@@ -1,0 +1,116 @@
+{
+    "constants": {
+        "maxVarianceCap": 0.40,
+        "annihilationRatioThreshold": 1.25,
+        "annihilationMoraleThreshold": 0.30,
+        "annihilationRandomChance": 0.15,
+        "skirmishPowerThreshold": 500,
+        "baseSupplyDecayPerRound": 0.10,
+        "interdictedSupplyDecayPerRound": 0.20,
+        "defensiveOrbitSupplyDecayPerRound": 0.05,
+        "orbitalBombardmentPrecisionDamage": 0.15,
+        "orbitalBombardmentPrecisionInfraDamage": 0.05,
+        "orbitalBombardmentIndiscriminateDamage": 0.25,
+        "orbitalBombardmentIndiscriminateInfraDamage": 0.30,
+        "orbitalBombardmentIndiscriminateMoraleDamage": 0.15,
+        "maxRpsBonusCap": 0.20
+    },
+    "intelPredictionProbabilities": {
+        "blind": {
+            "archetypeExact": 0.33,
+            "compositionVisibility": "size_only"
+        },
+        "observing": {
+            "archetypeExact": 0.40,
+            "compositionVisibility": "rough_archetype"
+        },
+        "infiltrated": {
+            "archetypeExact": 0.60,
+            "compositionVisibility": "percentage_bands"
+        },
+        "deep_penetration": {
+            "archetypeExact": 0.75,
+            "compositionVisibility": "precise_ranges"
+        }
+    },
+    "unitCounters": {
+        "orbital": {
+            "interceptor": {
+                "bomber": 0.15,
+                "destroyer": -0.15
+            },
+            "destroyer": {
+                "interceptor": 0.15,
+                "cruiser": -0.15
+            },
+            "cruiser": {
+                "destroyer": 0.15,
+                "bomber": -0.15
+            },
+            "bomber": {
+                "cruiser": 0.15,
+                "interceptor": -0.15
+            },
+            "carrier": {}
+        },
+        "ground": {
+            "infantry": {
+                "armor": -0.15
+            },
+            "armor": {
+                "infantry": 0.15,
+                "anti_armor": -0.15
+            },
+            "anti_armor": {
+                "armor": 0.15,
+                "airborne": -0.15
+            },
+            "airborne": {
+                "anti_armor": 0.15,
+                "infantry": -0.10
+            },
+            "artillery": {
+                "entrenched": 0.15
+            },
+            "special_ops": {}
+        }
+    },
+    "stanceCounters": {
+        "blitz": {
+            "shock": 0.15,
+            "feint": 0.10,
+            "entrench": -0.15,
+            "withdraw": -0.10
+        },
+        "entrench": {
+            "blitz": 0.15,
+            "feint": 0.10,
+            "shock": -0.10,
+            "sabotage": -0.10
+        },
+        "shock": {
+            "entrench": 0.10,
+            "sabotage": 0.10,
+            "blitz": -0.15,
+            "feint": -0.15
+        },
+        "feint": {
+            "shock": 0.15,
+            "sabotage": 0.10,
+            "blitz": -0.10,
+            "entrench": -0.10
+        },
+        "sabotage": {
+            "entrench": 0.10,
+            "blitz": 0.10,
+            "shock": -0.10,
+            "withdraw": -0.10
+        },
+        "withdraw": {
+            "blitz": 0.10,
+            "shock": 0.10,
+            "sabotage": 0.10,
+            "feint": 0.10
+        }
+    }
+}

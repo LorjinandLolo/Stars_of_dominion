@@ -1,0 +1,444 @@
+{
+    "_comment": "Stars of Dominion — Movement, Exploration & Doctrine config. All numeric tuning lives here.",
+    "movement": {
+        "baseSpeedUnitsPerSecond": 10,
+        "layerSpeedMultipliers": {
+            "hyperlane": 1.0,
+            "trade": 1.3,
+            "corridor": 1.1,
+            "gate": 3.0,
+            "deepSpace": 0.45
+        },
+        "layerDetectabilityMultipliers": {
+            "hyperlane": 1.0,
+            "trade": 1.2,
+            "corridor": 1.1,
+            "gate": 1.4,
+            "deepSpace": 0.25
+        },
+        "layerSupplyStrainMultipliers": {
+            "hyperlane": 1.0,
+            "trade": 0.85,
+            "corridor": 1.0,
+            "gate": 1.1,
+            "deepSpace": 2.0
+        },
+        "gateJumpCooldownSeconds": 180,
+        "deepSpaceBaseRiskPerHop": 0.04,
+        "deepSpaceExpansionInstabilityThreshold": 60,
+        "orderQueueMaxLength": 8,
+        "crisisResponseWindowSeconds": 300
+    },
+    "visibility": {
+        "sensorDecayExponent": 1.8,
+        "pingRadiusBase": 2,
+        "scanRadiusBase": 1,
+        "surveyRadiusBase": 0,
+        "fleetSensorStrength": 0.6,
+        "outpostSensorStrength": 0.9,
+        "planetSensorStrength": 1.0,
+        "minimumStrengthForPing": 0.15,
+        "minimumStrengthForScan": 0.45,
+        "minimumStrengthForSurvey": 0.80,
+        "revealDecayPerHour": 0.05
+    },
+    "exploration": {
+        "pingDurationSeconds": 30,
+        "scanDurationSeconds": 120,
+        "surveyDurationSeconds": 480,
+        "anomalyBaseChance": 0.18,
+        "anomalyTagWeightBoosts": {
+            "void": 0.4,
+            "relic": 0.6,
+            "anomalous": 0.8,
+            "gate": 0.3,
+            "standard": 0.0,
+            "fortress": 0.1
+        },
+        "frontierPhaseThresholds": {
+            "claimToAnchor": {
+                "minPresenceScore": 20,
+                "minTimeDays": 3
+            },
+            "anchorToIntegrate": {
+                "minPresenceScore": 60,
+                "minTimeDays": 10
+            }
+        },
+        "automationMaxSimultaneousScouts": 4,
+        "automationRiskToleranceLevels": {
+            "conservative": 0.2,
+            "balanced": 0.5,
+            "aggressive": 0.8
+        }
+    },
+    "infrastructure": {
+        "degradation": {
+            "physical": {
+                "tradeSegmentRatePerHour": 0.002,
+                "corridorRatePerHour": 0.001,
+                "gateRatePerHour": 0.0005
+            },
+            "hostile": {
+                "sabotageImpact": 0.35,
+                "blockadeImpactPerHour": 0.04,
+                "gateOverloadImpact": 0.60
+            },
+            "economic": {
+                "instabilityThreshold": 55,
+                "driftRatePerHour": 0.003
+            }
+        },
+        "recovery": {
+            "baseRatePerHour": 0.008,
+            "repairedAlteredThreshold": 0.3,
+            "fullRestorationThreshold": 0.95
+        },
+        "reshape": {
+            "reshapeBaseProb": 0.04,
+            "permanentLinkFormationProb": 0.015,
+            "corridorFractureProb": 0.025
+        },
+        "weaponization": {
+            "blockadeCost": 50,
+            "sabotageSuccessBase": 0.65,
+            "closureReversalCostMulti": 2.0
+        }
+    },
+    "doctrine": {
+        "postureSwitchDurationHours": 48,
+        "postureTransitionInefficiency": 0.20,
+        "doctrineDeviationFriction": 0.15,
+        "logisticsStrainRateBase": 0.001,
+        "stabilityDriftRateBase": 0.0005,
+        "moraleRecoveryRatePerHour": 0.002,
+        "blocInfluenceUpdateIntervalHours": 6,
+        "blocCrisisThreshold": 3,
+        "blocMinSatisfactionForCrisis": 20,
+        "doctrineTypes": {
+            "Defensive": {
+                "preferredLayers": [
+                    "hyperlane",
+                    "corridor"
+                ],
+                "retreatThreshold": 0.40,
+                "supplyModifier": 0.9,
+                "moraleDriftBias": -0.0002
+            },
+            "Offensive": {
+                "preferredLayers": [
+                    "hyperlane",
+                    "trade"
+                ],
+                "retreatThreshold": 0.15,
+                "supplyModifier": 1.2,
+                "moraleDriftBias": 0.0003
+            },
+            "Raider": {
+                "preferredLayers": [
+                    "deepSpace",
+                    "trade"
+                ],
+                "retreatThreshold": 0.30,
+                "supplyModifier": 1.5,
+                "moraleDriftBias": 0.0005
+            },
+            "Fortress": {
+                "preferredLayers": [
+                    "corridor"
+                ],
+                "retreatThreshold": 0.55,
+                "supplyModifier": 0.75,
+                "moraleDriftBias": -0.0003
+            },
+            "Mobility": {
+                "preferredLayers": [
+                    "trade",
+                    "gate",
+                    "hyperlane"
+                ],
+                "retreatThreshold": 0.25,
+                "supplyModifier": 1.1,
+                "moraleDriftBias": 0.0001
+            }
+        },
+        "postureTypes": {
+            "Expansionist": {
+                "frontierBlocBias": 0.1,
+                "militaryBlocBias": 0.05
+            },
+            "Consolidating": {
+                "tradeBlocBias": 0.08,
+                "frontierBlocBias": -0.05
+            },
+            "Militarist": {
+                "militaryBlocBias": 0.12,
+                "tradeBlocBias": -0.06
+            },
+            "Pacifist": {
+                "scienceBlocBias": 0.08,
+                "militaryBlocBias": -0.10
+            },
+            "Mercantile": {
+                "tradeBlocBias": 0.12,
+                "frontierBlocBias": 0.04
+            }
+        }
+    },
+    "economy": {
+        "production": {
+            "baseRates": {
+                "metals": 0.8,
+                "chemicals": 0.5,
+                "energy": 0.7,
+                "food": 0.6,
+                "military": 0.4,
+                "research": 0.3,
+                "luxury": 0.2,
+                "cultural": 0.15,
+                "rare": 0.05
+            },
+            "planetTypeMults": {
+                "industrial": {
+                    "metals": 2.0,
+                    "chemicals": 1.5,
+                    "energy": 1.2
+                },
+                "agricultural": {
+                    "food": 2.5,
+                    "chemicals": 0.8,
+                    "luxury": 1.2
+                },
+                "research": {
+                    "research": 2.8,
+                    "rare": 1.4,
+                    "military": 0.7
+                },
+                "fortress": {
+                    "military": 2.2,
+                    "energy": 1.3,
+                    "metals": 1.1
+                },
+                "commercial": {
+                    "luxury": 2.0,
+                    "cultural": 2.0,
+                    "credits": 1.8
+                },
+                "frontier": {
+                    "food": 0.7,
+                    "metals": 0.9,
+                    "research": 0.5
+                }
+            }
+        },
+        "tradeFlow": {
+            "baseCompoundingMultiplier": 1.08,
+            "hubBonusPercentPerRoute": 0.04,
+            "maxHubBonus": 0.35,
+            "disruptionMultiplierPenalty": 0.35,
+            "blockadeMultiplierPenalty": 0.55,
+            "collapseMultiplierPenalty": 0.80,
+            "rerouteEfficiencyLoss": 0.22,
+            "flowUpdateIntervalSeconds": 30
+        },
+        "commodities": {
+            "baseHappinessPerUnit": 2.5,
+            "maxHappinessBonusPerPlanet": 20,
+            "scarcityInstabilityDriftPerHour": 0.4,
+            "scarcityEspionageVulnerabilityBonus": 0.15,
+            "scarcityFrontierIntegrationPenalty": 0.3,
+            "distributionRadiusHops": 3
+        },
+        "collapse": {
+            "inefficiencyDriftRatePerHour": 0.002,
+            "commodityShortageThreshold": 0.25,
+            "regionalIdentityShiftRate": 0.001,
+            "collapseRecoveryRatePerHour": 0.004,
+            "collapseStages": [
+                "stable",
+                "strained",
+                "critical",
+                "collapsing"
+            ]
+        }
+    },
+    "politics": {
+        "blocDriftSources": {
+            "warDurationDriftPerDay": 1.2,
+            "commodityScarcityDriftPerHour": 0.8,
+            "frontierInstabilityDriftPerHour": 0.5,
+            "goodEconomicPerformanceRecoveryPerHour": 0.3,
+            "policyAlignmentRecoveryBonus": 0.4
+        },
+        "policyFlexReduction": {
+            "highInfluenceThreshold": 65,
+            "flexReductionPercentAtHighInfluence": 0.30,
+            "doctrineSwitchSlowdownMultiplier": 1.50
+        },
+        "crisisGating": {
+            "minIndicatorsRequired": 2,
+            "indicators": [
+                "lowBlocSatisfaction",
+                "highInstability",
+                "highEspionagePressure",
+                "tradeCollapse",
+                "warFatigue"
+            ]
+        }
+    },
+    "espionage": {
+        "domains": {
+            "infrastructureSabotage": {
+                "baseDurationHours": 8,
+                "baseSuccessRate": 0.70,
+                "baseAttributionRisk": 0.25,
+                "effects": {
+                    "tradeDisruptionIntensity": 0.4,
+                    "gateDestabilizationRisk": 0.3,
+                    "corridorSensorInterferenceDuration": 3600
+                }
+            },
+            "politicalSubversion": {
+                "baseDurationHours": 24,
+                "baseSuccessRate": 0.55,
+                "baseAttributionRisk": 0.35,
+                "effects": {
+                    "blocDissatisfactionDelta": -12,
+                    "frontierUnrestDrift": 0.5,
+                    "warFatigueDrift": 0.8
+                }
+            },
+            "shadowEconomy": {
+                "baseDurationHours": 48,
+                "baseSuccessRate": 0.80,
+                "baseAttributionRisk": 0.15,
+                "effects": {
+                    "piracySpawnChance": 0.25,
+                    "smugglingRouteCapacity": 0.3,
+                    "tradeInsuranceCostInflation": 0.12
+                }
+            }
+        },
+        "attribution": {
+            "sensorStrengthWeight": 0.35,
+            "regionStabilityWeight": 0.20,
+            "counterIntelWeight": 0.30,
+            "operationRiskWeight": 0.15,
+            "repeatedActivityMultiplier": 1.40,
+            "suspectedThreshold": 0.35,
+            "exposedThreshold": 0.70,
+            "diplomaticPenaltyOnExpose": 25,
+            "tensionIncreaseOnSuspected": 8
+        },
+        "escalation": {
+            "repeatOperationDetectionBonus": 0.10,
+            "repeatOperationTensionBonus": 5,
+            "repeatOperationInstabilityBonus": 0.5,
+            "regionCooldownHours": 12
+        }
+    },
+    "seasons": {
+        "durationDays": 30,
+        "announcementLeadDays": 5,
+        "maxActiveModifiers": 3,
+        "modifierPool": [
+            {
+                "id": "tradeVolatility",
+                "label": "Trade Volatility",
+                "pressureRate": 0.15,
+                "affectedVariable": "tradeEfficiency"
+            },
+            {
+                "id": "militaryEscalation",
+                "label": "Military Escalation",
+                "pressureRate": 0.20,
+                "affectedVariable": "stability"
+            },
+            {
+                "id": "commodityScarcity",
+                "label": "Commodity Scarcity",
+                "pressureRate": 0.25,
+                "affectedVariable": "commodityAccess"
+            },
+            {
+                "id": "gateFlux",
+                "label": "Gate Flux",
+                "pressureRate": 0.10,
+                "affectedVariable": "infraIntegrity"
+            },
+            {
+                "id": "deepSpaceBloom",
+                "label": "Deep Space Bloom",
+                "pressureRate": 0.12,
+                "affectedVariable": "espionagePressure"
+            },
+            {
+                "id": "ideologicalDrift",
+                "label": "Ideological Drift",
+                "pressureRate": 0.18,
+                "affectedVariable": "blocSatisfaction"
+            }
+        ],
+        "rewards": {
+            "titles": [
+                "Pioneer",
+                "Merchant Prince",
+                "Warlord",
+                "Pathfinder",
+                "Chronicler"
+            ],
+            "prestigePerTitle": 10,
+            "maxBonusPerSeason": 3,
+            "permanentBonusCap": 5
+        }
+    },
+    "victory": {
+        "conquest": {
+            "_comment": "Applied to hegemon immediately after conquest, all drift-based",
+            "stabilityDriftBoostPerHour": 0.005,
+            "tradeStrainMultiplier": 1.35,
+            "espionagePressureBoostPerHour": 0.008,
+            "deepSpaceExpansionMultiplier": 1.50,
+            "blocImbalanceDriftPerHour": 0.004,
+            "rebellionPressureThreshold": 0.75
+        },
+        "enlightenment": {
+            "qualificationDurationDays": 10,
+            "transcendenceWindowDays": 7,
+            "thresholds": {
+                "stability": 0.80,
+                "tradeEfficiency": 0.75,
+                "commodityAccess": 0.70,
+                "blocSatisfaction": 0.70,
+                "infraIntegrity": 0.72,
+                "maxBlocDominance": 0.55,
+                "minBlocSatisfaction": 0.45
+            },
+            "culturalPressureDriftRate": 0.003,
+            "legacyBonusStabilityResistance": 0.05,
+            "legacyBonusBlocVolatilityReduction": 0.04,
+            "structuralImpactTypes": [
+                "stabilizedGateNexus",
+                "tradeEfficiencyBoostRegion",
+                "deepSpaceContractionSector"
+            ]
+        },
+        "postVictory": {
+            "_comment": "48h transition phase after any victory type",
+            "transitionDurationHours": 48,
+            "instabilityMultiplier": 1.80,
+            "tradeVolatilityBoost": 0.20,
+            "espionageActivityBoost": 0.25,
+            "blocSensitivityMultiplier": 1.60,
+            "deepSpaceExpansionBoost": 0.15,
+            "autonomousRegionInstabilityThreshold": 0.80
+        },
+        "territoryPersistence": {
+            "_comment": "Cross-season drift applied to infrastructure (not ownership)",
+            "infraDecayRatePerDayIdle": 0.005,
+            "routeDecayRatePerDayDisrupted": 0.010,
+            "gateDecayRatePerDayUnstable": 0.008,
+            "maxCrossSeasonDecay": 0.30
+        }
+    }
+}
