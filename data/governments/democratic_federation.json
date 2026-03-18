@@ -1,0 +1,27 @@
+{
+    "id": "democratic_federation",
+    "tags": [
+        "democracy",
+        "senate_system",
+        "elected_leadership"
+    ],
+    "base_values": {
+        "senate_power": 40,
+        "executive_power": 45,
+        "legitimacy": 60
+    },
+    "modifiers": {
+        "trade_income": 0.25,
+        "diplomatic_reputation": 0.20,
+        "crisis_response_speed": -0.15
+    },
+    "allowed_policies": [
+        "civil_reforms",
+        "trade_expansion",
+        "science_investment"
+    ],
+    "restricted_policies": [
+        "permanent_martial_law"
+    ],
+    "institution_name": "Senate"
+}

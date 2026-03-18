@@ -1,0 +1,13 @@
+{
+    "id": "faction-aurelian",
+    "tags": [
+        "authoritarian",
+        "militarist",
+        "centralized_rule"
+    ],
+    "base_influence": 80,
+    "favored_policies": [
+        "war_mobilization",
+        "state_censorship"
+    ]
+}

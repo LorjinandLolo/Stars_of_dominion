@@ -1,0 +1,42 @@
+[
+    {
+        "id": "liberation_broadcast",
+        "name": "Liberation Broadcasts",
+        "description": "Continuous transmission of unencrypted anti-authoritarian messaging designed to incite democratic uprisings.",
+        "intensity": 5,
+        "baseDurationTicks": 300,
+        "isCovert": false
+    },
+    {
+        "id": "anti_corporate",
+        "name": "Anti-Corporate Agitprop",
+        "description": "Dark web leaks of corporate corruption meant to destabilize megacorp monopolies and incite worker strikes.",
+        "intensity": 6,
+        "baseDurationTicks": 200,
+        "isCovert": true
+    },
+    {
+        "id": "fear_campaign",
+        "name": "Fear Campaign",
+        "description": "Exaggerated reports of foreign military buildup broadcast across border worlds to drum up militaristic panic and xenophobia.",
+        "intensity": 8,
+        "baseDurationTicks": 150,
+        "isCovert": false
+    },
+    {
+        "id": "scientific_utopian",
+        "name": "Scientific Utopianism",
+        "description": "Calculated cultural exports showcasing tech miracles to demoralize traditionalist populations.",
+        "intensity": 3,
+        "baseDurationTicks": 500,
+        "isCovert": false
+    },
+    {
+        "id": "nationalist_mythmaking",
+        "name": "Nationalist Mythmaking",
+        "description": "State-sponsored historical revisionism broadcast internally to solidify internal harmony and isolationism.",
+        "intensity": 4,
+        "baseDurationTicks": 250,
+        "isCovert": false
+    }
+]

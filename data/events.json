@@ -1,0 +1,16 @@
+{
+    "events": [
+        {
+            "id": "event-001",
+            "title": "Signal from the Void",
+            "body": "Your sensors pick up a strange transmission from a nearby asteroid belt. It seems to be a distress signal, but the encryption is ancient.",
+            "triggers": "[]",
+            "choices": "[{\"id\":\"investigate\",\"text\":\"Send a scout ship\"},{\"id\":\"ignore\",\"text\":\"Ignore it\"}]",
+            "effects": "[]",
+            "cooldown_days": 0,
+            "repeatable": false,
+            "tags": "[]",
+            "newspaper": "[]"
+        }
+    ]
+}

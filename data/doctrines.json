@@ -1,0 +1,56 @@
+[
+    {
+        "id": "military_hegemony",
+        "name": "Military Hegemony",
+        "perks": [
+            "+20% Fleet Capacity for Members",
+            "-10% Ship Upkeep"
+        ],
+        "description": "A rigid coalition built upon overwhelming preemptive force."
+    },
+    {
+        "id": "defensive_containment",
+        "name": "Defensive Containment",
+        "perks": [
+            "+30% Starbase Hull",
+            "+15% Intel against Rivals"
+        ],
+        "description": "A mutual defense pact designed specifically to block the expansion of a threatening neighbor."
+    },
+    {
+        "id": "revolutionary_expansion",
+        "name": "Revolutionary Vanguard",
+        "perks": [
+            "+50% Propaganda Impact",
+            "-25% Covert Ops Cost"
+        ],
+        "description": "An aggressive ideological bloc dedicated to exporting their revolution via proxy support."
+    },
+    {
+        "id": "trade_supremacy",
+        "name": "Corporate Syndicate",
+        "perks": [
+            "+25% Trade Value",
+            "Immune to Trade Embargoes from Non-Members"
+        ],
+        "description": "An alliance of market convenience designed to corner galactic trade networks."
+    },
+    {
+        "id": "anti_authoritarian_liberation",
+        "name": "Liberation Front",
+        "perks": [
+            "Rebel factions in rival states receive +50% passive strength",
+            "No borders against refugees"
+        ],
+        "description": "A coalition sworn to the total eradication of tyrannical rule across the stars."
+    },
+    {
+        "id": "pragmatic_alliance",
+        "name": "Pragmatic Alliance",
+        "perks": [
+            "+10% Diplomatic Weight",
+            "Reduced Cohesion Decay"
+        ],
+        "description": "A standard realpolitik alliance of convenience with no strict ideological overtones."
+    }
+]

@@ -1,0 +1,23 @@
+{
+    "id": "militarist_society",
+    "tags": [
+        "militarist",
+        "honor_culture",
+        "expansionist"
+    ],
+    "modifiers": {
+        "military_production": 0.20,
+        "fleet_morale": 0.15,
+        "diplomatic_trust": -0.10
+    },
+    "policy_bias": [
+        "war_mobilization",
+        "fleet_expansion",
+        "military_budget"
+    ],
+    "faction_weights": {
+        "military": 0.40,
+        "populists": 0.20,
+        "scientists": 0.10
+    }
+}

@@ -1,0 +1,14 @@
+{
+    "id": "covenant_theocracy",
+    "tags": [
+        "autocracy",
+        "religious_council"
+    ],
+    "base_values": {
+        "senate_power": 10,
+        "executive_power": 90,
+        "legitimacy": 100
+    },
+    "modifiers": {},
+    "institution_name": "Holy Synod"
+}

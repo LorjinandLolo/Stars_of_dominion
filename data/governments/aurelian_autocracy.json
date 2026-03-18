@@ -1,0 +1,14 @@
+{
+    "id": "aurelian_autocracy",
+    "tags": [
+        "autocracy",
+        "centralized_rule"
+    ],
+    "base_values": {
+        "senate_power": 0,
+        "executive_power": 100,
+        "legitimacy": 80
+    },
+    "modifiers": {},
+    "institution_name": "Aurelian Throne"
+}

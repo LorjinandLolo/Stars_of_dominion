@@ -1,0 +1,22 @@
+{
+    "id": "aurelian_society",
+    "tags": [
+        "militarist",
+        "collectivist",
+        "honor_culture"
+    ],
+    "modifiers": {
+        "military_production": 0.25,
+        "fleet_morale": 0.20,
+        "diplomatic_trust": -0.20
+    },
+    "policy_bias": [
+        "war_mobilization",
+        "fleet_expansion"
+    ],
+    "faction_weights": {
+        "military": 0.50,
+        "populists": 0.30,
+        "scientists": 0.05
+    }
+}

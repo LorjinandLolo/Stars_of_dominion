@@ -1,0 +1,13 @@
+{
+    "id": "faction-vektori",
+    "tags": [
+        "democracy",
+        "pacifist",
+        "individualist"
+    ],
+    "base_influence": 60,
+    "favored_policies": [
+        "free_trade",
+        "civil_reforms"
+    ]
+}

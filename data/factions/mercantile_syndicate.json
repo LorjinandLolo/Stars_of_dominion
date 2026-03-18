@@ -1,0 +1,13 @@
+{
+    "id": "mercantile_syndicate",
+    "tags": [
+        "merchant_culture",
+        "corporate",
+        "pacifist"
+    ],
+    "base_influence": 50,
+    "favored_policies": [
+        "trade_expansion",
+        "civil_reforms"
+    ]
+}

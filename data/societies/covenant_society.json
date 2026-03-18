@@ -1,0 +1,22 @@
+{
+    "id": "covenant_society",
+    "tags": [
+        "religious",
+        "traditional",
+        "collectivist"
+    ],
+    "modifiers": {
+        "cultural_unity": 0.40,
+        "science_output": -0.20,
+        "diplomatic_trust": -0.10
+    },
+    "policy_bias": [
+        "state_religion",
+        "traditional_values"
+    ],
+    "faction_weights": {
+        "clergy": 0.50,
+        "populists": 0.30,
+        "merchants": 0.10
+    }
+}

@@ -1,0 +1,66 @@
+[
+    {
+        "id": "crisis_embassy_bombing",
+        "name": "Embassy Bombing",
+        "description": "A massive detonation has levelled an embassy in the capital sector. Intelligence strongly points towards rival state sponsorship.",
+        "requiredEscalationIndex": 4,
+        "triggerTags": [
+            "covert_op_failure",
+            "high_tension"
+        ],
+        "escalationBump": 2,
+        "options": [
+            "Reprisal Strike",
+            "Expel Diplomats",
+            "Deny Involvement"
+        ]
+    },
+    {
+        "id": "crisis_border_standoff",
+        "name": "Border Fleet Standoff",
+        "description": "Naval exercise fleets have dangerously intermingled near a disputed, mineral-rich asteroid belt. Weapons are hot.",
+        "requiredEscalationIndex": 2,
+        "triggerTags": [
+            "border_friction",
+            "militaristic"
+        ],
+        "escalationBump": 1,
+        "options": [
+            "Hold the Line",
+            "Order Withdrawal",
+            "Demand Apology"
+        ]
+    },
+    {
+        "id": "crisis_rebel_supply_leak",
+        "name": "Covert Supply Leak Exposed",
+        "description": "A dark freighter carrying military-grade weaponry to local dissidents was intercepted. The cargo manifests trace directly back to a rival power.",
+        "requiredEscalationIndex": 5,
+        "triggerTags": [
+            "proxy_war",
+            "covert_exposure"
+        ],
+        "escalationBump": 2,
+        "options": [
+            "Public Denunciation",
+            "Arm More Rebels",
+            "Offer Backchannel Deals"
+        ]
+    },
+    {
+        "id": "crisis_defected_admiral",
+        "name": "High-Profile Defection",
+        "description": "A decorated Admiral from the rival fleet has arrived claiming asylum, bringing critical shield frequency codes.",
+        "requiredEscalationIndex": 3,
+        "triggerTags": [
+            "ideological_friction",
+            "espionage"
+        ],
+        "escalationBump": 1,
+        "options": [
+            "Extract Intelligence",
+            "Return the Admiral",
+            "Public Trial"
+        ]
+    }
+]

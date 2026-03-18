@@ -1,0 +1,20 @@
+{
+    "id": "emergency_fleet_expansion",
+    "tags": [
+        "military_policy",
+        "war_preparation",
+        "emergency"
+    ],
+    "effects": {
+        "fleet_production": 0.25,
+        "happiness": -0.10,
+        "military_faction_power": 0.10
+    },
+    "support_tags": [
+        "militarist",
+        "expansionist"
+    ],
+    "oppose_tags": [
+        "pacifist"
+    ]
+}

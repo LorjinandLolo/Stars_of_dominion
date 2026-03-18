@@ -1,0 +1,22 @@
+{
+    "id": "vektori_society",
+    "tags": [
+        "scientific_culture",
+        "individualist",
+        "pacifist"
+    ],
+    "modifiers": {
+        "science_output": 0.30,
+        "fleet_morale": -0.10,
+        "diplomatic_trust": 0.20
+    },
+    "policy_bias": [
+        "free_trade",
+        "science_funding"
+    ],
+    "faction_weights": {
+        "scientists": 0.60,
+        "merchants": 0.30,
+        "military": 0.05
+    }
+}

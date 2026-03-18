@@ -1,0 +1,15 @@
+{
+    "id": "imperial_autocracy",
+    "tags": [
+        "autocracy",
+        "noble_council",
+        "centralized_rule"
+    ],
+    "base_values": {
+        "senate_power": 20,
+        "executive_power": 70,
+        "legitimacy": 50
+    },
+    "modifiers": {},
+    "institution_name": "Imperial Council"
+}

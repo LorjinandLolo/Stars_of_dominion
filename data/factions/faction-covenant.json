@@ -1,0 +1,13 @@
+{
+    "id": "faction-covenant",
+    "tags": [
+        "religious",
+        "traditional",
+        "isolationist"
+    ],
+    "base_influence": 70,
+    "favored_policies": [
+        "state_religion",
+        "closed_borders"
+    ]
+}

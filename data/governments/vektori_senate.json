@@ -1,0 +1,14 @@
+{
+    "id": "vektori_senate",
+    "tags": [
+        "democracy",
+        "senate_system"
+    ],
+    "base_values": {
+        "senate_power": 90,
+        "executive_power": 10,
+        "legitimacy": 95
+    },
+    "modifiers": {},
+    "institution_name": "Vektori Senate"
+}
