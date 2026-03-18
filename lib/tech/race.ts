@@ -16,6 +16,8 @@ export interface RaceConstraint {
 
 export const STANDARD_PENALTY: TechEffect = {
     type: SecondaryEffectType.HAPPINESS_DRAIN,
+    target: 'global_stability',
+    value: -5,
     magnitude: Magnitude.MED,
     modifier: { reason: "Race Constraint Violation" }
 };
@@ -28,7 +30,7 @@ export class RaceConstraintManager {
         let violation = false;
 
         // Check Primary
-        if (constraint.forbiddenPrimary.has(tech.primaryEffect.type as PrimaryEffectType)) {
+        if (tech.primaryEffect && constraint.forbiddenPrimary.has(tech.primaryEffect.type)) {
             violation = true;
             // Strategy: Keep the forbidden effect but add a stiff penalty (Cruelty Layer)
             // "If a forbidden element is used... Add mandatory Secondary Effect"
@@ -51,10 +53,11 @@ export class RaceConstraintManager {
 
         if (violation) {
             // Apply Penalty
-            // If tech already has secondary, we might need to replace it or upgrade it to be worse?
-            // Grammar says: "Add mandatory Secondary Effect OR Burn"
-            // Let's overwrite Secondary with a generated Penalty
-            correctedTech.secondaryEffect = constraint.penaltyGenerator(tech) || STANDARD_PENALTY;
+            const penalty = constraint.penaltyGenerator(tech) || STANDARD_PENALTY;
+            correctedTech.secondaryEffect = {
+                type: (penalty.type as SecondaryEffectType),
+                magnitude: penalty.magnitude || Magnitude.MED
+            };
 
             // Mark description
             correctedTech.description += " [CONTRA-INNOVATION PROTOCOL ENGAGED]";

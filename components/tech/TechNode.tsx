@@ -27,8 +27,8 @@ export default function TechNode({
     offsetX = 0,
     offsetY = 0
 }: TechNodeProps & { offsetX?: number, offsetY?: number }) {
-    const x = (tech.position.x - offsetX) * 120 * scale;
-    const y = (tech.position.y - offsetY) * 100 * scale;
+    const x = ((tech.position?.x ?? 0) - offsetX) * 120 * scale;
+    const y = ((tech.position?.y ?? 0) - offsetY) * 100 * scale;
 
     return (
         <div 
@@ -93,7 +93,7 @@ export default function TechNode({
                         <div key={i} className="flex items-center gap-1 opacity-60">
                             <Dna size={8} className="text-amber-500" />
                             <span className="text-[7px] text-slate-400 truncate max-w-[60px] uppercase">
-                                {eff.target.replace(/_/g, ' ')}
+                                {eff.target?.replace(/_/g, ' ') || 'effect'}
                             </span>
                         </div>
                     ))}
@@ -110,9 +110,9 @@ export default function TechNode({
                         <span className="text-[8px] font-display text-slate-500 uppercase tracking-widest block mb-1">Impact Analysis</span>
                         {tech.effects.map((eff, idx) => (
                             <div key={idx} className="flex items-center justify-between text-[9px]">
-                                <span className="text-slate-400 lowercase">{eff.target.replace(/_/g, ' ')}</span>
-                                <span className={eff.value > 0 ? 'text-green-400' : 'text-red-400'}>
-                                    {eff.value > 0 ? '+' : ''}{eff.value * 100}%
+                                <span className="text-slate-400 lowercase">{eff.target?.replace(/_/g, ' ') || 'unspecified'}</span>
+                                <span className={(eff.value || 0) > 0 ? 'text-green-400' : 'text-red-400'}>
+                                    {(eff.value || 0) > 0 ? '+' : ''}{(eff.value || 0) * 100}%
                                 </span>
                             </div>
                         ))}

@@ -39,7 +39,7 @@ export async function getFactionStatusSummary(factionId: string): Promise<Factio
       government: "Military Autocracy", // TODO: Dynamic from governmentRegistry
       ideology: "Militarist / Centralized", // TODO: From ideology-service
       narrativeTone: generateNarrativeTone(empireId, world),
-      stability: shared.standardStability || 80,
+      stability: (shared.stability * 100) || 80,
       warExhaustion: shared.warFatigue || 0,
       unrest: 10, // Mock for now
       recentEvents: [

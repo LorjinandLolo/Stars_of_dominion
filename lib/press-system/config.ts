@@ -66,6 +66,21 @@ export const PressConfig = {
             trustCost: -5,
             pressureReduction: -5,
             offensiveImpact: 20 // Damage to attacker
+        },
+        [CrisisChoice.QUARANTINE]: {
+            trustCost: -20,
+            pressureReduction: -30,
+            stabilityBonus: -10
+        },
+        [CrisisChoice.JAM_SIGNAL]: {
+            trustCost: -15,
+            pressureReduction: -25,
+            stabilityBonus: -5
+        },
+        [CrisisChoice.COUNTER_NARRATIVE]: {
+            trustCost: 5,
+            pressureReduction: -15,
+            stabilityBonus: 0
         }
     },
 

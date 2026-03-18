@@ -70,7 +70,10 @@ export function processPublishing(
                     storyId: story.id,
                     publisherId: factionId,
                     tickPublished: tick,
-                    viralFactor: viral
+                    viralFactor: viral,
+                    originPlanetId: 'GENERIC_CAPITAL', // Mock
+                    transmissionMap: new Map(),
+                    jammedSystems: new Set()
                 });
             }
         }

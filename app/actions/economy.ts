@@ -126,3 +126,27 @@ export async function getEconomyStateAction() {
         policies: world.economy.policies ? Array.from(world.economy.policies.entries()) : []
     };
 }
+
+/**
+ * Stub for establishTradeRouteAction (used by Dashboard.tsx)
+ */
+export async function establishTradeRouteAction(playerFactionId: string, targetFactionId: string, resource: any, amount: number) {
+    console.log(`[ECONOMY] Stub: establishTradeRouteAction for ${resource} from ${playerFactionId} to ${targetFactionId}`);
+    return { success: true };
+}
+
+/**
+ * Stub for generateIntrigueOptionsAction (used by Dashboard.tsx)
+ */
+export async function generateIntrigueOptionsAction(targetFactionId: string) {
+    console.log(`[INTRIGUE] Stub: generateIntrigueOptionsAction for ${targetFactionId}`);
+    return [];
+}
+
+/**
+ * Stub for executeIntrigueAction (used by Dashboard.tsx)
+ */
+export async function executeIntrigueAction(optionId: string, type: string, targetId: string) {
+    console.log(`[INTRIGUE] Stub: executeIntrigueAction ${type} on ${targetId}`);
+    return { success: true };
+}

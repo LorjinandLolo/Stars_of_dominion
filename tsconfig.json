@@ -36,6 +36,13 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "lib/**/tests.ts",
+    "lib/**/test-*.ts",
+    "lib/**/victory-tests.ts",
+    "lib/pillar-tests.ts",
+    "tmp/**/*.ts",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }

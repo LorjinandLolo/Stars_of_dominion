@@ -26,6 +26,7 @@ function createTestPlanet(): Planet {
     id: 'test_planet_1',
     name: 'Neo Terra',
     ownerId: 'player_1',
+    systemId: 'test_system',
     planetType: 'standard',
     infrastructureLevel: 2,
     stability: 50,
@@ -35,6 +36,7 @@ function createTestPlanet(): Planet {
     tiles,
     buildQueue: [],
     activeModifiers: [],
+    tags: [],
   };
 }
 

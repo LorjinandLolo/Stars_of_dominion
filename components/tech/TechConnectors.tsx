@@ -32,12 +32,12 @@ export default function TechConnectors({
                 if (parent) {
                     connections.push({
                         from: { 
-                            x: (parent.position.x - offsetX) * X_GAP + NODE_WIDTH / 2, 
-                            y: (parent.position.y - offsetY) * Y_GAP + 60 * scale // Bottom of parent node
+                            x: ((parent.position?.x ?? 0) - offsetX) * X_GAP + NODE_WIDTH / 2, 
+                            y: ((parent.position?.y ?? 0) - offsetY) * Y_GAP + 60 * scale // Bottom of parent node
                         },
                         to: { 
-                            x: (tech.position.x - offsetX) * X_GAP + NODE_WIDTH / 2, 
-                            y: (tech.position.y - offsetY) * Y_GAP // Top of child node
+                            x: ((tech.position?.x ?? 0) - offsetX) * X_GAP + NODE_WIDTH / 2, 
+                            y: ((tech.position?.y ?? 0) - offsetY) * Y_GAP // Top of child node
                         },
                         active: unlockedTechIds.includes(parent.id),
                         id: `${parent.id}-${tech.id}`

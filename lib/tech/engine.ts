@@ -46,6 +46,7 @@ export class TechEngine {
                 { slotId: 'slot-1', targetTechId: null, startTime: 0, progressHours: 0 },
                 { slotId: 'slot-2', targetTechId: null, startTime: 0, progressHours: 0 }
             ],
+            activeEffects: [],
             maxSlots: 2,
             globalModifiers: {
                 'research_speed': 1.0,
@@ -144,12 +145,12 @@ export class TechEngine {
                 });
                 break;
             case TechEffectType.MODIFIER_PERCENT:
-                const current = state.globalModifiers[effect.target] || 1.0;
-                state.globalModifiers[effect.target] = current + effect.value;
+                const current = state.globalModifiers[effect.target!] || 1.0;
+                state.globalModifiers[effect.target!] = current + effect.value!;
                 break;
             case TechEffectType.MODIFIER_FLAT:
-                const flat = state.globalModifiers[effect.target] || 0;
-                state.globalModifiers[effect.target] = flat + effect.value;
+                const flat = state.globalModifiers[effect.target!] || 0;
+                state.globalModifiers[effect.target!] = flat + effect.value!;
                 break;
             // Other system-specific effects (e.g., building unlocks) are queried via unlockedTechs set
         }
@@ -177,6 +178,7 @@ export class TechEngine {
             ...state,
             unlockedTechs: new Set(state.unlockedTechs),
             activeSlots: state.activeSlots.map(s => ({ ...s })),
+            activeEffects: [...state.activeEffects],
             globalModifiers: { ...state.globalModifiers },
             lockedTechs: new Set(state.lockedTechs)
         };

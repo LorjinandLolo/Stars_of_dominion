@@ -96,12 +96,12 @@ export function tickProduction(
         const key = k as keyof ResourceBundle;
         const delta = (v ?? 0) * deltaSeconds * efficiencyMod;
         planet.stockpile[key] = (planet.stockpile[key] ?? 0) + delta;
-        planet.baseRates[key] = v ?? 0;
+        planet.currentRates[key] = v ?? 0;
     }
 
     // Research and military capacity
-    planet.researchOutput = (rates['research'] ?? 0);
-    planet.militaryCapacity = clamp((rates['military'] ?? 0) / (econ.production.baseRates.military * 2.2));
+    planet.derived.research = (rates['research'] ?? 0);
+    planet.derived.military = clamp((rates['military'] ?? 0) / (econ.production.baseRates.military * 2.2));
 }
 
 // ─── Pillar 3B: Network Trade Flow ────────────────────────────────────────────
@@ -159,7 +159,7 @@ export function tickTradeFlow(
         // Source planet's stockpile drains into flow
         const fromPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.fromSystemId);
         if (fromPlanet) {
-            const drainRate = scaleBundles(fromPlanet.baseRates, 0.5 * eff * hubMult);
+            const drainRate = scaleBundles(fromPlanet.currentRates, 0.5 * eff * hubMult);
             edge.flowPerHour = drainRate;
             // Drain from stockpile (up to what's available)
             const drain = scaleBundles(drainRate, deltaSeconds / 3600);
@@ -362,7 +362,7 @@ export function tickEconomy(
     const eco = world.economy;
 
     // 0. Construction Tick (Global)
-    tickConstructionGlobal(world.construction.planets, world.nowSeconds);
+    tickConstructionGlobal(world);
 
     // 1. Local production
     for (const planet of eco.planets.values()) {

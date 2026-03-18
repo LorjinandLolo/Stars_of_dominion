@@ -55,6 +55,11 @@ export class TechGenerator {
             tier,
             intent,
             description: "A procedurally generated technology.",
+            researchCost: tier * 24, // 24 hours per tier base
+            prerequisites: [],
+            effects: [],
+            tags: [],
+            aiTags: [],
             primaryEffect: { type: pEffectType, magnitude: pMag },
             secondaryEffect: sEffect,
             visibilityModifier: vis,
@@ -69,10 +74,16 @@ export class TechGenerator {
     // --- Selectors ---
 
     private static selectIntent(ctx: GameStateContext): Intent {
-        // Map context to intent weights
-        // Simplification:
-        if (ctx.warIntensity === Magnitude.HIGH || ctx.warIntensity === Magnitude.SEVERE) return Intent.AGGRESSION;
-        if (ctx.economicStress === Magnitude.HIGH) return Intent.LEVERAGE;
+        // Handle both Magnitude-based and numeric-based context
+        const isWarHigh = ctx.warIntensity === Magnitude.HIGH || 
+                          ctx.warIntensity === Magnitude.SEVERE || 
+                          (ctx.warThreat > 0.7);
+                          
+        const isEconHigh = (ctx.economicStress as any) === Magnitude.HIGH || 
+                           ctx.economicStress > 0.7;
+
+        if (isWarHigh) return Intent.AGGRESSION;
+        if (isEconHigh) return Intent.LEVERAGE;
         return Intent.CONTROL; // default
     }
 

@@ -30,8 +30,8 @@ export default function ResearchPanel() {
 
     const { offsetX, offsetY } = useMemo(() => {
         if (filteredTechs.length === 0) return { offsetX: 0, offsetY: 0 };
-        const minX = Math.min(...filteredTechs.map(t => t.position.x));
-        const minY = Math.min(...filteredTechs.map(t => t.position.y));
+        const minX = Math.min(...filteredTechs.map(t => t.position?.x ?? 0));
+        const minY = Math.min(...filteredTechs.map(t => t.position?.y ?? 0));
         return { offsetX: minX, offsetY: minY };
     }, [filteredTechs]);
     

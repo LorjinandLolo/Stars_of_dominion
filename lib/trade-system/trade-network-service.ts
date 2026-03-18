@@ -60,7 +60,7 @@ export function tickGalacticTrade(
 
     // We sum up the actual per-second baseRates (production) and inferred consumption.
     for (const planet of tradeNetwork.planets.values()) {
-        for (const [resKey, prod] of Object.entries(planet.baseRates)) {
+        for (const [resKey, prod] of Object.entries(planet.currentRates)) {
             const res = mapPayloadToResource(resKey);
             if (!res || prod === undefined) continue;
 

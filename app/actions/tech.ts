@@ -60,6 +60,7 @@ export async function getPlayerTechStateAction(factionId: string) {
     factionId: playerState.factionId,
     unlockedTechIds: Array.from(playerState.unlockedTechs),
     activeSlots: playerState.activeSlots,
+    activeEffects: playerState.activeEffects,
     maxSlots: playerState.maxSlots,
     globalModifiers: playerState.globalModifiers,
     lockedTechIds: Array.from(playerState.lockedTechs)

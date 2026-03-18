@@ -16,8 +16,8 @@ export class VisibilityEngine {
             // Base Signal
             let signal: PublicSignal = {
                 playerId: targetState.factionId,
-                domain: tech.domain,
-                tier: tech.tier,
+                domain: tech.domain || tech.branch || Domain.MILITARY,
+                tier: tech.tier || Tier.I,
                 timestamp: Date.now(), // In real app, store unlock time in state
                 isObscured: false,
                 isFalsified: false
@@ -33,7 +33,7 @@ export class VisibilityEngine {
 
                     case VisibilityModifierType.FALSIFY_DOMAIN:
                         signal.isFalsified = true;
-                        signal.domain = this.getFalsifiedDomain(tech.domain);
+                        signal.domain = this.getFalsifiedDomain(tech.domain || tech.branch || Domain.MILITARY);
                         break;
 
                     case VisibilityModifierType.DELAYED_REVEAL:
