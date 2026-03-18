@@ -1,0 +1,232 @@
+{
+  "databaseId": "game",
+  "collections": [
+    {
+      "id": "world_state",
+      "name": "world_state",
+      "attributes": [
+        {
+          "key": "day",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "key": "resources",
+          "type": "json",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "name": "events",
+      "attributes": [
+        {
+          "key": "id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "body",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "triggers",
+          "type": "json",
+          "required": true
+        },
+        {
+          "key": "choices",
+          "type": "json",
+          "required": true
+        },
+        {
+          "key": "effects",
+          "type": "json",
+          "required": false
+        },
+        {
+          "key": "cooldown_days",
+          "type": "integer",
+          "required": false
+        },
+        {
+          "key": "repeatable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "tags",
+          "type": "json",
+          "required": false
+        },
+        {
+          "key": "newspaper",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "gazettes",
+      "name": "gazettes",
+      "attributes": [
+        {
+          "key": "day",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "key": "headline",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "lede",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "tone",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "image",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "factions",
+      "name": "factions",
+      "attributes": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "traits",
+          "type": "json",
+          "required": false
+        },
+        {
+          "key": "resources",
+          "type": "json",
+          "required": false
+        },
+        {
+          "key": "home_planet_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "inviteCode",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "governmentType",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "user_profiles",
+      "name": "user_profiles",
+      "attributes": [
+        {
+          "key": "userId",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "factionId",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "role",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "permissions",
+          "type": "json",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "armies",
+      "name": "armies",
+      "attributes": [
+        {
+          "key": "faction_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "location_planet_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "units",
+          "type": "json",
+          "required": true
+        },
+        {
+          "key": "status",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "planets",
+      "name": "planets",
+      "attributes": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "x",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "key": "y",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "key": "type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "owner_faction_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "attributes",
+          "type": "json",
+          "required": false
+        }
+      ]
+    }
+  ]
+}
