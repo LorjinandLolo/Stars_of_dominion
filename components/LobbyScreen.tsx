@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useUIStore } from '@/lib/store/ui-store';
+import { getFleetsAction } from '@/app/actions/movement';
+import { useRouter } from 'next/navigation';
+import { authService } from '@/lib/auth-service';
 
 interface LobbyFaction {
     id: string;
@@ -68,6 +70,17 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
             {/* Header */}
             <div className="relative z-10 text-center mb-12">
+                <div className="absolute top-0 right-0 mt-[-20px] mr-[-40px]">
+                    <button 
+                        onClick={async () => {
+                            await authService.logout();
+                            router.push('/login');
+                        }}
+                        className="text-slate-500 hover:text-white text-xs uppercase tracking-widest px-4 py-2 border border-slate-800 hover:border-slate-600 rounded-full transition-all"
+                    >
+                        Sign Out
+                    </button>
+                </div>
                 <div className="text-slate-500 text-xs tracking-[0.4em] uppercase mb-3">Stars of Dominion</div>
                 <h1 className="text-5xl font-bold text-white mb-3" style={{ letterSpacing: '-0.02em' }}>
                     Choose Your Faction

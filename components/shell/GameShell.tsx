@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
+import { authService } from '@/lib/auth-service';
 import TopNav from '@/components/shell/TopNav';
 import GalaxyShell from '@/components/galaxy/GalaxyShell';
 import EconomyPanel from '@/components/panels/EconomyPanel';
@@ -45,14 +46,24 @@ export default function GameShell() {
     const { activeTab, showSeasonEnd, seasonState, setFleets, playerFactionId, setPlayerFactionId } = useUIStore();
     const router = useRouter();
 
-    // On mount: check localStorage for saved faction, redirect to /lobby if missing
+    // On mount: check auth and localStorage for saved faction
     useEffect(() => {
-        const saved = localStorage.getItem('selectedFactionId');
-        if (saved) {
-            setPlayerFactionId(saved);
-        } else {
-            router.replace('/lobby');
-        }
+        const checkAuthAndFaction = async () => {
+            const user = await authService.getCurrentUser();
+            if (!user) {
+                router.replace('/login');
+                return;
+            }
+
+            const saved = localStorage.getItem('selectedFactionId');
+            if (saved) {
+                setPlayerFactionId(saved);
+            } else {
+                router.replace('/lobby');
+            }
+        };
+
+        checkAuthAndFaction();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
