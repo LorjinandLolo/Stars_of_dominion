@@ -19,8 +19,11 @@ import { mockSystems, mockCouncilState } from './ui-mock-data';
 import { Faction, Resource, Market, TradeAgreement } from './trade-system/types';
 import { ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-types';
 import { PressFactionType, SimulationState as PressSimulationState } from './press-system/types';
+import { IntelligenceWorldState, IntelligenceNetwork } from './intelligence/types';
+import { OPERATION_DEFINITIONS } from './intelligence/operation-definitions';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
+
 
 let globalGameStateInstance: GameWorldState | null = null;
 let globalCorporateStateInstance: CorporateWorldState | null = null;
@@ -134,7 +137,6 @@ function buildEmptyEconomyState(): EconomyWorldState {
         lastFlowUpdateAt: 0,
     };
 }
-
 function buildEmptyEspionageState(): EspionageWorldState {
     return {
         operations: new Map(),
@@ -146,6 +148,41 @@ function buildEmptyEspionageState(): EspionageWorldState {
         intelNetworks: new Map(),
     };
 }
+
+function buildEmptyIntelligenceState(): IntelligenceWorldState {
+    const definitions = new Map<string, typeof OPERATION_DEFINITIONS[0]>();
+    OPERATION_DEFINITIONS.forEach(def => definitions.set(def.id, def));
+
+    const networks = new Map<string, IntelligenceNetwork>();
+    const FACTION_IDS = [
+        'faction-aurelian', 'faction-vektori', 'faction-null-syndicate', 
+        'faction-covenant', 'faction-rhimetals', 'faction-gabagoonians', 
+        'faction-infernoids', 'faction-movanites', 'faction-leopantheri', 
+        'faction-buthari', 'faction-sarrak', 'faction-kaerruun', 'faction-pirates'
+    ];
+
+    FACTION_IDS.forEach(id => {
+        networks.set(id, {
+            empireId: id,
+            intelPoints: 100,
+            agentCapacity: 3,
+            usedAgentCapacity: 0,
+            counterIntelStrength: 10,
+            surveillanceStrength: 10,
+            propagandaResistance: 10,
+            internalSecurity: 10,
+            infiltrationLevels: {}
+        });
+    });
+
+    return {
+        operations: new Map(),
+        networks,
+        sleeperCells: new Map(),
+        definitions
+    };
+}
+
 
 function buildEmptyConstructionState(): ConstructionWorldState {
     const planets = new Map<string, Planet>();
@@ -267,8 +304,10 @@ export function getGameWorldState(): GameWorldState {
             construction: buildEmptyConstructionState(),
             council: mockCouncilState,
             press: buildEmptyPressState(),
+            intelligence: buildEmptyIntelligenceState(),
             nowSeconds: Math.floor(Date.now() / 1000),
         };
+
 
         // Seed a dormant proxy conflict in Vektori space to demonstrate the feature
         const vektoriConflict: ProxyConflict = {

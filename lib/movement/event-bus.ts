@@ -149,6 +149,13 @@ export interface ExplorationStageCompleteEvent {
     timestamp: number;
 }
 
+export interface IntelligenceOperationResolveEvent {
+    type: 'intelligenceOperationResolve';
+    opId: string;
+    outcome: string;
+    exposed: boolean;
+}
+
 // ─── Union ────────────────────────────────────────────────────────────────────
 
 export type GameEvent =
@@ -167,7 +174,9 @@ export type GameEvent =
     | ReshapeEvent
     | DoctrineDeviationEvent
     | BlocSatisfactionCrisisEvent
-    | ExplorationStageCompleteEvent;
+    | ExplorationStageCompleteEvent
+    | IntelligenceOperationResolveEvent;
+
 
 export type GameEventType = GameEvent['type'];
 

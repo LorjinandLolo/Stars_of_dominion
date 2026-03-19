@@ -170,7 +170,11 @@ export interface PlayerTechState {
     // Global modifiers accumulated from techs
     globalModifiers: Record<string, number>;
     
+    /** Accumulated points spent on research. */
+    researchPoints: number;
+
     // HoI4 Doctrine Hard-Locks
+
     lockedTechIds: string[];
 }
 

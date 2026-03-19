@@ -5,13 +5,19 @@
 
 import { getGameWorldState } from '../game-world-state-singleton';
 import { tickEconomy } from '../economy/economy-service';
-import { tickConstructionGlobal } from '../construction/construction-service';
+import { tickConstructionGlobal, getBuildingsForSystem } from '../construction/construction-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
 import { computeVisibility } from '../movement/visibility-service';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
+import { BUILDINGS } from '../../data/buildings';
+import { tickIntelligence } from '../intelligence/intelligence-service';
+import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
+
+
+
 
 // ─── Tick Delta ─────────────────────────────────────────────────────────────
 
@@ -60,6 +66,10 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     step11_pirateSpawning(world);
     step12_pirateTacticalAI(world);
     step13_pirateSafeHavens(world);
+    step14_empireFleetRepair(world);
+    step15_intelligence(world, TICK_DELTA_SECONDS);
+
+
 
 
     // Post-tick: expire stale crises
@@ -400,4 +410,61 @@ function step13_pirateSafeHavens(world: ReturnType<typeof getGameWorldState>) {
         }
     }
 }
+
+/**
+ * Step 14: Empire Fleet Repair
+ * Non-pirate fleets recover strength in owned systems, faster near spaceyards.
+ */
+function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
+    for (const fleet of world.movement.fleets.values()) {
+        // Only non-pirate fleets use this standard dock repair
+        if (fleet.factionId === 'faction-pirates') continue;
+        if (!fleet.currentSystemId) continue;
+
+        const currentSys = world.movement.systems.get(fleet.currentSystemId);
+        if (!currentSys || currentSys.ownerFactionId !== fleet.factionId) continue;
+
+        // If we are already full strength, skip
+        if (fleet.strength >= 1.0) continue;
+
+        // Base repair: 0.05
+        let repairRate = 0.05;
+
+        // Check for Spaceyard/Drydock (Production buildings)
+        const { buildings } = getBuildingsForSystem(fleet.currentSystemId, world.construction);
+        const hasSpaceyard = buildings.some(pb => {
+            const def = BUILDINGS.find(b => b.id === pb.buildingId);
+            return def?.tags.includes('production') || def?.tags.includes('advanced');
+        });
+
+        if (hasSpaceyard) {
+            repairRate = 0.15;
+        }
+
+        fleet.strength = Math.min(1.0, fleet.strength + repairRate);
+        
+        if (fleet.strength >= 1.0) {
+            console.log(`[REPAIR] Fleet ${fleet.id} fully repaired at ${currentSys.name}`);
+        }
+    }
+}
+
+/**
+ * Step 15: Intelligence Operations
+ * Advance operation phases and regenerate intel points.
+ */
+function step15_intelligence(world: ReturnType<typeof getGameWorldState>, deltaSeconds: number) {
+    // 1. Advance active operations
+    tickIntelligence(world, deltaSeconds);
+
+    // 2. AI Decision turn
+    for (const factionId of world.economy.factions.keys()) {
+        // Skip player if we have a way to identify one, for now all non-pirates
+        if (factionId === 'faction-pirates') continue;
+        processEmpireIntelligenceTurn(factionId, world);
+    }
+}
+
+
+
 

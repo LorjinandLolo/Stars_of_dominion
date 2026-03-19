@@ -12,6 +12,8 @@ import type { CombatState } from './combat/combat-types';
 import type { ConstructionWorldState } from './construction/construction-types';
 import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
+import type { IntelligenceWorldState } from './intelligence/types';
+
 
 // ─── Shared cross-pillar variables ────────────────────────────────────────────
 
@@ -59,6 +61,9 @@ export interface GameWorldState {
 
     // ── Pillar 6 — Espionage ─────────────────────────────────────────────────
     espionage: EspionageWorldState;
+    /** V2 Intelligence & Covert Ops System. */
+    intelligence: IntelligenceWorldState;
+
 
     // ── Pillar 7 — Season ────────────────────────────────────────────────────
     activeSeason: ActiveSeason | null;
