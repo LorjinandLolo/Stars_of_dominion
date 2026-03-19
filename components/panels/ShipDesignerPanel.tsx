@@ -6,14 +6,14 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { 
     Shield, Sword, Zap, Activity, Save, Trash2, 
     Plus, ChevronRight, Info, AlertOctagon,
-    Cpu, Target, Gauge, ArrowRight
+    Cpu, Target, Gauge, ArrowRight, Maximize2
 } from 'lucide-react';
 import { SHIP_HULLS, SHIP_COMPONENTS, calculateDesignStats } from '@/lib/combat/ship-registry';
 import { ShipDesign, ShipStats } from '@/lib/combat/ship-types';
 import { saveShipDesignAction, deleteShipDesignAction } from '@/app/actions/ship-design';
 
 export default function ShipDesignerPanel() {
-    const { shipDesigns, addShipDesign, updateShipDesign, deleteShipDesign } = useUIStore();
+    const { shipDesigns, addShipDesign, updateShipDesign, deleteShipDesign, toggleFloatTab } = useUIStore();
     const [selectedHullId, setSelectedHullId] = useState(SHIP_HULLS[0].id);
     const [currentComponents, setCurrentComponents] = useState<Record<string, string>>({});
     const [designName, setDesignName] = useState('New Design');
@@ -119,14 +119,23 @@ export default function ShipDesignerPanel() {
                             <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1">Sovereign Fleet Engineer v4.2</p>
                         </div>
                     </div>
-                    <button 
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all font-display text-xs tracking-widest disabled:opacity-50"
-                    >
-                        <Save size={14} />
-                        {isSaving ? 'SYNCING...' : 'SAVE DESIGN'}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={() => toggleFloatTab('designer')}
+                            className="p-2.5 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
+                            title="Detach Panel"
+                        >
+                            <Maximize2 size={16} />
+                        </button>
+                        <button 
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all font-display text-xs tracking-widest disabled:opacity-50"
+                        >
+                            <Save size={14} />
+                            {isSaving ? 'SYNCING...' : 'SAVE DESIGN'}
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex overflow-hidden">
@@ -137,22 +146,26 @@ export default function ShipDesignerPanel() {
                             <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                 <Activity size={12} /> SELECT HULL ARCHETYPE
                             </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div className="flex flex-wrap gap-3">
                                 {SHIP_HULLS.map(hull => (
                                     <button
                                         key={hull.id}
                                         onClick={() => setSelectedHullId(hull.id)}
-                                        className={`p-4 rounded-xl border transition-all text-left ${
+                                        className={`p-4 rounded-xl border transition-all text-left flex flex-col justify-between h-24 min-w-[140px] flex-1 ${
                                             selectedHullId === hull.id
                                             ? 'bg-blue-500/10 border-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
                                             : 'bg-white/5 border-white/10 hover:border-white/20'
                                         }`}
                                     >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-[10px] font-display text-white truncate pr-2">{hull.name}</span>
-                                            <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-slate-500 shrink-0">{hull.size}</span>
+                                        <div className="flex justify-between items-start w-full">
+                                            <span className="text-[11px] font-display text-white uppercase tracking-wider leading-tight">
+                                                {hull.name}
+                                            </span>
+                                            <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-blue-400 font-bold shrink-0">
+                                                {hull.size}
+                                            </span>
                                         </div>
-                                        <div className="text-[8px] text-slate-500 uppercase tracking-widest">
+                                        <div className="text-[9px] text-slate-500 uppercase tracking-[0.2em] font-mono">
                                             {hull.slots.length} MODULES
                                         </div>
                                     </button>
@@ -171,29 +184,33 @@ export default function ShipDesignerPanel() {
                                     const currentComp = SHIP_COMPONENTS.find(c => c.id === currentCompId);
                                     
                                     return (
-                                        <div key={slot.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
-                                                {slot.type === 'weapon' && <Sword size={18} className="text-red-400" />}
-                                                {slot.type === 'utility' && <Shield size={18} className="text-blue-400" />}
-                                                {slot.type === 'core' && <Zap size={18} className="text-amber-400" />}
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="text-[10px] text-slate-500 uppercase tracking-widest">{slot.type} slot</div>
-                                                <select 
-                                                    value={currentCompId || ''}
-                                                    onChange={(e) => handleComponentChange(slot.id, e.target.value)}
-                                                    className="w-full bg-transparent border-none focus:ring-0 text-sm text-white p-0 mt-1 cursor-pointer"
-                                                >
-                                                    <option value="" className="bg-slate-900">EMPTY SLOT</option>
-                                                    {SHIP_COMPONENTS.filter(c => c.type === slot.type).map(comp => (
-                                                        <option key={comp.id} value={comp.id} className="bg-slate-900">
-                                                            {comp.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                        <div key={slot.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col gap-3">
+                                            <div className="flex items-center gap-4 w-full">
+                                                <div className="w-10 h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                                                    {slot.type === 'weapon' && <Sword size={18} className="text-red-400" />}
+                                                    {slot.type === 'utility' && <Shield size={18} className="text-blue-400" />}
+                                                    {slot.type === 'core' && <Zap size={18} className="text-amber-400" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-[10px] text-slate-500 uppercase tracking-widest">{slot.type} slot</div>
+                                                    <select 
+                                                        value={currentCompId || ''}
+                                                        onChange={(e) => handleComponentChange(slot.id, e.target.value)}
+                                                        className="w-full bg-transparent border-none focus:ring-0 text-sm text-white p-0 mt-1 cursor-pointer appearance-none"
+                                                        style={{ background: 'none' }}
+                                                    >
+                                                        <option value="" className="bg-slate-900 text-slate-400">SELECT MODULE</option>
+                                                        {SHIP_COMPONENTS.filter(c => c.type === slot.type).map(comp => (
+                                                            <option key={comp.id} value={comp.id} className="bg-slate-900">
+                                                                {comp.name}
+                                                                {comp.stats?.powerDraw !== undefined && ` (${Math.abs(comp.stats.powerDraw)}P)`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </div>
                                             {currentComp && (
-                                                <div className="text-[10px] text-slate-400 italic">
+                                                <div className="pl-14 text-[11px] text-slate-400 leading-relaxed border-t border-white/5 pt-2">
                                                     {currentComp.description}
                                                 </div>
                                             )}

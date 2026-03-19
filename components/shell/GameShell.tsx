@@ -3,6 +3,8 @@
 import React, { useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { useGameSync } from '@/hooks/useGameSync';
+import DraggablePanel from '@/components/ui/DraggablePanel';
+import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
@@ -43,7 +45,17 @@ const PANEL_MAP = {
 } as const;
 
 export default function GameShell() {
-    const { activeTab, showSeasonEnd, seasonState, setFleets, playerFactionId, setPlayerFactionId } = useUIStore();
+    const { 
+        activeTab, 
+        showSeasonEnd, 
+        seasonState, 
+        setFleets, 
+        playerFactionId, 
+        setPlayerFactionId,
+        floatedTabs,
+        closeFloatedTab,
+        updateFloatedTabPos
+    } = useUIStore();
     const router = useRouter();
 
     // Sync global state via API polling
@@ -70,7 +82,8 @@ export default function GameShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const activePanel = PANEL_MAP[activeTab];
+    const isFloated = activeTab in floatedTabs;
+    const activePanel = isFloated ? null : PANEL_MAP[activeTab as keyof typeof PANEL_MAP];
 
     return (
         <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950">
@@ -93,6 +106,25 @@ export default function GameShell() {
                         {activePanel}
                     </div>
                 )}
+
+                {/* ── Floated Panels ──────────────────────────────────────────────── */}
+                {Object.entries(floatedTabs).map(([tab, pos]) => {
+                    if (!pos) return null;
+                    const PanelContent = PANEL_MAP[tab as keyof typeof PANEL_MAP];
+                    if (!PanelContent) return null;
+
+                    return (
+                        <DraggablePanel
+                            key={tab}
+                            title={tab.replace(/_/g, ' ')}
+                            initialPos={pos}
+                            onClose={() => closeFloatedTab(tab as NavTab)}
+                            onUpdatePos={(newPos: { x: number; y: number; w: number; h: number }) => updateFloatedTabPos(tab as NavTab, newPos)}
+                        >
+                            {PanelContent}
+                        </DraggablePanel>
+                    );
+                })}
             </div>
 
             {/* ── Season-end screen (full overlay) ──────────────────────────────── */}

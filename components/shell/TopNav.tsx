@@ -21,6 +21,7 @@ import {
     Building2,
     ChevronDown,
     Handshake,
+    Maximize2
 } from 'lucide-react';
 import { advanceTimeAction } from '@/app/actions/construction';
 import { getGlobalStateAction } from '@/app/actions/construction-sim';
@@ -73,9 +74,10 @@ interface NavDropdownProps {
     activeTab: NavTab;
     setActiveTab: (tab: NavTab) => void;
     label: string;
+    toggleFloatTab: (tab: NavTab) => void;
 }
 
-function NavDropdown({ groupId, items, activeTab, setActiveTab, label }: NavDropdownProps) {
+function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFloatTab }: NavDropdownProps) {
     const [isOpen, setIsOpen] = React.useState(false);
     const hasActiveChild = items.some(item => item.tab === activeTab);
 
@@ -128,9 +130,22 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label }: NavDrop
                                     {icon}
                                 </div>
                                 <span>{itemLabel}</span>
-                                {isActive && (
-                                    <div className="ml-auto w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
-                                )}
+                                <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleFloatTab(tab);
+                                            setIsOpen(false);
+                                        }}
+                                        className="p-1 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors"
+                                        title="Detach Panel"
+                                    >
+                                        <Maximize2 size={12} />
+                                    </button>
+                                    {isActive && (
+                                        <div className="w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+                                    )}
+                                </div>
                             </button>
                         );
                     })}
@@ -141,7 +156,7 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label }: NavDrop
 }
 
 export default function TopNav() {
-    const { activeTab, setActiveTab, playerState, councilState, crisisWindows, nowSeconds, setNowSeconds } =
+    const { activeTab, setActiveTab, playerState, councilState, crisisWindows, nowSeconds, setNowSeconds, toggleFloatTab } =
         useUIStore();
 
     const activeCrises = crisisWindows.filter((w) => w.phase !== 'warning');
@@ -204,6 +219,7 @@ export default function TopNav() {
                                     activeTab={activeTab}
                                     setActiveTab={setActiveTab}
                                     label={GROUP_LABELS[groupId]}
+                                    toggleFloatTab={toggleFloatTab}
                                 />
                             ) : (
                                 /* Direct Links Group */
@@ -239,6 +255,18 @@ export default function TopNav() {
                                                     {isActive && (
                                                         <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-amber-400 rounded-t shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
                                                     )}
+
+                                                    {/* Pop-out button on hover */}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleFloatTab(tab);
+                                                        }}
+                                                        className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10"
+                                                        title="Detach Panel"
+                                                    >
+                                                        <Maximize2 size={10} />
+                                                    </button>
 
                                                     {/* Crisis pulse dot for galaxy tab */}
                                                     {hasCrisisAlert && !isActive && (

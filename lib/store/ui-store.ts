@@ -176,6 +176,10 @@ export interface UIStore {
     nowSeconds: number;
     setNowSeconds: (now: number) => void;
 
+    // ── Visibility ──
+    factionVisibility: FactionVisibility | null;
+    setFactionVisibility: (vis: FactionVisibility | null) => void;
+
     // ── Floating Panels ──
     floatedTabs: Partial<Record<NavTab, { x: number; y: number; w: number; h: number } | null>>;
     toggleFloatTab: (tab: NavTab) => void;
@@ -393,7 +397,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Visibility ──
     factionVisibility: null,
-    setFactionVisibility: (vis) => set({ factionVisibility: vis }),
+    setFactionVisibility: (vis: FactionVisibility | null) => set({ factionVisibility: vis }),
 
     // ── Floating Panels ──
     floatedTabs: {},
