@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { sponsorProxyConflict } from '@/lib/politics/proxy-logic';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import { ProxyConflict } from '@/lib/politics/cold-war-types';
 
 /**

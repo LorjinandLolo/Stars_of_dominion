@@ -10,8 +10,7 @@ export async function createFactionAction(name: string) {
     }
 }
 
-export async function claimHomePlanetAction(factionId: string, formData: FormData) {
-    const planetId = formData.get('planetId') as string;
+export async function claimHomePlanetAction(factionId: string, planetId: string) {
     if (planetId) {
         await claimHomePlanet(factionId, planetId);
         redirect(`/faction/${factionId}`);

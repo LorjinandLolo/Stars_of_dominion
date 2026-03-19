@@ -8,7 +8,7 @@
 import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { initiateCombat, resolveEngagementRound, advanceRound } from '@/lib/combat/combat-engine';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import { CombatState, CombatantState, TargetDetails, OngoingEngagementRound, CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
 
 /**

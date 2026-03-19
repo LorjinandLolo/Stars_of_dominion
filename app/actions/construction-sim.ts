@@ -8,7 +8,7 @@
 import { getConstructionWorldState, getGameWorldState } from '@/lib/game-world-state-singleton';
 import { getBuildingsForSystem } from '@/lib/construction/construction-service';
 import { SystemConstructionData } from './construction';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import { Planet } from '@/lib/construction/construction-types';
 
 /**

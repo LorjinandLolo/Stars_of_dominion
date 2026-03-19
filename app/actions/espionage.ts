@@ -14,7 +14,7 @@ import {
     getSystemVisibility 
 } from '@/lib/espionage/agent-service';
 import { launchOperation } from '@/lib/espionage/espionage-service';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import type { SpyAgent, IntelNetwork, AgentCandidate, VisibilityLevel } from '@/lib/espionage/agent-types';
 

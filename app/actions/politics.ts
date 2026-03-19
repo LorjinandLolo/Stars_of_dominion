@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { applyPolicyEffect } from '@/lib/politics/politics-service';
 import { calculateEscalationLevel } from '@/lib/politics/cold-war-service';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import { RivalryState, Treaty, TradePact, Tribute, TreatyType } from '@/lib/politics/cold-war-types';
 import { applyCouncilVote, supportBloc, lobbyCouncil } from '@/lib/politics/council-logic';
 

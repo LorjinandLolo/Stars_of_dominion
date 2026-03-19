@@ -14,7 +14,7 @@ import {
     getBuildingsForSystem,
     canBuildOnTile
 } from '@/lib/construction/construction-service';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import type { PlacedBuilding, ConstructionOrder, Planet, BuildOrder } from '@/lib/construction/construction-types';
 import { getServerClients } from '@/lib/appwrite';
 import { advanceFleet } from '@/lib/movement/movement-service';
@@ -276,6 +276,7 @@ export async function advanceTimeAction(deltaSeconds: number = 86400): Promise<A
  * Returns the current global simulation time.
  */
 export async function getGlobalStateAction(): Promise<{ nowSeconds: number }> {
+    console.log('[ACTION] getGlobalStateAction called');
     return { nowSeconds: getGameWorldState().nowSeconds };
 }
 

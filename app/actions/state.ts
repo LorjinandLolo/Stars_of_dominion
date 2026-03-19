@@ -211,8 +211,7 @@ export async function getState() {
       victory_status: myVictoryStatus,
       last_updated: new Date().toISOString(),
       event: event,
-      crises: crises.documents,
-      advanceDay: advanceDay
+      crises: crises.documents
     };
   } catch (error: any) {
     console.error("CRITICAL GETSTATE ERROR:", error);

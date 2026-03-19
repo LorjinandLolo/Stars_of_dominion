@@ -8,7 +8,7 @@
 import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { TechEngine, registry } from '@/lib/tech/engine';
-import { ActionResult } from '@/lib/actions/types';
+import type { ActionResult } from '@/lib/actions/types';
 import { GameStateContext } from '@/lib/tech/types';
 
 /**
