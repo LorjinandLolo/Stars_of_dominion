@@ -1,16 +1,6 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/crises/route": "app/api/crises/route.js",
-  "/api/game/construction/route": "app/api/game/construction/route.js",
-  "/(site)/page": "app/(site)/page.js",
-  "/faction-council/page": "app/faction-council/page.js",
-  "/faction/[id]/page": "app/faction/[id]/page.js",
   "/api/game/state/route": "app/api/game/state/route.js",
-  "/api/tick/route": "app/api/tick/route.js",
-  "/api/game/economy/route": "app/api/game/economy/route.js",
-  "/login/page": "app/login/page.js",
-  "/api/notifications/route": "app/api/notifications/route.js",
+  "/(site)/page": "app/(site)/page.js",
   "/lobby/page": "app/lobby/page.js",
-  "/api/gazette/route": "app/api/gazette/route.js",
-  "/faction/page": "app/faction/page.js"
+  "/login/page": "app/login/page.js"
 }

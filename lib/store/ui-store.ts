@@ -176,9 +176,11 @@ export interface UIStore {
     nowSeconds: number;
     setNowSeconds: (now: number) => void;
 
-    // ── Visibility ──
-    factionVisibility: FactionVisibility | null;
-    setFactionVisibility: (vis: FactionVisibility | null) => void;
+    // ── Floating Panels ──
+    floatedTabs: Partial<Record<NavTab, { x: number; y: number; w: number; h: number } | null>>;
+    toggleFloatTab: (tab: NavTab) => void;
+    updateFloatedTabPos: (tab: NavTab, pos: { x: number; y: number; w?: number; h?: number }) => void;
+    closeFloatedTab: (tab: NavTab) => void;
 }
 
 
@@ -392,5 +394,38 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Visibility ──
     factionVisibility: null,
     setFactionVisibility: (vis) => set({ factionVisibility: vis }),
+
+    // ── Floating Panels ──
+    floatedTabs: {},
+    toggleFloatTab: (tab) =>
+        set((state) => {
+            const isFloated = !!state.floatedTabs[tab];
+            if (isFloated) {
+                const newFloated = { ...state.floatedTabs };
+                delete newFloated[tab];
+                return { floatedTabs: newFloated };
+            } else {
+                return {
+                    floatedTabs: {
+                        ...state.floatedTabs,
+                        [tab]: { x: 100, y: 100, w: 800, h: 600 },
+                    },
+                    activeTab: state.activeTab === tab ? 'galaxy' : state.activeTab,
+                };
+            }
+        }),
+    updateFloatedTabPos: (tab, pos) =>
+        set((state) => ({
+            floatedTabs: {
+                ...state.floatedTabs,
+                [tab]: { ...state.floatedTabs[tab]!, ...pos },
+            },
+        })),
+    closeFloatedTab: (tab) =>
+        set((state) => {
+            const newFloated = { ...state.floatedTabs };
+            delete newFloated[tab];
+            return { floatedTabs: newFloated };
+        }),
 }));
 

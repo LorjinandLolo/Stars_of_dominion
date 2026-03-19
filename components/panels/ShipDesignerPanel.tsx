@@ -137,7 +137,7 @@ export default function ShipDesignerPanel() {
                             <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                 <Activity size={12} /> SELECT HULL ARCHETYPE
                             </h4>
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {SHIP_HULLS.map(hull => (
                                     <button
                                         key={hull.id}
@@ -148,12 +148,12 @@ export default function ShipDesignerPanel() {
                                             : 'bg-white/5 border-white/10 hover:border-white/20'
                                         }`}
                                     >
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-display text-white">{hull.name}</span>
-                                            <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-slate-500">{hull.size}</span>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-[10px] font-display text-white truncate pr-2">{hull.name}</span>
+                                            <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-slate-500 shrink-0">{hull.size}</span>
                                         </div>
-                                        <div className="text-[9px] text-slate-500 uppercase tracking-tighter">
-                                            {hull.slots.length} MODULE SLOTS
+                                        <div className="text-[8px] text-slate-500 uppercase tracking-widest">
+                                            {hull.slots.length} MODULES
                                         </div>
                                     </button>
                                 ))}
