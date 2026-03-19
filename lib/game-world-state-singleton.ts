@@ -63,7 +63,9 @@ function buildEmptyEconomyState(): EconomyWorldState {
         { id: 'faction-buthari', name: 'The Buthari / Hisham', capitalIdx: 70 },
         { id: 'faction-sarrak', name: 'Sarrak / Sil', capitalIdx: 80 },
         { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', capitalIdx: 90 },
+        { id: 'faction-pirates', name: 'The Pirate Corsair', capitalIdx: 120 },
     ];
+
 
     FACTION_DATA.forEach((data) => {
         const theatreId = `theatre-${data.id.split('-')[1]}`;

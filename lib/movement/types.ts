@@ -65,9 +65,14 @@ export interface SystemNode {
     ownerFactionId?: string;
     /** Instability 0–100. Affects deep-space expansion and infra degradation. */
     instability: number;
+    /** Localized security level 0-100. Low security attracts pirates. */
+    security?: number;
+    /** Trade volume/value 0-100. High value attracts pirates. */
+    tradeValue?: number;
     /** Tracked localized ideology profile for rebellions/dissent. */
     ideology?: IdeologyProfile;
 }
+
 
 /** A planet within a star system. Deterministic; anomalies are separate attachments. */
 export interface PlanetNode {

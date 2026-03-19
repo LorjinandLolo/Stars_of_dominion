@@ -9,6 +9,9 @@ import { tickConstructionGlobal } from '../construction/construction-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
 import { computeVisibility } from '../movement/visibility-service';
+import { processPirateTurn } from '../ai/pirate-ai-service';
+import { issueMoveOrder } from '../movement/movement-service';
+import { Fleet } from '../movement/types';
 
 // ─── Tick Delta ─────────────────────────────────────────────────────────────
 
@@ -54,6 +57,8 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);
+    step11_pirateSpawning(world);
+    step12_pirateTacticalAI(world);
 
     // Post-tick: expire stale crises
     await expireAllStaleCrises(now);
@@ -272,3 +277,78 @@ function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
     }
 }
 
+/**
+ * Step 11: Pirate Spawning
+ * Spawns raider fleets in systems with low security or uncontrolled frontier zones.
+ */
+function step11_pirateSpawning(world: ReturnType<typeof getGameWorldState>) {
+    const pirateFleetCount = Array.from(world.movement.fleets.values()).filter(f => f.factionId === 'faction-pirates').length;
+    if (pirateFleetCount > 15) return; // Cap total raiders
+
+    for (const [sysId, sys] of world.movement.systems) {
+        // Chance to spawn increases as security drops
+        const baseChance = 0.02; // 2% per tick
+        const securityFactor = Math.max(0, (40 - (sys.security || 50)) / 100);
+        const finalChance = baseChance + securityFactor;
+
+        if (Math.random() < finalChance) {
+            const fleetId = `pirate-raider-${sysId}-${Date.now()}`;
+            const newFleet: Fleet = {
+                id: fleetId,
+                name: "Pirate Raider",
+                factionId: 'faction-pirates',
+                currentSystemId: sysId,
+                destinationSystemId: null,
+                plannedPath: [],
+                transitProgress: 0,
+                strength: 0.2 + Math.random() * 0.4, // 0-1 scale
+                hyperdriveProfile: {
+                    hyperlane: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
+                    trade: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                    corridor: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                    gate: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                    deepSpace: { speedMultiplier: 0.8, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 }
+                },
+                orders: [],
+                etaSeconds: 0,
+                activeLayer: null,
+                isDetectable: true,
+                postureId: 'Expansionist',
+                doctrine: {
+                    type: 'Raider',
+                    deviationFromPosture: 0.5,
+                    preferredLayers: ['hyperlane', 'deepSpace'],
+                    retreatThreshold: 0.3,
+                    logisticsStrain: 0,
+                    moraleDrift: 0,
+                    supplyLevel: 1.0
+                }
+            };
+            world.movement.fleets.set(fleetId, newFleet);
+            console.log(`[PIRATES] Spawned raider at ${sysId} (Security: ${sys.security || 'N/A'})`);
+        }
+    }
+}
+
+
+/**
+ * Step 12: Pirate Tactical AI
+ * Processes autonomous behavior for all pirate-faction fleets.
+ */
+function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
+    for (const [fleetId, fleet] of world.movement.fleets) {
+        if (fleet.factionId !== 'faction-pirates') continue;
+
+        const order = processPirateTurn(fleet, world);
+        if (order) {
+            if (order.type === 'move') {
+                const updated = issueMoveOrder(fleet, order.targetSystemId, 'hyperlane', world.movement);
+                world.movement.fleets.set(fleetId, updated);
+            } else {
+                // For blockade or withdraw, we directly update orders for now
+                // In a more robust system, movement-service would handle this.
+                fleet.orders = [...fleet.orders, order as any].slice(-5);
+            }
+        }
+    }
+}
