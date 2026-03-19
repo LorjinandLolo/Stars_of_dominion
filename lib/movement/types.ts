@@ -69,9 +69,12 @@ export interface SystemNode {
     security?: number;
     /** Trade volume/value 0-100. High value attracts pirates. */
     tradeValue?: number;
+    /** Current pirate lawlessness 0-100. At 100, system flips to a Pirate Haven. */
+    lawlessness?: number;
     /** Tracked localized ideology profile for rebellions/dissent. */
     ideology?: IdeologyProfile;
 }
+
 
 
 /** A planet within a star system. Deterministic; anomalies are separate attachments. */

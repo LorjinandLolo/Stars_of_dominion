@@ -20,35 +20,73 @@ export function processPirateTurn(fleet: Fleet, world: GameWorldState): FleetOrd
     const currentSystem = world.movement.systems.get(currentSystemId);
     if (!currentSystem) return null;
 
-    // 2. Performance Check: Is there a superior non-pirate force here?
+    // 2. Intelligence: Identify local non-pirate presence
     const nonPirateFleets = Array.from(world.movement.fleets.values()).filter(
         f => f.currentSystemId === currentSystemId && f.factionId !== 'faction-pirates' && f.transitProgress === 0
     );
 
     const piratePower = fleet.strength;
-    const enemyPower = nonPirateFleets.reduce((sum, f) => sum + f.strength, 0);
+    const enemyPower = nonPirateFleets.reduce((sum: number, f: Fleet) => sum + f.strength, 0);
 
-    if (enemyPower > piratePower * 1.5) {
-        // RETREAT! Find any adjacent system with higher security (ironically) or just away.
-        const neighbors = Array.from(world.movement.systems.values()).filter(s => 
-            currentSystem.hyperlaneNeighbors.includes(s.id)
-        );
-        if (neighbors.length > 0) {
-            const escapeTarget = neighbors[Math.floor(Math.random() * neighbors.length)];
+    // 3. Repair Logic: If we are in a safe haven and damaged, STAY for repair
+    const isAtHaven = currentSystem.tags.includes('corsair_den');
+    if (isAtHaven && fleet.strength < 0.9) {
+        return {
+            type: 'patrol',
+            targetSystemId: currentSystemId,
+            startTime: world.movement.nowSeconds,
+            arrivalTime: world.movement.nowSeconds
+        } as any;
+    }
+
+    // 4. Survival & Retreat: If heavily damaged OR facing superior force, find Haven
+    if (enemyPower > piratePower * 1.5 || fleet.strength < 0.4) {
+        // Find nearest safe-haven
+        let nearestHavenId: string | null = null;
+        let minDistance = Infinity;
+
+        for (const [sysId, sys] of world.movement.systems) {
+            if (sys.tags.includes('corsair_den')) {
+                // Simple Euclidean distance for heuristic
+                const dx = sys.q - currentSystem.q;
+                const dy = sys.r - currentSystem.r;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    nearestHavenId = sysId;
+                }
+            }
+        }
+
+        if (nearestHavenId && nearestHavenId !== currentSystemId) {
             return {
-                type: 'withdraw',
-                targetSystemId: escapeTarget.id,
+                type: 'move',
+                targetSystemId: nearestHavenId,
                 startTime: world.movement.nowSeconds,
-                arrivalTime: world.movement.nowSeconds + 3600 // 1 hour transit
-            } as any; 
+                arrivalTime: world.movement.nowSeconds + 3600 
+            } as any;
+        }
+
+        // Standard retreat if no haven or already at haven
+        if (enemyPower > piratePower * 1.5) {
+            const neighbors = Array.from(world.movement.systems.values()).filter(s => 
+                currentSystem.hyperlaneNeighbors.includes(s.id)
+            );
+            if (neighbors.length > 0) {
+                const escapeTarget = neighbors[Math.floor(Math.random() * neighbors.length)];
+                return {
+                    type: 'withdraw',
+                    targetSystemId: escapeTarget.id,
+                    startTime: world.movement.nowSeconds,
+                    arrivalTime: world.movement.nowSeconds + 3600
+                } as any; 
+            }
         }
     }
 
-    // 3. Check for Interdiction: Are there trade convoys here or high value?
+    // 5. Interdiction: Are there trade convoys here or high value?
     const tradeValue = currentSystem.tradeValue || 0;
     if (tradeValue > 30) {
-        // If we are already blockading, stay. 
-        // Otherwise, start blockading.
         return {
             type: 'blockade',
             targetSystemId: currentSystemId,
@@ -57,15 +95,13 @@ export function processPirateTurn(fleet: Fleet, world: GameWorldState): FleetOrd
         } as any;
     }
 
-    // 4. Piracy Radar: Find the nearest high-value system
+    // 6. Piracy Radar: Find the nearest high-value system
     let bestTargetId: string | null = null;
     let highestValue = -1;
 
     for (const sys of world.movement.systems.values()) {
         if (sys.id === currentSystemId) continue;
         
-        // Simple heuristic: Value / Distance
-        // For simplicity, we just use raw trade value for now
         const sysValue = sys.tradeValue || 0;
         if (sysValue > highestValue) {
             highestValue = sysValue;
@@ -73,13 +109,12 @@ export function processPirateTurn(fleet: Fleet, world: GameWorldState): FleetOrd
         }
     }
 
-
     if (bestTargetId && highestValue > 20) {
         return {
             type: 'move',
             targetSystemId: bestTargetId,
             startTime: world.movement.nowSeconds,
-            arrivalTime: world.movement.nowSeconds + 7200 // 2 hour transit for raiders
+            arrivalTime: world.movement.nowSeconds + 7200 
         } as any;
     }
 

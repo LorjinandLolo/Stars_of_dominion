@@ -59,6 +59,8 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     step10_visibility(world);
     step11_pirateSpawning(world);
     step12_pirateTacticalAI(world);
+    step13_pirateSafeHavens(world);
+
 
     // Post-tick: expire stale crises
     await expireAllStaleCrises(now);
@@ -352,3 +354,50 @@ function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
         }
     }
 }
+
+/**
+ * Step 13: Pirate Safe-Havens
+ * Manages lawlessness progression and creates fixed pirate bases in weak empire margins.
+ */
+function step13_pirateSafeHavens(world: ReturnType<typeof getGameWorldState>) {
+    // Count system ownership to identify "Large Empires"
+    const empireSizes = new Map<string, number>();
+    for (const sys of world.movement.systems.values()) {
+        if (sys.ownerFactionId) {
+            empireSizes.set(sys.ownerFactionId, (empireSizes.get(sys.ownerFactionId) || 0) + 1);
+        }
+    }
+
+    for (const [sysId, sys] of world.movement.systems) {
+        // Condition: Low security and border system of a large empire
+        const ownerId = sys.ownerFactionId;
+        const isLargeEmpire = ownerId && (empireSizes.get(ownerId) || 0) >= 8;
+        
+        if (isLargeEmpire && (sys.security || 50) < 25) {
+            // Is it a border system? (Neighbor with different/no owner)
+            const isBorder = sys.hyperlaneNeighbors.some(nId => {
+                const neighbor = world.movement.systems.get(nId);
+                return !neighbor || neighbor.ownerFactionId !== ownerId;
+            });
+
+            if (isBorder) {
+                sys.lawlessness = (sys.lawlessness || 0) + 5;
+                if (sys.lawlessness >= 100 && !sys.tags.includes('corsair_den')) {
+                    sys.tags.push('corsair_den');
+                    console.log(`[PIRATES] Safe-haven established at ${sys.name} (${sysId})`);
+                }
+            }
+        }
+    }
+
+    // Passive Repair: Pirate fleets in havens recover strength
+    for (const fleet of world.movement.fleets.values()) {
+        if (fleet.factionId === 'faction-pirates' && fleet.currentSystemId) {
+            const currentSys = world.movement.systems.get(fleet.currentSystemId);
+            if (currentSys?.tags.includes('corsair_den')) {
+                fleet.strength = Math.min(1.0, fleet.strength + 0.1);
+            }
+        }
+    }
+}
+
