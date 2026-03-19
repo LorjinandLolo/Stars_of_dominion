@@ -41,10 +41,10 @@ export class TechEngine {
     static initPlayerState(factionId: string): PlayerTechState {
         return {
             factionId,
-            unlockedTechs: new Set(),
+            unlockedTechIds: [],
             activeSlots: [
-                { slotId: 'slot-1', targetTechId: null, startTime: 0, progressHours: 0 },
-                { slotId: 'slot-2', targetTechId: null, startTime: 0, progressHours: 0 }
+                { slotId: 'slot-1', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' },
+                { slotId: 'slot-2', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' }
             ],
             activeEffects: [],
             maxSlots: 2,
@@ -52,7 +52,7 @@ export class TechEngine {
                 'research_speed': 1.0,
                 'construction_speed': 1.0
             },
-            lockedTechs: new Set()
+            lockedTechIds: []
         };
     }
 
@@ -71,7 +71,8 @@ export class TechEngine {
         this.validateAvailability(newState, tech);
 
         // Assign
-        slot.targetTechId = techId;
+        slot.techId = techId;
+        slot.status = 'researching';
         slot.startTime = now;
         slot.progressHours = 0;
 
@@ -89,9 +90,9 @@ export class TechEngine {
         const completedTechIds: string[] = [];
 
         for (const slot of newState.activeSlots) {
-            if (!slot.targetTechId) continue;
+            if (!slot.techId) continue;
 
-            const tech = registry.get(slot.targetTechId);
+            const tech = registry.get(slot.techId);
             if (!tech) continue;
 
             // Apply progress
@@ -101,7 +102,8 @@ export class TechEngine {
             // Check completion
             if (slot.progressHours >= tech.researchCost) {
                 completedTechIds.push(tech.id);
-                slot.targetTechId = null;
+                slot.techId = null;
+                slot.status = 'complete';
                 slot.progressHours = 0;
             }
         }
@@ -118,7 +120,9 @@ export class TechEngine {
         const tech = registry.get(techId);
         if (!tech) return;
 
-        state.unlockedTechs.add(techId);
+        if (!state.unlockedTechIds.includes(techId)) {
+            state.unlockedTechIds.push(techId);
+        }
 
         // 1. Apply Effects
         for (const effect of tech.effects) {
@@ -128,7 +132,9 @@ export class TechEngine {
         // 2. Handle Mutual Exclusivity (Doctrine Locks)
         if (tech.mutuallyExclusiveWith) {
             for (const conflictId of tech.mutuallyExclusiveWith) {
-                state.lockedTechs.add(conflictId);
+                if (!state.lockedTechIds.includes(conflictId)) {
+                    state.lockedTechIds.push(conflictId);
+                }
             }
         }
     }
@@ -139,7 +145,10 @@ export class TechEngine {
                 state.maxSlots += 1;
                 state.activeSlots.push({
                     slotId: `slot-${state.maxSlots}`,
-                    targetTechId: null,
+                    techId: null,
+                    ticksCompleted: 0,
+                    ticksRequired: 0,
+                    status: 'empty',
                     startTime: 0,
                     progressHours: 0
                 });
@@ -157,30 +166,30 @@ export class TechEngine {
     }
 
     private static validateAvailability(state: PlayerTechState, tech: Tech) {
-        if (state.unlockedTechs.has(tech.id)) throw new Error("Already researched");
-        if (state.lockedTechs.has(tech.id)) throw new Error("Technology is mutually exclusive with an existing choice");
+        if (state.unlockedTechIds.includes(tech.id)) throw new Error("Already researched");
+        if (state.lockedTechIds.includes(tech.id)) throw new Error("Technology is mutually exclusive with an existing choice");
 
         // Prerequisite check
         for (const preId of tech.prerequisites) {
-            if (!state.unlockedTechs.has(preId)) {
+            if (!state.unlockedTechIds.includes(preId)) {
                 const pre = registry.get(preId);
                 throw new Error(`Missing prerequisite: ${pre ? pre.name : preId}`);
             }
         }
 
         // Slot check (is it already being researched?)
-        const isResearching = state.activeSlots.some(s => s.targetTechId === tech.id);
+        const isResearching = state.activeSlots.some(s => s.techId === tech.id);
         if (isResearching) throw new Error("Already being researched in another slot");
     }
 
     private static cloneState(state: PlayerTechState): PlayerTechState {
         return {
             ...state,
-            unlockedTechs: new Set(state.unlockedTechs),
+            unlockedTechIds: [...state.unlockedTechIds],
             activeSlots: state.activeSlots.map(s => ({ ...s })),
             activeEffects: [...state.activeEffects],
             globalModifiers: { ...state.globalModifiers },
-            lockedTechs: new Set(state.lockedTechs)
+            lockedTechIds: [...state.lockedTechIds]
         };
     }
 }

@@ -148,16 +148,19 @@ export interface Tech {
 
 export interface ResearchSlot {
     slotId: string;
-    targetTechId: string | null;
-    startTime: number; // Unix seconds
+    techId: string | null; // Renamed from targetTechId for consistency
+    startTime: number;
     progressHours: number;
+    ticksCompleted: number;
+    ticksRequired: number;
+    status: 'researching' | 'complete' | 'paused' | 'empty';
     isBoosted?: boolean;
     boostValue?: number;
 }
 
 export interface PlayerTechState {
     factionId: string;
-    unlockedTechs: Set<string>;
+    unlockedTechIds: string[]; // Changed from Set to Array for easier persistence/serialization
     activeEffects: TechEffect[]; // Combined effects for fast lookup
     
     // Research Slots
@@ -168,7 +171,7 @@ export interface PlayerTechState {
     globalModifiers: Record<string, number>;
     
     // HoI4 Doctrine Hard-Locks
-    lockedTechs: Set<string>;
+    lockedTechIds: string[];
 }
 
 export interface GameStateContext {

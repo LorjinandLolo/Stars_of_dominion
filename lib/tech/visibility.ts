@@ -9,7 +9,7 @@ export class VisibilityEngine {
     static getVisibleSignals(viewerId: string, targetState: PlayerTechState): PublicSignal[] {
         const signals: PublicSignal[] = [];
 
-        targetState.unlockedTechs.forEach(techId => {
+        targetState.unlockedTechIds.forEach(techId => {
             const tech = registry.get(techId);
             if (!tech) return;
 

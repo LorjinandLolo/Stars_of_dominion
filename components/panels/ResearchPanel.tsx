@@ -70,7 +70,7 @@ export default function ResearchPanel() {
                         <div className="flex flex-col items-end">
                             <span className="text-[8px] text-slate-500 uppercase">Research Slots</span>
                             <span className="text-xs font-mono text-indigo-400">
-                                {techState.activeSlots?.filter(s => s.targetTechId).length || 0} / {techState.activeSlots?.length || 0}
+                                {techState.activeSlots?.filter(s => s.techId).length || 0} / {techState.activeSlots?.length || 0}
                             </span>
                         </div>
                         <div className="h-8 w-px bg-white/10" />
@@ -132,7 +132,7 @@ export default function ResearchPanel() {
                     {filteredTechs.map(tech => {
                         const isUnlocked = unlockedSet.has(tech.id);
                         const isLocked = lockedSet.has(tech.id);
-                        const slot = techState.activeSlots?.find(s => s.targetTechId === tech.id);
+                        const slot = techState.activeSlots?.find(s => s.techId === tech.id);
                         const isResearching = !!slot;
                         
                         // Availability logic: not unlocked, not locked, and all prereqs met

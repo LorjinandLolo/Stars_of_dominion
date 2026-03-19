@@ -26,7 +26,7 @@ export async function startResearchAction(factionId: string, techId: string): Pr
   }
 
   // 2. Find an empty slot
-  const slot = playerState.activeSlots.find(s => s.targetTechId === null);
+  const slot = playerState.activeSlots.find(s => s.techId === null);
   if (!slot) {
     return { success: false, error: 'No available research slots.' };
   }
@@ -58,11 +58,11 @@ export async function getPlayerTechStateAction(factionId: string) {
   // Return plain object for RSC
   return {
     factionId: playerState.factionId,
-    unlockedTechIds: Array.from(playerState.unlockedTechs),
+    unlockedTechIds: playerState.unlockedTechIds,
     activeSlots: playerState.activeSlots,
     activeEffects: playerState.activeEffects,
     maxSlots: playerState.maxSlots,
     globalModifiers: playerState.globalModifiers,
-    lockedTechIds: Array.from(playerState.lockedTechs)
+    lockedTechIds: playerState.lockedTechIds
   };
 }

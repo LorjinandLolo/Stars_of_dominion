@@ -100,7 +100,7 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
                 if (slot.ticksRequired && slot.ticksCompleted >= slot.ticksRequired) {
                     slot.status = 'complete';
                     // Mark tech as unlocked
-                    if (!techState.unlockedTechIds.includes(slot.techId)) {
+                    if (slot.techId && !techState.unlockedTechIds.includes(slot.techId)) {
                         techState.unlockedTechIds.push(slot.techId);
                     }
                     // Notification fired below
@@ -130,23 +130,24 @@ function step5_recruitment(world: ReturnType<typeof getGameWorldState>) {
     // exposes a tickRecruitment() function.
     // For now this is a no-op stub with logging.
     try {
-        for (const buildItem of world.construction.spaceBuildQueue) {
-            if (buildItem.status !== 'in_progress') continue;
-            buildItem.ticksCompleted = (buildItem.ticksCompleted ?? 0) + 1;
-            if (buildItem.ticksCompleted >= buildItem.ticksRequired) {
-                buildItem.status = 'complete';
+        for (let i = world.construction.spaceBuildQueue.length - 1; i >= 0; i--) {
+            const buildItem = world.construction.spaceBuildQueue[i];
+            if (world.nowSeconds >= buildItem.completesAtSeconds) {
+                // Construction complete
                 fireNotification({
-                    id: `ship-complete-${buildItem.id}-${Date.now()}`,
-                    factionId: buildItem.factionId ?? 'unknown',
+                    id: `ship-complete-${buildItem.orderId}-${Date.now()}`,
+                    factionId: 'unknown', // factionId not in SpaceBuildOrder, could add it or leave unknown
                     category: 'construction',
                     priority: 'normal',
                     title: 'Ship Construction Complete',
-                    body: `${buildItem.shipDesignId ?? 'New ship'} is ready for deployment.`,
+                    body: `${buildItem.shipType ?? 'New ship'} is ready for deployment.`,
                     createdAt: new Date().toISOString(),
                     read: false,
                     linkToTab: 'war',
-                    payload: { buildItemId: buildItem.id },
+                    payload: { buildItemId: buildItem.orderId },
                 });
+                // Remove from queue
+                world.construction.spaceBuildQueue.splice(i, 1);
             }
         }
     } catch (e) {
@@ -165,10 +166,11 @@ function step6_trade(world: ReturnType<typeof getGameWorldState>, delta: number)
             const overlordEconFaction = world.economy.factions.get(tribute.overlordId);
             if (vassalEconFaction && overlordEconFaction) {
                 const amount = tribute.amountPerTick;
-                vassalEconFaction.reserves[tribute.resourceType as any] =
-                    Math.max(0, (vassalEconFaction.reserves[tribute.resourceType as any] ?? 0) - amount);
-                overlordEconFaction.reserves[tribute.resourceType as any] =
-                    (overlordEconFaction.reserves[tribute.resourceType as any] ?? 0) + amount;
+                const resourceKey = tribute.resourceType as keyof typeof vassalEconFaction.reserves;
+                vassalEconFaction.reserves[resourceKey] =
+                    Math.max(0, (vassalEconFaction.reserves[resourceKey] ?? 0) - amount);
+                overlordEconFaction.reserves[resourceKey] =
+                    (overlordEconFaction.reserves[resourceKey] ?? 0) + amount;
             }
         }
     } catch (e) {
@@ -234,10 +236,9 @@ function step9_ongoingEffects(world: ReturnType<typeof getGameWorldState>) {
     try {
         // Propaganda: decay credibility on active campaigns
         for (const campaign of world.propagandaCampaigns.values()) {
-            if (campaign.active) {
-                // Propaganda slowly erodes if not refreshed (placeholder drift)
-                campaign.strength = Math.max(0, campaign.strength - 1);
-                if (campaign.strength <= 0) campaign.active = false;
+            if (campaign.ticksRemaining > 0) {
+                // Propaganda slowly erodes if not refreshed
+                campaign.ticksRemaining = Math.max(0, campaign.ticksRemaining - 1);
             }
         }
 

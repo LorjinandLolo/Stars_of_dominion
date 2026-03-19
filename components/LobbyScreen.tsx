@@ -88,8 +88,9 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 <p className="text-slate-400 text-lg">Select the empire you will lead to galactic supremacy.</p>
             </div>
 
-            {/* Faction Cards */}
-            <div className="relative z-10 grid grid-cols-2 gap-5 max-w-4xl w-full px-6 mb-10">
+            {/* Faction Cards - Scrollable area */}
+            <div className="relative z-10 max-w-5xl w-full px-6 mb-10 overflow-y-auto max-h-[65vh] custom-scrollbar pr-2">
+                <div className="grid grid-cols-2 gap-5">
                 {factions.map(faction => {
                     const isSelected = selectedId === faction.id;
                     const isHovered = hoveredId === faction.id;
@@ -122,26 +123,32 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                             {/* Selection indicator */}
                             {isSelected && (
                                 <div
-                                    className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm"
+                                    className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
                                     style={{ background: faction.accentColor }}
                                 >
                                     ✓
                                 </div>
                             )}
 
-                            {/* Icon + Name */}
-                            <div className="flex items-center gap-3 mb-3">
-                                <span className="text-3xl">{faction.icon}</span>
-                                <div>
-                                    <div className="text-white font-bold text-lg leading-tight">{faction.name}</div>
-                                    <div
-                                        className="text-xs font-medium italic mt-0.5"
-                                        style={{ color: faction.accentColor }}
-                                    >
-                                        {faction.tagline}
+                                {/* Icon + Name */}
+                                <div className="flex items-center gap-4 mb-3 relative z-10">
+                                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-black/40">
+                                        <img 
+                                            src={faction.icon} 
+                                            alt={faction.name} 
+                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="text-white font-bold text-xl leading-tight">{faction.name}</div>
+                                        <div
+                                            className="text-xs font-medium italic mt-0.5"
+                                            style={{ color: faction.accentColor }}
+                                        >
+                                            {faction.tagline}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
                             {/* Description */}
                             <p className="text-slate-400 text-sm leading-relaxed mb-4">{faction.description}</p>
@@ -175,6 +182,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         </button>
                     );
                 })}
+                </div>
             </div>
 
             {/* Confirm Button */}
