@@ -272,13 +272,7 @@ export async function advanceTimeAction(deltaSeconds: number = 86400): Promise<A
     return { success: true, data: { nowSeconds: world.nowSeconds } };
 }
 
-/**
- * Returns the current global simulation time.
- */
-export async function getGlobalStateAction(): Promise<{ nowSeconds: number }> {
-    console.log('[ACTION] getGlobalStateAction called');
-    return { nowSeconds: getGameWorldState().nowSeconds };
-}
+
 
 /**
  * Upgrades an existing building to the next tier.

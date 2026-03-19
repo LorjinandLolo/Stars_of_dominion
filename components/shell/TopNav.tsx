@@ -22,7 +22,8 @@ import {
     ChevronDown,
     Handshake,
 } from 'lucide-react';
-import { advanceTimeAction, getGlobalStateAction } from '@/app/actions/construction';
+import { advanceTimeAction } from '@/app/actions/construction';
+import { getGlobalStateAction } from '@/app/actions/construction-sim';
 
 interface NavItem {
     tab: NavTab;

@@ -115,9 +115,16 @@ export default function FactionCouncil() {
 
                 <div className="border-t border-neutral-800 pt-4">
                     <h3 className="font-bold text-green-400 mb-2">Join Existing Faction</h3>
-                    <form action={(formData) => handleJoin(formData.get('code') as string)} className="flex gap-2">
+                    <form 
+                        onSubmit={async (e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            await handleJoin(formData.get('code') as string);
+                        }} 
+                        className="flex gap-2"
+                    >
                         <input name="code" className="bg-black border border-neutral-700 p-2 rounded flex-1" placeholder="Invite Code" required />
-                        <button className="bg-green-600 px-4 py-2 rounded font-bold hover:bg-green-500">Join</button>
+                        <button type="submit" className="bg-green-600 px-4 py-2 rounded font-bold hover:bg-green-500">Join</button>
                     </form>
                 </div>
                 {error && <p className="text-red-500 text-sm">{error}</p>}
