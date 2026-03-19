@@ -388,3 +388,17 @@ export function tickEconomy(
     }
     tickGalacticTrade(world, deltaSeconds, tradeRng);
 }
+
+/**
+ * Fetch current live economy state for serialization.
+ */
+export function getEconomyState(world: GameWorldState, playerFactionId: string) {
+    return {
+        markets: Array.from(world.economy.markets.values()),
+        agreements: Array.from(world.economy.tradeAgreements.values()),
+        routes: Array.from(world.economy.tradeRoutes.values()),
+        factions: Array.from(world.economy.factions.values()),
+        playerFactionId,
+        policies: world.economy.policies ? Array.from(world.economy.policies.entries()) : []
+    };
+}

@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { useGameSync } from '@/hooks/useGameSync';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
@@ -16,7 +17,6 @@ import CouncilPanel from '@/components/panels/CouncilPanel';
 import SeasonEndScreen from '@/components/season/SeasonEndScreen';
 import Modal from '@/components/ui/Modal';
 import EconomicTerminal from '@/components/economy/EconomicTerminal';
-import { getEconomyStateAction } from '@/app/actions/economy';
 import DossierPanel from '@/components/panels/DossierPanel';
 import ResearchPanel from '@/components/panels/ResearchPanel';
 import DiscoursePanel from '@/components/panels/DiscoursePanel';
@@ -46,6 +46,9 @@ export default function GameShell() {
     const { activeTab, showSeasonEnd, seasonState, setFleets, playerFactionId, setPlayerFactionId } = useUIStore();
     const router = useRouter();
 
+    // Sync global state via API polling
+    useGameSync();
+
     // On mount: check auth and localStorage for saved faction
     useEffect(() => {
         const checkAuthAndFaction = async () => {
@@ -66,21 +69,6 @@ export default function GameShell() {
         checkAuthAndFaction();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    // Initial fetch + poll every 2 seconds to animate fleet transit
-    useEffect(() => {
-        const fetchFleets = async () => {
-            try {
-                const fleets = await getFleetsAction();
-                setFleets(fleets);
-            } catch (e) {
-                console.error("Failed to fetch fleets:", e);
-            }
-        };
-        fetchFleets();
-        const interval = setInterval(fetchFleets, 2000);
-        return () => clearInterval(interval);
-    }, [setFleets]);
 
     const activePanel = PANEL_MAP[activeTab];
 
@@ -135,7 +123,8 @@ function EconomicTerminalModal() {
             console.log("[ECONOMY] Modal Open - Fetching data...");
             setLoading(true);
             setError(null);
-            getEconomyStateAction()
+            fetch('/api/game/economy')
+                .then(res => res.json())
                 .then(data => {
                     console.log("[ECONOMY] Data received:", data);
                     setEconData(data);

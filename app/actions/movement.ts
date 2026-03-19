@@ -1,4 +1,4 @@
-"use server";
+'use server';
 
 import { revalidatePath } from "next/cache";
 import { getGameWorldState } from "@/lib/game-world-state-singleton";

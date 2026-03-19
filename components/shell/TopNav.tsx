@@ -141,24 +141,16 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label }: NavDrop
 }
 
 export default function TopNav() {
-    const { activeTab, setActiveTab, playerState, councilState, crisisWindows } =
+    const { activeTab, setActiveTab, playerState, councilState, crisisWindows, nowSeconds, setNowSeconds } =
         useUIStore();
 
     const activeCrises = crisisWindows.filter((w) => w.phase !== 'warning');
     const showShadow = isShadowTabVisible(playerState);
     const showCouncil = isCouncilTabVisible(councilState);
 
-    const [nowSeconds, setNowSeconds] = React.useState(0);
 
-    React.useEffect(() => {
-        const fetchTime = async () => {
-            const state = await getGlobalStateAction();
-            setNowSeconds(state.nowSeconds);
-        };
-        fetchTime();
-        const interval = setInterval(fetchTime, 5000);
-        return () => clearInterval(interval);
-    }, []);
+
+
 
     const handleAdvance = async (delta: number) => {
         await advanceTimeAction(delta);

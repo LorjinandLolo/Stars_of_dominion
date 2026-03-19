@@ -1,6 +1,7 @@
 'use server';
 
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
+import { getEconomyState } from '@/lib/economy/economy-service';
 import { Resource, PriceFormula, PolicyRule } from '@/lib/trade-system/types';
 import { revalidatePath } from 'next/cache';
 
@@ -115,16 +116,7 @@ export async function updateProductionFocusAction(resource: Resource | null) {
  */
 export async function getEconomyStateAction() {
     const world = getGameWorldState();
-    
-    // Convert Maps to Arrays for serialization
-    return {
-        markets: Array.from(world.economy.markets.values()),
-        agreements: Array.from(world.economy.tradeAgreements.values()),
-        routes: Array.from(world.economy.tradeRoutes.values()),
-        factions: Array.from(world.economy.factions.values()),
-        playerFactionId: 'faction-aurelian',
-        policies: world.economy.policies ? Array.from(world.economy.policies.entries()) : []
-    };
+    return getEconomyState(world, 'faction-aurelian');
 }
 
 /**

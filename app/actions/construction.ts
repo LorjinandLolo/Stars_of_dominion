@@ -1,8 +1,8 @@
+'use server'
 /**
  * app/actions/construction.ts
  * Phase 17B — Server Actions for Planetary Construction
  */
-'use server'
 
 import { revalidatePath } from 'next/cache';
 import { getConstructionWorldState, getGameWorldState } from '@/lib/game-world-state-singleton';

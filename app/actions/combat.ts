@@ -1,9 +1,9 @@
+'use server'
 /**
  * app/actions/combat.ts
  * 
  * Server actions for the Military & Combat pillar.
  */
-'use server'
 
 import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';

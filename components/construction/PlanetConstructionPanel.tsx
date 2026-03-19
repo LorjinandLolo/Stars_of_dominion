@@ -5,7 +5,6 @@ import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle } from
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
 import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
 import { cancelBuildingAction, advanceTimeAction } from '@/app/actions/construction';
-import { getSystemBuildingsAction } from '@/app/actions/construction-sim';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Navigation } from 'lucide-react';
 
@@ -64,15 +63,16 @@ export function PlanetConstructionPanel({
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await getSystemBuildingsAction(systemId);
+            const response = await fetch(`/api/game/construction?systemId=${systemId}`);
+            const res = await response.json();
             if (res.success && res.data) {
                 // Filter to just this planet for the panel view
-                const p = res.data.planets.find(p => p.id === planetId);
+                const p = res.data.planets.find((p: any) => p.id === planetId);
                 setPlanet(p || null);
-                setBuildings(res.data.buildings.filter(b => b.planetId === planetId));
-                setQueue(res.data.queue.filter(q => q.planetId === planetId));
+                setBuildings(res.data.buildings.filter((b: any) => b.planetId === planetId));
+                setQueue(res.data.queue.filter((q: any) => q.planetId === planetId));
                 if ('spaceBuildQueue' in res.data) {
-                    setSpaceQueue((res.data as any).spaceBuildQueue.filter((q: any) => q.planetId === planetId));
+                    setSpaceQueue(res.data.spaceBuildQueue.filter((q: any) => q.planetId === planetId));
                 }
                 setError(null);
             } else if (!res.success) {

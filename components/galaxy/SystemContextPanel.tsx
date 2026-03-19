@@ -7,8 +7,8 @@ import { surveySystemAction } from '@/app/actions/exploration';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { executePlayerAction } from '@/app/actions/registry-handler';
-import { getSystemBuildingsAction } from '@/app/actions/construction-sim';
 import { LayoutGrid } from 'lucide-react';
+
 
 function StatBar({ value, color }: { value: number; color: string }) {
     return (
@@ -52,7 +52,8 @@ export default function SystemContextPanel() {
     React.useEffect(() => {
         if (selectedSystemId) {
             setLoadingPlanets(true);
-            getSystemBuildingsAction(selectedSystemId)
+            fetch(`/api/game/construction?systemId=${selectedSystemId}`)
+                .then(res => res.json())
                 .then(res => {
                     if (res.success && res.data) {
                         setPlanets(res.data.planets);

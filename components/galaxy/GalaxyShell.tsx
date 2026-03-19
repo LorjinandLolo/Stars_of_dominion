@@ -7,7 +7,7 @@ import OverlayToggleBar from './OverlayToggleBar';
 import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
 import { PlanetConstructionPanel } from '../construction/PlanetConstructionPanel';
-import { getGlobalStateAction } from '@/app/actions/construction-sim';
+
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
@@ -92,13 +92,9 @@ export default function GalaxyShell() {
         selectedPlanetId,
         setSelectedPlanet,
         playerState,
+        nowSeconds,
     } = useUIStore();
 
-    const [nowSeconds, setNowSeconds] = React.useState(0);
-
-    React.useEffect(() => {
-        getGlobalStateAction().then(res => setNowSeconds(res.nowSeconds));
-    }, []);
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
         if (!systems.length) return { minQ: -30, maxQ: 30, minR: -25, maxR: 25 };

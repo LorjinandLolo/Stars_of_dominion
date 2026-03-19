@@ -1,9 +1,9 @@
+'use server'
 /**
  * app/actions/construction-sim.ts
  * Client-safe server actions for construction simulation state.
  * These do NOT import node-appwrite.
  */
-'use server'
 
 import { getConstructionWorldState, getGameWorldState } from '@/lib/game-world-state-singleton';
 import { getBuildingsForSystem } from '@/lib/construction/construction-service';

@@ -170,6 +170,10 @@ export interface UIStore {
     addShipDesign: (design: ShipDesign) => void;
     updateShipDesign: (id: string, patch: Partial<ShipDesign>) => void;
     deleteShipDesign: (id: string) => void;
+
+    // ── Global Time ──
+    nowSeconds: number;
+    setNowSeconds: (now: number) => void;
 }
 
 // ─── Visibility helpers (re-exported for components) ─────────────────────────
@@ -374,4 +378,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
     deleteShipDesign: (id) =>
         set((state) => ({ shipDesigns: state.shipDesigns.filter((d) => d.id !== id) })),
+
+    // ── Global Time ──
+    nowSeconds: 0,
+    setNowSeconds: (nowSeconds) => set({ nowSeconds }),
 }));
