@@ -10,16 +10,26 @@ export async function GET(req: NextRequest) {
         const factionId = searchParams.get('factionId');
         
         let fleets = Array.from(world.movement.fleets.values());
-        if (factionId) {
-            // In a real implementation, you might only see your own fleets + detected ones
-            // For now, we return all or filter by owner
-            // fleets = fleets.filter(f => f.factionId === factionId);
+        const visibility = factionId ? world.movement.factionVisibility.get(factionId) : null;
+
+        if (factionId && visibility) {
+            // Filter fleets: Always see own, see Others if system is scanned/surveyed
+            fleets = fleets.filter(f => {
+                if (f.factionId === factionId) return true;
+                const sysId = f.currentSystemId || f.destinationSystemId;
+                if (!sysId) return false;
+                const entry = visibility[sysId];
+                return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
+            });
         }
 
         return NextResponse.json({
             nowSeconds: world.nowSeconds,
-            fleets: fleets
+            fleets: fleets,
+            visibility: visibility // it's already a Record, serializes fine
         }, { status: 200 });
+
+
     } catch (err: any) {
         console.error('[API/game/state] Failed to fetch state:', err);
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });

@@ -228,7 +228,19 @@
                     "food": 0.7,
                     "metals": 0.9,
                     "research": 0.5
+                },
+                "capital": {
+                    "metals": 1.5,
+                    "chemicals": 1.5,
+                    "energy": 1.5,
+                    "food": 1.5,
+                    "military": 1.5,
+                    "research": 1.5,
+                    "luxury": 1.5,
+                    "cultural": 1.5,
+                    "rare": 1.5
                 }
+
             }
         },
         "tradeFlow": {

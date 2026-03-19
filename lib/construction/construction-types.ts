@@ -13,7 +13,9 @@ export type PlanetType =
   | "research" 
   | "moon" 
   | "megaplanet"
+  | "capital"
   | "hive"
+
   | "prison"
   | "resort"
   | "tomb"

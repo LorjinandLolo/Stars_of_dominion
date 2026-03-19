@@ -26,7 +26,8 @@ import type {
     CombatState,
     ShipDesign,
 } from '@/types/ui-state';
-import type { Fleet } from '@/lib/movement/types';
+import type { Fleet, FactionVisibility } from '@/lib/movement/types';
+
 import {
     mockSystems,
     mockLinks,
@@ -174,7 +175,12 @@ export interface UIStore {
     // ── Global Time ──
     nowSeconds: number;
     setNowSeconds: (now: number) => void;
+
+    // ── Visibility ──
+    factionVisibility: FactionVisibility | null;
+    setFactionVisibility: (vis: FactionVisibility | null) => void;
 }
+
 
 // ─── Visibility helpers (re-exported for components) ─────────────────────────
 
@@ -382,4 +388,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Global Time ──
     nowSeconds: 0,
     setNowSeconds: (nowSeconds) => set({ nowSeconds }),
+
+    // ── Visibility ──
+    factionVisibility: null,
+    setFactionVisibility: (vis) => set({ factionVisibility: vis }),
 }));
+

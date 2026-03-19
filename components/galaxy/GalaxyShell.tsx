@@ -72,12 +72,39 @@ function systemColor(
     }
 }
 
-function surveyedColor(isSurveyed: boolean | undefined, baseColors: { fill: string; stroke: string }) {
-    if (isSurveyed === false) {
-        return { fill: '#0f172a', stroke: '#1e293b' }; // Dark, hidden visual for unsurveyed
+function getVisibilityStyles(
+    revealStage: string | undefined,
+    baseColors: { fill: string; stroke: string }
+) {
+    switch (revealStage) {
+        case 'pinged':
+            return {
+                fill: '#0f172a',
+                stroke: '#1e293b',
+                opacity: 0.6,
+                showDetails: false,
+                showDot: true
+            };
+        case 'scanned':
+        case 'surveyed':
+            return {
+                ...baseColors,
+                opacity: 1,
+                showDetails: true,
+                showDot: true
+            };
+        case 'unknown':
+        default:
+            return {
+                fill: '#020617',
+                stroke: '#0f172a',
+                opacity: 0.3,
+                showDetails: false,
+                showDot: false
+            };
     }
-    return baseColors;
 }
+
 
 export default function GalaxyShell() {
     const {
@@ -93,7 +120,10 @@ export default function GalaxyShell() {
         setSelectedPlanet,
         playerState,
         nowSeconds,
+        factionVisibility,
     } = useUIStore();
+
+
 
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
@@ -196,10 +226,11 @@ export default function GalaxyShell() {
                     });
                 })}
 
-                {/* System hexes */}
                 {systems.map((sys) => {
                     const px = hexToPixel(sys.q, sys.r);
                     const isSelected = selectedSystemId === sys.id;
+                    
+                    const revealStage = factionVisibility?.[sys.id]?.revealStage || 'unknown';
                     const baseColors = systemColor(
                         activeOverlay,
                         sys.instability,
@@ -207,7 +238,8 @@ export default function GalaxyShell() {
                         sys.escalationLevel,
                         sys.security,
                     );
-                    const { fill, stroke } = surveyedColor(sys.isSurveyed, baseColors);
+                    
+                    const styles = getVisibilityStyles(revealStage, baseColors);
                     const regionColor = regionBySystem[sys.id]?.color;
 
                     return (
@@ -218,31 +250,31 @@ export default function GalaxyShell() {
                                 e.stopPropagation();
                                 if (!hasMoved.current) setSelectedSystem(isSelected ? null : sys.id);
                             }}
-                            style={{ cursor: 'pointer' }}
+                            style={{ cursor: 'pointer', opacity: styles.opacity }}
                         >
                             <polygon
                                 points={HEX_POINTS}
-                                fill={fill}
-                                stroke={isSelected ? '#fbbf24' : stroke}
-                                strokeWidth={isSelected ? 2 : 1} // Bumped stroke width slightly for contrast
+                                fill={styles.fill}
+                                stroke={isSelected ? '#fbbf24' : styles.stroke}
+                                strokeWidth={isSelected ? 2 : 1}
                             />
-                            {/* System dot */}
-                            <circle
-                                r={sys.tags.includes('gate') || sys.tags.includes('fortress') ? 4 : 2.5}
-                                fill={
-                                    sys.ownerId
-                                        ? (sys.ownerId === 'faction-aurelian'
-                                            ? '#3b82f6'
-                                            : sys.ownerId === 'faction-vektori'
-                                                ? '#ef4444'
-                                                : sys.ownerId === 'faction-null-syndicate'
-                                                    ? '#a855f7'
-                                                    : '#22c55e')
-                                        : '#94a3b8' // Brightened neutral system dot to pop clearly
-                                }
-                            />
-                            {/* Escalation indicator ring */}
-                            {sys.escalationLevel > 6 && (
+                            
+                            {/* System dot - only show if pinged or better */}
+                            {styles.showDot && (
+                                <circle
+                                    r={sys.tags.includes('gate') || sys.tags.includes('fortress') ? 4 : 2.5}
+                                    fill={
+                                        sys.ownerId
+                                            ? (sys.ownerId === 'faction-aurelian' ? '#3b82f6' : 
+                                               sys.ownerId === 'faction-vektori' ? '#ef4444' : 
+                                               sys.ownerId === 'faction-null-syndicate' ? '#a855f7' : '#22c55e')
+                                            : '#94a3b8'
+                                    }
+                                />
+                            )}
+
+                            {/* Escalation indicator ring - only show if scanned or better */}
+                            {styles.showDetails && sys.escalationLevel > 6 && (
                                 <circle
                                     r={5}
                                     fill="none"
@@ -255,6 +287,7 @@ export default function GalaxyShell() {
                         </g>
                     );
                 })}
+
 
                 {/* Fleets */}
                 {fleets.map((fleet) => {

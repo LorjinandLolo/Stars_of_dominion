@@ -8,8 +8,10 @@ import { tickEconomy } from '../economy/economy-service';
 import { tickConstructionGlobal } from '../construction/construction-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
+import { computeVisibility } from '../movement/visibility-service';
 
 // ─── Tick Delta ─────────────────────────────────────────────────────────────
+
 
 /** 6 hours in seconds — the time span each tick represents. */
 const TICK_DELTA_SECONDS = 6 * 60 * 60;
@@ -50,8 +52,12 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     // 9: Ongoing effects (sanctions, propaganda, rebellion, seasonal)
     step9_ongoingEffects(world);
 
+    // 10: Visibility refresh (Fog of War)
+    step10_visibility(world);
+
     // Post-tick: expire stale crises
     await expireAllStaleCrises(now);
+
 
     // Post-tick notification
     await fireNotification({
@@ -253,3 +259,16 @@ function step9_ongoingEffects(world: ReturnType<typeof getGameWorldState>) {
         console.error('[TickProcessor] step9_ongoingEffects failed:', e);
     }
 }
+
+function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
+    // Recompute visibility for all active factions
+    try {
+        for (const factionId of world.economy.factions.keys()) {
+            const visibility = computeVisibility(factionId, world.movement);
+            world.movement.factionVisibility.set(factionId, visibility);
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step10_visibility failed:', e);
+    }
+}
+

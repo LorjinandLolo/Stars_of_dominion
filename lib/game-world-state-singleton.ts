@@ -49,20 +49,31 @@ function buildEmptyMovementState(): MovementWorldState {
 function buildEmptyEconomyState(): EconomyWorldState {
     const factions = new Map<string, Faction>();
     
-    // Seed initial factions
-    const FACTION_IDS = ['faction-aurelian', 'faction-vektori', 'faction-null-syndicate', 'faction-covenant'];
-    const names = ['Aurelian Combine', 'Vektori High Command', 'Null Syndicate', 'Covenant of the Void'];
-    const capitals = [mockSystems[0].id, mockSystems[50].id, mockSystems[100].id, mockSystems[135].id];
-    const theatres = ['theatre-aurelian', 'theatre-vektori', 'theatre-null', 'theatre-covenant'];
+    // Seed initial factions (4 starters + 8 friends factions)
+    const FACTION_DATA = [
+        { id: 'faction-aurelian', name: 'Aurelian Combine', capitalIdx: 0 },
+        { id: 'faction-vektori', name: 'Vektori High Command', capitalIdx: 50 },
+        { id: 'faction-null-syndicate', name: 'Null Syndicate', capitalIdx: 100 },
+        { id: 'faction-covenant', name: 'Covenant of the Void', capitalIdx: 135 },
+        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', capitalIdx: 10 },
+        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', capitalIdx: 20 },
+        { id: 'faction-infernoids', name: 'Infernoids / Martijn', capitalIdx: 30 },
+        { id: 'faction-movanites', name: 'Movanites / David', capitalIdx: 40 },
+        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', capitalIdx: 60 },
+        { id: 'faction-buthari', name: 'The Buthari / Hisham', capitalIdx: 70 },
+        { id: 'faction-sarrak', name: 'Sarrak / Sil', capitalIdx: 80 },
+        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', capitalIdx: 90 },
+    ];
 
-    FACTION_IDS.forEach((id, i) => {
-        factions.set(id, {
-            id,
-            name: names[i],
-            capitalSystemId: capitals[i],
-            theatreId: theatres[i],
+    FACTION_DATA.forEach((data) => {
+        const theatreId = `theatre-${data.id.split('-')[1]}`;
+        factions.set(data.id, {
+            id: data.id,
+            name: data.name,
+            capitalSystemId: mockSystems[data.capitalIdx].id,
+            theatreId: theatreId,
             backingRatioPolicy: 0.5,
-            reserves: { [Resource.ENERGY]: 1000 },
+            reserves: { [Resource.ENERGY]: 2500, [Resource.METALS]: 500, [Resource.FOOD]: 500 }, // Buffed start
             creditSupply: 1000000,
             liquidity: 500000,
             debt: 0,
@@ -76,8 +87,9 @@ function buildEmptyEconomyState(): EconomyWorldState {
                 reserveStressIndex: 0,
                 capitalExposureRating: 0.1
             }
-        } as any); // cast for safety if name isn't in Faction type, but let's check Faction
+        } as any);
     });
+
 
     const markets = new Map<string, Market>();
     Object.values(Resource).map(res => {
@@ -136,7 +148,12 @@ function buildEmptyEspionageState(): EspionageWorldState {
 function buildEmptyConstructionState(): ConstructionWorldState {
     const planets = new Map<string, Planet>();
     // Seed initial planets for ALL mock systems to ensure UI has data regardless of selection
+    // Identify capital systems from FACTION_DATA
+    const CAPITAL_SYSTEM_IDS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 135]
+        .map(idx => mockSystems[idx].id);
+
     mockSystems.forEach((sys, idx) => {
+
         const environmentalTags = [
             'Radioactive World', 'Desert World', 'Oceanic World', 
             'Night World', 'Tomb World', 'Freak Weather', 
@@ -154,8 +171,9 @@ function buildEmptyConstructionState(): ConstructionWorldState {
             name: `${sys.name} Prime`,
             systemId: sys.id,
             ownerId: sys.ownerId || 'faction-neutral',
-            planetType: idx % 3 === 0 ? 'industrial' : idx % 3 === 1 ? 'agricultural' : 'standard',
+            planetType: CAPITAL_SYSTEM_IDS.includes(sys.id) ? 'capital' : (idx % 3 === 0 ? 'industrial' : idx % 3 === 1 ? 'agricultural' : 'standard'),
             infrastructureLevel: 1,
+
             stability: 100,
             happiness: 80,
             specialization: 'none',
