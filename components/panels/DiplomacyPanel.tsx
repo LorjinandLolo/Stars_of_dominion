@@ -82,7 +82,7 @@ const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
 ];
 
 export default function DiplomacyPanel() {
-    const { playerState, diplomacyState, updateDiplomacy } = useUIStore();
+    const { playerState, diplomacyState, empireIdentity, updateDiplomacy } = useUIStore();
     const [activeTab, setActiveTab] = React.useState<'intel' | 'statecraft'>('statecraft');
     const [selectedFactionId, setSelectedFactionId] = React.useState(FACTIONS[0].id);
     const [isProcessing, setIsProcessing] = React.useState<string | null>(null);
@@ -483,7 +483,7 @@ export default function DiplomacyPanel() {
                                     <Target className="w-3 h-3" /> Doctrine Tags
                                 </h3>
                                 <div className="flex flex-wrap gap-2">
-                                    {selectedFaction.traits.map(trait => (
+                                    {(empireIdentity.reputation[selectedFactionId]?.derivedTags || selectedFaction.traits).map((trait: string) => (
                                         <span key={trait} className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase tracking-wide text-slate-300 font-mono">
                                             {trait}
                                         </span>

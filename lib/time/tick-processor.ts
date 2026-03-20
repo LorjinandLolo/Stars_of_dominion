@@ -15,6 +15,10 @@ import { Fleet } from '../movement/types';
 import { BUILDINGS } from '../../data/buildings';
 import { tickIntelligence } from '../intelligence/intelligence-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
+import { PopulationService } from '../construction/population-service';
+import { ReputationService } from '../reputation/reputation-service';
+import { LeadershipService } from '../leadership/leadership-service';
+import { StrategicAIService } from '../ai/strategic-ai-service';
 
 
 
@@ -68,6 +72,10 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     step13_pirateSafeHavens(world);
     step14_empireFleetRepair(world);
     step15_intelligence(world, TICK_DELTA_SECONDS);
+    step16_population(world, TICK_DELTA_SECONDS);
+    step17_reputationDecay(world, TICK_DELTA_SECONDS);
+    step18_leadershipXP(world);
+    step19_strategicAI(world);
 
 
 
@@ -234,6 +242,46 @@ function step7_socialState(world: ReturnType<typeof getGameWorldState>) {
         }
     } catch (e) {
         console.error('[TickProcessor] step7_socialState failed:', e);
+    }
+}
+
+function step16_population(world: ReturnType<typeof getGameWorldState>, delta: number) {
+    try {
+        PopulationService.tickPopulation(world, delta);
+    } catch (e) {
+        console.error('[TickProcessor] step16_population failed:', e);
+    }
+}
+
+function step17_reputationDecay(world: ReturnType<typeof getGameWorldState>, delta: number) {
+    try {
+        ReputationService.decayReputation(world, delta);
+    } catch (e) {
+        console.error('[TickProcessor] step17_reputationDecay failed:', e);
+    }
+}
+
+function step18_leadershipXP(world: ReturnType<typeof getGameWorldState>) {
+    try {
+        // Passive XP for assigned leaders
+        for (const leader of world.leadership.leaders.values()) {
+            if (leader.status === 'active' && leader.assignmentId) {
+                LeadershipService.grantXP(world, leader.id, 50); // 50 XP per tick for being assigned
+            }
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step18_leadershipXP failed:', e);
+    }
+}
+
+function step19_strategicAI(world: ReturnType<typeof getGameWorldState>) {
+    try {
+        for (const factionId of world.economy.factions.keys()) {
+            if (factionId === 'faction-pirates') continue;
+            StrategicAIService.processEmpireTurn(factionId, world);
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step19_strategicAI failed:', e);
     }
 }
 

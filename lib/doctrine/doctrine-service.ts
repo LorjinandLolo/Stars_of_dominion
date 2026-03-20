@@ -11,8 +11,23 @@ import type {
     MovementWorldState,
     FleetCardData,
 } from '../movement/types';
+import { 
+    DoctrineDomain, 
+    DoctrineDefinition, 
+    EmpireDoctrines 
+} from './types';
+import doctrineDefinitions from './data/doctrine-definitions.json';
 import { eventBus } from '../movement/event-bus';
+import { GameWorldState } from '../game-world-state';
 import config from '../movement/movement-config.json';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const DOCTRINE_DEFINITIONS: Map<string, DoctrineDefinition> = new Map(
+    (doctrineDefinitions as any[]).map(d => [d.id, d])
+);
+
+const DOCTRINE_CHANGE_COOLDOWN_SECONDS = 3600 * 24; // 1 day
 
 // ─── Type helpers ─────────────────────────────────────────────────────────────
 
@@ -302,6 +317,75 @@ export function getFleetCardData(
         isInTransit: fleet.destinationSystemId !== null,
         postureAligned,
     };
+}
+
+// ─── Empire Domain Doctrines ──────────────────────────────────────────────────
+
+/**
+ * Set a doctrine for an empire domain.
+ */
+export function setEmpireDoctrine(
+    world: GameWorldState,
+    factionId: string,
+    domain: DoctrineDomain,
+    doctrineId: string
+): boolean {
+    let empireDoctrines = world.doctrines.get(factionId);
+    if (!empireDoctrines) {
+        empireDoctrines = {
+            factionId,
+            activeDoctrines: { military: null, economic: null, intelligence: null },
+            lastChangeTimestamps: { military: 0, economic: 0, intelligence: 0 }
+        };
+        world.doctrines.set(factionId, empireDoctrines);
+    }
+
+    const lastChange = empireDoctrines.lastChangeTimestamps[domain];
+    if (world.nowSeconds - lastChange < DOCTRINE_CHANGE_COOLDOWN_SECONDS) {
+        return false; // On cooldown
+    }
+
+    const definition = DOCTRINE_DEFINITIONS.get(doctrineId);
+    if (!definition || definition.domain !== domain) return false;
+
+    const prev = empireDoctrines.activeDoctrines[domain];
+    empireDoctrines.activeDoctrines[domain] = doctrineId;
+    empireDoctrines.lastChangeTimestamps[domain] = world.nowSeconds;
+
+    eventBus.emit({
+        type: 'doctrineChanged',
+        factionId,
+        domain,
+        oldDoctrineId: prev,
+        newDoctrineId: doctrineId,
+        timestamp: world.nowSeconds
+    });
+
+    return true;
+}
+
+/**
+ * Get aggregate modifiers from empire-wide doctrines.
+ */
+export function getEmpireDoctrineModifiers(
+    world: GameWorldState,
+    factionId: string
+): Record<string, number> {
+    const modifiers: Record<string, number> = {};
+    const empireDoctrines = world.doctrines.get(factionId);
+    if (!empireDoctrines) return modifiers;
+
+    for (const doctrineId of Object.values(empireDoctrines.activeDoctrines)) {
+        if (!doctrineId) continue;
+        const def = DOCTRINE_DEFINITIONS.get(doctrineId);
+        if (!def) continue;
+
+        for (const [key, val] of Object.entries(def.modifiers)) {
+            modifiers[key] = (modifiers[key] || 0) + val;
+        }
+    }
+
+    return modifiers;
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

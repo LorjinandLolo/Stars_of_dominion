@@ -156,6 +156,52 @@ export interface IntelligenceOperationResolveEvent {
     exposed: boolean;
 }
 
+export interface LeaderAssignedEvent {
+    type: 'leaderAssigned';
+    leaderId: string;
+    assignmentId: string;
+    timestamp: number;
+}
+
+export interface LeaderLeveledUpEvent {
+    type: 'leaderLeveledUp';
+    leaderId: string;
+    newLevel: number;
+    timestamp: number;
+}
+
+export interface LeaderRecruitedEvent {
+    type: 'leaderRecruited';
+    leaderId: string;
+    factionId: string;
+    timestamp: number;
+}
+
+export interface DoctrineChangedEvent {
+    type: 'doctrineChanged';
+    factionId: string;
+    domain: string;
+    oldDoctrineId: string | null;
+    newDoctrineId: string;
+    timestamp: number;
+}
+
+export interface ReputationShiftedEvent {
+    type: 'reputationShifted';
+    factionId: string;
+    action: string;
+    delta: Record<string, number>;
+    timestamp: number;
+}
+
+export interface PopulationShiftEvent {
+    type: 'populationShift';
+    planetId: string;
+    delta: number;
+    cause: string;
+    timestamp: number;
+}
+
 // ─── Union ────────────────────────────────────────────────────────────────────
 
 export type GameEvent =
@@ -175,7 +221,13 @@ export type GameEvent =
     | DoctrineDeviationEvent
     | BlocSatisfactionCrisisEvent
     | ExplorationStageCompleteEvent
-    | IntelligenceOperationResolveEvent;
+    | IntelligenceOperationResolveEvent
+    | LeaderAssignedEvent
+    | LeaderLeveledUpEvent
+    | LeaderRecruitedEvent
+    | DoctrineChangedEvent
+    | ReputationShiftedEvent
+    | PopulationShiftEvent;
 
 
 export type GameEventType = GameEvent['type'];

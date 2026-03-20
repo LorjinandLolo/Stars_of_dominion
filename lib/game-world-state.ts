@@ -13,6 +13,9 @@ import type { ConstructionWorldState } from './construction/construction-types';
 import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
 import type { IntelligenceWorldState } from './intelligence/types';
+import type { LeadershipWorldState } from './leadership/types';
+import type { EmpireDoctrines } from './doctrine/types';
+import type { FactionReputation } from './reputation/types';
 
 
 // ─── Shared cross-pillar variables ────────────────────────────────────────────
@@ -100,6 +103,11 @@ export interface GameWorldState {
 
     // ── Pillar 17B — Planetary Construction ──────────────────────────────────
     construction: ConstructionWorldState;
+
+    // ── Phase 3 — Empire Identity & Leadership ──────────────────────────────
+    leadership: LeadershipWorldState;
+    doctrines: Map<string, EmpireDoctrines>;
+    reputation: Map<string, FactionReputation>;
 
     /** Sim-clock unix seconds. Single source of truth for all services. */
     nowSeconds: number;

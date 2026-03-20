@@ -124,6 +124,14 @@ export interface Planet {
   buildQueue: BuildOrder[];
   activeModifiers: Modifier[];
   tags: string[];
+  
+  // Phase 3: Population System
+  population: number;
+  popCapacity: number;
+  popGrowth: number;
+  unrest: number;
+  isOccupied: boolean;
+  governorId?: string;
 }
 
 export interface PlanetStats {

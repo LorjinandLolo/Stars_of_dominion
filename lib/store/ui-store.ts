@@ -25,6 +25,7 @@ import type {
     PressState,
     CombatState,
     ShipDesign,
+    EmpireIdentityState,
 } from '@/types/ui-state';
 import type { Fleet, FactionVisibility } from '@/lib/movement/types';
 
@@ -171,6 +172,10 @@ export interface UIStore {
     addShipDesign: (design: ShipDesign) => void;
     updateShipDesign: (id: string, patch: Partial<ShipDesign>) => void;
     deleteShipDesign: (id: string) => void;
+
+    // ── Empire Identity (Phase 3) ──
+    empireIdentity: EmpireIdentityState;
+    updateEmpireIdentity: (patch: Partial<EmpireIdentityState>) => void;
 
     // ── Global Time ──
     nowSeconds: number;
@@ -390,6 +395,19 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
     deleteShipDesign: (id) =>
         set((state) => ({ shipDesigns: state.shipDesigns.filter((d) => d.id !== id) })),
+
+    // ── Empire Identity ──
+    empireIdentity: {
+        leadership: { leaders: new Map(), recruitmentPool: [], nowSeconds: 0 },
+        doctrines: { 
+            factionId: '', 
+            activeDoctrines: { military: null, economic: null, intelligence: null }, 
+            lastChangeTimestamps: { military: 0, economic: 0, intelligence: 0 } 
+        },
+        reputation: {},
+    },
+    updateEmpireIdentity: (patch) =>
+        set((state) => ({ empireIdentity: { ...state.empireIdentity, ...patch } })),
 
     // ── Global Time ──
     nowSeconds: 0,

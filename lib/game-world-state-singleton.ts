@@ -21,6 +21,9 @@ import { ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-t
 import { PressFactionType, SimulationState as PressSimulationState } from './press-system/types';
 import { IntelligenceWorldState, IntelligenceNetwork } from './intelligence/types';
 import { OPERATION_DEFINITIONS } from './intelligence/operation-definitions';
+import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
+import { EmpireDoctrines } from './doctrine/types';
+import { FactionReputation } from './reputation/types';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
 
@@ -226,7 +229,12 @@ function buildEmptyConstructionState(): ConstructionWorldState {
             })),
             buildQueue: [],
             activeModifiers: [],
-            tags: planetTags
+            tags: planetTags,
+            population: CAPITAL_SYSTEM_IDS.includes(sys.id) ? 15 : 2,
+            popCapacity: 30,
+            popGrowth: 0.05,
+            unrest: 0,
+            isOccupied: false
         };
         planets.set(planet.id, planet);
     });
@@ -276,6 +284,46 @@ function buildEmptyPressState(): PressSimulationState {
     };
 }
 
+function buildEmptyLeadershipState(): LeadershipWorldState {
+    const roles: LeaderRole[] = [
+        'Admiral', 'General', 'Governor', 'IntelligenceDirector', 
+        'DiplomaticEnvoy', 'EconomicMinister', 'CharterCompanyExecutive'
+    ];
+    
+    const pool: Leader[] = roles.map((role, idx) => ({
+        id: `leader-start-${idx}`,
+        factionId: 'faction-aurelian',
+        name: `Initial ${role}`,
+        role: role,
+        level: 1,
+        xp: 0,
+        loyalty: 80,
+        status: 'active',
+        traits: [],
+        history: [{ timestamp: Date.now() / 1000, description: 'Entered service.' }]
+    }));
+
+    // Add one wildcard
+    pool.push({
+        id: 'leader-wildcard-1',
+        factionId: 'faction-aurelian',
+        name: 'Rising Star',
+        role: 'Admiral',
+        level: 1,
+        xp: 0,
+        loyalty: 90,
+        status: 'active',
+        traits: ['aggressive_tactician'],
+        history: [{ timestamp: Date.now() / 1000, description: 'Discovered in the academy.' }]
+    });
+
+    return {
+        leaders: new Map(),
+        recruitmentPool: pool,
+        nowSeconds: Math.floor(Date.now() / 1000)
+    };
+}
+
 /**
  * Get (or lazily create) the singleton GameWorldState.
  * This is the live in-memory simulation state used by all Server Actions.
@@ -305,6 +353,9 @@ export function getGameWorldState(): GameWorldState {
             council: mockCouncilState,
             press: buildEmptyPressState(),
             intelligence: buildEmptyIntelligenceState(),
+            leadership: buildEmptyLeadershipState(),
+            doctrines: new Map(),
+            reputation: new Map(),
             nowSeconds: Math.floor(Date.now() / 1000),
         };
 

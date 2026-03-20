@@ -1,0 +1,47 @@
+[
+    {
+        "id": "aggressive_tactician",
+        "name": "Aggressive Tactician",
+        "description": "Increases offensive damage but reduces defense.",
+        "modifiers": {
+            "offensiveDamage": 0.15,
+            "defensiveStrength": -0.1
+        }
+    },
+    {
+        "id": "master_bureaucrat",
+        "name": "Master Bureaucrat",
+        "description": "Increases infrastructure efficiency and taxation.",
+        "modifiers": {
+            "infraEfficiency": 0.2,
+            "taxationRate": 0.1
+        }
+    },
+    {
+        "id": "charismatic_leader",
+        "name": "Charismatic Leader",
+        "description": "Increases happiness and reduces unrest.",
+        "modifiers": {
+            "happiness": 5,
+            "unrestRate": -0.2
+        }
+    },
+    {
+        "id": "covert_master",
+        "name": "Covert Master",
+        "description": "Increases intelligence success chance and reduces exposure.",
+        "modifiers": {
+            "intelSuccessChance": 0.1,
+            "intelExposureChance": -0.15
+        }
+    },
+    {
+        "id": "industrial_magnate",
+        "name": "Industrial Magnate",
+        "description": "Increases production coordination and resource extraction.",
+        "modifiers": {
+            "metalsOutput": 0.2,
+            "extractionEfficiency": 0.15
+        }
+    }
+]

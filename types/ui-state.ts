@@ -28,7 +28,11 @@ export { PressFactionType };
 export type { PressFactionState };
 import { CombatState } from '@/lib/combat/combat-types';
 import { ShipDesign } from '@/lib/combat/ship-types';
-export type { CombatState, ShipDesign };
+import { LeadershipWorldState } from '@/lib/leadership/types';
+import { EmpireDoctrines } from '@/lib/doctrine/types';
+import { FactionReputation } from '@/lib/reputation/types';
+
+export type { CombatState, ShipDesign, LeadershipWorldState, EmpireDoctrines, FactionReputation };
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
@@ -154,6 +158,14 @@ export interface CouncilState {
     blocs?: Bloc[];              // present when status === 'split'
     activeResolutionIds?: string[];
     emergencySession: boolean;
+}
+
+// ─── Phase 3: Empire Identity ──────────────────────────────────────────────
+
+export interface EmpireIdentityState {
+    leadership: LeadershipWorldState;
+    doctrines: EmpireDoctrines;
+    reputation: Record<string, FactionReputation>; // Keyed by factionId
 }
 
 // ─── Espionage ──────────────────────────────────────────────────────────────

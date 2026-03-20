@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle } from 'lucide-react';
+import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap } from 'lucide-react';
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
 import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
 import { cancelBuildingAction, advanceTimeAction } from '@/app/actions/construction';
@@ -222,7 +222,22 @@ export function PlanetConstructionPanel({
                                     </span>
                                 )}
                             </h2>
-                            <p className="text-sm text-slate-400">Manage infrastructure arrays and industrial complexes</p>
+                            {planet && (
+                                <div className="flex gap-4 mt-1">
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                        <Users className="w-3 h-3 text-blue-400" />
+                                        <span className="font-mono text-slate-200">POP {(planet.population || 0).toFixed(1)}M / {planet.popCapacity || 20}M</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                        <Heart className="w-3 h-3 text-rose-400" />
+                                        <span className="font-mono text-slate-200">HAP {planet.happiness || 80}%</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                        <Zap className="w-3 h-3 text-amber-400" />
+                                        <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>UNR {(planet.unrest || 0).toFixed(0)}%</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     <button

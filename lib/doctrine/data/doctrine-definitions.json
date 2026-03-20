@@ -1,0 +1,64 @@
+[
+    {
+        "id": "doctrine_military_offensive",
+        "domain": "military",
+        "name": "Surgical Strike",
+        "description": "Prioritizes speed and precision over heavy armor.",
+        "modifiers": {
+            "fleetSpeed": 0.2,
+            "offensiveDamage": 0.1,
+            "survivalPower": -0.15
+        },
+        "enabledActions": ["preemptive_strike"]
+    },
+    {
+        "id": "doctrine_military_defensive",
+        "domain": "military",
+        "name": "Planetary Bastion",
+        "description": "Heavy investment in planetary and system defenses.",
+        "modifiers": {
+            "defensiveStrength": 0.25,
+            "unrestRate": -0.1
+        }
+    },
+    {
+        "id": "doctrine_economic_expansion",
+        "domain": "economic",
+        "name": "Frontier Incentives",
+        "description": "Encourages rapid settlement and resource extraction.",
+        "modifiers": {
+            "popGrowth": 0.15,
+            "infraCost": -0.1
+        }
+    },
+    {
+        "id": "doctrine_economic_consolidation",
+        "domain": "economic",
+        "name": "Core World Efficiency",
+        "description": "Focuses on maximizing output from established systems.",
+        "modifiers": {
+            "taxationRate": 0.2,
+            "productionCoordination": 0.1
+        }
+    },
+    {
+        "id": "doctrine_intel_aggressive",
+        "domain": "intelligence",
+        "name": "Active Subversion",
+        "description": "Aggressive infiltration and sabotage operations.",
+        "modifiers": {
+            "intelPointsGen": 0.2,
+            "sabotageSuccess": 0.15
+        }
+    },
+    {
+        "id": "doctrine_intel_defensive",
+        "domain": "intelligence",
+        "name": "Iron Curtain",
+        "description": "Focuses on counter-intelligence and internal security.",
+        "modifiers": {
+            "counterIntelStrength": 0.3,
+            "internalSecurity": 0.2
+        }
+    }
+]
