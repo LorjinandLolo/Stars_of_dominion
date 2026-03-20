@@ -234,7 +234,14 @@ function buildEmptyConstructionState(): ConstructionWorldState {
             popCapacity: 30,
             popGrowth: 0.05,
             unrest: 0,
-            isOccupied: false
+            isOccupied: false,
+            demographics: CAPITAL_SYSTEM_IDS.includes(sys.id) ? [
+                { speciesId: 'species-primary', name: 'Imperial Prime', percentage: 95, socialClass: 'Citizen' },
+                { speciesId: 'species-minority', name: 'Alien Minority', percentage: 5, socialClass: 'Resident' }
+            ] : [
+                { speciesId: 'species-primary', name: 'Imperial Prime', percentage: 80, socialClass: 'Citizen' },
+                { speciesId: 'species-labor', name: 'Frontier Labor', percentage: 20, socialClass: 'Servant' }
+            ]
         };
         planets.set(planet.id, planet);
     });

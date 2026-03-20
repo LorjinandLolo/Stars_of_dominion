@@ -109,6 +109,13 @@ export interface Modifier {
   expiresAt?: number;
 }
 
+export interface Demographic {
+  speciesId: string;
+  name: string;
+  percentage: number; // 0-100
+  socialClass: 'Citizen' | 'Resident' | 'Servant' | 'Slave';
+}
+
 export interface Planet {
   id: string;
   name: string;
@@ -132,6 +139,7 @@ export interface Planet {
   unrest: number;
   isOccupied: boolean;
   governorId?: string;
+  demographics: Demographic[];
 }
 
 export interface PlanetStats {

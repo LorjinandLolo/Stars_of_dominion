@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap } from 'lucide-react';
+import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap, Shield, Info, Activity, ShieldCheck, Globe } from 'lucide-react';
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
 import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
 import { cancelBuildingAction, advanceTimeAction } from '@/app/actions/construction';
@@ -46,7 +46,7 @@ export function PlanetConstructionPanel({
     onClose
 }: PlanetConstructionPanelProps) {
     const { playerFactionId, diplomacyState } = useUIStore();
-    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE'>('BUILD');
+    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY'>('BUILD');
     const [buildings, setBuildings] = useState<PlacedBuilding[]>([]);
     const [queue, setQueue] = useState<ConstructionOrder[]>([]);
     const [spaceQueue, setSpaceQueue] = useState<any[]>([]);
@@ -261,6 +261,10 @@ export function PlanetConstructionPanel({
                                         <Zap className="w-3 h-3 text-amber-400" />
                                         <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>UNR {(planet.unrest || 0).toFixed(0)}%</span>
                                     </div>
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                        <Shield className="w-3 h-3 text-cyan-400" />
+                                        <span className={`font-mono ${planet.stability < 40 ? 'text-red-400' : 'text-slate-200'}`}>STA {(planet.stability || 0).toFixed(0)}%</span>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -292,6 +296,15 @@ export function PlanetConstructionPanel({
                             }`}
                     >
                         ACTIVE QUEUE & STRUCTURES
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('SOCIETY')}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'SOCIETY'
+                            ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                    >
+                        SOCIETY & DEMOGRAPHICS
                     </button>
                     {hasShipyard && (
                         <button
@@ -567,6 +580,129 @@ export function PlanetConstructionPanel({
                                         </button>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'SOCIETY' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Demographics Card */}
+                                <div className="p-6 bg-slate-900/50 border border-slate-800 rounded-xl">
+                                    <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-6 flex items-center gap-2">
+                                        <Users className="w-4 h-4 text-blue-400" />
+                                        Species Demographics
+                                    </h3>
+                                    <div className="space-y-4">
+                                        {planet?.demographics?.map((demo: any, idx: number) => (
+                                            <div key={idx} className="space-y-2">
+                                                <div className="flex justify-between text-sm">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-200">{demo.name}</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter
+                                                            ${demo.socialClass === 'Citizen' ? 'bg-emerald-500/20 text-emerald-400' : 
+                                                              demo.socialClass === 'Resident' ? 'bg-blue-500/20 text-blue-400' :
+                                                              demo.socialClass === 'Servant' ? 'bg-amber-500/20 text-amber-400' :
+                                                              'bg-red-500/20 text-red-500'}
+                                                        `}>
+                                                            {demo.socialClass}
+                                                        </span>
+                                                    </div>
+                                                    <span className="font-mono text-slate-400">{demo.percentage}%</span>
+                                                </div>
+                                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div 
+                                                        className={`h-full transition-all duration-500 ${
+                                                            demo.socialClass === 'Citizen' ? 'bg-emerald-500' : 
+                                                            demo.socialClass === 'Resident' ? 'bg-blue-500' :
+                                                            demo.socialClass === 'Servant' ? 'bg-amber-500' :
+                                                            'bg-red-500'
+                                                        }`}
+                                                        style={{ width: `${demo.percentage}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Stability Card */}
+                                <div className="p-6 bg-slate-900/50 border border-slate-800 rounded-xl">
+                                    <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-6 flex items-center gap-2">
+                                        <Activity className="w-4 h-4 text-cyan-400" />
+                                        Control & Stability
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                                                <span className="text-sm font-medium text-slate-300">Planetary Stability</span>
+                                            </div>
+                                            <span className="text-lg font-bold text-emerald-400">{planet?.stability || 0}%</span>
+                                        </div>
+                                        <div className="space-y-3 px-1">
+                                            <div className="flex justify-between text-xs text-slate-500">
+                                                <span>Baseline Satisfaction</span>
+                                                <span className="text-emerald-500">+80%</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs text-slate-500">
+                                                <span>Unrest Penalty</span>
+                                                <span className="text-red-400">-{((planet?.unrest || 0) * 0.5).toFixed(1)}%</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs text-slate-500">
+                                                <span>Infrastructure Support</span>
+                                                <span className="text-emerald-500">+{((planet?.infrastructureLevel || 1) * 2).toFixed(1)}%</span>
+                                            </div>
+                                            {planet?.isOccupied && (
+                                                <div className="flex justify-between text-xs text-slate-500">
+                                                    <span>Military Occupation</span>
+                                                    <span className="text-amber-500">-15.0%</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Ideology Section */}
+                            <div className="p-6 bg-slate-900/50 border border-slate-800 rounded-xl">
+                                <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-6 flex items-center gap-2">
+                                    <Globe className="w-4 h-4 text-indigo-400" />
+                                    Ideological Alignment
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                                    {[
+                                        { label: 'Hierarchy', val: 75, color: 'text-purple-400' },
+                                        { label: 'Centralization', val: 40, color: 'text-blue-400' },
+                                        { label: 'Militarism', val: 90, color: 'text-red-400' },
+                                        { label: 'Tradition', val: 60, color: 'text-amber-400' },
+                                        { label: 'Collectivism', val: 30, color: 'text-emerald-400' },
+                                        { label: 'Expansionism', val: 85, color: 'text-sky-400' },
+                                        { label: 'Authoritarianism', val: 80, color: 'text-rose-400' }
+                                    ].map((axis, idx) => (
+                                        <div key={idx} className="flex items-center gap-4">
+                                            <div className="w-24 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{axis.label}</div>
+                                            <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden flex items-center justify-center relative">
+                                                <div className="absolute left-1/2 w-0.5 h-full bg-slate-700 z-0" />
+                                                <div 
+                                                    className={`h-full relative z-10 transition-all duration-700 ${axis.color.replace('text-', 'bg-')}`}
+                                                    style={{ 
+                                                        width: `${Math.abs(axis.val)}%`,
+                                                        marginLeft: axis.val < 0 ? 'auto' : '0',
+                                                        marginRight: axis.val > 0 ? 'auto' : '0'
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className={`w-10 text-right font-mono text-xs font-bold ${axis.color}`}>{axis.val > 0 ? '+' : ''}{axis.val}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-6 flex items-start gap-3 p-3 bg-indigo-500/5 border border-indigo-500/10 rounded-lg">
+                                    <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                                    <p className="text-xs text-slate-400 leading-relaxed italic">
+                                        Ideological divergence from the Imperial Core increases unrest and slows infrastructure development. Maintain local stability to prevent secessionist movements.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     )}

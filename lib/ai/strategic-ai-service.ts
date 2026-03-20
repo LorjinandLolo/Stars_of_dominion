@@ -27,7 +27,7 @@ export class StrategicAIService {
         // 1. Recruit if pool has someone useful and we have space/need
         const recruitPool = world.leadership.recruitmentPool.filter(l => l.factionId === factionId);
         if (recruitPool.length > 0 && leaders.length < 5) {
-            LeadershipService.recruitLeader(world, recruitPool[0].id);
+            LeadershipService.recruitLeader(world, recruitPool[0].id, factionId);
         }
 
         // 2. Assign unassigned leaders
