@@ -1,6 +1,4 @@
 {
   "/api/game/state/route": "app/api/game/state/route.js",
-  "/login/page": "app/login/page.js",
-  "/(site)/page": "app/(site)/page.js",
-  "/lobby/page": "app/lobby/page.js"
+  "/(site)/page": "app/(site)/page.js"
 }

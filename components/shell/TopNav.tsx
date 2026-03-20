@@ -131,17 +131,18 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
                                 </div>
                                 <span>{itemLabel}</span>
                                 <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
+                                    <span
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             toggleFloatTab(tab);
                                             setIsOpen(false);
                                         }}
-                                        className="p-1 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors"
+                                        className="p-1 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors cursor-pointer"
                                         title="Detach Panel"
+                                        role="button"
                                     >
                                         <Maximize2 size={12} />
-                                    </button>
+                                    </span>
                                     {isActive && (
                                         <div className="w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
                                     )}
@@ -257,16 +258,17 @@ export default function TopNav() {
                                                     )}
 
                                                     {/* Pop-out button on hover */}
-                                                    <button
+                                                    <span
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             toggleFloatTab(tab);
                                                         }}
-                                                        className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10"
+                                                        className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10 cursor-pointer"
                                                         title="Detach Panel"
+                                                        role="button"
                                                     >
                                                         <Maximize2 size={10} />
-                                                    </button>
+                                                    </span>
 
                                                     {/* Crisis pulse dot for galaxy tab */}
                                                     {hasCrisisAlert && !isActive && (
