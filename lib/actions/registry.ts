@@ -221,5 +221,26 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
       subFactionId: "id"
     },
     cost: { credits: 2000, manpower: 50, happiness: -20 }
+  },
+
+  // --- Leadership Actions ---
+  LEADER_RECRUIT: {
+    id: "LEADER_RECRUIT",
+    category: "internal",
+    params: {
+      leaderId: "id",
+      factionId: "id"
+    },
+    cost: { influence: 25, credits: 500 }
+  },
+  LEADER_ASSIGN: {
+    id: "LEADER_ASSIGN",
+    category: "internal",
+    params: {
+      leaderId: "id",
+      assignmentId: "id",
+      factionId: "id"
+    },
+    cost: { influence: 10 }
   }
 };

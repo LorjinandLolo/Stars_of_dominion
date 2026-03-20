@@ -96,17 +96,18 @@ export class LeadershipService {
     /**
      * Recruit a leader from the pool.
      */
-    static recruitLeader(world: GameWorldState, leaderId: string): void {
+    static recruitLeader(world: GameWorldState, leaderId: string, factionId: string): void {
         const poolIndex = world.leadership.recruitmentPool.findIndex(l => l.id === leaderId);
         if (poolIndex === -1) return;
 
         const leader = world.leadership.recruitmentPool.splice(poolIndex, 1)[0];
+        leader.factionId = factionId;
         world.leadership.leaders.set(leader.id, leader);
 
         eventBus.emit({
             type: 'leaderRecruited',
             leaderId: leader.id,
-            factionId: leader.factionId,
+            factionId,
             timestamp: world.nowSeconds
         });
     }

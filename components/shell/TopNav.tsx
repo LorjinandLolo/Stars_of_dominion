@@ -21,7 +21,10 @@ import {
     Building2,
     ChevronDown,
     Handshake,
-    Maximize2
+    Maximize2,
+    Scale,
+    Users,
+    Zap
 } from 'lucide-react';
 import { advanceTimeAction } from '@/app/actions/construction';
 import { getGlobalStateAction } from '@/app/actions/construction-sim';
@@ -37,8 +40,9 @@ const NAV_GROUPS: Record<string, NavItem[]> = {
         { tab: 'galaxy', label: 'GALAXY', icon: <Globe2 size={15} /> },
     ],
     governance: [
-        { tab: 'government', label: 'GOVERNMENT', icon: <Landmark size={15} /> },
-        { tab: 'tech', label: 'TECH', icon: <Microscope size={15} /> },
+        { tab: 'government' as NavTab, label: 'GOVERNMENT', icon: <Scale size={15} /> },
+        { tab: 'leadership' as NavTab, label: 'LEADERSHIP', icon: <Users size={15} /> },
+        { tab: 'tech' as NavTab, label: 'TECHNOLOGY', icon: <Zap size={15} /> },
     ],
     commerce: [
         { tab: 'economy', label: 'ECONOMY', icon: <BarChart3 size={15} /> },
@@ -113,41 +117,43 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
                     {items.map(({ tab, label: itemLabel, icon }) => {
                         const isActive = activeTab === tab;
                         return (
-                            <button
-                                key={tab}
-                                onClick={() => {
-                                    setActiveTab(tab);
-                                    setIsOpen(false);
-                                }}
-                                className={[
-                                    'flex items-center gap-3 px-3 py-2 text-[10px] font-display tracking-[0.1em] transition-all duration-200 rounded-sm text-left',
-                                    isActive 
-                                        ? 'text-amber-400 bg-amber-400/10' 
-                                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
-                                ].join(' ')}
-                            >
-                                <div className={isActive ? 'text-amber-400' : 'text-slate-500'}>
-                                    {icon}
-                                </div>
-                                <span>{itemLabel}</span>
-                                <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span
+                            <div className="relative group/btn-container">
+                                <button
+                                    key={tab}
+                                    onClick={() => {
+                                        setActiveTab(tab);
+                                        setIsOpen(false);
+                                    }}
+                                    className={[
+                                        'flex w-full items-center gap-3 px-3 py-2 text-[10px] font-display tracking-[0.1em] transition-all duration-200 rounded-sm text-left',
+                                        isActive 
+                                            ? 'text-amber-400 bg-amber-400/10' 
+                                            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                                    ].join(' ')}
+                                >
+                                    <div className={isActive ? 'text-amber-400' : 'text-slate-500'}>
+                                        {icon}
+                                    </div>
+                                    <span>{itemLabel}</span>
+                                    {isActive && (
+                                        <div className="ml-auto w-1 h-1 rounded-full bg-[var(--color-active)] shadow-[0_0_4px_rgba(239,250,107,0.8)]" />
+                                    )}
+                                </button>
+                                
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 opacity-0 group-hover/btn-container:opacity-100 transition-opacity pointer-events-none">
+                                    <div
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             toggleFloatTab(tab);
                                             setIsOpen(false);
                                         }}
-                                        className="p-1 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors cursor-pointer"
+                                        className="p-1 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors cursor-pointer pointer-events-auto"
                                         title="Detach Panel"
-                                        role="button"
                                     >
                                         <Maximize2 size={12} />
-                                    </span>
-                                    {isActive && (
-                                        <div className="w-1 h-1 rounded-full bg-[var(--color-active)] shadow-[0_0_4px_rgba(239,250,107,0.8)]" />
-                                    )}
+                                    </div>
                                 </div>
-                            </button>
+                            </div>
                         );
                     })}
                 </div>
@@ -235,48 +241,49 @@ export default function TopNav() {
                                             const hasCrisisAlert = isGalaxy && activeCrises.length > 0;
 
                                             return (
-                                                <button
-                                                    key={tab}
-                                                    onClick={() => setActiveTab(tab)}
-                                                    className={[
-                                                        'relative flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-display tracking-[0.15em] transition-all duration-300 rounded-sm group/btn',
-                                                        isActive
-                                                            ? 'text-amber-400 bg-amber-400/10'
-                                                            : tab === 'shadow'
-                                                                ? 'text-slate-400 hover:text-purple-400 hover:bg-purple-400/10'
-                                                                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-700/40',
-                                                    ].join(' ')}
-                                                >
-                                                    <div className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover/btn:scale-110'}`}>
-                                                        {icon}
-                                                    </div>
-                                                    <span className="hidden xl:inline">{label}</span>
+                                                <div className="relative group/btn-container">
+                                                    <button
+                                                        key={tab}
+                                                        onClick={() => setActiveTab(tab)}
+                                                        className={[
+                                                            'relative flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-display tracking-[0.15em] transition-all duration-300 rounded-sm group/btn',
+                                                            isActive
+                                                                ? 'text-amber-400 bg-amber-400/10'
+                                                                : tab === 'shadow'
+                                                                    ? 'text-slate-400 hover:text-purple-400 hover:bg-purple-400/10'
+                                                                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-700/40',
+                                                        ].join(' ')}
+                                                    >
+                                                        <div className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover/btn:scale-110'}`}>
+                                                            {icon}
+                                                        </div>
+                                                        <span className="hidden xl:inline">{label}</span>
 
-                                                    {/* Active indicator bar */}
-                                                    {isActive && (
-                                                        <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--color-active)] rounded-t shadow-[0_0_8px_rgba(239,250,107,0.5)]" />
-                                                    )}
+                                                        {/* Active indicator bar */}
+                                                        {isActive && (
+                                                            <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--color-active)] rounded-t shadow-[0_0_8px_rgba(239,250,107,0.5)]" />
+                                                        )}
+
+                                                        {/* Crisis pulse dot for galaxy tab */}
+                                                        {hasCrisisAlert && !isActive && (
+                                                            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_4px_rgba(239,68,68,0.8)]" />
+                                                        )}
+                                                    </button>
 
                                                     {/* Pop-out button on hover - Disabled for Galaxy */}
                                                     {tab !== 'galaxy' && (
-                                                        <span
+                                                        <div
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 toggleFloatTab(tab);
                                                             }}
-                                                            className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10 cursor-pointer"
+                                                            className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn-container:opacity-100 transition-opacity text-slate-500 hover:text-white z-10 cursor-pointer shadow-lg"
                                                             title="Detach Panel"
-                                                            role="button"
                                                         >
                                                             <Maximize2 size={10} />
-                                                        </span>
+                                                        </div>
                                                     )}
-
-                                                    {/* Crisis pulse dot for galaxy tab */}
-                                                    {hasCrisisAlert && !isActive && (
-                                                        <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_4px_rgba(239,68,68,0.8)]" />
-                                                    )}
-                                                </button>
+                                                </div>
                                             );
                                         })}
                                     </div>

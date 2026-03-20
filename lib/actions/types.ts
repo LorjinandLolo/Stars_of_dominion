@@ -69,7 +69,9 @@ export type PlayerActionId =
   // Other
   | "TECH_START_RESEARCH"
   | "IDEO_ENACT_POLICY"
-  | "INTERNAL_PURGE_FACTION";
+  | "INTERNAL_PURGE_FACTION"
+  | "LEADER_RECRUIT"
+  | "LEADER_ASSIGN";
 
 export interface ActionResult<T = void> {
   success: boolean;

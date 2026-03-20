@@ -26,7 +26,12 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
             nowSeconds: world.nowSeconds,
             fleets: fleets,
-            visibility: visibility // it's already a Record, serializes fine
+            visibility: visibility,
+            leadership: {
+                leaders: Object.fromEntries(world.leadership.leaders),
+                recruitmentPool: world.leadership.recruitmentPool,
+                nowSeconds: world.leadership.nowSeconds
+            }
         }, { status: 200 });
 
 

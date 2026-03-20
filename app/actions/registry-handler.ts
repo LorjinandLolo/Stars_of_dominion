@@ -17,6 +17,7 @@ import { ResourceType } from '@/lib/actions/types';
 import { startResearchAction } from './tech';
 import { attackFleetAction, bombardPlanetAction } from './combat';
 import { declareWarAction, offerPeaceAction, sendEnvoyAction, enactPolicyAction } from './politics';
+import { recruitLeaderAction, assignLeaderAction } from './leadership';
 
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 const COLL_FACTIONS = 'factions';
@@ -181,6 +182,19 @@ export async function executePlayerAction(action: PlayerAction): Promise<ActionR
       return await enactPolicyAction(
         action.issuerId,
         action.payload.policyId
+      );
+
+    case "LEADER_RECRUIT":
+      return await recruitLeaderAction(
+        action.issuerId,
+        action.payload.leaderId
+      );
+
+    case "LEADER_ASSIGN":
+      return await assignLeaderAction(
+        action.issuerId,
+        action.payload.leaderId,
+        action.payload.assignmentId
       );
 
     // Add more cases as subsystems are implemented (Diplomacy, etc.)

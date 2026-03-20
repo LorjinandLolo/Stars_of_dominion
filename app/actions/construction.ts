@@ -268,7 +268,6 @@ export async function advanceTimeAction(deltaSeconds: number = 86400): Promise<A
     // 5. Tick Combat
     tickCombats(deltaSeconds);
 
-    revalidatePath('/');
     return { success: true, data: { nowSeconds: world.nowSeconds } };
 }
 

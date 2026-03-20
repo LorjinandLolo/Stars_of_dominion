@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { useGameSync } from '@/hooks/useGameSync';
 import DraggablePanel from '@/components/ui/DraggablePanel';
+import LeadershipPanel from '@/components/panels/LeadershipPanel';
 import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
@@ -31,6 +32,7 @@ const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
     economy: <EconomyPanel />,
     government: <GovernmentPanel />,
+    leadership: <LeadershipPanel />,
     intelligence: <IntelligencePanel />,
     press: <PressPanel />,
     shadow: <EspionageAgencyPanel />,
