@@ -93,14 +93,14 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
             
             <button className={[
                 'flex items-center gap-2 px-4 py-1.5 text-[10px] font-display tracking-[0.15em] transition-all duration-300 rounded-sm bg-slate-900/40 border border-transparent group-hover/dropdown:border-slate-800/50',
-                hasActiveChild ? 'text-amber-400 bg-amber-400/5' : 'text-slate-400 group-hover/dropdown:text-slate-100'
+                hasActiveChild ? 'text-[var(--color-active)] bg-[var(--color-active)]/5' : 'text-slate-400 group-hover/dropdown:text-slate-100'
             ].join(' ')}>
                 <span className="uppercase">{groupId}</span>
                 <ChevronDown size={12} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
                 
                 {/* Active indicator bar */}
                 {hasActiveChild && (
-                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-amber-400 rounded-t shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--color-active)] rounded-t shadow-[0_0_8px_rgba(239,250,107,0.5)]" />
                 )}
             </button>
 
@@ -144,7 +144,7 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
                                         <Maximize2 size={12} />
                                     </span>
                                     {isActive && (
-                                        <div className="w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+                                        <div className="w-1 h-1 rounded-full bg-[var(--color-active)] shadow-[0_0_4px_rgba(239,250,107,0.8)]" />
                                     )}
                                 </div>
                             </button>
@@ -184,10 +184,10 @@ export default function TopNav() {
         <nav className="relative z-50 flex items-center justify-between px-6 py-2 border-b border-slate-700/60 bg-slate-950/95 backdrop-blur-md select-none">
             {/* Brand */}
             <div className="flex items-center gap-3 min-w-[200px]">
-                <div className="w-7 h-7 rounded-full bg-amber-500 flex items-center justify-center text-slate-950 font-black text-sm font-display">
+                <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-slate-950 font-black text-sm font-display">
                     S
                 </div>
-                <span className="font-display text-sm tracking-widest text-amber-400 hidden md:block">
+                <span className="font-display text-sm tracking-widest text-[var(--color-primary)] hidden md:block">
                     STARS OF DOMINION
                 </span>
             </div>
@@ -254,21 +254,23 @@ export default function TopNav() {
 
                                                     {/* Active indicator bar */}
                                                     {isActive && (
-                                                        <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-amber-400 rounded-t shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                                                        <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--color-active)] rounded-t shadow-[0_0_8px_rgba(239,250,107,0.5)]" />
                                                     )}
 
-                                                    {/* Pop-out button on hover */}
-                                                    <span
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleFloatTab(tab);
-                                                        }}
-                                                        className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10 cursor-pointer"
-                                                        title="Detach Panel"
-                                                        role="button"
-                                                    >
-                                                        <Maximize2 size={10} />
-                                                    </span>
+                                                    {/* Pop-out button on hover - Disabled for Galaxy */}
+                                                    {tab !== 'galaxy' && (
+                                                        <span
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleFloatTab(tab);
+                                                            }}
+                                                            className="absolute -top-1 -right-1 p-0.5 bg-slate-900 border border-slate-700 rounded opacity-0 group-hover/btn:opacity-100 transition-opacity text-slate-500 hover:text-white z-10 cursor-pointer"
+                                                            title="Detach Panel"
+                                                            role="button"
+                                                        >
+                                                            <Maximize2 size={10} />
+                                                        </span>
+                                                    )}
 
                                                     {/* Crisis pulse dot for galaxy tab */}
                                                     {hasCrisisAlert && !isActive && (
@@ -300,21 +302,21 @@ export default function TopNav() {
                 )}
                 
                 <div className="flex items-center gap-4 bg-slate-900/40 px-3 py-1.5 rounded-full border border-slate-700/50">
-                    <div className="flex items-center gap-2 text-amber-400 font-mono text-[10px] tracking-tighter">
+                    <div className="flex items-center gap-2 text-[var(--color-active)] font-mono text-[10px] tracking-tighter">
                         <Clock size={12} />
                         <span>S{season} · D{relativeDay}</span>
                     </div>
                     <div className="flex items-center gap-1 border-l border-slate-700 pl-2">
                         <button 
                             onClick={() => handleAdvance(86400)}
-                            className="p-1 hover:text-amber-400 text-slate-500 transition-colors"
+                            className="p-1 hover:text-[var(--color-active)] text-slate-500 transition-colors"
                             title="Advance 1 Day"
                         >
                             <FastForward size={14} />
                         </button>
                         <button 
                             onClick={() => handleAdvance(86400 * 7)}
-                            className="p-1 hover:text-amber-400 text-slate-500 transition-colors flex items-center gap-0.5"
+                            className="p-1 hover:text-[var(--color-active)] text-slate-500 transition-colors flex items-center gap-0.5"
                             title="Advance 1 Week"
                         >
                             <FastForward size={14} />

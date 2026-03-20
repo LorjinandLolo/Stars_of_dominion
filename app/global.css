@@ -4,9 +4,9 @@
 
 html,
 body {
-  background: #0b0b0b;
-  color: #eee;
-  font-family: system-ui, Segoe UI, Roboto, sans-serif
+  background: #0a0b1e;
+  color: #f1f5f9;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
 * {
@@ -101,7 +101,7 @@ body {
 }
 
 .bg-blue-600 {
-  background: #2563eb
+  background: #3E9FFD;
 }
 
 .bg-neutral-700 {

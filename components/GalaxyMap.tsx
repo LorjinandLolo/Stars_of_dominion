@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { HexGrid } from '@/lib/hex-grid';
 import { getSectorType } from '@/lib/game-rules';
+import { useUIStore } from '@/lib/store/ui-store';
 
 interface GalaxyMapProps {
     planets: any[];
@@ -13,6 +14,7 @@ interface GalaxyMapProps {
 }
 
 export default function GalaxyMap({ planets, factions, armies, onHexClick, selectedHex }: GalaxyMapProps) {
+    const { playerFactionId, diplomacyState } = useUIStore();
     // Configuration - Dynamic based on map content
     const { minX, minY, maxX, maxY, ROWS, COLS } = useMemo(() => {
         if (!planets || !planets.length) return { minX: 0, minY: 0, maxX: 50, maxY: 50, ROWS: 50, COLS: 50 };
@@ -127,13 +129,36 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
         setIsDragging(false);
     };
 
-    // Helper to get faction color
+    // Helper to get ownership relationship color
+    const getOwnershipColor = (ownerId: string | null) => {
+        if (!ownerId) return 'var(--color-owner-neutral)';
+        if (ownerId === playerFactionId) return 'var(--color-owner-player)';
+        
+        // Check treaties for alliance/non-aggression/cooperation (Ally)
+        const isAlly = diplomacyState.treaties.some(t => 
+            t.status === 'active' && 
+            t.signatories.includes(ownerId) && 
+            t.signatories.includes(playerFactionId!) &&
+            (t.type === 'mutual_defense' || t.type === 'non_aggression' || t.type === 'research_share' || t.type === 'intelligence_pact')
+        );
+        if (isAlly) return 'var(--color-owner-ally)';
+
+        // Check rivalries (Enemy)
+        const isEnemy = diplomacyState.rivalries.some(r => 
+            (r.empireAId === ownerId && r.empireBId === playerFactionId) ||
+            (r.empireBId === ownerId && r.empireAId === playerFactionId)
+        );
+        if (isEnemy) return 'var(--color-owner-enemy)';
+
+        return 'var(--color-owner-neutral)';
+    };
+
     const getFactionColor = (factionId: string) => {
         const faction = factions.find(f => f.$id === factionId);
         if (!faction) return '#d946ef';
-        if (faction.alignment === 'dominant') return '#1e3a8a';
-        if (faction.alignment === 'rebel') return '#7f1d1d';
-        return '#3f3f46';
+        // Fallback to relationship color if we want consistency, or keep individual colors for background?
+        // Let's use relationship color for the planet dot.
+        return getOwnershipColor(factionId);
     };
 
     // Generate all hexes
@@ -332,14 +357,27 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                 </div>
             )}
 
-            <div className="absolute top-4 right-4 bg-zinc-900/80 p-4 rounded text-white text-sm pointer-events-none">
-                <h3 className="font-bold mb-2">Map Legend</h3>
-                <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-red-900 border border-red-500"></div> Throats / Chokepoints</div>
-                <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-cyan-600 border border-cyan-400"></div> Wormhole Canals</div>
-                <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-yellow-600 border border-yellow-500"></div> Trade Spines</div>
-                <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-green-900 border border-green-500"></div> Fortress Gates</div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-950 border border-indigo-500"></div> Central Basin</div>
-                <div className="mt-4 text-xs text-zinc-500 border-t border-zinc-700 pt-2">
+            <div className="absolute top-4 right-4 bg-zinc-900/80 p-4 rounded text-white text-sm pointer-events-none border border-zinc-700/50 backdrop-blur-sm">
+                <h3 className="font-bold mb-2 text-sky-400">Map Legend</h3>
+                <div className="space-y-4">
+                    <div>
+                        <div className="text-[10px] uppercase text-zinc-500 font-bold mb-1">Terrain / Regions</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-red-900 border border-red-500"></div> Throats / Chokepoints</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-cyan-600 border border-cyan-400"></div> Wormhole Canals</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-yellow-600 border border-yellow-500"></div> Trade Spines</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-green-900 border border-green-500"></div> Fortress Gates</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-950 border border-indigo-500"></div> Central Basin</div>
+                    </div>
+                    
+                    <div className="border-t border-zinc-800 pt-3">
+                        <div className="text-[10px] uppercase text-zinc-500 font-bold mb-1">Ownership</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#10b981]"></div> Your Territory</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#3b82f6]"></div> Allied / Pacts</div>
+                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#ef4444]"></div> Rivals / Enemies</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#facc15]"></div> Neutral / Unknown</div>
+                    </div>
+                </div>
+                <div className="mt-4 text-[10px] text-zinc-500 border-t border-zinc-800 pt-2 italic">
                     Scroll to Zoom • Drag to Pan • Click to Select
                 </div>
             </div>

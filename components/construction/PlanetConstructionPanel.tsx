@@ -7,6 +7,7 @@ import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
 import { cancelBuildingAction, advanceTimeAction } from '@/app/actions/construction';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Navigation } from 'lucide-react';
+import { useUIStore } from '@/lib/store/ui-store';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -44,6 +45,7 @@ export function PlanetConstructionPanel({
     factionManpower = 0,
     onClose
 }: PlanetConstructionPanelProps) {
+    const { playerFactionId, diplomacyState } = useUIStore();
     const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE'>('BUILD');
     const [buildings, setBuildings] = useState<PlacedBuilding[]>([]);
     const [queue, setQueue] = useState<ConstructionOrder[]>([]);
@@ -201,12 +203,35 @@ export function PlanetConstructionPanel({
 
     const hasShipyard = buildings.some(b => ['shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
 
+    // Helper: get ownership color
+    const getOwnershipColor = (ownerId: string | null) => {
+        if (!ownerId) return 'var(--color-owner-neutral)';
+        if (ownerId === playerFactionId) return 'var(--color-owner-player)';
+        const isAlly = diplomacyState.treaties?.some(t => 
+            t.status === 'active' && 
+            t.signatories.includes(ownerId) && 
+            t.signatories.includes(playerFactionId!)
+        );
+        if (isAlly) return 'var(--color-owner-ally)';
+        const isEnemy = diplomacyState.rivalries?.some(r => 
+            (r.empireAId === ownerId && r.empireBId === playerFactionId) ||
+            (r.empireBId === ownerId && r.empireAId === playerFactionId)
+        );
+        if (isEnemy) return 'var(--color-owner-enemy)';
+        return 'var(--color-owner-neutral)';
+    };
+
+    const ownerColor = getOwnershipColor(factionId); // Using factionId passed as prop which is the owner context
+
     // Organize BUILD tab into categories
     const categories = Array.from(new Set(Object.values(BUILDING_DEFS).map(d => d.category)));
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden shadow-cyan-900/10">
+            <div 
+                className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border-2 rounded-xl shadow-2xl overflow-hidden shadow-cyan-900/10"
+                style={{ borderColor: ownerColor }}
+                >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
                     <div className="flex items-center gap-3">

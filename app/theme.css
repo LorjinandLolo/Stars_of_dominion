@@ -1,25 +1,28 @@
 :root {
-  --color-bg: #0f172a;
-  /* Slate 900 - Deep Blue/Grey */
-  --color-glass: rgba(15, 23, 42, 0.95);
-  /* Solid/Slightly Translucent */
-  --color-glass-border: #94a3b8;
-  /* Slate 400 */
+  --color-bg: #0a0b1e; /* Deepest Navy/Indigo */
+  --color-glass: rgba(10, 11, 30, 0.95);
+  --color-glass-border: #1d23bc; /* Deep Blue Accent */
 
-  --color-primary: #ca8a04;
-  /* Yellow 600 - Gold */
-  --color-primary-glow: rgba(202, 138, 4, 0.5);
+  --color-primary: #3E9FFD; /* Bright Cyan - High Contrast */
+  --color-primary-glow: rgba(62, 159, 253, 0.4);
 
-  --color-secondary: #1e3a8a;
-  /* Blue 900 - Imperial Blue */
+  --color-secondary: #1D23BC; /* Deep Blue */
+  --color-active: #EFFA6B; /* Neon Yellow - Focus/Active */
 
-  --color-danger: #b91c1c;
-  /* Red 700 - Deep Red */
+  --color-danger: #ef4444; /* Red 500 */
+  --color-danger-glow: rgba(239, 68, 68, 0.4);
 
-  --color-text-main: #f8fafc;
-  /* Slate 50 */
-  --color-text-muted: #94a3b8;
-  /* Slate 400 */
+  --color-success: #10b981; /* Green 500 */
+  
+  --color-text-main: #f1f5f9; /* Slate 100 */
+  --color-text-muted: #64748b; /* Slate 500 */
+
+  /* System Ownership Colors */
+  --color-owner-player: #10b981;
+  --color-owner-ally: #3b82f6;
+  --color-owner-enemy: #ef4444;
+  --color-owner-neutral: #facc15;
+  --color-owner-contested: #f97316;
 
   --font-display: var(--font-orbitron), sans-serif;
   --font-body: var(--font-rajdhani), sans-serif;
