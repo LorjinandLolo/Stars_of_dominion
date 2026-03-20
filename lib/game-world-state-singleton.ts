@@ -57,19 +57,19 @@ function buildEmptyEconomyState(): EconomyWorldState {
     
     // Seed initial factions (4 starters + 8 friends factions)
     const FACTION_DATA = [
-        { id: 'faction-aurelian', name: 'Aurelian Combine', capitalIdx: 0 },
-        { id: 'faction-vektori', name: 'Vektori High Command', capitalIdx: 50 },
-        { id: 'faction-null-syndicate', name: 'Null Syndicate', capitalIdx: 100 },
-        { id: 'faction-covenant', name: 'Covenant of the Void', capitalIdx: 135 },
-        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', capitalIdx: 10 },
-        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', capitalIdx: 20 },
-        { id: 'faction-infernoids', name: 'Infernoids / Martijn', capitalIdx: 30 },
-        { id: 'faction-movanites', name: 'Movanites / David', capitalIdx: 40 },
-        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', capitalIdx: 60 },
-        { id: 'faction-buthari', name: 'The Buthari / Hisham', capitalIdx: 70 },
-        { id: 'faction-sarrak', name: 'Sarrak / Sil', capitalIdx: 80 },
-        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', capitalIdx: 90 },
-        { id: 'faction-pirates', name: 'The Pirate Corsair', capitalIdx: 120 },
+        { id: 'faction-aurelian', name: 'Aurelian Combine', capitalIdx: 0, civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist' },
+        { id: 'faction-vektori', name: 'Vektori High Command', capitalIdx: 50, civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist' },
+        { id: 'faction-null-syndicate', name: 'Null Syndicate', capitalIdx: 100, civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic' },
+        { id: 'faction-covenant', name: 'Covenant of the Void', capitalIdx: 135, civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic' },
+        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', capitalIdx: 10, civilizationId: 'civ-grakkar', ideologyId: 'ideo-imperialist' },
+        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', capitalIdx: 20, civilizationId: 'civ-mycelari', ideologyId: 'ideo-ecological' },
+        { id: 'faction-infernoids', name: 'Infernoids / Martijn', capitalIdx: 30, civilizationId: 'civ-nythari', ideologyId: 'ideo-anarchic' },
+        { id: 'faction-movanites', name: 'Movanites / David', capitalIdx: 40, civilizationId: 'civ-xalthuun', ideologyId: 'ideo-socialist' },
+        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', capitalIdx: 60, civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist' },
+        { id: 'faction-buthari', name: 'The Buthari / Hisham', capitalIdx: 70, civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist' },
+        { id: 'faction-sarrak', name: 'Sarrak / Sil', capitalIdx: 80, civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic' },
+        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', capitalIdx: 90, civilizationId: 'civ-nythari', ideologyId: 'ideo-theocratic' },
+        { id: 'faction-pirates', name: 'The Pirate Corsair', capitalIdx: 120, civilizationId: 'civ-mycelari', ideologyId: 'ideo-anarchic' },
     ];
 
 
@@ -78,7 +78,7 @@ function buildEmptyEconomyState(): EconomyWorldState {
         factions.set(data.id, {
             id: data.id,
             name: data.name,
-            capitalSystemId: mockSystems[data.capitalIdx].id,
+            capitalSystemId: mockSystems[data.capitalIdx]?.id || 'unknown-capital',
             theatreId: theatreId,
             backingRatioPolicy: 0.5,
             reserves: { [Resource.ENERGY]: 2500, [Resource.METALS]: 500, [Resource.FOOD]: 500 }, // Buffed start
@@ -89,6 +89,8 @@ function buildEmptyEconomyState(): EconomyWorldState {
             ideology: 0,
             centralization: 50,
             economicModel: 0,
+            civilizationId: data.civilizationId,
+            ideologyId: data.ideologyId,
             metrics: {
                 tradeDependencyIndex: 0.2,
                 chokepointDependencyScore: 0.1,
@@ -192,7 +194,7 @@ function buildEmptyConstructionState(): ConstructionWorldState {
     // Seed initial planets for ALL mock systems to ensure UI has data regardless of selection
     // Identify capital systems from FACTION_DATA
     const CAPITAL_SYSTEM_IDS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 135]
-        .map(idx => mockSystems[idx].id);
+        .map(idx => mockSystems[idx]?.id).filter(Boolean) as string[];
 
     mockSystems.forEach((sys, idx) => {
 
@@ -370,7 +372,7 @@ export function getGameWorldState(): GameWorldState {
         // Seed a dormant proxy conflict in Vektori space to demonstrate the feature
         const vektoriConflict: ProxyConflict = {
             id: 'proxy-vektori-labor-unrest',
-            systemId: mockSystems[50].id,
+            systemId: mockSystems[50]?.id || 'unknown-system',
             sponsorIds: [], // Initially no foreign backing
             rebelFactionId: 'rebel-labor-front',
             targetEmpireId: 'faction-vektori',

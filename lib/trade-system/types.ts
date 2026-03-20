@@ -42,6 +42,8 @@ export interface Faction {
     debt: number;
     stability: number; // 0-100
     ideology: number; // -100 (Authoritarian) to 100 (Libertarian)
+    civilizationId?: string; // e.g., 'civ-mycelari'
+    ideologyId?: string; // e.g., 'ideo-imperialist'
     centralization: number; // 0 (Decentralized) to 100 (Centralized)
     economicModel: number; // -100 (Planned) to 100 (Free Market)
     capitalSystemId: string;

@@ -19567,6 +19567,8 @@ export const mockCouncilState: CouncilState = {
 
 export const mockPlayerState: PlayerState = {
     factionId: 'faction-null-syndicate',
+    civilizationId: 'civ-auraxian',
+    ideologyId: 'ideo-technocratic',
     role: 'shadow',
     pirateInvolvementScore: 68,
     infamy: 54,

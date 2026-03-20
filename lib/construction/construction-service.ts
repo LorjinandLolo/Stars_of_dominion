@@ -19,9 +19,15 @@ export function canBuildOnTile(
   tile: PlanetTile,
   buildingDef: BuildingDefinition,
   empireResources: { metals: number; chemicals: number; food: number; manpower: number },
-  unlockedTechIds: Set<string> = new Set()
+  unlockedTechIds: Set<string> = new Set(),
+  playerCivilizationId?: string
 ): { canBuild: boolean; reason?: string } {
-  // 0. Tech check
+  // 0. Civilization check
+  if (buildingDef.civilizationId && buildingDef.civilizationId !== playerCivilizationId) {
+    return { canBuild: false, reason: `This building is unique to the ${buildingDef.civilizationId} civilization` };
+  }
+
+  // 1. Tech check
   if (buildingDef.techRequired && !unlockedTechIds.has(buildingDef.techRequired)) {
     return { canBuild: false, reason: `Technology '${buildingDef.techRequired}' required` };
   }

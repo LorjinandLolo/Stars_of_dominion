@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { getConstructionWorldState, getGameWorldState } from '@/lib/game-world-state-singleton';
 import { getBuildingsForSystem } from '@/lib/construction/construction-service';
 import { Planet } from '@/lib/construction/construction-types';

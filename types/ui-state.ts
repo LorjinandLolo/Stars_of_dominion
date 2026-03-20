@@ -332,6 +332,8 @@ export type PlayerRole = 'sovereign' | 'shadow' | 'hybrid';
 
 export interface PlayerState {
     factionId: string;
+    civilizationId?: string;
+    ideologyId?: string;
     role: PlayerRole;
     pirateInvolvementScore: number; // 0–100; ≥30 unlocks SHADOW tab
     infamy: number;                 // 0–100

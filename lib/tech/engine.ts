@@ -52,6 +52,7 @@ export class TechEngine {
                 'research_speed': 1.0,
                 'construction_speed': 1.0
             },
+            researchPoints: 0,
             lockedTechIds: []
         };
     }

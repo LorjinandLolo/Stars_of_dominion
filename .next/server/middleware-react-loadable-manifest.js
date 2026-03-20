@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{\"components\\\\construction\\\\PlanetConstructionPanel.tsx -> @/app/actions/construction\":{\"id\":\"components\\\\construction\\\\PlanetConstructionPanel.tsx -> @/app/actions/construction\",\"files\":[]}}"
+self.__REACT_LOADABLE_MANIFEST='{"components\\\\construction\\\\PlanetConstructionPanel.tsx -> @/app/actions/construction":{"id":6830,"files":[]}}';

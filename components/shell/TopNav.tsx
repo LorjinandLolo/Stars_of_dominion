@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { advanceTimeAction } from '@/app/actions/construction';
 import { getGlobalStateAction } from '@/app/actions/construction-sim';
+import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
 
 interface NavItem {
     tab: NavTab;
@@ -193,9 +194,11 @@ export default function TopNav() {
                 <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-slate-950 font-black text-sm font-display">
                     S
                 </div>
-                <span className="font-display text-sm tracking-widest text-[var(--color-primary)] hidden md:block">
+                <span className="font-display text-sm tracking-widest text-[var(--color-primary)] hidden md:block mr-4">
                     STARS OF DOMINION
                 </span>
+
+                <CivilizationIdentity />
             </div>
 
             {/* Grouped Nav Tabs */}

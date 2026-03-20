@@ -8,6 +8,8 @@ import { LeadershipService } from '../leadership/leadership-service';
 import { setEmpireDoctrine } from '../doctrine/doctrine-service';
 import { DoctrineDomain } from '../doctrine/types';
 
+import { CivilizationRegistry } from '../civilization/registry';
+
 export class StrategicAIService {
     /**
      * Process a strategic turn for a faction.
@@ -59,27 +61,45 @@ export class StrategicAIService {
     }
 
     /**
-     * AI logic for doctrine selection based on current needs.
+     * AI logic for doctrine selection based on current needs and civilization biases.
      */
     private static manageDoctrines(factionId: string, world: GameWorldState): void {
+        const faction = world.economy.factions.get(factionId);
+        const civId = faction?.civilizationId;
+        const civ = civId ? CivilizationRegistry.getCivilization(civId) : null;
+        const biases = civ?.doctrineBiases;
+
         const posture = world.movement.empirePostures.get(factionId);
         if (!posture) return;
 
-        // Simple heuristic: match doctrine to empire posture
-        if (posture.current === 'Militarist') {
-            setEmpireDoctrine(world, factionId, 'military', 'doctrine_military_offensive');
-        } else if (posture.current === 'Pacifist' || posture.current === 'Consolidating') {
-            setEmpireDoctrine(world, factionId, 'military', 'doctrine_military_defensive');
-            setEmpireDoctrine(world, factionId, 'economic', 'doctrine_economic_consolidation');
-        } else if (posture.current === 'Expansionist') {
-            setEmpireDoctrine(world, factionId, 'economic', 'doctrine_economic_expansion');
+        // 1. Military Doctrine
+        let milDoctrine = 'doctrine_military_balanced';
+        const milBiases = biases?.military || [];
+        if (posture.current === 'Militarist' || milBiases.includes('aggressive') || milBiases.includes('mass_assault') || milBiases.includes('decisive_battle')) {
+            milDoctrine = 'doctrine_military_offensive';
+        } else if (posture.current === 'Pacifist' || milBiases.includes('defensive') || milBiases.includes('guerilla_warfare') || milBiases.includes('active_defense')) {
+            milDoctrine = 'doctrine_military_defensive';
         }
+        setEmpireDoctrine(world, factionId, 'military', milDoctrine);
 
-        // Intelligence: pick based on stability
-        if (world.shared.stability < 0.6) {
-            setEmpireDoctrine(world, factionId, 'intelligence', 'doctrine_intel_defensive');
-        } else {
-            setEmpireDoctrine(world, factionId, 'intelligence', 'doctrine_intel_aggressive');
+        // 2. Economic Doctrine
+        let ecoDoctrine = 'doctrine_economic_balanced';
+        const ecoBiases = biases?.economic || [];
+        if (posture.current === 'Expansionist' || ecoBiases.includes('expansionist') || ecoBiases.includes('biological_extraction')) {
+            ecoDoctrine = 'doctrine_economic_expansion';
+        } else if (posture.current === 'Consolidating' || ecoBiases.includes('mercantile') || ecoBiases.includes('free_market') || ecoBiases.includes('resource_tribute')) {
+            ecoDoctrine = 'doctrine_economic_consolidation';
         }
+        setEmpireDoctrine(world, factionId, 'economic', ecoDoctrine);
+
+        // 3. Intelligence Doctrine
+        let intelDoctrine = 'doctrine_intel_balanced';
+        const intelBiases = biases?.intelligence || [];
+        if (world.shared.stability < 0.6 || intelBiases.includes('defensive') || intelBiases.includes('internal_security')) {
+            intelDoctrine = 'doctrine_intel_defensive';
+        } else if (intelBiases.includes('aggressive') || intelBiases.includes('synaptic_infiltration') || intelBiases.includes('corporate_espionage') || intelBiases.includes('covert_ops')) {
+            intelDoctrine = 'doctrine_intel_aggressive';
+        }
+        setEmpireDoctrine(world, factionId, 'intelligence', intelDoctrine);
     }
 }

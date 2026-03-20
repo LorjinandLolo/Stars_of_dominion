@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 
 export async function GET(req: NextRequest) {

@@ -62,6 +62,7 @@ export interface BuildingUpkeep {
   food?: number;
   manpower?: number;
   energy?: number;
+  credits?: number;
 }
 
 export interface BuildingDefinition {
@@ -81,6 +82,7 @@ export interface BuildingDefinition {
   uniquePerEmpire?: boolean;
   tagRequirements?: string[];
   techRequired?: string;
+  civilizationId?: string;
 }
 
 export interface PlanetTile {
