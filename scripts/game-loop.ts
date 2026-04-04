@@ -318,7 +318,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'TRADE_ESTABLISH_ROUTE': {
             // Deduct freighter amount from faction's fleet and establish a background route
-            import('../lib/economy/trade-service').then(({ establishTradeRoute }) => {
+            import('@/lib/economy/trade-service').then(({ establishTradeRoute }) => {
                 establishTradeRoute(world, factionId, payload);
                 console.log(`[Tick Worker] Established Trade Route from ${payload.startSystemId} to ${payload.endSystemId}`);
             }).catch(e => console.warn('[Tick Worker] Could not load Trade module.', e.message));

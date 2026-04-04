@@ -175,6 +175,12 @@ export interface UIStore {
     // ── Factions & Economy ──
     factions: Record<string, Faction>;
     setFactions: (factions: Record<string, Faction>) => void;
+
+    // ── Manual ──
+    showManual: boolean;
+    setShowManual: (show: boolean) => void;
+    activeManualSectionId: string;
+    setActiveManualSection: (id: string) => void;
 }
 
 
@@ -437,5 +443,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Factions & Economy ──
     factions: {},
     setFactions: (factions) => set({ factions }),
+
+    // ── Manual ──
+    showManual: false,
+    setShowManual: (show) => set({ showManual: show }),
+    activeManualSectionId: 'intro',
+    setActiveManualSection: (id) => set({ activeManualSectionId: id }),
 }));
 

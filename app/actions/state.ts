@@ -138,7 +138,8 @@ async function ensureState(db: any) {
   return doc;
 }
 
-import { VictoryManager } from '@/lib/victory/manager';
+import { MilestoneService } from '@/lib/victory/milestone-service';
+import { getGameWorldState } from '@/lib/game-world-state-singleton';
 
 export async function getState() {
   try {
@@ -186,15 +187,20 @@ export async function getState() {
       myHealth = faction.economic_health || myHealth; // From return
 
       // Check Defeat Conditions
-      const cleanFaction = {
-        ...faction,
-        resources: myResources
-      };
-      myDefeatStatus = DefeatManager.checkDefeatConditions(cleanFaction, planets.documents as any, { income_rates: myRates });
+      const world = getGameWorldState();
+      myDefeatStatus = DefeatManager.checkDefeatConditions(myFactionId, world);
 
-      // Check Victory Conditions
-      const rivals = allFactions.filter(d => d.$id !== myFactionId);
-      myVictoryStatus = VictoryManager.checkVictory(cleanFaction, rivals, { income_rates: myRates });
+      // Check Victory/Prestige Conditions
+      const prestige = MilestoneService.calculateFactionPrestige(myFactionId, world);
+      const activeMilestones = Array.from(world.milestones.entries())
+          .filter(([mId, data]) => data.factionId === myFactionId)
+          .map(([mId]) => mId);
+
+      myVictoryStatus = { 
+          status: 'PENDING', 
+          prestige, 
+          milestones: activeMilestones 
+      };
 
     } catch (e) {
       console.error("Economy Update Failed:", e);

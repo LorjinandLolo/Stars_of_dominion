@@ -27,6 +27,7 @@ import CorporateLedgerPanel from '@/components/panels/CorporateLedgerPanel';
 import BattleCommandPanel from '@/components/panels/BattleCommandPanel';
 import DiplomacyPanel from '@/components/panels/DiplomacyPanel';
 import ShipDesignerPanel from '@/components/panels/ShipDesignerPanel';
+import ManualGuidebook from '@/components/manual/ManualGuidebook';
 
 const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
@@ -134,6 +135,9 @@ export default function GameShell() {
 
             {/* ── Economic Terminal Modal ────────────────────────────────────────── */}
             <EconomicTerminalModal />
+
+            {/* ── Manual Guidebook (HOI4-style) ────────────────────────────────── */}
+            <ManualGuidebook />
 
             {/* Slide animation keyframe */}
             <style jsx global>{`

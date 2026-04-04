@@ -39,6 +39,7 @@ interface NavItem {
 const NAV_GROUPS: Record<string, NavItem[]> = {
     foundation: [
         { tab: 'galaxy', label: 'GALAXY', icon: <Globe2 size={15} /> },
+        { tab: 'guide' as NavTab, label: 'GUIDE', icon: <BookOpen size={15} /> },
     ],
     governance: [
         { tab: 'government' as NavTab, label: 'GOVERNMENT', icon: <Scale size={15} /> },
@@ -164,7 +165,7 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
 }
 
 export default function TopNav() {
-    const { activeTab, setActiveTab, playerState, councilState, crisisWindows, nowSeconds, setNowSeconds, toggleFloatTab } =
+    const { activeTab, setActiveTab, playerState, councilState, crisisWindows, nowSeconds, setNowSeconds, toggleFloatTab, setShowManual } =
         useUIStore();
 
     const activeCrises = crisisWindows.filter((w) => w.phase !== 'warning');
@@ -246,7 +247,13 @@ export default function TopNav() {
                                             return (
                                                 <div key={tab} className="relative group/btn-container">
                                                     <button
-                                                        onClick={() => setActiveTab(tab)}
+                                                        onClick={() => {
+                                                            if (tab === 'guide') {
+                                                                setShowManual(true);
+                                                            } else {
+                                                                setActiveTab(tab);
+                                                            }
+                                                        }}
                                                         className={[
                                                             'relative flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-display tracking-[0.15em] transition-all duration-300 rounded-sm group/btn',
                                                             isActive
