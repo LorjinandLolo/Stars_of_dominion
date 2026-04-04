@@ -170,26 +170,8 @@ export interface EmpireIdentityState {
 }
 
 // ─── Espionage ──────────────────────────────────────────────────────────────
-
-export type AgentStatus = 'available' | 'deployed' | 'on_cooldown' | 'burned' | 'captured' | 'turned';
-
-export interface SpyAgent {
-    id: string;
-    name: string;
-    codename: string;
-    status: AgentStatus;
-    deployedToSystemId: string | null;
-    experienceLevel: number;
-    traitIds: string[];
-    coverStrength: number;
-}
-
-export interface IntelNetwork {
-    id: string;
-    systemId: string;
-    strength: number; // 0-1
-    penetrationLevel: 'none' | 'rumor' | 'confirmed' | 'deep';
-}
+import type { SpyAgent, IntelNetwork, AgentStatus } from '@/lib/espionage/agent-types';
+export type { SpyAgent, IntelNetwork, AgentStatus };
 
 export interface EspionageOperation {
     id: string;
@@ -254,6 +236,7 @@ export interface PoliticsState {
     activePolicies: string[];
     crisisConditionMet: boolean;
     activeIndicators: string[];
+    allFactions: any[]; // Phase 3: Live faction data for diplomacy
 }
 
 // ─── Tech & Research ────────────────────────────────────────────────────────

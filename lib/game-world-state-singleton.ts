@@ -15,7 +15,7 @@ import type { EconomyWorldState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
 import { CorporateWorldState, createEmptyCorporateWorldState } from './economy/corporate/company-registry';
 import { ConstructionWorldState, Planet, PlanetTile } from './construction/construction-types';
-import { mockSystems, mockCouncilState } from './ui-mock-data';
+import { mockCouncilState } from './ui-mock-data';
 import { Faction, Resource, Market, TradeAgreement } from './trade-system/types';
 import { ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-types';
 import { PressFactionType, SimulationState as PressSimulationState } from './press-system/types';
@@ -57,19 +57,12 @@ function buildEmptyEconomyState(): EconomyWorldState {
     
     // Seed initial factions (4 starters + 8 friends factions)
     const FACTION_DATA = [
-        { id: 'faction-aurelian', name: 'Aurelian Combine', capitalIdx: 0, civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist' },
-        { id: 'faction-vektori', name: 'Vektori High Command', capitalIdx: 50, civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist' },
-        { id: 'faction-null-syndicate', name: 'Null Syndicate', capitalIdx: 100, civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic' },
-        { id: 'faction-covenant', name: 'Covenant of the Void', capitalIdx: 135, civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic' },
-        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', capitalIdx: 10, civilizationId: 'civ-grakkar', ideologyId: 'ideo-imperialist' },
-        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', capitalIdx: 20, civilizationId: 'civ-mycelari', ideologyId: 'ideo-ecological' },
-        { id: 'faction-infernoids', name: 'Infernoids / Martijn', capitalIdx: 30, civilizationId: 'civ-nythari', ideologyId: 'ideo-anarchic' },
-        { id: 'faction-movanites', name: 'Movanites / David', capitalIdx: 40, civilizationId: 'civ-xalthuun', ideologyId: 'ideo-socialist' },
-        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', capitalIdx: 60, civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist' },
-        { id: 'faction-buthari', name: 'The Buthari / Hisham', capitalIdx: 70, civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist' },
-        { id: 'faction-sarrak', name: 'Sarrak / Sil', capitalIdx: 80, civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic' },
-        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', capitalIdx: 90, civilizationId: 'civ-nythari', ideologyId: 'ideo-theocratic' },
-        { id: 'faction-pirates', name: 'The Pirate Corsair', capitalIdx: 120, civilizationId: 'civ-mycelari', ideologyId: 'ideo-anarchic' },
+        { id: 'faction-aurelian', name: 'Aurelian Combine', civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist', capitalId: 'alpha-5b34961e18bb6fd14903' },
+        { id: 'faction-vektori', name: 'Vektori High Command', civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist', capitalId: 'alpha-fe148b9a69a680fa14a3' },
+        { id: 'faction-null-syndicate', name: 'Null Syndicate', civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic', capitalId: 'alpha-1acb646b529592834b59' },
+        { id: 'faction-covenant', name: 'Covenant of the Void', civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic', capitalId: 'alpha-10fae8cf89590243337b' },
+        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', civilizationId: 'civ-grakkar', ideologyId: 'ideo-imperialist', capitalId: 'alpha-18109e81be8a4bb03aab' },
+        // ... other factions will load their capitals from the DB
     ];
 
 
@@ -78,10 +71,10 @@ function buildEmptyEconomyState(): EconomyWorldState {
         factions.set(data.id, {
             id: data.id,
             name: data.name,
-            capitalSystemId: mockSystems[data.capitalIdx]?.id || 'unknown-capital',
+            capitalSystemId: data.capitalId || 'unknown-capital',
             theatreId: theatreId,
             backingRatioPolicy: 0.5,
-            reserves: { [Resource.ENERGY]: 2500, [Resource.METALS]: 500, [Resource.FOOD]: 500 }, // Buffed start
+            reserves: { [Resource.ENERGY]: 2500, [Resource.METALS]: 500, [Resource.FOOD]: 500 },
             creditSupply: 1000000,
             liquidity: 500000,
             debt: 0,
@@ -190,66 +183,8 @@ function buildEmptyIntelligenceState(): IntelligenceWorldState {
 
 
 function buildEmptyConstructionState(): ConstructionWorldState {
-    const planets = new Map<string, Planet>();
-    // Seed initial planets for ALL mock systems to ensure UI has data regardless of selection
-    // Identify capital systems from FACTION_DATA
-    const CAPITAL_SYSTEM_IDS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 135]
-        .map(idx => mockSystems[idx]?.id).filter(Boolean) as string[];
-
-    mockSystems.forEach((sys, idx) => {
-
-        const environmentalTags = [
-            'Radioactive World', 'Desert World', 'Oceanic World', 
-            'Night World', 'Tomb World', 'Freak Weather', 
-            'Freak Geology', 'Hostile Biosphere', 'Seamic Instability'
-        ];
-        
-        // 2-3% chance for Gas Giant tag
-        const isGasGiant = Math.random() < 0.025;
-        const planetTags = isGasGiant 
-            ? ['Gas Giant'] 
-            : [environmentalTags[idx % environmentalTags.length]];
-
-        const planet: Planet = {
-            id: `planet_${sys.id}`,
-            name: `${sys.name} Prime`,
-            systemId: sys.id,
-            ownerId: sys.ownerId || 'faction-neutral',
-            planetType: CAPITAL_SYSTEM_IDS.includes(sys.id) ? 'capital' : (idx % 3 === 0 ? 'industrial' : idx % 3 === 1 ? 'agricultural' : 'standard'),
-            infrastructureLevel: 1,
-
-            stability: 100,
-            happiness: 80,
-            specialization: 'none',
-            maxTiles: 6,
-            tiles: Array.from({ length: 6 }, (_, i) => ({
-                tileId: `tile_${i}`,
-                districtType: i === 0 ? 'industrial' : i === 1 ? 'civilian' : 'any',
-                buildingId: null,
-                constructionState: 'empty',
-                constructionCompleteAt: null
-            })),
-            buildQueue: [],
-            activeModifiers: [],
-            tags: planetTags,
-            population: CAPITAL_SYSTEM_IDS.includes(sys.id) ? 15 : 2,
-            popCapacity: 30,
-            popGrowth: 0.05,
-            unrest: 0,
-            isOccupied: false,
-            demographics: CAPITAL_SYSTEM_IDS.includes(sys.id) ? [
-                { speciesId: 'species-primary', name: 'Imperial Prime', percentage: 95, socialClass: 'Citizen' },
-                { speciesId: 'species-minority', name: 'Alien Minority', percentage: 5, socialClass: 'Resident' }
-            ] : [
-                { speciesId: 'species-primary', name: 'Imperial Prime', percentage: 80, socialClass: 'Citizen' },
-                { speciesId: 'species-labor', name: 'Frontier Labor', percentage: 20, socialClass: 'Servant' }
-            ]
-        };
-        planets.set(planet.id, planet);
-    });
-
     return {
-        planets,
+        planets: new Map(),
         spaceBuildQueue: [],
         nowSeconds: Math.floor(Date.now() / 1000)
     };
@@ -369,20 +304,7 @@ export function getGameWorldState(): GameWorldState {
         };
 
 
-        // Seed a dormant proxy conflict in Vektori space to demonstrate the feature
-        const vektoriConflict: ProxyConflict = {
-            id: 'proxy-vektori-labor-unrest',
-            systemId: mockSystems[50]?.id || 'unknown-system',
-            sponsorIds: [], // Initially no foreign backing
-            rebelFactionId: 'rebel-labor-front',
-            targetEmpireId: 'faction-vektori',
-            intensity: 15,
-            fundingLevel: 0,
-            blowbackRisk: 5
-        };
-        if (globalGameStateInstance) {
-            globalGameStateInstance.proxyConflicts.set(vektoriConflict.id, vektoriConflict);
-        }
+        // Initial state is empty; it will be populated by the first Appwrite snapshot load
     }
     return globalGameStateInstance!;
 }

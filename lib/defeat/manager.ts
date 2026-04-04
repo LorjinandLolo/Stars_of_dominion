@@ -1,9 +1,5 @@
-import { Faction, Planet } from '@/types/game';
-import { DefeatState, ActiveDefeat, DefeatCondition, DefeatCategory } from '@/types/defeat';
-import { checkEconomicHealth } from '@/lib/economy/upkeep';
-import { getAllActiveRoutes } from '@/lib/economy/trade';
-import { getActiveCrises } from '@/lib/economy/crisis';
-import { ResourceId } from '@/types';
+import { GameWorldState } from '../game-world-state';
+import { DefeatState, ActiveDefeat, DefeatCondition } from '@/types/defeat';
 
 // Define the conditions
 export const DEFEAT_CONDITIONS: Record<string, DefeatCondition> = {
@@ -35,13 +31,6 @@ export const DEFEAT_CONDITIONS: Record<string, DefeatCondition> = {
         category: 'STRATEGIC',
         severity: 'WARNING'
     },
-    'DIPLOMATIC_ISOLATION': {
-        id: 'DIPLOMATIC_ISOLATION',
-        name: 'Diplomatic Isolation',
-        description: 'You have no active trade routes with other factions.',
-        category: 'POLITICAL',
-        severity: 'WARNING'
-    },
     'CIVIL_UNREST': {
         id: 'CIVIL_UNREST',
         name: 'Civil Unrest',
@@ -56,13 +45,6 @@ export const DEFEAT_CONDITIONS: Record<string, DefeatCondition> = {
         category: 'INTERNAL',
         severity: 'CRITICAL'
     },
-    'STRATEGIC_BLINDNESS': {
-        id: 'STRATEGIC_BLINDNESS',
-        name: 'Strategic Blindness',
-        description: 'Intel levels are critically low. You cannot see enemy movements.',
-        category: 'ESPIONAGE',
-        severity: 'WARNING'
-    },
     'CRISIS_OVERWHELM': {
         id: 'CRISIS_OVERWHELM',
         name: 'Crisis Systems Failure',
@@ -76,15 +58,15 @@ export class DefeatManager {
 
     /**
      * Evaluates the faction's state and returns the current DefeatStatus.
-     * This should be called during the main game loop or state update.
+     * Uses the authoritative GameWorldState.
      */
-    static checkDefeatConditions(faction: Faction, planets: Planet[], context: any = {}): DefeatState {
+    static checkDefeatConditions(factionId: string, world: GameWorldState): DefeatState {
         const activeDefeats: ActiveDefeat[] = [];
         let doomScore = 0;
         let status: DefeatState['status'] = 'ALIVE';
 
         // 1. Check Terminal Defeats (Game Over)
-        const terminalDefeat = this.checkTerminalDefeats(faction, planets);
+        const terminalDefeat = this.checkTerminalDefeats(factionId, world);
         if (terminalDefeat) {
             activeDefeats.push(terminalDefeat);
             status = 'ELIMINATED';
@@ -92,30 +74,21 @@ export class DefeatManager {
         }
 
         // 2. Check Strategic Defeats (Economy, Military)
-        // Only run if not already eliminated
         if (status !== 'ELIMINATED') {
-            const strategicDefeats = this.checkStrategicDefeats(faction, context);
+            const strategicDefeats = this.checkStrategicDefeats(factionId, world);
             activeDefeats.push(...strategicDefeats);
-
-            // Calculate Doom Score based on active defeats
-            doomScore += strategicDefeats.length * 20; // Arbitrary weight for now
+            doomScore += strategicDefeats.length * 20;
         }
 
-        // 3. Check Political, Internal, Espionage
+        // 3. Check Internal & Crisis
         if (status !== 'ELIMINATED') {
-            const politicalDefeats = this.checkPoliticalDefeats(faction, planets);
-            const internalDefeats = this.checkInternalDefeats(faction);
-            const espionageDefeats = this.checkEspionageDefeats(faction);
-
-            activeDefeats.push(...politicalDefeats, ...internalDefeats, ...espionageDefeats);
-
-            doomScore += (politicalDefeats.length * 10) + (internalDefeats.length * 15) + (espionageDefeats.length * 10);
+            const internalDefeats = this.checkInternalDefeats(factionId, world);
+            activeDefeats.push(...internalDefeats);
+            doomScore += internalDefeats.length * 15;
         }
 
-        // Cap Doom Score
         if (doomScore > 100) doomScore = 100;
 
-        // If Doom Score is high but not eliminated, set status to DYING
         if (status !== 'ELIMINATED' && doomScore > 80) {
             status = 'DYING';
         }
@@ -127,142 +100,71 @@ export class DefeatManager {
         };
     }
 
-    private static checkTerminalDefeats(faction: Faction, planets: Planet[]): ActiveDefeat | null {
-        // Condition 1: Homeworld Conquest
-        if (faction.home_planet_id) {
-            const homePlanet = planets.find(p => p.$id === faction.home_planet_id);
-            if (homePlanet && homePlanet.owner_faction_id !== faction.$id) {
-                return {
-                    condition_id: DEFEAT_CONDITIONS['HOMEWORLD_LOST'].id,
-                    triggered_at: new Date().toISOString(),
-                    status: 'ACTIVE',
-                    severity: 'TERMINAL',
-                    message: `Your homeworld ${homePlanet.name} has been lost to the enemy!`
-                };
-            }
+    private static checkTerminalDefeats(factionId: string, world: GameWorldState): ActiveDefeat | null {
+        // Condition: No planets owned
+        const ownedPlanets = Array.from(world.construction.planets.values()).filter(p => p.ownerId === factionId);
+        
+        if (ownedPlanets.length === 0) {
+            return {
+                condition_id: DEFEAT_CONDITIONS['HOMEWORLD_LOST'].id,
+                triggered_at: new Date().toISOString(),
+                status: 'ACTIVE',
+                severity: 'TERMINAL',
+                message: `All systems lost. Your faction has been eliminated.`
+            };
         }
         return null;
     }
 
-    private static checkStrategicDefeats(faction: Faction, context: any): ActiveDefeat[] {
+    private static checkStrategicDefeats(factionId: string, world: GameWorldState): ActiveDefeat[] {
         const defeats: ActiveDefeat[] = [];
+        const econ = world.economy.factions.get(factionId);
+        if (!econ) return defeats;
 
-        // Condition 1: Economic Health
-        // We reuse the verify logic from economy lib if possible, or just check the flags
-        // Assuming faction.resources might contain health flags if we saved them, 
-        // or we recalculate here. Let's recalculate to be safe.
-
-        // Mock state for checkEconomicHealth - in real impl, we'd pass full state
-        const ecoState: any = {
-            resources: typeof faction.resources === 'string' ? JSON.parse(faction.resources) : faction.resources,
-            // We need income rates, assuming they are on faction or passed in context
-            income_rates: context.income_rates || { credits: 0 },
-            economic_health: { stability: 100, deficit_counter: 0, status: 'solvent' } // Default
-        };
-
-        const health = checkEconomicHealth(ecoState).economic_health;
-
-        if (health.status === 'collapsed') {
+        // Economic Collapse (Solvency check)
+        if ((econ.reserves.CREDITS || 0) < -5000) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['ECONOMIC_COLLAPSE'].id,
                 triggered_at: new Date().toISOString(),
                 status: 'ACTIVE',
                 severity: 'CRITICAL',
-                message: 'Economy has collapsed. Production halted.'
+                message: 'Massive debt has collapsed the economy. Production halted.'
             });
-        } else if (health.status === 'bankrupt') {
+        } else if ((econ.reserves.CREDITS || 0) < 0) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['BANKRUPTCY'].id,
                 triggered_at: new Date().toISOString(),
                 status: 'ACTIVE',
                 severity: 'WARNING',
-                message: 'Treasury empty. Debt accumulating.'
+                message: 'Sovereign default. Credit rating is zero.'
             });
         }
 
         return defeats;
     }
 
-    private static checkInternalDefeats(faction: Faction): ActiveDefeat[] {
+    private static checkInternalDefeats(factionId: string, world: GameWorldState): ActiveDefeat[] {
         const defeats: ActiveDefeat[] = [];
-        const resources: any = typeof faction.resources === 'string' ? JSON.parse(faction.resources) : faction.resources;
-        const happiness = resources.happiness || 50; // Default
+        const planets = Array.from(world.construction.planets.values()).filter(p => p.ownerId === factionId);
+        if (planets.length === 0) return defeats;
 
-        if (happiness < 10) {
+        const avgHappiness = planets.reduce((s, p) => s + (p.happiness || 50), 0) / planets.length;
+
+        if (avgHappiness < 15) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['REBELLION'].id,
                 triggered_at: new Date().toISOString(),
                 status: 'ACTIVE',
                 severity: 'CRITICAL',
-                message: 'Widespread rebellion due to low happiness.'
+                message: 'Planetary systems are in open revolt.'
             });
-        } else if (happiness < 30) {
+        } else if (avgHappiness < 35) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['CIVIL_UNREST'].id,
                 triggered_at: new Date().toISOString(),
                 status: 'ACTIVE',
                 severity: 'WARNING',
-                message: 'Civil unrest is growing.'
-            });
-        }
-
-        return defeats;
-    }
-
-    private static checkPoliticalDefeats(faction: Faction, planets: Planet[]): ActiveDefeat[] {
-        const defeats: ActiveDefeat[] = [];
-
-        // Diplomatic Isolation: No trade routes with OTHER factions
-        const myPlanetIds = planets.filter(p => p.owner_faction_id === faction.$id).map(p => p.$id);
-        const allRoutes = getAllActiveRoutes();
-
-        const myExternalRoutes = allRoutes.filter(r => {
-            const originIsMine = myPlanetIds.includes(r.origin_planet_id);
-            const targetIsMine = myPlanetIds.includes(r.target_planet_id);
-            // External if exactly one end is mine
-            return (originIsMine && !targetIsMine) || (!originIsMine && targetIsMine);
-        });
-
-        // If I have planets but no external trade...
-        if (myPlanetIds.length > 0 && myExternalRoutes.length === 0) {
-            defeats.push({
-                condition_id: DEFEAT_CONDITIONS['DIPLOMATIC_ISOLATION'].id,
-                triggered_at: new Date().toISOString(),
-                status: 'ACTIVE',
-                severity: 'WARNING',
-                message: 'You are diplomatically isolated. Establish trade routes.'
-            });
-        }
-
-        return defeats;
-    }
-
-    private static checkEspionageDefeats(faction: Faction): ActiveDefeat[] {
-        const defeats: ActiveDefeat[] = [];
-        const resources: any = typeof faction.resources === 'string' ? JSON.parse(faction.resources) : faction.resources;
-
-        // Blindness: Low Intel
-        const intel = resources.intel || 0;
-        if (intel < 10) {
-            defeats.push({
-                condition_id: DEFEAT_CONDITIONS['STRATEGIC_BLINDNESS'].id,
-                triggered_at: new Date().toISOString(),
-                status: 'ACTIVE',
-                severity: 'WARNING',
-                message: 'Intel cache empty. Map visibility compromised.'
-            });
-        }
-
-        // Crisis Overwhelm
-        const crises = getActiveCrises(faction.$id);
-
-        if (crises.length >= 3) {
-            defeats.push({
-                condition_id: DEFEAT_CONDITIONS['CRISIS_OVERWHELM'].id,
-                triggered_at: new Date().toISOString(),
-                status: 'ACTIVE',
-                severity: 'CRITICAL',
-                message: `Overwhelmed by ${crises.length} active crises.`
+                message: 'Widespread civil disobedience detected.'
             });
         }
 

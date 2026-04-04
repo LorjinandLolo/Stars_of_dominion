@@ -87,21 +87,36 @@ export function tickProduction(
     deltaSeconds: number,
     world: GameWorldState
 ): void {
+    // 1. Initialize Default Data-Driven Services (For unseeded planets)
+    if (!planet.services) {
+        planet.services = {};
+        const { initializePlanetServices } = require('./services/service-engine');
+        initializePlanetServices(planet);
+    }
+
+    const { updatePlanetServices } = require('./services/service-engine');
+    
+    // 2. Resolve Service Upkeeps, Coverage, and Aggregate Yield Modifiers
+    const gridEfficiency = updatePlanetServices(planet, deltaSeconds);
+
+    // 3. Compute Production Modifiers
     const rates = planetBaseRates(planet);
+    
+    // If the grid fails, it zeroes out industrial output efficiency natively
+    let efficiencyMod = gridEfficiency - (world.shared.seasonalModifiers['tradeEfficiency'] ?? 0) * 0.3;
+    efficiencyMod = Math.max(0, efficiencyMod);
 
-    // Apply seasonal modifiers affecting production efficiency
-    const efficiencyMod = 1 - (world.shared.seasonalModifiers['tradeEfficiency'] ?? 0) * 0.3;
-
+    // 4. Update Stockpiles
     for (const [k, v] of Object.entries(rates)) {
         const key = k as keyof ResourceBundle;
         const delta = (v ?? 0) * deltaSeconds * efficiencyMod;
         planet.stockpile[key] = (planet.stockpile[key] ?? 0) + delta;
-        planet.currentRates[key] = v ?? 0;
+        planet.currentRates[key] = (v ?? 0) * efficiencyMod; // Track effective rate
     }
 
-    // Research and military capacity
-    planet.derived.research = (rates['research'] ?? 0);
-    planet.derived.military = clamp((rates['military'] ?? 0) / (econ.production.baseRates.military * 2.2));
+    // 5. Research and military capacity
+    planet.derived.research = (rates['research'] ?? 0) * efficiencyMod;
+    planet.derived.military = clamp((rates['military'] ?? 0) / (econ.production.baseRates.military * 2.2)) * efficiencyMod;
 }
 
 // ─── Pillar 3B: Network Trade Flow ────────────────────────────────────────────
@@ -390,14 +405,52 @@ export function tickEconomy(
 }
 
 /**
+ * Calculates a faction's "Real-Time" resources based on their rates
+ * and the elapsed time since the last authoritative tick.
+ */
+export function getEffectiveFactionState(factionId: string, world: GameWorldState) {
+    const faction = world.economy.factions.get(factionId);
+    if (!faction) return null;
+
+    const dtSeconds = Math.max(0, world.nowSeconds - world.economy.lastFlowUpdateAt);
+    
+    // Deep clone reserves to compute effective ones
+    const effectiveReserves: any = { ...faction.reserves };
+
+    // Accumulate from owned planets
+    for (const planet of world.economy.planets.values()) {
+        if (planet.factionId !== factionId) continue;
+        
+        for (const [resId, rate] of Object.entries(planet.currentRates)) {
+             if (!rate) continue;
+             // Bridge the case difference between PlanetProduction (lower) and FactionReserves (UPPER)
+             const upperKey = resId.toUpperCase();
+             effectiveReserves[upperKey] = (effectiveReserves[upperKey] || 0) + (rate as number) * dtSeconds;
+        }
+    }
+
+    return {
+        ...faction,
+        reserves: effectiveReserves,
+        isVirtual: true,
+        virtualAgeSeconds: dtSeconds
+    };
+}
+
+/**
  * Fetch current live economy state for serialization.
  */
 export function getEconomyState(world: GameWorldState, playerFactionId: string) {
+    // Apply lazy evaluation to all factions so the UI sees real-time changes
+    const effectiveFactions = Array.from(world.economy.factions.keys()).map(id => 
+        getEffectiveFactionState(id, world)
+    ).filter(Boolean);
+
     return {
         markets: Array.from(world.economy.markets.values()),
         agreements: Array.from(world.economy.tradeAgreements.values()),
         routes: Array.from(world.economy.tradeRoutes.values()),
-        factions: Array.from(world.economy.factions.values()),
+        factions: effectiveFactions,
         playerFactionId,
         policies: world.economy.policies ? Array.from(world.economy.policies.entries()) : []
     };

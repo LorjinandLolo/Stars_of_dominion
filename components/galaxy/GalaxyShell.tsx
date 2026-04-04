@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { HexGrid } from '@/lib/hex-grid';
 import OverlayToggleBar from './OverlayToggleBar';
 import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
 import { PlanetConstructionPanel } from '../construction/PlanetConstructionPanel';
-
+import { Activity } from 'lucide-react';
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
@@ -31,6 +30,36 @@ function getHexCorners(size: number): string {
 }
 
 const HEX_POINTS = getHexCorners(HEX_SIZE - 1);
+
+function SimulationTimer({ nowSeconds }: { nowSeconds: number }) {
+    const tick = Math.floor(nowSeconds / 10);
+    const progress = ((nowSeconds % 10) / 10) * 100;
+    
+    return (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40 glass-panel px-6 py-2 rounded-full flex items-center gap-6 border-b-2 border-b-sky-500/50 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+            <div className="flex flex-col">
+                <span className="text-[8px] text-sky-500/60 uppercase tracking-[0.2em] font-display">Authoritative Clock</span>
+                <span className="text-sm font-mono text-white flex items-center gap-2">
+                    <Activity size={12} className="text-sky-400 animate-pulse" />
+                    TICK {tick}
+                </span>
+            </div>
+            <div className="h-8 w-px bg-white/10" />
+            <div className="flex flex-col w-32">
+                <div className="flex justify-between text-[8px] text-slate-500 uppercase mb-1 font-display">
+                    <span>Next Update</span>
+                    <span className="text-sky-400 font-mono">{10 - (nowSeconds % 10)}s</span>
+                </div>
+                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                    <div 
+                        className="h-full bg-sky-500 transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(14,165,233,0.5)]" 
+                        style={{ width: `${progress}%` }} 
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
 
 /** Color for a system based on active overlay and system data */
 function systemColor(
@@ -65,10 +94,9 @@ function systemColor(
                 : { fill: '#451a03', stroke: '#92400e' };
         }
         case 'deepSpace':
-            return { fill: '#1e293b', stroke: '#38bdf8' }; // Brightened Deep Space
+            return { fill: '#1e293b', stroke: '#38bdf8' };
         default:
-            // Standard systems default visual—lightened to pop against the dark space background
-            return { fill: '#334155', stroke: '#94a3b8' }; // Significantly brighter neutral hex
+            return { fill: '#334155', stroke: '#94a3b8' };
     }
 }
 
@@ -78,33 +106,15 @@ function getVisibilityStyles(
 ) {
     switch (revealStage) {
         case 'pinged':
-            return {
-                fill: '#0f172a',
-                stroke: '#1e293b',
-                opacity: 0.6,
-                showDetails: false,
-                showDot: true
-            };
+            return { fill: '#0f172a', stroke: '#1e293b', opacity: 0.6, showDetails: false, showDot: true };
         case 'scanned':
         case 'surveyed':
-            return {
-                ...baseColors,
-                opacity: 1,
-                showDetails: true,
-                showDot: true
-            };
+            return { ...baseColors, opacity: 1, showDetails: true, showDot: true };
         case 'unknown':
         default:
-            return {
-                fill: '#020617',
-                stroke: '#0f172a',
-                opacity: 0.3,
-                showDetails: false,
-                showDot: false
-            };
+            return { fill: '#020617', stroke: '#0f172a', opacity: 0.3, showDetails: false, showDot: false };
     }
 }
-
 
 export default function GalaxyShell() {
     const {
@@ -114,25 +124,21 @@ export default function GalaxyShell() {
         selectedSystemId,
         setSelectedSystem,
         fleets,
-        selectedFleetId,
-        setSelectedFleetId,
         selectedPlanetId,
         setSelectedPlanet,
         playerState,
         nowSeconds,
         factionVisibility,
+        factions
     } = useUIStore();
-
-
-
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
         if (!systems.length) return { minQ: -30, maxQ: 30, minR: -25, maxR: 25 };
         return {
-            minQ: Math.min(...systems.map((s) => s.q)),
-            maxQ: Math.max(...systems.map((s) => s.q)),
-            minR: Math.min(...systems.map((s) => s.r)),
-            maxR: Math.max(...systems.map((s) => s.r)),
+            minQ: Math.min(...systems.map((s: any) => s.q)),
+            maxQ: Math.max(...systems.map((s: any) => s.q)),
+            minR: Math.min(...systems.map((s: any) => s.r)),
+            maxR: Math.max(...systems.map((s: any) => s.r)),
         };
     }, [systems]);
 
@@ -141,20 +147,12 @@ export default function GalaxyShell() {
     const svgMinY = hexToPixel(minQ - pad, minR - pad).y;
     const svgMaxX = hexToPixel(maxQ + pad, maxR + pad).x;
     const svgMaxY = hexToPixel(maxQ + pad, maxR + pad).y;
-    const vb = `${svgMinX} ${svgMinY} ${svgMaxX - svgMinX} ${svgMaxY - svgMinY}`;
 
-    // Region color lookup
-    const regionBySystem = useMemo(() => {
-        const map: Record<string, typeof regions[0]> = {};
-        regions.forEach((r) => r.systemIds.forEach((sid) => { map[sid] = r; }));
-        return map;
-    }, [regions]);
-
-    const [pan, setPan] = React.useState({ x: 0, y: 0 });
-    const [zoom, setZoom] = React.useState(1);
-    const [dragging, setDragging] = React.useState(false);
-    const hasMoved = React.useRef(false);
-    const lastMouse = React.useRef({ x: 0, y: 0 });
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [zoom, setZoom] = useState(1);
+    const [dragging, setDragging] = useState(false);
+    const hasMoved = useRef(false);
+    const lastMouse = useRef({ x: 0, y: 0 });
 
     const dynamicVb = useMemo(() => {
         const w = (svgMaxX - svgMinX) / zoom;
@@ -165,7 +163,6 @@ export default function GalaxyShell() {
     }, [pan, zoom, svgMinX, svgMaxX, svgMinY, svgMaxY]);
 
     const handleWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
         setZoom((z) => Math.min(8, Math.max(0.4, z * (e.deltaY < 0 ? 1.1 : 0.9))));
     };
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -177,16 +174,17 @@ export default function GalaxyShell() {
         if (!dragging) return;
         const dx = (e.clientX - lastMouse.current.x) * (2 / zoom);
         const dy = (e.clientY - lastMouse.current.y) * (2 / zoom);
-        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-            hasMoved.current = true;
-        }
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) hasMoved.current = true;
         setPan((p) => ({ x: p.x - dx, y: p.y - dy }));
         lastMouse.current = { x: e.clientX, y: e.clientY };
     };
 
+    const playerFaction = factions[playerState.factionId || ''];
+    const reserves = playerFaction?.reserves || {};
+
     return (
         <div
-            className="relative w-full h-full overflow-hidden bg-slate-950 select-none"
+            className="relative w-full h-full overflow-hidden bg-slate-950 select-none nebula-bg"
             style={{ cursor: dragging ? 'grabbing' : 'grab' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -194,53 +192,41 @@ export default function GalaxyShell() {
             onMouseLeave={() => setDragging(false)}
             onWheel={handleWheel}
         >
-            {/* ── Star field background ── */}
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_#0f172a_0%,_#020617_80%)]" />
 
-            {/* ── Galaxy SVG ── */}
-            <svg
-                viewBox={dynamicVb}
-                className="absolute inset-0 w-full h-full"
-                preserveAspectRatio="xMidYMid meet"
-            >
-                {/* Region soft-border halos */}
-                {regions.map((region) => {
-                    if (region.status === 'dissolving') return null;
-                    return region.systemIds.map((sid) => {
-                        const sys = systems.find((s) => s.id === sid);
-                        if (!sys) return null;
-                        const px = hexToPixel(sys.q, sys.r);
-                        return (
-                            <polygon
-                                key={`region-halo-${sid}`}
-                                points={HEX_POINTS}
-                                transform={`translate(${px.x}, ${px.y})`}
-                                fill={`${region.color}18`}
-                                stroke={region.color}
-                                strokeWidth={region.status === 'emerging' ? 0.5 : 1}
-                                strokeDasharray={region.status === 'emerging' ? '3,3' : undefined}
-                                strokeOpacity={0.5}
-                                pointerEvents="none"
-                            />
-                        );
-                    });
-                })}
+            <SimulationTimer nowSeconds={nowSeconds} />
 
-                {systems.map((sys) => {
+            <svg viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                    <filter id="hex-glow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="2" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                </defs>
+
+                {regions.map((region: any) => region.systemIds.map((sid: any) => {
+                    const sys = systems.find((s: any) => s.id === sid);
+                    if (!sys) return null;
+                    const px = hexToPixel(sys.q, sys.r);
+                    return (
+                        <polygon
+                            key={`region-halo-${sid}`}
+                            points={HEX_POINTS}
+                            transform={`translate(${px.x}, ${px.y})`}
+                            fill={`${region.color}18`}
+                            stroke={region.color}
+                            strokeWidth={region.status === 'emerging' ? 0.5 : 1}
+                            strokeOpacity={0.5}
+                            pointerEvents="none"
+                        />
+                    );
+                }))}
+
+                {systems.map((sys: any) => {
                     const px = hexToPixel(sys.q, sys.r);
                     const isSelected = selectedSystemId === sys.id;
-                    
                     const revealStage = factionVisibility?.[sys.id]?.revealStage || 'unknown';
-                    const baseColors = systemColor(
-                        activeOverlay,
-                        sys.instability,
-                        sys.tradeValue,
-                        sys.escalationLevel,
-                        sys.security,
-                    );
-                    
-                    const styles = getVisibilityStyles(revealStage, baseColors);
-                    const regionColor = regionBySystem[sys.id]?.color;
+                    const styles = getVisibilityStyles(revealStage, systemColor(activeOverlay, sys.instability, sys.tradeValue, sys.escalationLevel, sys.security));
 
                     return (
                         <g
@@ -250,139 +236,65 @@ export default function GalaxyShell() {
                                 e.stopPropagation();
                                 if (!hasMoved.current) setSelectedSystem(isSelected ? null : sys.id);
                             }}
+                            className="transition-all"
                             style={{ cursor: 'pointer', opacity: styles.opacity }}
                         >
                             <polygon
                                 points={HEX_POINTS}
                                 fill={styles.fill}
-                                stroke={isSelected ? '#fbbf24' : styles.stroke}
+                                stroke={isSelected ? 'var(--color-neon-blue)' : styles.stroke}
                                 strokeWidth={isSelected ? 2 : 1}
+                                filter={isSelected ? 'url(#hex-glow)' : undefined}
                             />
-                            
-                            {/* System dot - only show if pinged or better */}
                             {styles.showDot && (
                                 <circle
                                     r={sys.tags.includes('gate') || sys.tags.includes('fortress') ? 4 : 2.5}
-                                    fill={
-                                        sys.ownerId
-                                            ? (sys.ownerId === 'faction-aurelian' ? '#3b82f6' : 
-                                               sys.ownerId === 'faction-vektori' ? '#ef4444' : 
-                                               sys.ownerId === 'faction-null-syndicate' ? '#a855f7' : '#22c55e')
-                                            : '#94a3b8'
-                                    }
-                                />
-                            )}
-
-                            {/* Escalation indicator ring - only show if scanned or better */}
-                            {styles.showDetails && sys.escalationLevel > 6 && (
-                                <circle
-                                    r={5}
-                                    fill="none"
-                                    stroke="#ef4444"
-                                    strokeWidth={1}
-                                    strokeOpacity={0.7}
-                                    strokeDasharray="2,2"
+                                    fill={sys.ownerId ? (sys.ownerId === 'faction-aurelian' ? '#3b82f6' : sys.ownerId === 'faction-vektori' ? '#ef4444' : '#22c55e') : '#94a3b8'}
+                                    className="animate-breathe"
                                 />
                             )}
                         </g>
                     );
                 })}
 
-
                 {/* Fleets */}
-                {fleets.map((fleet) => {
-                    let fromSys, toSys;
-                    let x = 0, y = 0;
-
+                {fleets.map((fleet: any) => {
+                    let fromSys, x = 0, y = 0;
                     if (fleet.currentSystemId) {
-                        fromSys = systems.find(s => s.id === fleet.currentSystemId);
+                        fromSys = systems.find((s: any) => s.id === fleet.currentSystemId);
                         if (fromSys) {
                             const px = hexToPixel(fromSys.q, fromSys.r);
-                            x = px.x;
-                            y = px.y - 6; // Offset slightly above planet
-                        }
-                    } else if (fleet.plannedPath.length >= 2) {
-                        fromSys = systems.find(s => s.id === fleet.plannedPath[0]);
-                        toSys = systems.find(s => s.id === fleet.plannedPath[1]);
-                        if (fromSys && toSys) {
-                            const p1 = hexToPixel(fromSys.q, fromSys.r);
-                            const p2 = hexToPixel(toSys.q, toSys.r);
-                            x = p1.x + (p2.x - p1.x) * fleet.transitProgress;
-                            y = p1.y + (p2.y - p1.y) * fleet.transitProgress;
+                            x = px.x; y = px.y - 6;
                         }
                     }
-
                     if (!fromSys) return null;
-
-                    const color = fleet.factionId === 'faction-aurelian' ? '#3b82f6' :
-                        fleet.factionId === 'faction-vektori' ? '#ef4444' :
-                            fleet.factionId === 'faction-null-syndicate' ? '#a855f7' : '#22c55e';
-
+                    const color = fleet.factionId === 'faction-aurelian' ? '#3b82f6' : '#ef4444';
                     return (
-                        <g
-                            key={fleet.id}
-                            transform={`translate(${x}, ${y})`}
-                            style={{ transition: 'transform 2s linear' }}
-                        >
-                            {/* Simple triangle to represent a fleet */}
-                            <polygon
-                                points="0,-4 3,4 -3,4"
-                                fill={color}
-                                stroke="#fff"
-                                strokeWidth={0.5}
-                                className="drop-shadow-md"
-                            />
-                            {/* Pulse ring for moving fleets */}
-                            {fleet.transitProgress > 0 && (
-                                <circle
-                                    r={6}
-                                    fill="none"
-                                    stroke={color}
-                                    className="animate-ping"
-                                    opacity={0.5}
-                                />
-                            )}
+                        <g key={fleet.id} transform={`translate(${x}, ${y})`}>
+                            <polygon points="0,-4 3,4 -3,4" fill={color} stroke="#fff" strokeWidth={0.5} filter="url(#hex-glow)" />
                         </g>
                     );
                 })}
             </svg>
 
-            {/* ── Overlay UI layers ── */}
             <OverlayToggleBar />
             <SystemContextPanel />
             <CrisisBottomTray />
 
-            {/* ── Construction UI Overlay ── */}
             {selectedPlanetId && selectedSystemId && (
                 <PlanetConstructionPanel
                     planetId={selectedPlanetId}
                     systemId={selectedSystemId}
                     factionId={playerState.factionId}
-                    factionCredits={1000} // TODO: Connect to real economy credits state
-                    factionMetals={2000}  // TODO: Connect to real economy metals state
-                    factionChemicals={500}
-                    factionEnergy={1000}
-                    factionRares={100}
-                    factionManpower={1000}
+                    factionCredits={reserves['CREDITS'] || 0}
+                    factionMetals={reserves['METALS'] || 0}
+                    factionChemicals={reserves['CHEMICALS'] || 0}
+                    factionEnergy={reserves['ENERGY'] || 0}
+                    factionRares={reserves['RARES'] || 0}
+                    factionManpower={reserves['FOOD'] || 0}
                     onClose={() => setSelectedPlanet(null)}
                 />
             )}
-
-            {/* ── Overlay label when active ── */}
-            {activeOverlay && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-                    <div className="text-xs font-display tracking-widest text-amber-400 bg-slate-950/80 px-3 py-1 rounded border border-amber-400/30">
-                        {activeOverlay.toUpperCase()} OVERLAY ACTIVE
-                    </div>
-                </div>
-            )}
-
-            {/* ── Scroll/Drag/Click help (Minimal) ── */}
-            <div className="absolute bottom-16 right-4 z-30 pointer-events-none">
-                <div className="text-[10px] font-display text-slate-600 bg-slate-950/40 px-2 py-1 rounded border border-slate-800/30">
-                    Scroll · Drag · Click
-                </div>
-            </div>
         </div>
     );
 }

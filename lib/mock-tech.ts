@@ -4,10 +4,9 @@ export const mockTechState: TechState = {
     unlockedTechIds: ['mil_plt_1', 'eco_tra_1', 'dip_emb_1', 'cul_har_1'],
     lockedTechIds: [],
     activeSlots: [
-        { slotId: 'slot-1', techId: 'mil_inf_1', startTime: Date.now() / 1000 - 3600, progressHours: 24, ticksCompleted: 4, ticksRequired: 12, status: 'researching' },
-        { slotId: 'slot-2', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' }
+        { slotId: 'slot-1', techId: 'mil_inf_1', startTime: Date.now() / 1000 - 3600, progressHours: 24, ticksCompleted: 4, ticksRequired: 12, status: 'researching' }
     ],
-    maxSlots: 2,
+    maxSlots: 1,
     globalModifiers: {
         'research_speed': 1.0,
         'construction_speed': 1.0

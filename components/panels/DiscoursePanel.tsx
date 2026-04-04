@@ -14,7 +14,6 @@ import {
     UserCircle2,
     Loader2
 } from 'lucide-react';
-import { sendDiscourseMessageAction, getFactionStatusSummary } from '@/app/actions/discourse';
 import { FACTION_SPEAKERS } from '@/lib/ai/faction-personalities';
 
 export default function DiscoursePanel() {
@@ -37,8 +36,15 @@ export default function DiscoursePanel() {
     // Fetch faction summary when active faction changes
     React.useEffect(() => {
         const fetchSummary = async () => {
-            const data = await getFactionStatusSummary(activeFactionId);
-            setSummary(data);
+            try {
+                const res = await fetch(`/api/discourse?factionId=${encodeURIComponent(activeFactionId)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSummary(data);
+                }
+            } catch (e) {
+                console.error('[DiscoursePanel] Failed to fetch faction summary:', e);
+            }
         };
         fetchSummary();
     }, [activeFactionId]);
@@ -60,17 +66,28 @@ export default function DiscoursePanel() {
         addDiscourseMessage(activeFactionId, playerMsg);
 
         try {
-            const result = await sendDiscourseMessageAction({
-                factionId: activeFactionId,
-                playerMessage: messageText
+            const res = await fetch('/api/discourse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    factionId: activeFactionId,
+                    playerMessage: messageText,
+                }),
             });
+
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}));
+                throw new Error(errBody.error ?? `Server error ${res.status}`);
+            }
+
+            const result = await res.json();
 
             // Add faction response
             addDiscourseMessage(activeFactionId, {
                 id: result.factionMessage.id,
                 speaker: 'faction',
                 content: result.factionMessage.content,
-                timestamp: result.factionMessage.timestamp
+                timestamp: result.factionMessage.timestamp,
             });
         } catch (error) {
             console.error("Discourse connection failed:", error);

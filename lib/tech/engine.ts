@@ -43,11 +43,10 @@ export class TechEngine {
             factionId,
             unlockedTechIds: [],
             activeSlots: [
-                { slotId: 'slot-1', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' },
-                { slotId: 'slot-2', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' }
+                { slotId: 'slot-1', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' }
             ],
             activeEffects: [],
-            maxSlots: 2,
+            maxSlots: 1,
             globalModifiers: {
                 'research_speed': 1.0,
                 'construction_speed': 1.0
@@ -143,16 +142,16 @@ export class TechEngine {
     private static applyEffect(state: PlayerTechState, effect: TechEffect) {
         switch (effect.type) {
             case TechEffectType.UNLOCK_RESEARCH_SLOT:
-                state.maxSlots += 1;
-                state.activeSlots.push({
-                    slotId: `slot-${state.maxSlots}`,
-                    techId: null,
-                    ticksCompleted: 0,
-                    ticksRequired: 0,
-                    status: 'empty',
-                    startTime: 0,
-                    progressHours: 0
-                });
+                // state.maxSlots += 1;
+                // state.activeSlots.push({
+                //     slotId: `slot-${state.maxSlots}`,
+                //     techId: null,
+                //     ticksCompleted: 0,
+                //     ticksRequired: 0,
+                //     status: 'empty',
+                //     startTime: 0,
+                //     progressHours: 0
+                // });
                 break;
             case TechEffectType.MODIFIER_PERCENT:
                 const current = state.globalModifiers[effect.target!] || 1.0;

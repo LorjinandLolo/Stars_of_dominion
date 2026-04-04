@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useState, useTransition } from 'react';
+import { useUIStore } from '@/lib/store/ui-store';
 import {
     Activity, AlertTriangle, CheckCircle, ChevronRight, DollarSign, Eye, Flame, Globe, Loader2, Lock, MapPin, Radio, RotateCcw, Search, Shield, Signal, Skull, Target, Unlock, UserPlus, XCircle, Zap
 } from 'lucide-react';
 import {
     launchCovertOpAction,
     recallAgentAction,
-    getRecruitPoolAction,
     recruitAgentAction,
-    getEspionageStateAction
 } from '@/app/actions/espionage';
-import type { SpyAgent, IntelNetwork, AgentTraitId, AgentStatus } from '@/lib/espionage/agent-types';
+import type { SpyAgent, IntelNetwork, AgentStatus } from '@/types/ui-state';
+import type { AgentTraitId } from '@/lib/espionage/agent-types';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import Modal from '@/components/ui/Modal';
 
@@ -113,8 +113,13 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
         setRecruitModalOpen(true);
         setLoadingRecruits(true);
         try {
-            const candidates = await getRecruitPoolAction('PLAYER_FACTION');
-            if (candidates && candidates.length > 0) {
+            const res = await fetch('/api/espionage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ factionId: 'PLAYER_FACTION' }),
+            });
+            const candidates = await res.json();
+            if (Array.isArray(candidates) && candidates.length > 0) {
                 setCandidates(candidates);
             } else {
                 showToast('No recruits available', false);
@@ -538,25 +543,15 @@ function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => 
 type Tab = 'roster' | 'networks' | 'ops';
 
 export default function EspionageAgencyPanel() {
+    const { espionageState, playerState } = useUIStore();
     const [tab, setTab] = useState<Tab>('roster');
-    const [agents, setAgents] = useState<SpyAgent[]>([]);
-    const [networks, setNetworks] = useState<IntelNetwork[]>([]);
-    const [loading, setLoading] = useState(true);
 
-    const loadState = async () => {
-        setLoading(true);
-        try {
-            const state = await getEspionageStateAction('PLAYER_FACTION');
-            setAgents(state.agents);
-            setNetworks(state.networks);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const agents = espionageState.agents || [];
+    const networks = espionageState.networks || [];
 
-    React.useEffect(() => {
-        loadState();
-    }, []);
+    // Note: for 1.0 we assume GameSync handles the updates.
+    // Manual refresh is no longer needed but we keep the prop for compatibility.
+    const refresh = async () => {};
 
     const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         { id: 'roster', label: 'AGENT ROSTER', icon: <Eye size={11} /> },
@@ -576,7 +571,6 @@ export default function EspionageAgencyPanel() {
                         Agent roster, intel networks &amp; covert operations command
                     </p>
                 </div>
-                {loading && <Loader2 size={16} className="animate-spin text-slate-500" />}
             </div>
 
             {/* Tab Bar */}
@@ -593,9 +587,9 @@ export default function EspionageAgencyPanel() {
 
             {/* Tab content */}
             <div className="flex-1 overflow-hidden">
-                {tab === 'roster' && <AgentRosterTab agents={agents} refresh={loadState} />}
+                {tab === 'roster' && <AgentRosterTab agents={agents} refresh={refresh} />}
                 {tab === 'networks' && <IntelNetworksTab networks={networks} />}
-                {tab === 'ops' && <CovertOpsTab agents={agents} refresh={loadState} />}
+                {tab === 'ops' && <CovertOpsTab agents={agents} refresh={refresh} />}
             </div>
         </div>
     );

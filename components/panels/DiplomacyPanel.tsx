@@ -1,12 +1,12 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { 
     Users, Shield, Target, Globe, BookOpen, Fingerprint, 
     Send, Skull, Heart, Activity, Flame, Zap, 
     FileText, Gavel, TrendingUp, Handshake, Scroll,
-    AlertTriangle, ShieldCheck, DollarSign
+    AlertTriangle, ShieldCheck, DollarSign, Info
 } from 'lucide-react';
 import { 
     sendEnvoyAction, 
@@ -62,17 +62,6 @@ const FACTIONS = [
     },
 ];
 
-const ESCALATION_LABELS = [
-    'Calm Competition',
-    'Hostile Messaging',
-    'Sanctions & Propaganda',
-    'Proxy Intervention',
-    'Major Covert War',
-    'Sustained Cold War',
-    'Near-Hot War',
-    'DIRECT WAR RISK'
-];
-
 const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
     { type: 'non_aggression', label: 'Non-Aggression Pact', icon: ShieldCheck },
     { type: 'mutual_defense', label: 'Mutual Defense Treaty', icon: Shield },
@@ -82,418 +71,254 @@ const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
 ];
 
 export default function DiplomacyPanel() {
-    const { playerState, diplomacyState, empireIdentity, updateDiplomacy } = useUIStore();
-    const [activeTab, setActiveTab] = React.useState<'intel' | 'statecraft'>('statecraft');
-    const [selectedFactionId, setSelectedFactionId] = React.useState(FACTIONS[0].id);
-    const [isProcessing, setIsProcessing] = React.useState<string | null>(null);
+    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy } = useUIStore();
+    const [activeTab, setActiveTab] = useState<'intel' | 'statecraft'>('statecraft');
+    const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
-    const selectedFaction = FACTIONS.find(f => f.id === selectedFactionId) || FACTIONS[0];
+    const liveFactions = useMemo(() => {
+        return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
+            const mock = FACTIONS.find(m => m.id === f.id);
+            return {
+                id: f.id,
+                name: f.name || mock?.name || f.id,
+                color: mock?.color || '#94a3b8',
+                description: mock?.description || 'Data on this faction is restricted or unavailable.',
+                traits: mock?.traits || ['Sovereign State'],
+                ...f
+            };
+        });
+    }, [politicsState.allFactions, playerState.factionId]);
+
+    const [selectedFactionId, setSelectedFactionId] = useState(liveFactions[0]?.id || '');
+    const selectedFaction = liveFactions.find(f => f.id === selectedFactionId) || liveFactions[0];
     
-    // Find real rivalry state for this faction
-    const rivalry = diplomacyState.rivalries.find(r => 
+    if (!selectedFaction) {
+        return (
+            <div className="flex flex-col h-full items-center justify-center text-slate-500 bg-slate-950/80 backdrop-blur-xl">
+                <Globe className="w-12 h-12 mb-4 opacity-10 animate-pulse" />
+                <span className="text-[10px] font-display tracking-[0.3em] uppercase">No External Factions Detected</span>
+            </div>
+        );
+    }
+
+    const rivalry = (diplomacyState.rivalries || []).find(r => 
         (r.empireAId === playerState.factionId && r.empireBId === selectedFactionId) ||
         (r.empireBId === playerState.factionId && r.empireAId === selectedFactionId)
     );
 
-    const activeTreaties = diplomacyState.treaties.filter(t => t.signatories.includes(selectedFactionId));
-    const activePacts = diplomacyState.tradePacts.filter(p => 
-        (p.empireAId === selectedFactionId || p.empireBId === selectedFactionId)
-    );
-    const activeTributes = diplomacyState.tributes.filter(t => t.vassalId === selectedFactionId || t.overlordId === selectedFactionId);
+    const activeTreaties = (diplomacyState.treaties || []).filter(t => t.signatories.includes(selectedFactionId));
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
-        try {
-            const res = await promise;
-            if (res.success) {
-                // For a real app, the server action would revalidate or return fresh data
-                // For this demo, we assume the world state is updated on the next tick or via optimistic store updates if we wanted to add them.
-            }
-        } finally {
-            setIsProcessing(null);
-        }
-    };
-
-    const handleProposeTreaty = (type: TreatyType) => {
-        handleAction(`treaty-${type}`, proposeTreatyAction(type, [playerState.factionId, selectedFactionId]));
-    };
-
-    const handleDemandTribute = () => {
-        handleAction('tribute', demandTributeAction(selectedFactionId, playerState.factionId, 'energy', 100));
-    };
-
-    const handleNegotiateTrade = () => {
-        handleAction('trade', negotiateTradePactAction(playerState.factionId, selectedFactionId, { 'energy': 1.05 }, true));
+        try { await promise; } finally { setIsProcessing(null); }
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-950/80 backdrop-blur-xl border-l border-white/5 text-slate-200">
+        <div className="flex flex-col h-full bg-slate-950/80 backdrop-blur-xl border-l border-white/5 text-slate-200 overflow-hidden relative">
+            <div className="absolute inset-0 scanline-overlay pointer-events-none opacity-[0.03]" />
+
             {/* Header */}
-            <div className="p-6 border-b border-white/5 bg-gradient-to-r from-blue-500/10 via-transparent to-red-500/10">
+            <div className="p-8 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 via-transparent to-rose-500/10">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Handshake className="w-6 h-6 text-blue-400" />
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]">
+                            <Handshake className="w-7 h-7 text-indigo-400" />
+                        </div>
                         <div>
-                            <h1 className="text-xl font-display tracking-[0.2em] uppercase text-white">Advanced Statecraft</h1>
-                            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mt-1">Sovereign Diplomatic Terminal</p>
+                            <h1 className="text-2xl font-display tracking-[0.2em] uppercase text-white">Neural Statecraft</h1>
+                            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.3em] mt-1">Sovereign Diplomatic Uplink // Protocol 1.0</p>
                         </div>
                     </div>
                     
-                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/10">
-                        <button 
-                            onClick={() => setActiveTab('statecraft')}
-                            className={`px-4 py-1.5 rounded text-[10px] font-display transition-all ${activeTab === 'statecraft' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-white'}`}
-                        >
-                            STATECRAFT
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab('intel')}
-                            className={`px-4 py-1.5 rounded text-[10px] font-display transition-all ${activeTab === 'intel' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-500 hover:text-white'}`}
-                        >
-                            INTELLIGENCE
-                        </button>
+                    <div className="flex bg-black/60 p-1.5 rounded-xl border border-white/10 shadow-inner">
+                        {(['statecraft', 'intel'] as const).map(tab => (
+                            <button 
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`px-6 py-2 rounded-lg text-[10px] font-display tracking-widest transition-all duration-300 ${
+                                    activeTab === tab 
+                                        ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]' 
+                                        : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                            >
+                                {tab.toUpperCase()}
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>
 
             <div className="flex flex-1 overflow-hidden">
-                {/* Faction List (Left) */}
-                <div className="w-20 border-r border-white/5 flex flex-col gap-6 p-4 items-center bg-black/40">
-                    {FACTIONS.map((faction) => (
+                {/* Faction Selector Sidebar */}
+                <div className="w-24 border-r border-white/5 flex flex-col gap-8 py-8 items-center bg-black/20 overflow-y-auto custom-scrollbar">
+                    {liveFactions.map((faction) => (
                         <button
                             key={faction.id}
                             onClick={() => setSelectedFactionId(faction.id)}
-                            className={`group relative w-12 h-12 rounded-xl border transition-all duration-300 flex items-center justify-center ${
+                            className={`group relative w-14 h-14 rounded-2xl border transition-all duration-500 flex items-center justify-center overflow-hidden ${
                                 selectedFactionId === faction.id 
-                                ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)] bg-blue-500/10' 
+                                ? 'border-indigo-500 shadow-[0_0_25px_rgba(99,102,241,0.3)] bg-indigo-500/20' 
                                 : 'border-white/5 hover:border-white/20 grayscale opacity-40 hover:opacity-100 hover:grayscale-0 bg-white/5'
                             }`}
                         >
-                            <Shield className="w-6 h-6" style={{ color: faction.color }} />
+                            <Shield className="w-7 h-7" style={{ color: faction.color }} />
                             {selectedFactionId === faction.id && (
-                                <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-blue-500 rounded-full" />
+                                <div className="absolute left-0 top-0 w-1 h-full bg-indigo-500 shadow-[0_0_10px_indigo]" />
                             )}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         </button>
                     ))}
                 </div>
 
-                {/* Main Content (Right) */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                    <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in slide-in-from-right-4 duration-700">
+                {/* Main Action Area */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-10 bg-[url('/grid-dark.svg')] bg-repeat">
+                    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in slide-in-from-right-8 duration-700">
                         
-                        {/* Faction Profile Bar */}
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em] block mb-2">Target Profile: {selectedFaction.id}</span>
-                                <h2 className="text-4xl font-display uppercase tracking-widest text-white">{selectedFaction.name}</h2>
+                        {/* Profile Header */}
+                        <div className="flex items-end justify-between border-b border-white/5 pb-8">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: selectedFaction.color }} />
+                                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em]">Active Contact // {selectedFaction.id}</span>
+                                </div>
+                                <h2 className="text-5xl font-display uppercase tracking-[0.1em] text-white drop-shadow-2xl">{selectedFaction.name}</h2>
+                                <div className="flex gap-2 pt-2">
+                                    {selectedFaction.traits.map((trait: string) => (
+                                        <span key={trait} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-slate-400 uppercase tracking-tighter">{trait}</span>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="text-right">
-                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest block mb-2">Diplomatic Weight</span>
-                                <div className="flex items-center gap-2">
-                                    <div className="text-2xl font-mono text-white">88.4</div>
-                                    <div className="px-2 py-1 bg-green-500/10 border border-green-500/20 text-green-400 text-[10px] rounded uppercase font-bold tracking-tighter">Rising</div>
+                            <div className="text-right glass-panel p-4 rounded-2xl border-white/10 group cursor-help transition-all hover:bg-white/5">
+                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Influence Rating</span>
+                                <div className="flex items-center gap-3 justify-end">
+                                    <div className="text-3xl font-mono text-white tracking-tighter">{(rivalry?.rivalryScore || 45.2).toFixed(1)}</div>
+                                    <TrendingUp className="w-5 h-5 text-emerald-400 animate-bounce" />
                                 </div>
                             </div>
                         </div>
 
                         {activeTab === 'statecraft' ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                {/* Left Column: Proposals & Treaties */}
-                                <div className="space-y-8">
-                                    <section className="space-y-4">
-                                        <h3 className="text-xs font-display text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                                            <Scroll className="w-3 h-3" /> Propose Formal Treaties
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                {/* Treaties & Accords */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[11px] font-display text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                            <Scroll className="w-4 h-4" /> Sovereign Accords
                                         </h3>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {TREATY_TYPES.map(treaty => {
-                                                const Icon = treaty.icon;
-                                                const isActive = activeTreaties.some(t => t.type === treaty.type);
-                                                return (
-                                                    <button
-                                                        key={treaty.type}
-                                                        onClick={() => handleProposeTreaty(treaty.type)}
-                                                        disabled={isActive || isProcessing === `treaty-${treaty.type}`}
-                                                        className={`flex items-center justify-between p-4 rounded-xl border transition-all text-left group ${
-                                                            isActive 
-                                                            ? 'bg-blue-500/10 border-blue-500/40 text-blue-400' 
-                                                            : 'bg-white/5 border-white/10 hover:border-white/30 text-white'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-2 rounded-lg ${isActive ? 'bg-blue-500/20' : 'bg-black/40 border border-white/5'}`}>
-                                                                <Icon className="w-4 h-4" />
-                                                            </div>
-                                                            <span className="text-xs font-display uppercase tracking-wide">{treaty.label}</span>
+                                        <span className="text-[9px] text-slate-500 font-mono italic">Multiplayer Synchronized</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {TREATY_TYPES.map(treaty => {
+                                            const Icon = treaty.icon;
+                                            const isActive = activeTreaties.some(t => t.type === treaty.type);
+                                            return (
+                                                <button
+                                                    key={treaty.type}
+                                                    onClick={() => handleAction(`treaty-${treaty.type}`, proposeTreatyAction(treaty.type, [playerState.factionId, selectedFactionId]))}
+                                                    disabled={isActive || !!isProcessing}
+                                                    className={`group flex items-center justify-between p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden ${
+                                                        isActive 
+                                                        ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-400' 
+                                                        : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-4 relative z-10">
+                                                        <div className={`p-3 rounded-xl transition-colors ${isActive ? 'bg-emerald-500/20' : 'bg-black/60 border border-white/5 group-hover:border-indigo-500/50'}`}>
+                                                            <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-indigo-400'}`} />
                                                         </div>
-                                                        {isActive ? (
-                                                            <ShieldCheck className="w-4 h-4 text-blue-400" />
-                                                        ) : (
-                                                            <Send className="w-3 h-3 text-slate-500 group-hover:text-blue-400 transition-colors" />
-                                                        )}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </section>
-
-                                    <section className="space-y-4">
-                                        <h3 className="text-xs font-display text-red-400 uppercase tracking-widest flex items-center gap-2">
-                                            <Skull className="w-3 h-3" /> Hostile Interventions
-                                        </h3>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <button 
-                                                onClick={() => handleDemandTribute()}
-                                                disabled={isProcessing === 'tribute'}
-                                                className="flex flex-col items-center gap-3 p-6 rounded-xl bg-red-950/20 border border-red-900/40 hover:bg-red-900/30 transition-all text-center group"
-                                            >
-                                                <DollarSign className="w-6 h-6 text-red-500 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-display text-white uppercase tracking-widest">Demand Tribute</span>
-                                            </button>
-                                            <button 
-                                                onClick={() => handleAction('embargo', declareWarAction(playerState.factionId, selectedFactionId))}
-                                                disabled={isProcessing === 'embargo'}
-                                                className="flex flex-col items-center gap-3 p-6 rounded-xl bg-orange-950/20 border border-orange-900/40 hover:bg-orange-900/30 transition-all text-center group"
-                                            >
-                                                <AlertTriangle className="w-6 h-6 text-orange-500 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-display text-white uppercase tracking-widest">Total Embargo</span>
-                                            </button>
-                                        </div>
-                                    </section>
+                                                        <div>
+                                                            <span className="text-xs font-bold uppercase tracking-widest block">{treaty.label}</span>
+                                                            <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Requires Mutual Consensus</span>
+                                                        </div>
+                                                    </div>
+                                                    {isActive && <ShieldCheck className="w-5 h-5 opacity-50" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
 
-                                {/* Right Column: Active Agreements & Economic Pacts */}
-                                <div className="space-y-8">
-                                    <section className="space-y-4">
-                                        <h3 className="text-xs font-display text-green-400 uppercase tracking-widest flex items-center gap-2">
-                                            <TrendingUp className="w-3 h-3" /> Commercial Synergies
-                                        </h3>
-                                        <div className="p-6 rounded-2xl bg-gradient-to-br from-green-500/10 to-transparent border border-green-500/20 space-y-4">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h4 className="text-sm font-display text-white uppercase">Inter-Empire Trade Pact</h4>
-                                                    <p className="text-[10px] text-slate-500 uppercase mt-1 italic">Mutual tariff exemption and supply priority.</p>
-                                                </div>
-                                                <div className="p-2 rounded-lg bg-green-500/20">
-                                                    <Globe className="w-4 h-4 text-green-400" />
-                                                </div>
+                                {/* Aggressive Postures */}
+                                <div className="space-y-6">
+                                    <h3 className="text-[11px] font-display text-rose-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Skull className="w-4 h-4" /> Escalation Triggers
+                                    </h3>
+                                    <div className="glass-panel p-6 rounded-3xl border-white/5 space-y-6 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/5 rounded-full blur-3xl -mr-16 -mt-16" />
+                                        
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Hostility Level</span>
+                                                <span className="text-sm font-mono text-rose-400">CRITICAL</span>
                                             </div>
-                                            
-                                            <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
-                                                <div>
-                                                    <span className="text-[10px] text-slate-500 uppercase block mb-1">Efficiency Bonus</span>
-                                                    <span className="text-lg font-mono text-white">+12.5%</span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-slate-500 uppercase block mb-1">Status</span>
-                                                    <span className="text-xs font-mono text-green-400 uppercase">Profitable</span>
-                                                </div>
+                                            <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5 p-0.5">
+                                                <div 
+                                                    className="h-full bg-gradient-to-r from-orange-500 to-rose-600 rounded-full shadow-[0_0_15px_rgba(225,29,72,0.5)] transition-all duration-1000"
+                                                    style={{ width: `${(rivalry?.escalationLevel || 4) * 14.28}%` }}
+                                                />
                                             </div>
+                                        </div>
 
+                                        <div className="grid grid-cols-1 gap-4 pt-4">
                                             <button 
-                                                onClick={handleNegotiateTrade}
-                                                disabled={isProcessing === 'trade'}
-                                                className="w-full py-3 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 rounded-lg text-xs font-display uppercase tracking-widest transition-all"
+                                                onClick={() => handleAction('war', declareWarAction(playerState.factionId, selectedFactionId))}
+                                                className="w-full py-4 rounded-xl bg-rose-600/10 border border-rose-600/30 text-rose-500 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all duration-300 shadow-lg shadow-rose-900/10"
                                             >
-                                                Establish Major Trade Pact
+                                                Unilateral Hostility Declaration
                                             </button>
+                                            <div className="flex items-start gap-3 p-4 bg-black/40 rounded-xl border border-white/5">
+                                                <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                                                <p className="text-[9px] text-slate-500 leading-relaxed italic uppercase font-mono tracking-tighter">
+                                                    Declaring war suspends all active trade pacts and treaties. Infamy penalty of +15.2 accumulation expected.
+                                                </p>
+                                            </div>
                                         </div>
-                                    </section>
-
-                                    <section className="space-y-4">
-                                        <h3 className="text-xs font-display text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                            <FileText className="w-3 h-3" /> Active Protocol Ledger
-                                        </h3>
-                                        <div className="space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
-                                            {activeTreaties.length === 0 && activePacts.length === 0 && activeTributes.length === 0 ? (
-                                                <div className="p-8 text-center bg-white/5 rounded-xl border border-dashed border-white/10">
-                                                    <span className="text-[10px] font-mono text-slate-600 uppercase">No active protocols detected.</span>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    {activeTreaties.map(t => (
-                                                        <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                                            <div className="flex items-center gap-3">
-                                                                <ShieldCheck size={14} className="text-blue-400" />
-                                                                <span className="text-[10px] font-display uppercase">{t.type.replace(/_/g, ' ')}</span>
-                                                            </div>
-                                                            <span className="text-[9px] font-mono text-blue-400/60 uppercase">Active</span>
-                                                        </div>
-                                                    ))}
-                                                    {activePacts.map(p => (
-                                                        <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                                            <div className="flex items-center gap-3">
-                                                                <TrendingUp size={14} className="text-green-400" />
-                                                                <span className="text-[10px] font-display uppercase">Trade Pact - {p.empireAId === selectedFactionId ? p.empireBId : p.empireAId}</span>
-                                                            </div>
-                                                            <span className="text-[9px] font-mono text-green-400/60 uppercase">Profitable</span>
-                                                        </div>
-                                                    ))}
-                                                    {activeTributes.map(t => (
-                                                        <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-white/10 border border-red-500/30">
-                                                            <div className="flex items-center gap-3">
-                                                                <DollarSign size={14} className="text-red-400" />
-                                                                <span className="text-[10px] font-display uppercase">Tribute: {t.vassalId === selectedFactionId ? 'Vassal' : 'Overlord'}</span>
-                                                            </div>
-                                                            <span className="text-[9px] font-mono text-red-500/60 uppercase">{t.amountPerTick}/tick</span>
-                                                        </div>
-                                                    ))}
-                                                </>
-                                            )}
-                                        </div>
-                                    </section>
+                                    </div>
                                 </div>
                             </div>
                         ) : (
-                            /* Intelligence Tab Content (Original Dossier Logic) */
-                            <div className="space-y-8 animate-in fade-in duration-500">
-                                {/* Escalation & Rivalry Section */}
-                                <div className="bg-slate-900/60 border border-slate-700/50 rounded-2xl overflow-hidden shadow-2xl">
-                                    <div className="px-6 py-4 border-b border-slate-700/30 bg-white/5 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Activity size={14} className="text-amber-500" />
-                                            <span className="text-xs font-display tracking-widest text-slate-400">ESCALATION LADDER</span>
+                            <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {[
+                                        { label: 'Network Infiltration', val: '88%', sub: 'Signal Clarity' },
+                                        { label: 'Counter-Intel Risk', val: '12%', sub: 'Detection Chance' },
+                                        { label: 'Vulnerability Window', val: '14m', sub: 'Archive Sync' }
+                                    ].map(stat => (
+                                        <div key={stat.label} className="glass-panel p-6 rounded-2xl border-white/5 text-center transition-all hover:border-white/20">
+                                            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-2">{stat.label}</span>
+                                            <div className="text-3xl font-mono text-indigo-400 mb-1">{stat.val}</div>
+                                            <span className="text-[8px] text-slate-600 uppercase tracking-tighter">{stat.sub}</span>
                                         </div>
-                                        <span className="text-[10px] font-mono text-amber-500 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 uppercase">
-                                            {rivalry ? ESCALATION_LABELS[rivalry.escalationLevel] : 'NEUTRAL'}
-                                        </span>
-                                    </div>
-
-                                    <div className="p-8 space-y-6">
-                                        <div className="flex gap-1.5 h-4">
-                                            {[0, 1, 2, 3, 4, 5, 6, 7].map((lvl) => (
-                                                <div 
-                                                    key={lvl}
-                                                    className={`flex-1 rounded transition-all duration-700 ${
-                                                        rivalry && lvl <= rivalry.escalationLevel 
-                                                        ? (lvl < 2 ? 'bg-blue-500' : lvl < 5 ? 'bg-amber-500' : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]')
-                                                        : 'bg-slate-800'
-                                                    }`}
-                                                />
-                                            ))}
-                                        </div>
-
-                                        <div className="flex justify-between items-end">
-                                            <div>
-                                                <span className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1">Rivalry Score</span>
-                                                <span className="text-4xl font-mono font-bold text-white leading-none">
-                                                    {rivalry?.rivalryScore ?? 0}<span className="text-sm text-slate-600 ml-1">/ 100</span>
-                                                </span>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1">System Status</span>
-                                                <span className={`text-xs font-display ${rivalry?.detenteActive ? 'text-green-400' : 'text-slate-400'}`}>
-                                                    {rivalry?.detenteActive ? 'DETENTE ACTIVE - RELATION DECAY' : 'ACTIVE STRATEGIC COMPETITION'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-3 border-t border-slate-700/30 bg-black/20">
-                                        <button 
-                                            onClick={() => handleAction('envoy', sendEnvoyAction(playerState.factionId, selectedFactionId))}
-                                            disabled={isProcessing === 'envoy'}
-                                            className="p-6 flex flex-col items-center gap-2 hover:bg-blue-500/10 transition-colors group border-r border-slate-700/30"
-                                        >
-                                            <Send size={20} className="text-blue-400 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-display text-slate-400 uppercase tracking-widest">Send Envoy</span>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleAction('peace', offerPeaceAction(playerState.factionId, selectedFactionId))}
-                                            disabled={isProcessing === 'peace'}
-                                            className="p-6 flex flex-col items-center gap-2 hover:bg-green-500/10 transition-colors group border-r border-slate-700/30"
-                                        >
-                                            <Heart size={20} className="text-green-400 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-display text-slate-400 uppercase tracking-widest">Offer Peace</span>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleAction('war', declareWarAction(playerState.factionId, selectedFactionId))}
-                                            disabled={isProcessing === 'war'}
-                                            className="p-6 flex flex-col items-center gap-2 hover:bg-red-500/10 transition-colors group"
-                                        >
-                                            <Skull size={20} className="text-red-400 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-display text-slate-400 uppercase tracking-widest">Declare War</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Proxy Conflicts Section */}
-                                {diplomacyState.proxyConflicts.filter(p => p.targetEmpireId === selectedFactionId).length > 0 && (
-                                    <div className="space-y-4">
-                                        <h3 className="text-xs uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                                            <Flame className="w-3 h-3 text-orange-500" /> Active Shadow Conflicts
-                                        </h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {diplomacyState.proxyConflicts.filter(p => p.targetEmpireId === selectedFactionId).map(conflict => (
-                                                <div key={conflict.id} className="bg-slate-900/40 border border-orange-500/20 rounded-xl p-5 relative overflow-hidden">
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <div>
-                                                            <h4 className="text-sm font-display text-white uppercase tracking-wider">{conflict.rebelFactionId.replace(/-/g, ' ')}</h4>
-                                                            <p className="text-[10px] text-slate-500 uppercase">System: {conflict.systemId}</p>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <span className="text-[9px] text-slate-500 block uppercase">Blowback</span>
-                                                            <span className={`text-xs font-mono font-bold ${conflict.blowbackRisk > 50 ? 'text-red-400' : 'text-orange-400'}`}>
-                                                                {conflict.blowbackRisk.toFixed(0)}%
-                                                            </span>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="space-y-2">
-                                                        <div className="flex justify-between text-[9px] uppercase text-slate-400 font-mono">
-                                                            <span>Conflict Intensity</span>
-                                                            <span>{conflict.intensity.toFixed(0)}%</span>
-                                                        </div>
-                                                        <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                                            <div 
-                                                                className="h-full bg-gradient-to-r from-orange-600 via-orange-400 to-red-500 rounded-full transition-all duration-1000"
-                                                                style={{ width: `${conflict.intensity}%` }}
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <button 
-                                                        onClick={() => handleAction(conflict.id, sponsorProxyAction(playerState.factionId, conflict.id, 500))}
-                                                        disabled={isProcessing === conflict.id}
-                                                        className="mt-6 w-full py-2.5 bg-orange-600/10 hover:bg-orange-600/20 border border-orange-500/30 text-orange-400 rounded-lg text-[10px] font-display uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                                                    >
-                                                        {isProcessing === conflict.id ? 'Channeling Funds...' : (
-                                                            <><Zap size={14} /> Increase Funding (500 Energy)</>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Faction Description Footer */}
-                        <div className="pt-10 border-t border-white/5 flex gap-8">
-                            <div className="flex-1 space-y-4">
-                                <h3 className="text-xs uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                                    <BookOpen className="w-3 h-3" /> Faction Manifesto
-                                </h3>
-                                <div className="p-6 rounded-xl bg-white/5 border border-white/5 italic text-sm text-slate-400 leading-relaxed shadow-inner">
-                                    "{selectedFaction.description}"
-                                </div>
-                            </div>
-                            <div className="w-64 space-y-4">
-                                <h3 className="text-xs uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                                    <Target className="w-3 h-3" /> Doctrine Tags
-                                </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    {(empireIdentity.reputation[selectedFactionId]?.derivedTags || selectedFaction.traits).map((trait: string) => (
-                                        <span key={trait} className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase tracking-wide text-slate-300 font-mono">
-                                            {trait}
-                                        </span>
                                     ))}
                                 </div>
+                                <div className="glass-panel p-20 rounded-3xl border-dashed border-white/10 flex flex-col items-center gap-6 bg-indigo-500/[0.02]">
+                                    <Activity className="w-12 h-12 text-indigo-500/20 animate-pulse" />
+                                    <div className="text-center">
+                                        <span className="text-[10px] font-display text-slate-400 uppercase tracking-[0.3em]">Neural Interception Pending</span>
+                                        <p className="text-[9px] text-slate-600 mt-2 max-w-xs mx-auto">Upgrade to Tier 2 Intelligence Archive to unlock deep-sector traffic analysis.</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
+            </div>
+
+            {/* Footer / Status Bar */}
+            <div className="p-4 bg-black/40 border-t border-white/5 flex items-center justify-between px-10">
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
+                        <span className="text-[9px] font-mono text-slate-500 uppercase">Archive Link: STABLE</span>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-white/10 pl-6">
+                        <Activity className="w-3 h-3 text-slate-500" />
+                        <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Protocol Sync Latency: 14ms</span>
+                    </div>
+                </div>
+                <div className="text-[9px] font-mono text-slate-600 uppercase">Sovereign OS v1.0.4 r75</div>
             </div>
         </div>
     );
 }
+

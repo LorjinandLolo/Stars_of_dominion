@@ -15,11 +15,11 @@ import { Domain, Tier } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
 import { startResearchAction, getPlayerTechStateAction } from '@/app/actions/tech';
 import '@/lib/tech/techData';
-
-
+import TechNode from '../tech/TechNode';
+import TechConnectors from '../tech/TechConnectors';
 
 export default function ResearchPanel() {
-    const { techState, playerState, updateTech } = useUIStore();
+    const { techState, playerState, updateTech, nowSeconds } = useUIStore();
     const [scale, setScale] = React.useState(1);
     const [activeBranch, setActiveBranch] = React.useState<Domain>(Domain.MILITARY);
     
@@ -90,7 +90,6 @@ export default function ResearchPanel() {
                     </div>
                 </div>
 
-                {/* Branch Tabs */}
                 <div className="flex gap-1">
                     {branches.map(branch => {
                         const isActive = activeBranch === branch.id;
@@ -113,13 +112,11 @@ export default function ResearchPanel() {
                 </div>
             </div>
 
-            {/* Tree Canvas */}
             <div className="flex-1 overflow-auto custom-scrollbar relative bg-[url('/grid-dark.svg')] bg-repeat">
                 <div 
                     className="relative p-20 min-w-[6000px] min-h-[3000px]"
                     style={{ transform: `scale(${scale})`, transformOrigin: '0 0' }}
                 >
-                    {/* SVG Connections Layer */}
                     <TechConnectors 
                         techs={filteredTechs} 
                         unlockedTechIds={techState.unlockedTechIds} 
@@ -128,19 +125,20 @@ export default function ResearchPanel() {
                         offsetY={offsetY}
                     />
 
-                    {/* Nodes Layer */}
                     {filteredTechs.map(tech => {
                         const isUnlocked = unlockedSet.has(tech.id);
                         const isLocked = lockedSet.has(tech.id);
                         const slot = techState.activeSlots?.find(s => s.techId === tech.id);
                         const isResearching = !!slot;
-                        
-                        // Availability logic: not unlocked, not locked, and all prereqs met
                         const prereqsMet = (tech.prerequisites || []).every(pid => unlockedSet.has(pid));
                         const isAvailable = !isUnlocked && !isLocked && !isResearching && prereqsMet;
 
-                        // Mock progress for visualization if researching
-                        const progress = isResearching ? 45 : 0; 
+                        let progress = 0;
+                        if (isResearching && slot) {
+                            const elapsed = nowSeconds - (slot.startTime || 0);
+                            const total = (tech as any).baseCost || 100;
+                            progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
+                        }
 
                         return (
                             <TechNode
@@ -161,7 +159,6 @@ export default function ResearchPanel() {
                 </div>
             </div>
 
-            {/* Footer / Telemetry */}
             <div className="p-4 bg-slate-900/60 border-t border-white/5 backdrop-blur-md">
                 <div className="flex items-center gap-6 max-w-5xl mx-auto italic">
                     <div className="flex items-center gap-2">
@@ -169,16 +166,8 @@ export default function ResearchPanel() {
                         <span className="text-[10px] font-display text-slate-400 uppercase tracking-widest">Archive Sync Status:</span>
                         <span className="text-[10px] font-mono text-green-400 uppercase">Synchronized</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Atom size={14} className="text-purple-500" />
-                        <span className="text-[10px] font-display text-slate-400 uppercase tracking-widest">Theoretical Cap:</span>
-                        <span className="text-[10px] font-mono text-slate-200">Tier VI Singular</span>
-                    </div>
                 </div>
             </div>
         </div>
     );
 }
-
-import TechNode from '../tech/TechNode';
-import TechConnectors from '../tech/TechConnectors';

@@ -5,14 +5,16 @@ import { getActiveCrises } from './crisis';
 import { calculateTotalUpkeep, checkEconomicHealth } from './upkeep';
 import { ResourceId, EconomyState, Entity } from '@/types';
 
-// Initialize Appwrite (Server-side)
-const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!)
-    .setKey(process.env.APPWRITE_API_KEY!);
-
-const db = new Databases(client);
+// Initialize Appwrite (Server-side) safely and lazily
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
+
+function getDb(): Databases {
+    const client = new Client()
+        .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'http://localhost/v1')
+        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || '')
+        .setKey(process.env.APPWRITE_API_KEY || '');
+    return new Databases(client);
+}
 const COLL_FACTIONS = 'factions';
 const COLL_PLANETS = 'planets';
 const COLL_ARMIES = 'armies';
@@ -23,7 +25,7 @@ const COLL_ARMIES = 'armies';
  */
 export async function updateEconomy(factionId: string): Promise<any> { // TODO: Return EconomyState properly
     // 1. Fetch Faction Data
-    const faction: any = await db.getDocument(DB_ID, COLL_FACTIONS, factionId);
+    const faction: any = await getDb().getDocument(DB_ID, COLL_FACTIONS, factionId);
 
     // Parse JSON fields
     let resources: any = { metals: 0, chemicals: 0, food: 0, happiness: 50, credits: 0 };
@@ -64,7 +66,7 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
 
     // 2. Fetch Assets for Upkeep
     // Planets
-    const planets = await db.listDocuments(DB_ID, COLL_PLANETS, [
+    const planets = await getDb().listDocuments(DB_ID, COLL_PLANETS, [
         Query.equal('owner_faction_id', factionId),
         Query.limit(100)
     ]);
@@ -76,7 +78,7 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
     }));
 
     // Armies
-    const armies = await db.listDocuments(DB_ID, COLL_ARMIES, [
+    const armies = await getDb().listDocuments(DB_ID, COLL_ARMIES, [
         Query.equal('faction_id', factionId),
         Query.limit(100)
     ]);
@@ -135,7 +137,7 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
         newResources._health = economicHealth;
 
         // 5. Save to DB
-        await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
+        await getDb().updateDocument(DB_ID, COLL_FACTIONS, factionId, {
             resources: JSON.stringify(newResources),
             income_rates: JSON.stringify(newRates),
             economy_last_updated: now.toISOString()
@@ -144,7 +146,7 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
         // Just update rates if time hasn't passed significant amount
         // But still verify health status?
         if (JSON.stringify(rates) !== JSON.stringify(newRates)) {
-            await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
+            await getDb().updateDocument(DB_ID, COLL_FACTIONS, factionId, {
                 income_rates: JSON.stringify(newRates)
             });
         }

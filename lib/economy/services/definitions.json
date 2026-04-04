@@ -1,0 +1,144 @@
+[
+  {
+    "id": "healthcare",
+    "name": "Healthcare",
+    "category": "basic_service",
+    "description": "Medical support that improves population resilience and growth.",
+    "baseCapacity": 100,
+    "baseUpkeep": {
+      "credits": 2,
+      "energy": 1
+    },
+    "scaling": {
+      "capacityPerLevel": 100,
+      "upkeepMultiplier": 1.15
+    },
+    "effects": {
+      "adequate": {
+        "populationGrowth": 0.05,
+        "happiness": 2
+      },
+      "strained": {
+        "populationGrowth": 0.0,
+        "happiness": -1
+      },
+      "failing": {
+        "populationGrowth": -0.05,
+        "happiness": -3,
+        "stability": -2
+      },
+      "collapsed": {
+        "populationGrowth": -0.1,
+        "happiness": -6,
+        "stability": -4
+      }
+    },
+    "tags": ["population", "health", "basic"]
+  },
+  {
+    "id": "food_distribution",
+    "name": "Food Distribution",
+    "category": "basic_service",
+    "description": "Logistics network required to prevent local famines.",
+    "baseCapacity": 100,
+    "baseUpkeep": {
+      "credits": 1,
+      "energy": 1
+    },
+    "scaling": {
+      "capacityPerLevel": 100,
+      "upkeepMultiplier": 1.10
+    },
+    "effects": {
+      "adequate": {
+        "happiness": 1
+      },
+      "strained": {
+        "happiness": -1,
+        "manpower": -5
+      },
+      "failing": {
+        "happiness": -4,
+        "stability": -3,
+        "manpower": -15
+      },
+      "collapsed": {
+        "happiness": -8,
+        "stability": -6,
+        "populationGrowth": -0.15,
+        "manpower": -30
+      }
+    },
+    "tags": ["logistics", "survival", "basic"]
+  },
+  {
+    "id": "energy_grid",
+    "name": "Energy Grid",
+    "category": "basic_service",
+    "description": "Distributes energy to the population securely. Defines what % of raw energy can actually be utilized.",
+    "baseCapacity": 100,
+    "baseUpkeep": {
+      "credits": 3
+    },
+    "scaling": {
+      "capacityPerLevel": 100,
+      "upkeepMultiplier": 1.20
+    },
+    "effects": {
+      "adequate": {
+        "efficiency": 1.0,
+        "stability": 2
+      },
+      "strained": {
+        "efficiency": 0.75,
+        "happiness": -2
+      },
+      "failing": {
+        "efficiency": 0.40,
+        "happiness": -4,
+        "stability": -3
+      },
+      "collapsed": {
+        "efficiency": 0.10,
+        "happiness": -10,
+        "stability": -8
+      }
+    },
+    "tags": ["infrastructure", "core", "utility"]
+  },
+  {
+    "id": "housing",
+    "name": "Housing",
+    "category": "basic_service",
+    "description": "Shelter caps population limit and mitigates overcrowding distress.",
+    "baseCapacity": 100,
+    "baseUpkeep": {
+      "credits": 1
+    },
+    "scaling": {
+      "capacityPerLevel": 100,
+      "upkeepMultiplier": 1.05
+    },
+    "effects": {
+      "adequate": {
+        "happiness": 1
+      },
+      "strained": {
+        "happiness": -2,
+        "populationGrowth": -0.05
+      },
+      "failing": {
+        "happiness": -5,
+        "stability": -2,
+        "populationGrowth": -0.10
+      },
+      "collapsed": {
+        "happiness": -8,
+        "stability": -5,
+        "unrestRisk": 10,
+        "populationGrowth": -0.20
+      }
+    },
+    "tags": ["population", "infrastructure", "basic"]
+  }
+]

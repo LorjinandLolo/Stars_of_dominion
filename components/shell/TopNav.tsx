@@ -118,9 +118,9 @@ function NavDropdown({ groupId, items, activeTab, setActiveTab, label, toggleFlo
                     {items.map(({ tab, label: itemLabel, icon }) => {
                         const isActive = activeTab === tab;
                         return (
-                            <div className="relative group/btn-container">
+                            <div key={tab} className="relative group/btn-container">
                                 <button
-                                    key={tab}
+
                                     onClick={() => {
                                         setActiveTab(tab);
                                         setIsOpen(false);
@@ -244,9 +244,8 @@ export default function TopNav() {
                                             const hasCrisisAlert = isGalaxy && activeCrises.length > 0;
 
                                             return (
-                                                <div className="relative group/btn-container">
+                                                <div key={tab} className="relative group/btn-container">
                                                     <button
-                                                        key={tab}
                                                         onClick={() => setActiveTab(tab)}
                                                         className={[
                                                             'relative flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-display tracking-[0.15em] transition-all duration-300 rounded-sm group/btn',

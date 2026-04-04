@@ -2,11 +2,12 @@
 
 import { Client, Account, Models } from 'appwrite';
 
-const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!);
-
-const account = new Account(client);
+function getAccount(): Account {
+    const client = new Client()
+        .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'http://localhost/v1')
+        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || '');
+    return new Account(client);
+}
 
 export const authService = {
     async getCurrentUser(): Promise<Models.User<Models.Preferences> | null> {
@@ -25,7 +26,7 @@ export const authService = {
                     accessedAt: new Date().toISOString(),
                 } as Models.User<Models.Preferences>;
             }
-            return await account.get();
+            return await getAccount().get();
         } catch (error) {
             return null;
         }
@@ -33,7 +34,7 @@ export const authService = {
 
     async logout() {
         try {
-            await account.deleteSession('current');
+            await getAccount().deleteSession('current');
             localStorage.removeItem('selectedFactionId');
             localStorage.removeItem('dev_bypass');
         } catch (error) {

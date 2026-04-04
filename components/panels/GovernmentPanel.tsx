@@ -45,10 +45,10 @@ export default function GovernmentPanel() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {/* Government type & Crisis Status */}
                 <div className="space-y-3">
-                    <div className="bg-slate-900/60 border rounded-lg p-4 space-y-3" style={{ borderColor: politicsState.crisisConditionMet ? '#ef4444' : `${govType.color}44` }}>
+                    <div className="bg-slate-900/60 border rounded-lg p-4 space-y-3" style={{ borderColor: politicsState?.crisisConditionMet ? '#ef4444' : `${govType.color}44` }}>
                         <div className="flex justify-between items-start">
                             <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase">Current Administration</div>
-                            {politicsState.crisisConditionMet && (
+                            {politicsState?.crisisConditionMet && (
                                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/10 border border-red-500/30 rounded text-red-500 text-[9px] font-display animate-pulse uppercase">
                                     <AlertCircle size={10} /> Domestic Crisis
                                 </div>
@@ -67,7 +67,7 @@ export default function GovernmentPanel() {
                         </div>
                     </div>
 
-                    {politicsState.activeIndicators.length > 0 && (
+                    {(politicsState?.activeIndicators?.length ?? 0) > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {politicsState.activeIndicators.map(indicator => (
                                 <span key={indicator} className="text-[9px] font-display px-2 py-0.5 bg-slate-800 text-slate-400 border border-slate-700 rounded uppercase tracking-wider">
@@ -84,7 +84,7 @@ export default function GovernmentPanel() {
                         <Users size={12} className="text-indigo-400" /> INSTITUTIONAL POWER BLOCS
                     </div>
                     <div className="grid grid-cols-1 gap-3">
-                        {politicsState.blocs.map((bloc) => (
+                        {politicsState?.blocs?.map((bloc) => (
                             <div key={bloc.id} className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 transition-all hover:bg-slate-900/60 group">
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
@@ -122,7 +122,7 @@ export default function GovernmentPanel() {
                     </div>
                     <div className="space-y-2">
                         {POLICIES.map((policy) => {
-                            const isActive = politicsState.activePolicies.includes(policy.id);
+                            const isActive = politicsState?.activePolicies?.includes(policy.id) ?? false;
                             return (
                                 <div key={policy.id} className={`flex items-center gap-4 p-3 rounded-lg border transition-all ${isActive ? 'bg-blue-900/10 border-blue-500/30' : 'bg-slate-900/30 border-slate-800/40 hover:border-slate-700'}`}>
                                     <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${isActive ? 'bg-blue-500 text-white shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'bg-slate-800 text-slate-500'}`}>

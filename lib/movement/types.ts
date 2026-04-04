@@ -281,6 +281,10 @@ export interface Fleet {
     postureId: EmpirePostureType;
     /** 0–1: fleet strength (combat power / HP proxy). */
     strength: number;
+    /** The aggregate base power of the entire fleet. */
+    basePower: number;
+    /** The unit breakdown (e.g. { interceptor: 10, destroyer: 2 }). */
+    composition: any; // Using any for now to avoid circular deps if needed, but will refine to UnitComposition
     /** Hyperdrive profile this fleet uses for layer modifiers. */
     hyperdriveProfile: HyperdriveProfile;
     /** Whether this fleet is detectable above threshold (ui hint). */
@@ -377,6 +381,26 @@ export interface EmpirePosture {
     ideology: IdeologyProfile;
 }
 
+// ─── Air Sorties (Naval Air Support) ───────────────────────────────────────────
+
+export type AirMissionType = 'scout' | 'strike_fleet' | 'strike_planet' | 'escort';
+export type AirSortieStatus = 'outbound' | 'executing' | 'returning' | 'destroyed';
+
+export interface AirSortie {
+    id: string;
+    factionId: string;
+    parentBaseId: string; // Fleet ID or Planet ID
+    missionType: AirMissionType;
+    composition: { interceptor?: number; bomber?: number };
+    originSystemId: string;
+    targetId: string; // System, Fleet, Planet, or Route ID
+    status: AirSortieStatus;
+    maxRadius: number; // Operational radius in hyperlane jumps
+    
+    currentSystemId: string;
+    launchedAt: number;
+}
+
 // ─── World State (aggregate passed to services) ───────────────────────────────
 
 export interface MovementWorldState {
@@ -394,6 +418,7 @@ export interface MovementWorldState {
     automationDoctrines: Map<string, AutomationDoctrine>;
     empirePostures: Map<string, EmpirePosture>;
     degradations: Map<string, InfrastructureDegradation>;
+    sorties: Map<string, AirSortie>;
     /** Unix epoch in seconds — current simulation time. */
     nowSeconds: number;
 }

@@ -72,3 +72,53 @@ export function serializeWorld(world: GameWorldState): string {
 export function deserializeWorld(snapshot: string): GameWorldState {
     return recordsToMaps(JSON.parse(snapshot)) as GameWorldState;
 }
+
+// ─── Phase 4: State Sharding Utilities ────────────────────────────────────────
+
+/**
+ * Extracts a specific faction's data into a sharded JSON string.
+ */
+export function extractFactionShard(world: GameWorldState, factionId: string): string {
+    const shard = {
+        factionId,
+        fleets: Array.from(world.movement.fleets.values()).filter(f => f.factionId === factionId),
+        economy: world.economy.factions.get(factionId),
+        tech: world.tech.get(factionId),
+        espionageAgents: Array.from(world.espionage.agents.values()).filter((a: any) => a.ownerFactionId === factionId),
+        intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId)
+    };
+    return JSON.stringify(mapsToRecords(shard));
+}
+
+/**
+ * Injects a parsed shard back into the main GameWorldState map structures.
+ */
+export function injectFactionShard(world: GameWorldState, shardJson: string) {
+    if (!shardJson) return;
+    const shard = recordsToMaps(JSON.parse(shardJson));
+    if (shard.fleets) {
+        shard.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
+    }
+    if (shard.economy) world.economy.factions.set(shard.factionId, shard.economy);
+    if (shard.tech) world.tech.set(shard.factionId, shard.tech);
+    if (shard.espionageAgents) {
+        shard.espionageAgents.forEach((a: any) => world.espionage.agents.set(a.id, a));
+    }
+    if (shard.intelNetworks) {
+        shard.intelNetworks.forEach((n: any) => world.espionage.intelNetworks.set(n.id, n));
+    }
+}
+
+/**
+ * Returns a deep clone of the world state with all sharded data removed.
+ * This prevents the main 'default-session' document from breaking size limits.
+ */
+export function cleanWorldForSave(world: GameWorldState): GameWorldState {
+    const cloned = recordsToMaps(mapsToRecords(world)) as GameWorldState;
+    cloned.movement.fleets.clear();
+    cloned.economy.factions.clear();
+    cloned.tech.clear();
+    cloned.espionage.agents.clear();
+    cloned.espionage.intelNetworks.clear();
+    return cloned;
+}

@@ -28,6 +28,33 @@ export type PlanetType =
 
 export type ResourceBundle = Partial<Record<ResourceId, number>>;
 
+// ─── Planet Infrastructure & Services ───────────────────────────────────────────
+
+// ─── Planet Services & Demographics ───────────────────────────────────────────
+
+export type ServiceStatus = 'adequate' | 'strained' | 'failing' | 'collapsed';
+
+export interface PlanetServiceState {
+    serviceId: string;
+    level: number;
+    capacity: number;
+    demand: number;
+    efficiency: number;
+    coverageRatio: number;
+    status: ServiceStatus;
+    unpaidUpkeepTicks: number;
+    modifiers: string[];
+}
+
+export interface PlanetDemographics {
+    population: number;
+    growthRate: number;
+    housingCapacity: number;
+    serviceSatisfaction: number;
+    unrestRisk: number;
+    manpowerEfficiency: number;
+}
+
 // ─── Planet production ────────────────────────────────────────────────────────
 
 export interface PlanetProduction {
@@ -37,6 +64,10 @@ export interface PlanetProduction {
     planetType: PlanetType;
     /** Assorted SWN tags assigned to the original world. Determines Biosphere Traits. */
     tags: string[];
+    /** Essential Services map driven by JSON defs. */
+    services: Record<string, PlanetServiceState>;
+    /** Population and instability limits. */
+    demographics: PlanetDemographics;
     /**
      * Per-second production rates (before any multipliers).
      * Pulled from config economy.production.baseRates × planetTypeMults.
@@ -56,9 +87,11 @@ export interface PlanetProduction {
         research: number;
         cultural: number;
     };
-    /** Energy requirements */
+    /** Current load demanded by the infrastructure and population. */
     energyLoad: number;
-    /** Happiness 0–100. Increases with commodity access. */
+    /** Current energy output of the power grid. */
+    energyProduced: number;
+    /** Happiness 0–100. Increases with commodity access and basic services. */
     happiness: number;
     /** Instability 0–100. Increases with scarcity, decreases with happiness. */
     instability: number;

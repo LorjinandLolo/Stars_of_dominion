@@ -46,15 +46,21 @@ export interface TargetDetails {
 export interface CombatantState {
     factionId: string;
     role: 'attacker' | 'defender';
-    baseForceCount: number;
+    
+    // HOI4 Naval Engine Metrics
+    hp: number;
+    maxHp: number;
+    organization: number; 
+    maxOrganization: number;
+    screeningEfficiency: number; // 0 to 1, prevents torpedoes hitting capitals
+    
     composition: UnitComposition;
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy
     supply: number; // 0–1
-    morale: number; // 0–1
+    morale: number; // Global Morale (different from tactical Organization)
     doctrine: EngagementArchetype; // Pre-battle
 
     // In-combat variables
-    casualties: number;
     predictionPoints: number; // 0-3 (Doctrine, Archetype, Directive)
     currentStance?: CombatStance;
     currentDirective?: PostBattleDirective;

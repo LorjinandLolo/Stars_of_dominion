@@ -28,26 +28,7 @@ import type {
     EmpireIdentityState,
 } from '@/types/ui-state';
 import type { Fleet, FactionVisibility } from '@/lib/movement/types';
-
-import {
-    mockSystems,
-    mockLinks,
-    mockRegions,
-    mockCrisisWindows,
-    mockCouncilState,
-    mockPlayerState,
-    mockCrisisEvents,
-    mockPressState,
-} from '@/lib/ui-mock-data';
-import { mockSeasonState } from '@/lib/mock-season';
-import { mockChronicle } from '@/lib/mock-chronicle';
-import { mockCivilizationalOutcomes } from '@/lib/mock-outcomes';
-import { mockEspionageState } from '@/lib/mock-espionage';
-import { mockPoliticsState } from '@/lib/mock-politics';
-import { mockDiplomacyState } from '@/lib/mock-diplomacy';
-import { mockTechState } from '@/lib/mock-tech';
-import { mockDiscourseState } from '@/lib/mock-discourse';
-import { mockCorporateState } from '@/lib/mock-corporate';
+import type { Faction } from '@/lib/trade-system/types';
 
 // ─── Store shape ──────────────────────────────────────────────────────────────
 
@@ -190,6 +171,10 @@ export interface UIStore {
     toggleFloatTab: (tab: NavTab) => void;
     updateFloatedTabPos: (tab: NavTab, pos: { x: number; y: number; w?: number; h?: number }) => void;
     closeFloatedTab: (tab: NavTab) => void;
+
+    // ── Factions & Economy ──
+    factions: Record<string, Faction>;
+    setFactions: (factions: Record<string, Faction>) => void;
 }
 
 
@@ -238,26 +223,26 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setSelectedPlanet: (id: string | null) => set({ selectedPlanetId: id }),
 
     // ── Systems & links ──
-    systems: mockSystems,
+    systems: [],
     updateSystem: (id, patch) =>
         set((state) => ({
             systems: state.systems.map((s) => (s.id === id ? { ...s, ...patch } : s)),
         })),
-    links: mockLinks,
+    links: [],
 
     // ── Fleets ──
     fleets: [],
     setFleets: (fleets) => set({ fleets }),
 
     // ── Regions ──
-    regions: mockRegions,
+    regions: [],
     updateRegion: (id, patch) =>
         set((state) => ({
             regions: state.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
         })),
 
     // ── Crisis windows ──
-    crisisWindows: mockCrisisWindows,
+    crisisWindows: [],
     addCrisisWindow: (w) =>
         set((state) => ({ crisisWindows: [...state.crisisWindows, w] })),
     removeCrisisWindow: (id) =>
@@ -278,17 +263,17 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
 
     // ── Council ──
-    councilState: mockCouncilState,
+    councilState: { status: 'absent', members: [], policies: [], votes: {} } as any,
     updateCouncil: (patch) =>
         set((state) => ({ councilState: { ...state.councilState, ...patch } })),
 
     // ── Player ──
-    playerState: mockPlayerState,
+    playerState: { role: 'sovereign', factionId: '', credits: 0, pirateInvolvementScore: 0 } as any,
     updatePlayer: (patch) =>
         set((state) => ({ playerState: { ...state.playerState, ...patch } })),
 
     // ── Season ──
-    seasonState: mockSeasonState,
+    seasonState: { season: 0, phase: 'exploration', regionalLocks: {} } as any,
     updateSeason: (patch) =>
         set((state) => ({ seasonState: { ...state.seasonState, ...patch } })),
     lockRegion: (regionId) =>
@@ -303,7 +288,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
 
     // ── Crisis events ──
-    crisisEvents: mockCrisisEvents,
+    crisisEvents: [],
     addCrisisEvent: (ev) =>
         set((state) => ({ crisisEvents: [...state.crisisEvents, ev] })),
     resolveCrisisEvent: (id) =>
@@ -314,12 +299,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
 
     // ── Chronicle ──
-    chronicle: mockChronicle,
+    chronicle: [],
     addChronicleEntry: (entry) =>
         set((state) => ({ chronicle: [...state.chronicle, entry] })),
 
     // ── Outcomes ──
-    civilizationalOutcomes: mockCivilizationalOutcomes,
+    civilizationalOutcomes: [],
     setCivilizationalOutcomes: (outcomes) => set({ civilizationalOutcomes: outcomes }),
 
     // ── Season end ──
@@ -331,27 +316,27 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setShowEconomicTerminal: (show) => set({ showEconomicTerminal: show }),
 
     // ── Espionage ──
-    espionageState: mockEspionageState,
+    espionageState: { operations: [], counterIntel: {}, networks: {} } as any,
     updateEspionage: (patch) =>
         set((state) => ({ espionageState: { ...state.espionageState, ...patch } })),
 
     // ── Politics ──
-    politicsState: mockPoliticsState,
+    politicsState: { blocs: [], activePolicies: [], crisisConditionMet: false, activeIndicators: [], allFactions: [] } as any,
     updatePolitics: (patch) =>
         set((state) => ({ politicsState: { ...state.politicsState, ...patch } })),
 
     // ── Diplomacy ──
-    diplomacyState: mockDiplomacyState,
+    diplomacyState: { activeTreaties: [], pendingAgreements: [] } as any,
     updateDiplomacy: (patch) =>
         set((state) => ({ diplomacyState: { ...state.diplomacyState, ...patch } })),
 
     // ── Tech ──
-    techState: mockTechState,
+    techState: { researched: [], researchQueue: [], knownBlueprints: [] } as any,
     updateTech: (patch) =>
         set((state) => ({ techState: { ...state.techState, ...patch } })),
 
     // ── Discourse ──
-    discourseState: mockDiscourseState,
+    discourseState: { activeChats: [], messages: {} } as any,
     updateDiscourse: (patch) =>
         set((state) => ({ discourseState: { ...state.discourseState, ...patch } })),
     addDiscourseMessage: (factionId, message) =>
@@ -369,12 +354,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
         }),
 
     // ── Corporate ──
-    corporateState: mockCorporateState,
+    corporateState: { activeCharters: [], marketFluctuations: {} } as any,
     updateCorporate: (patch) =>
         set((state) => ({ corporateState: { ...state.corporateState, ...patch } })),
 
     // ── Press ──
-    pressState: mockPressState,
+    pressState: { publishedStories: [], activeStories: [], credibilityByFaction: {} } as any,
     updatePress: (patch) =>
         set((state) => ({ pressState: { ...state.pressState, ...patch } })),
 
@@ -449,5 +434,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
             delete newFloated[tab];
             return { floatedTabs: newFloated };
         }),
+    // ── Factions & Economy ──
+    factions: {},
+    setFactions: (factions) => set({ factions }),
 }));
 

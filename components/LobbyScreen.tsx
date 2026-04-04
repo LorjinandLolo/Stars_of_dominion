@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 
@@ -29,17 +28,71 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
 
+    const [takenFactions, setTakenFactions] = useState<Record<string, string>>({});
+    const [currentUser, setCurrentUser] = useState<any>(null);
+
+    useEffect(() => {
+        // Fetch User
+        authService.getCurrentUser().then(user => {
+             if (user) {
+                  setCurrentUser(user);
+             } else {
+                  router.push('/login');
+             }
+        });
+
+        // Fetch Taken Factions
+        fetch('/api/lobby/claim')
+            .then(res => res.json())
+            .then(data => {
+                if (data.claimedFactions) {
+                    setTakenFactions(data.claimedFactions);
+                     // If I already claimed something, pre-select it
+                     const myClaim = Object.entries(data.claimedFactions).find(([fid, uid]) => uid === currentUser?.$id);
+                     if (myClaim) {
+                          setSelectedId(myClaim[0]);
+                          setPlayerFactionId(myClaim[0]);
+                     }
+                }
+            })
+            .catch(err => console.error("Failed to fetch claims:", err));
+    }, [currentUser?.$id]);
+
     const handleSelect = (factionId: string) => {
+        if (takenFactions[factionId] && takenFactions[factionId] !== currentUser?.$id) return; // Locked by someone else
         setSelectedId(factionId);
     };
 
-    const handleConfirm = () => {
-        if (!selectedId) return;
+    const handleConfirm = async () => {
+        if (!selectedId || !currentUser) return;
         setConfirming(true);
-        // Save to localStorage and store
-        localStorage.setItem('selectedFactionId', selectedId);
-        setPlayerFactionId(selectedId);
-        setTimeout(() => router.push('/'), 800);
+        
+        try {
+            const res = await fetch('/api/lobby/claim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUser.$id,
+                    factionId: selectedId,
+                    displayName: currentUser.name
+                })
+            });
+
+            if (!res.ok) {
+                 const err = await res.json();
+                 alert(`Cannot claim faction: ${err.error}`);
+                 setConfirming(false);
+                 return;
+            }
+
+            // Success
+            localStorage.setItem('selectedFactionId', selectedId);
+            setPlayerFactionId(selectedId);
+            router.push('/');
+        } catch (e) {
+            alert('Failed to contact server.');
+            setConfirming(false);
+        }
     };
 
     const selected = factions.find(f => f.id === selectedId);
@@ -120,15 +173,21 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                                 transform: isSelected ? 'scale(1.02)' : isHovered ? 'scale(1.01)' : 'scale(1)',
                             }}
                         >
-                            {/* Selection indicator */}
-                            {isSelected && (
-                                <div
-                                    className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
-                                    style={{ background: faction.accentColor }}
-                                >
-                                    ✓
-                                </div>
-                            )}
+                                {/* Selection indicator or Lock indicator */}
+                                {isSelected ? (
+                                    <div
+                                        className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
+                                        style={{ background: faction.accentColor }}
+                                    >
+                                        ✓
+                                    </div>
+                                ) : takenFactions[faction.id] && takenFactions[faction.id] !== currentUser?.$id ? (
+                                     <div
+                                        className="absolute top-4 right-4 w-8 h-8 rounded bg-red-900/80 flex items-center justify-center text-xs z-20 border border-red-500/50"
+                                    >
+                                        🔒
+                                    </div>
+                                ) : null}
 
                                 {/* Icon + Name */}
                                 <div className="flex items-center gap-4 mb-3 relative z-10">

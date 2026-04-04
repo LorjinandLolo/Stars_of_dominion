@@ -9,6 +9,7 @@
 import { revalidatePath } from 'next/cache';
 import { PlayerAction, ActionResult } from '@/lib/actions/types';
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
+import { withSafeAction } from '@/lib/actions/safe-action';
 import { queueBuildingAction, upgradeBuildingAction, repairBuildingAction, recruitUnitsAction } from './construction';
 import { moveFleetAction, buildFleetAction } from './movement';
 import { assignAgentAction, launchCovertOpAction } from './espionage';
@@ -64,13 +65,14 @@ async function checkAndDeductCosts(factionId: string, cost: Partial<Record<Resou
  * logging, and multi-step validation.
  */
 export async function executePlayerAction(action: PlayerAction): Promise<ActionResult<any>> {
-  const definition = ACTION_DEFINITIONS[action.actionId];
-  if (!definition) {
-    return { success: false, error: `Unknown action: ${action.actionId}` };
-  }
+  return withSafeAction(async () => {
+    const definition = ACTION_DEFINITIONS[action.actionId];
+    if (!definition) {
+      return { success: false, error: `Unknown action: ${action.actionId}` };
+    }
 
-  // 1. Basic Validation (Schema check)
-  for (const [key, type] of Object.entries(definition.params)) {
+    // 1. Basic Validation (Schema check)
+    for (const [key, type] of Object.entries(definition.params)) {
     if (!(key in action.payload)) {
       return { success: false, error: `Missing parameter: ${key}` };
     }
@@ -82,124 +84,23 @@ export async function executePlayerAction(action: PlayerAction): Promise<ActionR
     return costResult;
   }
 
-  // 2. Dispatch to Subsystem
-  switch (action.actionId) {
-    case "PLANET_CONSTRUCT_BUILDING":
-      return await queueBuildingAction(
-        action.payload.planetId,
-        action.targetId || "", // targetId is systemId here
-        action.payload.buildingType,
-        action.issuerId
-      );
-
-    case "PLANET_UPGRADE_BUILDING":
-      return await upgradeBuildingAction(
-        action.payload.buildingId,
-        action.issuerId
-      );
-
-    case "PLANET_REPAIR_BUILDING":
-      return await repairBuildingAction(
-        action.payload.buildingId,
-        action.issuerId
-      );
-
-    case "PLANET_RECRUIT_UNITS":
-      return await recruitUnitsAction(
-        action.payload.planetId,
-        action.payload.unitType,
-        action.payload.count,
-        action.issuerId
-      );
-
-    case "MIL_MOVE_FLEET":
-      return await moveFleetAction(
-        action.payload.fleetId,
-        action.payload.destinationId
-      );
-
-    case "MIL_BUILD_FLEET":
-      return await buildFleetAction(
-        action.payload.planetId,
-        action.payload.systemId,
-        action.payload.factionId
-      );
-
-    case "MIL_ATTACK_FLEET":
-      return await attackFleetAction(
-        action.payload.attackerId,
-        action.payload.targetId
-      );
-
-    case "MIL_BOMBARD_PLANET":
-      return await bombardPlanetAction(
-        action.payload.fleetId,
-        action.payload.targetId
-      );
-
-    case "ESP_ASSIGN_AGENT":
-      return await assignAgentAction(
-        action.payload.agentId,
-        action.payload.systemId,
-        action.payload.domain // e.g. 'politicalSubversion'
-      );
-
-    case "ESP_SABOTAGE_FACILITY":
-      return await launchCovertOpAction(
-        action.issuerId,
-        action.payload.targetFactionId,
-        action.payload.targetRegionId,
-        'infrastructureSabotage',
-        action.payload.investment || 0.5,
-        action.payload.risk || 0.5
-      );
-
-    case "TECH_START_RESEARCH":
-      return await startResearchAction(
-        action.issuerId,
-        action.payload.techId
-      );
-
-    case "DIP_DECLARE_WAR":
-      return await declareWarAction(
-        action.issuerId,
-        action.payload.targetFactionId
-      );
-
-    case "DIP_OFFER_PEACE":
-      return await offerPeaceAction(
-        action.issuerId,
-        action.payload.targetFactionId
-      );
-
-    case "DIP_SEND_ENVOY":
-      return await sendEnvoyAction(
-        action.issuerId,
-        action.payload.targetFactionId
-      );
-
-    case "IDEO_ENACT_POLICY":
-      return await enactPolicyAction(
-        action.issuerId,
-        action.payload.policyId
-      );
-
-    case "LEADER_RECRUIT":
-      return await recruitLeaderAction(
-        action.issuerId,
-        action.payload.leaderId
-      );
-
-    case "LEADER_ASSIGN":
-      return await assignLeaderAction(
-        action.issuerId,
-        action.payload.leaderId,
-        action.payload.assignmentId
-      );
-
-    // Add more cases as subsystems are implemented (Diplomacy, etc.)
+    // 2. Push to Appwrite Order Queue instead of direct execution
+    const { db, ID } = await getServerClients();
     
-    default:
-      return { success: false, error: `Action ${action.actionId} is not yet implemented.` };
-  }
+    try {
+        await db.createDocument(DB_ID, 'game_orders', ID.unique(), {
+            factionId: action.issuerId,
+            actionId: action.actionId,
+            payload: JSON.stringify(action.payload),
+            processed: false
+        });
+        
+        console.log(`[Queue] Action ${action.actionId} queued for ${action.issuerId}`);
+        revalidatePath('/');
+        return { success: true };
+    } catch (e: any) {
+        console.error('[Queue] Failed to push action:', e);
+        return { success: false, error: 'Failed to synchronize action with database.' };
+    }
+  });
 }

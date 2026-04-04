@@ -1,8 +1,5 @@
-
-import { Faction } from '@/types/game';
+import { GameWorldState } from '../game-world-state';
 import { VictoryState, VictoryCondition } from '@/types/victory';
-import { DefeatManager } from '@/lib/defeat/manager';
-import { DefeatState } from '@/types/defeat';
 
 export const VICTORY_CONDITIONS: Record<string, VictoryCondition> = {
     'GALACTIC_MONOPOLY': {
@@ -23,74 +20,53 @@ export const VICTORY_CONDITIONS: Record<string, VictoryCondition> = {
 export class VictoryManager {
 
     /**
-     * Checks if the given faction has achieved victory over the others.
+     * Checks if the given faction has achieved victory.
+     * Uses the authoritative GameWorldState for multiplayer accuracy.
      */
-    static checkVictory(myFaction: Faction, otherFactions: Faction[], context: any = {}): VictoryState {
+    static checkVictory(factionId: string, world: GameWorldState): VictoryState {
+        const myEcon = world.economy.factions.get(factionId);
+        if (!myEcon) return { status: 'PENDING' };
 
-        // 1. Check Last Standing (Conquest / Collapse)
-        // We need to know the status of other factions. 
-        // Ideally, we run DefeatManager on them, or we trust their persisted state if we had one.
-        // For this check, we will assume we calculate their defeat status on the fly or it's passed in.
-
+        // 1. Check Last Standing (Conquest / Elimination)
         let activeRivals = 0;
-        let defeatedRivals = 0;
+        for (const [rId, rEcon] of world.economy.factions) {
+            if (rId === factionId) continue;
+            if (rId === 'faction-pirates' || rId === 'faction-neutral') continue;
 
-        for (const rival of otherFactions) {
-            // Self-check prevention (though caller should filter)
-            if (rival.$id === myFaction.$id) continue;
-
-            // We need to check if rival is "Alive"
-            // We can run a lightweight Defeat Check?
-            // Or assume if they are not in the list they are gone?
-            // Let's run a checkDefeatConditions if we have their data.
-
-            // Getting context for rival might be hard (planets, etc). 
-            // For MVP, let's look at their resources directly.
-
-            let rivalStatus: DefeatState['status'] = 'ALIVE';
-
-            // QUICK CHECK: If resources say collapsed
-            const rRes = typeof rival.resources === 'string' ? JSON.parse(rival.resources) : rival.resources;
-            if (rRes._health && rRes._health.status === 'collapsed') {
-                rivalStatus = 'ELIMINATED'; // Effectively
-            }
-
-            if (rivalStatus === 'ALIVE') activeRivals++;
-            else defeatedRivals++;
+            // Faction is active if it owns any systems or has significant reserves
+            const ownedSystems = Array.from(world.movement.systems.values()).filter(s => s.ownerFactionId === rId);
+            const isAlive = ownedSystems.length > 0 || rEcon.reserves.credits > 1000;
+            
+            if (isAlive) activeRivals++;
         }
 
-        if (activeRivals === 0 && otherFactions.length > 0) {
+        if (activeRivals === 0 && world.economy.factions.size > 2) {
             return {
                 status: 'VICTORIOUS',
                 type: 'CONQUEST',
                 message: 'All rival factions have collapsed or been eliminated. The galaxy is yours.',
-                victor_id: myFaction.$id,
+                victor_id: factionId,
                 timestamp: new Date().toISOString()
             };
         }
 
         // 2. Check Economic Hegemony
-        // Compare Income Rates
-        const myRates = context.income_rates || { credits: 0 };
-        let myIncome = myRates.credits || 0;
-        let totalGalacticIncome = myIncome;
-
-        for (const rival of otherFactions) {
-            if (rival.$id === myFaction.$id) continue;
-            const rRates = typeof (rival as any).income_rates === 'string' ? JSON.parse((rival as any).income_rates) : (rival as any).income_rates;
-            if (rRates && rRates.credits) {
-                totalGalacticIncome += rRates.credits;
-            }
-        }
+        let totalGalacticIncome = 0;
+        world.economy.factions.forEach(f => {
+            if (f.id === 'faction-pirates' || f.id === 'faction-neutral') return;
+            // Income is calculated lazily, but we can look at the recorded production from the last tick
+            totalGalacticIncome += f.production.credits || 0;
+        });
 
         if (totalGalacticIncome > 0) {
+            const myIncome = myEcon.production.credits || 0;
             const share = myIncome / totalGalacticIncome;
             if (share >= 0.75) {
                 return {
                     status: 'VICTORIOUS',
                     type: 'ECONOMIC_HEGEMONY',
                     message: `You control ${Math.floor(share * 100)}% of the galactic economy. Acceptance is inevitable.`,
-                    victor_id: myFaction.$id,
+                    victor_id: factionId,
                     timestamp: new Date().toISOString()
                 };
             }

@@ -19,6 +19,8 @@ import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
 import { StrategicAIService } from '../ai/strategic-ai-service';
+import { VictoryManager } from '../victory/manager';
+import { DefeatManager } from '../defeat/manager';
 
 
 
@@ -76,6 +78,7 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
     step18_leadershipXP(world);
     step19_strategicAI(world);
+    step20_victoryAndDefeat(world);
 
 
 
@@ -382,7 +385,9 @@ function step11_pirateSpawning(world: ReturnType<typeof getGameWorldState>) {
                     logisticsStrain: 0,
                     moraleDrift: 0,
                     supplyLevel: 1.0
-                }
+                },
+                basePower: 100,
+                composition: { interceptor: 2 }
             };
             world.movement.fleets.set(fleetId, newFleet);
             console.log(`[PIRATES] Spawned raider at ${sysId} (Security: ${sys.security || 'N/A'})`);
@@ -510,6 +515,50 @@ function step15_intelligence(world: ReturnType<typeof getGameWorldState>, deltaS
         // Skip player if we have a way to identify one, for now all non-pirates
         if (factionId === 'faction-pirates') continue;
         processEmpireIntelligenceTurn(factionId, world);
+    }
+}
+
+function step20_victoryAndDefeat(world: ReturnType<typeof getGameWorldState>) {
+    try {
+        for (const factionId of world.economy.factions.keys()) {
+            if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
+
+            // 1. Check Defeat
+            const defeat = DefeatManager.checkDefeatConditions(factionId, world);
+            if (defeat.status !== 'ALIVE') {
+                fireNotification({
+                    id: `defeat-${factionId}-${Date.now()}`,
+                    factionId,
+                    category: 'politics',
+                    priority: 'urgent',
+                    title: defeat.status === 'ELIMINATED' ? 'FACTION ELIMINATED' : 'STRATEGIC COLLAPSE',
+                    body: defeat.active_defeats[0]?.message || 'Your faction has collapsed.',
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    linkToTab: 'dashboard',
+                    payload: { defeatStatus: defeat.status }
+                });
+            }
+
+            // 2. Check Victory
+            const victory = VictoryManager.checkVictory(factionId, world);
+            if (victory.status === 'VICTORIOUS') {
+                fireNotification({
+                    id: `victory-${factionId}-${Date.now()}`,
+                    factionId: 'all', // Broadcast to everyone
+                    category: 'system',
+                    priority: 'urgent',
+                    title: 'GALACTIC ASCENDANCY',
+                    body: `${factionId} has achieved ${victory.type} victory! ${victory.message}`,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    linkToTab: 'dashboard',
+                    payload: { victorId: factionId }
+                });
+            }
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step20_victoryAndDefeat failed:', e);
     }
 }
 

@@ -3,12 +3,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FactionContextSummary, 
+import {
+  FactionContextSummary,
   DiscourseMessage,
-  FactionDiscourseResponse 
+  FactionDiscourseResponse
 } from '@/lib/politics/faction-discourse-types';
-import { getFactionStatusSummary, sendDiscourseMessageAction } from '@/app/actions/discourse';
 import { FactionMoodBadge } from './FactionMoodBadge';
 import { FactionSpeakerCard } from './FactionSpeakerCard';
 
@@ -28,11 +27,13 @@ export function FactionDiscourse({ factionId }: Props) {
   useEffect(() => {
     async function init() {
       try {
-        const ctx = await getFactionStatusSummary(factionId);
+        const res = await fetch(`/api/discourse?factionId=${encodeURIComponent(factionId)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const ctx: FactionContextSummary = await res.json();
         setContext(ctx);
         setMessages(ctx.conversation.recentMessages);
       } catch (err) {
-        console.error("Failed to load discourse context:", err);
+        console.error('Failed to load discourse context:', err);
       } finally {
         setLoading(false);
       }
@@ -56,27 +57,23 @@ export function FactionDiscourse({ factionId }: Props) {
     setIsSending(true);
 
     try {
-      const res = await sendDiscourseMessageAction({
-        factionId,
-        playerMessage: currentInput
+      const res = await fetch('/api/discourse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factionId, playerMessage: currentInput }),
       });
 
-      // Update local message list
-      setMessages(prev => [...prev, res.playerMessage, res.factionMessage]);
-      
-      // Optionally update context (stance, mood, etc. from response)
-      if (context) {
-        setContext({
-          ...context,
-          faction: {
-            ...context.faction,
-            satisfaction: context.faction.satisfaction // TODO: Dynamic update if action returns new sat
-          }
-        });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error ?? `Server error ${res.status}`);
       }
+
+      const result = await res.json();
+
+      // Update local message list
+      setMessages(prev => [...prev, result.playerMessage, result.factionMessage]);
     } catch (err) {
-      console.error("Message send failure:", err);
-      // Rollback or show error
+      console.error('Message send failure:', err);
     } finally {
       setIsSending(false);
     }

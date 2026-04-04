@@ -4,6 +4,7 @@ import React, { useMemo, useState, useRef } from 'react';
 import { HexGrid } from '@/lib/hex-grid';
 import { getSectorType } from '@/lib/game-rules';
 import { useUIStore } from '@/lib/store/ui-store';
+import { Activity } from 'lucide-react';
 
 interface GalaxyMapProps {
     planets: any[];
@@ -37,9 +38,79 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
 
     const grid = useMemo(() => new HexGrid(ROWS, COLS), [ROWS, COLS]);
 
-    // Zoom State
     const [zoom, setZoom] = useState(1);
     const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 0, h: 0 });
+
+    // Air Sorties & UI State
+    const [showSortieMenu, setShowSortieMenu] = useState(false);
+    const [showRenameInput, setShowRenameInput] = useState(false);
+    const [renamePlanetName, setRenamePlanetName] = useState('');
+    const [sortieTargetInput, setSortieTargetInput] = useState('');
+    const [sortieInts, setSortieInts] = useState(0);
+    const [sortieBombers, setSortieBombers] = useState(0);
+    const [sortieLoading, setSortieLoading] = useState(false);
+
+    const filteredTargets = useMemo(() => {
+        if (!sortieTargetInput || sortieTargetInput.length < 2) return [];
+        return planets.filter(p => p.name.toLowerCase().includes(sortieTargetInput.toLowerCase())).slice(0, 5);
+    }, [planets, sortieTargetInput]);
+
+    const handleLaunchSortie = async (parentPlanetId: string) => {
+        if (!sortieTargetInput) return;
+        setSortieLoading(true);
+        try {
+            // Find target ID from exact match or string
+            const targetPlanet = planets.find(p => p.name.toLowerCase() === sortieTargetInput.toLowerCase());
+            const targetId = targetPlanet ? targetPlanet.id : sortieTargetInput;
+
+            await fetch('/api/game/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    actionId: 'AIR_LAUNCH_SORTIE',
+                    factionId: playerFactionId,
+                    payload: {
+                        parentBaseId: parentPlanetId,
+                        targetId,
+                        missionType: 'strike_planet', // Hardcoded for now
+                        numInterceptors: sortieInts,
+                        numBombers: sortieBombers
+                    }
+                })
+            });
+            setShowSortieMenu(false);
+            setSortieInts(0);
+            setSortieBombers(0);
+            setSortieTargetInput('');
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSortieLoading(false);
+        }
+    };
+
+    const handleRenamePlanet = async (planetId: string) => {
+        if (!renamePlanetName) return;
+        try {
+            await fetch('/api/game/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    actionId: 'RENAME_PLANET',
+                    factionId: playerFactionId,
+                    payload: {
+                        planetId,
+                        newName: renamePlanetName
+                    }
+                })
+            });
+            setShowRenameInput(false);
+            setRenamePlanetName('');
+            // Optimistic update could happen here if we mutated local UI state
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     // Panning State
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -275,110 +346,296 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
 
     return (
         <div
-            className={`w-full h-screen bg-black overflow-hidden select-none relative ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`w-full h-screen bg-black overflow-hidden select-none relative nebula-bg ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
             onWheel={handleWheel}
         >
+            {/* Scanline Overlay */}
+            <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.03] overflow-hidden">
+                <div className="w-full h-[200%] bg-[linear-gradient(to_bottom,transparent_50%,#fff_50%)] bg-[length:100%_4px] animate-[scanline_10s_linear_infinite]" />
+            </div>
+
             <svg
                 viewBox={currentViewBox}
                 className="w-full h-full"
                 preserveAspectRatio="xMidYMid slice"
             >
-                {hexes}
+                <defs>
+                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="2.5" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    <filter id="planet-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0.8  0 0 0 0 1  0 0 0 1 0" />
+                        <feMerge>
+                            <feMergeNode />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+
+                {/* Hyperlanes Layer (Rendered below hexes for depth) */}
+                <g opacity="0.4">
+                    {planets.map(p => p.hyperlaneTo?.map((dest: any, idx: number) => {
+                        if (dest.x === undefined || dest.y === undefined) return null;
+                        const start = grid.hexToPixel(p.x, p.y, HEX_SIZE);
+                        const end = grid.hexToPixel(dest.x, dest.y, HEX_SIZE);
+                        return (
+                            <line 
+                                key={`lane-bg-${p.id}-${idx}`} 
+                                x1={start.x} y1={start.y} x2={end.x} y2={end.y}
+                                stroke="var(--color-neon-cyan)" 
+                                strokeWidth="1.5" 
+                                strokeDasharray="4,8"
+                                className="hyperlane-anim"
+                            />
+                        );
+                    }))}
+                </g>
+
+                {hexes.map((hex: any) => (
+                    <g key={hex.key} filter={hex.props.children[0].props.fill !== '#0a0a0a' ? 'url(#glow)' : undefined}>
+                        {hex}
+                    </g>
+                ))}
             </svg>
 
             {/* Info Panel Overlay */}
             {selectedPlanet && (
-                <div className="absolute bottom-6 left-6 w-80 bg-zinc-900/90 border border-zinc-700 p-6 rounded-lg shadow-2xl backdrop-blur-md text-white pointer-events-auto">
-                    <div className="flex justify-between items-start mb-4">
-                        <h2 className="text-2xl font-bold text-sky-400">{selectedPlanet.name}</h2>
-                        <span className="text-xs font-mono text-zinc-500">[{selectedPlanet.x}, {selectedPlanet.y}]</span>
+                <div className="absolute bottom-10 left-10 w-96 glass-panel p-8 rounded-2xl shadow-2xl animate-in slide-in-from-left-10 duration-500 text-white pointer-events-auto border-l-4 border-l-sky-500">
+                    <div className="flex justify-between items-start mb-6 group">
+                        <div>
+                            <span className="text-[10px] font-mono text-sky-500/60 uppercase tracking-[0.3em] block mb-1">Sector Core Identified</span>
+                            {showRenameInput ? (
+                                <div className="flex items-center gap-2 mt-1">
+                                    <input 
+                                        type="text" 
+                                        value={renamePlanetName} 
+                                        onChange={(e) => setRenamePlanetName(e.target.value)} 
+                                        placeholder={selectedPlanet.name}
+                                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleRenamePlanet(selectedPlanet.id);
+                                            else if (e.key === 'Escape') setShowRenameInput(false);
+                                        }}
+                                        autoFocus
+                                    />
+                                    <button onClick={() => handleRenamePlanet(selectedPlanet.id)} className="text-xs text-sky-400 hover:text-sky-300">Save</button>
+                                </div>
+                            ) : (
+                                <h2 className="text-3xl font-display uppercase tracking-widest text-white flex items-center gap-2">
+                                    {selectedPlanet.name}
+                                    <button onClick={() => { setShowRenameInput(true); setRenamePlanetName(selectedPlanet.name); }} className="text-slate-600 hover:text-slate-300 transition-colors opacity-0 group-hover:opacity-100">
+                                        <Activity size={14} />
+                                    </button>
+                                </h2>
+                            )}
+                        </div>
+                        <div className="px-2 py-1 bg-sky-500/10 border border-sky-500/20 rounded text-[9px] font-mono text-sky-400">
+                            {selectedPlanet.x}:{selectedPlanet.y}
+                        </div>
                     </div>
 
-                    <div className="space-y-3">
-                        <div className="flex justify-between border-b border-zinc-700 pb-2">
-                            <span className="text-zinc-400">Region</span>
-                            <span className="font-semibold capitalize">{JSON.parse(selectedPlanet.attributes).region_id?.replace('_', ' ') || 'Unknown'}</span>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center text-sm border-b border-white/5 pb-2">
+                            <span className="text-slate-400 font-display text-[10px] uppercase tracking-widest">Administrative Region</span>
+                            <span className="font-mono text-xs uppercase text-slate-200">
+                                {JSON.parse(selectedPlanet.attributes).region_id?.replace(/_/g, ' ') || 'Frontier Space'}
+                            </span>
                         </div>
-                        <div className="flex justify-between border-b border-zinc-700 pb-2">
-                            <span className="text-zinc-400">Arch. Tag</span>
-                            <span className="font-mono text-yellow-500">{JSON.parse(selectedPlanet.attributes).archetype_tag || 'Standard'}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 pt-2">
-                            <div className="bg-zinc-800 p-2 rounded text-center">
-                                <div className="text-xs text-zinc-500 uppercase">Defense</div>
-                                <div className="text-lg font-bold text-green-400">{JSON.parse(selectedPlanet.attributes).defense_modifier || '1.0'}x</div>
-                            </div>
-                            <div className="bg-zinc-800 p-2 rounded text-center">
-                                <div className="text-xs text-zinc-500 uppercase">Hazard</div>
-                                <div className="text-lg font-bold text-red-400">{(JSON.parse(selectedPlanet.attributes).hazard_level || 0) * 100}%</div>
-                            </div>
-                        </div>
-                        <div className="bg-zinc-800 p-2 rounded text-center mt-2">
-                            <div className="text-xs text-zinc-500 uppercase">Trade Value</div>
-                            <div className="text-lg font-bold text-yellow-400">{JSON.parse(selectedPlanet.attributes).trade_value || '1.0'}</div>
-                        </div>
-                    </div>
 
-                    {/* Phase 13: Unrest and Siege Indicators */}
-                    {selectedPlanet.unrest !== undefined && (
-                        <div className="bg-zinc-800 border border-zinc-700 p-3 rounded mt-2">
-                            <div className="flex justify-between items-center mb-1">
-                                <div className="text-xs text-zinc-400 uppercase">Planetary Unrest</div>
-                                <div className={`text-sm font-bold ${selectedPlanet.unrest > 80 ? 'text-red-500' : selectedPlanet.unrest > 50 ? 'text-yellow-500' : 'text-green-500'}`}>
-                                    {selectedPlanet.unrest}%
+                        <div className="grid grid-cols-3 gap-4 py-2">
+                            <div className="text-center">
+                                <div className="text-[8px] text-slate-500 uppercase mb-1">Defense</div>
+                                <div className="text-sm font-mono text-green-400">{JSON.parse(selectedPlanet.attributes).defense_modifier || '1.0'}x</div>
+                            </div>
+                            <div className="text-center border-x border-white/5">
+                                <div className="text-[8px] text-slate-500 uppercase mb-1">Hazards</div>
+                                <div className="text-sm font-mono text-red-400">{(JSON.parse(selectedPlanet.attributes).hazard_level || 0) * 100}%</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-[8px] text-slate-500 uppercase mb-1">Trade Flux</div>
+                                <div className="text-sm font-mono text-amber-400">{JSON.parse(selectedPlanet.attributes).trade_value || '1.0'}</div>
+                            </div>
+                        </div>
+
+                        {/* Unrest Bar */}
+                        {selectedPlanet.unrest !== undefined && (
+                            <div className="space-y-2 mt-4">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[8px] text-slate-500 uppercase tracking-widest">Internal Stability</span>
+                                    <span className={`text-[10px] font-mono ${selectedPlanet.unrest > 80 ? 'text-red-400' : 'text-green-400'}`}>
+                                        {100 - selectedPlanet.unrest}%
+                                    </span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <div 
+                                        className={`h-full transition-all duration-1000 ${selectedPlanet.unrest > 80 ? 'bg-red-500' : 'bg-sky-500'}`}
+                                        style={{ width: `${100 - selectedPlanet.unrest}%` }}
+                                    />
                                 </div>
                             </div>
-                            <div className="w-full bg-black h-2 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full ${selectedPlanet.unrest > 80 ? 'bg-red-500' : selectedPlanet.unrest > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                                    style={{ width: `${selectedPlanet.unrest}%` }}
-                                />
-                            </div>
-                        </div>
-                    )}
+                        )}
 
-                    {selectedPlanet.siege && (
-                        <div className="border border-red-900 bg-red-950/30 p-3 rounded mt-2 animate-pulse">
-                            <div className="text-red-500 font-bold uppercase text-xs mb-1 flex items-center justify-between">
-                                <span>Active Siege</span>
-                                <span>{selectedPlanet.siege.occupationProgress}% Occupied</span>
+                        {selectedPlanet.siege && (
+                            <div className="mt-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 animate-pulse">
+                                <div className="flex items-center gap-2 text-red-400 mb-2">
+                                    <Activity size={14} />
+                                    <span className="text-[10px] font-display uppercase tracking-widest">Siege in Progress</span>
+                                </div>
+                                <div className="flex justify-between items-end">
+                                    <span className="text-[9px] text-slate-400">Occupation Status</span>
+                                    <span className="text-lg font-mono text-red-500">{selectedPlanet.siege.occupationProgress}%</span>
+                                </div>
                             </div>
-                            <div className="flex justify-between text-xs text-zinc-300">
-                                <span>Attacker: {selectedPlanet.siege.aggressorEmpireId.slice(0, 10)}</span>
-                                <span className="text-red-400">{selectedPlanet.siege.invadingTroops} Troops</span>
-                            </div>
-                        </div>
-                    )}
+                        )}
 
+                        {/* Basic Services Dashboard */}
+                        {selectedPlanet.services && Object.keys(selectedPlanet.services).length > 0 && (
+                            <div className="mt-6 pt-4 border-t border-white/5 space-y-3">
+                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-2 block">Basic Services</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {Object.values(selectedPlanet.services).map((svc: any) => {
+                                        let dotColor = 'bg-slate-500';
+                                        if (svc.status === 'adequate') dotColor = 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]';
+                                        if (svc.status === 'strained') dotColor = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]';
+                                        if (svc.status === 'failing') dotColor = 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]';
+                                        if (svc.status === 'collapsed') dotColor = 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse';
+
+                                        return (
+                                            <div key={svc.serviceId} className="flex flex-col bg-slate-900/60 border border-slate-800/80 rounded p-2">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                                                        <span className="text-[9px] font-display uppercase tracking-wider text-slate-300">{svc.serviceId.replace('_', ' ')}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                    <span className="text-[8px] text-slate-500 uppercase">LVL {svc.level}</span>
+                                                    <span className={`text-[9px] font-mono ${svc.coverageRatio >= 1 ? 'text-green-400' : 'text-amber-400'}`}>
+                                                        {Math.floor(svc.coverageRatio * 100)}%
+                                                    </span>
+                                                </div>
+                                                {svc.unpaidUpkeepTicks > 0 && (
+                                                    <div className="text-[7px] text-red-400 mt-1 uppercase font-mono tracking-tighter">
+                                                        Budget Deficit Detected ({svc.unpaidUpkeepTicks} cycles)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tactical Actions (Air Sorties) */}
+                        <div className="pt-4 mt-6 border-t border-white/10">
+                            <button
+                                onClick={() => setShowSortieMenu(!showSortieMenu)}
+                                className="w-full py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 rounded-lg text-xs font-display uppercase tracking-widest text-indigo-300 transition-colors"
+                            >
+                                {showSortieMenu ? 'Cancel Operation' : 'Launch Air Sortie'}
+                            </button>
+
+                            {showSortieMenu && (
+                                <div className="mt-4 p-4 bg-black/40 rounded-lg border border-white/5 space-y-4 relative">
+                                    <div>
+                                        <label className="text-[9px] text-slate-400 font-display uppercase tracking-widest block mb-2">Target Sector / System</label>
+                                        <input
+                                            type="text"
+                                            value={sortieTargetInput}
+                                            onChange={(e) => setSortieTargetInput(e.target.value)}
+                                            placeholder="Enter Hex/Name (e.g. rim-prime)"
+                                            className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-white"
+                                        />
+                                        {/* Autocomplete Dropdown */}
+                                        {filteredTargets.length > 0 && (
+                                            <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded shadow-xl overflow-hidden max-h-40">
+                                                {filteredTargets.map(t => (
+                                                    <div 
+                                                        key={t.id} 
+                                                        className="px-3 py-2 text-xs text-slate-300 hover:bg-indigo-500 hover:text-white cursor-pointer"
+                                                        onClick={() => {
+                                                            setSortieTargetInput(t.name);
+                                                        }}
+                                                    >
+                                                        {t.name} <span className="text-slate-500 ml-2">({t.x}:{t.y})</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[9px] text-slate-400 font-display uppercase tracking-widest block mb-2">Interceptors ({sortieInts})</label>
+                                            <input 
+                                                type="range" min="0" max="100" 
+                                                value={sortieInts} 
+                                                onChange={(e) => setSortieInts(parseInt(e.target.value))}
+                                                className="w-full accent-indigo-500" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] text-slate-400 font-display uppercase tracking-widest block mb-2">Bombers ({sortieBombers})</label>
+                                            <input 
+                                                type="range" min="0" max="100" 
+                                                value={sortieBombers} 
+                                                onChange={(e) => setSortieBombers(parseInt(e.target.value))}
+                                                className="w-full accent-red-500" 
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleLaunchSortie(selectedPlanet.id)}
+                                        disabled={sortieLoading || !sortieTargetInput || (sortieInts === 0 && sortieBombers === 0)}
+                                        className="w-full py-2 mt-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:bg-slate-700 rounded text-xs font-display uppercase font-bold text-white tracking-widest"
+                                    >
+                                        {sortieLoading ? 'Transmitting Auth...' : 'Execute Strike Order'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
 
-            <div className="absolute top-4 right-4 bg-zinc-900/80 p-4 rounded text-white text-sm pointer-events-none border border-zinc-700/50 backdrop-blur-sm">
-                <h3 className="font-bold mb-2 text-sky-400">Map Legend</h3>
+            {/* Floating Legend */}
+            <div className="absolute top-10 right-10 glass-panel p-6 rounded-2xl w-64 animate-in slide-in-from-right-10 duration-700 pointer-events-none">
+                <h3 className="text-[10px] font-display text-sky-500 uppercase tracking-[0.3em] mb-4 border-b border-white/5 pb-2">Cartographic Legend</h3>
                 <div className="space-y-4">
-                    <div>
-                        <div className="text-[10px] uppercase text-zinc-500 font-bold mb-1">Terrain / Regions</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-red-900 border border-red-500"></div> Throats / Chokepoints</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-cyan-600 border border-cyan-400"></div> Wormhole Canals</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-yellow-600 border border-yellow-500"></div> Trade Spines</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-green-900 border border-green-500"></div> Fortress Gates</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-950 border border-indigo-500"></div> Central Basin</div>
+                    <div className="space-y-2">
+                        <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-2">Sector Significance</div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full shadow-[0_0_8px_var(--color-neon-red)] bg-red-500" />
+                            <span className="text-[10px] text-slate-300 uppercase">Strategic Throat</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full shadow-[0_0_8px_var(--color-neon-blue)] bg-sky-500" />
+                            <span className="text-[10px] text-slate-300 uppercase">Trade Canal</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full shadow-[0_0_8px_var(--color-neon-gold)] bg-amber-500" />
+                            <span className="text-[10px] text-slate-300 uppercase">Resource Spine</span>
+                        </div>
                     </div>
                     
-                    <div className="border-t border-zinc-800 pt-3">
-                        <div className="text-[10px] uppercase text-zinc-500 font-bold mb-1">Ownership</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#10b981]"></div> Your Territory</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#3b82f6]"></div> Allied / Pacts</div>
-                        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 rounded-full bg-[#ef4444]"></div> Rivals / Enemies</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#facc15]"></div> Neutral / Unknown</div>
+                    <div className="pt-4 border-t border-white/5 space-y-2">
+                        <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-2">Real-time Signals</div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 border border-dashed border-sky-400 animate-spin-slow" />
+                            <span className="text-[10px] text-slate-300 uppercase">Hyperlane Pulse</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <span className="text-red-500 text-xs animate-pulse">⚔</span>
+                            <span className="text-[10px] text-slate-300 uppercase">Active Conflict</span>
+                        </div>
                     </div>
-                </div>
-                <div className="mt-4 text-[10px] text-zinc-500 border-t border-zinc-800 pt-2 italic">
-                    Scroll to Zoom • Drag to Pan • Click to Select
                 </div>
             </div>
         </div>

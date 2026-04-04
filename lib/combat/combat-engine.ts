@@ -98,8 +98,8 @@ export function calculateEffectivePower(
 
     totalMultiplier = clamp(totalMultiplier, minMulti, maxMulti);
 
-    // Simple Scaling for now: baseForceCount is the "Health/Mass" of the fleet.
-    return Math.max(0, combatant.baseForceCount * totalMultiplier);
+    // Simple Scaling for now: hp is the "Health/Mass" of the fleet.
+    return Math.max(0, combatant.hp * totalMultiplier);
 }
 
 // ─── 2. Initiation ────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export function initiateCombat(
     attacker: CombatantState,
     defender: CombatantState
 ): CombatState {
-    const totalBaseForce = attacker.baseForceCount + defender.baseForceCount;
+    const totalBaseForce = attacker.hp + defender.hp;
     const isSkirmish = totalBaseForce < config.constants.skirmishPowerThreshold;
 
     return {
@@ -151,7 +151,7 @@ export function generateVisibilityProfile(
     const visibleArchetypes: string[] = [];
     const compositionBands: Partial<Record<UnitType, [number, number]>> = {};
 
-    const base = target.baseForceCount;
+    const base = target.hp;
 
     if (profileLevel === 'size_only') {
         // Blind: +/- 50%
@@ -244,14 +244,65 @@ export function resolveEngagementRound(
     attackerPower *= (1.0 + attackerPredictionBonus);
     defenderPower *= (1.0 + defenderPredictionBonus);
 
-    // Casualties (Damage dealt is purely driven by EffectivePower / 10 for balancing per round)
-    const attackDmg = attackerPower * 0.10;
-    const defendDmg = defenderPower * 0.10;
+    // HOI4 Damage Vectors Integration
+    // HOI4 Damage Vectors Integration & Naval Air Support
+    const aComp = state.attacker.composition;
+    const aScreens = (aComp['destroyer'] || 0);
+    const aCapitals = (aComp['cruiser'] || 0) + (aComp['carrier'] || 0);
+    let aInterceptors = (aComp['interceptor'] || 0);
+    let aBombers = (aComp['bomber'] || 0);
 
-    state.attacker.casualties += defendDmg;
-    state.defender.casualties += attackDmg;
-    state.attacker.baseForceCount = Math.max(0, state.attacker.baseForceCount - defendDmg);
-    state.defender.baseForceCount = Math.max(0, state.defender.baseForceCount - attackDmg);
+    const dComp = state.defender.composition;
+    const dScreens = (dComp['destroyer'] || 0);
+    const dCapitals = (dComp['cruiser'] || 0) + (dComp['carrier'] || 0);
+    let dInterceptors = (dComp['interceptor'] || 0);
+    let dBombers = (dComp['bomber'] || 0);
+
+    // 1. Air superiority phase (Interceptors dogfight)
+    const aIntLosses = Math.min(aInterceptors, dInterceptors);
+    aInterceptors -= aIntLosses;
+    dInterceptors -= aIntLosses; // 1-to-1 trading
+
+    // Remaining interceptors shred enemy bombers
+    const aBombLosses = Math.min(aBombers, dInterceptors);
+    aBombers -= aBombLosses;
+
+    const dBombLosses = Math.min(dBombers, aInterceptors);
+    dBombers -= dBombLosses;
+
+    // 2. Surface Combat Math
+    const aLightAtk = aScreens * 4 + aCapitals * 2;
+    const aHeavyAtk = aCapitals * 8;
+    const aTorpedoAtk = aScreens * 2; // Surface torpedoes only
+
+    const dLightAtk = dScreens * 4 + dCapitals * 2;
+    const dHeavyAtk = dCapitals * 8;
+    const dTorpedoAtk = dScreens * 2;
+
+    // Apply combat modifiers to raw attacks
+    const aTotalMod = attackerPower / Math.max(1, state.attacker.maxHp || 100);
+    const dTotalMod = defenderPower / Math.max(1, state.defender.maxHp || 100);
+
+    // Torpedoes are blocked by screening efficiency
+    const aTorpedoDmg = aTorpedoAtk * (1.0 - state.defender.screeningEfficiency);
+    const dTorpedoDmg = dTorpedoAtk * (1.0 - state.attacker.screeningEfficiency);
+
+    // 3. Air Support Damage (Bombers bypass screens completely and deal massive flat damage directly to HP)
+    const aAirDmg = aBombers * 25; 
+    const dAirDmg = dBombers * 25;
+
+    const attackDmg = (aLightAtk + aHeavyAtk + aTorpedoDmg + aAirDmg) * aTotalMod;
+    const defendDmg = (dLightAtk + dHeavyAtk + dTorpedoDmg + dAirDmg) * dTotalMod;
+
+    const attackOrgDmg = attackDmg * 0.15; // Organization drops as ships get hit
+    const defendOrgDmg = defendDmg * 0.15;
+
+    // Apply to states
+    state.defender.hp = Math.max(0, state.defender.hp - attackDmg);
+    state.defender.organization = Math.max(0, state.defender.organization - attackOrgDmg);
+
+    state.attacker.hp = Math.max(0, state.attacker.hp - defendDmg);
+    state.attacker.organization = Math.max(0, state.attacker.organization - defendOrgDmg);
 
     // Momentum shift logic: Whoever dealt more damage shifts momentum to them
     const dmgDelta = attackDmg - defendDmg;
@@ -341,8 +392,8 @@ export function advanceRound(state: CombatState) {
             state.round = 1;
 
             // Whoever dealt more damage/has higher power holds orbit
-            // Simple check: compare remaining base force in orbit (assuming all forces committed are orbital)
-            if (state.attacker.baseForceCount > state.defender.baseForceCount) {
+            // Simple check: compare remaining hp in orbit (assuming all forces committed are orbital)
+            if (state.attacker.hp > state.defender.hp) {
                 state.orbitalWinnerId = state.attacker.factionId;
             } else {
                 state.orbitalWinnerId = state.defender.factionId;
@@ -362,7 +413,7 @@ export function checkAnnihilation(state: CombatState): { annihilatedFactionId: s
     const checkSide = (side: CombatantState, enemy: CombatantState) => {
         if (side.predictionPoints < 3) return false;
 
-        const ratio = (side.baseForceCount || 1) / (enemy.baseForceCount || 1);
+        const ratio = (side.hp || 1) / (enemy.hp || 1);
         if (ratio < config.constants.annihilationRatioThreshold) return false;
 
         if (enemy.morale > config.constants.annihilationMoraleThreshold) return false;
@@ -394,8 +445,8 @@ export function applyPostBattleDirective(state: CombatState) {
                 c.morale = clamp(c.morale + 0.10, 0, 1);
                 break;
             case 'orderly_retreat':
-                // retain casualties
-                c.casualties *= 0.8;
+                // Retrieve some organization to escape safely
+                c.organization = Math.min(c.maxOrganization, c.organization + (c.maxOrganization * 0.2));
                 break;
             case 'pillage':
                 if (c.role === 'attacker' && state.territoryControl > 0.5) {
