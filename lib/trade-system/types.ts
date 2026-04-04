@@ -37,6 +37,7 @@ export interface Faction {
     theatreId: string;
     backingRatioPolicy: number; // e.g. 0.5 means 50% backing required
     reserves: { [key in Resource]?: number }; // Quantity of each resource held in reserve
+    production?: { [key in Resource]?: number }; // Current production rate per tick
     creditSupply: number;
     liquidity: number;
     debt: number;

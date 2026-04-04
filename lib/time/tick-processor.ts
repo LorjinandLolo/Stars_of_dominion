@@ -19,8 +19,9 @@ import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
 import { StrategicAIService } from '../ai/strategic-ai-service';
-import { VictoryManager } from '../victory/manager';
+import { MilestoneService } from '../victory/milestone-service';
 import { DefeatManager } from '../defeat/manager';
+import { fromISO } from '../seasons/season-service';
 
 
 
@@ -78,7 +79,7 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
     step18_leadershipXP(world);
     step19_strategicAI(world);
-    step20_victoryAndDefeat(world);
+    step20_milestonesAndSeasons(world);
 
 
 
@@ -518,12 +519,12 @@ function step15_intelligence(world: ReturnType<typeof getGameWorldState>, deltaS
     }
 }
 
-function step20_victoryAndDefeat(world: ReturnType<typeof getGameWorldState>) {
+function step20_milestonesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
     try {
+        // 1. Check Personal Defeat (Strategic Collapse)
         for (const factionId of world.economy.factions.keys()) {
             if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
 
-            // 1. Check Defeat
             const defeat = DefeatManager.checkDefeatConditions(factionId, world);
             if (defeat.status !== 'ALIVE') {
                 fireNotification({
@@ -539,26 +540,22 @@ function step20_victoryAndDefeat(world: ReturnType<typeof getGameWorldState>) {
                     payload: { defeatStatus: defeat.status }
                 });
             }
+        }
 
-            // 2. Check Victory
-            const victory = VictoryManager.checkVictory(factionId, world);
-            if (victory.status === 'VICTORIOUS') {
-                fireNotification({
-                    id: `victory-${factionId}-${Date.now()}`,
-                    factionId: 'all', // Broadcast to everyone
-                    category: 'system',
-                    priority: 'urgent',
-                    title: 'GALACTIC ASCENDANCY',
-                    body: `${factionId} has achieved ${victory.type} victory! ${victory.message}`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    linkToTab: 'dashboard',
-                    payload: { victorId: factionId }
-                });
+        // 2. Check Milestones (Trophies)
+        MilestoneService.checkMilestones(world);
+
+        // 3. Seasonal Cycle
+        const season = world.activeSeason;
+        if (season && season.phase !== 'complete') {
+            const endsAt = fromISO(season.endsAt);
+            if (world.nowSeconds >= endsAt) {
+                 MilestoneService.resolveSeasonTransition(world);
             }
         }
+
     } catch (e) {
-        console.error('[TickProcessor] step20_victoryAndDefeat failed:', e);
+        console.error('[TickProcessor] step20_milestonesAndSeasons failed:', e);
     }
 }
 

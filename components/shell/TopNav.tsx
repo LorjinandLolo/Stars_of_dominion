@@ -301,7 +301,7 @@ export default function TopNav() {
                 })}
             </div>
 
-            {/* Status indicators */}
+            {/* Crisis indicators */}
             <div className="flex items-center gap-3 min-w-[200px] justify-end">
                 {councilState.emergencySession && councilState.status !== 'absent' && (
                     <div className="flex items-center gap-1 text-xs text-red-400 animate-pulse font-display">
@@ -310,30 +310,6 @@ export default function TopNav() {
                     </div>
                 )}
                 
-                <div className="flex items-center gap-4 bg-slate-900/40 px-3 py-1.5 rounded-full border border-slate-700/50">
-                    <div className="flex items-center gap-2 text-[var(--color-active)] font-mono text-[10px] tracking-tighter">
-                        <Clock size={12} />
-                        <span>S{season} · D{relativeDay}</span>
-                    </div>
-                    <div className="flex items-center gap-1 border-l border-slate-700 pl-2">
-                        <button 
-                            onClick={() => handleAdvance(86400)}
-                            className="p-1 hover:text-[var(--color-active)] text-slate-500 transition-colors"
-                            title="Advance 1 Day"
-                        >
-                            <FastForward size={14} />
-                        </button>
-                        <button 
-                            onClick={() => handleAdvance(86400 * 7)}
-                            className="p-1 hover:text-[var(--color-active)] text-slate-500 transition-colors flex items-center gap-0.5"
-                            title="Advance 1 Week"
-                        >
-                            <FastForward size={14} />
-                            <span className="text-[8px] font-bold">W</span>
-                        </button>
-                    </div>
-                </div>
-
                 <div className="text-xs font-mono text-slate-500">
                     {crisisWindows.length > 0 ? `${crisisWindows.length} ACTIVE` : 'STABLE'}
                 </div>

@@ -10,6 +10,7 @@ import { applyPolicyEffect } from '../lib/politics/politics-service';
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { calculateEscalationLevel } from '../lib/politics/cold-war-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
+import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 
 // Ensure environment variables are loaded
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -102,6 +103,12 @@ async function runGameTick() {
             console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
             await runStrategicTick(new Date(world.nowSeconds * 1000), currentTickWindow);
         }
+
+        // 5.5. Faction Initialization Check (Ensures homeworlds exist for all players)
+        // We run this every tick to catch new claimants or fresh game starts
+        world.economy.factions.forEach((f, id) => {
+            initializeFactionHomeWorld(world, id);
+        });
 
         // 6. Push state back to Cloud (Sharded)
         const cleanWorld = cleanWorldForSave(world);

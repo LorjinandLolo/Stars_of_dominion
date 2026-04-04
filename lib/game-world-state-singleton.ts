@@ -24,6 +24,7 @@ import { OPERATION_DEFINITIONS } from './intelligence/operation-definitions';
 import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
 import { EmpireDoctrines } from './doctrine/types';
 import { FactionReputation } from './reputation/types';
+import { initializeFactionHomeWorld } from './economy/services/initialization-service';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ function buildEmptyMovementState(): MovementWorldState {
         automationDoctrines: new Map(),
         empirePostures: new Map(),
         degradations: new Map(),
+        sorties: new Map(),
         nowSeconds: Math.floor(Date.now() / 1000),
     };
 }
@@ -281,8 +283,9 @@ export function getGameWorldState(): GameWorldState {
             espionage: buildEmptyEspionageState(),
             activeSeason: null,
             seasonHistory: [],
-            victoryState: null,
-            postVictoryTransition: null,
+            hallOfFame: [],
+            milestones: new Map(),
+            legacyPrestigeBonuses: new Map(),
             territoryHistory: [],
             tech: new Map(),
             rivalries: new Map(),
@@ -305,6 +308,10 @@ export function getGameWorldState(): GameWorldState {
 
 
         // Initial state is empty; it will be populated by the first Appwrite snapshot load
+        // However, we ensure all seeded factions have a functional Homeworld
+        globalGameStateInstance.economy.factions.forEach((f, id) => {
+            initializeFactionHomeWorld(globalGameStateInstance!, id);
+        });
     }
     return globalGameStateInstance!;
 }

@@ -228,10 +228,10 @@ export function getFactionRecognition(
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function toISO(unixSeconds: number): string {
+export function toISO(unixSeconds: number): string {
     return new Date(unixSeconds * 1000).toISOString();
 }
 
-function fromISO(iso: string): number {
+export function fromISO(iso: string): number {
     return new Date(iso).getTime() / 1000;
 }

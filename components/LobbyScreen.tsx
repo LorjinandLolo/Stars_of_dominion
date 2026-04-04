@@ -59,6 +59,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     }, [currentUser?.$id]);
 
     const handleSelect = (factionId: string) => {
+        // If we already have a lock in the DB, we can't change it here
+        const myClaim = Object.entries(takenFactions).find(([fid, uid]) => uid === currentUser?.$id);
+        if (myClaim) return; 
+
         if (takenFactions[factionId] && takenFactions[factionId] !== currentUser?.$id) return; // Locked by someone else
         setSelectedId(factionId);
     };
@@ -97,6 +101,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
     const selected = factions.find(f => f.id === selectedId);
     const hovered = factions.find(f => f.id === hoveredId);
+    const currentUserHasClaim = currentUser && Object.values(takenFactions).includes(currentUser.$id);
 
     return (
         <div
@@ -136,111 +141,114 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 </div>
                 <div className="text-slate-500 text-xs tracking-[0.4em] uppercase mb-3">Stars of Dominion</div>
                 <h1 className="text-5xl font-bold text-white mb-3" style={{ letterSpacing: '-0.02em' }}>
-                    Choose Your Faction
+                    {currentUserHasClaim ? 'Faction Locked' : 'Choose Your Faction'}
                 </h1>
-                <p className="text-slate-400 text-lg">Select the empire you will lead to galactic supremacy.</p>
+                <p className="text-slate-400 text-lg">
+                    {currentUserHasClaim 
+                        ? `You have committed to leading the ${selected?.name}.` 
+                        : 'Select the empire you will lead to galactic supremacy.'}
+                </p>
             </div>
 
             {/* Faction Cards - Scrollable area */}
             <div className="relative z-10 max-w-5xl w-full px-6 mb-10 overflow-y-auto max-h-[65vh] custom-scrollbar pr-2">
                 <div className="grid grid-cols-2 gap-5">
-                {factions.map(faction => {
-                    const isSelected = selectedId === faction.id;
-                    const isHovered = hoveredId === faction.id;
-                    return (
-                        <button
-                            key={faction.id}
-                            onClick={() => handleSelect(faction.id)}
-                            onMouseEnter={() => setHoveredId(faction.id)}
-                            onMouseLeave={() => setHoveredId(null)}
-                            className="text-left rounded-xl p-6 border transition-all duration-300 relative overflow-hidden group"
-                            style={{
-                                background: isSelected
-                                    ? `linear-gradient(135deg, ${faction.color}90, ${faction.color}40)`
-                                    : isHovered
-                                        ? `linear-gradient(135deg, ${faction.color}40, ${faction.color}10)`
-                                        : 'rgba(15, 20, 35, 0.8)',
-                                borderColor: isSelected
-                                    ? faction.accentColor
-                                    : isHovered
-                                        ? `${faction.accentColor}60`
-                                        : 'rgba(100,116,139,0.2)',
-                                boxShadow: isSelected
-                                    ? `0 0 30px ${faction.accentColor}40, inset 0 0 30px ${faction.color}20`
-                                    : isHovered
-                                        ? `0 0 15px ${faction.accentColor}20`
-                                        : 'none',
-                                transform: isSelected ? 'scale(1.02)' : isHovered ? 'scale(1.01)' : 'scale(1)',
-                            }}
-                        >
-                                {/* Selection indicator or Lock indicator */}
-                                {isSelected ? (
-                                    <div
-                                        className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
-                                        style={{ background: faction.accentColor }}
-                                    >
-                                        ✓
-                                    </div>
-                                ) : takenFactions[faction.id] && takenFactions[faction.id] !== currentUser?.$id ? (
-                                     <div
-                                        className="absolute top-4 right-4 w-8 h-8 rounded bg-red-900/80 flex items-center justify-center text-xs z-20 border border-red-500/50"
-                                    >
-                                        🔒
-                                    </div>
-                                ) : null}
+                {factions
+                    .filter(f => !takenFactions[f.id] || takenFactions[f.id] === currentUser?.$id)
+                    .map(faction => {
+                        const isSelected = selectedId === faction.id;
+                        const isHovered = hoveredId === faction.id;
+                        const isLocked = currentUserHasClaim && isSelected;
 
-                                {/* Icon + Name */}
-                                <div className="flex items-center gap-4 mb-3 relative z-10">
-                                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-black/40">
-                                        <img 
-                                            src={faction.icon} 
-                                            alt={faction.name} 
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <div className="text-white font-bold text-xl leading-tight">{faction.name}</div>
+                        return (
+                            <button
+                                key={faction.id}
+                                disabled={currentUserHasClaim && !isSelected}
+                                onClick={() => handleSelect(faction.id)}
+                                onMouseEnter={() => setHoveredId(faction.id)}
+                                onMouseLeave={() => setHoveredId(null)}
+                                className={`text-left rounded-xl p-6 border transition-all duration-300 relative overflow-hidden group ${currentUserHasClaim && !isSelected ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
+                                style={{
+                                    background: isSelected
+                                        ? `linear-gradient(135deg, ${faction.color}90, ${faction.color}40)`
+                                        : isHovered
+                                            ? `linear-gradient(135deg, ${faction.color}40, ${faction.color}10)`
+                                            : 'rgba(15, 20, 35, 0.8)',
+                                    borderColor: isSelected
+                                        ? faction.accentColor
+                                        : isHovered
+                                            ? `${faction.accentColor}60`
+                                            : 'rgba(100,116,139,0.2)',
+                                    boxShadow: isSelected
+                                        ? `0 0 30px ${faction.accentColor}40, inset 0 0 30px ${faction.color}20`
+                                        : isHovered
+                                            ? `0 0 15px ${faction.accentColor}20`
+                                            : 'none',
+                                    transform: isSelected ? 'scale(1.02)' : isHovered ? 'scale(1.01)' : 'scale(1)',
+                                }}
+                            >
+                                    {/* Selection indicator */}
+                                    {isSelected && (
                                         <div
-                                            className="text-xs font-medium italic mt-0.5"
-                                            style={{ color: faction.accentColor }}
+                                            className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
+                                            style={{ background: faction.accentColor }}
                                         >
-                                            {faction.tagline}
+                                            {currentUserHasClaim ? '🔒' : '✓'}
+                                        </div>
+                                    )}
+
+                                    {/* Icon + Name */}
+                                    <div className="flex items-center gap-4 mb-3 relative z-10">
+                                        <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-black/40">
+                                            <img 
+                                                src={faction.icon} 
+                                                alt={faction.name} 
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <div className="text-white font-bold text-xl leading-tight">{faction.name}</div>
+                                            <div
+                                                className="text-xs font-medium italic mt-0.5"
+                                                style={{ color: faction.accentColor }}
+                                            >
+                                                {faction.tagline}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                            {/* Description */}
-                            <p className="text-slate-400 text-sm leading-relaxed mb-4">{faction.description}</p>
+                                {/* Description */}
+                                <p className="text-slate-400 text-sm leading-relaxed mb-4">{faction.description}</p>
 
-                            {/* Playstyle + Traits */}
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500 text-xs uppercase tracking-wider">Playstyle:</span>
-                                    <span
-                                        className="text-xs font-semibold px-2 py-0.5 rounded"
-                                        style={{ background: `${faction.accentColor}20`, color: faction.accentColor }}
-                                    >
-                                        {faction.playstyle}
-                                    </span>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {faction.traits.map(trait => (
+                                {/* Playstyle + Traits */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500 text-xs uppercase tracking-wider">Playstyle:</span>
                                         <span
-                                            key={trait}
-                                            className="text-xs px-2 py-0.5 rounded border"
-                                            style={{
-                                                borderColor: `${faction.accentColor}30`,
-                                                color: 'rgba(148,163,184,0.8)'
-                                            }}
+                                            className="text-xs font-semibold px-2 py-0.5 rounded"
+                                            style={{ background: `${faction.accentColor}20`, color: faction.accentColor }}
                                         >
-                                            {trait}
+                                            {faction.playstyle}
                                         </span>
-                                    ))}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {faction.traits.map(trait => (
+                                            <span
+                                                key={trait}
+                                                className="text-xs px-2 py-0.5 rounded border"
+                                                style={{
+                                                    borderColor: `${faction.accentColor}30`,
+                                                    color: 'rgba(148,163,184,0.8)'
+                                                }}
+                                            >
+                                                {trait}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        </button>
-                    );
-                })}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -248,7 +256,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             <div className="relative z-10 text-center">
                 <button
                     onClick={handleConfirm}
-                    disabled={!selectedId || confirming}
+                    disabled={(!selectedId || confirming) && !currentUserHasClaim}
                     className="px-12 py-4 rounded-lg font-bold text-lg transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{
                         background: selectedId
@@ -259,11 +267,17 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         transform: selectedId && !confirming ? 'scale(1.02)' : 'scale(1)',
                     }}
                 >
-                    {confirming ? '⏳ Entering game...' : selectedId ? `🚀 Play as ${selected!.name}` : 'Select a faction first'}
+                    {confirming 
+                        ? '⏳ Entering game...' 
+                        : currentUserHasClaim 
+                            ? '🚀 Re-enter Game' 
+                            : selectedId 
+                                ? `🚀 Play as ${selected!.name}` 
+                                : 'Select a faction first'}
                 </button>
-                {selectedId && !confirming && (
+                {currentUserHasClaim && !confirming && (
                     <p className="text-slate-500 text-sm mt-3">
-                        Your choice is saved locally. You can change it by returning to this page.
+                        Your choice is locked. Contact an admin if you need to reset your claim.
                     </p>
                 )}
             </div>

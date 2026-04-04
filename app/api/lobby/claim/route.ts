@@ -33,14 +33,19 @@ export async function POST(req: NextRequest) {
         ]);
 
         if (myProfiles.total > 0) {
-            // Update the existing profile to this new faction 
-            // (Assuming we allow players to switch before game starts)
+            const existingFactionId = myProfiles.documents[0].factionId;
+            if (existingFactionId !== factionId) {
+                return NextResponse.json({ 
+                    error: `You are already locked into the ${existingFactionId}. Faction hopping is disabled to prevent espionage.` 
+                }, { status: 403 });
+            }
+            
+            // If they are re-submitting for the same faction (maybe to update name), allow it
             const docId = myProfiles.documents[0].$id;
             await db.updateDocument(DB_ID, COLL_PROFILES, docId, {
-                factionId: factionId,
                 displayName: displayName || myProfiles.documents[0].displayName
             });
-            return NextResponse.json({ success: true, message: 'Faction selection updated' });
+            return NextResponse.json({ success: true, message: 'Profile updated' });
         }
 
         // 3. Create fresh profile

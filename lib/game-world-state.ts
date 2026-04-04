@@ -68,15 +68,18 @@ export interface GameWorldState {
     intelligence: IntelligenceWorldState;
 
 
-    // ── Pillar 7 — Season ────────────────────────────────────────────────────
+    // ── Milestone & Seasonal Cycle ──────────────────────────────────────────────
+    /** Active season metadata and progression. */
     activeSeason: ActiveSeason | null;
+    /** Historical record of completed seasons. */
     seasonHistory: SeasonRecord[];
+    /** Archive of top seasonal performers and historical milestone winners. */
+    hallOfFame: SeasonRecord[];
+    /** Permanent tracking of milestone achievements (e.g. First to 10 Planets). */
+    milestones: Map<string, { factionId: string; unlockedAt: string }>;
+    /** Carry-over bonuses from previous season prestige. Key = factionID. */
+    legacyPrestigeBonuses: Map<string, Record<string, number>>;
 
-    // ── Victory & Transition ──────────────────────────────────────────────
-    /** Active victory tracker (conquest OR enlightenment, never both simultaneously). */
-    victoryState: VictoryState | null;
-    /** Active 48-hour post-victory transition phase, if any. */
-    postVictoryTransition: PostVictoryTransition | null;
     /** Historical territory snapshots at each season boundary. */
     territoryHistory: TerritoryPersistenceRecord[];
     
