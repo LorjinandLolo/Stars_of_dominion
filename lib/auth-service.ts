@@ -3,9 +3,13 @@
 import { Client, Account, Models } from 'appwrite';
 
 function getAccount(): Account {
-    const client = new Client()
-        .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'http://localhost/v1')
-        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || '');
+    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+
+    const client = new Client();
+    if (endpoint) client.setEndpoint(endpoint);
+    if (project) client.setProject(project || '');
+    
     return new Account(client);
 }
 

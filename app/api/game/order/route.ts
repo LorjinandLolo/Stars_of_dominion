@@ -12,10 +12,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required order fields.' }, { status: 400 });
         }
 
-        const client = new Client()
-            .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || '')
-            .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || '')
-            .setKey(process.env.APPWRITE_API_KEY || '');
+        const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+        const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+        const apiKey = process.env.APPWRITE_API_KEY;
+
+        const client = new Client();
+        if (endpoint) client.setEndpoint(endpoint);
+        if (project) client.setProject(project);
+        if (apiKey) client.setKey(apiKey);
 
         const db = new Databases(client);
 

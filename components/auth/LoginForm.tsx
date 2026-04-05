@@ -14,9 +14,13 @@ export default function LoginForm() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const client = new Client()
-        .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
-        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!);
+    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+
+    const client = new Client();
+    if (endpoint) client.setEndpoint(endpoint);
+    if (project) client.setProject(project);
+
     const account = new Account(client);
 
     const handleSubmit = async (e: React.FormEvent) => {

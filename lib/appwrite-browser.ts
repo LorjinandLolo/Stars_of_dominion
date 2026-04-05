@@ -6,9 +6,13 @@ let db: Databases | null = null;
 
 export function getBrowserClients() {
   if (!client) {
-    client = new Client()
-      .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
-      .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!);
+    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+
+    client = new Client();
+    if (endpoint) client.setEndpoint(endpoint);
+    if (project) client.setProject(project);
+
     db = new Databases(client);
   }
   return { client: client!, db: db! };
