@@ -4,6 +4,7 @@
  */
 
 import { ResourceId } from '../../types/index';
+import { PlanetaryDefenseState, GroundSiegeState } from '../combat/ground-combat-types';
 
 export type PlanetType = 
   | "standard" 
@@ -142,6 +143,10 @@ export interface Planet {
   isOccupied: boolean;
   governorId?: string;
   demographics: Demographic[];
+
+  // Phase 16: Ground Combat Expansion
+  garrison?: PlanetaryDefenseState;
+  siege?: GroundSiegeState | null;
 }
 
 export interface PlanetStats {

@@ -26,6 +26,7 @@ import type {
     CombatState,
     ShipDesign,
     EmpireIdentityState,
+    RecruitmentJob,
 } from '@/types/ui-state';
 import type { Fleet, FactionVisibility } from '@/lib/movement/types';
 import type { Faction } from '@/lib/trade-system/types';
@@ -160,6 +161,8 @@ export interface UIStore {
     // ── Combat ──
     activeCombats: CombatState[];
     updateCombat: (id: string, patch: Partial<CombatState>) => void;
+    recruitmentJobs: RecruitmentJob[];
+    setRecruitmentJobs: (jobs: RecruitmentJob[]) => void;
 
     // ── Ship Designs ──
     shipDesigns: ShipDesign[];
@@ -405,8 +408,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
     activeCombats: [],
     updateCombat: (id: string, patch) =>
         set((state) => ({
-            activeCombats: state.activeCombats.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+            activeCombats: (state as any).activeCombats.map((c: any) => (c.id === id ? { ...c, ...patch } : c)),
         })),
+    recruitmentJobs: [],
+    setRecruitmentJobs: (jobs) => set({ recruitmentJobs: jobs }),
 
     // ── Ship Designs ──
     shipDesigns: [],

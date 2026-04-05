@@ -34,7 +34,8 @@ import { LeadershipWorldState } from '@/lib/leadership/types';
 import { EmpireDoctrines } from '@/lib/doctrine/types';
 import { FactionReputation } from '@/lib/reputation/types';
 
-export type { CombatState, ShipDesign, LeadershipWorldState, EmpireDoctrines, FactionReputation };
+import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
+export type { CombatState, ShipDesign, LeadershipWorldState, EmpireDoctrines, FactionReputation, RecruitmentJob };
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 

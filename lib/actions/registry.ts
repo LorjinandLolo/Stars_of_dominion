@@ -87,6 +87,24 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id" },
     cost: { metals: 100, manpower: 200 }
   },
+  MIL_LEAVE_SIEGE: {
+    id: "MIL_LEAVE_SIEGE",
+    category: "military",
+    params: { planetId: "id" },
+    cost: {}
+  },
+  MIL_SET_GROUND_TACTIC: {
+    id: "MIL_SET_GROUND_TACTIC",
+    category: "military",
+    params: { planetId: "id", tacticId: "string" },
+    cost: {}
+  },
+  MIL_SET_GROUND_PREDICTION: {
+    id: "MIL_SET_GROUND_PREDICTION",
+    category: "military",
+    params: { planetId: "id", tacticId: "string" },
+    cost: {}
+  },
 
   // --- Diplomacy Actions ---
   DIP_DECLARE_WAR: {

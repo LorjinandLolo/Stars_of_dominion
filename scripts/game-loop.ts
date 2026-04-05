@@ -11,6 +11,11 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { calculateEscalationLevel } from '../lib/politics/cold-war-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
+import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
+import { RecruitmentService } from '../lib/combat/recruitment-service';
+import { tickConstructionGlobal } from '../lib/construction/construction-service';
+import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
+import type { GameWorldState } from '../lib/game-world-state';
 
 // Ensure environment variables are loaded
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -91,6 +96,14 @@ async function runGameTick() {
 
         // 4.5. Real-time Conflict: Sector Combats & Air Sorties
         processSectorCombats(world);
+        
+        // 4. Process Construction
+        tickConstructionGlobal(world);
+
+        // 5. Process Ground Recruitment
+        RecruitmentService.tick(world);
+
+        // 6. Final cleanup or logging
         import('../lib/combat/air-mission-service').then(({ advanceSorties }) => {
             advanceSorties(world);
         }).catch(e => console.warn('[Tick Worker] Could not load AirMissionService', e.message));
@@ -171,8 +184,11 @@ async function runGameTick() {
         }
 
 
-        // 5. Finalize State
+        // 4. Seeding & Administrative recalculations ────────────────────────
+        processSieges(world);
         recalculateSystemControl(world);
+        
+        // Finalize state
         world.nowSeconds += 60; // 1 minute per tick (demo speed)
         await saveWorldState(world);
 
@@ -284,30 +300,123 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_INVASION_PLANET': {
-            // payload: { fleetId, systemId, planetId }
+            // payload: { fleetId, planetId, systemId }
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet) {
-                console.warn(`[Order] MIL_INVASION_PLANET: Planet ${payload.planetId} not found.`);
-                return;
-            }
-            // Security: owner cannot invade their own planet
-            if (planet.ownerId === factionId) {
-                console.warn(`[Security] ${factionId} tried to invade their own planet ${payload.planetId}.`);
-                return;
-            }
-            // Validate attacking fleet is in (or moving to) the target system
-            const fleet = payload.fleetId ? world.movement.fleets.get(payload.fleetId) : null;
-            if (fleet && fleet.factionId !== factionId) {
-                console.error(`[Security] Unauthorized INVASION from ${factionId} using fleet owned by ${fleet.factionId}.`);
-                return;
-            }
+            const fleet = world.movement.fleets.get(payload.fleetId);
+            
+            if (!planet || !fleet || fleet.factionId !== factionId) return;
+            if (planet.ownerId === factionId) return; // Already owner
 
-            const previousOwner = planet.ownerId;
-            planet.ownerId = factionId;
-            planet.isOccupied = true;
-            planet.unrest = Math.min(100, (planet.unrest || 0) + 35);
-            planet.stability = Math.max(0, (planet.stability || 60) - 25);
-            console.log(`[Order] Planet ${planet.name} (${payload.planetId}) captured by ${factionId} from ${previousOwner || 'unclaimed'}.`);
+            // Phase 16: Initialize or Reinforce Ground Siege
+            if (!planet.siege) {
+                const defenseState: PlanetaryDefenseState = (planet as any).garrison || {
+                    planetId: planet.id,
+                    ownerEmpireId: planet.ownerId,
+                    garrisonTroops: 500,
+                    unitComposition: { INFANTRY: 400, MILITIA: 100 } as any,
+                    fortificationLevel: 2,
+                    fortificationLayers: { orbitalSuppressed: false, outerDefenses: 100, innerDefenses: 100, commandBunkers: 100 },
+                    supply: 1000,
+                    maxSupply: 1000,
+                    morale: 100,
+                    maxMorale: 100,
+                    cohesion: 100,
+                    maxCohesion: 100,
+                    resistance: 10,
+                    stability: planet.stability,
+                    infrastructureIntegrity: 100,
+                    militiaAvailable: true,
+                    occupationProgress: 0,
+                    isUnderSiege: true
+                };
+
+                planet.siege = {
+                    siegeId: `siege-${payload.planetId}-${Date.now()}`,
+                    planetId: payload.planetId,
+                    attackerEmpireId: factionId,
+                    defenderEmpireId: planet.ownerId,
+                    phase: 'LANDING',
+                    tickCount: 0,
+                    cycleCount: 0,
+                    cycleLengthTicks: 4, // User Choice: 4 ticks
+                    currentFrontage: 500,
+                    maxFrontage: 1000,
+                    attackerState: {
+                        siegeId: `siege-${payload.planetId}-${Date.now()}`,
+                        attackerEmpireId: factionId,
+                        sourceFleetIds: [payload.fleetId],
+                        totalLandedTroops: fleet.basePower * 5,
+                        reserveTroops: 0,
+                        unitComposition: { INFANTRY: fleet.basePower * 4, ARMOR: fleet.basePower * 1 } as any,
+                        supply: 1000,
+                        maxSupply: 1000,
+                        morale: 100,
+                        maxMorale: 100,
+                        cohesion: 100,
+                        maxCohesion: 100,
+                        orbitalSupportPower: fleet.basePower,
+                        retreatRequested: false,
+                        reinforcementQueue: [],
+                        occupationControl: 0,
+                        devastationCaused: 0
+                    },
+                    defenderState: defenseState,
+                    battleLog: [],
+                    lastResolvedCycle: 0
+                };
+                (planet as any).garrison = defenseState;
+                console.log(`[Tick Worker] SIEGE EXPANSIONS INITIATED on ${planet.name} by ${factionId}`);
+            } else if (planet.siege.attackerEmpireId === factionId) {
+                // Reinforce
+                planet.siege.attackerState.unitComposition.INFANTRY += fleet.basePower * 5;
+                planet.siege.attackerState.totalLandedTroops += fleet.basePower * 5;
+                console.log(`[Tick Worker] SIEGE REINFORCED on ${planet.name} by ${factionId}`);
+            }
+            break;
+        }
+
+        case 'MIL_SET_GROUND_TACTIC': {
+            const planet = world.construction.planets.get(payload.planetId);
+            if (planet && planet.siege) {
+                if (planet.siege.attackerEmpireId === factionId) {
+                    planet.siege.attackerState.activeAttackerTactic = payload.tacticId as TacticalStanceId;
+                } else if (planet.siege.defenderEmpireId === factionId) {
+                    planet.siege.defenderState.activeDefenderTactic = payload.tacticId as TacticalStanceId;
+                }
+            }
+            break;
+        }
+
+        case 'MIL_SET_GROUND_PREDICTION': {
+            const planet = world.construction.planets.get(payload.planetId);
+            if (planet && planet.siege) {
+                if (planet.siege.attackerEmpireId === factionId) {
+                    planet.siege.attackerState.attackerPrediction = payload.tacticId as TacticalStanceId;
+                } else if (planet.siege.defenderEmpireId === factionId) {
+                    planet.siege.defenderState.defenderPrediction = payload.tacticId as TacticalStanceId;
+                }
+            }
+            break;
+        }
+
+        case 'MIL_LEAVE_SIEGE': {
+             const planet = world.construction.planets.get(payload.planetId);
+             if (planet && planet.siege && planet.siege.attackerEmpireId === factionId) {
+                 console.log(`[Tick Worker] Siege of ${planet.name} ABANDONED by ${factionId}`);
+                 planet.siege = null;
+             }
+             break;
+        }
+
+        case 'MIL_BOMBARD_PLANET': {
+            const planet = world.construction.planets.get(payload.targetId || payload.planetId);
+            if (planet && planet.siege && planet.siege.attackerEmpireId === factionId) {
+                // If the user's previously added bombardment button exists, toggle bombardment status
+                // But in Phase 16 we also have specific modes in the payload if provided
+                const mode = payload.mode || 'FORTIFICATION'; // Default
+                planet.siege.attackerState.orbitalSupportPower = (planet as any).bombardmentActive ? 100 : 0; // Simplified
+                console.log(`[Tick Worker] Bombardment mode ${mode} active on ${planet.name}`);
+            }
             break;
         }
 
@@ -503,6 +612,35 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'PLANET_RECRUIT_UNITS': {
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet) return;
+            
+            // Military facility check (Simplified requirement for Phase 16)
+            const hasMilitaryFacility = planet.tiles.some((t: any) => 
+                (t.buildingId === 'barracks' || t.buildingId === 'tank_foundry' || t.buildingId === 'military_academy') 
+                && t.constructionState === 'active'
+            );
+            
+            if (!hasMilitaryFacility && payload.unitType !== 'MILITIA') {
+                console.warn(`[Security] Faction ${factionId} tried to recruit specialized units without military facility on ${payload.planetId}`);
+                return;
+            }
+
+            const job = RecruitmentService.createJob(
+                payload.planetId,
+                factionId,
+                payload.unitType as GroundUnitType,
+                payload.count,
+                world.nowSeconds
+            );
+            if (!world.combat) world.combat = {};
+            if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
+            world.combat.recruitmentJobs.push(job);
+            console.log(`[Order] Faction ${factionId} recruiting ${payload.count}x ${payload.unitType} on ${payload.planetId}`);
+            break;
+        }
+
         case 'ESP_INFILTRATE_NETWORK': {
              const networkId = `net-${factionId}-${payload.targetId}`;
              if (!world.espionage.intelNetworks) world.espionage.intelNetworks = new Map();
@@ -641,8 +779,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'MIL_COMBAT_DIRECTIVE': {
             const combat = world.activeCombats.get(payload.combatId);
             if (!combat) return;
-            if (combat.attacker.factionId === factionId) combat.attacker.selectedDirective = payload.directive;
-            else if (combat.defender.factionId === factionId) combat.defender.selectedDirective = payload.directive;
+            if (combat.attacker.factionId === factionId) combat.attacker.selectedStance = payload.stance;
+            else if (combat.defender.factionId === factionId) combat.defender.selectedStance = payload.stance;
             break;
         }
 
@@ -896,6 +1034,45 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         default:
             console.warn(`[Tick Worker] No worker-side handler for action: ${actionId}`);
+    }
+}
+
+/**
+ * Authoritative Tick: Evaluates all active planetary sieges using Ground Combat logic.
+ * Phase 16: Uses GroundSiegeEngine for complex logistics and tactical stances.
+ */
+function processSieges(world: GameWorldState) {
+    for (const planet of world.construction.planets.values()) {
+        const siege = planet.siege;
+        if (!siege) continue;
+
+        // Resolve common per-tick logic (attrition, cycle checks)
+        const updatedSiege = GroundSiegeEngine.resolveTick(siege);
+        planet.siege = updatedSiege;
+
+        // Resolve Phase transitions
+        if (updatedSiege.defenderState.garrisonTroops <= 0) {
+            // Occupation phase start
+            updatedSiege.phase = 'OCCUPATION';
+            
+            // Advance occupation progress based on surviving infantry
+            const infantryCount = updatedSiege.attackerState.unitComposition.INFANTRY || 0;
+            const progress = (infantryCount / 1000) * 1.5; // 0.15% per 100 infantry
+            updatedSiege.defenderState.occupationProgress += progress;
+
+            if (updatedSiege.defenderState.occupationProgress >= 100) {
+                const oldOwner = planet.ownerId;
+                planet.ownerId = updatedSiege.attackerEmpireId;
+                planet.isOccupied = false;
+                planet.siege = null;
+                // Severe stability hit on capture
+                planet.stability = Math.max(10, (planet.stability || 60) - 40);
+                console.log(`[Tick Worker] PLANETARY CAPTURE: ${planet.name} taken by ${planet.ownerId}`);
+            }
+        } else if (updatedSiege.attackerState.totalLandedTroops <= 0) {
+            console.log(`[Tick Worker] INVASION COLLAPSED: Attackers on ${planet.name} eliminated.`);
+            planet.siege = null;
+        }
     }
 }
 

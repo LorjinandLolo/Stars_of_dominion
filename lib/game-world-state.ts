@@ -16,6 +16,7 @@ import type { IntelligenceWorldState } from './intelligence/types';
 import type { LeadershipWorldState } from './leadership/types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
+import type { RecruitmentJob } from './combat/siege/siege-types';
 
 
 // ─── Shared cross-pillar variables ────────────────────────────────────────────
@@ -119,6 +120,11 @@ export interface GameWorldState {
 
     /** Sim-clock unix seconds. Single source of truth for all services. */
     nowSeconds: number;
+
+    /** Ground force recruitment and localized combat state. */
+    combat: {
+        recruitmentJobs: RecruitmentJob[];
+    };
 }
 
 // ─── Shared-state helpers ─────────────────────────────────────────────────────

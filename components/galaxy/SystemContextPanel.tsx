@@ -1,6 +1,8 @@
 "use client";
 
 import React from 'react';
+import { ShipType, Planet } from '@/lib/construction/construction-types';
+import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
 import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, LayoutGrid, Crosshair, AlertOctagon, Globe, Anchor, Swords } from 'lucide-react';
 import { surveySystemAction } from '@/app/actions/exploration';
@@ -65,6 +67,13 @@ interface PlanetCardProps {
     onOrbit: (planetId: string) => void;
     onSiege: (planetId: string) => void;
     onConstruct: (planetId: string) => void;
+    onBombard: (planetId: string) => void;
+    onRetreat: (planetId: string) => void;
+    onBattleReport?: (report: any) => void;
+    onSetTactic?: (planetId: string, tacticId: string) => void;
+    onSetPrediction?: (planetId: string, tacticId: string) => void;
+    onRecruitUnits?: (planetId: string, unitType: string, count: number) => void;
+    activeJobs?: RecruitmentJob[];
     orbitIndex: number;
 }
 
@@ -77,8 +86,17 @@ function PlanetCard({
     onOrbit,
     onSiege,
     onConstruct,
+    onBombard,
+    onRetreat,
+    onBattleReport,
+    onSetTactic,
+    onSetPrediction,
+    onRecruitUnits,
+    activeJobs = [],
     orbitIndex,
 }: PlanetCardProps) {
+    const [expanded, setExpanded] = React.useState(false);
+    const [recruiting, setRecruiting] = React.useState(false);
     const isOwnedByPlayer = planet.ownerId === playerFactionId;
     const isUnowned = !planet.ownerId;
     const isOrbitedByFleet = orbitedPlanetId === planet.id;
@@ -205,18 +223,41 @@ function PlanetCard({
                     )}
 
                     {/* Siege (if fleet is in orbit and planet is enemy-owned or unowned) */}
-                    {isOrbitedByFleet && !isOwnedByPlayer && (
+                    {isOrbitedByFleet && !isOwnedByPlayer && !planet.siege && (
                         <button
                             onClick={() => onSiege(planet.id)}
                             className="flex-1 py-1 bg-red-700/20 hover:bg-red-700/35 border border-red-500/30 rounded text-[9px] text-red-400 font-bold transition-all flex items-center justify-center gap-1 animate-pulse hover:animate-none"
                         >
                             <Swords size={9} />
-                            SIEGE
+                            INVASION
                         </button>
                     )}
 
+                    {/* Active Siege Tactics */}
+                    {planet.siege && planet.siege.aggressorEmpireId === playerFactionId && (
+                        <div className="flex gap-1 flex-1">
+                            <button
+                                onClick={() => onBombard(planet.id)}
+                                className={`flex-1 py-1 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
+                                    planet.siege.bombardmentActive 
+                                    ? 'bg-orange-600/40 border-orange-400 text-white' 
+                                    : 'bg-orange-900/20 border-orange-700/30 text-orange-400'
+                                }`}
+                            >
+                                <Zap size={9} />
+                                {planet.siege.bombardmentActive ? 'BOMBARDING' : 'BOMBARD'}
+                            </button>
+                            <button
+                                onClick={() => onRetreat(planet.id)}
+                                className="flex-1 py-1 bg-slate-800/60 hover:bg-slate-700 border border-slate-600/40 rounded text-[9px] text-slate-300 font-bold"
+                            >
+                                RETREAT
+                            </button>
+                        </div>
+                    )}
+
                     {/* Leave orbit */}
-                    {isOrbitedByFleet && (
+                    {isOrbitedByFleet && (!planet.siege || planet.siege.aggressorEmpireId !== playerFactionId) && (
                         <button
                             onClick={() => onOrbit(planet.id)} // toggle
                             className="py-1 px-2 bg-slate-800/60 hover:bg-slate-700/60 border border-slate-600/30 rounded text-[9px] text-slate-400 font-bold transition-all"
@@ -226,6 +267,177 @@ function PlanetCard({
                         </button>
                     )}
                 </div>
+
+                {/* Advanced Siege UI Phase 16 */}
+                {planet.siege && (
+                    <div className="mt-3 pt-3 border-t border-slate-700/40 space-y-3">
+                        {/* Phase & Cycle Header */}
+                        <div className="flex justify-between items-center bg-slate-900/50 p-1.5 rounded border border-slate-700/30">
+                            <div className="flex items-center gap-1.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${planet.siege.phase === 'LANDING' ? 'bg-orange-500 animate-pulse' : 'bg-red-500'}`} />
+                                <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">{planet.siege.phase}</span>
+                            </div>
+                            <span className="text-[8px] text-slate-500 font-mono">CYCLE {planet.siege.cycleCount} | TICK {planet.siege.tickCount % 4}/4</span>
+                        </div>
+
+                        {/* Stance & Prediction Command (Only if player is attacker or defender) */}
+                        {(planet.siege.attackerEmpireId === playerFactionId || planet.siege.defenderEmpireId === playerFactionId) && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-[7px] text-slate-500 uppercase tracking-tighter">Next Stance</label>
+                                    <div className="flex gap-0.5">
+                                        {['AGGRESSIVE_ASSAULT', 'DEFENSIVE_HOLD', 'MANEUVER_AMBUSH'].map(s => {
+                                            const activeStance = planet.siege.attackerEmpireId === playerFactionId ? planet.siege.attackerState.selectedStance : planet.siege.defenderState.selectedStance;
+                                            return (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => onSetTactic?.(planet.id, s)}
+                                                    className={`w-full py-1 rounded text-[7px] border transition-all ${
+                                                        activeStance === s ? 'bg-indigo-600/40 border-indigo-500 text-white shadow-[0_0_8px_rgba(99,102,241,0.4)]' : 'bg-slate-800/40 border-slate-700/50 text-slate-500 hover:text-slate-300'
+                                                    }`}
+                                                    title={s.replace('_', ' ')}
+                                                >
+                                                    {s[0]}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[7px] text-slate-500 uppercase tracking-tighter">Predict Enemy</label>
+                                    <div className="flex gap-0.5">
+                                        {['AGGRESSIVE_ASSAULT', 'DEFENSIVE_HOLD', 'MANEUVER_AMBUSH'].map(s => {
+                                            const activePred = planet.siege.attackerEmpireId === playerFactionId ? planet.siege.attackerState.attackerPrediction : planet.siege.defenderState.defenderPrediction;
+                                            return (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => onSetPrediction?.(planet.id, s)}
+                                                    className={`w-full py-1 rounded text-[7px] border transition-all ${
+                                                        activePred === s ? 'bg-emerald-600/40 border-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-slate-800/40 border-slate-700/50 text-slate-500 hover:text-slate-300'
+                                                    }`}
+                                                    title={`Predict ${s.replace('_', ' ')}`}
+                                                >
+                                                    {s[0]}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Combat Meters */}
+                        <div className="space-y-1.5">
+                            {/* Occupation / Garrison HP */}
+                            <div className="flex justify-between items-center text-[9px]">
+                                <span className="text-slate-400">Occupation</span>
+                                <span className="font-bold text-red-400">{Math.round(planet.siege.defenderState.occupationProgress)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-700/30">
+                                <div className="h-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all duration-1000" style={{ width: `${planet.siege.defenderState.occupationProgress}%` }} />
+                            </div>
+
+                            {/* Attacker & Defender Vitals */}
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                                {[
+                                    { label: 'Attacker', state: planet.siege.attackerState, color: 'indigo' },
+                                    { label: 'Defender', state: planet.siege.defenderState, color: 'slate' }
+                                ].map(side => (
+                                    <div key={side.label} className="space-y-1.5">
+                                        <div className="flex justify-between text-[7px] text-slate-500 uppercase font-bold tracking-tighter">
+                                            <span>{side.label}</span>
+                                            <span className={`text-${side.color}-400`}>{Math.round(side.state.totalLandedTroops || side.state.garrisonTroops)} TRP</span>
+                                        </div>
+                                        {/* Morale Bar */}
+                                        <div className="h-1 bg-slate-900 rounded-full overflow-hidden">
+                                            <div className="h-full bg-emerald-500" style={{ width: `${(side.state.morale / side.state.maxMorale) * 100}%` }} />
+                                        </div>
+                                        {/* Supply Bar */}
+                                        <div className="h-1 bg-slate-900 rounded-full overflow-hidden">
+                                            <div className="h-full bg-amber-500" style={{ width: `${(side.state.supply / side.state.maxSupply) * 100}%` }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Recent Battle Log Expansion */}
+                        {planet.siege.battleLog && planet.siege.battleLog.length > 0 && (
+                            <div className="bg-slate-900/80 p-2 rounded border border-slate-700/50">
+                                <div className="text-[7px] text-slate-500 uppercase mb-1 flex justify-between">
+                                    <span>Last Cycle Results</span>
+                                    {planet.siege.battleLog[planet.siege.battleLog.length-1].event && (
+                                        <span className="text-emerald-400 animate-pulse">{planet.siege.battleLog[planet.siege.battleLog.length-1].event}</span>
+                                    )}
+                                </div>
+                                <div className="text-[9px] text-slate-300 leading-tight">
+                                    {planet.siege.battleLog[planet.siege.battleLog.length-1].message}
+                                </div>
+                                <div className="flex justify-between mt-1 text-[8px] font-mono">
+                                    <span className="text-red-400">-{Math.round(planet.siege.battleLog[planet.siege.battleLog.length-1].attackerLosses || 0)} KILLED</span>
+                                    <span className="text-emerald-400">-{Math.round(planet.siege.battleLog[planet.siege.battleLog.length-1].defenderLosses || 0)} KILLED</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Recruitment Interface */}
+                {isOwnedByPlayer && (
+                    <div className="mt-2.5 pt-2.5 border-t border-slate-700/30">
+                        {/* Active Progress Bars */}
+                        {activeJobs.length > 0 && (
+                            <div className="mb-2.5 space-y-1.5">
+                                <div className="text-[7px] text-slate-500 uppercase tracking-widest font-bold">In Production</div>
+                                {activeJobs.map(job => (
+                                    <div key={job.id} className="p-1.5 bg-slate-900/50 rounded border border-slate-800/80">
+                                        <div className="flex justify-between text-[8px] mb-1">
+                                            <span className="text-indigo-400 font-bold">{job.unitType.replace('_', ' ')}</span>
+                                            <span className="text-slate-500">{Math.round(job.progress)}%</span>
+                                        </div>
+                                        <div className="h-0.5 bg-slate-800 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-indigo-500 transition-all duration-500" 
+                                                style={{ width: `${job.progress}%` }} 
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {!recruiting ? (
+                            <button
+                                onClick={() => setRecruiting(true)}
+                                className="w-full py-1.5 px-2 rounded bg-indigo-500/10 border border-indigo-500/30 text-[9px] font-display tracking-widest text-indigo-300 hover:bg-indigo-500/20 transition-colors uppercase"
+                            >
+                                Commission Ground Forces
+                            </button>
+                        ) : (
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[8px] font-bold text-slate-400">SELECT TROOP TYPE</span>
+                                    <button onClick={() => setRecruiting(false)} className="text-[8px] text-slate-500 hover:text-white">CANCEL</button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                    {['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS'].map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => {
+                                                onRecruitUnits?.(planet.id, type, 10);
+                                                setRecruiting(false);
+                                            }}
+                                            className="py-1 px-1.5 rounded bg-slate-800/50 border border-slate-700 hover:border-indigo-500/50 text-left group transition-all"
+                                        >
+                                            <div className="text-[8px] font-bold text-slate-300 group-hover:text-indigo-300">{type.replace('_', ' ')}</div>
+                                            <div className="text-[7px] text-slate-500 italic">10 Units</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -246,7 +458,11 @@ export default function SystemContextPanel() {
         orbitedPlanetId,
         setOrbitedPlanet,
         setSystemContested,
-        setPlanets, // New: from the UI store
+        setPlanets,
+        setNowSeconds,
+        factionVisibility,
+        setFactionVisibility,
+        recruitmentJobs,
     } = useUIStore();
     const [moving, setMoving] = React.useState(false);
     const [surveying, setSurveying] = React.useState(false);
@@ -282,6 +498,8 @@ export default function SystemContextPanel() {
     const isContested = system.isContested || [...new Set(planets.map(p => p.ownerId).filter(o => o && o !== 'faction-neutral'))].length > 1;
     const playerOwnedCount = planets.filter(p => p.ownerId === playerFactionId).length;
     const enemyOwnedCount = planets.filter(p => p.ownerId && p.ownerId !== playerFactionId && p.ownerId !== 'faction-neutral').length;
+    
+    const [recruitingOnPlanet, setRecruitingOnPlanet] = React.useState<string | null>(null);
 
 
     // ── Handlers ───────────────────────────────────────────────────────────────
@@ -354,6 +572,80 @@ export default function SystemContextPanel() {
         }
     };
 
+    const handleRetreatPlanet = async (planetId: string) => {
+        try {
+            await executePlayerAction({
+                id: `act_retreat_${Date.now()}`,
+                actionId: 'MIL_LEAVE_SIEGE',
+                issuerId: playerFactionId || 'PLAYER_FACTION',
+                targetId: planetId,
+                payload: { planetId },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
+        } catch (err) {
+            console.error("Retreat failed:", err);
+        }
+    };
+
+    const handleBombardPlanet = async (planetId: string) => {
+        try {
+            await executePlayerAction({
+                id: `act_bombard_${Date.now()}`,
+                actionId: 'MIL_BOMBARD_PLANET',
+                issuerId: playerFactionId || 'PLAYER_FACTION',
+                targetId: planetId,
+                payload: { targetId: planetId, mode: 'FORTIFICATION' },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
+        } catch (err) {
+            console.error("Bombard failed:", err);
+        }
+    };
+
+    const handleSetGroundTactic = async (planetId: string, tacticId: string) => {
+        try {
+            await executePlayerAction({
+                id: `act_tactic_${Date.now()}`,
+                actionId: 'MIL_SET_GROUND_TACTIC',
+                issuerId: playerFactionId || 'PLAYER_FACTION',
+                targetId: planetId,
+                payload: { planetId, tacticId },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
+        } catch (err) {
+            console.error("Set tactic failed:", err);
+        }
+    };
+
+    const handleSetGroundPrediction = async (planetId: string, tacticId: string) => {
+        try {
+            await executePlayerAction({
+                id: `act_pred_${Date.now()}`,
+                actionId: 'MIL_SET_GROUND_PREDICTION',
+                issuerId: playerFactionId || 'PLAYER_FACTION',
+                targetId: planetId,
+                payload: { planetId, tacticId },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
+        } catch (err) {
+            console.error("Set prediction failed:", err);
+        }
+    };
+
+    const handleRecruitUnits = async (planetId: string, unitType: string, count: number) => {
+        try {
+            await executePlayerAction({
+                id: `act_rec_${Date.now()}`,
+                actionId: 'PLANET_RECRUIT_UNITS',
+                issuerId: playerFactionId || 'PLAYER_FACTION',
+                targetId: planetId,
+                payload: { planetId, unitType, count },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
+        } catch (err) {
+            console.error("Recruitment failed:", err);
+        }
+    };
 
     const handleConstruct = (planetId: string) => {
         setSelectedPlanet(planetId);
@@ -675,6 +967,12 @@ export default function SystemContextPanel() {
                                         onOrbit={handleOrbitPlanet}
                                         onSiege={handleSiegePlanet}
                                         onConstruct={handleConstruct}
+                                        onBombard={handleBombardPlanet}
+                                        onRetreat={handleRetreatPlanet}
+                                        onSetTactic={handleSetGroundTactic}
+                                        onSetPrediction={handleSetGroundPrediction}
+                                        onRecruitUnits={handleRecruitUnits}
+                                        activeJobs={recruitmentJobs.filter(j => j.planetId === planet.id)}
                                         orbitIndex={i}
                                     />
                                 ))

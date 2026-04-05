@@ -1,0 +1,80 @@
+{
+  "INFANTRY": {
+    "name": "Infantry Corps",
+    "description": "General-purpose ground forces, strong in occupation and defensive holding.",
+    "baseStrength": 1.0,
+    "supplyConsumption": 0.5,
+    "moraleWeight": 1.0,
+    "bonus": {
+      "DEFENSIVE_HOLD": 1.25,
+      "AGGRESSIVE_ASSAULT": 1.1
+    },
+    "occupationEfficiency": 1.5
+  },
+  "ARMOR": {
+    "name": "Heavy Armor Division",
+    "description": "Strong in assault and breakthroughs, weak to anti-armor.",
+    "baseStrength": 2.5,
+    "supplyConsumption": 1.5,
+    "moraleWeight": 2.0,
+    "bonus": {
+      "AGGRESSIVE_ASSAULT": 1.5
+    },
+    "occupationEfficiency": 0.5
+  },
+  "ANTI_ARMOR": {
+    "name": "Anti-Armor Battalions",
+    "description": "Counters armor, weaker in aggressive open assault.",
+    "baseStrength": 1.8,
+    "supplyConsumption": 1.0,
+    "moraleWeight": 1.2,
+    "bonus": {
+      "DEFENSIVE_HOLD": 1.4
+    },
+    "occupationEfficiency": 0.8
+  },
+  "AIRBORNE": {
+    "name": "Airborne Regiments",
+    "description": "Bypasses some fortification effects, strong in maneuver.",
+    "baseStrength": 1.6,
+    "supplyConsumption": 1.2,
+    "moraleWeight": 1.5,
+    "bonus": {
+      "MANEUVER_AMBUSH": 1.5
+    },
+    "occupationEfficiency": 1.2
+  },
+  "ARTILLERY": {
+    "name": "Artillery Batteries",
+    "description": "Increases siege and morale damage, weak in close engagement.",
+    "baseStrength": 2.0,
+    "supplyConsumption": 2.0,
+    "moraleWeight": 1.5,
+    "bonus": {
+      "DEFENSIVE_HOLD": 1.3
+    },
+    "occupationEfficiency": 0.2
+  },
+  "SPECIAL_OPS": {
+    "name": "Special Operations Group",
+    "description": "Targets supply, command, and occupation resistance.",
+    "baseStrength": 1.4,
+    "supplyConsumption": 0.8,
+    "moraleWeight": 3.0,
+    "bonus": {
+      "MANEUVER_AMBUSH": 1.8
+    },
+    "occupationEfficiency": 2.0
+  },
+  "MILITIA": {
+    "name": "Local Militia",
+    "description": "Weak combat stats but useful for defense and resistance.",
+    "baseStrength": 0.5,
+    "supplyConsumption": 0.2,
+    "moraleWeight": 0.5,
+    "bonus": {
+      "DEFENSIVE_HOLD": 1.1
+    },
+    "occupationEfficiency": 1.0
+  }
+}

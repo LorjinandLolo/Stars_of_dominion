@@ -3,6 +3,7 @@
 // Serializes GameWorldState to JSON-safe format (Maps → Records) for Appwrite storage.
 
 import type { GameWorldState } from '@/lib/game-world-state';
+import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from '@/lib/combat/siege/siege-types';
 
 export interface GameSaveMetadata {
     id: string;
@@ -85,7 +86,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         economy: world.economy.factions.get(factionId),
         tech: world.tech.get(factionId),
         espionageAgents: Array.from(world.espionage.agents.values()).filter((a: any) => a.ownerFactionId === factionId),
-        intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId)
+        intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId),
+        recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId)
     };
     return JSON.stringify(mapsToRecords(shard));
 }
@@ -107,6 +109,14 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.intelNetworks) {
         shard.intelNetworks.forEach((n: any) => world.espionage.intelNetworks.set(n.id, n));
     }
+    if (shard.recruitmentJobs) {
+        if (!world.combat) world.combat = { recruitmentJobs: [] };
+        // Merge - unique by ID
+        const existingIds = new Set(world.combat.recruitmentJobs.map(j => j.id));
+        shard.recruitmentJobs.forEach((j: any) => {
+            if (!existingIds.has(j.id)) world.combat.recruitmentJobs.push(j);
+        });
+    }
 }
 
 /**
@@ -120,5 +130,6 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.tech.clear();
     cloned.espionage.agents.clear();
     cloned.espionage.intelNetworks.clear();
+    if (cloned.combat) cloned.combat.recruitmentJobs = [];
     return cloned;
 }

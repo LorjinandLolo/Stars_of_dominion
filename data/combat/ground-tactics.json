@@ -1,0 +1,54 @@
+{
+  "AGGRESSIVE_ASSAULT": {
+    "name": "Aggressive Assault",
+    "description": "High direct damage, higher casualties taken. Strong with infantry and armor.",
+    "beats": "DEFENSIVE_HOLD",
+    "modifiers": {
+      "damageDealt": 1.5,
+      "damageTaken": 1.25,
+      "moraleDamage": 1.2,
+      "supplyDamage": 1.0,
+      "cohesionReduction": 0.05,
+      "fortificationInteraction": 0.8
+    }
+  },
+  "DEFENSIVE_HOLD": {
+    "name": "Defensive Hold",
+    "description": "Lower damage dealt, reduced damage taken. Benefits more from fortifications.",
+    "beats": "MANEUVER_AMBUSH",
+    "modifiers": {
+      "damageDealt": 0.8,
+      "damageTaken": 0.6,
+      "moraleDamage": 0.5,
+      "supplyDamage": 0.5,
+      "cohesionReduction": 0.02,
+      "fortificationInteraction": 1.5
+    }
+  },
+  "MANEUVER_AMBUSH": {
+    "name": "Maneuver Ambush",
+    "description": "Higher morale/supply/cohesion disruption. Partial fortification bypass.",
+    "beats": "AGGRESSIVE_ASSAULT",
+    "modifiers": {
+      "damageDealt": 1.0,
+      "damageTaken": 1.0,
+      "moraleDamage": 1.5,
+      "supplyDamage": 1.8,
+      "cohesionReduction": 0.15,
+      "fortificationInteraction": 0.5
+    }
+  },
+  "RPS_COUNTER_BONUS": 0.15,
+  "PREDICTION_SUCCESS": {
+    "damageDealt": 1.3,
+    "damageTaken": 0.8,
+    "moraleDamage": 1.4,
+    "cohesionBonus": 0.1
+  },
+  "PREDICTION_FAILURE": {
+    "damageDealt": 0.85,
+    "damageTaken": 1.15,
+    "moralePenalty": 1.2,
+    "cohesionPenalty": 0.05
+  }
+}

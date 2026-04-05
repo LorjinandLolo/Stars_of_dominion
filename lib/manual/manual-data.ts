@@ -150,29 +150,51 @@ export const MANUAL_DATA: ManualSection[] = [
                         type: 'bullet_list',
                         content: [
                             '1. ORBITAL: Fleets clash for system control. Victory here allows bombardment or ground assault.',
-                            '2. GROUND: Armies fight for planet possession. Requires orbital supremacy.'
+                            '2. GROUND: Advanced planetary siege. Involves unit composition, tactical cycles, and morale attrition.'
                         ]
+                    },
+                    {
+                        type: 'strategy_tip',
+                        title: 'Orbital Superiority',
+                        content: 'Bombardment is essential to strip enemy fortifications and suppress garrisons. Use "FORTIFICATION BOMBARDMENT" to reduce defense layers before landing your troops.'
                     }
                 ]
             },
             {
                 id: 'units',
-                title: 'Unit Counter System',
+                title: 'Ground Unit Roles',
                 blocks: [
                     {
                         type: 'table',
                         content: [
-                            { unit: 'Infantry', counter: 'Airborne' },
-                            { unit: 'Tanks', counter: 'Anti-Armor' },
-                            { unit: 'Anti-Armor', counter: 'Infantry' },
-                            { unit: 'Airborne', counter: 'Tanks' },
-                            { unit: 'Special Ops', counter: 'Admirals/Generals (Assassination)' }
+                            { unit: 'INFANTRY', role: 'Foundation of any army. High morale, good all-rounder.' },
+                            { unit: 'ARMOR', role: 'Punching through defenses. Strong vs Infantry, weak vs Anti-Armor.' },
+                            { unit: 'ANTI_ARMOR', role: 'Specialized tank hunters. Essential for breaking armored pushes.' },
+                            { unit: 'ARTILLERY', role: 'Support fire. High damage but fragile and supply-intensive.' },
+                            { unit: 'SPECIAL_OPS', role: 'Disruption & Assassination. Can bypass frontlines to hit command bunkers.' }
                         ]
                     },
                     {
-                        type: 'strategy_tip',
-                        title: 'Logistics',
-                        content: 'Military operations require continuous AMMO and MANPOWER. A fleet without ammo deals only 10% damage and cannot use special abilities.'
+                        type: 'paragraph',
+                        content: 'Recruiting units requires specific military infrastructure (Barracks, Foundries) and consumes MANPOWER and CREDITS in a real-time production queue.'
+                    }
+                ]
+            },
+            {
+                id: 'siege_cycle',
+                title: 'The Tactical Cycle',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Ground combat is resolved in 4-tick "Tactical Cycles". Every 4 ticks, the simulation evaluates stances, calculates attrition, and reports losses.'
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'STANCE: Choose between Aggressive, Defensive, or Maneuver.',
+                            'PREDICTION: Predict the enemy stance for a 35% effectiveness bonus.',
+                            'RESOLUTION: At the end of the cycle, the clash is resolved based on Rock-Paper-Scissors modifiers.'
+                        ]
                     }
                 ]
             }
@@ -290,8 +312,8 @@ export const MANUAL_DATA: ManualSection[] = [
                     },
                     {
                         type: 'strategy_tip',
-                        title: 'The Prediction Game',
-                        content: 'If the Attacker predicts your response correctly (e.g. predicts you will "Fortify" and you do), their attack is 35% more effective. If they guess wrong, your defense gains a massive boost. This is a game of psychological reading.'
+                        title: 'The Ground Siege Stance Game',
+                        content: 'Aggressive beats Maneuver, Maneuver beats Defensive, and Defensive beats Aggressive. If you predict the enemy correctly AND have the winning stance, you will inflict massive losses while taking minimal damage.'
                     }
                 ]
             }
