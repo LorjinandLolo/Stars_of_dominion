@@ -16,34 +16,39 @@ const client = new Client()
 
 const databases = new Databases(client);
 
+const PLANET_TYPES = ['standard', 'arid', 'oceanic', 'volcanic', 'barren', 'gas_giant', 'moon', 'tundra'];
+const SUFFIXES = ['Prime', 'II', 'III', 'IV', 'V'];
+
+function getRandomType(systemId: string, index: number) {
+    // Simple deterministic type based on IDs
+    const types = PLANET_TYPES;
+    const charCodeSum = systemId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return types[(charCodeSum + index) % types.length];
+}
+
 async function seedUniverse() {
-    console.log(`[Seeder] Starting Universe Seed: ${mockSystems.length} systems found in mock data.`);
+    console.log(`[Seeder] Starting Universe Seed: ${mockSystems.length} systems.`);
 
     try {
-        // 1. Verify collections exist by listing one doc
         await databases.listDocuments(DB_ID, COLL_SYSTEMS, [Query.limit(1)]);
-        console.log('✅ Systems collection verified.');
     } catch (e: any) {
-        console.error('❌ Systems collection missing or not ready. Run init-multiplayer.ts first.');
+        console.error('❌ Systems collection missing. Run init-multiplayer.ts first.');
         process.exit(1);
     }
 
     let systemsCreated = 0;
     let planetsCreated = 0;
 
-    // Batch systems to avoid hitting Appwrite rate limits too hard
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 5; // Smaller batch for stability
     for (let i = 0; i < mockSystems.length; i += BATCH_SIZE) {
         const batch = mockSystems.slice(i, i + BATCH_SIZE);
         
         await Promise.all(batch.map(async (sys) => {
             try {
-                // Check if system already exists
+                // 1. Ensure System Exists
                 try {
                     await databases.getDocument(DB_ID, COLL_SYSTEMS, sys.id);
-                    // console.log(`ℹ️ System ${sys.name} already exists.`);
                 } catch (e) {
-                    // Create System
                     await databases.createDocument(DB_ID, COLL_SYSTEMS, sys.id, {
                         name: sys.name,
                         q: sys.q,
@@ -53,32 +58,53 @@ async function seedUniverse() {
                         regionId: sys.regionId
                     });
                     systemsCreated++;
+                }
 
-                    // Create a "Prime" planet for every system
-                    const planetId = `planet_${sys.id}`;
+                // 2. Determine Planet Count (1-4)
+                // Deterministic count based on systemId hash
+                const hash = sys.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+                const planetCount = (hash % 4) + 1;
+
+                // 3. Create Planets
+                for (let p = 0; p < planetCount; p++) {
+                    const planetId = `planet_${sys.id}_${p}`;
+                    const planetType = getRandomType(sys.id, p);
+                    
+                    // Determine initial owner
+                    let ownerId = 'faction-neutral';
+                    if (sys.tags.includes('capital') || sys.tags.some(t => t.toLowerCase().includes('core'))) {
+                        if (sys.tags.some(t => t.includes('Hegemony'))) ownerId = 'faction-aurelian';
+                        else if (sys.tags.some(t => t.includes('Vektori'))) ownerId = 'faction-vektori';
+                        else if (sys.tags.some(t => t.includes('Syndicate'))) ownerId = 'faction-null-syndicate';
+                        else if (sys.tags.some(t => t.includes('Covenant'))) ownerId = 'faction-covenant';
+                    }
+
                     try {
+                        await databases.getDocument(DB_ID, COLL_PLANETS, planetId);
+                    } catch (e) {
                         await databases.createDocument(DB_ID, COLL_PLANETS, planetId, {
-                            name: `${sys.name} Prime`,
+                            name: `${sys.name} ${SUFFIXES[p] || p + 1}`,
                             systemId: sys.id,
-                            ownerId: 'faction-neutral',
-                            planetType: 'standard',
-                            population: 1.0
+                            ownerId: ownerId,
+                            planetType: planetType,
+                            population: Math.random() * 5 + 0.5,
+                            stability: 70 + Math.random() * 30,
+                            unrest: Math.random() * 20
                         });
                         planetsCreated++;
-                    } catch (e) { /* planet exists */ }
+                    }
                 }
             } catch (err: any) {
                 console.error(`Error processing ${sys.name}:`, err.message);
             }
         }));
 
-        console.log(`[Seeder] Processed ${Math.min(i + BATCH_SIZE, mockSystems.length)} / ${mockSystems.length} systems...`);
+        console.log(`[Seeder] Processed ${Math.min(i + BATCH_SIZE, mockSystems.length)} systems...`);
     }
 
     console.log(`\n========= ✅ SEEDING COMPLETE =========`);
-    console.log(`Systems Created: ${systemsCreated}`);
+    console.log(`Systems Processed: ${mockSystems.length}`);
     console.log(`Planets Created: ${planetsCreated}`);
-    console.log(`Universe is now authoritative in Appwrite.`);
 }
 
 seedUniverse();

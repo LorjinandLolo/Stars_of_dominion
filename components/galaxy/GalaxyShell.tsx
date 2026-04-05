@@ -129,7 +129,8 @@ export default function GalaxyShell() {
         playerState,
         nowSeconds,
         factionVisibility,
-        factions
+        factions,
+        contestedSystemIds,
     } = useUIStore();
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
@@ -253,6 +254,19 @@ export default function GalaxyShell() {
                                     className="animate-breathe"
                                 />
                             )}
+                            {/* Contested overlay — dashed orange ring */}
+                            {contestedSystemIds.has(sys.id) && (
+                                <polygon
+                                    points={HEX_POINTS}
+                                    fill="none"
+                                    stroke="#f97316"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="3 2"
+                                    opacity={0.75}
+                                    style={{ animation: 'spin 8s linear infinite' }}
+                                    pointerEvents="none"
+                                />
+                            )}
                         </g>
                     );
                 })}
@@ -276,6 +290,19 @@ export default function GalaxyShell() {
                     );
                 })}
             </svg>
+
+            {/* Contested ring animation */}
+            <style>{`
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to   { transform: rotate(360deg); }
+                }
+                @keyframes breathe {
+                    0%, 100% { opacity: 0.8; transform: scale(1); }
+                    50%       { opacity: 1;   transform: scale(1.15); }
+                }
+                .animate-breathe { animation: breathe 3s ease-in-out infinite; }
+            `}</style>
 
             <OverlayToggleBar />
             <SystemContextPanel />

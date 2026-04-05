@@ -58,14 +58,27 @@ export interface UIStore {
     selectedPlanetId: string | null;
     setSelectedPlanet: (id: string | null) => void;
 
+    // ── Orbital engagement (fleet in orbit around a specific planet) ──
+    orbitedPlanetId: string | null;
+    setOrbitedPlanet: (id: string | null) => void;
+
     // ── Systems & links ──
     systems: SystemNode[];
+    setSystems: (systems: SystemNode[]) => void;
     updateSystem: (id: string, patch: Partial<SystemNode>) => void;
     links: Link[];
+
+    // ── Contested systems (populated when planet data is loaded per system) ──
+    contestedSystemIds: Set<string>;
+    setSystemContested: (systemId: string, contested: boolean) => void;
 
     // ── Fleets ──
     fleets: Fleet[];
     setFleets: (fleets: Fleet[]) => void;
+
+    // ── Planets (Synced from world.construction.planets) ──
+    planets: any[]; // Use any[] for now to avoid complex imports, or import Planet type
+    setPlanets: (planets: any[]) => void;
 
     // ── Regions ──
     regions: Region[];
@@ -228,17 +241,36 @@ export const useUIStore = create<UIStore>((set, get) => ({
     selectedPlanetId: null,
     setSelectedPlanet: (id: string | null) => set({ selectedPlanetId: id }),
 
+    // ── Orbital engagement ──
+    orbitedPlanetId: null,
+    setOrbitedPlanet: (id: string | null) => set({ orbitedPlanetId: id }),
+
     // ── Systems & links ──
     systems: [],
+    setSystems: (systems) => set({ systems }),
     updateSystem: (id, patch) =>
         set((state) => ({
             systems: state.systems.map((s) => (s.id === id ? { ...s, ...patch } : s)),
         })),
     links: [],
 
+    // ── Contested systems ──
+    contestedSystemIds: new Set<string>(),
+    setSystemContested: (systemId, contested) =>
+        set((state) => {
+            const next = new Set(state.contestedSystemIds);
+            if (contested) next.add(systemId);
+            else next.delete(systemId);
+            return { contestedSystemIds: next };
+        }),
+
     // ── Fleets ──
     fleets: [],
     setFleets: (fleets) => set({ fleets }),
+
+    // ── Planets ──
+    planets: [],
+    setPlanets: (planets) => set({ planets }),
 
     // ── Regions ──
     regions: [],

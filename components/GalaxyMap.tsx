@@ -255,11 +255,24 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                 let fill = '#0a0a0a';
                 let stroke = '#262626';
 
+                const asteroids = [];
                 if (terrain === 'asteroid_field') {
                     fill = '#18181b';
                     stroke = '#27272a';
+                    // deterministic asteroids based on coords
+                    const seed = (c * 31 + r * 17);
+                    const count = (seed % 4) + 3; // 3 to 6 asteroids
+                    for (let i = 0; i < count; i++) {
+                        const ax = ((seed * (i + 1) * 7) % (HEX_SIZE * 1.2)) - HEX_SIZE * 0.6;
+                        const ay = ((seed * (i + 2) * 11) % (HEX_SIZE * 1.2)) - HEX_SIZE * 0.6;
+                        const ar = ((seed * (i + 3)) % 3) + 1.5;
+                        asteroids.push(<circle key={`ast-${i}`} cx={ax} cy={ay} r={ar} fill="#3f3f46" opacity="0.8" />);
+                    }
                 } else if (terrain === 'nebula') {
                     fill = '#172554';
+                } else if (terrain === 'ion_storm') {
+                    fill = '#082f49';
+                    stroke = '#0284c7';
                 }
 
                 if (planet && planet.attributes) {
@@ -284,6 +297,15 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                     stroke = '#22c55e'; // Green highlight
                 }
 
+                // Moon generation
+                let moon = null;
+                if (planet) {
+                    const hasMoon = (c * 13 + r * 7) % 10 > 6; // ~30% chance for a moon
+                    if (hasMoon) {
+                        moon = <circle cx={HEX_SIZE * 0.55} cy={-HEX_SIZE * 0.55} r={HEX_SIZE * 0.15} fill="#a1a1aa" opacity="0.9" />;
+                    }
+                }
+
                 _hexes.push(
                     <g key={`${c},${r}`} transform={`translate(${center.x}, ${center.y})`}
                         onClick={(e) => {
@@ -300,6 +322,18 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                             className="transition-colors duration-200 hover:fill-zinc-800"
                         />
 
+                        {/* Terrain Features */}
+                        {terrain === 'nebula' && (
+                            <circle cx={0} cy={0} r={HEX_SIZE * 0.8} fill="#3b82f6" opacity="0.15" filter="url(#glow)" />
+                        )}
+                        {terrain === 'ion_storm' && (
+                            <>
+                                <path d={`M -5,-10 L 5,0 L -2,3 L 8,12`} stroke="#38bdf8" strokeWidth="1.5" fill="none" opacity="0.6" filter="url(#glow)" />
+                                <circle cx={0} cy={0} r={HEX_SIZE * 0.6} fill="#0ea5e9" opacity="0.1" filter="url(#glow)" />
+                            </>
+                        )}
+                        {asteroids}
+
                         {/* Render Hyperlanes if any */}
                         {planet?.hyperlaneTo?.map((dest: any, idx: number) => {
                             if (dest.x === undefined || dest.y === undefined) return null;
@@ -311,6 +345,8 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                                     stroke="#06b6d4" strokeWidth="2" strokeDasharray="5,5" opacity="0.6" />
                             );
                         })}
+
+                        {moon}
 
                         {planet && (
                             <circle r={HEX_SIZE * 0.4} fill={planet.ownerId ? getFactionColor(planet.ownerId) : '#52525b'} />

@@ -8,6 +8,9 @@ const SESSION_DOC_ID = 'default-session';
 
 export function useGameSync() {
     const setFleets = useUIStore(s => s.setFleets);
+    const setPlanets = useUIStore(s => s.setPlanets);
+    const setSystems = useUIStore(s => s.setSystems);
+    const setSystemContested = useUIStore(s => s.setSystemContested);
     const setNowSeconds = useUIStore(s => s.setNowSeconds);
     const setFactionVisibility = useUIStore(s => s.setFactionVisibility);
     const updateEmpireIdentity = useUIStore(s => s.updateEmpireIdentity);
@@ -107,6 +110,30 @@ export function useGameSync() {
                  // Pillar 5: Press & Media
                  if (data.press) {
                      useUIStore.getState().updatePress(data.press);
+                 }
+
+                 // Pillar 6: Construction & Planets (Multi-Planet Sync)
+                 if (data.construction?.planets) {
+                     const planetList = Array.from(Object.values(data.construction.planets)) as any[];
+                     setPlanets(planetList);
+
+                     // Recalculate contested status for each system based on planetary ownership
+                     const systemGroups: Record<string, string[]> = {};
+                     planetList.forEach(p => {
+                         if (!systemGroups[p.systemId]) systemGroups[p.systemId] = [];
+                         if (p.ownerId) systemGroups[p.systemId].push(p.ownerId);
+                     });
+
+                     Object.entries(systemGroups).forEach(([sysId, owners]) => {
+                         const uniqueOwners = new Set(owners);
+                         setSystemContested(sysId, uniqueOwners.size > 1);
+                     });
+                 }
+
+                 // Pillar 7: Systems & Movement Structure
+                 if (data.movement?.systems) {
+                     const systemList = Array.from(Object.values(data.movement.systems)) as any[];
+                     setSystems(systemList);
                  }
 
                  if (data.leadership) {

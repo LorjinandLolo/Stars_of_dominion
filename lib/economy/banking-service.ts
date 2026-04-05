@@ -1,107 +1,87 @@
 /**
  * lib/economy/banking-service.ts
  * 
- * Predatory Lending & Mercenary Enforcement logic.
- * Managed by the Intergalactic Banking Clan.
+ * Logic for the Intergalactic Banking Clan's financial mechanics.
+ * Handles issuing loans, compounding interest, defaults, and mercenary debt-enforcement.
  */
-
-import { HERO_ACTIONS } from '../mechanics/hero-actions';
 
 export interface Loan {
     id: string;
-    factionId: string;
+    debtorFactionId: string;
+    creditorFactionId: string; // usually 'banking_clan'
     principal: number;
-    interestAccrued: number;
-    interestRate: number; // e.g. 0.05 per 100 ticks
-    ticksSinceIssuance: number;
-    status: 'active' | 'defaulted' | 'paid';
+    currentBalance: number;
+    interestRatePerTick: number;
+    issueTick: number;
+    status: 'active' | 'defaulted' | 'repaid';
 }
 
-export const BANKING_CONFIG = {
-    BASE_INTEREST_RATE: 0.02, // 2% per 100 ticks
-    CRISIS_MULTIPLIER: 2.5, // Interest spikes during galactic tension
-    MAX_LOAN_MULTIPLIER: 10, // Max loan based on yearly income
-    RECLAMATION_THRESHOLD: 50000, // Defaulters over this amount get Mercenary Armadas sent
-};
+export class BankingService {
+    activeLoans: Map<string, Loan> = new Map();
 
-export const activeLoans: Map<string, Loan> = new Map();
+    /**
+     * Issues a high-interest liquidity injection to a desperate faction.
+     */
+    issueLoan(debtorId: string, amount: number, tick: number): Loan {
+        const loan: Loan = {
+            id: `loan-${debtorId}-${Date.now()}`,
+            debtorFactionId: debtorId,
+            creditorFactionId: 'banking_clan',
+            principal: amount,
+            currentBalance: amount,
+            interestRatePerTick: 0.005, // 0.5% compounding per tick
+            issueTick: tick,
+            status: 'active'
+        };
 
-/**
- * Issuing a loan to a faction.
- */
-export function requestLoan(factionId: string, amount: number, world: any): Loan {
-    const loan: Loan = {
-        id: `loan-${factionId}-${Date.now()}`,
-        factionId,
-        principal: amount,
-        interestAccrued: 0,
-        interestRate: BANKING_CONFIG.BASE_INTEREST_RATE,
-        ticksSinceIssuance: 0,
-        status: 'active'
-    };
-    
-    // Update faction liquidity
-    world.factions[factionId].metrics.wealth += amount;
-    activeLoans.set(loan.id, loan);
-    
-    return loan;
-}
+        this.activeLoans.set(loan.id, loan);
+        return loan;
+    }
 
-/**
- * Calculating predatory interest drift.
- */
-export function processInterestDrift(world: any) {
-    const tension = world.politics.galacticTension || 1.0;
-    
-    activeLoans.forEach((loan, id) => {
-        if (loan.status !== 'active') return;
-        
-        // Increase interest rate if the galaxy is unstable
-        const currentRate = loan.interestRate * (1 + (tension * 0.1));
-        const compoundingInterest = (loan.principal + loan.interestAccrued) * currentRate;
-        
-        loan.interestAccrued += compoundingInterest;
-        loan.ticksSinceIssuance += 100;
-
-        // Auto-check for insolvency
-        if (loan.interestAccrued > loan.principal * 3) {
-            triggerDefaultWarning(loan.factionId);
+    /**
+     * Called during the simulation loop to apply compounding interest.
+     */
+    calculateInterestDrift(tick: number) {
+        for (const loan of this.activeLoans.values()) {
+            if (loan.status === 'active') {
+                // Apply interest
+                const interest = loan.currentBalance * loan.interestRatePerTick;
+                loan.currentBalance += interest;
+                // In a real loop, we would deduct the interest from debtor's liquidity 
+                // and add it to the Banking Clan's liquidity here.
+            }
         }
-    });
-}
+    }
 
-/**
- * Defaulting on debt - triggers immediate War with IBC Mercenaries.
- */
-export function defaultOnDebt(factionId: string, world: any) {
-    const totalDebt = Array.from(activeLoans.values())
-        .filter(l => l.factionId === factionId && l.status === 'active')
-        .reduce((sum, l) => sum + (l.principal + l.interestAccrued), 0);
+    /**
+     * If a faction cannot or will not pay, they can declare default.
+     * This provides instant debt-relief but destroys diplomatic trust
+     * and triggers mercenary retaliation.
+     */
+    defaultOnLoan(loanId: string): { success: boolean; events: string[] } {
+        const loan = this.activeLoans.get(loanId);
+        if (!loan || loan.status !== 'active') return { success: false, events: [] };
 
-    // 1. Set status to 'Pariah'
-    world.factions[factionId].diplomacy.status = 'CREDIT_PARIAH';
+        loan.status = 'defaulted';
+        
+        return {
+            success: true,
+            events: [
+                `Faction ${loan.debtorFactionId} has defaulted on their debt of ${Math.floor(loan.currentBalance)} to the Banking Clan!`,
+                `The Banking Clan has declared a Debt Reclamation War.`,
+                `Mercenary armadas have been hired to burn the assets of ${loan.debtorFactionId}.`
+            ]
+        };
+    }
 
-    // 2. Hire Mercenaries for the IBC to reclaim debt
-    if (totalDebt > BANKING_CONFIG.RECLAMATION_THRESHOLD) {
-        spawnMercenaryArmada('banking_clan', factionId, 'RECLAMATION_STRIKE', world);
+    /**
+     * Hires an off-the-books mercenary armada for a set cost.
+     * Often used by the Banking Clan to enforce defaults.
+     */
+    hireMercenaries(buyerFactionId: string, systemTargetId: string, payment: number): string {
+        // Here we'd link to the tactical simulation to spawn a pirate/merc unit
+        return `A mercenary fleet of strength ${payment * 0.1} has been dispatched to ${systemTargetId} on behalf of ${buyerFactionId}.`;
     }
 }
 
-/**
- * Spawns NPC Mercenary fleets to attack a target.
- */
-export function spawnMercenaryArmada(hiringFaction: string, targetFaction: string, contractType: string, world: any) {
-    // Mock logic to spawn AI fleets belonging to the 'Hiring Faction' 
-    // effectively using their wealth to automate their defense/offense.
-    console.log(`[BANKING CLAN] Mercenary Armada deployed for ${hiringFaction} against ${targetFaction}: ${contractType}`);
-    
-    // Add to 'Crisis Events' list for UI tracking
-    world.crises.push({
-        id: `merc-${Date.now()}`,
-        type: 'mercenary_invasion',
-        origin: hiringFaction,
-        target: targetFaction,
-        intensity: world.factions[hiringFaction].metrics.wealth / 1000,
-        severity: 'existential'
-    });
-}
+export const GlobalBank = new BankingService();

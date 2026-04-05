@@ -1,24 +1,24 @@
 /**
  * lib/mechanics/pathway-logic.ts
  * 
- * Logic for the 'Societal Pathway Ladders'.
- * Every faction can climb one of four ladders to reach a specialized end-state.
+ * Defines the progression ladder for dynamic societal evolution.
+ * Factions can shift between 4 core pathways (Sovereign, Mercantile, Shadow, Crisis)
+ * depending on their economic and political milestones.
  */
 
-export type PathwayId = 'golden_ledger' | 'shadow_veil' | 'unified_order' | 'great_pyre';
+export type PathwayId = 'sovereign' | 'mercantile' | 'shadow' | 'crisis';
 
 export interface PathwayRank {
-    rank: number;
+    level: number;
     title: string;
     description: string;
-    requirements: {
-        wealth?: number;
-        infamy?: number;
-        legitimacy?: number;
-        militaryScore?: number;
-        stabilityMax?: number;
+    unlockRequirements: {
+        wealthMin?: number;
+        infamyMin?: number;
+        legitimacyMin?: number;
+        militaryScoreMin?: number;
     };
-    unlockedModifiers: Record<string, number>;
+    mechanicsUnlocked: string[];
 }
 
 export interface Pathway {
@@ -27,128 +27,89 @@ export interface Pathway {
     ranks: PathwayRank[];
 }
 
-export const PATHWAY_LADDERS: Record<PathwayId, Pathway> = {
-    golden_ledger: {
-        id: 'golden_ledger',
-        name: "The Golden Ledger",
+export const PATHWAYS: Record<PathwayId, Pathway> = {
+    sovereign: {
+        id: 'sovereign',
+        name: 'The Unified Order',
         ranks: [
-            { 
-                rank: 1, title: "Trade Guild", description: "Economic focus starts to shift toward financial mediation.",
-                requirements: { wealth: 5000 },
-                unlockedModifiers: { trade_efficiency: 0.05 }
-            },
-            { 
-                rank: 2, title: "Sovereign Fund", description: "The state begins leveraging its reserves to influence rivals.",
-                requirements: { wealth: 25000, trade_efficiency: 0.15 },
-                unlockedModifiers: { diplomatic_leverage_wealth: 0.10 }
-            },
-            { 
-                rank: 3, title: "Banking Hub", description: "Unlocks the ability to issue high-interest predatory loans.",
-                requirements: { wealth: 100000, trade_efficiency: 0.30 },
-                unlockedModifiers: { loan_interest_bonus: 0.20 }
-            },
-            { 
-                rank: 4, title: "Financial Hegemon", description: "Can seize entire star systems as collateral for unpaid debts.",
-                requirements: { wealth: 500000, trade_efficiency: 0.50 },
-                unlockedModifiers: { debt_seizure_unlocked: 1.0 }
-            }
+            { level: 1, title: 'Protectorate', description: 'Basic governance.', unlockRequirements: { legitimacyMin: 10 }, mechanicsUnlocked: [] },
+            { level: 2, title: 'Authority', description: 'Centralized law making.', unlockRequirements: { legitimacyMin: 40 }, mechanicsUnlocked: ['senate_veto'] },
+            { level: 3, title: 'Imperial Axis', description: 'Dominant regional power.', unlockRequirements: { legitimacyMin: 70 }, mechanicsUnlocked: ['tax_tribute'] },
+            { level: 4, title: 'Galactic Enforcer', description: 'The undisputed arbiter of the galaxy.', unlockRequirements: { legitimacyMin: 95 }, mechanicsUnlocked: ['declare_galactic_law'] }
         ]
     },
-    shadow_veil: {
-        id: 'shadow_veil',
-        name: "The Shadow Veil",
+    mercantile: {
+        id: 'mercantile',
+        name: 'The Golden Ledger',
         ranks: [
-            { 
-                rank: 1, title: "Smugglers", description: "Operating outside the law to avoid taxation.",
-                requirements: { infamy: 10 },
-                unlockedModifiers: { tax_evasion: 0.10 }
-            },
-            { 
-                rank: 2, title: "Privateers", description: "State-sanctioned raiding of rival trade routes.",
-                requirements: { infamy: 30, militaryScore: 50 },
-                unlockedModifiers: { raiding_efficiency: 0.20 }
-            },
-            { 
-                rank: 3, title: "Shadow State", description: "Complete transition to a non-sovereign entity; black market focus.",
-                requirements: { infamy: 60, stabilityMax: 40 },
-                unlockedModifiers: { black_market_access: 1.0 }
-            },
-            { 
-                rank: 4, title: "Pirate King", description: "Unchecked dominion over the galactic underbelly.",
-                requirements: { infamy: 100, militaryScore: 200 },
-                unlockedModifiers: { piracy_share_bonus: 0.50 }
-            }
+            { level: 1, title: 'Trade Guild', description: 'A focus on commerce.', unlockRequirements: { wealthMin: 5000 }, mechanicsUnlocked: ['open_trade_routes'] },
+            { level: 2, title: 'Sovereign Fund', description: 'Extensive lending power.', unlockRequirements: { wealthMin: 25000 }, mechanicsUnlocked: ['issue_loans'] },
+            { level: 3, title: 'Banking Hub', description: 'Predatory financial dominance.', unlockRequirements: { wealthMin: 100000 }, mechanicsUnlocked: ['hire_mercenaries'] },
+            { level: 4, title: 'Financial Hegemon', description: 'The absolute center of galactic wealth.', unlockRequirements: { wealthMin: 500000 }, mechanicsUnlocked: ['foreclose_planet'] }
         ]
     },
-    unified_order: {
-        id: 'unified_order',
-        name: "The Unified Order",
+    shadow: {
+        id: 'shadow',
+        name: 'The Shadow Veil',
         ranks: [
-            { 
-                rank: 1, title: "Protectorate", description: "Enforcing local peace through military presence.",
-                requirements: { legitimacy: 60 },
-                unlockedModifiers: { internal_stability: 0.10 }
-            },
-            { 
-                rank: 2, title: "Authority", description: "Standardizing law and order across multiple sectors.",
-                requirements: { legitimacy: 80, militaryScore: 100 },
-                unlockedModifiers: { corruption_reduction: 0.20 }
-            },
-            { 
-                rank: 3, title: "Imperial Axis", description: "A centralized powerhouse of administrative control.",
-                requirements: { legitimacy: 90, infrastructure: 50 },
-                unlockedModifiers: { administrative_capacity: 0.30 }
-            },
-            { 
-                rank: 4, title: "Galactic Enforcer", description: "The definitive law of the stars. Can veto Council resolutions.",
-                requirements: { legitimacy: 100, militaryScore: 500 },
-                unlockedModifiers: { council_veto_unlocked: 1.0 }
-            }
+            { level: 1, title: 'Smugglers', description: 'Covert operations.', unlockRequirements: { infamyMin: 20 }, mechanicsUnlocked: ['black_market_access'] },
+            { level: 2, title: 'Privateers', description: 'Sanctioned raiding.', unlockRequirements: { infamyMin: 50 }, mechanicsUnlocked: ['covert_raiding'] },
+            { level: 3, title: 'Shadow State', description: 'A hidden empire.', unlockRequirements: { infamyMin: 80 }, mechanicsUnlocked: ['shadow_hub'] },
+            { level: 4, title: 'Pirate King', description: 'The undisputed lord of the underworld.', unlockRequirements: { infamyMin: 95 }, mechanicsUnlocked: ['instigate_pirate_surge'] }
         ]
     },
-    great_pyre: {
-        id: 'great_pyre',
-        name: "The Great Pyre",
+    crisis: {
+        id: 'crisis',
+        name: 'The Great Pyre',
         ranks: [
-            { 
-                rank: 1, title: "Zealots", description: "Ideological purity through sacrifice.",
-                requirements: { militaryScore: 50, stabilityMax: 50 },
-                unlockedModifiers: { combat_fanaticism: 0.10 }
-            },
-            { 
-                rank: 2, title: "Raiders", description: "Scorched-earth tactics become standard protocol.",
-                requirements: { militaryScore: 150, infamy: 40 },
-                unlockedModifiers: { planet_pillaging: 0.30 }
-            },
-            { 
-                rank: 3, title: "Purge-Legion", description: "Diplomacy is abandoned in favor of total conquest.",
-                requirements: { militaryScore: 400, diplomatic_trust_max: -50 },
-                unlockedModifiers: { total_war_bonus: 0.40 }
-            },
-            { 
-                rank: 4, title: "Universal Crisis", description: "The galaxy's survival is secondary to your ascension.",
-                requirements: { militaryScore: 1000, infamy: 100 },
-                unlockedModifiers: { crisis_strength_bonus: 1.0 }
-            }
+            { level: 1, title: 'Zealots', description: 'Aggressive expansionists.', unlockRequirements: { militaryScoreMin: 50 }, mechanicsUnlocked: ['total_war_cassus_belli'] },
+            { level: 2, title: 'Raiders', description: 'Plunder over stability.', unlockRequirements: { militaryScoreMin: 80 }, mechanicsUnlocked: ['planetary_bombardment'] },
+            { level: 3, title: 'Purge-Legion', description: 'A threat to all life.', unlockRequirements: { militaryScoreMin: 120 }, mechanicsUnlocked: ['scorched_earth_tactics'] },
+            { level: 4, title: 'Universal Crisis', description: 'The end-game threat.', unlockRequirements: { militaryScoreMin: 200 }, mechanicsUnlocked: ['xenocide_mandate'] }
         ]
     }
 };
 
 /**
- * Checks if a faction meets the criteria for the next rank in a pathway.
+ * Evaluates a given faction's metrics against the ladder requirements to see if they can 
+ * unlock a new rank or pivot to a new pathway.
  */
-export function canAdvanceRank(factionId: string, currentRank: number, pathwayId: PathwayId, world: any): boolean {
-    const pathway = PATHWAY_LADDERS[pathwayId];
-    const nextRank = pathway.ranks.find(r => r.rank === currentRank + 1);
-    if (!nextRank) return false;
-
-    const stats = world.factions[factionId].metrics;
-    const req = nextRank.requirements;
-
-    if (req.wealth && stats.wealth < req.wealth) return false;
-    if (req.infamy && stats.infamy < req.infamy) return false;
-    if (req.legitimacy && stats.legitimacy < req.legitimacy) return false;
-    if (req.militaryScore && stats.militaryScore < req.militaryScore) return false;
+export function evaluatePathwayProgression(
+    currentPathway: PathwayId, 
+    currentRank: number, 
+    metrics: { wealth: number; infamy: number; legitimacy: number; militaryScore: number }
+): { newPathway?: PathwayId; newRank?: number; unlockedMechanics: string[] } {
     
-    return true;
+    let highestEligiblePathway = currentPathway;
+    let highestEligibleRank = currentRank;
+    const unlockedMechanics: string[] = [];
+
+    // Evaluate all pathways to find highest possible rank (prioritizing current path, but allowing shifts)
+    for (const [pathwayId, pathway] of Object.entries(PATHWAYS)) {
+        for (const rank of pathway.ranks) {
+            let eligible = true;
+            if (rank.unlockRequirements.wealthMin && metrics.wealth < rank.unlockRequirements.wealthMin) eligible = false;
+            if (rank.unlockRequirements.infamyMin && metrics.infamy < rank.unlockRequirements.infamyMin) eligible = false;
+            if (rank.unlockRequirements.legitimacyMin && metrics.legitimacy < rank.unlockRequirements.legitimacyMin) eligible = false;
+            if (rank.unlockRequirements.militaryScoreMin && metrics.militaryScore < rank.unlockRequirements.militaryScoreMin) eligible = false;
+
+            if (eligible) {
+                // If they are climbing their own ladder, or shifting to a dramatically higher tier in a new ladder
+                if (pathwayId === currentPathway && rank.level > highestEligibleRank) {
+                    highestEligibleRank = rank.level;
+                    unlockedMechanics.push(...rank.mechanicsUnlocked);
+                } else if (pathwayId !== currentPathway && rank.level > highestEligibleRank) {
+                    highestEligiblePathway = pathwayId as PathwayId;
+                    highestEligibleRank = rank.level;
+                    unlockedMechanics.push(...rank.mechanicsUnlocked);
+                }
+            }
+        }
+    }
+
+    return {
+        newPathway: highestEligiblePathway !== currentPathway ? highestEligiblePathway : undefined,
+        newRank: highestEligibleRank !== currentRank ? highestEligibleRank : undefined,
+        unlockedMechanics
+    };
 }

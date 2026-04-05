@@ -11,118 +11,91 @@ import { initiateCombat, resolveEngagementRound, advanceRound } from '@/lib/comb
 import type { ActionResult } from '@/lib/actions/types';
 import { CombatState, CombatantState, TargetDetails, OngoingEngagementRound, CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
 
+import { executePlayerAction } from './registry-handler';
+
 /**
  * Initiates combat between two fleets.
  */
 export async function attackFleetAction(attackerFleetId: string, defenderFleetId: string): Promise<ActionResult> {
-  const world = getGameWorldState();
-  const attackerFleet = world.movement.fleets.get(attackerFleetId);
-  const defenderFleet = world.movement.fleets.get(defenderFleetId);
+  const result = await executePlayerAction({
+    id: `combat-init-${Date.now()}`,
+    actionId: 'MIL_ATTACK_FLEET',
+    issuerId: 'PLAYER_FACTION', // Resolved by handler
+    targetId: defenderFleetId,
+    payload: { attackerFleetId, defenderFleetId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
 
-  if (!attackerFleet || !defenderFleet) {
-    return { success: false, error: 'Attacker or Defender fleet not found.' };
-  }
-
-  const combatId = `combat-${attackerFleetId}-${defenderFleetId}-${Date.now()}`;
-  
-  const target: TargetDetails = {
-    systemId: attackerFleet.currentSystemId || '',
-    terrainModifier: 1.0,
-    infrastructureIntegrity: 1.0
-  };
-
-  const attacker: CombatantState = {
-    factionId: attackerFleet.factionId,
-    role: 'attacker',
-    hp: attackerFleet.strength * 1000,
-    maxHp: attackerFleet.strength * 1000,
-    organization: 100,
-    maxOrganization: 100,
-    screeningEfficiency: 1.0,
-    baseForceCount: attackerFleet.strength * 100,
-    composition: {}, // In a full impl, derive from fleet unit registry
-    intelLevel: 'observing',
-    supply: 1.0,
-    morale: 1.0,
-    doctrine: 'aggressive',
-    casualties: 0,
-    predictionPoints: 0
-  };
-
-  const defender: CombatantState = {
-    factionId: defenderFleet.factionId,
-    role: 'defender',
-    hp: defenderFleet.strength * 1000,
-    maxHp: defenderFleet.strength * 1000,
-    organization: 100,
-    maxOrganization: 100,
-    screeningEfficiency: 1.0,
-    baseForceCount: defenderFleet.strength * 100,
-    composition: {},
-    intelLevel: 'observing',
-    supply: 1.0,
-    morale: 1.0,
-    doctrine: 'defensive',
-    casualties: 0,
-    predictionPoints: 0
-  };
-
-  const combatState = initiateCombat(combatId, target, attacker, defender);
-  world.activeCombats.set(combatId, combatState);
-
-  revalidatePath('/');
-  return { success: true, combatId } as any;
+  if (result.success) revalidatePath('/');
+  return result;
 }
 
 /**
  * Selects a combat stance for the next round.
  */
 export async function selectCombatStanceAction(combatId: string, factionId: string, stance: CombatStance): Promise<ActionResult> {
-  const world = getGameWorldState();
-  const combat = world.activeCombats.get(combatId);
+  const result = await executePlayerAction({
+    id: `stance-${Date.now()}`,
+    actionId: 'MIL_COMBAT_STANCE',
+    issuerId: factionId,
+    targetId: combatId,
+    payload: { combatId, stance },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
 
-  if (!combat) return { success: false, error: 'Combat not found.' };
-
-  if (combat.attacker.factionId === factionId) {
-    combat.attacker.selectedStance = stance;
-  } else if (combat.defender.factionId === factionId) {
-    combat.defender.selectedStance = stance;
-  } else {
-    return { success: false, error: 'Faction not involved in this combat.' };
-  }
-
-  revalidatePath('/');
-  return { success: true };
+  if (result.success) revalidatePath('/');
+  return result;
 }
 
 /**
  * Selects a post-battle directive.
  */
 export async function selectCombatDirectiveAction(combatId: string, factionId: string, directive: PostBattleDirective): Promise<ActionResult> {
-  const world = getGameWorldState();
-  const combat = world.activeCombats.get(combatId);
+  const result = await executePlayerAction({
+    id: `directive-${Date.now()}`,
+    actionId: 'MIL_COMBAT_DIRECTIVE',
+    issuerId: factionId,
+    targetId: combatId,
+    payload: { combatId, directive },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
 
-  if (!combat) return { success: false, error: 'Combat not found.' };
-
-  if (combat.attacker.factionId === factionId) {
-    combat.attacker.selectedDirective = directive;
-  } else if (combat.defender.factionId === factionId) {
-    combat.defender.selectedDirective = directive;
-  } else {
-    return { success: false, error: 'Faction not involved in this combat.' };
-  }
-
-  revalidatePath('/');
-  return { success: true };
+  if (result.success) revalidatePath('/');
+  return result;
 }
 
 /**
  * Launches a planetary bombardment.
  */
 export async function bombardPlanetAction(fleetId: string, planetId: string): Promise<ActionResult> {
-  // Bombardment logic: reduce planet stability, damage buildings
-  // For now, we'll just log it or apply a placeholder effect
-  return { success: true };
+  const result = await executePlayerAction({
+    id: `bombard-${Date.now()}`,
+    actionId: 'MIL_BOMBARD_PLANET',
+    issuerId: 'PLAYER_FACTION', // Resolved by handler
+    targetId: planetId,
+    payload: { fleetId, targetId: planetId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/**
+ * Launches a planetary invasion.
+ */
+export async function invasionPlanetAction(fleetId: string, planetId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `invasion-${Date.now()}`,
+    actionId: 'MIL_INVASION_PLANET',
+    issuerId: 'PLAYER_FACTION', // Resolved by handler
+    targetId: planetId,
+    payload: { fleetId, targetId: planetId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
 }
 
 /**

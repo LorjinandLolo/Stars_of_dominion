@@ -7,41 +7,27 @@
 
 import { revalidatePath } from 'next/cache';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
-import { TechEngine, registry } from '@/lib/tech/engine';
+import { TechEngine } from '@/lib/tech/engine';
 import type { ActionResult } from '@/lib/actions/types';
-import { GameStateContext } from '@/lib/tech/types';
+
+import { executePlayerAction } from './registry-handler';
 
 /**
  * Starts research for a specific tech ID.
  * Assigns tech to the first available research slot.
  */
 export async function startResearchAction(factionId: string, techId: string): Promise<ActionResult> {
-  const world = getGameWorldState();
-  
-  // 1. Get or Init Player Tech State
-  let playerState = world.tech.get(factionId);
-  if (!playerState) {
-    playerState = TechEngine.initPlayerState(factionId);
-    world.tech.set(factionId, playerState);
-  }
+  const result = await executePlayerAction({
+    id: `tech-${Date.now()}`,
+    actionId: 'TECH_START_RESEARCH',
+    issuerId: factionId,
+    targetId: techId,
+    payload: { techId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
 
-  // 2. Find an empty slot
-  const slot = playerState.activeSlots.find(s => s.techId === null);
-  if (!slot) {
-    return { success: false, error: 'No available research slots.' };
-  }
-
-  // 3. Execute Logic
-  try {
-    const now = Math.floor(Date.now() / 1000);
-    const newState = TechEngine.assignResearch(playerState, slot.slotId, techId, now);
-    world.tech.set(factionId, newState);
-    
-    revalidatePath('/');
-    return { success: true };
-  } catch (e: any) {
-    return { success: false, error: e.message || 'Failed to start research.' };
-  }
+  if (result.success) revalidatePath('/');
+  return result;
 }
 
 /**

@@ -7,46 +7,38 @@
 
 import { revalidatePath } from 'next/cache';
 import { ActionResult } from '@/lib/actions/types';
-import { getGameWorldState } from '@/lib/game-world-state-singleton';
-import { LeadershipService } from '@/lib/leadership/leadership-service';
+import { executePlayerAction } from './registry-handler';
 
 /**
  * Recruit a leader from the galactic pool.
  */
 export async function recruitLeaderAction(factionId: string, leaderId: string): Promise<ActionResult> {
-    try {
-        const world = getGameWorldState();
-        
-        // 1. Logic check
-        const candidate = world.leadership.recruitmentPool.find(l => l.id === leaderId);
-        if (!candidate) return { success: false, error: 'Candidate no longer available.' };
+    const result = await executePlayerAction({
+        id: `leader-recruit-${Date.now()}`,
+        actionId: 'LEADER_RECRUIT',
+        issuerId: factionId,
+        targetId: leaderId,
+        payload: { leaderId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
 
-        // 2. Execute via service
-        LeadershipService.recruitLeader(world, leaderId, factionId);
-        
-        return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
-    }
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /**
  * Assign an active leader to a specific target (Fleet, Planet, etc).
  */
 export async function assignLeaderAction(factionId: string, leaderId: string, assignmentId: string): Promise<ActionResult> {
-    try {
-        const world = getGameWorldState();
-        
-        // 1. Logic check
-        const leader = world.leadership.leaders.get(leaderId);
-        if (!leader) return { success: false, error: 'Leader not found.' };
-        if (leader.factionId !== factionId) return { success: false, error: 'Unauthorized assignment.' };
+    const result = await executePlayerAction({
+        id: `leader-assign-${Date.now()}`,
+        actionId: 'LEADER_ASSIGN',
+        issuerId: factionId,
+        targetId: leaderId,
+        payload: { leaderId, assignmentId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
 
-        // 2. Execute via service
-        LeadershipService.assignLeader(world, leaderId, assignmentId);
-        
-        return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
-    }
+    if (result.success) revalidatePath('/');
+    return result;
 }

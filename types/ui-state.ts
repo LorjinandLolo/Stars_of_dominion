@@ -65,7 +65,9 @@ export interface SystemNode {
     q: number;
     r: number;
     name: string;
-    ownerId?: string;
+    ownerId?: string;        // Legacy field
+    ownerFactionId?: string; // Phase 15: Authoritative Ownership
+    isContested?: boolean;   // Phase 15: Authoritative Dispute
     tags: string[];
     security: number;        // 0–100
     tradeValue: number;      // 0–100

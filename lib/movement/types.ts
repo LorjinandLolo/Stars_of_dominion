@@ -61,8 +61,10 @@ export interface SystemNode {
     corridorIds: string[];
     /** ID of the gate installed here, if any. */
     gateId?: string;
-    /** Owner faction ID. Undefined = unclaimed. */
+    /** Owner faction ID. Undefined = unclaimed or contested. */
     ownerFactionId?: string;
+    /** Whether multiple factions own planets inside this system. */
+    isContested?: boolean;
     /** Instability 0–100. Affects deep-space expansion and infra degradation. */
     instability: number;
     /** Localized security level 0-100. Low security attracts pirates. */

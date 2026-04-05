@@ -1,9 +1,9 @@
 'use server';
 
-import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { getEconomyState } from '@/lib/economy/economy-service';
 import { Resource, PriceFormula, PolicyRule } from '@/lib/trade-system/types';
 import { revalidatePath } from 'next/cache';
+import { executePlayerAction } from './registry-handler';
 
 /**
  * Propose or update a trade agreement between two factions.
@@ -15,27 +15,17 @@ export async function proposeTradeAgreementAction(
     priceFormula: PriceFormula = 'market',
     fixedPrice?: number
 ) {
-    const world = getGameWorldState();
-    const playerFactionId = 'faction-aurelian'; // Hardcoded for now, would come from session
-
-    const agreementId = `ag-${playerFactionId}-${targetFactionId}-${resource}`;
-    
-    world.economy.tradeAgreements.set(agreementId, {
-        id: agreementId,
-        aFactionId: playerFactionId,
-        bFactionId: targetFactionId,
-        resource,
-        volumePerHour: volume,
-        startTick: 0, // Should be current tick
-        endTick: 1000, // Should be configurable
-        priceFormula,
-        fixedPrice
+    const result = await executePlayerAction({
+        id: `trade-${Date.now()}`,
+        actionId: 'DIP_TRADE_PACT',
+        issuerId: 'PLAYER_FACTION',
+        targetId: targetFactionId,
+        payload: { targetFactionId, resource, volume, priceFormula, fixedPrice },
+        timestamp: Math.floor(Date.now() / 1000)
     });
 
-    console.log(`[ECONOMY] Proposal: ${playerFactionId} <-> ${targetFactionId} for ${volume} ${resource}`);
-    
-    revalidatePath('/');
-    return { success: true, agreementId };
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /**
@@ -49,82 +39,59 @@ export async function updateEconomicPolicyAction(
         embargoes?: { factionId: string; resources: Resource[] }[];
     }
 ) {
-    const world = getGameWorldState();
-    const playerFactionId = 'faction-aurelian';
-    
-    let policy = world.economy.policies?.get(playerFactionId);
-    if (!policy) {
-        policy = {
-            tariffsByResource: new Map(),
-            subsidiesByResource: new Map(),
-            sanctions: new Set(),
-            embargoes: [],
-            chokepointRules: new Map(),
-            productionFocus: null
-        };
-        if (!world.economy.policies) world.economy.policies = new Map();
-        world.economy.policies.set(playerFactionId, policy);
-    }
+    const result = await executePlayerAction({
+        id: `policy-${Date.now()}`,
+        actionId: 'ECON_UPDATE_POLICY',
+        issuerId: 'PLAYER_FACTION',
+        targetId: 'GLOBAL',
+        payload: { updates },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
 
-    if (updates.tariffs) {
-        updates.tariffs.forEach(t => policy!.tariffsByResource.set(t.resource, t.value));
-    }
-    if (updates.subsidies) {
-        updates.subsidies.forEach(s => policy!.subsidiesByResource.set(s.resource, s.value));
-    }
-    if (updates.sanctions) {
-        policy.sanctions = new Set(updates.sanctions);
-    }
-    if (updates.embargoes) {
-        policy.embargoes = updates.embargoes;
-    }
-
-    revalidatePath('/');
-    return { success: true };
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /**
  * Set the empire-wide production focus (e.g. Focus AMMO).
  */
 export async function updateProductionFocusAction(resource: Resource | null) {
-    const world = getGameWorldState();
-    const playerFactionId = 'faction-aurelian';
-    
-    let policy = world.economy.policies?.get(playerFactionId);
-    if (!policy) {
-        policy = {
-            tariffsByResource: new Map(),
-            subsidiesByResource: new Map(),
-            sanctions: new Set(),
-            embargoes: [],
-            chokepointRules: new Map(),
-            productionFocus: null
-        };
-        if (!world.economy.policies) world.economy.policies = new Map();
-        world.economy.policies.set(playerFactionId, policy);
-    }
+    const result = await executePlayerAction({
+        id: `focus-${Date.now()}`,
+        actionId: 'ECON_SET_FOCUS',
+        issuerId: 'PLAYER_FACTION',
+        targetId: 'GLOBAL',
+        payload: { resource },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
 
-    policy.productionFocus = resource;
-    console.log(`[ECONOMY] Production Focus set to: ${resource}`);
-
-    revalidatePath('/');
-    return { success: true };
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /**
  * Fetch current live economy state for the UI.
  */
 export async function getEconomyStateAction() {
-    const world = getGameWorldState();
-    return getEconomyState(world, 'faction-aurelian');
+    // Note: This remains a read-only operation
+    return getEconomyState(null as any, 'faction-aurelian');
 }
 
 /**
- * Stub for establishTradeRouteAction (used by Dashboard.tsx)
+ * Establish a trade route (used by Dashboard.tsx)
  */
 export async function establishTradeRouteAction(playerFactionId: string, targetFactionId: string, resource: any, amount: number) {
-    console.log(`[ECONOMY] Stub: establishTradeRouteAction for ${resource} from ${playerFactionId} to ${targetFactionId}`);
-    return { success: true };
+    const result = await executePlayerAction({
+        id: `route-${Date.now()}`,
+        actionId: 'ECON_ESTABLISH_ROUTE',
+        issuerId: playerFactionId,
+        targetId: targetFactionId,
+        payload: { targetFactionId, resource, amount },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /**
