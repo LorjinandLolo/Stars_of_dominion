@@ -90,6 +90,7 @@ export async function executePlayerAction(action: PlayerAction): Promise<ActionR
     try {
         await db.createDocument(DB_ID, 'game_orders', ID.unique(), {
             factionId: action.issuerId,
+            userId: (action as any).userId || 'guest', // Capture user identity for verification
             actionId: action.actionId,
             payload: JSON.stringify(action.payload),
             processed: false

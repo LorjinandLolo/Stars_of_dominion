@@ -322,6 +322,8 @@ export interface PlayerState {
     civilizationId?: string;
     ideologyId?: string;
     role: PlayerRole;
+    credits: number;                // Phase 15: Authoritative Credits
+    resource_production?: Record<string, number>;
     pirateInvolvementScore: number; // 0–100; ≥30 unlocks SHADOW tab
     infamy: number;                 // 0–100
     heat: number;                   // 0–100
@@ -360,7 +362,7 @@ export type RegionLockStatus = 'unlocked' | 'approaching' | 'locked';
 
 export interface SeasonState {
     phase: SeasonPhase;
-    seasonNumber: number;
+    season: number;          // Aligned with GameWorldState.activeSeason.season
     regionalLocks: Record<string, RegionLockStatus>;
     /** Approximate - only shown when very close to lock; never shown as exact % early */
     nearLockRegionIds: string[];

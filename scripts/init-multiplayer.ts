@@ -68,6 +68,8 @@ async function initMultiplayerDB() {
 
         try {
             await databases.createStringAttribute(DB_ID, 'systems', 'name', 100, true);
+            await databases.createIntegerAttribute(DB_ID, 'systems', 'x', false);
+            await databases.createIntegerAttribute(DB_ID, 'systems', 'y', false);
             await databases.createIntegerAttribute(DB_ID, 'systems', 'q', true);
             await databases.createIntegerAttribute(DB_ID, 'systems', 'r', true);
             await databases.createIntegerAttribute(DB_ID, 'systems', 'security', false, 0, 100, 50);
@@ -87,8 +89,11 @@ async function initMultiplayerDB() {
             await databases.createStringAttribute(DB_ID, 'planets', 'name', 100, true);
             await databases.createStringAttribute(DB_ID, 'planets', 'systemId', 50, true);
             await databases.createStringAttribute(DB_ID, 'planets', 'ownerId', 50, false, 'faction-neutral');
-            await databases.createStringAttribute(DB_ID, 'planets', 'planetType', 50, false, 'standard');
+            await databases.createStringAttribute(DB_ID, 'planets', 'type', 50, false, 'standard');
             await databases.createFloatAttribute(DB_ID, 'planets', 'population', false, 1.0);
+            await databases.createIntegerAttribute(DB_ID, 'planets', 'x', false);
+            await databases.createIntegerAttribute(DB_ID, 'planets', 'y', false);
+            await databases.createStringAttribute(DB_ID, 'planets', 'attributes', 50000, false);
             console.log('✅ Updated attributes for planets');
 
             await new Promise(resolve => setTimeout(resolve, 3000));

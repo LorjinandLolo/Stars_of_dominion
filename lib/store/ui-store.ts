@@ -197,6 +197,10 @@ export interface UIStore {
     setShowManual: (show: boolean) => void;
     activeManualSectionId: string;
     setActiveManualSection: (id: string) => void;
+
+    // ── Multiplayer Mode ──
+    isMultiplayer: boolean;
+    setIsMultiplayer: (val: boolean) => void;
 }
 
 
@@ -314,7 +318,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         set((state) => ({ playerState: { ...state.playerState, ...patch } })),
 
     // ── Season ──
-    seasonState: { season: 0, phase: 'exploration', regionalLocks: {} } as any,
+    seasonState: { season: 0, phase: 'active', regionalLocks: {}, nearLockRegionIds: [] } as any,
     updateSeason: (patch) =>
         set((state) => ({ seasonState: { ...state.seasonState, ...patch } })),
     lockRegion: (regionId) =>
@@ -486,5 +490,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setShowManual: (show) => set({ showManual: show }),
     activeManualSectionId: 'intro',
     setActiveManualSection: (id) => set({ activeManualSectionId: id }),
+
+    // ── Multiplayer Mode ──
+    isMultiplayer: false,
+    setIsMultiplayer: (val) => set({ isMultiplayer: val }),
 }));
 

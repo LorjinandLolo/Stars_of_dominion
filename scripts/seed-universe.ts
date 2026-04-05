@@ -26,6 +26,10 @@ function getRandomType(systemId: string, index: number) {
     return types[(charCodeSum + index) % types.length];
 }
 
+function sanitizeId(id: string): string {
+    return id.toLowerCase().replace(/[^a-z0-9._-]/g, '-').substring(0, 36);
+}
+
 async function seedUniverse() {
     console.log(`[Seeder] Starting Universe Seed: ${mockSystems.length} systems.`);
 
@@ -46,11 +50,11 @@ async function seedUniverse() {
         await Promise.all(batch.map(async (sys) => {
             try {
                 // 1. Ensure System Exists
+                const systemDocId = sanitizeId(sys.id);
                 try {
-                    await databases.getDocument(DB_ID, COLL_SYSTEMS, sys.id);
+                    await databases.getDocument(DB_ID, COLL_SYSTEMS, systemDocId);
                 } catch (e) {
-                    // System Schema Alignment: Provide mandatory x and y (from q/r)
-                    await databases.createDocument(DB_ID, COLL_SYSTEMS, sys.id, {
+                    await databases.createDocument(DB_ID, COLL_SYSTEMS, systemDocId, {
                         name: sys.name,
                         x: sys.q, 
                         y: sys.r,
@@ -72,7 +76,7 @@ async function seedUniverse() {
 
                 // 3. Create Planets
                 for (let p = 0; p < planetCount; p++) {
-                    const planetId = `planet_${sys.id}_${p}`;
+                    const planetDocId = sanitizeId(`planet_${sys.id}_${p}`);
                     
                     // 3.1 Advanced Faction Mapping for ALL 14 Society Homeworlds
                     let ownerId = 'faction-neutral';
@@ -104,51 +108,25 @@ async function seedUniverse() {
                     }
                     
                     try {
-                        await databases.getDocument(DB_ID, COLL_PLANETS, planetId);
+                        await databases.getDocument(DB_ID, COLL_PLANETS, planetDocId);
                     } catch (e) {
-                        // Extended Multiplayer Data (packed into attributes JSON)
-                        const isNeutral = ownerId === 'faction-neutral';
-                        const garrison = {
-                            ownerEmpireId: ownerId,
-                            garrisonTroops: isCapital ? 1000 : (isNeutral ? 100 : 500),
-                            unitComposition: isCapital
-                                ? { INFANTRY: 600, ARMOR: 200, ARTILLERY: 200 }
-                                : (isNeutral ? { MILITIA: 100 } : { INFANTRY: 400, MILITIA: 100 }),
-                            fortificationLevel: isCapital ? 5 : (isNeutral ? 0 : 2),
-                            fortificationLayers: {
-                                orbitalSuppressed: false,
-                                outerDefenses: isCapital ? 500 : (isNeutral ? 0 : 100),
-                                innerDefenses: isCapital ? 250 : 0,
-                                commandBunkers: isCapital ? 100 : 0
-                            },
-                            supply: isCapital ? 5000 : (isNeutral ? 200 : 1000),
-                            maxSupply: isCapital ? 5000 : (isNeutral ? 200 : 1000),
-                            morale: 100,
-                            maxMorale: 100,
-                            cohesion: 100,
-                            maxCohesion: 100,
-                            resistance: isCapital ? 50 : (isNeutral ? 0 : 10),
-                            stability: isCapital ? 100 : 80,
-                            infrastructureIntegrity: 100,
-                            militiaAvailable: true,
-                            occupationProgress: 0,
-                            isUnderSiege: false
-                        };
+                        const popValue = isCapital ? 25.0 : (Math.random() * 5 + 1.0);
                         
-                        await databases.createDocument(DB_ID, COLL_PLANETS, planetId, {
+                        await databases.createDocument(DB_ID, COLL_PLANETS, planetDocId, {
                             name: `${sys.name} ${SUFFIXES[p] || p + 1}`,
-                            x: sys.q, // Mandatory
-                            y: sys.r, // Mandatory
-                            type: planetType, // Mandatory
-                            owner_faction_id: ownerId, // Map ownerId to schema field
+                            systemId: sys.id,
+                            ownerId: ownerId,
+                            type: planetType,
+                            population: popValue,
+                            x: sys.q,
+                            y: sys.r,
                             attributes: JSON.stringify({
-                                systemId: sys.id,
-                                ownerId: ownerId, // Duplicate for backward compat
-                                planetType: planetType, // Duplicate for backward compat
-                                population: isCapital ? 25.0 : (Math.random() * 5 + 0.5),
-                                stability: isCapital ? 100 : (70 + Math.random() * 30),
-                                unrest: 0,
-                                garrison: garrison
+                                garrison: {
+                                    ownerEmpireId: ownerId,
+                                    garrisonTroops: isCapital ? 1000 : 500,
+                                    unitComposition: isCapital ? { INFANTRY: 600, ARMOR: 200 } : { INFANTRY: 400, MILITIA: 100 },
+                                    isUnderSiege: false
+                                }
                             })
                         });
                         planetsCreated++;
