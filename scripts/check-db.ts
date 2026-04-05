@@ -18,7 +18,7 @@ try {
 }
 
 const endpoint = env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-const projectId = env.NEXT_PUBLIC_APPWRITE_PROJECT;
+const projectId = env.NEXT_PUBLIC_APPWRITE_PROJECT || env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
 const apiKey = env.APPWRITE_API_KEY;
 const dbId = env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 

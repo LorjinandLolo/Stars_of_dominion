@@ -2,6 +2,7 @@
 
 import { LLMProviderType, FactionContextSummary } from '../politics/faction-discourse-types';
 import { OllamaProvider } from './providers/ollama-provider';
+import { GeminiProvider } from './providers/gemini-provider';
 import { TemplateProvider } from './providers/template-provider';
 import { MockProvider } from './providers/mock-provider';
 
@@ -17,6 +18,8 @@ interface LLMProviderInterface {
 
 export function getLLMProvider(type: LLMProviderType = LLM_PROVIDER): LLMProviderInterface {
   switch (type) {
+    case 'gemini':
+      return new GeminiProvider() as any;
     case 'ollama':
       return new OllamaProvider() as any;
     case 'template':
@@ -36,7 +39,19 @@ export async function safeGenerateFactionReply(input: {
   context: FactionContextSummary;
 }): Promise<{ text: string; provider: LLMProviderType; model?: string; fallbackReason?: string }> {
   
-  // 1. Try Primary (Ollama)
+  // 1. Try Primary (Gemini)
+  if (LLM_PROVIDER === 'gemini') {
+    try {
+      const provider = new GeminiProvider();
+      return await provider.generateFactionReply(input);
+    } catch (e: any) {
+      console.warn(`[LLM] Gemini failed, falling back to Template. Error: ${e.message}`);
+      const fallback = new TemplateProvider();
+      return await fallback.generateFactionReply({ ...input, context: input.context });
+    }
+  }
+
+  // 2. Try Secondary (Ollama)
   if (LLM_PROVIDER === 'ollama') {
     try {
       const provider = new OllamaProvider();

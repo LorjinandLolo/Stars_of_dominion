@@ -1,7 +1,7 @@
 // lib/politics/faction-discourse-types.ts
 
-export type LLMProviderType = "ollama" | "template" | "mock";
-export type DiscourseGenerationMode = "ollama" | "template" | "mock";
+export type LLMProviderType = "ollama" | "gemini" | "template" | "mock";
+export type DiscourseGenerationMode = "ollama" | "gemini" | "template" | "mock";
 
 export type DiscourseStance =
   | "supportive"

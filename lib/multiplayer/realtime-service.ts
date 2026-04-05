@@ -29,7 +29,7 @@ export type RealtimeCallbacks = {
 export function subscribeToGameUpdates(callbacks: RealtimeCallbacks): () => void {
     const client = new Client()
         .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ?? '')
-        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT ?? '');
+        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '');
 
     const handler = (response: RealtimeResponseEvent<any>) => {
         const channel = response.channels[0] ?? '';

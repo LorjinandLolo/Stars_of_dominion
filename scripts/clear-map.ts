@@ -12,7 +12,7 @@ content.split('\n').forEach(line => {
 
 const client = new Client()
     .setEndpoint(env.NEXT_PUBLIC_APPWRITE_ENDPOINT)
-    .setProject(env.NEXT_PUBLIC_APPWRITE_PROJECT)
+    .setProject(env.NEXT_PUBLIC_APPWRITE_PROJECT || env.NEXT_PUBLIC_APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
 
 const db = new Databases(client);

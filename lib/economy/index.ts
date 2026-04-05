@@ -11,7 +11,7 @@ const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 function getDb(): Databases {
     const client = new Client()
         .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'http://localhost/v1')
-        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || '')
+        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '')
         .setKey(process.env.APPWRITE_API_KEY || '');
     return new Databases(client);
 }

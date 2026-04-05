@@ -6,10 +6,10 @@ let account: Account | null = null;
 
 export function getBrowserClients() {
   const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
 
   if (!endpoint || !project) {
-    throw new Error('Appwrite configuration missing. Please ensure NEXT_PUBLIC_APPWRITE_ENDPOINT and NEXT_PUBLIC_APPWRITE_PROJECT are set in your environment.');
+    throw new Error('Appwrite configuration missing. Please ensure NEXT_PUBLIC_APPWRITE_ENDPOINT and NEXT_PUBLIC_APPWRITE_PROJECT (or PROJECT_ID) are set in your environment.');
   }
 
   if (!client) {

@@ -5,11 +5,11 @@ export async function getServerClients() {
   const { Client, Databases, Functions, Query, ID } = await import('node-appwrite');
   
   const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
   const apiKey = process.env.APPWRITE_API_KEY;
 
   if (!endpoint || !project) {
-    console.warn('Appwrite configuration is incomplete. Skipping client initialization during build-time.');
+    console.warn('Appwrite configuration is incomplete (PROJECT or PROJECT_ID missing). Skipping client initialization during build-time.');
   }
 
   const client = new Client();
