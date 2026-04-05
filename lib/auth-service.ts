@@ -1,21 +1,10 @@
-"use client";
-
-import { Client, Account, Models } from 'appwrite';
-
-function getAccount(): Account {
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
-
-    const client = new Client();
-    if (endpoint) client.setEndpoint(endpoint);
-    if (project) client.setProject(project || '');
-    
-    return new Account(client);
-}
+import { Models } from 'appwrite';
+import { getBrowserClients } from '@/lib/appwrite-browser';
 
 export const authService = {
     async getCurrentUser(): Promise<Models.User<Models.Preferences> | null> {
         try {
+            const { account } = getBrowserClients();
             // Dev Bypass: check localStorage for mock session
             if (typeof window !== 'undefined' && localStorage.getItem('dev_bypass') === 'true') {
                 return {
@@ -30,7 +19,7 @@ export const authService = {
                     accessedAt: new Date().toISOString(),
                 } as Models.User<Models.Preferences>;
             }
-            return await getAccount().get();
+            return await account.get();
         } catch (error) {
             return null;
         }
@@ -38,7 +27,8 @@ export const authService = {
 
     async logout() {
         try {
-            await getAccount().deleteSession('current');
+            const { account } = getBrowserClients();
+            await account.deleteSession('current');
             localStorage.removeItem('selectedFactionId');
             localStorage.removeItem('dev_bypass');
         } catch (error) {
