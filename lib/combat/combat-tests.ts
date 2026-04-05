@@ -47,6 +47,11 @@ function makeCombatant(role: 'attacker' | 'defender', baseForceCount: number): C
     return {
         factionId: role === 'attacker' ? 'factionA' : 'factionB',
         role,
+        hp: baseForceCount * 10,
+        maxHp: baseForceCount * 10,
+        organization: 100,
+        maxOrganization: 100,
+        screeningEfficiency: 1.0,
         baseForceCount,
         composition: role === 'attacker' ? { cruiser: 10, bomber: 5 } : { interceptor: 10, destroyer: 5 },
         intelLevel: 'blind',

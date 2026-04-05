@@ -10,4 +10,5 @@ export const mockPoliticsState: PoliticsState = {
     activePolicies: ['open_trade', 'research_push'],
     crisisConditionMet: false,
     activeIndicators: ['lowBlocSatisfaction'],
+    allFactions: [],
 };

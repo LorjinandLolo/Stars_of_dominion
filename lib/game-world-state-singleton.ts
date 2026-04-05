@@ -286,6 +286,8 @@ export function getGameWorldState(): GameWorldState {
             hallOfFame: [],
             milestones: new Map(),
             legacyPrestigeBonuses: new Map(),
+            victoryState: null,
+            postVictoryTransition: null,
             territoryHistory: [],
             tech: new Map(),
             rivalries: new Map(),

@@ -34,6 +34,11 @@ export async function attackFleetAction(attackerFleetId: string, defenderFleetId
   const attacker: CombatantState = {
     factionId: attackerFleet.factionId,
     role: 'attacker',
+    hp: attackerFleet.strength * 1000,
+    maxHp: attackerFleet.strength * 1000,
+    organization: 100,
+    maxOrganization: 100,
+    screeningEfficiency: 1.0,
     baseForceCount: attackerFleet.strength * 100,
     composition: {}, // In a full impl, derive from fleet unit registry
     intelLevel: 'observing',
@@ -47,6 +52,11 @@ export async function attackFleetAction(attackerFleetId: string, defenderFleetId
   const defender: CombatantState = {
     factionId: defenderFleet.factionId,
     role: 'defender',
+    hp: defenderFleet.strength * 1000,
+    maxHp: defenderFleet.strength * 1000,
+    organization: 100,
+    maxOrganization: 100,
+    screeningEfficiency: 1.0,
     baseForceCount: defenderFleet.strength * 100,
     composition: {},
     intelLevel: 'observing',

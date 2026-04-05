@@ -147,6 +147,8 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         role,
         hp: hp,
         maxHp: hp,
+        baseForceCount: totalPower * 100,
+        casualties: 0,
         organization: org,
         maxOrganization: org,
         screeningEfficiency: screenEff,

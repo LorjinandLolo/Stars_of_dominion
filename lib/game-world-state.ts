@@ -80,6 +80,11 @@ export interface GameWorldState {
     /** Carry-over bonuses from previous season prestige. Key = factionID. */
     legacyPrestigeBonuses: Map<string, Record<string, number>>;
 
+    /** Active victory tracking (Conquest / Enlightenment). */
+    victoryState: VictoryState | null;
+    /** Transition phase between seasons or after victory. */
+    postVictoryTransition: PostVictoryTransition | null;
+
     /** Historical territory snapshots at each season boundary. */
     territoryHistory: TerritoryPersistenceRecord[];
     

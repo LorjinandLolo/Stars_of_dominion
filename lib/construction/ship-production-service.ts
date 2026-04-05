@@ -117,6 +117,8 @@ function spawnFleet(world: GameWorldState, systemId: string, factionId: string, 
     },
     postureId: 'Consolidating',
     strength: 1.0,
+    basePower: 100,
+    composition: {},
     hyperdriveProfile: defaultProfile,
     isDetectable: true
   };

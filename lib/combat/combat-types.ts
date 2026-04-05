@@ -50,6 +50,8 @@ export interface CombatantState {
     // HOI4 Naval Engine Metrics
     hp: number;
     maxHp: number;
+    baseForceCount: number;
+    casualties: number;
     organization: number; 
     maxOrganization: number;
     screeningEfficiency: number; // 0 to 1, prevents torpedoes hitting capitals

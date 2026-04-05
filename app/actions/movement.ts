@@ -33,6 +33,8 @@ export async function buildFleetAction(planetId: string, systemId: string, facti
         },
         postureId: 'Expansionist',
         strength: 1.0,
+        basePower: 100,
+        composition: {},
         hyperdriveProfile: {
             hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
             trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
