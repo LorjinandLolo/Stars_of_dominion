@@ -1,0 +1,28 @@
+{
+  "id": "movanite_stampede",
+  "name": "The Movanite Stampede",
+  "species": "Movanites",
+  "homeWorld": "Graviton Vale",
+  "tags": [
+    "heavy_gravity_adapted",
+    "dense_muscle_structure",
+    "bureaucratic_peacekeepers",
+    "mass_mobilization"
+  ],
+  "modifiers": {
+    "recruitment_cost": -0.40,
+    "construction_speed": 0.25,
+    "unit_upkeep": -0.15,
+    "administrative_capacity": -0.20
+  },
+  "policy_bias": [
+    "defensive_militarization",
+    "bureaucratic_standardization",
+    "industrial_expansion"
+  ],
+  "faction_weights": {
+    "populists": 0.50,
+    "bureaucrats": 0.30,
+    "industrialists": 0.20
+  }
+}

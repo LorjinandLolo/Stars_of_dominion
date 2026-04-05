@@ -1,0 +1,41 @@
+{
+  "id": "buthari_council",
+  "name": "The Buthari Council",
+  "species": "Buthari",
+  "homeWorld": "Jabal",
+  "tags": [
+    "mountain_adapted",
+    "spiritual_narcotics",
+    "master_manipulators",
+    "sacred_smoke_rites"
+  ],
+  "modifiers": {
+    "espionage_power": 0.40,
+    "internal_stability": 0.30,
+    "diplomatic_influence": 0.25,
+    "offensive_war_enthusiasm": -0.50
+  },
+  "policy_bias": [
+    "covert_operations",
+    "sacred_flora_protection",
+    "defense_fortification"
+  ],
+  "faction_weights": {
+    "diplomats": 0.50,
+    "scientists": 0.30,
+    "religious": 0.20
+  },
+  "unique_mechanics": {
+    "council_of_five": {
+      "description": "Super-powered defenders representing sacred mountain beasts. Can be deployed once per galactic cycle.",
+      "champions": [
+        { "name": "Gharnuq (Ibex)", "role": "Skirmisher", "ability": "Cosmic Leaping Strikes" },
+        { "name": "Barra (Snow Panther)", "role": "Infiltrator", "ability": "Silent Infiltration & Invisibility" },
+        { "name": "Zughra (Fire Bear)", "role": "Tank", "ability": "Radiant Flame Body" },
+        { "name": "Rahla (Hawk-Deer)", "role": "Tactician", "ability": "Vision into Alternate Futures" },
+        { "name": "Thamir (Rock Serpent)", "role": "Saboteur", "ability": "Seismic Sabotage" }
+      ],
+      "cooldown_ticks": 10000 
+    }
+  }
+}

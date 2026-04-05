@@ -25,6 +25,20 @@ export function updateRivalryScore(
     context: RivalryContext
 ): RivalryState {
 
+    // 0. Special Rule: The Infernoid Crusade is in a state of total war with everyone.
+    if (empireAId === 'infernoid_crusade' || empireBId === 'infernoid_crusade') {
+        return {
+            id: currentRivalry?.id || `rivalry-${empireAId}-${empireBId}`,
+            empireAId,
+            empireBId,
+            rivalryScore: 100,
+            escalationLevel: 7, // Direct War Trigger Risk
+            activeSanctionIds: ['xenocide_mandate', 'total_embargo'],
+            proxyConflictsInvolved: [],
+            detenteActive: false
+        };
+    }
+
     // 1. Base friction derived entirely from mathematical ideological distance
     // Max theoretical distance is 1400. We scale it so 400 distance = ~40 tension.
     const distance = ideologyDistance(ideologyA, ideologyB);

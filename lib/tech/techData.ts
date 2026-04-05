@@ -726,6 +726,24 @@ const techs: Tech[] = [
         prerequisites: ['dip_fin_1'],
         effects: [{ type: TechEffectType.MODIFIER_PERCENT, target: 'diplomatic_submission_rate', value: 0.5 }],
         tags: ['diplomacy', 'victory'], aiTags: ['hegemony']
+    },
+    {
+        "id": "nex_phase_shields", "name": "Adaptive Phase-Shields",
+        "description": "Defense systems that learn the frequency of incoming fire over time.",
+        "branch": Domain.MILITARY, "subBranch": "Defense", "tier": Tier.IV,
+        "position": { "x": 10, "y": 7 }, "researchCost": 600,
+        "prerequisites": ["mil_plt_1"],
+        "effects": [{ "type": TechEffectType.MODIFIER_PERCENT, "target": "combat_defense_per_turn", "value": 0.05 }],
+        "tags": ["military", "defense", "nexulan"], "aiTags": ["defensive"]
+    },
+    {
+        "id": "nex_blink_drive", "name": "Blink Drives",
+        "description": "Zero-point teleportation drives that allow near-instantaneous jumping.",
+        "branch": Domain.MILITARY, "subBranch": "Fleet", "tier": Tier.VI,
+        "position": { "x": 6, "y": 10 }, "researchCost": 3000,
+        "prerequisites": ["mil_adv_1"],
+        "effects": [{ "type": TechEffectType.UNLOCK_ACTION, "target": "blink_jump", "value": 1 }],
+        "tags": ["military", "fleet", "nexulan", "victory"], "aiTags": ["offensive"]
     }
 ];
 

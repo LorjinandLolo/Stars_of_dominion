@@ -1,0 +1,28 @@
+{
+  "id": "sarrak_legion",
+  "name": "The Sarrak Legion",
+  "species": "Sarrak",
+  "homeWorld": "Gor’Zhul",
+  "tags": [
+    "crocodilian_crush",
+    "swamp_juice_infusion",
+    "imperial_slave_structure",
+    "monotheistic_fanaticism"
+  ],
+  "modifiers": {
+    "construction_speed": 0.40,
+    "melee_damage": 0.50,
+    "unrest_risk_slaves": 0.20,
+    "morale_min": 100
+  },
+  "policy_bias": [
+    "slave_industrialization",
+    "swamp_juice_refinement",
+    "conquest_logic"
+  ],
+  "faction_weights": {
+    "military": 0.60,
+    "industrialists": 0.30,
+    "religious": 0.10
+  }
+}

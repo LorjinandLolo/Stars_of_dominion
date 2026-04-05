@@ -1,0 +1,28 @@
+{
+  "id": "infernoid_crusade",
+  "name": "The Infernoid Crusade",
+  "species": "Infernoids",
+  "homeWorld": "Pyrothar",
+  "tags": [
+    "pyreborn_tyranny",
+    "living_weaponry",
+    "diplomatic_pariah",
+    "extreme_heat_immune"
+  ],
+  "modifiers": {
+    "ground_combat_damage": 0.35,
+    "fire_damage_resist": 1.0,
+    "diplomatic_trust": -1.0,
+    "morale_recovery": 0.50
+  },
+  "policy_bias": [
+    "scorch_and_burn",
+    "total_war_mobilization",
+    "slave_industrialization"
+  ],
+  "faction_weights": {
+    "military": 0.80,
+    "industrialists": 0.15,
+    "religious": 0.05
+  }
+}

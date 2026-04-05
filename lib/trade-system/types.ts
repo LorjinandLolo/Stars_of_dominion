@@ -8,6 +8,10 @@ export enum Resource {
     RARES = 'RARES',
     AMMO = 'AMMO',
     CREDITS = 'CREDITS',
+    /** Gabagoonian luxury resource; also a combat stimulant. */
+    CAPACOLA = 'CAPACOLA',
+    /** Buthari sacred flora; luxury trade good. */
+    SACRED_FLORA = 'SACRED_FLORA',
     // Derived type identifiers (for mapping/UI)
     CONSTRUCTION = 'CONSTRUCTION',
     MILITARY_CAP = 'MILITARY_CAP',

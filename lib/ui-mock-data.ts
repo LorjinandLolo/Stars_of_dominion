@@ -47,7 +47,22 @@ for (let i = 50; i < 100; i++) REGION_ASSIGNMENTS[i] = 'veldt-dominion';
 for (let i = 100; i < 135; i++) REGION_ASSIGNMENTS[i] = 'nullward-fringe';
 // 135-149 unaffiliated
 
-const FACTION_IDS = ['faction-aurelian', 'faction-vektori', 'faction-null-syndicate', 'faction-covenant'];
+const FACTION_IDS = [
+    'faction-aurelian', 
+    'faction-vektori', 
+    'faction-null-syndicate', 
+    'faction-covenant',
+    'nexulan_convergence',
+    'rhimetal_sovereignty',
+    'gabagoonian_republic',
+    'infernoid_crusade',
+    'movanite_stampede',
+    'leopantheri_harmonate',
+    'buthari_council',
+    'sarrak_legion',
+    'kaer_ruun_hunt',
+    'banking_clan'
+];
 
 const SYSTEM_TAGS_POOL = [
     'throat', 'canal', 'spine', 'fortress', 'void', 'basin', 'gate', 'standard',
@@ -56,62 +71,73 @@ const SYSTEM_TAGS_POOL = [
 
 export const mockSystems: SystemNode[] = [
     {
+        "id": "alpha-nexulan-prime-dyson-shell",
+        "name": "The Solara Shell",
+        "q": 0,
+        "r": 0,
+        "security": 98,
+        "tradeValue": 95,
+        "instability": 1,
+        "escalationLevel": 0,
+        "tags": [
+            "dyson-shell",
+            "infinite-power",
+            "massive-laboratory",
+            "nexus-node",
+            "capital"
+        ],
+        "regionId": "veldt-dominion"
+    },
+    {
         "id": "alpha-5b34961e18bb6fd14903",
-        "name": "Aglate",
+        "name": "The High Altar",
         "q": 6,
         "r": 13,
-        "security": 29,
+        "security": 90,
         "tradeValue": 62,
-        "instability": 14,
-        "escalationLevel": 2,
+        "instability": 5,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Prison Planet",
-            "Holy War",
-            "Former Warriors",
-            "Beastmasters",
-            "Hatred",
-            "Abandoned Colony"
-            ,
-            "corsair_den",
-            "black-market"],
+            "Holy Site",
+            "Covenant Core",
+            "capital"
+        ],
         "regionId": "nullward-fringe"
     },
     {
         "id": "alpha-fe148b9a69a680fa14a3",
-        "name": "Sha Gaura",
+        "name": "Syndicate Vault",
         "q": 37,
         "r": 13,
-        "security": 51,
-        "tradeValue": 13,
-        "instability": 16,
-        "escalationLevel": 1,
+        "security": 85,
+        "tradeValue": 99,
+        "instability": 10,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Battleground",
-            "Flying Cities",
-            "Quarantined World",
-            "Major Spaceyard",
-            "Cybercommunists"
+            "Black Market Nexus",
+            "Syndicate Core",
+            "capital"
         ],
         "regionId": "nullward-fringe"
     },
     {
         "id": "alpha-18109e81be8a4bb03aab",
-        "name": "Aganarp",
+        "name": "Aurelia Prime",
         "q": 37,
         "r": 37,
-        "security": 26,
-        "tradeValue": 19,
-        "instability": 40,
+        "security": 95,
+        "tradeValue": 80,
+        "instability": 2,
         "escalationLevel": 0,
         "tags": [
             "standard",
             "crimson_expanse",
-            "Cyclical Doom",
-            "Preceptor Archive"
+            "Hegemony Core",
+            "capital"
         ],
         "regionId": "crimson-expanse"
     },
@@ -153,58 +179,55 @@ export const mockSystems: SystemNode[] = [
     },
     {
         "id": "alpha-e57bea6eb8b32ca91823",
-        "name": "Rallavi Manjnam XIV",
+        "name": "Pyrothar",
         "q": 33,
         "r": 19,
-        "security": 21,
-        "tradeValue": 21,
-        "instability": 5,
-        "escalationLevel": 1,
+        "security": 30,
+        "tradeValue": 20,
+        "instability": 60,
+        "escalationLevel": 2,
         "tags": [
             "standard",
             "crimson_expanse",
-            "Doomed World",
-            "Taboo Treasure"
+            "volcanic-hellscape",
+            "fire-blood",
+            "capital"
         ],
         "regionId": "crimson-expanse"
     },
     {
         "id": "alpha-c3fd1fb4c112be530803",
-        "name": "Groa",
+        "name": "Meatballia Prima",
         "q": 30,
         "r": 41,
-        "security": 40,
-        "tradeValue": 26,
-        "instability": 34,
-        "escalationLevel": 2,
+        "security": 60,
+        "tradeValue": 85,
+        "instability": 15,
+        "escalationLevel": 0,
         "tags": [
             "standard",
-            "crimson_expanse",
-            "Nomads",
-            "Alien Ruins",
-            "Police State",
-            "Primitive Aliens"
+            "veldt_dominion",
+            "protein-rich-moon",
+            "capacola-vines",
+            "capital"
         ],
-        "regionId": "crimson-expanse"
+        "regionId": "veldt-dominion"
     },
     {
         "id": "alpha-1ec3d07e8aa8f591f2d3",
-        "name": "Thorhil",
+        "name": "Vektor Hub",
         "q": 15,
         "r": 17,
-        "security": 68,
-        "tradeValue": 38,
-        "instability": 29,
-        "escalationLevel": 2,
+        "security": 90,
+        "tradeValue": 75,
+        "instability": 5,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "crimson_expanse",
-            "Utopia",
-            "Regional Hegemon",
-            "Major Spaceyard",
-            "Mandate Base",
-            "Xenophiles",
-            "Revolutionaries"
+            "Orbital Shipyards",
+            "Vektori Core",
+            "capital"
         ],
         "regionId": "crimson-expanse"
     },
@@ -269,35 +292,37 @@ export const mockSystems: SystemNode[] = [
     },
     {
         "id": "alpha-b51aa651102346de66b9",
-        "name": "Puillan",
+        "name": "Aeiralux",
         "q": 11,
         "r": 44,
-        "security": 68,
-        "tradeValue": 11,
-        "instability": 17,
-        "escalationLevel": 1,
+        "security": 70,
+        "tradeValue": 45,
+        "instability": 5,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Colonized Population",
-            "Fallen Hegemon"
+            "suspended-cities",
+            "crystal-canopies",
+            "capital"
         ],
         "regionId": "nullward-fringe"
     },
     {
         "id": "alpha-782feae03506829e3c7e",
-        "name": "Betied",
+        "name": "Rrriiaa",
         "q": 33,
         "r": 11,
-        "security": 49,
-        "tradeValue": 83,
-        "instability": 24,
-        "escalationLevel": 1,
+        "security": 40,
+        "tradeValue": 15,
+        "instability": 50,
+        "escalationLevel": 2,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Badlands World",
-            "Unbraked AI"
+            "deathworld",
+            "shadow-mountains",
+            "capital"
         ],
         "regionId": "nullward-fringe"
     },
@@ -356,18 +381,19 @@ export const mockSystems: SystemNode[] = [
     },
     {
         "id": "alpha-db9639818642df50f902",
-        "name": "Autora",
+        "name": "Jabal",
         "q": 4,
         "r": 37,
-        "security": 64,
-        "tradeValue": 74,
-        "instability": 8,
-        "escalationLevel": 1,
+        "security": 65,
+        "tradeValue": 30,
+        "instability": 10,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Psionics Worship",
-            "Urbanized Surface"
+            "sacred-peaks",
+            "narcotic-atmosphere",
+            "capital"
         ],
         "regionId": "nullward-fringe"
     },
@@ -411,56 +437,55 @@ export const mockSystems: SystemNode[] = [
     },
     {
         "id": "alpha-a212bbc325df7b2dbb21",
-        "name": "Bardond",
+        "name": "Graviton Vale",
         "q": 33,
         "r": 28,
-        "security": 34,
-        "tradeValue": 88,
-        "instability": 34,
-        "escalationLevel": 2,
+        "security": 80,
+        "tradeValue": 70,
+        "instability": 5,
+        "escalationLevel": 0,
         "tags": [
             "standard",
             "crimson_expanse",
-            "Holy War",
-            "Fallen Hegemon",
-            "Cold War",
-            "Seagoing Cities"
+            "heavy-gravity",
+            "dense-metals",
+            "capital"
         ],
         "regionId": "crimson-expanse"
     },
     {
         "id": "alpha-f7fd7a7f0ce6e0565f0c",
-        "name": "Korophali",
+        "name": "Savarr'Tel",
         "q": 28,
         "r": 44,
-        "security": 35,
-        "tradeValue": 72,
-        "instability": 16,
+        "security": 85,
+        "tradeValue": 60,
+        "instability": 2,
         "escalationLevel": 0,
         "tags": [
             "standard",
             "crimson_expanse",
-            "Major Spaceyard",
-            "Taboo Treasure",
-            "Tyranny",
-            "Rising Hegemon"
+            "golden-grasslands",
+            "citadels",
+            "capital"
         ],
         "regionId": "crimson-expanse"
     },
     {
         "id": "alpha-b3312d2d9c677aef75db",
-        "name": "Demnoph",
+        "name": "Gor’Zhul",
         "q": 24,
         "r": 8,
-        "security": 50,
-        "tradeValue": 22,
-        "instability": 29,
+        "security": 75,
+        "tradeValue": 40,
+        "instability": 20,
         "escalationLevel": 1,
         "tags": [
             "standard",
             "nullward_fringe",
-            "Forbidden Tech",
-            "Heavy Industry"
+            "bioluminescent-swamps",
+            "carnivorous-flora",
+            "capital"
         ],
         "regionId": "nullward-fringe"
     },
@@ -771,20 +796,22 @@ export const mockSystems: SystemNode[] = [
     },
     {
         "id": "alpha-fa0b1dffda00ef2f632e",
-        "name": "Torgent",
+        "name": "Muun's Ledger",
         "q": 35,
-        "r": 22,
-        "security": 37,
-        "tradeValue": 69,
-        "instability": 9,
-        "escalationLevel": 2,
+        "r": 10,
+        "security": 90,
+        "tradeValue": 99,
+        "instability": 5,
+        "escalationLevel": 0,
         "tags": [
             "standard",
-            "crimson_expanse",
-            "Battleground",
-            "Seismic Instability"
+            "nullward_fringe",
+            "Banking Hub",
+            "Tax Haven",
+            "weak_starting_armada",
+            "capital"
         ],
-        "regionId": "crimson-expanse"
+        "regionId": "nullward-fringe"
     },
     {
         "id": "alpha-6e25d4c0d8f819351779",

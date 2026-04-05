@@ -1,0 +1,30 @@
+{
+  "id": "banking_clan",
+  "name": "The Intergalactic Banking Clan",
+  "species": "Muun-kin",
+  "homeWorld": "Muun's Ledger",
+  "tags": [
+    "tax_havens",
+    "mercenary_sponsors",
+    "debt_arbitrators",
+    "weak_starting_armada",
+    "financial_neutrality"
+  ],
+  "modifiers": {
+    "loan_interest_income": 0.25,
+    "mercenary_hire_cost": -0.40,
+    "diplomatic_leverage_debt": 0.50,
+    "ground_defense": -0.30,
+    "trade_efficiency": 0.20
+  },
+  "policy_bias": [
+    "debt_collection_mandates",
+    "mercenary_deregulation",
+    "monetary_expansion"
+  ],
+  "faction_weights": {
+    "industrialists": 0.70,
+    "diplomats": 0.20,
+    "military": 0.10
+  }
+}

@@ -1,0 +1,31 @@
+{
+    "id": "nexulan_convergence",
+    "name": "The Nexulan Convergence",
+    "species": "Nexulans",
+    "homeWorld": "The Solara Shell (Dyson Shell)",
+    "tags": [
+        "technological_elitist",
+        "synthetic_life",
+        "dyson_construct",
+        "optimization_directive",
+        "biomass_dependent"
+    ],
+    "modifiers": {
+        "research_speed": 0.35,
+        "resource_efficiency": 0.25,
+        "diplomatic_trust": -0.50,
+        "construction_speed": 1.0,
+        "food_upkeep": 0.50,
+        "combat_defense_per_turn": 0.05
+    },
+    "policy_bias": [
+        "technological_ascendancy",
+        "resource_refinement",
+        "industrial_optimization"
+    ],
+    "faction_weights": {
+        "technocrat": 0.70,
+        "industrialists": 0.20,
+        "military": 0.10
+    }
+}

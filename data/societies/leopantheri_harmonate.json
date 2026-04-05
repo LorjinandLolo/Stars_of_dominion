@@ -1,0 +1,28 @@
+{
+  "id": "leopantheri_harmonate",
+  "name": "The Leo-pantheri Harmonate",
+  "species": "Leo-pantheri",
+  "homeWorld": "Savarr'Tel",
+  "tags": [
+    "ritual_combatants",
+    "starlit_philosophers",
+    "honorable_interventionists",
+    "claws_of_authority"
+  ],
+  "modifiers": {
+    "diplomatic_reputation": 0.30,
+    "unit_quality_bonus": 0.25,
+    "unit_cost": 0.50,
+    "cultural_influence": 0.20
+  },
+  "policy_bias": [
+    "cultural_preservation",
+    "scientific_ritualism",
+    "defensive_honor_war"
+  ],
+  "faction_weights": {
+    "diplomats": 0.40,
+    "scientists": 0.30,
+    "military": 0.30
+  }
+}

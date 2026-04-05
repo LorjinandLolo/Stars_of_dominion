@@ -1,0 +1,28 @@
+{
+  "id": "kaer_ruun_hunt",
+  "name": "The Kaer’Ruun Hunt",
+  "species": "Kaer’Ruun",
+  "homeWorld": "Rrriiaa",
+  "tags": [
+    "stealth_specialists",
+    "ritual_brutality",
+    "mercenary_contractors",
+    "deathworld_survivors"
+  ],
+  "modifiers": {
+    "espionage_power": 0.50,
+    "combat_strength_modifier": 0.15,
+    "mercenary_income": 0.30,
+    "tech_penalty": 0.20
+  },
+  "policy_bias": [
+    "hunt_traditions",
+    "mercenary_negotiations",
+    "shadow_warfare"
+  ],
+  "faction_weights": {
+    "military": 0.50,
+    "shadow_operatives": 0.40,
+    "industrialists": 0.10
+  }
+}

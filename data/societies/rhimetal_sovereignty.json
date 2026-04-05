@@ -1,0 +1,28 @@
+{
+  "id": "rhimetal_sovereignty",
+  "name": "The Rhimetal Sovereignty",
+  "species": "Rhimetals",
+  "homeWorld": "Aeiralux",
+  "tags": [
+    "hive_mind",
+    "supersonic_flight",
+    "telepathic_arbitrators",
+    "light_gravity_preference"
+  ],
+  "modifiers": {
+    "fleet_speed": 0.50,
+    "diplomatic_trust": 0.20,
+    "ground_defense": -0.25,
+    "energy_efficiency": 0.15
+  },
+  "policy_bias": [
+    "peacekeeping_interventions",
+    "hive_cohesion",
+    "supersonic_patrols"
+  ],
+  "faction_weights": {
+    "technocrats": 0.40,
+    "diplomats": 0.40,
+    "pacifists": 0.20
+  }
+}
