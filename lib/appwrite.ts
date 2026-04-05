@@ -4,10 +4,19 @@ export async function getServerClients() {
   // Use dynamic import to prevent node-appwrite from being bundled into the client
   const { Client, Databases, Functions, Query, ID } = await import('node-appwrite');
   
-  const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!)
-    .setKey(process.env.APPWRITE_API_KEY!);
+  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+  const apiKey = process.env.APPWRITE_API_KEY;
+
+  if (!endpoint || !project) {
+    console.warn('Appwrite configuration is incomplete. Skipping client initialization during build-time.');
+  }
+
+  const client = new Client();
+  
+  if (endpoint) client.setEndpoint(endpoint);
+  if (project) client.setProject(project);
+  if (apiKey) client.setKey(apiKey);
 
   const db = new Databases(client);
   const fn = new Functions(client);

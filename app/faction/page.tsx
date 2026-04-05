@@ -2,6 +2,8 @@ import { getFactions } from '@/app/actions/state';
 import CreateFactionForm from '@/components/CreateFactionForm';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 export default async function FactionHub() {
     const factions = await getFactions();
 
