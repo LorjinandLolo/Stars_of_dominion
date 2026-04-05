@@ -68,10 +68,13 @@ export async function GET(req: NextRequest) {
         const { db } = await getServerClients();
         const profiles = await db.listDocuments(DB_ID, COLL_PROFILES);
         
-        // Return a map of { factionId: userId } so the Lobby knows what's taken
-        const claimedFactions: Record<string, string> = {};
+        // Return a map of { factionId: { userId, displayName } } so the Lobby knows what's taken by whom
+        const claimedFactions: Record<string, { userId: string, displayName: string }> = {};
         profiles.documents.forEach((doc: any) => {
-             claimedFactions[doc.factionId] = doc.userId;
+             claimedFactions[doc.factionId] = {
+                 userId: doc.userId,
+                 displayName: doc.displayName
+             };
         });
 
         return NextResponse.json({ claimedFactions });

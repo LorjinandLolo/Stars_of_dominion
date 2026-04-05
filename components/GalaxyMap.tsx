@@ -15,7 +15,7 @@ interface GalaxyMapProps {
 }
 
 export default function GalaxyMap({ planets, factions, armies, onHexClick, selectedHex }: GalaxyMapProps) {
-    const { playerFactionId, diplomacyState } = useUIStore();
+    const { playerFactionId, diplomacyState, focusTarget, setFocusTarget } = useUIStore();
     // Configuration - Dynamic based on map content
     const { minX, minY, maxX, maxY, ROWS, COLS } = useMemo(() => {
         if (!planets || !planets.length) return { minX: 0, minY: 0, maxX: 50, maxY: 50, ROWS: 50, COLS: 50 };
@@ -39,7 +39,61 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
     const grid = useMemo(() => new HexGrid(ROWS, COLS), [ROWS, COLS]);
 
     const [zoom, setZoom] = useState(1);
-    const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 0, h: 0 });
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const lastMousePos = useRef({ x: 0, y: 0 });
+    const [viewBoxVisible, setViewBoxVisible] = useState({ x: 0, y: 0, w: 0, h: 0 });
+
+    // ─── CAMERA LOGIC ─────────────────────────────────────────────────────────
+
+    // Initial Focus on Capital
+    React.useEffect(() => {
+        if (!playerFactionId || !factions?.length || !planets?.length) return;
+        
+        const faction = factions.find(f => f.$id === playerFactionId || f.id === playerFactionId);
+        if (faction && faction.capitalSystemId) {
+            const capitalPlanet = planets.find(p => p.systemId === faction.capitalSystemId || p.id === `planet-${faction.capitalSystemId}`);
+            if (capitalPlanet) {
+                setFocusTarget({ x: capitalPlanet.x, y: capitalPlanet.y, zoom: 1.5 });
+            }
+        }
+    }, [playerFactionId, factions, planets?.length]);
+
+    // Handle focusTarget changes
+    React.useEffect(() => {
+        if (!focusTarget) return;
+
+        const { x, y, zoom: targetZoom } = focusTarget;
+        
+        // Convert hex (x, y) to pixel
+        const targetPix = grid.hexToPixel(x, y, HEX_SIZE);
+        
+        // Calculate base center (similar to currentViewBox logic)
+        const padding = 3;
+        const baseX = (minX - padding) * HEX_WIDTH;
+        const baseY = (minY - padding) * 0.75 * HEX_HEIGHT;
+        const baseW = (maxX - minX + padding * 2) * HEX_WIDTH;
+        const baseH = (maxY - minY + padding * 2) * 0.75 * HEX_HEIGHT;
+
+        // We want targetPix to be at the center of the viewport
+        // ViewBox = (baseX + pan.x) (baseY + pan.y) (baseW/zoom) (baseH/zoom)
+        // Center of ViewBox = (baseX + pan.x + baseW/2zoom) , (baseY + pan.y + baseH/2zoom)
+        // Set Center = targetPix
+        
+        if (targetZoom) setZoom(targetZoom);
+
+        const currentW = baseW / (targetZoom || zoom);
+        const currentH = baseH / (targetZoom || zoom);
+
+        setPan({
+            x: targetPix.x - baseX - currentW / 2,
+            y: targetPix.y - baseY - currentH / 2
+        });
+
+        // Clear target after focusing
+        setFocusTarget(null);
+    }, [focusTarget, minX, minY, maxX, maxY, HEX_WIDTH, HEX_HEIGHT, zoom, grid]);
+
 
     // Air Sorties & UI State
     const [showSortieMenu, setShowSortieMenu] = useState(false);
@@ -112,38 +166,12 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
         }
     };
 
-    // Panning State
-    const [pan, setPan] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const lastMousePos = useRef({ x: 0, y: 0 });
-
-    // Initialize ViewBox once planets are loaded
-    React.useEffect(() => {
-        const padding = 3;
-        const x = (minX - padding) * HEX_WIDTH;
-        const y = (minY - padding) * 0.75 * HEX_HEIGHT;
-        const w = (maxX - minX + padding * 2) * HEX_WIDTH;
-        const h = (maxY - minY + padding * 2) * 0.75 * HEX_HEIGHT;
-        setViewBox({ x, y, w, h });
-    }, [minX, minY, maxX, maxY, HEX_WIDTH, HEX_HEIGHT]);
-
     const handleWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
         const scaleBy = 1.1;
         const oldZoom = zoom;
         let newZoom = e.deltaY < 0 ? oldZoom * scaleBy : oldZoom / scaleBy;
         newZoom = Math.min(Math.max(newZoom, 0.5), 5); // Limit zoom
-
-        // Calculate focus point relative to SVG
-        // This is tricky without exact specialized logic, so we'll zoom to center of current view for simplicity first
-        // Or strict center zoom:
-        const zoomFactor = oldZoom / newZoom;
-
         setZoom(newZoom);
-
-        // Adjust Pan to keep center? 
-        // For now, let's keep it simple: Zoom creates a multiplier on the ViewBox W/H
-        // But viewBox x/y is 'pan'.
     };
 
     // Better Zoom Interaction:

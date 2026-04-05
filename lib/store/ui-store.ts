@@ -201,6 +201,10 @@ export interface UIStore {
     // ── Multiplayer Mode ──
     isMultiplayer: boolean;
     setIsMultiplayer: (val: boolean) => void;
+
+    // ── Map Focus ──
+    focusTarget: { x: number; y: number; zoom?: number } | null;
+    setFocusTarget: (target: { x: number; y: number; zoom?: number } | null) => void;
 }
 
 
@@ -494,5 +498,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Multiplayer Mode ──
     isMultiplayer: false,
     setIsMultiplayer: (val) => set({ isMultiplayer: val }),
+
+    // ── Map Focus ──
+    focusTarget: null,
+    setFocusTarget: (focusTarget) => set({ focusTarget }),
 }));
 

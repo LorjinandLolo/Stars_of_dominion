@@ -23,10 +23,11 @@ export default function LoginForm() {
         try {
             const { account } = getBrowserClients();
             if (isLogin) {
-                await account.createEmailSession(email, password);
+                await authService.login(email, password);
             } else {
+                const { account } = getBrowserClients();
                 await account.create(ID.unique(), email, password, name);
-                await account.createEmailSession(email, password);
+                await authService.login(email, password);
             }
             router.push('/lobby');
         } catch (err: any) {

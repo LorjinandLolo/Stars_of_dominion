@@ -28,7 +28,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
 
-    const [takenFactions, setTakenFactions] = useState<Record<string, string>>({});
+    const [takenFactions, setTakenFactions] = useState<Record<string, { userId: string, displayName: string }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
 
     useEffect(() => {
@@ -48,7 +48,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 if (data.claimedFactions) {
                     setTakenFactions(data.claimedFactions);
                      // If I already claimed something, pre-select it
-                     const myClaim = Object.entries(data.claimedFactions).find(([fid, uid]) => uid === currentUser?.$id);
+                     const myClaim = Object.entries(data.claimedFactions).find(([fid, data]: [string, any]) => data.userId === currentUser?.$id);
                      if (myClaim) {
                           setSelectedId(myClaim[0]);
                           setPlayerFactionId(myClaim[0]);
@@ -60,10 +60,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
     const handleSelect = (factionId: string) => {
         // If we already have a lock in the DB, we can't change it here
-        const myClaim = Object.entries(takenFactions).find(([fid, uid]) => uid === currentUser?.$id);
+        const myClaim = Object.entries(takenFactions).find(([fid, data]: [string, any]) => data.userId === currentUser?.$id);
         if (myClaim) return; 
 
-        if (takenFactions[factionId] && takenFactions[factionId] !== currentUser?.$id) return; // Locked by someone else
+        if (takenFactions[factionId] && takenFactions[factionId].userId !== currentUser?.$id) return; // Locked by someone else
         setSelectedId(factionId);
     };
 
@@ -101,7 +101,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
     const selected = factions.find(f => f.id === selectedId);
     const hovered = factions.find(f => f.id === hoveredId);
-    const currentUserHasClaim = currentUser && Object.values(takenFactions).includes(currentUser.$id);
+    const currentUserHasClaim = currentUser && Object.values(takenFactions).some((d: any) => d.userId === currentUser?.$id);
 
     return (
         <div
@@ -148,52 +148,64 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         ? `You have committed to leading the ${selected?.name}.` 
                         : 'Select the empire you will lead to galactic supremacy.'}
                 </p>
+                <div className="text-slate-600 text-[10px] mt-4 uppercase tracking-[0.2em]">Total Factions: {factions.length} | Available: {factions.length - Object.keys(takenFactions).length}</div>
             </div>
 
             {/* Faction Cards - Scrollable area */}
             <div className="relative z-10 max-w-5xl w-full px-6 mb-10 overflow-y-auto max-h-[65vh] custom-scrollbar pr-2">
                 <div className="grid grid-cols-2 gap-5">
                 {factions
-                    .filter(f => !takenFactions[f.id] || takenFactions[f.id] === currentUser?.$id)
                     .map(faction => {
                         const isSelected = selectedId === faction.id;
                         const isHovered = hoveredId === faction.id;
-                        const isLocked = currentUserHasClaim && isSelected;
+                        const claimData = takenFactions[faction.id];
+                        const isOwnedByMe = claimData && claimData.userId === currentUser?.$id;
+                        const isOwnedByOthers = claimData && claimData.userId !== currentUser?.$id;
+                        const isLocked = currentUserHasClaim && isOwnedByMe;
 
                         return (
                             <button
                                 key={faction.id}
-                                disabled={currentUserHasClaim && !isSelected}
+                                disabled={(currentUserHasClaim && !isOwnedByMe) || isOwnedByOthers}
                                 onClick={() => handleSelect(faction.id)}
                                 onMouseEnter={() => setHoveredId(faction.id)}
                                 onMouseLeave={() => setHoveredId(null)}
-                                className={`text-left rounded-xl p-6 border transition-all duration-300 relative overflow-hidden group ${currentUserHasClaim && !isSelected ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
+                                className={`text-left rounded-xl p-6 border transition-all duration-300 relative overflow-hidden group ${(currentUserHasClaim && !isOwnedByMe) || isOwnedByOthers ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                                 style={{
-                                    background: isSelected
+                                    background: isOwnedByMe
                                         ? `linear-gradient(135deg, ${faction.color}90, ${faction.color}40)`
-                                        : isHovered
-                                            ? `linear-gradient(135deg, ${faction.color}40, ${faction.color}10)`
-                                            : 'rgba(15, 20, 35, 0.8)',
-                                    borderColor: isSelected
+                                        : isSelected
+                                            ? `linear-gradient(135deg, ${faction.color}90, ${faction.color}40)`
+                                            : isHovered
+                                                ? `linear-gradient(135deg, ${faction.color}40, ${faction.color}10)`
+                                                : 'rgba(15, 20, 35, 0.8)',
+                                    borderColor: isOwnedByMe || isSelected
                                         ? faction.accentColor
                                         : isHovered
                                             ? `${faction.accentColor}60`
                                             : 'rgba(100,116,139,0.2)',
-                                    boxShadow: isSelected
+                                    boxShadow: isSelected || isOwnedByMe
                                         ? `0 0 30px ${faction.accentColor}40, inset 0 0 30px ${faction.color}20`
                                         : isHovered
                                             ? `0 0 15px ${faction.accentColor}20`
                                             : 'none',
-                                    transform: isSelected ? 'scale(1.02)' : isHovered ? 'scale(1.01)' : 'scale(1)',
+                                    transform: isSelected || isOwnedByMe ? 'scale(1.02)' : isHovered ? 'scale(1.01)' : 'scale(1)',
                                 }}
                             >
                                     {/* Selection indicator */}
-                                    {isSelected && (
+                                    {(isSelected || isOwnedByMe) && (
                                         <div
                                             className="absolute top-4 right-4 w-6 h-6 rounded-full flex items-center justify-center text-sm z-20"
                                             style={{ background: faction.accentColor }}
                                         >
-                                            {currentUserHasClaim ? '🔒' : '✓'}
+                                            {isOwnedByMe ? '🔒' : '✓'}
+                                        </div>
+                                    )}
+
+                                    {/* Ownership Label */}
+                                    {isOwnedByOthers && (
+                                        <div className="absolute top-4 right-4 px-3 py-1 bg-red-500/20 border border-red-500/40 rounded-full text-[10px] font-bold text-red-400 z-20 uppercase tracking-widest">
+                                            Claimed by {claimData.displayName}
                                         </div>
                                     )}
 

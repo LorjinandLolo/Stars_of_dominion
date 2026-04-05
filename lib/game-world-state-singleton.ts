@@ -57,14 +57,22 @@ function buildEmptyMovementState(): MovementWorldState {
 function buildEmptyEconomyState(): EconomyWorldState {
     const factions = new Map<string, Faction>();
     
-    // Seed initial factions (4 starters + 8 friends factions)
+    // Seed initial factions (14 Societies)
     const FACTION_DATA = [
-        { id: 'faction-aurelian', name: 'Aurelian Combine', civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist', capitalId: 'alpha-5b34961e18bb6fd14903' },
-        { id: 'faction-vektori', name: 'Vektori High Command', civilizationId: 'civ-velkori', ideologyId: 'ideo-imperialist', capitalId: 'alpha-fe148b9a69a680fa14a3' },
-        { id: 'faction-null-syndicate', name: 'Null Syndicate', civilizationId: 'civ-auraxian', ideologyId: 'ideo-technocratic', capitalId: 'alpha-1acb646b529592834b59' },
-        { id: 'faction-covenant', name: 'Covenant of the Void', civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic', capitalId: 'alpha-10fae8cf89590243337b' },
-        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', civilizationId: 'civ-grakkar', ideologyId: 'ideo-imperialist', capitalId: 'alpha-18109e81be8a4bb03aab' },
-        // ... other factions will load their capitals from the DB
+        { id: 'faction-aurelian', name: 'Aurelian Hegemony', civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist', capitalId: 'alpha-5b34961e18bb6fd14903' },
+        { id: 'faction-vektori', name: 'Vektori Technocracy', civilizationId: 'civ-velkori', ideologyId: 'ideo-individualist', capitalId: 'alpha-fe148b9a69a680fa14a3' },
+        { id: 'faction-null-syndicate', name: 'Nullward Syndicate', civilizationId: 'civ-auraxian', ideologyId: 'ideo-mercantile', capitalId: 'alpha-1acb646b529592834b59' },
+        { id: 'faction-covenant', name: 'Altaris Covenant', civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic', capitalId: 'alpha-10fae8cf89590243337b' },
+        { id: 'nexulan_convergence', name: 'Nexulan Convergence', civilizationId: 'civ-nexulan', ideologyId: 'ideo-technocratic', capitalId: 'alpha-nexulan-cap' },
+        { id: 'banking_clan', name: 'Intergalactic Banking Clan', civilizationId: 'civ-intergalactic', ideologyId: 'ideo-mercantile', capitalId: 'alpha-banking-cap' },
+        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', civilizationId: 'civ-grakkar', ideologyId: 'ideo-collectivist', capitalId: 'alpha-rhimetals-cap' },
+        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', civilizationId: 'civ-gabagoon', ideologyId: 'ideo-individualist', capitalId: 'alpha-gabagoon-cap' },
+        { id: 'faction-infernoids', name: 'Infernoids / Martijn', civilizationId: 'civ-infernoid', ideologyId: 'ideo-militaristic', capitalId: 'alpha-infernoid-cap' },
+        { id: 'faction-movanites', name: 'Movanites / David', civilizationId: 'civ-movanite', ideologyId: 'ideo-industrialist', capitalId: 'alpha-movanite-cap' },
+        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', civilizationId: 'civ-leopantheri', ideologyId: 'ideo-diplomatic', capitalId: 'alpha-leopantheri-cap' },
+        { id: 'faction-buthari', name: 'The Buthari / Hisham', civilizationId: 'civ-buthari', ideologyId: 'ideo-traditionalist', capitalId: 'alpha-buthari-cap' },
+        { id: 'faction-sarrak', name: 'Sarrak / Sil', civilizationId: 'civ-sarrak', ideologyId: 'ideo-militaristic', capitalId: 'alpha-sarrak-cap' },
+        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', civilizationId: 'civ-kaerruun', ideologyId: 'ideo-militaristic', capitalId: 'alpha-kaerruun-cap' },
     ];
 
 
@@ -306,6 +314,9 @@ export function getGameWorldState(): GameWorldState {
             doctrines: new Map(),
             reputation: new Map(),
             nowSeconds: Math.floor(Date.now() / 1000),
+            combat: {
+                recruitmentJobs: []
+            }
         };
 
 
@@ -326,7 +337,7 @@ export function getCorporateWorldState(): CorporateWorldState {
     if (!globalCorporateStateInstance) {
         globalCorporateStateInstance = createEmptyCorporateWorldState();
     }
-    return globalCorporateStateInstance;
+    return globalCorporateStateInstance!;
 }
 
 /**
@@ -336,5 +347,5 @@ export function getConstructionWorldState(): ConstructionWorldState {
     if (!globalConstructionStateInstance) {
         globalConstructionStateInstance = buildEmptyConstructionState();
     }
-    return globalConstructionStateInstance;
+    return globalConstructionStateInstance!;
 }

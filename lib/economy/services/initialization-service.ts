@@ -3,9 +3,9 @@ import { PlanetProduction, PlanetType } from '../economy-types';
 import { initializePlanetServices } from './service-engine';
 
 /**
- * Ensures a faction has its home planet initialized in the world state.
- * If the planet doesn't exist in the economy map, it creates a new one 
- * with a standardized "Starting Kit" of resources and infrastructure.
+ * Ensures a faction has its home system initialized in the world state.
+ * Creates a "Starting Kit" of 4 planets (1 Capital + 3 Colonies) in the system
+ * to ensure robust early-game capacity.
  */
 export function initializeFactionHomeWorld(world: GameWorldState, factionId: string) {
     // 1. Locate the faction's defined capital system
@@ -21,54 +21,63 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
         return;
     }
 
-    // 2. Check if the planet already exists
-    // We use the capitalSystemId as the planetId for the primary homeworld in that system
-    const planetId = `planet-${capitalSystemId}`;
-    if (world.economy.planets.has(planetId)) {
-        return; // Already initialized
-    }
+    // 2. We want to ensure 4 planets exist in this system
+    const PLANET_DEFINITIONS: { idSuffix: string, type: PlanetType }[] = [
+        { idSuffix: '', type: 'industrial' },    // The Capital
+        { idSuffix: '-colony-1', type: 'agricultural' },
+        { idSuffix: '-colony-2', type: 'research' },
+        { idSuffix: '-colony-3', type: 'fortress' }
+    ];
 
-    console.log(`[InitService] Initializing Homeworld for ${factionId} in system ${capitalSystemId}.`);
+    PLANET_DEFINITIONS.forEach((def, index) => {
+        const planetId = `planet-${capitalSystemId}${def.idSuffix}`;
+        
+        if (world.economy.planets.has(planetId)) {
+            return; // Already initialized
+        }
 
-    // 3. Create the PlanetProduction object
-    const homePlanet: PlanetProduction = {
-        planetId: planetId,
-        systemId: capitalSystemId,
-        factionId: factionId,
-        planetType: 'industrial', // Homeworlds start as generic industrial hubs
-        tags: ['homeworld', 'settled_core'],
-        services: {}, // Will be populated by initializePlanetServices
-        demographics: {
-            population: 50, // Starting with 50 abstract units (medium density)
-            growthRate: 0.05,
-            housingCapacity: 60,
-            serviceSatisfaction: 100,
-            unrestRisk: 0,
-            manpowerEfficiency: 1.0
-        },
-        currentRates: {},
-        stockpile: {
-            metals: 1000,
-            energy: 1000,
-            food: 1000,
-            credits: 5000
-        },
-        derived: {
-            construction: 1.0,
-            military: 0.5,
-            research: 0.5,
-            cultural: 0.2
-        },
-        energyLoad: 0,
-        energyProduced: 0,
-        happiness: 80,
-        instability: 0,
-        commodityScarcity: false
-    };
+        console.log(`[InitService] Initializing Starting Planet [${planetId}] (${def.type}) for ${factionId} in system ${capitalSystemId}.`);
 
-    // 4. Seed the Data-Driven Services at Level 1 
-    initializePlanetServices(homePlanet);
+        // 3. Create the PlanetProduction object
+        const planet: PlanetProduction = {
+            planetId: planetId,
+            systemId: capitalSystemId,
+            factionId: factionId,
+            planetType: def.type,
+            tags: index === 0 ? ['homeworld', 'settled_core'] : ['established_colony', 'sector_capital'],
+            services: {}, 
+            demographics: {
+                population: index === 0 ? 50 : 25, // Starting with 50 for capital, 25 for colonies
+                growthRate: 0.05,
+                housingCapacity: index === 0 ? 60 : 30,
+                serviceSatisfaction: 100,
+                unrestRisk: 0,
+                manpowerEfficiency: 1.0
+            },
+            currentRates: {},
+            stockpile: {
+                metals: index === 0 ? 1000 : 500,
+                energy: index === 0 ? 1000 : 500,
+                food: index === 0 ? 1000 : 500,
+                credits: index === 0 ? 5000 : 1000
+            },
+            derived: {
+                construction: index === 0 ? 1.0 : 0.5,
+                military: index === 0 ? 0.5 : 0.2,
+                research: index === 0 ? 0.5 : 0.2,
+                cultural: index === 0 ? 0.2 : 0.1
+            },
+            energyLoad: 0,
+            energyProduced: 0,
+            happiness: 80,
+            instability: 0,
+            commodityScarcity: false
+        };
 
-    // 5. Inject into the world state
-    world.economy.planets.set(planetId, homePlanet);
+        // 4. Seed the Data-Driven Services at Level 1 
+        initializePlanetServices(planet);
+
+        // 5. Inject into the world state
+        world.economy.planets.set(planetId, planet);
+    });
 }

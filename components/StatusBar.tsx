@@ -1,14 +1,28 @@
-import { Coins, Hammer, FlaskConical, Wheat, Smile, Activity, TrendingDown, TrendingUp } from 'lucide-react';
+import { Coins, Hammer, FlaskConical, Wheat, Activity, Home } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { EconomyState } from '@/types';
+import { useUIStore } from '@/lib/store/ui-store';
 
 export default function StatusBar({ state }: { state: EconomyState }) {
     const { resources, income_rates, expenses, economic_health, last_updated } = state;
+    const { playerFactionId, factions, planets, setFocusTarget } = useUIStore();
+
     // Fallback for safety if new fields aren't populated yet
     const stability = economic_health?.stability ?? 100;
     const currentExpenses = expenses?.credits ?? 0;
     const grossIncome = income_rates?.credits ?? 0;
     const netIncome = grossIncome - currentExpenses;
+
+    const handleHomeClick = () => {
+        if (!playerFactionId || !factions || !planets) return;
+        const faction = factions[playerFactionId];
+        if (faction && faction.capitalSystemId) {
+            const capitalPlanet = planets.find(p => p.systemId === faction.capitalSystemId || p.id === `planet-${faction.capitalSystemId}`);
+            if (capitalPlanet) {
+                setFocusTarget({ x: capitalPlanet.x, y: capitalPlanet.y, zoom: 1.5 });
+            }
+        }
+    };
 
     const getStabilityColor = (s: number) => {
         if (s > 80) return 'text-emerald-400';
@@ -70,9 +84,17 @@ export default function StatusBar({ state }: { state: EconomyState }) {
                 )}
             </div>
 
-            {/* Right: Date */}
-            <div className="flex items-center gap-4">
-                <div className="flex flex-col items-end leading-tight">
+            {/* Right: Date & Home */}
+            <div className="flex items-center gap-6">
+                <button 
+                    onClick={handleHomeClick}
+                    className="flex items-center gap-2 px-3 py-1 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/40 rounded text-[10px] text-amber-500 font-bold uppercase tracking-widest transition-all group"
+                    title="Refocus on Capital"
+                >
+                    <Home size={12} className="group-hover:scale-110 transition-transform" />
+                    <span>Home</span>
+                </button>
+                <div className="flex flex-col items-end leading-tight border-l border-slate-800 pl-4">
                     <span className="text-[10px] text-slate-400 uppercase tracking-widest">Date</span>
                     <span className="font-display font-bold text-lg text-slate-100">
                         {/* Use ClientComponent wrapper or simple hydration safe check */}
