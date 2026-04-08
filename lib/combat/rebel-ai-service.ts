@@ -1,4 +1,4 @@
-import { PlanetaryGarrison } from './ground-combat-types';
+import { PlanetaryGarrison } from './siege/siege-types';
 import { SystemNode, Link } from '@/types/ui-state';
 
 export type RebelActionType = 'FORTIFY' | 'EXPAND' | 'SABOTAGE';

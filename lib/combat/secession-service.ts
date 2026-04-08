@@ -1,4 +1,4 @@
-import { SecessionEvent, PlanetaryGarrison } from './ground-combat-types';
+import { SecessionEvent, PlanetaryGarrison } from './siege/siege-types';
 
 /**
  * Checks a system's current Unrest level. If it exceeds the critical threshold (default 100),

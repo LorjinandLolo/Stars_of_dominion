@@ -123,3 +123,12 @@ export interface SecessionEvent {
     foreignSponsors: string[];
     spawnedGarrisonStrength: number;
 }
+
+/**
+ * Basic defensive structure for a breakaway faction.
+ */
+export interface PlanetaryGarrison {
+    troops: number;
+    fortificationLevel: number;
+    supplyRemaining: number;
+}

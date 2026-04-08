@@ -4,7 +4,7 @@
  */
 
 import { ResourceId } from '../../types/index';
-import { PlanetaryDefenseState, GroundSiegeState } from '../combat/ground-combat-types';
+import { PlanetaryDefenseState, GroundSiegeState } from '../combat/siege/siege-types';
 
 export type PlanetType = 
   | "standard" 
