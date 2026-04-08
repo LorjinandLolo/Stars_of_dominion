@@ -52,7 +52,7 @@ export default function SeasonEndScreen() {
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="text-[10px] font-display tracking-[4px] text-amber-500/60 mb-1">
-                            SEASON {seasonState.seasonNumber} — CONCLUDED
+                            SEASON {seasonState.season} — CONCLUDED
                         </div>
                         <h1 className="font-display text-2xl text-amber-400 tracking-widest">
                             GALACTIC CHRONICLE
