@@ -19597,6 +19597,7 @@ export const mockPlayerState: PlayerState = {
     civilizationId: 'civ-auraxian',
     ideologyId: 'ideo-technocratic',
     role: 'shadow',
+    credits: 25000,
     pirateInvolvementScore: 68,
     infamy: 54,
     heat: 41,
