@@ -95,9 +95,10 @@ function handleEngagement(
         try {
             const report = resolveEngagementRound(state, {
                 roundNumber: state.round,
-                // In 1.0, we use doctrine-default stances if no player override
                 attackerStance: state.attacker.selectedStance || 'shock', 
-                defenderStance: state.defender.selectedStance || 'entrench'
+                defenderStance: state.defender.selectedStance || 'entrench',
+                attackerPredictedStance: state.attacker.selectedPrediction,
+                defenderPredictedStance: state.defender.selectedPrediction
             });
 
             console.log(`[CombatManager] Round ${state.round} resolved at ${systemId}. Dmg A: ${report.attackerDamageDealt.toFixed(1)}, Dmg B: ${report.defenderDamageDealt.toFixed(1)}`);

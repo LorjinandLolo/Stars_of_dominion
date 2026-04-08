@@ -114,17 +114,6 @@ export default function LoginForm() {
                         )}
                     </button>
 
-                    {/* Dev Bypass Button */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            localStorage.setItem('dev_bypass', 'true');
-                            window.location.href = '/lobby';
-                        }}
-                        className="w-full py-2 bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white text-xs font-bold uppercase tracking-widest rounded border border-slate-700/50 transition-all mt-4"
-                    >
-                        ⚡ Bypass Auth (Dev Only)
-                    </button>
                 </form>
 
                 <div className="mt-6 text-center">

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap, Shield, Info, Activity, ShieldCheck, Globe } from 'lucide-react';
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
 import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
-import { cancelBuildingAction, advanceTimeAction } from '@/app/actions/construction';
+import { cancelBuildingAction } from '@/app/actions/construction';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Navigation } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
@@ -130,23 +130,6 @@ export function PlanetConstructionPanel({
             const res = await cancelBuildingAction(orderId, factionId);
             if (!res.success) throw new Error(res.error || 'Failed to cancel order');
             await loadData();
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // For testing/prototyping: instantly advance the turn
-    const handleDevAdvanceTurn = async () => {
-        setActionLoading(true);
-        try {
-            const res = await advanceTimeAction(86400); // 1 day
-            if (res.success) {
-                await loadData();
-            } else {
-                setError(res.error || 'Failed to advance time');
-            }
         } catch (err: any) {
             setError(err.message);
         } finally {

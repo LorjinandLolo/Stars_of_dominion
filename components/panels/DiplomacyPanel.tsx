@@ -6,7 +6,7 @@ import {
     Users, Shield, Target, Globe, BookOpen, Fingerprint, 
     Send, Skull, Heart, Activity, Flame, Zap, 
     FileText, Gavel, TrendingUp, Handshake, Scroll,
-    AlertTriangle, ShieldCheck, DollarSign, Info
+    AlertTriangle, ShieldCheck, DollarSign, Info, Eye
 } from 'lucide-react';
 import { 
     sendEnvoyAction, 
@@ -18,6 +18,8 @@ import {
 } from '@/app/actions/politics';
 import { sponsorProxyAction } from '@/app/actions/proxy';
 import { TreatyType } from '@/lib/politics/cold-war-types';
+import { buildReputationProfile } from '@/lib/integration/reputation-vm';
+import type { ReputationSignal } from '@/lib/integration/types';
 
 const FACTIONS = [
     {
@@ -278,26 +280,11 @@ export default function DiplomacyPanel() {
                             </div>
                         ) : (
                             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    {[
-                                        { label: 'Network Infiltration', val: '88%', sub: 'Signal Clarity' },
-                                        { label: 'Counter-Intel Risk', val: '12%', sub: 'Detection Chance' },
-                                        { label: 'Vulnerability Window', val: '14m', sub: 'Archive Sync' }
-                                    ].map(stat => (
-                                        <div key={stat.label} className="glass-panel p-6 rounded-2xl border-white/5 text-center transition-all hover:border-white/20">
-                                            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-2">{stat.label}</span>
-                                            <div className="text-3xl font-mono text-indigo-400 mb-1">{stat.val}</div>
-                                            <span className="text-[8px] text-slate-600 uppercase tracking-tighter">{stat.sub}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="glass-panel p-20 rounded-3xl border-dashed border-white/10 flex flex-col items-center gap-6 bg-indigo-500/[0.02]">
-                                    <Activity className="w-12 h-12 text-indigo-500/20 animate-pulse" />
-                                    <div className="text-center">
-                                        <span className="text-[10px] font-display text-slate-400 uppercase tracking-[0.3em]">Neural Interception Pending</span>
-                                        <p className="text-[9px] text-slate-600 mt-2 max-w-xs mx-auto">Upgrade to Tier 2 Intelligence Archive to unlock deep-sector traffic analysis.</p>
-                                    </div>
-                                </div>
+                                {/* Reputation Assessment */}
+                                <ReputationAssessment
+                                    factionId={selectedFactionId}
+                                    repData={empireIdentity.reputation[selectedFactionId]}
+                                />
                             </div>
                         )}
                     </div>
@@ -322,3 +309,85 @@ export default function DiplomacyPanel() {
     );
 }
 
+// ── Reputation Assessment Sub-Component ──────────────────────────────────────
+
+const CERTAINTY_CONFIG = {
+    confirmed: { label: 'CONFIRMED', color: 'text-emerald-400', dot: 'bg-emerald-500 shadow-[0_0_6px_#10b981]' },
+    suspected: { label: 'SUSPECTED', color: 'text-amber-400',   dot: 'bg-amber-500 shadow-[0_0_6px_#f59e0b]'  },
+    unknown:   { label: 'UNKNOWN',   color: 'text-slate-500',    dot: 'bg-slate-600'                            },
+};
+
+function ReputationAssessment({ factionId, repData }: { factionId: string; repData: any }) {
+    if (!repData) {
+        return (
+            <div className="glass-panel p-16 rounded-3xl border-dashed border-white/10 flex flex-col items-center gap-5">
+                <Eye className="w-10 h-10 text-slate-700 animate-pulse" />
+                <div className="text-center">
+                    <span className="text-[10px] font-display text-slate-500 uppercase tracking-[0.3em] block">Intelligence Insufficient</span>
+                    <p className="text-[9px] text-slate-600 mt-2 max-w-xs mx-auto">
+                        No actionable data on this faction. Expand your espionage network to reveal behavioral patterns.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    const profile = buildReputationProfile(repData);
+
+    return (
+        <div className="space-y-7">
+            {/* Assessment header */}
+            <div>
+                <div className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em] mb-2">
+                    Intelligence Assessment // Intel Quality: {profile.intelQuality}%
+                </div>
+                <p className="text-sm text-slate-300 leading-relaxed italic">{profile.tendencyDescription}</p>
+            </div>
+
+            {/* Trait signals */}
+            {profile.knownTraits.length > 0 && (
+                <div className="space-y-3">
+                    <h4 className="text-[10px] font-display text-slate-400 uppercase tracking-[0.2em]">Known Behavioral Traits</h4>
+                    {profile.knownTraits.map((signal: ReputationSignal, i: number) => {
+                        const cert = CERTAINTY_CONFIG[signal.certainty];
+                        return (
+                            <div key={i} className="flex items-start justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${cert.dot}`} />
+                                    <div>
+                                        <div className="text-xs font-display text-white uppercase tracking-wide">{signal.label}</div>
+                                        {signal.source && (
+                                            <div className="text-[9px] text-slate-500 mt-0.5">{signal.source}</div>
+                                        )}
+                                    </div>
+                                </div>
+                                <span className={`text-[8px] font-mono uppercase tracking-widest px-2 py-0.5 rounded bg-black/40 ${cert.color}`}>
+                                    {cert.label}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Recent actions */}
+            {profile.recentActions && profile.recentActions.length > 0 && (
+                <div className="space-y-2">
+                    <h4 className="text-[10px] font-display text-slate-400 uppercase tracking-[0.2em]">Recent Activity Log</h4>
+                    <div className="space-y-1.5">
+                        {profile.recentActions.map((a: any, i: number) => (
+                            <div key={i} className="flex items-center justify-between text-[9px] py-2 border-b border-white/5 last:border-0">
+                                <span className="text-slate-400 uppercase tracking-wide">{a.action.replace(/_/g, ' ')}</span>
+                                <span className="text-slate-600 font-mono">{a.effect}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="text-[9px] text-slate-600 italic">
+                ⚠ This assessment reflects intercepted patterns, not confirmed intelligence. Estimates may be inaccurate.
+            </div>
+        </div>
+    );
+}

@@ -33,13 +33,13 @@ export async function attackFleetAction(attackerFleetId: string, defenderFleetId
 /**
  * Selects a combat stance for the next round.
  */
-export async function selectCombatStanceAction(combatId: string, factionId: string, stance: CombatStance): Promise<ActionResult> {
+export async function selectCombatStanceAction(combatId: string, factionId: string, stance: CombatStance, prediction?: string): Promise<ActionResult> {
   const result = await executePlayerAction({
     id: `stance-${Date.now()}`,
     actionId: 'MIL_COMBAT_STANCE',
     issuerId: factionId,
     targetId: combatId,
-    payload: { combatId, stance },
+    payload: { combatId, stance, prediction },
     timestamp: Math.floor(Date.now() / 1000)
   });
 
@@ -131,7 +131,7 @@ export async function tickCombats(deltaSeconds: number) {
 /**
  * Submits a tactical defense against a crisis.
  */
-export async function submitDefense(crisisId: string, strategyId: string): Promise<ActionResult> {
+export async function submitDefense(crisisId: string, strategyId: string, predictedActionId?: string): Promise<ActionResult> {
   // Crisis response logic: resolve the crisis based on strategy
   // For now, return a mock success
   revalidatePath('/');

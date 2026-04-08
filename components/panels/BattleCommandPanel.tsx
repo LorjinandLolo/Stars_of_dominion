@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { selectCombatStanceAction, selectCombatDirectiveAction } from '@/app/actions/combat';
 import { CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
+import { getPredictionHints } from '@/lib/integration/doctrine-bias';
+import { BrainCircuit, Sparkles } from 'lucide-react';
 
 interface StanceOption {
     id: CombatStance;
@@ -46,6 +48,7 @@ export default function BattleCommandPanel() {
     const { activeCombats, playerState } = useUIStore();
     const [selectedCombatId, setSelectedCombatId] = useState<string | null>(activeCombats[0]?.id || null);
     const [loading, setLoading] = useState(false);
+    const [predictedStance, setPredictedStance] = useState<string>('');
 
     const activeCombat = activeCombats.find(c => c.id === selectedCombatId);
 
@@ -64,7 +67,7 @@ export default function BattleCommandPanel() {
     const handleSetStance = async (stance: CombatStance) => {
         if (!selectedCombatId) return;
         setLoading(true);
-        await selectCombatStanceAction(selectedCombatId, playerState.factionId, stance);
+        await selectCombatStanceAction(selectedCombatId, playerState.factionId, stance, predictedStance || undefined);
         setLoading(false);
     };
 
@@ -167,7 +170,7 @@ export default function BattleCommandPanel() {
                                         onClick={() => handleSetStance(s.id)}
                                         className={`p-3 rounded-lg border text-left transition-all ${
                                             mySide?.selectedStance === s.id
-                                            ? 'bg-slate-800 border-red-500 ring-1 ring-red-500/30'
+                                            ? 'bg-red-900/10 border-red-500 ring-1 ring-red-500/30'
                                             : 'bg-slate-900/40 border-slate-700/50 hover:border-slate-500'
                                         }`}
                                     >
@@ -176,6 +179,35 @@ export default function BattleCommandPanel() {
                                             {mySide?.selectedStance === s.id && <Zap size={10} className="text-amber-400 fill-amber-400" />}
                                         </div>
                                         <div className="text-[10px] text-slate-400 leading-tight">{s.description}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Prediction Selection */}
+                        <div className="border-t border-white/5 pt-6">
+                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 flex items-center gap-2">
+                                <BrainCircuit size={10} /> PREDICT OPPONENT STANCE
+                            </div>
+                            <p className="text-[10px] text-slate-600 italic mb-4">
+                                Correctly guessing the enemy's next move grants a tactical windfall (+100 credits).
+                            </p>
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                                {getPredictionHints(null, STANCES.map(s => ({ id: s.id, name: s.label, description: s.description }))).map(hint => (
+                                    <button
+                                        key={hint.id}
+                                        onClick={() => setPredictedStance(prev => prev === hint.id ? '' : hint.id)}
+                                        className={`p-2 rounded border text-center transition-all ${
+                                            predictedStance === hint.id
+                                            ? 'bg-blue-900/20 border-blue-500 ring-1 ring-blue-500/50'
+                                            : hint.weightHint === 'likely' 
+                                                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' 
+                                                : 'bg-slate-900/40 border-slate-700/50 text-slate-500 hover:text-slate-300'
+                                        }`}
+                                    >
+                                        <div className="text-[9px] font-bold tracking-widest uppercase">{hint.label}</div>
+                                        {hint.weightHint === 'likely' && <div className="text-[7px] text-emerald-600 mt-1 uppercase font-mono">Likely</div>}
                                     </button>
                                 ))}
                             </div>
@@ -208,11 +240,14 @@ export default function BattleCommandPanel() {
                         <div className="bg-blue-900/10 border border-blue-500/20 rounded-lg p-3 flex gap-3">
                             <History className="text-blue-500 shrink-0" size={18} />
                             <div>
-                                <div className="text-[10px] font-display font-bold text-blue-400 tracking-wider uppercase">Tactical Intel Summary</div>
+                                <div className="text-[10px] font-display font-bold text-blue-400 tracking-wider uppercase flex items-center gap-2">
+                                    <Sparkles size={10} /> Tactical Intel Summary
+                                </div>
                                 <div className="text-[10px] text-slate-400 leading-relaxed mt-1">
-                                    Current engagement level: <span className="text-blue-200">ORBITAL</span>.
-                                    The enemy is utilizing <span className="text-amber-400">DEFENSIVE</span> doctrines. 
-                                    Stance predictions: <span className="text-slate-300">Moderate Confidence</span>.
+                                    Current engagement level: <span className="text-blue-200 uppercase">{activeCombat.phase || 'ORBITAL'}</span>.
+                                    The enemy is utilizing <span className="text-amber-400 font-bold">UNPREDICTABLE</span> doctrines. 
+                                    Stance predictions: <span className="text-slate-300">Evaluating Tendencies...</span>
+                                    {predictedStance && <div className="text-emerald-400 mt-1 font-mono uppercase">Prediction locked: {predictedStance}</div>}
                                 </div>
                             </div>
                         </div>

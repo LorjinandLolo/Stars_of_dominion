@@ -7,9 +7,15 @@
 
 import { getConstructionWorldState, getGameWorldState } from '@/lib/game-world-state-singleton';
 import { getBuildingsForSystem } from '@/lib/construction/construction-service';
-import { SystemConstructionData } from './construction';
 import type { ActionResult } from '@/lib/actions/types';
-import { Planet } from '@/lib/construction/construction-types';
+import { Planet, PlacedBuilding, SpaceBuildOrder, BuildOrder } from '@/lib/construction/construction-types';
+
+export interface SystemConstructionData {
+    planets: Planet[];
+    buildings: PlacedBuilding[];
+    queue: BuildOrder[];
+    spaceBuildQueue: SpaceBuildOrder[];
+}
 
 /**
  * Returns all placed buildings and active queue orders for a given system.

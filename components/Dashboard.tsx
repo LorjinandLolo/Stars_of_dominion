@@ -19,13 +19,20 @@ import PlanetConstructionPanel from '@/components/construction/PlanetConstructio
 import { DoomTracker } from '@/components/defeat/DoomTracker';
 import { DefeatModal } from '@/components/defeat/DefeatModal';
 import { VictoryModal } from '@/components/victory/VictoryModal';
+import ResearchPanel from '@/components/panels/ResearchPanel';
+import DiplomacyPanel from '@/components/panels/DiplomacyPanel';
+import ShipDesignerPanel from '@/components/panels/ShipDesignerPanel';
+import LeadershipPanel from '@/components/panels/LeadershipPanel';
+import BattleCommandPanel from '@/components/panels/BattleCommandPanel';
+import GovernmentPanel from '@/components/panels/GovernmentPanel';
+import DoctrinePanel from '@/components/panels/DoctrinePanel';
 import { establishTradeRouteAction, generateIntrigueOptionsAction, executeIntrigueAction } from '@/app/actions/economy';
 import { getActiveRoutes } from '@/lib/economy/trade';
 import { useRouter } from 'next/navigation';
 
 export default function Dashboard({ state, planets, factions, armies }: any) {
     const router = useRouter();
-    const [activeView, setActiveView] = useState<'none' | 'events' | 'gazette' | 'faction' | 'intrigue' | 'trade' | 'cold-war' | 'corporate' | 'build'>('none');
+    const [activeView, setActiveView] = useState<'none' | 'events' | 'gazette' | 'faction' | 'intrigue' | 'trade' | 'cold-war' | 'corporate' | 'build' | 'research' | 'diplomacy' | 'ship-designer' | 'leadership' | 'battle' | 'government' | 'doctrine'>('none');
     const [selectedHex, setSelectedHex] = useState<{ x: number, y: number } | null>(null);
     const [selectedArmyId, setSelectedArmyId] = useState<string | null>(null);
     const [isMoving, setIsMoving] = useState(false);
@@ -121,6 +128,13 @@ export default function Dashboard({ state, planets, factions, armies }: any) {
                         onOpenColdWar={() => setActiveView('cold-war')}
                         onOpenCorporate={() => setActiveView('corporate')}
                         onOpenBuild={() => setActiveView('build')}
+                        onOpenResearch={() => setActiveView('research')}
+                        onOpenDiplomacy={() => setActiveView('diplomacy')}
+                        onOpenShipDesigner={() => setActiveView('ship-designer')}
+                        onOpenLeadership={() => setActiveView('leadership')}
+                        onOpenBattle={() => setActiveView('battle')}
+                        onOpenGovernment={() => setActiveView('government')}
+                        onOpenDoctrine={() => setActiveView('doctrine')}
                     />
                 </div>
             </div>
@@ -217,6 +231,36 @@ export default function Dashboard({ state, planets, factions, armies }: any) {
                     />
                 );
             })()}
+
+            {/* === New Integrated Panels === */}
+
+            <Modal isOpen={activeView === 'research'} onClose={() => setActiveView('none')} title="Neural Archive — Research">
+                <ResearchPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'diplomacy'} onClose={() => setActiveView('none')} title="Neural Statecraft — Diplomacy">
+                <DiplomacyPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'ship-designer'} onClose={() => setActiveView('none')} title="Fleet Engineer — Ship Designer">
+                <ShipDesignerPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'leadership'} onClose={() => setActiveView('none')} title="Personnel & Leadership">
+                <LeadershipPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'battle'} onClose={() => setActiveView('none')} title="Battle Command — Tactical Override">
+                <BattleCommandPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'government'} onClose={() => setActiveView('none')} title="Government Domain">
+                <GovernmentPanel />
+            </Modal>
+
+            <Modal isOpen={activeView === 'doctrine'} onClose={() => setActiveView('none')} title="Empire Strategy — Doctrine">
+                <DoctrinePanel />
+            </Modal>
         </div>
     );
 }

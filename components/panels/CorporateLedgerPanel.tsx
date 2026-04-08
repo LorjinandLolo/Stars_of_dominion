@@ -20,8 +20,7 @@ import { CompanySnapshot, MarketTicker, CharterPower, Resource } from '@/types/u
 import { 
     charterCompanyAction, 
     commandPrivateersAction, 
-    taxColoniesAction, 
-    quickIssueEquitiesAction 
+    taxColoniesAction 
 } from '@/app/actions/company';
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -115,7 +114,7 @@ function FoundCharterDialog({ onClose }: { onClose: () => void }) {
         if (result.success) {
             onClose();
         } else {
-            console.error(result.message);
+            console.error(result.error);
         }
         setIsFounding(false);
     };
@@ -188,7 +187,7 @@ function FoundCharterDialog({ onClose }: { onClose: () => void }) {
 // ─── Main Panel ────────────────────────────────────────────────────────────────
 
 export default function CorporateLedgerPanel() {
-    const { corporateState } = useUIStore();
+    const { corporateState, playerFactionId } = useUIStore();
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [tab, setTab] = useState<'market' | 'companies'>('market');
     const [showFoundDialog, setShowFoundDialog] = useState(false);
@@ -196,27 +195,23 @@ export default function CorporateLedgerPanel() {
     const selected = corporateState.companies.find(c => c.id === selectedId) ?? null;
 
     const handlePrivateers = async () => {
-        if (!selectedId) return;
-        const res = await commandPrivateersAction(selectedId);
+        if (!selectedId || !playerFactionId) return;
+        const res = await commandPrivateersAction(selectedId, playerFactionId);
         if (res.success) {
             // Revalidation handles state
         }
     };
 
     const handleTax = async () => {
-        if (!selectedId || !selected) return;
-        const res = await taxColoniesAction(selectedId, selected.foundingFactionId);
+        if (!selectedId || !selected || !playerFactionId) return;
+        const res = await taxColoniesAction(selectedId, playerFactionId);
         if (res.success) {
             // Revalidation handles state
         }
     };
 
     const handleEquities = async () => {
-        if (!selectedId) return;
-        const res = await quickIssueEquitiesAction(selectedId);
-        if (res.success) {
-            // Revalidation handles state
-        }
+        // Feature not yet finalized
     };
 
     return (

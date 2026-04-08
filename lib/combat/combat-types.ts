@@ -68,6 +68,7 @@ export interface CombatantState {
     currentDirective?: PostBattleDirective;
     selectedStance?: CombatStance; // Player's override for next round
     selectedDirective?: PostBattleDirective; // Player's override for post-battle
+    selectedPrediction?: CombatStance; // Player's prediction of enemy stance for next round
     orbitalAllocation?: OrbitalAllocation;
     bombardmentMode?: BombardmentMode;
 }
@@ -90,6 +91,8 @@ export interface OngoingEngagementRound {
     roundNumber: number; // 1 to 3
     attackerStance?: CombatStance;
     defenderStance?: CombatStance;
+    attackerPredictedStance?: CombatStance;
+    defenderPredictedStance?: CombatStance;
     attackerAllocation?: OrbitalAllocation;
     defenderAllocation?: OrbitalAllocation; // Typically only one side controls orbit
 }

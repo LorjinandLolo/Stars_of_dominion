@@ -54,7 +54,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
   MIL_COMBAT_STANCE: {
     id: "MIL_COMBAT_STANCE",
     category: "military",
-    params: { combatId: "id", stance: "string" },
+    params: { combatId: "id", stance: "string", prediction: "string" },
     cost: {}
   },
   MIL_COMBAT_DIRECTIVE: {

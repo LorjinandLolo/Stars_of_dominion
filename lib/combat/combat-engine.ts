@@ -244,6 +244,21 @@ export function resolveEngagementRound(
     attackerPower *= (1.0 + attackerPredictionBonus);
     defenderPower *= (1.0 + defenderPredictionBonus);
 
+    // Manual Player Prediction Bonus (+15% Tactical Advantage)
+    const aPred = roundInput.attackerPredictedStance;
+    const dPred = roundInput.defenderPredictedStance;
+    let manualAttackerBonus = false;
+    let manualDefenderBonus = false;
+
+    if (aPred === dStance) {
+        attackerPower *= 1.15;
+        manualAttackerBonus = true;
+    }
+    if (dPred === aStance) {
+        defenderPower *= 1.15;
+        manualDefenderBonus = true;
+    }
+
     // HOI4 Damage Vectors Integration
     // HOI4 Damage Vectors Integration & Naval Air Support
     const aComp = state.attacker.composition;
@@ -324,6 +339,8 @@ export function resolveEngagementRound(
 
     if (attackerPredictionBonus > 0) report.events.push("Attacker Intel allowed stance prediction bonus.");
     if (defenderPredictionBonus > 0) report.events.push("Defender Intel allowed stance prediction bonus.");
+    if (manualAttackerBonus) report.events.push("Attacker successfully predicted enemy stance: +15% Tactical Advantage.");
+    if (manualDefenderBonus) report.events.push("Defender successfully predicted enemy stance: +15% Tactical Advantage.");
 
     // Supply decay
     applySupplyDecay(state, report, roundInput);

@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Eye, TrendingUp, ScrollText, Radio, Users, Flame, Building2 } from 'lucide-react';
+import { Eye, TrendingUp, ScrollText, Radio, Users, Flame, Building2, Atom, Handshake, Cpu, UserCircle, Sword, Scale, BookOpen } from 'lucide-react';
 
 interface CommandDockProps {
     onOpenEvent: () => void;
@@ -12,9 +12,16 @@ interface CommandDockProps {
     onOpenColdWar: () => void;
     onOpenCorporate: () => void;
     onOpenBuild: () => void;
+    onOpenResearch: () => void;
+    onOpenDiplomacy: () => void;
+    onOpenShipDesigner: () => void;
+    onOpenLeadership: () => void;
+    onOpenBattle: () => void;
+    onOpenGovernment: () => void;
+    onOpenDoctrine: () => void;
 }
 
-export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction, onOpenIntrigue, onOpenTrade, onOpenColdWar, onOpenCorporate, onOpenBuild }: CommandDockProps) {
+export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction, onOpenIntrigue, onOpenTrade, onOpenColdWar, onOpenCorporate, onOpenBuild, onOpenResearch, onOpenDiplomacy, onOpenShipDesigner, onOpenLeadership, onOpenBattle, onOpenGovernment, onOpenDoctrine }: CommandDockProps) {
     const DockButton = ({ label, icon, onClick, colorClass }: any) => {
         const colors: any = {
             blue: { border: 'group-hover:border-blue-500', bg: 'group-hover:bg-blue-600/20' },
@@ -22,6 +29,7 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
             yellow: { border: 'group-hover:border-yellow-500', bg: 'group-hover:bg-yellow-600/20' },
             red: { border: 'group-hover:border-red-500', bg: 'group-hover:bg-red-600/20' },
             cyan: { border: 'group-hover:border-cyan-500', bg: 'group-hover:bg-cyan-600/20' },
+            purple: { border: 'group-hover:border-purple-500', bg: 'group-hover:bg-purple-600/20' },
         };
         const c = colors[colorClass] || colors.blue;
 
@@ -51,6 +59,24 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
     return (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 pointer-events-auto items-end">
 
+            {/* === Combat & Military === */}
+            <DockButton
+                label="Battle Command"
+                colorClass="red"
+                onClick={onOpenBattle}
+                icon={<Sword size={24} />}
+            />
+
+            <DockButton
+                label="Ship Designer"
+                colorClass="blue"
+                onClick={onOpenShipDesigner}
+                icon={<Cpu size={24} />}
+            />
+
+            <div className="h-2" />
+
+            {/* === Intelligence & Intrigue === */}
             <DockButton
                 label="Intelligence"
                 colorClass="red"
@@ -58,6 +84,16 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
                 icon={<Eye size={24} />}
             />
 
+            <DockButton
+                label="Cold War"
+                colorClass="yellow"
+                onClick={onOpenColdWar}
+                icon={<Flame size={24} />}
+            />
+
+            <div className="h-2" />
+
+            {/* === Economy & Development === */}
             <DockButton
                 label="Construction"
                 colorClass="cyan"
@@ -73,21 +109,53 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
             />
 
             <DockButton
-                label="Cold War"
-                colorClass="yellow"
-                onClick={onOpenColdWar}
-                icon={<Flame size={24} />}
-            />
-
-            <DockButton
                 label="Galactic Exchange"
                 colorClass="green"
                 onClick={onOpenCorporate}
                 icon={<Building2 size={24} />}
             />
 
-            <div className="h-4" /> {/* Spacer */}
+            <DockButton
+                label="Research"
+                colorClass="blue"
+                onClick={onOpenResearch}
+                icon={<Atom size={24} />}
+            />
 
+            <div className="h-2" />
+
+            {/* === Diplomacy & Politics === */}
+            <DockButton
+                label="Diplomacy"
+                colorClass="blue"
+                onClick={onOpenDiplomacy}
+                icon={<Handshake size={24} />}
+            />
+
+            <DockButton
+                label="Empire Doctrine"
+                colorClass="purple"
+                onClick={onOpenDoctrine}
+                icon={<BookOpen size={24} />}
+            />
+
+            <DockButton
+                label="Government"
+                colorClass="yellow"
+                onClick={onOpenGovernment}
+                icon={<Scale size={24} />}
+            />
+
+            <DockButton
+                label="Leadership"
+                colorClass="yellow"
+                onClick={onOpenLeadership}
+                icon={<UserCircle size={24} />}
+            />
+
+            <div className="h-2" />
+
+            {/* === News & Comms === */}
             <DockButton
                 label="Faction Council"
                 colorClass="yellow"
@@ -109,7 +177,7 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
                 icon={<Radio size={24} />}
             />
 
-            {/* "Next Turn" or "Action" Big Button Placeholder */}
+            {/* GO Button */}
             <div className="w-20 h-20 bg-amber-600 rounded-full border-4 border-amber-400 shadow-[0_0_20px_rgba(202,138,4,0.4)] flex items-center justify-center cursor-pointer hover:scale-105 transition-transform mt-4 mr-1">
                 <span className="font-display font-bold text-2xl text-slate-900">GO</span>
             </div>

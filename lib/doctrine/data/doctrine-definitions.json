@@ -3,62 +3,98 @@
         "id": "doctrine_military_offensive",
         "domain": "military",
         "name": "Surgical Strike",
-        "description": "Prioritizes speed and precision over heavy armor.",
+        "description": "Prioritizes speed and precision over heavy armor. Fleets strike first and withdraw before the enemy can rally.",
         "modifiers": {
             "fleetSpeed": 0.2,
             "offensiveDamage": 0.1,
             "survivalPower": -0.15
         },
-        "enabledActions": ["preemptive_strike"]
+        "enabledActions": ["preemptive_strike"],
+        "behaviorBias": {
+            "crisisResponseBias": "attack",
+            "diplomaticBias": "aggressive",
+            "combatStanceBias": "blitz",
+            "biasStrength": "strong"
+        }
     },
     {
         "id": "doctrine_military_defensive",
         "domain": "military",
         "name": "Planetary Bastion",
-        "description": "Heavy investment in planetary and system defenses.",
+        "description": "Heavy investment in planetary and system defenses. Fleets hold ground while fortified positions absorb enemy advances.",
         "modifiers": {
             "defensiveStrength": 0.25,
             "unrestRate": -0.1
+        },
+        "behaviorBias": {
+            "crisisResponseBias": "defend",
+            "diplomaticBias": "isolationist",
+            "combatStanceBias": "entrench",
+            "biasStrength": "strong"
         }
     },
     {
         "id": "doctrine_economic_expansion",
         "domain": "economic",
         "name": "Frontier Incentives",
-        "description": "Encourages rapid settlement and resource extraction.",
+        "description": "Encourages rapid settlement and resource extraction. Economic growth drives outward — frontier worlds are subsidized.",
         "modifiers": {
             "popGrowth": 0.15,
             "infraCost": -0.1
+        },
+        "behaviorBias": {
+            "crisisResponseBias": "negotiate",
+            "diplomaticBias": "cooperative",
+            "combatStanceBias": "feint",
+            "biasStrength": "weak"
         }
     },
     {
         "id": "doctrine_economic_consolidation",
         "domain": "economic",
         "name": "Core World Efficiency",
-        "description": "Focuses on maximizing output from established systems.",
+        "description": "Focuses on maximizing output from established systems. Taxation and coordination yield higher stability and income.",
         "modifiers": {
             "taxationRate": 0.2,
             "productionCoordination": 0.1
+        },
+        "behaviorBias": {
+            "crisisResponseBias": "defend",
+            "diplomaticBias": "cooperative",
+            "combatStanceBias": "entrench",
+            "biasStrength": "moderate"
         }
     },
     {
         "id": "doctrine_intel_aggressive",
         "domain": "intelligence",
         "name": "Active Subversion",
-        "description": "Aggressive infiltration and sabotage operations.",
+        "description": "Aggressive infiltration and sabotage operations. Intel networks are weaponized — the empire strikes in the shadows before the enemy can see it coming.",
         "modifiers": {
             "intelPointsGen": 0.2,
             "sabotageSuccess": 0.15
+        },
+        "behaviorBias": {
+            "crisisResponseBias": "attack",
+            "diplomaticBias": "deceptive",
+            "combatStanceBias": "feint",
+            "biasStrength": "moderate"
         }
     },
     {
         "id": "doctrine_intel_defensive",
         "domain": "intelligence",
         "name": "Iron Curtain",
-        "description": "Focuses on counter-intelligence and internal security.",
+        "description": "Focuses on counter-intelligence and internal security. All information flows are locked down — the empire is a closed book.",
         "modifiers": {
             "counterIntelStrength": 0.3,
             "internalSecurity": 0.2
+        },
+        "behaviorBias": {
+            "crisisResponseBias": "defend",
+            "diplomaticBias": "isolationist",
+            "combatStanceBias": "entrench",
+            "biasStrength": "strong"
         }
     }
 ]

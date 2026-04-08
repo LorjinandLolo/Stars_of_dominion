@@ -771,8 +771,13 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'MIL_COMBAT_STANCE': {
             const combat = world.activeCombats.get(payload.combatId);
             if (!combat) return;
-            if (combat.attacker.factionId === factionId) combat.attacker.selectedStance = payload.stance;
-            else if (combat.defender.factionId === factionId) combat.defender.selectedStance = payload.stance;
+            if (combat.attacker.factionId === factionId) {
+                combat.attacker.selectedStance = payload.stance;
+                combat.attacker.selectedPrediction = payload.prediction;
+            } else if (combat.defender.factionId === factionId) {
+                combat.defender.selectedStance = payload.stance;
+                combat.defender.selectedPrediction = payload.prediction;
+            }
             break;
         }
 

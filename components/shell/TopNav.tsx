@@ -26,7 +26,6 @@ import {
     Users,
     Zap
 } from 'lucide-react';
-import { advanceTimeAction } from '@/app/actions/construction';
 import { getGlobalStateAction } from '@/app/actions/construction-sim';
 import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
 
@@ -175,12 +174,6 @@ export default function TopNav() {
 
 
 
-
-    const handleAdvance = async (delta: number) => {
-        await advanceTimeAction(delta);
-        const state = await getGlobalStateAction();
-        setNowSeconds(state.nowSeconds);
-    };
 
     // Simple date formatter (assuming season 1 started at timestamp 0 for simplicity)
     const dayOfSeason = Math.floor(nowSeconds / 86400) + 1;
