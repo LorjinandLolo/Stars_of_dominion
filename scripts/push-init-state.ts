@@ -40,7 +40,19 @@ async function pushInitialState() {
         console.log('✅ Successfully pushed initial state to "default-session"');
     } catch (err: any) {
         if (err.code === 409) {
-            console.log('ℹ️ default-session already exists in Appwrite. Skipping initialization.');
+            console.log('ℹ️ default-session already exists. Overwriting with fresh seeded state...');
+            const world = getGameWorldState();
+            const snapshot = serializeWorld(world);
+            await databases.updateDocument(
+                DB_ID,
+                COLL_SESSIONS,
+                'default-session',
+                {
+                    snapshot: snapshot,
+                    lastTickAt: new Date().toISOString()
+                }
+            );
+            console.log('✅ Successfully updated "default-session" with new seeded state.');
         } else {
             console.error('❌ Failed to push initial state:', err.message);
         }

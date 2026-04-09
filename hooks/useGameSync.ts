@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { appwriteClient, databases } from '@/lib/appwrite-client';
+import { deserializeWorld } from '@/lib/persistence/save-service';
 
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 const COLL_SESSIONS = 'multiplayer_sessions';
@@ -27,128 +28,108 @@ export function useGameSync() {
 
         const syncSnapshot = async (snapshotJson: string) => {
              try {
-                 const data = JSON.parse(snapshotJson);
+                 // 1. Use the core deserializer to handle our Map-based storage format
+                 const world = deserializeWorld(snapshotJson);
 
-                 // Phase 4: Fetch and Merge Shards
+                 // 2. Fetch and Merge Shards (if they exist)
                  try {
                      const factionDocs = await databases.listDocuments(DB_ID, 'game_factions');
                      
-                     if (!data.movement) data.movement = { fleets: {} };
-                     if (!data.movement.fleets) data.movement.fleets = {};
-                     if (!data.economy) data.economy = { factions: {} };
-                     if (!data.economy.factions) data.economy.factions = {};
-                     if (!data.tech) data.tech = {};
-                     if (!data.espionage) data.espionage = { agents: {}, intelNetworks: {} };
-                     if (!data.espionage.agents) data.espionage.agents = {};
-                     if (!data.espionage.intelNetworks) data.espionage.intelNetworks = {};
+                     // Helper to check if string is JSON before parsing
+                     const safeParse = (str: string) => {
+                         try { return JSON.parse(str); } catch { return null; }
+                     };
 
                      factionDocs.documents.forEach((fDoc: any) => {
-                         const shard = JSON.parse(fDoc.data);
-                         if (shard.fleets) shard.fleets.forEach((f: any) => data.movement.fleets[f.id] = f);
-                         if (shard.economy) data.economy.factions[shard.factionId] = shard.economy;
-                         if (shard.tech) data.tech[shard.factionId] = shard.tech;
-                         if (shard.espionageAgents) shard.espionageAgents.forEach((a: any) => data.espionage.agents[a.id] = a);
-                         if (shard.intelNetworks) shard.intelNetworks.forEach((n: any) => data.espionage.intelNetworks[n.id] = n);
+                         const shardData = safeParse(fDoc.data);
+                         if (!shardData) return;
+                         
+                         // Note: Shards themselves might be serialized with mapsToRecords
+                         // but serializeWorld/deserializeWorld handles the root.
+                         // For now we assume shards are standard records as per extractFactionShard.
+                         
+                         if (shardData.fleets) {
+                             shardData.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
+                         }
+                         if (shardData.economy && shardData.factionId) {
+                             world.economy.factions.set(shardData.factionId, shardData.economy);
+                         }
+                         if (shardData.tech && shardData.factionId) {
+                             world.tech.set(shardData.factionId, shardData.tech);
+                         }
                      });
                  } catch (err) {
-                     console.warn('[GameSync] Failed to fetch shards, UI may be incomplete.');
+                     console.warn('[GameSync] Failed to fetch shards, UI may use session base.');
                  }
                  
-                 if (data.movement?.fleets) {
-                     let parsedFleets = Array.from(Object.values(data.movement.fleets)) as any[];
-                     const visibility = playerFactionId && data.movement.factionVisibility 
-                         ? data.movement.factionVisibility[playerFactionId] 
-                         : null;
+                 // 3. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
+                 const systemList = Array.from(world.movement.systems.values());
+                 setSystems(systemList);
 
-                     if (playerFactionId && visibility) {
-                         parsedFleets = parsedFleets.filter(f => {
-                             if (f.factionId === playerFactionId) return true;
-                             const sysId = f.currentSystemId || f.destinationSystemId;
-                             if (!sysId) return false;
-                             const entry = visibility[sysId];
-                             return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
-                         });
-                     }
-                     setFleets(parsedFleets);
-                     if (visibility) setFactionVisibility(visibility);
-                 }
+                 const planetList = Array.from(world.construction.planets.values());
+                 setPlanets(planetList);
 
-                 if (data.nowSeconds !== undefined) setNowSeconds(data.nowSeconds);
+                 let fleetList = Array.from(world.movement.fleets.values());
                  
-                 // Pillar 1: Diplomacy & Rivalry
-                 if (data.rivalries) {
-                     const rivalryArray = Array.from(Object.values(data.rivalries));
-                     useUIStore.getState().updateDiplomacy({
-                         rivalries: rivalryArray as any,
-                         treaties: data.treaties ? Array.from(Object.values(data.treaties)) : [],
-                         tradePacts: data.tradePacts ? Array.from(Object.values(data.tradePacts)) : [],
-                         tributes: data.tributes ? Array.from(Object.values(data.tributes)) : [],
-                         proxyConflicts: data.proxyConflicts ? Array.from(Object.values(data.proxyConflicts)) : []
+                 // Map Fog-of-War / Visibility
+                 const visibility = playerFactionId 
+                    ? world.movement.factionVisibility.get(playerFactionId) || null
+                    : null;
+
+                 if (playerFactionId && visibility) {
+                     fleetList = fleetList.filter(f => {
+                         if (f.factionId === playerFactionId) return true;
+                         const sysId = f.currentSystemId || f.destinationSystemId;
+                         if (!sysId) return false;
+                         const entry = visibility[sysId];
+                         return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
                      });
+                     setFactionVisibility(visibility);
                  }
 
-                 // Pillar 2: Intelligence & Espionage
-                 if (data.espionage) {
-                     useUIStore.getState().updateEspionage(data.espionage);
-                 }
+                 setFleets(fleetList);
+                 setNowSeconds(world.nowSeconds);
+                 
+                 // Pillar 1: Diplomacy
+                 useUIStore.getState().updateDiplomacy({
+                     rivalries: Array.from(world.rivalries.values()),
+                     treaties: Array.from(world.treaties.values()),
+                     tradePacts: Array.from(world.tradePacts.values()),
+                     tributes: Array.from(world.tributes.values()),
+                     proxyConflicts: Array.from(world.proxyConflicts.values())
+                 });
 
                  // Pillar 3: Economy (Live Factions)
-                 if (data.economy?.factions) {
-                     const factionList = Array.from(Object.values(data.economy.factions));
-                     useUIStore.getState().updatePolitics({
-                         allFactions: factionList
-                     });
-                     useUIStore.getState().setFactions(data.economy.factions);
-                 }
+                 const factionMap: Record<string, any> = {};
+                 world.economy.factions.forEach((f, id) => factionMap[id] = f);
+                 
+                 useUIStore.getState().setFactions(factionMap);
+                 useUIStore.getState().updatePolitics({
+                     allFactions: Object.values(factionMap)
+                 });
 
                  // Pillar 4: Tech
-                 if (data.tech && playerFactionId) {
-                     const pTech = data.tech[playerFactionId];
+                 if (playerFactionId) {
+                     const pTech = world.tech.get(playerFactionId);
                      if (pTech) useUIStore.getState().updateTech(pTech);
                  }
 
-                 // Pillar 5: Press & Media
-                 if (data.press) {
-                     useUIStore.getState().updatePress(data.press);
-                 }
+                 // Recalculate contested status
+                 const systemGroups: Record<string, string[]> = {};
+                 planetList.forEach(p => {
+                     if (!systemGroups[p.systemId]) systemGroups[p.systemId] = [];
+                     if (p.ownerId) systemGroups[p.systemId].push(p.ownerId);
+                 });
+                 Object.entries(systemGroups).forEach(([sysId, owners]) => {
+                     const uniqueOwners = new Set(owners);
+                     setSystemContested(sysId, uniqueOwners.size > 1);
+                 });
 
-                 // Pillar 6: Construction & Planets (Multi-Planet Sync)
-                 if (data.construction?.planets) {
-                     const planetList = Array.from(Object.values(data.construction.planets)) as any[];
-                     setPlanets(planetList);
-
-                     // Recalculate contested status for each system based on planetary ownership
-                     const systemGroups: Record<string, string[]> = {};
-                     planetList.forEach(p => {
-                         if (!systemGroups[p.systemId]) systemGroups[p.systemId] = [];
-                         if (p.ownerId) systemGroups[p.systemId].push(p.ownerId);
-                     });
-
-                     Object.entries(systemGroups).forEach(([sysId, owners]) => {
-                         const uniqueOwners = new Set(owners);
-                         setSystemContested(sysId, uniqueOwners.size > 1);
-                     });
-                 }
-
-                 // Pillar 7: Systems & Movement Structure
-                 if (data.movement?.systems) {
-                     const systemList = Array.from(Object.values(data.movement.systems)) as any[];
-                     setSystems(systemList);
-                 }
-
-                 if (data.leadership) {
-                     updateEmpireIdentity({
-                         leadership: {
-                             ...data.leadership,
-                             leaders: new Map(Object.entries(data.leadership.leaders || {}))
-                         }
-                     });
-                 }
                  setIsLoading(false);
                  setError(null);
-                 setRetryCount(0); // Success! Reset retries.
+                 setRetryCount(0);
              } catch(err) {
-                 console.error('Failed to parse realtime sync payload', err);
+                 console.error('[GameSync] Critical parse error:', err);
              }
         };
 
