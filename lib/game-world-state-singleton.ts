@@ -357,9 +357,11 @@ export function getGameWorldState(): GameWorldState {
             if (f.capitalSystemId) {
                 globalGameStateInstance!.movement.factionVisibility.set(id, {
                     [f.capitalSystemId]: {
-                        systemId: f.capitalSystemId,
                         revealStage: 'surveyed',
-                        lastScanTick: 0
+                        lastSeenAt: new Date().toISOString(),
+                        visibleTags: globalGameStateInstance!.movement.systems.get(f.capitalSystemId)?.tags || [],
+                        observedFleetIds: [],
+                        movementIntentVisible: true
                     }
                 });
             }
