@@ -1,5 +1,5 @@
 const fs = require('fs');
-const content = fs.readFileSync('lib/ui-mock-data.ts', 'utf-8');
+const content = fs.readFileSync('lib/mocks/ui-mock-data.test.ts', 'utf-8');
 const lines = content.split('\n');
 let minQ = Infinity, maxQ = -Infinity, minR = Infinity, maxR = -Infinity;
 let count = 0;

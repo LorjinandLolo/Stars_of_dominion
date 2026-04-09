@@ -15,7 +15,7 @@ import type { EconomyWorldState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
 import { CorporateWorldState, createEmptyCorporateWorldState } from './economy/corporate/company-registry';
 import { ConstructionWorldState, Planet, PlanetTile } from './construction/construction-types';
-import { mockCouncilState } from './ui-mock-data';
+import { defaultCouncilState } from './ui/defaults';
 import { Faction, Resource, Market, TradeAgreement } from './trade-system/types';
 import { ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-types';
 import { PressFactionType, SimulationState as PressSimulationState } from './press-system/types';
@@ -307,7 +307,7 @@ export function getGameWorldState(): GameWorldState {
             propagandaCampaigns: new Map(),
             activeCombats: new Map(),
             construction: buildEmptyConstructionState(),
-            council: mockCouncilState,
+            council: defaultCouncilState,
             press: buildEmptyPressState(),
             intelligence: buildEmptyIntelligenceState(),
             leadership: buildEmptyLeadershipState(),

@@ -30,6 +30,18 @@ import type {
 } from '@/types/ui-state';
 import type { Fleet, FactionVisibility } from '@/lib/movement/types';
 import type { Faction } from '@/lib/trade-system/types';
+import { 
+    defaultCouncilState, 
+    defaultPlayerState, 
+    defaultSeasonState, 
+    defaultEspionageState, 
+    defaultPoliticsState, 
+    defaultDiplomacyState, 
+    defaultTechState, 
+    defaultDiscourseState, 
+    defaultCorporateState,
+    defaultEmpireIdentityState 
+} from '../ui/defaults';
 
 // ─── Store shape ──────────────────────────────────────────────────────────────
 
@@ -312,17 +324,17 @@ export const useUIStore = create<UIStore>((set, get) => ({
         })),
 
     // ── Council ──
-    councilState: { status: 'absent', members: [], policies: [], votes: {} } as any,
+    councilState: defaultCouncilState,
     updateCouncil: (patch) =>
         set((state) => ({ councilState: { ...state.councilState, ...patch } })),
 
     // ── Player ──
-    playerState: { role: 'sovereign', factionId: '', credits: 0, pirateInvolvementScore: 0 } as any,
+    playerState: defaultPlayerState,
     updatePlayer: (patch) =>
         set((state) => ({ playerState: { ...state.playerState, ...patch } })),
 
     // ── Season ──
-    seasonState: { season: 0, phase: 'active', regionalLocks: {}, nearLockRegionIds: [] } as any,
+    seasonState: defaultSeasonState,
     updateSeason: (patch) =>
         set((state) => ({ seasonState: { ...state.seasonState, ...patch } })),
     lockRegion: (regionId) =>
@@ -365,27 +377,27 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setShowEconomicTerminal: (show) => set({ showEconomicTerminal: show }),
 
     // ── Espionage ──
-    espionageState: { operations: [], counterIntel: {}, networks: {} } as any,
+    espionageState: defaultEspionageState,
     updateEspionage: (patch) =>
         set((state) => ({ espionageState: { ...state.espionageState, ...patch } })),
 
     // ── Politics ──
-    politicsState: { blocs: [], activePolicies: [], crisisConditionMet: false, activeIndicators: [], allFactions: [] } as any,
+    politicsState: defaultPoliticsState,
     updatePolitics: (patch) =>
         set((state) => ({ politicsState: { ...state.politicsState, ...patch } })),
 
     // ── Diplomacy ──
-    diplomacyState: { activeTreaties: [], pendingAgreements: [] } as any,
+    diplomacyState: defaultDiplomacyState,
     updateDiplomacy: (patch) =>
         set((state) => ({ diplomacyState: { ...state.diplomacyState, ...patch } })),
 
     // ── Tech ──
-    techState: { researched: [], researchQueue: [], knownBlueprints: [] } as any,
+    techState: defaultTechState,
     updateTech: (patch) =>
         set((state) => ({ techState: { ...state.techState, ...patch } })),
 
     // ── Discourse ──
-    discourseState: { activeChats: [], messages: {} } as any,
+    discourseState: defaultDiscourseState,
     updateDiscourse: (patch) =>
         set((state) => ({ discourseState: { ...state.discourseState, ...patch } })),
     addDiscourseMessage: (factionId, message) =>
@@ -403,7 +415,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         }),
 
     // ── Corporate ──
-    corporateState: { activeCharters: [], marketFluctuations: {} } as any,
+    corporateState: defaultCorporateState,
     updateCorporate: (patch) =>
         set((state) => ({ corporateState: { ...state.corporateState, ...patch } })),
 
@@ -433,15 +445,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         set((state) => ({ shipDesigns: state.shipDesigns.filter((d) => d.id !== id) })),
 
     // ── Empire Identity ──
-    empireIdentity: {
-        leadership: { leaders: new Map(), recruitmentPool: [], nowSeconds: 0 },
-        doctrines: { 
-            factionId: '', 
-            activeDoctrines: { military: null, economic: null, intelligence: null }, 
-            lastChangeTimestamps: { military: 0, economic: 0, intelligence: 0 } 
-        },
-        reputation: {},
-    },
+    empireIdentity: defaultEmpireIdentityState,
     updateEmpireIdentity: (patch) =>
         set((state) => ({ empireIdentity: { ...state.empireIdentity, ...patch } })),
 

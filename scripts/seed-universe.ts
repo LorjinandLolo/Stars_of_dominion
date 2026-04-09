@@ -1,7 +1,7 @@
 import { Client, Databases, ID, Query } from 'node-appwrite';
 import dotenv from 'dotenv';
 import path from 'path';
-import { mockSystems } from '../lib/ui-mock-data';
+import { mockSystems } from '../lib/mocks/ui-mock-data.test';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 

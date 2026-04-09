@@ -2,7 +2,7 @@ const fs = require('fs');
 
 try {
     const data = JSON.parse(fs.readFileSync('generated-systems.json', 'utf-8'));
-    let ts = fs.readFileSync('lib/ui-mock-data.ts', 'utf-8');
+    let ts = fs.readFileSync('lib/mocks/ui-mock-data.test.ts', 'utf-8');
 
     // Make mockSystems deterministic array instead of generated
     // By matching the previously injected array signature
@@ -30,8 +30,8 @@ try {
         return match;
     });
 
-    fs.writeFileSync('lib/ui-mock-data.ts', ts);
-    console.log(`Successfully patched lib/ui-mock-data.ts with ${data.systemNodes.length} systems and ${data.links.length} links.`);
+    fs.writeFileSync('lib/mocks/ui-mock-data.test.ts', ts);
+    console.log(`Successfully patched lib/mocks/ui-mock-data.test.ts with ${data.systemNodes.length} systems and ${data.links.length} links.`);
 } catch (err) {
     console.error(err);
 }
