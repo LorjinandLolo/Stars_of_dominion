@@ -67,6 +67,8 @@ export interface SystemNode {
     isContested?: boolean;
     /** Instability 0–100. Affects deep-space expansion and infra degradation. */
     instability: number;
+    /** Current escalation/conflict level 0–10. */
+    escalationLevel: number;
     /** Localized security level 0-100. Low security attracts pirates. */
     security?: number;
     /** Trade volume/value 0-100. High value attracts pirates. */

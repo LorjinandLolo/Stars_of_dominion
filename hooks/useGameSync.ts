@@ -63,7 +63,13 @@ export function useGameSync() {
                  }
                  
                  // 3. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
-                 const systemList = Array.from(world.movement.systems.values());
+                 const systemList = Array.from(world.movement.systems.values()).map(sys => ({
+                    ...sys,
+                    // Ensure mandatory UI fields are satisfied even if optional in simulation
+                    escalationLevel: sys.escalationLevel ?? 0,
+                    security: sys.security ?? 50,
+                    tradeValue: sys.tradeValue ?? 0
+                 }));
                  setSystems(systemList);
 
                  const planetList = Array.from(world.construction.planets.values());
