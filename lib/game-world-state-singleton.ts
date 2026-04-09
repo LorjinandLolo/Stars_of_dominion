@@ -9,6 +9,8 @@
  * For the current single-server dev setup this provides immediate interactivity.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { GameWorldState, defaultSharedState } from './game-world-state';
 import type { MovementWorldState } from './movement/types';
 import type { EconomyWorldState } from './economy/economy-types';
@@ -34,8 +36,28 @@ let globalCorporateStateInstance: CorporateWorldState | null = null;
 let globalConstructionStateInstance: ConstructionWorldState | null = null;
 
 function buildEmptyMovementState(): MovementWorldState {
+    const systems = new Map();
+    
+    // Load procedural systems from generated-systems.json
+    try {
+        const systemsPath = path.resolve(process.cwd(), 'generated-systems.json');
+        if (fs.existsSync(systemsPath)) {
+            const data = JSON.parse(fs.readFileSync(systemsPath, 'utf-8'));
+            if (data.systemNodes) {
+                data.systemNodes.forEach((sys: any) => {
+                    systems.set(sys.id, {
+                        ...sys,
+                        tags: sys.tags || []
+                    });
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[MovementState] Failed to load generated-systems.json:', err);
+    }
+
     return {
-        systems: new Map(),
+        systems,
         planets: new Map(),
         gates: new Map(),
         tradeSegments: new Map(),
@@ -84,7 +106,13 @@ function buildEmptyEconomyState(): EconomyWorldState {
             capitalSystemId: data.capitalId || 'unknown-capital',
             theatreId: theatreId,
             backingRatioPolicy: 0.5,
-            reserves: { [Resource.ENERGY]: 2500, [Resource.METALS]: 500, [Resource.FOOD]: 500 },
+            reserves: { 
+                [Resource.CREDITS]: 50000,
+                [Resource.METALS]: 3000, 
+                [Resource.CHEMICALS]: 1500,
+                [Resource.FOOD]: 2500,
+                [Resource.ENERGY]: 5000 
+            },
             creditSupply: 1000000,
             liquidity: 500000,
             debt: 0,
@@ -324,6 +352,17 @@ export function getGameWorldState(): GameWorldState {
         // However, we ensure all seeded factions have a functional Homeworld
         globalGameStateInstance.economy.factions.forEach((f, id) => {
             initializeFactionHomeWorld(globalGameStateInstance!, id);
+            
+            // Pillar: Visibility — Factions start with their home system surveyed
+            if (f.capitalSystemId) {
+                globalGameStateInstance!.movement.factionVisibility.set(id, {
+                    [f.capitalSystemId]: {
+                        systemId: f.capitalSystemId,
+                        revealStage: 'surveyed',
+                        lastScanTick: 0
+                    }
+                });
+            }
         });
     }
     return globalGameStateInstance!;

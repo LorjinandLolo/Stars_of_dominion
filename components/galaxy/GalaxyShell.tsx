@@ -155,6 +155,26 @@ export default function GalaxyShell() {
     const hasMoved = useRef(false);
     const lastMouse = useRef({ x: 0, y: 0 });
 
+    const { focusTarget, setFocusTarget } = useUIStore();
+
+    // Respond to focus target changes from external components (ResourceBar, GameShell)
+    useEffect(() => {
+        if (focusTarget) {
+            const px = hexToPixel(focusTarget.x, focusTarget.y);
+            // Center is (0,0) of the map space, so we pan to negative of target pixel
+            // minus the offset of the bounding box centers if necessary. 
+            // The dynamicVb uses svgMinX/Y as base.
+            setPan({ 
+                x: px.x - (svgMinX + (svgMaxX - svgMinX) / 2), 
+                y: px.y - (svgMinY + (svgMaxY - svgMinY) / 2) 
+            });
+            if (focusTarget.zoom) setZoom(focusTarget.zoom);
+            
+            // Clear target after consuming to allow re-triggering same target
+            setFocusTarget(null);
+        }
+    }, [focusTarget, setFocusTarget, svgMinX, svgMaxX, svgMinY, svgMaxY]);
+
     const dynamicVb = useMemo(() => {
         const w = (svgMaxX - svgMinX) / zoom;
         const h = (svgMaxY - svgMinY) / zoom;
@@ -176,7 +196,7 @@ export default function GalaxyShell() {
         const dx = (e.clientX - lastMouse.current.x) * (2 / zoom);
         const dy = (e.clientY - lastMouse.current.y) * (2 / zoom);
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) hasMoved.current = true;
-        setPan((p) => ({ x: p.x - dx, y: p.y - dy }));
+        setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
         lastMouse.current = { x: e.clientX, y: e.clientY };
     };
 

@@ -47,6 +47,8 @@ const PANEL_MAP = {
     designer: <ShipDesignerPanel />,
 } as const;
 
+import ResourceBar from '@/components/shell/ResourceBar';
+
 export default function GameShell() {
     const { 
         activeTab, 
@@ -57,7 +59,10 @@ export default function GameShell() {
         setPlayerFactionId,
         floatedTabs,
         closeFloatedTab,
-        updateFloatedTabPos
+        updateFloatedTabPos,
+        systems,
+        factions,
+        setFocusTarget
     } = useUIStore();
     const router = useRouter();
 
@@ -85,13 +90,29 @@ export default function GameShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Auto-focus capital on first load once systems and faction matched
+    useEffect(() => {
+        if (playerFactionId && systems.length > 0) {
+            const faction = factions[playerFactionId];
+            if (faction && faction.capitalSystemId) {
+                const capital = systems.find(s => s.id === faction.capitalSystemId);
+                if (capital) {
+                    setFocusTarget({ x: capital.q, y: capital.r, zoom: 1.5 });
+                }
+            }
+        }
+    }, [playerFactionId, systems, factions, setFocusTarget]);
+
     const isFloated = activeTab in floatedTabs;
     const activePanel = isFloated ? null : PANEL_MAP[activeTab as keyof typeof PANEL_MAP];
 
     return (
-        <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950">
+        <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950 text-slate-200">
             {/* ── Top Navigation ─────────────────────────────────────────────────── */}
             <TopNav />
+            
+            {/* ── Resource Bar ───────────────────────────────────────────────────── */}
+            <ResourceBar />
 
             {/* ── Main area ──────────────────────────────────────────────────────── */}
             <div className="flex flex-1 overflow-hidden relative">
