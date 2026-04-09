@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import OverlayToggleBar from './OverlayToggleBar';
 import SystemContextPanel from './SystemContextPanel';
