@@ -153,9 +153,11 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
         }
         const factionVis = world.movement.factionVisibility.get(factionId)!;
         factionVis[capitalSystemId] = {
-            systemId: capitalSystemId,
             revealStage: 'surveyed',
-            lastScanTick: 0
+            lastSeenAt: new Date().toISOString(),
+            visibleTags: world.movement.systems.get(capitalSystemId)?.tags || [],
+            observedFleetIds: [],
+            movementIntentVisible: true
         };
     });
 }
