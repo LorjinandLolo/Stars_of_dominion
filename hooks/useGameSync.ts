@@ -79,7 +79,7 @@ export function useGameSync() {
                  
                  // Map Fog-of-War / Visibility
                  const visibility = playerFactionId 
-                    ? world.movement.factionVisibility.get(playerFactionId) || null
+                    ? world.movement.factionVisibility.get(playerFactionId) || {}
                     : null;
 
                  if (playerFactionId && visibility) {

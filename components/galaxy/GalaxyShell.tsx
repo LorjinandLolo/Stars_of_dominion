@@ -112,7 +112,7 @@ function getVisibilityStyles(
             return { ...baseColors, opacity: 1, showDetails: true, showDot: true };
         case 'unknown':
         default:
-            return { fill: '#020617', stroke: '#0f172a', opacity: 0.3, showDetails: false, showDot: false };
+            return { fill: '#1e293b', stroke: '#334155', opacity: 0.7, showDetails: false, showDot: false };
     }
 }
 

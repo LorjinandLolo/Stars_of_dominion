@@ -486,6 +486,8 @@ export default function SystemContextPanel() {
     const system = systems.find((s) => s.id === selectedSystemId);
     if (!system) return null;
 
+    const revealStage = factionVisibility?.[system.id]?.revealStage || 'unknown';
+
     const region = regions.find((r) => r.systemIds.includes(system.id));
 
     const statusColor = (v: number) =>
@@ -689,21 +691,24 @@ export default function SystemContextPanel() {
                                 activeTab === 'system'
                                     ? 'text-amber-400 bg-slate-800/50 border-b-2 border-amber-500'
                                     : 'text-slate-500 hover:text-slate-300'
-                            }`}
+                                }`}
                         >
                             System
                         </button>
-                        <button
-                            onClick={() => setActiveTab('planets')}
-                            className={`flex-1 py-2 text-[10px] font-display tracking-widest uppercase transition-colors flex items-center justify-center gap-1.5 ${
-                                activeTab === 'planets'
-                                    ? 'text-sky-400 bg-slate-800/50 border-b-2 border-sky-500'
-                                    : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                        >
-                            <Globe size={10} />
-                            Planets ({planets.length})
-                        </button>
+                        {/* Planets Tab - hidden if unknown */}
+                        {revealStage !== 'unknown' && (
+                            <button
+                                onClick={() => setActiveTab('planets')}
+                                className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-display uppercase tracking-widest transition-colors flex-1 justify-center ${
+                                    activeTab === 'planets'
+                                        ? 'text-sky-400 bg-slate-800/50 border-b-2 border-sky-500'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                            >
+                                <Globe size={10} />
+                                Planets ({planets.length})
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -734,7 +739,7 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Owner */}
-                            {(system.ownerFactionId || (system as any).ownerId) && (
+                            {revealStage !== 'unknown' && (system.ownerFactionId || (system as any).ownerId) && (
                                 <div className="flex items-center gap-2 text-xs text-slate-400">
                                     <Users size={12} className="text-slate-500" />
                                     <span className="text-slate-300">{(system.ownerFactionId || (system as any).ownerId).replace('faction-', '').toUpperCase()}</span>
@@ -826,7 +831,7 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Stats */}
-                            {system.isSurveyed !== false ? (
+                            {revealStage !== 'unknown' && system.isSurveyed !== false ? (
                                 <div className="space-y-2.5">
                                     <StatRow label="SECURITY" value={system.security} color={statusColor(100 - system.security)} />
                                     <StatRow label="TRADE VALUE" value={system.tradeValue} color="#f59e0b" />
