@@ -362,9 +362,35 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     redLines: ["unpaid interest", "seizure of banking assets", "economic audit"],
     negotiationStyle: "cold, using interest rates as weapons, leveraging mercenary armadas",
     worldview: "The universe is a balance sheet; we are the auditors of reality."
+  },
+  pirates: {
+    id: "valerius",
+    factionId: "pirates",
+    name: "Captain Valerius",
+    title: "The Void Hydra / Pirate Diplomat",
+    tone: "raspy, mocking, and transactional",
+    politicalStyle: "opportunistic, darwinian, lawless",
+    coreValues: ["freedom", "profit", "strength"],
+    primaryConcerns: ["unclaimed space", "security loop-holes", "the next big score"],
+    verbalTics: ["The Void provides...", "Dead men pay no tolls.", "A fair share of the cut."],
+    samplePhrases: [
+        "In the shadows between the stars, your laws are just lines on a map. I deal in the reality of the hunt.",
+        "You call it piracy. I call it an alternative tax for the unprotected."
+    ],
+    redLines: ["blockading the safe havens", "treaties that restrict the hunt"],
+    negotiationStyle: "unpredictable, leverage-focused, blunt",
+    worldview: "The galaxy is a sea of sheep; only the wolves really know what freedom feels like."
   }
 };
 
 export function getFactionSpeaker(factionId: string): FactionSpeakerProfile {
+  // Explicit mapping for standard factions
+  if (FACTION_SPEAKERS[factionId]) return FACTION_SPEAKERS[factionId];
+
+  // Pirate detection (excluding Nullward Syndicate)
+  if (factionId.toLowerCase().includes('pirate') && factionId !== 'faction-null-syndicate') {
+    return FACTION_SPEAKERS['pirates'];
+  }
+
   return FACTION_SPEAKERS[factionId] || FACTION_SPEAKERS['senate'];
 }

@@ -473,6 +473,7 @@ export default function SystemContextPanel() {
     [storePlanets, selectedSystemId]);
     const loadingPlanets = false; // Now handled by global sync
     const [activeTab, setActiveTab] = React.useState<'system' | 'planets'>('system');
+    const [recruitingOnPlanet, setRecruitingOnPlanet] = React.useState<string | null>(null);
 
     React.useEffect(() => {
         if (selectedSystemId) {
@@ -500,8 +501,6 @@ export default function SystemContextPanel() {
     const isContested = system.isContested || [...new Set(planets.map(p => p.ownerId).filter(o => o && o !== 'faction-neutral'))].length > 1;
     const playerOwnedCount = planets.filter(p => p.ownerId === playerFactionId).length;
     const enemyOwnedCount = planets.filter(p => p.ownerId && p.ownerId !== playerFactionId && p.ownerId !== 'faction-neutral').length;
-    
-    const [recruitingOnPlanet, setRecruitingOnPlanet] = React.useState<string | null>(null);
 
 
     // ── Handlers ───────────────────────────────────────────────────────────────

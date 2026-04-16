@@ -22,10 +22,10 @@ export default function ResourceBar() {
     const production = (faction as any)?.production || {}; // Use production if available, fallback to 0
 
     const handleHomeClick = () => {
-        if (!faction || !faction.capitalSystemId) return;
+        if (!faction) return;
         
-        // Find the system coordinates
-        const system = systems.find(s => s.id === faction.capitalSystemId);
+        // Find the system coordinates or default to the first known system
+        const system = systems.find(s => s.id === faction.capitalSystemId) || systems[0];
         if (system) {
             setFocusTarget({ x: system.q, y: system.r, zoom: 2 });
         }

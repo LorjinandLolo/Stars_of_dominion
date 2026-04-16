@@ -94,9 +94,9 @@ function systemColor(
                 : { fill: '#451a03', stroke: '#92400e' };
         }
         case 'deepSpace':
-            return { fill: '#1e293b', stroke: '#38bdf8' };
+            return { fill: '#334155', stroke: '#38bdf8' }; // Brighter deep space
         default:
-            return { fill: '#334155', stroke: '#94a3b8' };
+            return { fill: '#64748b', stroke: '#cbd5e1' }; // Brighter slate for default
     }
 }
 
@@ -131,6 +131,7 @@ export default function GalaxyShell() {
         factionVisibility,
         factions,
         contestedSystemIds,
+        links,
     } = useUIStore();
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
@@ -224,6 +225,31 @@ export default function GalaxyShell() {
                         <feComposite in="SourceGraphic" in2="blur" operator="over" />
                     </filter>
                 </defs>
+
+                {/* Hyperlanes */}
+                <g className="hyperlanes">
+                    {links && links.map((link: any) => {
+                        const fromSys = systems.find((s: any) => s.id === link.fromSystemId);
+                        const toSys = systems.find((s: any) => s.id === link.toSystemId);
+                        if (!fromSys || !toSys) return null;
+                        const fromPx = hexToPixel(fromSys.q, fromSys.r);
+                        const toPx = hexToPixel(toSys.q, toSys.r);
+                        return (
+                            <line
+                                key={link.id}
+                                x1={fromPx.x}
+                                y1={fromPx.y}
+                                x2={toPx.x}
+                                y2={toPx.y}
+                                stroke="#3b82f6"
+                                strokeWidth={0.8}
+                                strokeOpacity={0.4}
+                                strokeLinecap="round"
+                                filter={activeOverlay === null ? 'url(#hex-glow)' : undefined}
+                            />
+                        );
+                    })}
+                </g>
 
                 {regions.map((region: any) => region.systemIds.map((sid: any) => {
                     const sys = systems.find((s: any) => s.id === sid);
@@ -321,8 +347,18 @@ export default function GalaxyShell() {
                     0%, 100% { opacity: 0.8; transform: scale(1); }
                     50%       { opacity: 1;   transform: scale(1.15); }
                 }
+                @keyframes scanlines {
+                    0% { background-position: 0 0; }
+                    100% { background-position: 0 4px; }
+                }
                 .animate-breathe { animation: breathe 3s ease-in-out infinite; }
+                .animate-scanlines { animation: scanlines 2s linear infinite; }
             `}</style>
+
+            {/* Tactical CRT Overlay & Space Dust */}
+            <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.15] mix-blend-overlay">
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] animate-scanlines" />
+            </div>
 
             <OverlayToggleBar />
             <SystemContextPanel />

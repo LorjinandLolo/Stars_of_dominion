@@ -21,6 +21,7 @@ export function FactionDiscourse({ factionId }: Props) {
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [initialGreeting, setInitialGreeting] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Initial load: Fetch context and existing thread history
@@ -32,6 +33,10 @@ export function FactionDiscourse({ factionId }: Props) {
         const ctx: FactionContextSummary = await res.json();
         setContext(ctx);
         setMessages(ctx.conversation.recentMessages);
+        
+        if (ctx.conversation.recentMessages.length === 0 && ctx.speaker.greetings?.length) {
+          setInitialGreeting(ctx.speaker.greetings[Math.floor(Math.random() * ctx.speaker.greetings.length)]);
+        }
       } catch (err) {
         console.error('Failed to load discourse context:', err);
       } finally {
@@ -147,12 +152,25 @@ export function FactionDiscourse({ factionId }: Props) {
             ref={scrollRef}
             className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-800"
           >
-            {messages.length === 0 && (
+            {messages.length === 0 && !initialGreeting && (
               <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
                 <div className="text-4xl mb-2">📡</div>
                 <div className="text-xs font-bold uppercase tracking-widest text-blue-400">Communication established</div>
                 <div className="text-[10px] text-slate-500 mt-1 max-w-[200px]">
                   Initiate political discourse with the {context.faction.name}.
+                </div>
+              </div>
+            )}
+
+            {messages.length === 0 && initialGreeting && (
+              <div className="flex justify-start pt-4">
+                <div className="max-w-[85%] group">
+                  <div className="text-[9px] uppercase tracking-tighter mb-1.5 font-black flex items-center gap-2 text-slate-500">
+                    {context.speaker.name}
+                  </div>
+                  <div className="p-4 rounded-lg text-sm leading-relaxed bg-slate-800/40 border border-slate-700/30 text-slate-200">
+                    {initialGreeting}
+                  </div>
                 </div>
               </div>
             )}

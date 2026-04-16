@@ -22,6 +22,7 @@ export interface FactionSpeakerProfile {
   primaryConcerns: string[];
   verbalTics: string[];
   samplePhrases: string[];
+  greetings: string[];
   redLines: string[];
   negotiationStyle: string;
   worldview: string;

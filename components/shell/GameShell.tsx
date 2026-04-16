@@ -72,6 +72,14 @@ export default function GameShell() {
     // On mount: check auth and localStorage for saved faction
     useEffect(() => {
         const checkAuthAndFaction = async () => {
+            // Development Quick-Play Bypass
+            if (process.env.NODE_ENV === 'development') {
+                const testFaction = 'faction-aurelian'; 
+                console.log(`[Dev Bypass] Auto-joining game as ${testFaction}`);
+                setPlayerFactionId(testFaction);
+                return;
+            }
+
             const user = await authService.getCurrentUser();
             if (!user) {
                 router.replace('/login');
@@ -94,8 +102,8 @@ export default function GameShell() {
     useEffect(() => {
         if (playerFactionId && systems.length > 0) {
             const faction = factions[playerFactionId];
-            if (faction && faction.capitalSystemId) {
-                const capital = systems.find(s => s.id === faction.capitalSystemId);
+            if (faction) {
+                const capital = systems.find(s => s.id === faction.capitalSystemId) || systems[0];
                 if (capital) {
                     setFocusTarget({ x: capital.q, y: capital.r, zoom: 1.5 });
                 }
