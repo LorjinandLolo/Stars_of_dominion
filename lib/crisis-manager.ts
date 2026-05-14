@@ -58,7 +58,7 @@ export async function getActiveCrises(factionId: string) {
 /**
  * Submits a defense response. Trigger resolution if needed.
  */
-export async function respondToCrisis(crisisId: string, responseStrategyId: string) {
+export async function respondToCrisis(crisisId: string, responseStrategyId: string, predictedAttackerStrategyId?: string) {
     const { db } = await getServerClients();
 
     // 1. Fetch Crisis
@@ -66,7 +66,7 @@ export async function respondToCrisis(crisisId: string, responseStrategyId: stri
     if (crisis.status !== 'active') throw new Error('Crisis already resolved');
 
     // 2. Resolve Immediately (WEGO style - since Attacker already committed)
-    const result = resolveLogic(crisis.attacker_strategy, responseStrategyId);
+    const result = resolveLogic(crisis.attacker_strategy, responseStrategyId, predictedAttackerStrategyId);
 
     // 3. Update Crisis
     await db.updateDocument(DB_ID, COLL_CRISES, crisisId, {
@@ -77,3 +77,4 @@ export async function respondToCrisis(crisisId: string, responseStrategyId: stri
 
     return result;
 }
+

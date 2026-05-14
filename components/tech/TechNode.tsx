@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Lock, CheckCircle2, FlaskConical, AlertCircle, Dna } from 'lucide-react';
-import { Tech, Tier } from '@/lib/tech/types';
+import { Tech, TechTier } from '@/lib/tech/types';
 
 interface TechNodeProps {
     tech: Tech;
@@ -13,6 +13,8 @@ interface TechNodeProps {
     progress?: number;
     onClick: (techId: string) => void;
     scale?: number;
+    offsetX?: number;
+    offsetY?: number;
 }
 
 export default function TechNode({ 
@@ -26,7 +28,7 @@ export default function TechNode({
     scale = 1,
     offsetX = 0,
     offsetY = 0
-}: TechNodeProps & { offsetX?: number, offsetY?: number }) {
+}: TechNodeProps) {
     const x = ((tech.position?.x ?? 0) - offsetX) * 120 * scale;
     const y = ((tech.position?.y ?? 0) - offsetY) * 100 * scale;
 
@@ -67,15 +69,26 @@ export default function TechNode({
                     ) : null}
                 </div>
 
-                {/* Sub-branch / Info */}
+                {/* Tier / Branch Info */}
                 <div className="flex items-center gap-2 mb-2">
                     <span className="text-[8px] font-mono text-slate-500 uppercase">TIER {tech.tier}</span>
-                    {tech.subBranch && (
-                        <span className="text-[8px] font-mono text-slate-400 px-1 bg-white/5 rounded lowercase">
-                            {tech.subBranch}
+                    {tech.branch && (
+                        <span className="text-[8px] font-mono text-slate-400 px-1 bg-white/5 rounded lowercase truncate max-w-[80px]">
+                            {tech.branch.replace(/_/g, ' ')}
                         </span>
                     )}
                 </div>
+
+                {/* Season Score Tags */}
+                {tech.seasonScoreTags && tech.seasonScoreTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                        {tech.seasonScoreTags.map(tag => (
+                            <span key={tag} className="text-[7px] font-display text-indigo-300 uppercase bg-indigo-500/10 px-1 py-0.5 rounded border border-indigo-500/20">
+                                {tag}
+                            </span>
+                        ))}
+                    </div>
+                )}
 
                 {/* Progress Bar (if researching) */}
                 {isResearching && (
@@ -88,16 +101,23 @@ export default function TechNode({
                 )}
 
                 {/* Effects Preview (Compact) */}
-                <div className="flex flex-wrap gap-1 mt-1">
-                    {tech.effects.slice(0, 2).map((eff, i) => (
-                        <div key={i} className="flex items-center gap-1 opacity-60">
-                            <Dna size={8} className="text-amber-500" />
-                            <span className="text-[7px] text-slate-400 truncate max-w-[60px] uppercase">
-                                {eff.target?.replace(/_/g, ' ') || 'effect'}
-                            </span>
+                <div className="flex flex-col gap-1 mt-1">
+                    {tech.mechanicalEffect ? (
+                        <div className="text-[8px] text-slate-400 leading-tight line-clamp-2">
+                            {tech.mechanicalEffect}
                         </div>
-                    ))}
-                    {tech.effects.length > 2 && <span className="text-[7px] text-slate-600">+{tech.effects.length - 2}</span>}
+                    ) : (
+                        <div className="flex flex-wrap gap-1">
+                            {tech.effects.slice(0, 2).map((eff, i) => (
+                                <div key={i} className="flex items-center gap-1 opacity-60">
+                                    <Dna size={8} className="text-amber-500" />
+                                    <span className="text-[7px] text-slate-400 truncate max-w-[60px] uppercase">
+                                        {eff.modifierKey?.replace(/_/g, ' ') || eff.type.replace(/_/g, ' ')}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Hover Details */}
@@ -106,23 +126,32 @@ export default function TechNode({
                         {tech.description}
                     </p>
                     
-                    <div className="space-y-2 border-t border-slate-800 pt-3">
-                        <span className="text-[8px] font-display text-slate-500 uppercase tracking-widest block mb-1">Impact Analysis</span>
-                        {tech.effects.map((eff, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-[9px]">
-                                <span className="text-slate-400 lowercase">{eff.target?.replace(/_/g, ' ') || 'unspecified'}</span>
-                                <span className={(eff.value || 0) > 0 ? 'text-green-400' : 'text-red-400'}>
-                                    {(eff.value || 0) > 0 ? '+' : ''}{(eff.value || 0) * 100}%
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-
-                    {tech.mutuallyExclusiveWith && tech.mutuallyExclusiveWith.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-red-900/30">
-                            <span className="text-[8px] font-display text-red-400 uppercase tracking-widest block mb-1">Mutual Exclusion</span>
-                            <div className="text-[8px] text-red-300">Researched this will lock {tech.mutuallyExclusiveWith.length} other path(s).</div>
+                    {tech.mechanicalEffect && (
+                        <div className="space-y-1 border-t border-slate-800 pt-3 mb-3">
+                            <span className="text-[8px] font-display text-slate-500 uppercase tracking-widest block mb-1">Mechanical Effect</span>
+                            <div className="text-[9px] text-slate-300">{tech.mechanicalEffect}</div>
                         </div>
+                    )}
+                    
+                    {tech.effects.length > 0 && (
+                        <div className="space-y-2 border-t border-slate-800 pt-3">
+                            <span className="text-[8px] font-display text-slate-500 uppercase tracking-widest block mb-1">Stat Adjustments</span>
+                            {tech.effects.map((eff, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-[9px]">
+                                    <span className="text-slate-400 lowercase">{eff.modifierKey?.replace(/_/g, ' ') || eff.type.replace(/_/g, ' ')}</span>
+                                    <span className={(eff.value || 0) > 0 ? 'text-green-400' : 'text-red-400'}>
+                                        {(eff.value || 0) > 0 ? '+' : ''}{(eff.value || 0) * 100}%
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {tech.mutuallyExclusiveGroup && (
+                         <div className="mt-3 pt-3 border-t border-red-900/30">
+                             <span className="text-[8px] font-display text-red-400 uppercase tracking-widest block mb-1">Mutually Exclusive Choice</span>
+                             <div className="text-[8px] text-red-300">Choosing this locks out other branches in group: {tech.mutuallyExclusiveGroup}.</div>
+                         </div>
                     )}
                     
                     {isAvailable && !isResearching && (

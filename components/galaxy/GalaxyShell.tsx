@@ -7,6 +7,7 @@ import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
 import { PlanetConstructionPanel } from '../construction/PlanetConstructionPanel';
 import { Activity } from 'lucide-react';
+import SystemNode from './SystemNode';
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
@@ -94,9 +95,9 @@ function systemColor(
                 : { fill: '#451a03', stroke: '#92400e' };
         }
         case 'deepSpace':
-            return { fill: '#334155', stroke: '#38bdf8' }; // Brighter deep space
+            return { fill: '#334155', stroke: '#38bdf8' };
         default:
-            return { fill: '#64748b', stroke: '#cbd5e1' }; // Brighter slate for default
+            return { fill: '#64748b', stroke: '#cbd5e1' };
     }
 }
 
@@ -131,8 +132,18 @@ export default function GalaxyShell() {
         factionVisibility,
         factions,
         contestedSystemIds,
-        links,
     } = useUIStore();
+
+    const systemMap = useMemo(() => {
+        const map = new Map<string, any>();
+        systems.forEach((s: any) => map.set(s.id, s));
+        return map;
+    }, [systems]);
+
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        setIsMobile(window.matchMedia('(max-width: 768px)').matches);
+    }, []);
 
     const { minQ, maxQ, minR, maxR } = useMemo(() => {
         if (!systems.length) return { minQ: -30, maxQ: 30, minR: -25, maxR: 25 };
@@ -158,20 +169,14 @@ export default function GalaxyShell() {
 
     const { focusTarget, setFocusTarget } = useUIStore();
 
-    // Respond to focus target changes from external components (ResourceBar, GameShell)
     useEffect(() => {
         if (focusTarget) {
             const px = hexToPixel(focusTarget.x, focusTarget.y);
-            // Center is (0,0) of the map space, so we pan to negative of target pixel
-            // minus the offset of the bounding box centers if necessary. 
-            // The dynamicVb uses svgMinX/Y as base.
             setPan({ 
                 x: px.x - (svgMinX + (svgMaxX - svgMinX) / 2), 
                 y: px.y - (svgMinY + (svgMaxY - svgMinY) / 2) 
             });
             if (focusTarget.zoom) setZoom(focusTarget.zoom);
-            
-            // Clear target after consuming to allow re-triggering same target
             setFocusTarget(null);
         }
     }, [focusTarget, setFocusTarget, svgMinX, svgMaxX, svgMinY, svgMaxY]);
@@ -183,6 +188,21 @@ export default function GalaxyShell() {
         const cy = svgMinY + (svgMaxY - svgMinY) / 2 + pan.y;
         return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
     }, [pan, zoom, svgMinX, svgMaxX, svgMinY, svgMaxY]);
+
+    // ─── FRUSTUM CULLING ──────────────────────────────────────────────────────
+    const visibleSystems = useMemo(() => {
+        const [vx, vy, vw, vh] = dynamicVb.split(' ').map(Number);
+        const buffer = HEX_WIDTH * 2;
+        return systems.filter((sys: any) => {
+            const px = hexToPixel(sys.q, sys.r);
+            return (
+                px.x >= vx - buffer &&
+                px.x <= vx + vw + buffer &&
+                px.y >= vy - buffer &&
+                px.y <= vy + vh + buffer
+            );
+        });
+    }, [systems, dynamicVb]);
 
     const handleWheel = (e: React.WheelEvent) => {
         setZoom((z) => Math.min(8, Math.max(0.4, z * (e.deltaY < 0 ? 1.1 : 0.9))));
@@ -224,35 +244,37 @@ export default function GalaxyShell() {
                         <feGaussianBlur stdDeviation="2" result="blur" />
                         <feComposite in="SourceGraphic" in2="blur" operator="over" />
                     </filter>
+                    
+                    {/* OPTIMIZED BACKGROUND GRID: Using a Pattern instead of thousands of polygons */}
+                    <pattern id="hex-grid-pattern" width={HEX_WIDTH} height={HEX_HEIGHT * 0.75} patternUnits="userSpaceOnUse" overflow="visible">
+                        <polygon
+                            points={getHexCorners(HEX_SIZE - 1)}
+                            transform={`translate(${HEX_WIDTH / 2}, ${HEX_HEIGHT / 2})`}
+                            fill="none"
+                            stroke="#334155"
+                            strokeWidth={0.5}
+                        />
+                        <polygon
+                            points={getHexCorners(HEX_SIZE - 1)}
+                            transform={`translate(0, ${HEX_HEIGHT * 0.75 / 2})`}
+                            fill="none"
+                            stroke="#334155"
+                            strokeWidth={0.5}
+                        />
+                    </pattern>
                 </defs>
 
-                {/* Hyperlanes */}
-                <g className="hyperlanes">
-                    {links && links.map((link: any) => {
-                        const fromSys = systems.find((s: any) => s.id === link.fromSystemId);
-                        const toSys = systems.find((s: any) => s.id === link.toSystemId);
-                        if (!fromSys || !toSys) return null;
-                        const fromPx = hexToPixel(fromSys.q, fromSys.r);
-                        const toPx = hexToPixel(toSys.q, toSys.r);
-                        return (
-                            <line
-                                key={link.id}
-                                x1={fromPx.x}
-                                y1={fromPx.y}
-                                x2={toPx.x}
-                                y2={toPx.y}
-                                stroke="#3b82f6"
-                                strokeWidth={0.8}
-                                strokeOpacity={0.4}
-                                strokeLinecap="round"
-                                filter={activeOverlay === null ? 'url(#hex-glow)' : undefined}
-                            />
-                        );
-                    })}
-                </g>
+                {/* Background Grid Pattern */}
+                <rect 
+                    x={svgMinX} y={svgMinY} 
+                    width={svgMaxX - svgMinX} height={svgMaxY - svgMinY} 
+                    fill="url(#hex-grid-pattern)" 
+                    opacity={0.15}
+                    pointerEvents="none"
+                />
 
                 {regions.map((region: any) => region.systemIds.map((sid: any) => {
-                    const sys = systems.find((s: any) => s.id === sid);
+                    const sys = systemMap.get(sid);
                     if (!sys) return null;
                     const px = hexToPixel(sys.q, sys.r);
                     return (
@@ -269,51 +291,27 @@ export default function GalaxyShell() {
                     );
                 }))}
 
-                {systems.map((sys: any) => {
+                {visibleSystems.map((sys: any) => {
                     const px = hexToPixel(sys.q, sys.r);
                     const isSelected = selectedSystemId === sys.id;
                     const revealStage = factionVisibility?.[sys.id]?.revealStage || 'unknown';
                     const styles = getVisibilityStyles(revealStage, systemColor(activeOverlay, sys.instability, sys.tradeValue, sys.escalationLevel, sys.security));
 
                     return (
-                        <g
+                        <SystemNode
                             key={sys.id}
-                            transform={`translate(${px.x}, ${px.y})`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (!hasMoved.current) setSelectedSystem(isSelected ? null : sys.id);
+                            sys={sys}
+                            px={px}
+                            isSelected={isSelected}
+                            revealStage={revealStage}
+                            styles={styles}
+                            contested={contestedSystemIds.has(sys.id)}
+                            isMobile={isMobile}
+                            hexPoints={HEX_POINTS}
+                            onSelect={(id) => {
+                                if (!hasMoved.current) setSelectedSystem(isSelected ? null : id);
                             }}
-                            className="transition-all"
-                            style={{ cursor: 'pointer', opacity: styles.opacity }}
-                        >
-                            <polygon
-                                points={HEX_POINTS}
-                                fill={styles.fill}
-                                stroke={isSelected ? 'var(--color-neon-blue)' : styles.stroke}
-                                strokeWidth={isSelected ? 2 : 1}
-                                filter={isSelected ? 'url(#hex-glow)' : undefined}
-                            />
-                            {styles.showDot && (
-                                <circle
-                                    r={sys.tags.includes('gate') || sys.tags.includes('fortress') ? 4 : 2.5}
-                                    fill={sys.ownerId ? (sys.ownerId === 'faction-aurelian' ? '#3b82f6' : sys.ownerId === 'faction-vektori' ? '#ef4444' : '#22c55e') : '#94a3b8'}
-                                    className="animate-breathe"
-                                />
-                            )}
-                            {/* Contested overlay — dashed orange ring */}
-                            {contestedSystemIds.has(sys.id) && (
-                                <polygon
-                                    points={HEX_POINTS}
-                                    fill="none"
-                                    stroke="#f97316"
-                                    strokeWidth={1.5}
-                                    strokeDasharray="3 2"
-                                    opacity={0.75}
-                                    style={{ animation: 'spin 8s linear infinite' }}
-                                    pointerEvents="none"
-                                />
-                            )}
-                        </g>
+                        />
                     );
                 })}
 
@@ -321,7 +319,7 @@ export default function GalaxyShell() {
                 {fleets.map((fleet: any) => {
                     let fromSys, x = 0, y = 0;
                     if (fleet.currentSystemId) {
-                        fromSys = systems.find((s: any) => s.id === fleet.currentSystemId);
+                        fromSys = systemMap.get(fleet.currentSystemId);
                         if (fromSys) {
                             const px = hexToPixel(fromSys.q, fromSys.r);
                             x = px.x; y = px.y - 6;
@@ -337,7 +335,6 @@ export default function GalaxyShell() {
                 })}
             </svg>
 
-            {/* Contested ring animation */}
             <style>{`
                 @keyframes spin {
                     from { transform: rotate(0deg); }
@@ -355,7 +352,6 @@ export default function GalaxyShell() {
                 .animate-scanlines { animation: scanlines 2s linear infinite; }
             `}</style>
 
-            {/* Tactical CRT Overlay & Space Dust */}
             <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.15] mix-blend-overlay">
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] animate-scanlines" />
             </div>

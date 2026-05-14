@@ -28,6 +28,7 @@ import BattleCommandPanel from '@/components/panels/BattleCommandPanel';
 import DiplomacyPanel from '@/components/panels/DiplomacyPanel';
 import ShipDesignerPanel from '@/components/panels/ShipDesignerPanel';
 import ManualGuidebook from '@/components/manual/ManualGuidebook';
+import DevToolbox from '@/components/debug/DevToolbox';
 
 const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
@@ -167,6 +168,9 @@ export default function GameShell() {
 
             {/* ── Manual Guidebook (HOI4-style) ────────────────────────────────── */}
             <ManualGuidebook />
+
+            {/* ── Developer Toolbox (Ctrl+D) ───────────────────────────────────── */}
+            <DevToolbox />
 
             {/* Slide animation keyframe */}
             <style jsx global>{`

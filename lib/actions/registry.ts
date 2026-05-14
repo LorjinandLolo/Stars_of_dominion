@@ -243,6 +243,12 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { companyId: "id" },
     cost: {}
   },
+  ECON_AWARD_STRATEGIC_BONUS: {
+    id: "ECON_AWARD_STRATEGIC_BONUS",
+    category: "economic",
+    params: { credits: "number", influence: "number" },
+    cost: {}
+  },
 
   // --- Economic / Development Actions ---
   PLANET_CONSTRUCT_BUILDING: {

@@ -9,9 +9,10 @@ import {
     Atom,
     Shield,
     TrendingUp,
-    Globe
+    Globe,
+    Eye
 } from 'lucide-react';
-import { Domain, Tier } from '@/lib/tech/types';
+import { TechTreeType, TechTier } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
 import { startResearchAction, getPlayerTechStateAction } from '@/app/actions/tech';
 import '@/lib/tech/techData';
@@ -21,11 +22,11 @@ import TechConnectors from '../tech/TechConnectors';
 export default function ResearchPanel() {
     const { techState, playerState, updateTech, nowSeconds } = useUIStore();
     const [scale, setScale] = React.useState(1);
-    const [activeBranch, setActiveBranch] = React.useState<Domain>(Domain.MILITARY);
+    const [activeBranch, setActiveBranch] = React.useState<TechTreeType>(TechTreeType.ESPIONAGE);
     
     const allTechs = useMemo(() => registry.getAll(), []);
     const filteredTechs = useMemo(() => 
-        allTechs.filter(t => t.branch === activeBranch),
+        allTechs.filter(t => t.tree === activeBranch),
     [allTechs, activeBranch]);
 
     const { offsetX, offsetY } = useMemo(() => {
@@ -47,10 +48,11 @@ export default function ResearchPanel() {
     const lockedSet = new Set(techState.lockedTechIds || []);
 
     const branches = [
-        { id: Domain.MILITARY, label: 'Military', icon: Shield, color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-400/20' },
-        { id: Domain.ECONOMIC, label: 'Economic', icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-400/10', border: 'border-green-400/20' },
-        { id: Domain.DIPLOMATIC, label: 'Diplomatic', icon: Globe, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' },
-        { id: Domain.CULTURAL, label: 'Cultural', icon: Atom, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20' },
+        { id: TechTreeType.ESPIONAGE, label: 'Espionage', icon: Eye, color: 'text-violet-400', bg: 'bg-violet-400/10', border: 'border-violet-400/20' },
+        { id: TechTreeType.MILITARY, label: 'Military', icon: Shield, color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-400/20' },
+        { id: TechTreeType.ECONOMY, label: 'Economy', icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-400/10', border: 'border-green-400/20' },
+        { id: TechTreeType.DIPLOMACY, label: 'Diplomacy', icon: Globe, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' },
+        { id: TechTreeType.INFRASTRUCTURE, label: 'Infrastructure', icon: Atom, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20' },
     ];
 
     return (
@@ -125,6 +127,26 @@ export default function ResearchPanel() {
                         offsetY={offsetY}
                     />
 
+                    {/* Tier Backgrounds (Horizontal Bands based on Y coordinate) */}
+                    <div className="absolute inset-0 pointer-events-none opacity-20">
+                        {/* Tier 1 - Expansion (Y: 0-2) */}
+                        <div className="absolute top-[0px] left-0 right-0 h-[250px] border-b border-indigo-500/20 bg-gradient-to-b from-transparent to-indigo-900/10 flex items-end p-4">
+                            <span className="text-xl font-display uppercase tracking-[0.5em] text-indigo-300 opacity-50">Tier I: Expansion</span>
+                        </div>
+                        {/* Tier 2 - Specialization (Y: 3-5) */}
+                        <div className="absolute top-[300px] left-0 right-0 h-[300px] border-b border-purple-500/20 bg-gradient-to-b from-transparent to-purple-900/10 flex items-end p-4">
+                            <span className="text-xl font-display uppercase tracking-[0.5em] text-purple-300 opacity-50">Tier II: Specialization</span>
+                        </div>
+                        {/* Tier 3 - Dominance (Y: 6-8) */}
+                        <div className="absolute top-[600px] left-0 right-0 h-[300px] border-b border-red-500/20 bg-gradient-to-b from-transparent to-red-900/10 flex items-end p-4">
+                            <span className="text-xl font-display uppercase tracking-[0.5em] text-red-300 opacity-50">Tier III: Dominance</span>
+                        </div>
+                        {/* Tier 4 - Transformation (Y: 9+) */}
+                        <div className="absolute top-[900px] left-0 right-0 h-[400px] border-b border-amber-500/20 bg-gradient-to-b from-transparent to-amber-900/10 flex items-end p-4">
+                            <span className="text-xl font-display uppercase tracking-[0.5em] text-amber-300 opacity-50">Tier IV: Transformation</span>
+                        </div>
+                    </div>
+
                     {filteredTechs.map(tech => {
                         const isUnlocked = unlockedSet.has(tech.id);
                         const isLocked = lockedSet.has(tech.id);
@@ -136,7 +158,7 @@ export default function ResearchPanel() {
                         let progress = 0;
                         if (isResearching && slot) {
                             const elapsed = nowSeconds - (slot.startTime || 0);
-                            const total = (tech as any).baseCost || 100;
+                            const total = tech.researchCost;
                             progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
                         }
 

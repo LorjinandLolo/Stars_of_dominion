@@ -4,8 +4,7 @@
  * Used for post-action feedback display and chronicle logging.
  *
  * Prediction bonus: credits reward (fixed) + mechanical tactical multiplier (15%).
- * TODO: Wire PREDICTION_BONUS_CREDITS into the actual faction credit balance
- *       via the economy service.
+ * Credits are wired via the economy service.
  */
 
 import type { ResolutionSummary, PredictionOutcome } from './types';
@@ -25,6 +24,7 @@ interface BuildParams {
     doctrineEffectsApplied?: string[];
     reputationSignals?: string[];
     timestamp?: number;
+    techModifiers?: Record<string, number>; // Passed from engine
 }
 
 /** All known strategies across both sides — for label lookup. */
@@ -49,14 +49,19 @@ export function buildResolutionSummary(params: BuildParams): {
 
     if (params.predictedActionId) {
         const correct = params.predictedActionId === params.opponentActionId;
-        predictionBonus = correct ? PREDICTION_BONUS_CREDITS : 0;
+        
+        // Dynamic bonus calculation based on tech identity
+        const baseBonus = params.techModifiers?.['prediction_bonus_credits'] ?? PREDICTION_BONUS_CREDITS;
+        const tacticalMultiplier = (params.techModifiers?.['prediction_bonus_multiplier'] ?? 1.0) * 15;
+        
+        predictionBonus = correct ? baseBonus : 0;
 
         prediction = {
             predictedActionId: params.predictedActionId,
             actualActionId: params.opponentActionId,
             correct,
             bonusApplied: correct
-                ? `+${PREDICTION_BONUS_CREDITS} credits & +15% Tactical Advantage (Foresight)`
+                ? `+${Math.round(predictionBonus)} credits & +${Math.round(tacticalMultiplier)}% Tactical Advantage (Foresight)`
                 : undefined,
         };
     }

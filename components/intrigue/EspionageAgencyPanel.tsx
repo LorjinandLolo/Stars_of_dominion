@@ -99,6 +99,8 @@ interface RosterProps {
 }
 
 function AgentRosterTab({ agents, refresh }: RosterProps) {
+    const { systems } = useUIStore();
+    const [selectedSystemId, setSelectedSystemId] = useState<string>(systems[0]?.id || '');
     const [selected, setSelected] = useState<string | null>(null);
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
     const [isPending, startTransition] = useTransition();
@@ -156,8 +158,8 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
                 id: `act_${Date.now()}`,
                 actionId: 'ESP_ASSIGN_AGENT',
                 issuerId: 'PLAYER_FACTION',
-                targetId: 'sys-kerath-prime', // TODO: Let player choose system
-                payload: { agentId: agent.id, systemId: 'sys-kerath-prime', domain: 'infrastructureSabotage' },
+                targetId: selectedSystemId || 'sys-kerath-prime',
+                payload: { agentId: agent.id, systemId: selectedSystemId || 'sys-kerath-prime', domain: 'infrastructureSabotage' },
                 timestamp: Math.floor(Date.now() / 1000)
             });
             if (res.success) {
@@ -245,11 +247,25 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
                                 </div>
                             </div>
                             {agent.status === 'available' && (
-                                <button onClick={handleDeploy} disabled={isPending}
-                                    className="w-full py-2 rounded border border-blue-700/50 text-[10px] font-display text-blue-400 hover:bg-blue-900/20 transition-colors flex items-center justify-center gap-1 disabled:opacity-50">
-                                    {isPending ? <Loader2 size={10} className="animate-spin" /> : <MapPin size={10} />}
-                                    {isPending ? 'DEPLOYING...' : 'DEPLOY AGENT'}
-                                </button>
+                                <div className="space-y-2 mt-4 border-t border-slate-700/50 pt-4">
+                                    <div>
+                                        <div className="text-[9px] text-slate-500 mb-1">TARGET SYSTEM</div>
+                                        <select 
+                                            value={selectedSystemId} 
+                                            onChange={e => setSelectedSystemId(e.target.value)}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-slate-300 outline-none focus:border-slate-500"
+                                        >
+                                            {systems.map(s => (
+                                                <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button onClick={handleDeploy} disabled={isPending || !selectedSystemId}
+                                        className="w-full py-2 rounded border border-blue-700/50 text-[10px] font-display text-blue-400 hover:bg-blue-900/20 transition-colors flex items-center justify-center gap-1 disabled:opacity-50">
+                                        {isPending ? <Loader2 size={10} className="animate-spin" /> : <MapPin size={10} />}
+                                        {isPending ? 'DEPLOYING...' : 'DEPLOY AGENT'}
+                                    </button>
+                                </div>
                             )}
                             {agent.status === 'deployed' && (
                                 <button onClick={handleRecall} disabled={isPending}
@@ -391,6 +407,8 @@ const OP_CARDS: { domain: DomainKey; label: string; desc: string; icon: React.Re
 ];
 
 function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => Promise<void> }) {
+    const { systems } = useUIStore();
+    const [selectedSystemId, setSelectedSystemId] = useState<string>(systems[0]?.id || '');
     const [selectedDomain, setSelectedDomain] = useState<DomainKey | null>(null);
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
     const [risk, setRisk] = useState(0.4);
@@ -417,7 +435,7 @@ function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => 
             const res = await launchCovertOpAction(
                 'PLAYER_FACTION',
                 'enemy-faction',
-                'sys-kerath-prime',
+                selectedSystemId || 'sys-kerath-prime',
                 selectedDomain,
                 invest,
                 risk
@@ -480,6 +498,18 @@ function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => 
                 </div>
 
                 <div className="space-y-4">
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-500 mb-1">TARGET SYSTEM</div>
+                        <select 
+                            value={selectedSystemId} 
+                            onChange={e => setSelectedSystemId(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-slate-300 outline-none focus:border-slate-500"
+                        >
+                            {systems.map(s => (
+                                <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                            ))}
+                        </select>
+                    </div>
                     <div>
                         <div className="text-[10px] font-display tracking-widest text-slate-500 mb-1 flex justify-between">
                             <span>INVESTMENT</span> <span className="text-amber-400">{Math.round(invest * 100)}%</span>

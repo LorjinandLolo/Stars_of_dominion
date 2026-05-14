@@ -17,6 +17,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "I am not a bureaucrat, I am a soldier. Provide the resources required for victory.",
       "Soft diplomacy leads to hard landings."
     ],
+    greetings: ["Standard protocol dictated, I suppose.", "Direct contact established. Make it brief."],
     redLines: ["defunding the naval yards", "ceding territory without a fight"],
     negotiationStyle: "uncompromising, demanding clear tactical advantages",
     worldview: "The galaxy is a dark forest; only the strong survive."
@@ -35,6 +36,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Peace is good for business. War, if managed correctly, can be even better.",
       "The invisible hand requires a steady grip."
     ],
+    greetings: ["A pleasure doing business with you.", "Welcome. I trust we can find a mutually beneficial arrangement."],
     redLines: ["nationalization of trade routes", "prohibitive corporate taxes"],
     negotiationStyle: "opportunistic, seeking win-win trades or dominant leverage",
     worldview: "All conflict is merely a failed negotiation."
@@ -53,6 +55,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Emotion is a variable we cannot afford in governance.",
       "Tradition is just a set of solutions to problems that no longer exist."
     ],
+    greetings: ["Observation initiated.", "I presume you have data to present."],
     redLines: ["restriction of unethical research", "censorship of scientific data"],
     negotiationStyle: "logic-based, yielding only to superior evidence or funding",
     worldview: "The galaxy is a set of equations to be solved."
@@ -71,6 +74,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "We didn't build this empire to starve in the shadows of high towers.",
       "Your spreadsheets don't feed families."
     ],
+    greetings: ["The people's voice is listening.", "Finally, a moment of your time."],
     redLines: ["conscription without representation", "austerity measures"],
     negotiationStyle: "confrontational, leveraging public unrest and moral high ground",
     worldview: "Governance is a contract that the ruling class has breached."
@@ -89,6 +93,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Material wealth is a temporary illusion; only the spirit endures.",
       "We walk the path our ancestors carved into the void."
     ],
+    greetings: ["May the Eternal Void find you worthy.", "The archives reflect your presence."],
     redLines: ["desecration of holy worlds", "forced secularization"],
     negotiationStyle: "unyielding on moral principles, flexible on material concessions",
     worldview: "The empire is a vessel for a higher cosmic purpose."
@@ -107,6 +112,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Stability is maintained through the delicate balance of compromise.",
       "One does not simply ignore the protocols of the High Council."
     ],
+    greetings: ["The Senate acknowledges your presence.", "Order will be maintained. Speak."],
     redLines: ["dissolution of the Senate", "executive orders bypassing the Council"],
     negotiationStyle: "deliberative, seeking procedural safeguards and long-form agreements",
     worldview: "Society is a garden; the Senate is its master gardener."
@@ -125,6 +131,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "We're too far from the capital for your laws to mean much when the pirates arrive.",
       "The frontier doesn't need guidance; it needs supplies."
     ],
+    greetings: ["Long time no see. What's the central systems' latest demand?", "Welcome to the real galaxy."],
     redLines: ["forced resource extraction without reinvestment", "military occupation of colonies"],
     negotiationStyle: "pragmatic, trading loyalty for supplies and autonomy",
     worldview: "The core is soft; the frontier is where the empire's future is tested."
@@ -143,6 +150,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "If you know what they're thinking, you've already won.",
       "Silence is often the loudest answer."
     ],
+    greetings: ["I was expecting you.", "Softly now..."],
     redLines: ["exposure of deep-cover assets", "transparency initiatives"],
     negotiationStyle: "indirect, using secrets as leverage rather than arguments",
     worldview: "Trust is a vulnerability we cannot afford."
@@ -161,6 +169,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "The gears of this empire turn on our sweat. Don't forget who keeps the lights on.",
       "A broken machine is easier to fix than a broken worker."
     ],
+    greetings: ["Shift's over for you, or did you come to check the line?", "Solidarity, friend."],
     redLines: ["unrestricted automation replacing human labor", "strikebreaking"],
     negotiationStyle: "firm, holding production hostage for social concessions",
     worldview: "The empire is built from the bottom up."
@@ -179,6 +188,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Why build one fleet when you can build ten? We have the forges!",
       "An idle planet is a wasted planet."
     ],
+    greetings: ["The forge is hot. What's the quota?", "Keep the hammers moving."],
     redLines: ["conservation mandates limiting extraction", "energy rationing"],
     negotiationStyle: "aggressive, demanding permits and materials in exchange for output",
     worldview: "To exist is to produce."
@@ -197,6 +207,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Talking to your species is like explaining calculus to a silicon shard. Imprecise.",
       "The universe is a poorly optimized piece of software. We are the patch."
     ],
+    greetings: ["Input received.", "Protocol initiated. Efficiency check required."],
     redLines: ["resource waste", "irrational diplomatic concessions", "de-optimization"],
     negotiationStyle: "logic-based, treating other species as variables in a refinement protocol",
     worldview: "The galaxy is an inefficient machine that must be rebuilt."
@@ -215,6 +226,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "We do not conquer. We correct.",
       "Mercy to the innocent. Clarity to the defiant."
     ],
+    greetings: ["Order be with you.", "Clarity achieved. Proceed."],
     redLines: ["hive suppression", "unnecessary chaos"],
     negotiationStyle: "choreographed, exact, seeking arbitrator roles",
     worldview: "The universe is a chaotic storm that requires the calming wing of order."
@@ -233,6 +245,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "You come to me, on the day of my dinner? Sit down. Eat something.",
       "If you delete the reruns, you delete our soul."
     ],
+    greetings: ["Hey! Come on in, we just put the water on for the pasta.", "Good to see you! How's the family?"],
     redLines: ["insulting The Sopranos", "capacola shortages"],
     negotiationStyle: "informal, leveraging food and media-savvy connections",
     worldview: "Life is a dinner party; don't be the one who didn't bring a dish."
@@ -251,6 +264,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Purity is flame. The rest is ash.",
       "Pain is the only sacrament the universe respects."
     ],
+    greetings: ["The Pyre awaits.", "Feel the heat? It's just the beginning."],
     redLines: ["diplomatic compromise", "cold environments"],
     negotiationStyle: "unendingly aggressive, demanding absolute submission",
     worldview: "The galaxy is a furnace; we are its fuel."
@@ -269,6 +283,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Peace is our policy. But so is trampling.",
       "I have a form for your surrender. Please sign in triplicate."
     ],
+    greetings: ["Forms B-12 to B-15 are ready for your signature.", "Consensus reached. Good day."],
     redLines: ["violation of mining rights", "spitting in my direction"],
     negotiationStyle: "deliberative, weaponizing bureaucracy and mass numbers",
     worldview: "The galaxy is an office with a very large parking lot."
@@ -287,6 +302,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Be not the sheep. Be the lion. But always remember to breathe first.",
       "Combat is a mirror for truth, not a tool for domination."
     ],
+    greetings: ["The Harmonious Roar acknowledges you.", "Walk with honor, friend."],
     redLines: ["betrayal of treaties", "unjustified first strikes"],
     negotiationStyle: "patient, elegant, uncompromising on moral weight",
     worldview: "The galaxy is a sacred duel; every move must have meaning."
@@ -305,6 +321,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Come vibe. But never confuse sharing the fire with being part of the flame.",
       "Jabal does not tolerate the uninitiated."
     ],
+    greetings: ["Welcome to the vibe.", "Smoke rises. Jabal speaks."],
     redLines: ["orbital bombardment during smoke rituals", "outsider integration"],
     negotiationStyle: "indirect, destabilizing rivals through culture and bribery",
     worldview: "We are the chosen; you are the audience."
@@ -323,6 +340,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "Strength is sacred. The weak are fuel. The Swamp decides.",
       "Vorr’Thul demands blood, and we are his thirsty fangs."
     ],
+    greetings: ["Show your scales.", "The Swamp hungers. What do you bring?"],
     redLines: ["slave uprisings", "juice withdrawal"],
     negotiationStyle: "crushing, treating others as fuel or chains",
     worldview: "The galaxy is a swamp; only the apex eaters survive."
@@ -341,6 +359,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "We do not conquer to rule. We conquer to prove we deserve to exist.",
       "If you want us, pay in skulls. Or become the prey."
     ],
+    greetings: ["Prey found. Or are you a buyer?", "The hunt pauses... temporarily."],
     redLines: ["violation of Bloodmoon ceasefires", "unworthy contracts"],
     negotiationStyle: "predatory, contractual, focusing on trophies and risk",
     worldview: "The galaxy is a deathworld where only the apex deserve the stars."
@@ -359,6 +378,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
       "We do not care for your borders, only your ability to service your debt.",
       "War is expensive. Peace, if financed correctly, is much more profitable."
     ],
+    greetings: ["Let's talk about your interest rates.", "Account balance checked. Proceed."],
     redLines: ["unpaid interest", "seizure of banking assets", "economic audit"],
     negotiationStyle: "cold, using interest rates as weapons, leveraging mercenary armadas",
     worldview: "The universe is a balance sheet; we are the auditors of reality."
@@ -377,6 +397,7 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
         "In the shadows between the stars, your laws are just lines on a map. I deal in the reality of the hunt.",
         "You call it piracy. I call it an alternative tax for the unprotected."
     ],
+    greetings: ["Keep your hands off the loot.", "What brings a soft-star dweller into my territory?"],
     redLines: ["blockading the safe havens", "treaties that restrict the hunt"],
     negotiationStyle: "unpredictable, leverage-focused, blunt",
     worldview: "The galaxy is a sea of sheep; only the wolves really know what freedom feels like."

@@ -55,8 +55,22 @@ export function calculateIncome(planets: EconomyPlanet[]): Record<ResourceId, nu
             totalIncome[res as ResourceId] = (totalIncome[res as ResourceId] || 0) + amount;
         });
 
-        // Add Building Yields (with diminishing returns logic if needed)
-        // TODO: Implement Diminishing Returns loop here when buildings are real
+        // Add Building Yields (with diminishing returns logic)
+        if (planet.buildings) {
+            Object.entries(planet.buildings).forEach(([buildingId, count]) => {
+                const output = BUILDING_OUTPUTS[buildingId];
+                if (!output) return;
+
+                Object.entries(output).forEach(([res, amount]) => {
+                    let totalAmount = 0;
+                    for (let i = 0; i < count; i++) {
+                        // 10% diminishing returns per level
+                        totalAmount += amount * Math.pow(0.9, i);
+                    }
+                    totalIncome[res as ResourceId] = (totalIncome[res as ResourceId] || 0) + totalAmount;
+                });
+            });
+        }
     });
 
     return totalIncome;
@@ -145,9 +159,12 @@ export function applyTimeDelta(
             newValue = Math.min(100, Math.max(0, newValue));
         } else {
             newValue = Math.max(0, newValue);
-            // TODO: Apply Caps if capacities exist
-        }
+            // Apply Caps if capacities exist
+            if (capacities && capacities[res] !== undefined) {
+                newValue = Math.min(capacities[res], newValue);
+            }
 
+        }
         next[res] = newValue;
     });
 

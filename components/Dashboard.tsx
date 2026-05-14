@@ -140,7 +140,7 @@ export default function Dashboard({ state, planets, factions, armies }: any) {
             </div>
 
             {/* Layer 3: Modals */}
-            <CrisisDashboard crises={state.crises || []} currentFactionId="692db2fa000cd91f9852" />
+            <CrisisDashboard crises={state.crises || []} currentFactionId={state.playerFactionId || "692db2fa000cd91f9852"} />
             <DoomTracker defeatState={state.defeat_status} />
             {state.defeat_status && <DefeatModal defeatState={state.defeat_status} />}
             {state.victory_status && <VictoryModal victoryState={state.victory_status} />}

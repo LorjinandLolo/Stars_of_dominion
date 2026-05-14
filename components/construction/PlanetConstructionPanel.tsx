@@ -65,7 +65,11 @@ export function PlanetConstructionPanel({
     const loadData = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/game/construction?systemId=${systemId}`);
+            const response = await fetch(`/api/game-construction?systemId=${systemId}`);
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Server error (${response.status}): ${text.slice(0, 100)}...`);
+            }
             const res = await response.json();
             if (res.success && res.data) {
                 // Filter to just this planet for the panel view

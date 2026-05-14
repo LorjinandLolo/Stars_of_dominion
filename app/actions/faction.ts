@@ -23,12 +23,35 @@ export async function getFactionMembers(factionId: string) {
     return res.documents;
 }
 
-export async function updateMemberRole(profileId: string, newRole: FactionRole) {
+export async function updateMemberRole(requesterUserId: string, profileId: string, newRole: FactionRole) {
     const { db } = await getServerClients();
-    // TODO: Verify requester has permission (e.g. is Leader)
+    
+    // Verify requester is Leader
+    const requester = await getUserProfile(requesterUserId);
+    if (!requester || requester.role !== 'Leader') {
+        throw new Error('Unauthorized: Only the faction leader can change roles.');
+    }
+
+    const targetProfile = await db.getDocument(DB_ID, COLL_PROFILES, profileId);
+    if (targetProfile.factionId !== requester.factionId) {
+        throw new Error('Unauthorized: Target is in a different faction.');
+    }
+
     await db.updateDocument(DB_ID, COLL_PROFILES, profileId, {
         role: newRole
     });
+}
+
+export async function updateFaction(requesterUserId: string, factionId: string, updates: any) {
+    const { db } = await getServerClients();
+    
+    // Verify requester is Leader
+    const requester = await getUserProfile(requesterUserId);
+    if (!requester || requester.factionId !== factionId || requester.role !== 'Leader') {
+        throw new Error('Unauthorized: Only the faction leader can modify faction settings.');
+    }
+
+    await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, updates);
 }
 
 export async function generateInviteCode(factionId: string) {

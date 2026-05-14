@@ -71,6 +71,7 @@ export interface CombatantState {
     selectedPrediction?: CombatStance; // Player's prediction of enemy stance for next round
     orbitalAllocation?: OrbitalAllocation;
     bombardmentMode?: BombardmentMode;
+    techModifiers?: Record<string, number>;
 }
 
 // ─── Recruitment & Logistics ──────────────────────────────────────────────────

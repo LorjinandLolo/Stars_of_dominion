@@ -131,10 +131,24 @@ export function findBestRoute(
                 path.unshift(curr);
                 curr = cameFrom.get(curr);
             }
+
+            // Calculate risk score based on the path
+            let riskScore = 0;
+            for (const sys of path) {
+                for (const ws of warStates.values()) {
+                    if (ws.blockadeSystems.has(sys)) {
+                        riskScore += 50;
+                    }
+                    if (ws.hostileFleetsPresence.has(sys)) {
+                        riskScore += (ws.hostileFleetsPresence.get(sys) || 0) * 5;
+                    }
+                }
+            }
+
             return {
                 path,
                 totalCost: costs.get(endSys)!,
-                riskScore: 0 // TODO: Calculate separate risk score if needed
+                riskScore
             };
         }
 

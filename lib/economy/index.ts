@@ -18,12 +18,13 @@ function getDb(): Databases {
 const COLL_FACTIONS = 'factions';
 const COLL_PLANETS = 'planets';
 const COLL_ARMIES = 'armies';
+const COLL_SHIPS = 'ships';
 
 /**
  * The Main Loop of the Lazy Economy.
  * Call this whenever you need to read the faction's resources.
  */
-export async function updateEconomy(factionId: string): Promise<any> { // TODO: Return EconomyState properly
+export async function updateEconomy(factionId: string): Promise<EconomyState> {
     // 1. Fetch Faction Data
     const faction: any = await getDb().getDocument(DB_ID, COLL_FACTIONS, factionId);
 
@@ -83,6 +84,12 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
         Query.limit(100)
     ]);
 
+    // Ships
+    const ships = await getDb().listDocuments(DB_ID, COLL_SHIPS, [
+        Query.equal('faction_id', factionId),
+        Query.limit(100)
+    ]).catch(() => ({ documents: [] })); // Fallback if collection isn't created yet
+
     // Convert to Entities for Upkeep
     const entities: Entity[] = [
         ...armies.documents.map(a => ({
@@ -92,11 +99,15 @@ export async function updateEconomy(factionId: string): Promise<any> { // TODO: 
             x: 0,
             y: 0
         } as Entity)),
-        // TODO: distinct Ships collection
+        ...ships.documents.map(s => ({
+            type: 'ship',
+            id: s.$id,
+            sectorId: '', 
+            x: 0,
+            y: 0
+        } as Entity)),
         // ... (planets don't cost upkeep usually, but buildings might? If so, map planets to entities too)
     ];
-    // Mock Stations/Ships for now until we have a collection
-    // entities.push({ type: 'station', id: 'mock-station' } as Entity);
 
     // 3. RECACLULATE RATES
     const baseRates = calculateIncome(economyPlanets);

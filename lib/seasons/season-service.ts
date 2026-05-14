@@ -10,9 +10,10 @@ import type {
     SeasonFactionRecord,
     SeasonReward,
 } from './season-types';
-import type { GameWorldState } from '../game-world-state';
+import type { GameWorldState, SharedState } from '../game-world-state';
 import { applySeasonalPressure, clampShared } from '../game-world-state';
 import config from '../movement/movement-config.json';
+import { registry } from '../tech/engine';
 
 const seasonCfg = config.seasons;
 
@@ -176,10 +177,10 @@ function computeReward(
     world: GameWorldState
 ): SeasonReward {
     const rewardCfg = seasonCfg.rewards;
-    const posture = world.movement.empirePostures.get(factionId);
     const shared = world.shared;
+    const techState = world.tech.get(factionId);
 
-    // Score based on performance under the season's modifiers
+    // 1. Score based on performance under the season's modifiers
     let score = 0;
     for (const mod of season.modifiers) {
         // If the faction maintained their variable above 0.6 despite pressure, award points
@@ -187,11 +188,31 @@ function computeReward(
         if (typeof current === 'number' && current >= 0.6) score++;
     }
 
+    // 2. Score based on Technology Identity (Standardized Schema)
+    // Every tech has SeasonScoreCategory tags. We reward specialized empires.
+    if (techState) {
+        const unlockedTechs = techState.unlockedTechIds.map(id => registry.get(id)).filter(t => !!t);
+        
+        // Count tags across all researched techs
+        const tagCounts: Record<string, number> = {};
+        unlockedTechs.forEach(t => {
+            t?.seasonScoreTags?.forEach(tag => {
+                tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            });
+        });
+
+        // Add to total score if player has reached critical mass in any category
+        // Thresholds: 10 techs in a category = +1 point (identity-driven prestige)
+        for (const count of Object.values(tagCounts)) {
+            if (count >= 10) score++;
+        }
+    }
+
     // Choose title based on score threshold
     const titleIndex = Math.min(score, rewardCfg.titles.length - 1);
     const title = score >= 1 ? rewardCfg.titles[titleIndex] : '';
     const prestige = score * rewardCfg.prestigePerTitle;
-    const bonus = score >= 2 ? `+${score}% trade efficiency next season` : '';
+    const bonus = score >= 2 ? `+${score}% efficiency boost next season` : '';
 
     return { title, prestige, bonus };
 }

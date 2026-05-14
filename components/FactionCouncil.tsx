@@ -73,7 +73,7 @@ export default function FactionCouncil() {
     };
 
     const handleRoleChange = async (memberId: string, role: FactionRole) => {
-        await updateMemberRole(memberId, role);
+        await updateMemberRole(userId, memberId, role);
         // Refresh
         if (profile) {
             const m = await getFactionMembers(profile.factionId);

@@ -10,6 +10,7 @@ import {
   PlacedBuilding
 } from './construction-types';
 import { BUILDINGS } from '../../data/buildings';
+import { recalculatePlanetStats } from './recalculation';
 
 /**
  * Validates if a building can be built on a specific tile.
@@ -89,7 +90,8 @@ export function startConstruction(
   tile.constructionState = 'under_construction';
   tile.buildingId = buildingId;
   
-  const buildTime = buildingDef.buildTimeSeconds; // TODO: Factor in planet construction speed mod
+  const stats = recalculatePlanetStats(planet);
+  const buildTime = buildingDef.buildTimeSeconds / stats.constructionSpeedModifier;
   const completionTime = now + buildTime;
   tile.constructionCompleteAt = completionTime;
 
@@ -236,7 +238,8 @@ export function repairBuilding(planet: Planet, tileId: string, now: number): boo
   if (!buildingDef) return false;
 
   // Repairs take half the time and cost? (Conceptual)
-  const repairTime = buildingDef.buildTimeSeconds / 2;
+  const stats = recalculatePlanetStats(planet);
+  const repairTime = (buildingDef.buildTimeSeconds / 2) / stats.constructionSpeedModifier;
   tile.constructionState = 'under_construction';
   tile.constructionCompleteAt = now + repairTime;
 

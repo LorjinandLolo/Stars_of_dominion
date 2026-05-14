@@ -1,178 +1,225 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { appwriteClient, databases } from '@/lib/appwrite-client';
-import { deserializeWorld } from '@/lib/persistence/save-service';
+import { deserializeWorld, injectFactionShard, recordsToMaps } from '@/lib/persistence/save-service';
+import type { GameWorldState } from '@/lib/game-world-state';
 
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 const COLL_SESSIONS = 'multiplayer_sessions';
+const COLL_FACTIONS = 'game_factions';
 const SESSION_DOC_ID = 'default-session';
 
 export function useGameSync() {
-    const setFleets = useUIStore(s => s.setFleets);
-    const setPlanets = useUIStore(s => s.setPlanets);
-    const setSystems = useUIStore(s => s.setSystems);
-    const setSystemContested = useUIStore(s => s.setSystemContested);
-    const setNowSeconds = useUIStore(s => s.setNowSeconds);
-    const setFactionVisibility = useUIStore(s => s.setFactionVisibility);
-    const updateEmpireIdentity = useUIStore(s => s.updateEmpireIdentity);
     const playerFactionId = useUIStore(s => s.playerFactionId);
-
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
 
-    // Initial Fetch + WebSocket Subscription Setup
+    const worldRef = useRef<GameWorldState | null>(null);
+    const shardCacheRef = useRef<Map<string, any>>(new Map());
+    const mappedShardCacheRef = useRef<Map<string, any>>(new Map());
+    const updatePendingRef = useRef(false);
+
+    // ─── Throttled Update Engine ──────────────────────────────────────────────
+    const throttledUpdate = () => {
+        if (updatePendingRef.current) return;
+        updatePendingRef.current = true;
+        
+        requestAnimationFrame(() => {
+            updateStoreFromWorld();
+            updatePendingRef.current = false;
+        });
+    };
+
+    const updateStoreFromWorld = () => {
+        const world = worldRef.current;
+        if (!world) return;
+
+        // 1. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
+        const systemList = Array.from(world.movement.systems.values()).map(sys => ({
+            ...sys,
+            escalationLevel: sys.escalationLevel ?? 0,
+            security: sys.security ?? 50,
+            tradeValue: sys.tradeValue ?? 0
+        }));
+
+        const planetList = Array.from(world.construction.planets.values());
+        let fleetList = Array.from(world.movement.fleets.values());
+        
+        // Visibility / Fog-of-War
+        const visibility = playerFactionId 
+            ? world.movement.factionVisibility.get(playerFactionId) || {}
+            : null;
+
+        if (playerFactionId && visibility) {
+            fleetList = fleetList.filter(f => {
+                if (f.factionId === playerFactionId) return true;
+                const sysId = f.currentSystemId || f.destinationSystemId;
+                if (!sysId) return false;
+                const entry = visibility[sysId];
+                return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
+            });
+        }
+
+        // Diplomacy
+        const diplomacyState = {
+            ...useUIStore.getState().diplomacyState,
+            rivalries: Array.from(world.rivalries.values()),
+            treaties: Array.from(world.treaties.values()),
+            tradePacts: Array.from(world.tradePacts.values()),
+            tributes: Array.from(world.tributes.values()),
+            proxyConflicts: Array.from(world.proxyConflicts.values())
+        };
+
+        // Economy
+        const factionMap: Record<string, any> = {};
+        world.economy.factions.forEach((f, id) => factionMap[id] = f);
+        
+        const politicsState = {
+            ...useUIStore.getState().politicsState,
+            allFactions: Object.values(factionMap)
+        };
+
+        // Tech
+        const pTech = playerFactionId ? world.tech.get(playerFactionId) : undefined;
+        const techState = pTech ? {
+            ...useUIStore.getState().techState,
+            ...pTech
+        } : useUIStore.getState().techState;
+
+        // Contested Systems
+        const systemGroups: Record<string, string[]> = {};
+        planetList.forEach(p => {
+            if (!systemGroups[p.systemId]) systemGroups[p.systemId] = [];
+            if (p.ownerId) systemGroups[p.systemId].push(p.ownerId);
+        });
+        
+        const contestedSystemIds = new Set<string>();
+        Object.entries(systemGroups).forEach(([sysId, owners]) => {
+            const uniqueOwners = new Set(owners);
+            if (uniqueOwners.size > 1) contestedSystemIds.add(sysId);
+        });
+
+        // Atomic Batch Update
+        useUIStore.setState({
+            systems: systemList,
+            planets: planetList,
+            fleets: fleetList,
+            nowSeconds: world.nowSeconds,
+            factionVisibility: visibility,
+            diplomacyState,
+            factions: factionMap,
+            politicsState,
+            techState,
+            contestedSystemIds
+        });
+
+        setIsLoading(false);
+        setError(null);
+    };
+
+    // ─── Initial Fetch + Real-Time Subscriptions ──────────────────────────────
     useEffect(() => {
-        let unsubscribe: (() => void) | null = null;
+        let unsubSession: (() => void) | null = null;
+        let unsubFactions: (() => void) | null = null;
         let retryTimeout: NodeJS.Timeout | null = null;
 
-        const syncSnapshot = async (snapshotJson: string) => {
-             try {
-                 // 1. Use the core deserializer to handle our Map-based storage format
-                 const world = deserializeWorld(snapshotJson);
-
-                 // 2. Fetch and Merge Shards (if they exist)
-                 try {
-                     const factionDocs = await databases.listDocuments(DB_ID, 'game_factions');
-                     
-                     // Helper to check if string is JSON before parsing
-                     const safeParse = (str: string) => {
-                         try { return JSON.parse(str); } catch { return null; }
-                     };
-
-                     factionDocs.documents.forEach((fDoc: any) => {
-                         const shardData = safeParse(fDoc.data);
-                         if (!shardData) return;
-                         
-                         // Note: Shards themselves might be serialized with mapsToRecords
-                         // but serializeWorld/deserializeWorld handles the root.
-                         // For now we assume shards are standard records as per extractFactionShard.
-                         
-                         if (shardData.fleets) {
-                             shardData.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
-                         }
-                         if (shardData.economy && shardData.factionId) {
-                             world.economy.factions.set(shardData.factionId, shardData.economy);
-                         }
-                         if (shardData.tech && shardData.factionId) {
-                             world.tech.set(shardData.factionId, shardData.tech);
-                         }
-                     });
-                 } catch (err) {
-                     console.warn('[GameSync] Failed to fetch shards, UI may use session base.');
-                 }
-                 
-                 // 3. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
-                 const systemList = Array.from(world.movement.systems.values()).map(sys => ({
-                    ...sys,
-                    // Ensure mandatory UI fields are satisfied even if optional in simulation
-                    escalationLevel: sys.escalationLevel ?? 0,
-                    security: sys.security ?? 50,
-                    tradeValue: sys.tradeValue ?? 0
-                 }));
-                 setSystems(systemList);
-
-                 const planetList = Array.from(world.construction.planets.values());
-                 setPlanets(planetList);
-
-                 let fleetList = Array.from(world.movement.fleets.values());
-                 
-                 // Map Fog-of-War / Visibility
-                 const visibility = playerFactionId 
-                    ? world.movement.factionVisibility.get(playerFactionId) || {}
-                    : null;
-
-                 if (playerFactionId && visibility) {
-                     fleetList = fleetList.filter(f => {
-                         if (f.factionId === playerFactionId) return true;
-                         const sysId = f.currentSystemId || f.destinationSystemId;
-                         if (!sysId) return false;
-                         const entry = visibility[sysId];
-                         return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
-                     });
-                     setFactionVisibility(visibility);
-                 }
-
-                 setFleets(fleetList);
-                 setNowSeconds(world.nowSeconds);
-                 
-                 // Pillar 1: Diplomacy
-                 useUIStore.getState().updateDiplomacy({
-                     rivalries: Array.from(world.rivalries.values()),
-                     treaties: Array.from(world.treaties.values()),
-                     tradePacts: Array.from(world.tradePacts.values()),
-                     tributes: Array.from(world.tributes.values()),
-                     proxyConflicts: Array.from(world.proxyConflicts.values())
-                 });
-
-                 // Pillar 3: Economy (Live Factions)
-                 const factionMap: Record<string, any> = {};
-                 world.economy.factions.forEach((f, id) => factionMap[id] = f);
-                 
-                 useUIStore.getState().setFactions(factionMap);
-                 useUIStore.getState().updatePolitics({
-                     allFactions: Object.values(factionMap)
-                 });
-
-                 // Pillar 4: Tech
-                 if (playerFactionId) {
-                     const pTech = world.tech.get(playerFactionId);
-                     if (pTech) useUIStore.getState().updateTech(pTech);
-                 }
-
-                 // Recalculate contested status
-                 const systemGroups: Record<string, string[]> = {};
-                 planetList.forEach(p => {
-                     if (!systemGroups[p.systemId]) systemGroups[p.systemId] = [];
-                     if (p.ownerId) systemGroups[p.systemId].push(p.ownerId);
-                 });
-                 Object.entries(systemGroups).forEach(([sysId, owners]) => {
-                     const uniqueOwners = new Set(owners);
-                     setSystemContested(sysId, uniqueOwners.size > 1);
-                 });
-
-                 setIsLoading(false);
-                 setError(null);
-                 setRetryCount(0);
-             } catch(err) {
-                 console.error('[GameSync] Critical parse error:', err);
-             }
+        const injectMappedShard = (world: GameWorldState, mappedShard: any) => {
+            if (!mappedShard) return;
+            if (mappedShard.fleets) {
+                mappedShard.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
+            }
+            if (mappedShard.economy) world.economy.factions.set(mappedShard.factionId, mappedShard.economy);
+            if (mappedShard.tech) world.tech.set(mappedShard.factionId, mappedShard.tech);
+            if (mappedShard.espionageAgents) {
+                mappedShard.espionageAgents.forEach((a: any) => world.espionage.agents.set(a.id, a));
+            }
+            if (mappedShard.intelNetworks) {
+                mappedShard.intelNetworks.forEach((n: any) => world.espionage.intelNetworks.set(n.id, n));
+            }
+            if (mappedShard.recruitmentJobs) {
+                if (!world.combat) world.combat = { recruitmentJobs: [] };
+                const existingIds = new Set(world.combat.recruitmentJobs.map(j => j.id));
+                mappedShard.recruitmentJobs.forEach((j: any) => {
+                    if (!existingIds.has(j.id)) world.combat.recruitmentJobs.push(j);
+                });
+            }
         };
 
         const initSync = async (attempt = 0) => {
-             try {
-                 if (attempt === 0) setIsLoading(true);
-                 
-                 console.log(`[GameSync] Initialization attempt ${attempt + 1}...`);
+            try {
+                if (attempt === 0) setIsLoading(true);
+                console.log(`[GameSync] Full sync attempt ${attempt + 1}...`);
 
-                 // 1. Initial Load via HTTP
-                 const doc: any = await databases.getDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID);
-                 if (doc && doc.snapshot) {
-                     await syncSnapshot(doc.snapshot);
-                 }
+                // 1. Parallel Load: Session + All Faction Shards
+                const [sessionDoc, factionDocs] = await Promise.all([
+                    databases.getDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID),
+                    databases.listDocuments(DB_ID, COLL_FACTIONS)
+                ]);
 
-                 // 2. Subscribe to WebSocket events
-                 const channel = `databases.${DB_ID}.collections.${COLL_SESSIONS}.documents.${SESSION_DOC_ID}`;
-                 unsubscribe = appwriteClient.subscribe(channel, (response) => {
-                     if (response.events.includes('databases.*.collections.*.documents.*.update')) {
-                         const payload = response.payload as any;
-                         if (payload.snapshot) {
-                             syncSnapshot(payload.snapshot);
-                         }
-                     }
-                 });
+                // 2. Initialize Authoritative World
+                const baseWorld = deserializeWorld(sessionDoc.snapshot);
+                worldRef.current = baseWorld;
 
-             } catch (err: any) {
-                 console.warn(`[GameSync] Attempt ${attempt + 1} failed:`, err.message);
-                 
-                 if (attempt < 5) {
-                     const delay = Math.pow(2, attempt) * 1000;
-                     retryTimeout = setTimeout(() => initSync(attempt + 1), delay);
-                 } else {
-                     setError("Establishing connection to Sector Core failed. Signal lost.");
-                     setIsLoading(false);
-                 }
-             }
+                // 3. Inject Shards and Populate Cache
+                factionDocs.documents.forEach((fDoc: any) => {
+                    if (fDoc.data) {
+                        try {
+                            const shardObj = JSON.parse(fDoc.data);
+                            shardCacheRef.current.set(fDoc.$id, shardObj);
+                            mappedShardCacheRef.current.set(fDoc.$id, recordsToMaps(shardObj));
+                        } catch (e) {}
+                    }
+                });
+
+                // Apply all shards to world
+                mappedShardCacheRef.current.forEach(mapped => injectMappedShard(baseWorld, mapped));
+                throttledUpdate();
+                setRetryCount(0);
+
+                // 4. Subscribe: Multiplayer Session (The Clock)
+                const sessionChannel = `databases.${DB_ID}.collections.${COLL_SESSIONS}.documents.${SESSION_DOC_ID}`;
+                unsubSession = appwriteClient.subscribe(sessionChannel, (response) => {
+                    if (response.events.some(e => e.includes('.update'))) {
+                        const payload = response.payload as any;
+                        if (payload.snapshot) {
+                            const newBase = deserializeWorld(payload.snapshot);
+                            // Re-inject cached MAPPED shards into new base snapshot (Zero re-parsing cost!)
+                            mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
+                            worldRef.current = newBase;
+                            throttledUpdate();
+                        }
+                    }
+                });
+
+                // 5. Subscribe: Faction Shards (The Details)
+                const factionChannel = `databases.${DB_ID}.collections.${COLL_FACTIONS}.documents`;
+                unsubFactions = appwriteClient.subscribe(factionChannel, (response) => {
+                    if (response.events.some(e => e.includes('.update') || e.includes('.create'))) {
+                        const shardDoc = response.payload as any;
+                        if (shardDoc.data && worldRef.current) {
+                            try {
+                                const shardObj = JSON.parse(shardDoc.data);
+                                const mapped = recordsToMaps(shardObj);
+                                shardCacheRef.current.set(shardDoc.$id, shardObj);
+                                mappedShardCacheRef.current.set(shardDoc.$id, mapped);
+                                injectMappedShard(worldRef.current, mapped);
+                                throttledUpdate();
+                            } catch (e) {}
+                        }
+                    }
+                });
+
+            } catch (err: any) {
+                console.warn(`[GameSync] Sync attempt ${attempt + 1} failed:`, err.message);
+                if (attempt < 5) {
+                    const delay = Math.pow(2, attempt) * 1000;
+                    retryTimeout = setTimeout(() => initSync(attempt + 1), delay);
+                } else {
+                    setError("Connection lost.");
+                    setIsLoading(false);
+                }
+            }
         };
 
         if (playerFactionId) {
@@ -180,11 +227,11 @@ export function useGameSync() {
         }
 
         return () => {
-            if (unsubscribe) unsubscribe();
+            if (unsubSession) unsubSession();
+            if (unsubFactions) unsubFactions();
             if (retryTimeout) clearTimeout(retryTimeout);
         };
-
-    }, [playerFactionId, setFleets, setNowSeconds, setFactionVisibility, updateEmpireIdentity, retryCount]);
+    }, [playerFactionId, retryCount]);
 
     return { isLoading, error };
 }

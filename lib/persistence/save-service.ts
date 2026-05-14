@@ -20,7 +20,7 @@ export interface GameSaveRecord extends GameSaveMetadata {
 
 // ─── Serialization ────────────────────────────────────────────────────────────
 
-function mapsToRecords(obj: any): any {
+export function mapsToRecords(obj: any): any {
     if (obj instanceof Map) {
         const out: Record<string, any> = {};
         obj.forEach((v, k) => { out[k] = mapsToRecords(v); });
@@ -42,7 +42,7 @@ function mapsToRecords(obj: any): any {
     return obj;
 }
 
-function recordsToMaps(obj: any): any {
+export function recordsToMaps(obj: any): any {
     if (obj && typeof obj === 'object') {
         if (obj.__map__ === true && obj.data) {
             const m = new Map();

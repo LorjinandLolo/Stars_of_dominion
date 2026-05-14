@@ -1,4 +1,5 @@
 import { ResourceId, TradeRoute } from '@/types';
+import { HexGrid } from '../hex-grid';
 
 // Mock DB for now, would normally be Appwrite calls
 const routes: TradeRoute[] = [];
@@ -17,13 +18,33 @@ export function createTradeRoute(originId: string, targetId: string, resource: R
     return newRoute;
 }
 
-export function checkBlockade(routeId: string, hostileSectors: string[]): boolean {
+export function checkBlockade(
+    routeId: string, 
+    hostileSectors: string[],
+    grid?: HexGrid,
+    originCoords?: { x: number, y: number },
+    targetCoords?: { x: number, y: number },
+    sectorLocations?: Record<string, { x: number, y: number }>
+): boolean {
     const route = routes.find(r => r.id === routeId);
     if (!route) return false;
 
-    // TODO: Geometry check (Raycast hex grid)
-    // For now, simple check if origin/dest are in hostile list
-    const isBlockaded = hostileSectors.includes(route.origin_planet_id) || hostileSectors.includes(route.target_planet_id);
+    let isBlockaded = false;
+
+    // Geometry check (Raycast hex grid)
+    if (grid && originCoords && targetCoords && sectorLocations) {
+        const line = grid.getLine(originCoords, targetCoords);
+        const hostileCoordsList = hostileSectors
+            .map(id => sectorLocations[id])
+            .filter(Boolean);
+
+        isBlockaded = line.some(point => 
+            hostileCoordsList.some(hc => hc.x === point.x && hc.y === point.y)
+        );
+    } else {
+        // Fallback: simple check if origin/dest are in hostile list
+        isBlockaded = hostileSectors.includes(route.origin_planet_id) || hostileSectors.includes(route.target_planet_id);
+    }
 
     if (isBlockaded && route.status === 'active') {
         route.status = 'blockaded';

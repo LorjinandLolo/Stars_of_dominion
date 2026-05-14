@@ -128,4 +128,69 @@ export class HexGrid {
         }
         return null; // No path found
     }
+
+    /**
+     * Converts Odd-R coordinates to Cubic coordinates.
+     */
+    toCubic(x: number, y: number): { q: number, r: number, s: number } {
+        const q = x - (y - (y & 1)) / 2;
+        const r = y;
+        return { q, r, s: -q - r };
+    }
+
+    /**
+     * Converts Cubic coordinates to Odd-R coordinates.
+     */
+    toOddR(q: number, r: number): { x: number, y: number } {
+        const x = q + (r - (r & 1)) / 2;
+        const y = r;
+        return { x, y };
+    }
+
+    /**
+     * Returns a straight line of hexes from start to end (inclusive) using raycast interpolation
+     */
+    getLine(start: { x: number, y: number }, end: { x: number, y: number }): { x: number, y: number }[] {
+        const N = this.getDistance(start, end);
+        if (N === 0) return [start];
+
+        const results: { x: number, y: number }[] = [];
+        const a = this.toCubic(start.x, start.y);
+        const b = this.toCubic(end.x, end.y);
+
+        // Nudge to prevent perfectly hitting corners which can cause jagged lines
+        const aNudge = { q: a.q + 1e-6, r: a.r + 1e-6, s: a.s - 2e-6 };
+        const bNudge = { q: b.q + 1e-6, r: b.r + 1e-6, s: b.s - 2e-6 };
+
+        for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const q = aNudge.q + (bNudge.q - aNudge.q) * t;
+            const r = aNudge.r + (bNudge.r - aNudge.r) * t;
+            const s = aNudge.s + (bNudge.s - aNudge.s) * t;
+
+            // Round to nearest hex
+            let rq = Math.round(q);
+            let rr = Math.round(r);
+            let rs = Math.round(s);
+
+            const q_diff = Math.abs(rq - q);
+            const r_diff = Math.abs(rr - r);
+            const s_diff = Math.abs(rs - s);
+
+            if (q_diff > r_diff && q_diff > s_diff) {
+                rq = -rr - rs;
+            } else if (r_diff > s_diff) {
+                rr = -rq - rs;
+            } else {
+                rs = -rq - rr;
+            }
+
+            const oddR = this.toOddR(rq, rr);
+            if (this.isValid(oddR.x, oddR.y)) {
+                results.push(oddR);
+            }
+        }
+
+        return results;
+    }
 }

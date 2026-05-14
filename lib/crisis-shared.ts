@@ -29,22 +29,37 @@ export function getAvailableStrategies(type: 'attack' | 'defense') {
     return type === 'attack' ? ATTACK_STRATEGIES : DEFENSE_STRATEGIES;
 }
 
-export function resolveLogic(attStratId: string, defStratId: string) {
+export function resolveLogic(attStratId: string, defStratId: string, predictedAttStratId?: string) {
     // Check if defense counters attack
     const defStrat = DEFENSE_STRATEGIES.find(s => s.id === defStratId);
 
-    if (defStrat && defStrat.counters?.includes(attStratId)) {
-        return {
-            winner: 'defender',
-            message: `${defStrat.name} effectively countered ${attStratId.replace('_', ' ')}!`,
-            bonus: 'Defender takes minimal damage.'
-        };
+    const winner = (defStrat && defStrat.counters?.includes(attStratId)) ? 'defender' : 'attacker';
+    const predictionCorrect = predictedAttStratId === attStratId;
+    
+    let message = '';
+    let bonus = '';
+    const appliedEffects: string[] = [];
+
+    if (winner === 'defender') {
+        message = `${defStrat?.name} effectively countered ${attStratId.replace(/_/g, ' ')}!`;
+        bonus = 'Defender takes minimal damage.';
+        appliedEffects.push('Counter-Strategy Applied');
+    } else {
+        message = `Defense (${defStrat?.name || 'None'}) failed to stop ${attStratId.replace(/_/g, ' ')}!`;
+        bonus = 'Attacker deals heavy damage.';
     }
 
-    // Checking for a lucky guess? For now, if not countered, Attacker wins.
+    if (predictionCorrect) {
+        appliedEffects.push('Foresight Bonus (+15% Tactical Advantage)');
+        bonus += ' Correct prediction granted a tactical windfall.';
+    }
+
     return {
-        winner: 'attacker',
-        message: `Defense (${defStrat?.name}) failed to stop ${attStratId.replace('_', ' ')}!`,
-        bonus: 'Attacker deals heavy damage.'
+        winner,
+        message,
+        bonus,
+        predictionCorrect,
+        appliedEffects
     };
 }
+

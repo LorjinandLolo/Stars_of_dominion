@@ -16,16 +16,17 @@ export class VisibilityEngine {
             // Base Signal
             let signal: PublicSignal = {
                 playerId: targetState.factionId,
-                domain: tech.domain || tech.branch || Domain.MILITARY,
-                tier: tech.tier || Tier.I,
+                domain: tech.tree || Domain.MILITARY,
+                tier: tech.tier || Tier.FOUNDATION,
                 timestamp: Date.now(), // In real app, store unlock time in state
                 isObscured: false,
                 isFalsified: false
             };
 
             // Apply Visibility Modifiers
-            if (tech.visibilityModifier) {
-                switch (tech.visibilityModifier) {
+            const vMod = (tech as any).visibilityModifier;
+            if (vMod) {
+                switch (vMod) {
                     case VisibilityModifierType.OBSCURE_TIER:
                         signal.isObscured = true;
                         // Tier remains in object for logic, but UI should hide it
@@ -33,7 +34,7 @@ export class VisibilityEngine {
 
                     case VisibilityModifierType.FALSIFY_DOMAIN:
                         signal.isFalsified = true;
-                        signal.domain = this.getFalsifiedDomain(tech.domain || tech.branch || Domain.MILITARY);
+                        signal.domain = this.getFalsifiedDomain(tech.tree || Domain.MILITARY);
                         break;
 
                     case VisibilityModifierType.DELAYED_REVEAL:
@@ -51,12 +52,13 @@ export class VisibilityEngine {
 
     private static getFalsifiedDomain(trueDomain: Domain): Domain {
         // Deterministic cycle for falsification
-        // Mil -> Econ -> Dip -> Cul -> Mil
         switch (trueDomain) {
-            case Domain.MILITARY: return Domain.ECONOMIC;
-            case Domain.ECONOMIC: return Domain.DIPLOMATIC;
-            case Domain.DIPLOMATIC: return Domain.CULTURAL;
-            case Domain.CULTURAL: return Domain.MILITARY;
+            case Domain.MILITARY: return Domain.ECONOMY;
+            case Domain.ECONOMY: return Domain.DIPLOMACY;
+            case Domain.DIPLOMACY: return Domain.INFRASTRUCTURE;
+            case Domain.INFRASTRUCTURE: return Domain.ESPIONAGE;
+            case Domain.ESPIONAGE: return Domain.MILITARY;
+            default: return Domain.MILITARY;
         }
     }
 }

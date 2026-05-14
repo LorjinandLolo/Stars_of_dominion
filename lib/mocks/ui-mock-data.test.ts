@@ -19640,15 +19640,15 @@ export const mockCrisisEvents: CrisisEvent[] = [
     },
 ];
 
-export { mockSeasonState } from './mock-season';
-export { mockChronicle } from './mock-chronicle';
-export { mockCivilizationalOutcomes } from './mock-outcomes';
-export { mockEspionageState } from './mock-espionage';
-export { mockPoliticsState } from './mock-politics';
-export { mockDiplomacyState } from './mock-diplomacy';
-export { mockTechState } from './mock-tech';
-export { mockDiscourseState } from './mock-discourse';
-export { mockCorporateState } from './mock-corporate';
+export { mockSeasonState } from './mock-season.test';
+export { mockChronicle } from './mock-chronicle.test';
+export { mockCivilizationalOutcomes } from './mock-outcomes.test';
+export { mockEspionageState } from './mock-espionage.test';
+export { mockPoliticsState } from './mock-politics.test';
+export { mockDiplomacyState } from './mock-diplomacy.test';
+export { mockTechState } from './mock-tech.test';
+export { mockDiscourseState } from './mock-discourse.test';
+export { mockCorporateState } from './mock-corporate.test';
 
 export const mockPressState: any = {
     tick: 0,

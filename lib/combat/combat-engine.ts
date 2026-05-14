@@ -77,10 +77,6 @@ export function calculateEffectivePower(
 ): number {
     const compMod = calculateCompositionModifier(combatant.composition, enemy.composition, layer);
 
-    // [INTEGRATION] If we have custom ship designs, we should use their stats here.
-    // For now, we scale the power based on a composite "Efficiency" factor derived from the composition.
-    // In a full implementation, we'd sum (unitCount * unitEffectivePower).
-    
     // Morale curve: Drops off hard below 50%
     const moraleMod = combatant.morale >= 0.5 ? 1.0 : (0.5 + combatant.morale);
 
@@ -91,6 +87,15 @@ export function calculateEffectivePower(
     totalMultiplier *= terrainMulti;
     totalMultiplier *= supplyMod;
     totalMultiplier *= moraleMod;
+
+    // Apply Tech Modifiers
+    if (combatant.techModifiers) {
+        const globalMod = combatant.techModifiers['combat_power_multiplier'] || 0;
+        const layerMod = layer === 'orbital' 
+            ? (combatant.techModifiers['orbital_power_multiplier'] || 0)
+            : (combatant.techModifiers['ground_power_multiplier'] || 0);
+        totalMultiplier *= (1.0 + globalMod + layerMod);
+    }
 
     // Apply strict ±40% variance cap on the base power
     const maxMulti = 1.0 + config.constants.maxVarianceCap;
@@ -231,8 +236,6 @@ export function resolveEngagementRound(
     if (state.momentum < 0) defenderPower *= (1.0 + (Math.abs(state.momentum) * 0.10));
 
     // Intelligence-based Prediction Simulation
-    // Represented probabilistically, granting a small bonus if successful.
-    // Deep penetration drops max probability up to 75%
     let attackerPredictionBonus = 0;
     let defenderPredictionBonus = 0;
     const aIntelProb = config.intelPredictionProbabilities[state.attacker.intelLevel].archetypeExact;
@@ -244,22 +247,25 @@ export function resolveEngagementRound(
     attackerPower *= (1.0 + attackerPredictionBonus);
     defenderPower *= (1.0 + defenderPredictionBonus);
 
-    // Manual Player Prediction Bonus (+15% Tactical Advantage)
+    // Manual Player Prediction Bonus
     const aPred = roundInput.attackerPredictedStance;
     const dPred = roundInput.defenderPredictedStance;
     let manualAttackerBonus = false;
     let manualDefenderBonus = false;
 
+    // Base prediction bonus is 15%, but can be modified by tech (Elite Precision Force path)
+    const aPredMult = state.attacker.techModifiers?.['prediction_bonus_multiplier'] || 0.15;
+    const dPredMult = state.defender.techModifiers?.['prediction_bonus_multiplier'] || 0.15;
+
     if (aPred === dStance) {
-        attackerPower *= 1.15;
+        attackerPower *= (1.0 + aPredMult);
         manualAttackerBonus = true;
     }
     if (dPred === aStance) {
-        defenderPower *= 1.15;
+        defenderPower *= (1.0 + dPredMult);
         manualDefenderBonus = true;
     }
 
-    // HOI4 Damage Vectors Integration
     // HOI4 Damage Vectors Integration & Naval Air Support
     const aComp = state.attacker.composition;
     const aScreens = (aComp['destroyer'] || 0);
@@ -339,8 +345,8 @@ export function resolveEngagementRound(
 
     if (attackerPredictionBonus > 0) report.events.push("Attacker Intel allowed stance prediction bonus.");
     if (defenderPredictionBonus > 0) report.events.push("Defender Intel allowed stance prediction bonus.");
-    if (manualAttackerBonus) report.events.push("Attacker successfully predicted enemy stance: +15% Tactical Advantage.");
-    if (manualDefenderBonus) report.events.push("Defender successfully predicted enemy stance: +15% Tactical Advantage.");
+    if (manualAttackerBonus) report.events.push(`Attacker successfully predicted enemy stance: +${Math.round(aPredMult*100)}% Tactical Advantage.`);
+    if (manualDefenderBonus) report.events.push(`Defender successfully predicted enemy stance: +${Math.round(dPredMult*100)}% Tactical Advantage.`);
 
     // Supply decay
     applySupplyDecay(state, report, roundInput);
@@ -409,7 +415,6 @@ export function advanceRound(state: CombatState) {
             state.round = 1;
 
             // Whoever dealt more damage/has higher power holds orbit
-            // Simple check: compare remaining hp in orbit (assuming all forces committed are orbital)
             if (state.attacker.hp > state.defender.hp) {
                 state.orbitalWinnerId = state.attacker.factionId;
             } else {
@@ -453,7 +458,6 @@ export function checkAnnihilation(state: CombatState): { annihilatedFactionId: s
 }
 
 export function applyPostBattleDirective(state: CombatState) {
-    // Process directives (Consolidate, Exploit, etc.) modifying casualty retention or supply
     const processDirective = (c: CombatantState) => {
         const activeDirective = c.selectedDirective || c.currentDirective;
         switch (activeDirective) {
@@ -462,7 +466,6 @@ export function applyPostBattleDirective(state: CombatState) {
                 c.morale = clamp(c.morale + 0.10, 0, 1);
                 break;
             case 'orderly_retreat':
-                // Retrieve some organization to escape safely
                 c.organization = Math.min(c.maxOrganization, c.organization + (c.maxOrganization * 0.2));
                 break;
             case 'pillage':
@@ -471,7 +474,6 @@ export function applyPostBattleDirective(state: CombatState) {
                 }
                 break;
             case 'pursue':
-                // Adds extra casualties to enemy (simulated outside this func by higher layer)
                 break;
         }
     };

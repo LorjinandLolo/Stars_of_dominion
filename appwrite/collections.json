@@ -227,6 +227,37 @@
           "required": false
         }
       ]
+    },
+    {
+      "id": "ships",
+      "name": "ships",
+      "attributes": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "faction_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "location_planet_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "status",
+          "type": "string",
+          "required": false
+        }
+      ]
     }
   ]
 }

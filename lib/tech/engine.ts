@@ -1,6 +1,6 @@
 import {
     Tech, PlayerTechState, GameStateContext,
-    Domain, Tier, TechEffectType, TechEffect,
+    TechTreeType, TechTier, TechEffectType, TechEffect,
     ResearchSlot
 } from './types';
 
@@ -23,8 +23,8 @@ class TechRegistry {
     }
 
     private validateSafetyRails(tech: Tech) {
-        if (!tech.id || !tech.name || !tech.effects) {
-            throw new Error(`Invalid tech definition: ${tech.id}`);
+        if (!tech.id || !tech.name || tech.tree === undefined || tech.tier === undefined) {
+            throw new Error(`Invalid tech definition: ${tech.id || 'unknown'}`);
         }
     }
 }
@@ -129,11 +129,18 @@ export class TechEngine {
             this.applyEffect(state, effect);
         }
 
-        // 2. Handle Mutual Exclusivity (Doctrine Locks)
-        if (tech.mutuallyExclusiveWith) {
-            for (const conflictId of tech.mutuallyExclusiveWith) {
-                if (!state.lockedTechIds.includes(conflictId)) {
-                    state.lockedTechIds.push(conflictId);
+        // 2. Handle Mutual Exclusivity (Identity/Branch Locking)
+        if (tech.mutuallyExclusiveGroup) {
+            // Find all other techs in this group and lock them
+            const allTechs = registry.getAll();
+            const groupConflictTechs = allTechs.filter(t => 
+                t.mutuallyExclusiveGroup === tech.mutuallyExclusiveGroup && 
+                t.id !== tech.id
+            );
+
+            for (const conflict of groupConflictTechs) {
+                if (!state.lockedTechIds.includes(conflict.id)) {
+                    state.lockedTechIds.push(conflict.id);
                 }
             }
         }
@@ -141,33 +148,38 @@ export class TechEngine {
 
     private static applyEffect(state: PlayerTechState, effect: TechEffect) {
         switch (effect.type) {
-            case TechEffectType.UNLOCK_RESEARCH_SLOT:
-                // state.maxSlots += 1;
-                // state.activeSlots.push({
-                //     slotId: `slot-${state.maxSlots}`,
-                //     techId: null,
-                //     ticksCompleted: 0,
-                //     ticksRequired: 0,
-                //     status: 'empty',
-                //     startTime: 0,
-                //     progressHours: 0
-                // });
-                break;
             case TechEffectType.MODIFIER_PERCENT:
-                const current = state.globalModifiers[effect.target!] || 1.0;
-                state.globalModifiers[effect.target!] = current + effect.value!;
+                if (effect.modifierKey) {
+                    const key = effect.modifierKey;
+                    const current = state.globalModifiers[key] || 1.0;
+                    state.globalModifiers[key] = current + effect.value!;
+                }
                 break;
             case TechEffectType.MODIFIER_FLAT:
-                const flat = state.globalModifiers[effect.target!] || 0;
-                state.globalModifiers[effect.target!] = flat + effect.value!;
+                if (effect.modifierKey) {
+                    const key = effect.modifierKey;
+                    const flat = state.globalModifiers[key] || 0;
+                    state.globalModifiers[key] = flat + effect.value!;
+                }
                 break;
-            // Other system-specific effects (e.g., building unlocks) are queried via unlockedTechs set
         }
+        
+        // Always store active effects for lookup by other systems
+        state.activeEffects.push(effect);
     }
 
     private static validateAvailability(state: PlayerTechState, tech: Tech) {
         if (state.unlockedTechIds.includes(tech.id)) throw new Error("Already researched");
         if (state.lockedTechIds.includes(tech.id)) throw new Error("Technology is mutually exclusive with an existing choice");
+
+        // Group-based locking check
+        if (tech.mutuallyExclusiveGroup) {
+            const alreadyPickedInGroup = state.unlockedTechIds.some(uid => {
+                const ut = registry.get(uid);
+                return ut?.mutuallyExclusiveGroup === tech.mutuallyExclusiveGroup;
+            });
+            if (alreadyPickedInGroup) throw new Error("A different path in this branch has already been chosen");
+        }
 
         // Prerequisite check
         for (const preId of tech.prerequisites) {
@@ -187,7 +199,7 @@ export class TechEngine {
             ...state,
             unlockedTechIds: [...state.unlockedTechIds],
             activeSlots: state.activeSlots.map(s => ({ ...s })),
-            activeEffects: [...state.activeEffects],
+            activeEffects: [...state.activeEffects.map(e => ({ ...e }))],
             globalModifiers: { ...state.globalModifiers },
             lockedTechIds: [...state.lockedTechIds]
         };

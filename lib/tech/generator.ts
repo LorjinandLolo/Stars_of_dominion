@@ -25,7 +25,7 @@ export class TechGenerator {
 
         // 3. Optional Secondary (Probability based on tier & intent)
         let sEffect = undefined;
-        if (Math.random() > 0.5 || tier >= Tier.III) {
+        if (Math.random() > 0.5 || tier >= Tier.DOMINANCE) {
             sEffect = {
                 type: this.selectSecondaryEffect(intent),
                 magnitude: pMag === Magnitude.SEVERE ? Magnitude.HIGH : Magnitude.LOW
@@ -34,7 +34,7 @@ export class TechGenerator {
 
         // 4. Burn (Mandatory for Tier IV)
         let burn = undefined;
-        if (tier === Tier.IV) {
+        if (tier === Tier.TRANSFORMATION) {
             burn = {
                 type: this.selectBurnType(intent),
                 description: "Procedurally generated sacrifice"
@@ -51,7 +51,7 @@ export class TechGenerator {
         const tech: Tech = {
             id: `gen_${domain}_${tier}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             name: `Generated ${domain} Protocol ${Math.floor(Math.random() * 999)}`,
-            domain,
+            tree: domain,
             tier,
             intent,
             description: "A procedurally generated technology.",
@@ -95,7 +95,7 @@ export class TechGenerator {
             case Intent.DECEPTION:
                 return PrimaryEffectType.INFORMATION_ASYMMETRY;
             case Intent.CONTROL:
-                return Tier.IV === tier ? PrimaryEffectType.COMMITMENT_TRAP : PrimaryEffectType.CRISIS_MODIFIER;
+                return Tier.TRANSFORMATION === tier ? PrimaryEffectType.COMMITMENT_TRAP : PrimaryEffectType.CRISIS_MODIFIER;
             case Intent.LEVERAGE:
                 return PrimaryEffectType.STAT_SHIFT;
             default:
@@ -119,9 +119,9 @@ export class TechGenerator {
 
     private static calculateMagnitude(tier: Tier, ctx: GameStateContext): Magnitude {
         // Base mag on tier
-        if (tier === Tier.I) return Magnitude.LOW;
-        if (tier === Tier.II) return Magnitude.MED;
-        if (tier === Tier.III) return Magnitude.HIGH;
+        if (tier === Tier.EXPANSION) return Magnitude.LOW;
+        if (tier === Tier.SPECIALIZATION) return Magnitude.MED;
+        if (tier === Tier.DOMINANCE) return Magnitude.HIGH;
         return Magnitude.SEVERE;
     }
 }

@@ -9,9 +9,13 @@ import ResolutionSummaryCard from '@/components/notifications/ResolutionSummaryC
 import type { ResolutionSummary } from '@/lib/integration/types';
 import { useRouter } from 'next/navigation';
 import Modal from '@/components/ui/Modal';
+import { useUIStore } from '@/lib/store/ui-store';
+import { awardStrategicBonusAction } from '@/app/actions/economy';
+import doctrineDefinitions from '@/lib/doctrine/data/doctrine-definitions.json';
 
 export default function CrisisDashboard({ crises, currentFactionId }: { crises: any[], currentFactionId: string }) {
     const router = useRouter();
+    const { empireIdentity } = useUIStore();
     const [selectedCrisis, setSelectedCrisis]     = useState<any>(null);
     const [selectedStrategy, setSelectedStrategy] = useState<string>('');
     const [predictedStrategy, setPredictedStrategy] = useState<string>('');
@@ -37,6 +41,13 @@ export default function CrisisDashboard({ crises, currentFactionId }: { crises: 
             // Determine opponent's actual strategy from crisis document
             const opponentActionId = selectedCrisis.attacker_strategy ?? 'unknown';
 
+            // Pull active doctrine names for the report
+            const activeDoctrineIds = Object.values(empireIdentity.doctrines?.activeDoctrines || {}).filter(Boolean) as string[];
+            const doctrineEffectsApplied = activeDoctrineIds.map(id => {
+                const def = (doctrineDefinitions as any[]).find(d => d.id === id);
+                return def ? `${def.name} Active` : null;
+            }).filter(Boolean) as string[];
+
             const { summary, predictionBonus } = buildResolutionSummary({
                 crisisId:        selectedCrisis.$id,
                 yourActionId:    selectedStrategy,
@@ -44,15 +55,16 @@ export default function CrisisDashboard({ crises, currentFactionId }: { crises: 
                 predictedActionId: predictedStrategy || undefined,
                 winner:          res.winner ?? 'attacker',
                 message:         res.message ?? 'Engagement resolved.',
-                // TODO: pull active doctrine modifiers from empireIdentity.doctrines
-                doctrineEffectsApplied: [],
+                doctrineEffectsApplied,
                 reputationSignals: opponentActionId !== 'unknown'
                     ? [`Enemy used ${opponentActionId.replace(/_/g, ' ')} — intel updated.`]
                     : [],
             });
 
-            // TODO: Apply predictionBonus credits via economy service when available.
-            // predictionBonus > 0 && awardCreditsAction(currentFactionId, predictionBonus);
+            // Apply predictionBonus credits via economy service
+            if (predictionBonus > 0) {
+                await awardStrategicBonusAction(currentFactionId, predictionBonus);
+            }
 
             setResolution(summary);
 

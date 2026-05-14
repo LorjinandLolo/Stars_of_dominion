@@ -19,7 +19,9 @@ import {
 import { sponsorProxyAction } from '@/app/actions/proxy';
 import { TreatyType } from '@/lib/politics/cold-war-types';
 import { buildReputationProfile } from '@/lib/integration/reputation-vm';
-import type { ReputationSignal } from '@/lib/integration/types';
+import { ReputationSignal } from '@/lib/integration/types';
+import DiscourseTerminal from '../politics/DiscourseTerminal';
+import { MessageSquare } from 'lucide-react';
 
 const FACTIONS = [
     {
@@ -73,9 +75,10 @@ const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
 ];
 
 export default function DiplomacyPanel() {
-    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy } = useUIStore();
-    const [activeTab, setActiveTab] = useState<'intel' | 'statecraft'>('statecraft');
+    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy, espionageState, planets } = useUIStore();
+    const [activeTab, setActiveTab] = useState<'intel' | 'statecraft' | 'economy' | 'intrigue'>('statecraft');
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
+    const [showDiscourse, setShowDiscourse] = useState(false);
 
     const liveFactions = useMemo(() => {
         return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
@@ -133,7 +136,7 @@ export default function DiplomacyPanel() {
                     </div>
                     
                     <div className="flex bg-black/60 p-1.5 rounded-xl border border-white/10 shadow-inner">
-                        {(['statecraft', 'intel'] as const).map(tab => (
+                        {(['statecraft', 'economy', 'intrigue', 'intel'] as const).map(tab => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -197,6 +200,14 @@ export default function DiplomacyPanel() {
                                     <TrendingUp className="w-5 h-5 text-emerald-400 animate-bounce" />
                                 </div>
                             </div>
+                            
+                            <button 
+                                onClick={() => setShowDiscourse(true)}
+                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-display tracking-[0.2em] uppercase flex items-center gap-2 shadow-lg shadow-indigo-900/20 transition-all hover:scale-105 active:scale-95"
+                            >
+                                <MessageSquare size={16} />
+                                Initiate Direct Discourse
+                            </button>
                         </div>
 
                         {activeTab === 'statecraft' ? (
@@ -278,6 +289,93 @@ export default function DiplomacyPanel() {
                                     </div>
                                 </div>
                             </div>
+                        ) : activeTab === 'economy' ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                <div className="space-y-6">
+                                    <h3 className="text-[11px] font-display text-green-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <TrendingUp className="w-4 h-4" /> Mercantile Synergies
+                                    </h3>
+                                    <button 
+                                        onClick={() => handleAction('trade-pact', negotiateTradePactAction(playerState.factionId, selectedFactionId, { credits: 1.1 }, true))}
+                                        className="w-full p-6 bg-green-500/5 border border-green-500/20 rounded-2xl hover:bg-green-500/10 transition-all text-left group"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="p-3 bg-green-500/20 rounded-xl">
+                                                <DollarSign className="w-5 h-5 text-green-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Establish Trade Pact</span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Mutual Resource Multiplier</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 italic">Increases trade efficiency by +10% in shared hexes.</p>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <h3 className="text-[11px] font-display text-amber-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Gavel className="w-4 h-4" /> Economic Leverage
+                                    </h3>
+                                    <button 
+                                        onClick={() => handleAction('tribute', demandTributeAction(selectedFactionId, playerState.factionId, 'credits', 500))}
+                                        className="w-full p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all text-left"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="p-3 bg-amber-500/20 rounded-xl">
+                                                <Flame className="w-5 h-5 text-amber-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Demand Sovereign Tribute</span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">One-way resource transfer</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 italic">Requires significant military superiority or leverage.</p>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : activeTab === 'intrigue' ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                <div className="space-y-6">
+                                    <h3 className="text-[11px] font-display text-purple-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Fingerprint className="w-4 h-4" /> Subversive Operations
+                                    </h3>
+                                    <button 
+                                        onClick={() => handleAction('proxy', sponsorProxyAction(selectedFactionId, 'rebel-cell-alpha', 500))}
+                                        className="w-full p-6 bg-purple-500/5 border border-purple-500/20 rounded-2xl hover:bg-purple-500/10 transition-all text-left"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="p-3 bg-purple-500/20 rounded-xl">
+                                                <Skull className="w-5 h-5 text-purple-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Sponsor Proxy Conflict</span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Covert destabilization</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 italic">Increases unrest in target systems. High blowback risk.</p>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <h3 className="text-[11px] font-display text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Activity className="w-4 h-4" /> Perception Management
+                                    </h3>
+                                    <button 
+                                        className="w-full p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl hover:bg-blue-500/10 transition-all text-left opacity-50 cursor-not-allowed"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="p-3 bg-blue-500/20 rounded-xl">
+                                                <FileText className="w-5 h-5 text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Propaganda Campaign</span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Ideological saturation</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 italic">Slowly shifts local population alignment towards your ideology.</p>
+                                    </button>
+                                </div>
+                            </div>
                         ) : (
                             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                                 {/* Reputation Assessment */}
@@ -305,6 +403,14 @@ export default function DiplomacyPanel() {
                 </div>
                 <div className="text-[9px] font-mono text-slate-600 uppercase">Sovereign OS v1.0.4 r75</div>
             </div>
+
+            {/* Discourse Terminal Modal */}
+            {showDiscourse && (
+                <DiscourseTerminal 
+                    factionId={selectedFactionId} 
+                    onClose={() => setShowDiscourse(false)} 
+                />
+            )}
         </div>
     );
 }
@@ -318,6 +424,8 @@ const CERTAINTY_CONFIG = {
 };
 
 function ReputationAssessment({ factionId, repData }: { factionId: string; repData: any }) {
+    const { espionageState, planets, playerState } = useUIStore();
+
     if (!repData) {
         return (
             <div className="glass-panel p-16 rounded-3xl border-dashed border-white/10 flex flex-col items-center gap-5">
@@ -332,7 +440,19 @@ function ReputationAssessment({ factionId, repData }: { factionId: string; repDa
         );
     }
 
-    const profile = buildReputationProfile(repData);
+    // Calculate dynamic intel Quality based on espionage networks in target's systems
+    const targetSystemIds = planets.filter(p => p.ownerId === factionId).map(p => p.systemId);
+    const playerNetworks = espionageState.networks.filter(n => 
+        n.ownerFactionId === playerState.factionId && targetSystemIds.includes(n.systemId)
+    );
+    
+    let intelQuality = 10; // Base minimal intel
+    if (playerNetworks.length > 0) {
+        const maxStrength = Math.max(...playerNetworks.map(n => n.strength));
+        intelQuality = Math.round(maxStrength * 100);
+    }
+
+    const profile = buildReputationProfile(repData, intelQuality);
 
     return (
         <div className="space-y-7">

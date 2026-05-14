@@ -4,6 +4,7 @@ import { getEconomyState } from '@/lib/economy/economy-service';
 import { Resource, PriceFormula, PolicyRule } from '@/lib/trade-system/types';
 import { revalidatePath } from 'next/cache';
 import { executePlayerAction } from './registry-handler';
+import { getServerClients } from '@/lib/appwrite';
 
 /**
  * Propose or update a trade agreement between two factions.
@@ -108,4 +109,47 @@ export async function generateIntrigueOptionsAction(targetFactionId: string) {
 export async function executeIntrigueAction(optionId: string, type: string, targetId: string) {
     console.log(`[INTRIGUE] Stub: executeIntrigueAction ${type} on ${targetId}`);
     return { success: true };
+}
+/**
+ * Awards a strategic bonus (credits/influence) to a faction.
+ * Typically called after successful predictions or missions.
+ */
+export async function awardStrategicBonusAction(
+    factionId: string,
+    credits: number = 0,
+    influence: number = 0
+) {
+    const { db } = await getServerClients();
+    const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
+    const COLL_FACTIONS = 'factions';
+
+    try {
+        const factionDoc = await db.getDocument(DB_ID, COLL_FACTIONS, factionId);
+        const resources = factionDoc.resources ? JSON.parse(factionDoc.resources) : {};
+        
+        if (credits > 0) {
+            resources.credits = (resources.credits || 0) + credits;
+        }
+        if (influence > 0) {
+            resources.influence = (resources.influence || 0) + influence;
+        }
+
+        await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
+            resources: JSON.stringify(resources)
+        });
+    } catch (e) {
+        console.error('Failed to directly award strategic bonus:', e);
+    }
+
+    const result = await executePlayerAction({
+        id: `bonus-${Date.now()}`,
+        actionId: 'ECON_AWARD_STRATEGIC_BONUS',
+        issuerId: factionId,
+        targetId: 'GLOBAL',
+        payload: { credits, influence },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
 }

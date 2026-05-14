@@ -128,17 +128,23 @@ export async function tickCombats(deltaSeconds: number) {
   }
 }
 
+import { respondToCrisis } from '@/lib/crisis-manager';
+
 /**
  * Submits a tactical defense against a crisis.
  */
 export async function submitDefense(crisisId: string, strategyId: string, predictedActionId?: string): Promise<ActionResult> {
-  // Crisis response logic: resolve the crisis based on strategy
-  // For now, return a mock success
-  revalidatePath('/');
-  return { 
-    success: true, 
-    winner: 'defender',
-    message: 'Defense successfully repelled the invaders.'
-  } as any;
+  try {
+    const result = await respondToCrisis(crisisId, strategyId, predictedActionId);
+    revalidatePath('/');
+    return { 
+      success: true, 
+      winner: result.winner,
+      message: result.message
+    } as any;
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Failed to resolve crisis.' };
+  }
 }
+
 

@@ -2,20 +2,37 @@ import { Faction } from '../../types/index';
 
 // --- ENUMS (HoI4 Strategy Grammar) ---
 
-export enum Domain {
-    MILITARY = 'Military',
-    ECONOMIC = 'Economic',
-    DIPLOMATIC = 'Diplomatic',
-    CULTURAL = 'Cultural'
+// --- ENUMS (Standardized Schema) ---
+
+export enum TechTreeType {
+    ESPIONAGE = 'espionage',
+    MILITARY = 'military',
+    ECONOMY = 'economy',
+    DIPLOMACY = 'diplomacy',
+    INFRASTRUCTURE = 'infrastructure'
 }
 
-export enum Tier {
-    I = 1,
-    II = 2,
-    III = 3,
-    IV = 4,
-    V = 5,
-    VI = 6
+export type Domain = TechTreeType;
+export const Domain = TechTreeType;
+
+export enum TechTier {
+    FOUNDATION = 0,
+    EXPANSION = 1,
+    SPECIALIZATION = 2,
+    DOMINANCE = 3,
+    TRANSFORMATION = 4
+}
+
+export type Tier = TechTier;
+export const Tier = TechTier;
+
+export enum TechStatus {
+    LOCKED = 'locked',
+    AVAILABLE = 'available',
+    RESEARCHING = 'researching',
+    COMPLETE = 'complete',
+    PAUSED = 'paused',
+    EMPTY = 'empty'
 }
 
 export enum TechEffectType {
@@ -25,125 +42,129 @@ export enum TechEffectType {
     UNLOCK_ACTION = 'unlock_action',
     UNLOCK_POLICY = 'unlock_policy',
     UNLOCK_RESEARCH_SLOT = 'unlock_research_slot',
-    UNLOCK_VICTORY_STEP = 'unlock_victory_step',
 
     // Modifiers
     MODIFIER_PERCENT = 'modifier_percent',
     MODIFIER_FLAT = 'modifier_flat',
     
-    // Specific Targets
+    // Performance Targets
     RESEARCH_SPEED = 'research_speed',
     UNIT_STAT = 'unit_stat',
     BUILDING_OUTPUT = 'building_output',
-    UPKEEP_MODIFIER = 'upkeep_modifier',
-    STRATEGIC_BONUS = 'strategic_bonus'
+    UPKEEP_MODIFIER = 'upkeep_modifier'
 }
 
-export enum Intent {
-    AGGRESSION = 'AGGRESSION',
-    DECEPTION = 'DECEPTION',
-    CONTROL = 'CONTROL',
-    SACRIFICE = 'SACRIFICE',
-    LEVERAGE = 'LEVERAGE',
-    GROWTH = 'GROWTH',
-    ASCENSION = 'ASCENSION'
-}
-
-export enum Magnitude {
-    VERY_LOW = 'VERY_LOW',
-    LOW = 'LOW',
-    MED = 'MED',
-    HIGH = 'HIGH',
-    SEVERE = 'SEVERE'
+export enum SeasonScoreCategory {
+    MILITARY = 'military',
+    TERRITORY = 'territory',
+    WEALTH = 'wealth',
+    TRADE = 'trade',
+    PRODUCTION = 'production',
+    INFLUENCE = 'influence',
+    ALLIANCE = 'alliance',
+    DISRUPTION = 'disruption',
+    INTEL = 'intel',
+    STABILITY = 'stability',
+    POPULATION = 'population'
 }
 
 export enum PrimaryEffectType {
-    STAT_SHIFT = 'STAT_SHIFT',
-    EXTERNALITY_WEAPON = 'EXTERNALITY_WEAPON',
-    INFORMATION_ASYMMETRY = 'INFORMATION_ASYMMETRY',
-    COMMITMENT_TRAP = 'COMMITMENT_TRAP',
-    CRISIS_MODIFIER = 'CRISIS_MODIFIER'
+    NONE = 'none',
+    COMBAT = 'combat',
+    ECONOMY = 'economy',
+    STAT_SHIFT = 'stat_shift',
+    EXTERNALITY_WEAPON = 'externality_weapon',
+    INFORMATION_ASYMMETRY = 'information_asymmetry',
+    COMMITMENT_TRAP = 'commitment_trap',
+    CRISIS_MODIFIER = 'crisis_modifier'
 }
 
 export enum SecondaryEffectType {
-    REVENUE_BOOST = 'REVENUE_BOOST',
-    STABILITY_BUFFER = 'STABILITY_BUFFER',
-    DIPLOMATIC_LEVERAGE = 'DIPLOMATIC_LEVERAGE',
-    HAPPINESS_DRAIN = 'HAPPINESS_DRAIN'
-}
-
-export enum VisibilityModifierType {
-    OBSCURE_TIER = 'OBSCURE_TIER',
-    FALSE_SIGNAL = 'FALSE_SIGNAL',
-    HIDDEN_EFFECT = 'HIDDEN_EFFECT',
-    FALSIFY_DOMAIN = 'FALSIFY_DOMAIN',
-    DELAYED_REVEAL = 'DELAYED_REVEAL'
+    NONE = 'none',
+    SABOTAGE = 'sabotage',
+    BOOST = 'boost',
+    HAPPINESS_DRAIN = 'happiness_drain'
 }
 
 export enum BurnType {
-    PERMANENT_PRODUCTION_PENALTY = 'PERMANENT_PRODUCTION_PENALTY',
-    TRUST_COLLAPSE = 'TRUST_COLLAPSE',
-    RESOURCE_DRAIN = 'RESOURCE_DRAIN'
+    NONE = 'none',
+    INSTANT = 'instant',
+    GRADUAL = 'gradual',
+    PERMANENT_PRODUCTION_PENALTY = 'permanent_production_penalty'
 }
 
-export enum GenerationTag {
-    PROCEDURAL = 'PROCEDURAL',
-    HISTORICAL = 'HISTORICAL',
-    ALIENTECH = 'ALIENTECH'
+export enum VisibilityModifierType {
+    NONE = 'none',
+    OBSCURE_TIER = 'obscure_tier',
+    FALSIFY_DOMAIN = 'falsify_domain',
+    DELAYED_REVEAL = 'delayed_reveal'
 }
 
-export interface PublicSignal {
-    playerId: string;
-    domain?: Domain;
-    tier: Tier;
-    timestamp: number;
-    isObscured: boolean;
-    isFalsified: boolean;
+export enum Magnitude {
+    LOW = 'low',
+    VERY_LOW = 'very_low',
+    MED = 'medium',
+    MEDIUM = 'medium',
+    HIGH = 'high',
+    CRITICAL = 'critical',
+    SEVERE = 'severe'
 }
+
+export enum Intent {
+    AGGRESSION = 'aggression',
+    DECEPTION = 'deception',
+    CONTROL = 'control',
+    LEVERAGE = 'leverage'
+}
+
+export type GenerationTag = string;
 
 // --- INTERFACES ---
 
 export interface TechEffect {
-    type: TechEffectType | PrimaryEffectType | SecondaryEffectType; // Superset for mixed versions
-    target?: string; // Made optional for advanced/procedural effects
-    value?: number;  // Made optional for advanced/procedural effects
+    type: TechEffectType;
+    targetSystem?: string;  // e.g., 'fleets', 'colonies'
+    modifierKey?: string;   // e.g., 'attack', 'extraction_rate'
+    value?: number;
+    duration?: number;      // 0 for permanent
+    conditions?: string[];  // e.g., ['at_war']
     description?: string;
-    modifier?: any; // For crisis modifiers
-    magnitude?: Magnitude;
+    magnitude?: Magnitude;  // Legacy support
+    target?: string;        // Legacy support
+    burnType?: BurnType;    // Legacy support
+    modifier?: number;      // Legacy support
 }
 
 export interface Tech {
     id: string;
     name: string;
+    tree: TechTreeType;
+    tier: TechTier;
+    branch?: string; // Internal ID for horizontal path (e.g., 'overwhelming_force')
     description: string;
-    flavorText?: string;
-    branch?: Domain;
-    domain?: Domain;
-    subBranch?: string; // Grouping (e.g., 'Infantry', 'Industry')
-    tier: Tier;
-    
-    // HoI4 Grid Layout
-    position?: { x: number; y: number };
-    
-    researchCost: number; // base hours to research
-    prerequisites: string[]; // specific Tech IDs
-    mutuallyExclusiveWith?: string[]; // specific Tech IDs
-    
     effects: TechEffect[];
+    prerequisites: string[]; // specific Tech IDs
+    researchCost: number; // base hours to research
+    seasonScoreTags?: SeasonScoreCategory[];
+    mutuallyExclusiveGroup?: string; // group ID for locks (e.g., 'military_t2_path')
+    position?: { x: number; y: number };
+    unlockFlags?: string[]; // hooks for backend mechanics
     
-    tags: string[];
-    aiTags: string[];
-    
-    isRepeatable?: boolean;
+    // Optional/UI Metadata
+    flavorText?: string;
+    mechanicalEffect?: string; // Readable explicit effect description
+    tags?: string[];
+    aiTags?: string[];
     isHidden?: boolean;
-
-    // Procedural/Advanced properties
-    intent?: Intent;
-    primaryEffect?: { type: PrimaryEffectType, magnitude: Magnitude, modifier?: any };
-    secondaryEffect?: { type: SecondaryEffectType, magnitude: Magnitude };
+    
+    // Legacy / Specialized support
     visibilityModifier?: VisibilityModifierType;
-    burnCost?: { type: BurnType, description: string };
-    generationTags?: string[];
+    burnCost?: number | { type: BurnType; description: string };
+    secondaryEffect?: any;
+    primaryEffect?: any;
+    intent?: Intent;
+    generationTags?: GenerationTag[];
+    domain?: Domain;
 }
 
 export interface ResearchSlot {
@@ -186,4 +207,13 @@ export interface GameStateContext {
     economicStress: number; // 0-1
     warIntensity?: Magnitude;
     warIntensityValue?: number; // fallback for numeric logic
+}
+
+export interface PublicSignal {
+    playerId: string;
+    domain: TechTreeType;
+    tier: TechTier;
+    timestamp: number;
+    isObscured: boolean;
+    isFalsified: boolean;
 }
