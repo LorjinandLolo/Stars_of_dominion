@@ -26,6 +26,14 @@ export class LeadershipService {
             description: `Assigned to ${assignmentId}.`
         });
 
+        if (world.movement.fleets.has(assignmentId)) {
+            const fleet = world.movement.fleets.get(assignmentId)!;
+            fleet.leaderId = leaderId;
+        } else if (world.movement.armies && world.movement.armies.has(assignmentId)) {
+            const army = world.movement.armies.get(assignmentId)!;
+            army.leaderId = leaderId;
+        }
+
         eventBus.emit({
             type: 'leaderAssigned',
             leaderId,

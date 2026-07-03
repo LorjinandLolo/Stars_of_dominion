@@ -28,7 +28,7 @@ import type {
     EmpireIdentityState,
     RecruitmentJob,
 } from '@/types/ui-state';
-import type { Fleet, FactionVisibility } from '@/lib/movement/types';
+import type { Fleet, Army, FactionVisibility } from '@/lib/movement/types';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -70,6 +70,8 @@ export interface UIStore {
     // ── Planet selection ──
     selectedPlanetId: string | null;
     setSelectedPlanet: (id: string | null) => void;
+    constructionPlanetId: string | null;
+    setConstructionPlanet: (id: string | null) => void;
 
     // ── Orbital engagement (fleet in orbit around a specific planet) ──
     orbitedPlanetId: string | null;
@@ -85,9 +87,11 @@ export interface UIStore {
     contestedSystemIds: Set<string>;
     setSystemContested: (systemId: string, contested: boolean) => void;
 
-    // ── Fleets ──
+    // ── Fleets & Armies ──
     fleets: Fleet[];
     setFleets: (fleets: Fleet[]) => void;
+    armies: Army[];
+    setArmies: (armies: Army[]) => void;
 
     // ── Planets (Synced from world.construction.planets) ──
     planets: any[]; // Use any[] for now to avoid complex imports, or import Planet type
@@ -263,6 +267,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Planet selection ──
     selectedPlanetId: null,
     setSelectedPlanet: (id: string | null) => set({ selectedPlanetId: id }),
+    constructionPlanetId: null,
+    setConstructionPlanet: (id: string | null) => set({ constructionPlanetId: id }),
 
     // ── Orbital engagement ──
     orbitedPlanetId: null,
@@ -287,9 +293,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
             return { contestedSystemIds: next };
         }),
 
-    // ── Fleets ──
+    // ── Fleets & Armies ──
     fleets: [],
     setFleets: (fleets) => set({ fleets }),
+    armies: [],
+    setArmies: (armies) => set({ armies }),
 
     // ── Planets ──
     planets: [],

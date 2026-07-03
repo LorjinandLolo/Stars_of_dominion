@@ -92,6 +92,7 @@ export default function DraggablePanel({ title, children, initialPos, onClose, o
                 zIndex: 1000,
             }}
             className="flex flex-col bg-slate-950/98 backdrop-blur-2xl border border-slate-700/50 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden motion-safe:animate-in motion-safe:zoom-in-95 duration-200"
+            onWheel={(e) => e.stopPropagation()}
         >
             {/* Header */}
             <div 

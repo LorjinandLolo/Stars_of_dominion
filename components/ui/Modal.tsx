@@ -22,7 +22,10 @@ export default function Modal({ isOpen, onClose, title, children, wide }: ModalP
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onWheel={(e) => e.stopPropagation()}
+        >
             <div className={`bg-neutral-900 border border-neutral-700 w-full ${wide ? 'max-w-[1150px]' : 'max-w-2xl'} max-h-[90vh] flex flex-col rounded-lg shadow-[0_0_30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200`}>
                 <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-950/50 rounded-t-lg">
                     <h2 className="text-lg font-bold text-white tracking-wide uppercase flex items-center gap-2">

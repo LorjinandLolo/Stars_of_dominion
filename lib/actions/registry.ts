@@ -21,6 +21,18 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", systemId: "id" },
     cost: { credits: 1000, metals: 500 }
   },
+  MIL_CREATE_ARMY: {
+    id: "MIL_CREATE_ARMY",
+    category: "military",
+    params: { planetId: "id", systemId: "id" },
+    cost: { credits: 500 }
+  },
+  MIL_RECRUIT_FORMATION_UNIT: {
+    id: "MIL_RECRUIT_FORMATION_UNIT",
+    category: "military",
+    params: { formationId: "id", isFleet: "boolean", unitType: "string", count: "number" },
+    cost: {}
+  },
   MIL_ATTACK_FLEET: {
     id: "MIL_ATTACK_FLEET",
     category: "military",

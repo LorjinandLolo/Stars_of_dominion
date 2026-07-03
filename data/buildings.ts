@@ -73,6 +73,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     buildTimeSeconds: 600,
     effects: [{ type: 'construction_speed_percent', value: 15 }],
     tags: ['industrial', 'construction'],
+    upgradesFrom: 'metal_mine',
   },
   {
     id: 'heavy_industry_complex',
@@ -90,6 +91,7 @@ export const BUILDINGS: BuildingDefinition[] = [
       { type: 'ship_production_speed', value: 20 }
     ],
     tags: ['industrial', 'military'],
+    upgradesFrom: 'planetary_factory',
   },
   {
     id: 'research_lab',
@@ -118,6 +120,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     buildTimeSeconds: 1800,
     effects: [{ type: 'research_output', value: 75 }],
     tags: ['research', 'advanced'],
+    upgradesFrom: 'research_lab',
   },
   {
     id: 'barracks',
@@ -146,6 +149,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     buildTimeSeconds: 900,
     effects: [{ type: 'troop_recruitment_modifier', value: 20 }],
     tags: ['military', 'vehicles'],
+    upgradesFrom: 'barracks',
   },
   {
     id: 'airbase',
@@ -160,6 +164,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     buildTimeSeconds: 900,
     effects: [{ type: 'troop_recruitment_modifier', value: 15 }],
     tags: ['military', 'airborne'],
+    upgradesFrom: 'barracks',
   },
   {
     id: 'orbital_defense_platform',
@@ -207,6 +212,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     effects: [{ type: 'stability', value: 15 }],
     tags: ['society', 'admin'],
     uniquePerPlanet: true,
+    upgradesFrom: 'habitat_block',
   },
   {
     id: 'media_network',
@@ -267,6 +273,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     effects: [{ type: 'ship_production_modifier', value: 50 }],
     tags: ['space', 'advanced'],
     uniquePerPlanet: true,
+    upgradesFrom: 'orbital_shipyard',
   },
   {
     id: 'sensor_relay_factory',
@@ -317,6 +324,7 @@ export const BUILDINGS: BuildingDefinition[] = [
       { type: 'metals_output_multiplier', value: -15 }
     ],
     tags: ['resort', 'society'],
+    upgradesFrom: 'administrative_center',
   },
   {
     id: 'underhive_warren',

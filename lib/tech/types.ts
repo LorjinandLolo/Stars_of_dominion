@@ -122,7 +122,7 @@ export type GenerationTag = string;
 // --- INTERFACES ---
 
 export interface TechEffect {
-    type: TechEffectType;
+    type: TechEffectType | PrimaryEffectType | SecondaryEffectType;
     targetSystem?: string;  // e.g., 'fleets', 'colonies'
     modifierKey?: string;   // e.g., 'attack', 'extraction_rate'
     value?: number;
@@ -132,7 +132,7 @@ export interface TechEffect {
     magnitude?: Magnitude;  // Legacy support
     target?: string;        // Legacy support
     burnType?: BurnType;    // Legacy support
-    modifier?: number;      // Legacy support
+    modifier?: any;         // Legacy support
 }
 
 export interface Tech {

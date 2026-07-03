@@ -84,6 +84,7 @@ export interface BuildingDefinition {
   tagRequirements?: string[];
   techRequired?: string;
   civilizationId?: string;
+  upgradesFrom?: string; // ID of the building this upgrades from
 }
 
 export interface PlanetTile {

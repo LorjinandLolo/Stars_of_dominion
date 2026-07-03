@@ -153,12 +153,10 @@ export function PlanetConstructionPanel({
         return true;
     };
 
-    // Helper: Is this an upgrade button? (Conceptual for now as defs don't have upgradesTo yet)
+    // Helper: Is this an upgrade button?
     const getUpgradePrereq = (type: string) => {
         const def = buildingMap[type];
-        if (!def || def.tier === 1) return null;
-        // For now, no implicit upgrade chain in data, so return null
-        return null;
+        return def?.upgradesFrom || null;
     };
 
     const hasPrereq = (type: string) => {
@@ -214,11 +212,14 @@ export function PlanetConstructionPanel({
     const categories = Array.from(new Set(Object.values(BUILDING_DEFS).map(d => d.category)));
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div 
+            className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 translate-y-0 w-[90vw] max-w-6xl"
+            onWheel={(e) => e.stopPropagation()}
+        >
             <div 
-                className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border-2 rounded-xl shadow-2xl overflow-hidden shadow-cyan-900/10"
-                style={{ borderColor: ownerColor }}
-                >
+                className="bg-slate-950/95 backdrop-blur-md border-t border-l border-r border-slate-700/60 rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[85vh] overflow-hidden"
+                style={{ borderTopColor: ownerColor }}
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
                     <div className="flex items-center gap-3">
@@ -529,6 +530,33 @@ export function PlanetConstructionPanel({
                                                             </div>
                                                         ))}
                                                     </div>
+                                                    
+                                                    {/* Upgrade Option */}
+                                                    {(() => {
+                                                        const upgradeDef = Object.values(buildingMap).find(d => d.upgradesFrom === def.id);
+                                                        if (!upgradeDef) return null;
+                                                        
+                                                        const canAffordUpgrade = canAfford(upgradeDef.id);
+                                                        return (
+                                                            <div className="mt-4 pt-3 border-t border-slate-800 relative z-10">
+                                                                <button
+                                                                    disabled={!canAffordUpgrade || actionLoading}
+                                                                    onClick={() => handleQueueBuilding(upgradeDef.id)}
+                                                                    className={`w-full py-1.5 rounded text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                                                                        canAffordUpgrade 
+                                                                            ? 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30' 
+                                                                            : 'bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                                                                    }`}
+                                                                >
+                                                                    <ArrowUpCircle className="w-3 h-3" />
+                                                                    UPGRADE: {upgradeDef.name}
+                                                                </button>
+                                                                {!canAffordUpgrade && (
+                                                                    <div className="text-[9px] text-center text-red-500 mt-1 uppercase tracking-wider">Insufficient Funds</div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             )
                                         })}

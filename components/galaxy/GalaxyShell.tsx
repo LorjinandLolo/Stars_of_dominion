@@ -5,6 +5,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import OverlayToggleBar from './OverlayToggleBar';
 import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
+import { ReviewPanel } from '../combat/ReviewPanel';
 import { PlanetConstructionPanel } from '../construction/PlanetConstructionPanel';
 import { Activity } from 'lucide-react';
 import SystemNode from './SystemNode';
@@ -127,6 +128,8 @@ export default function GalaxyShell() {
         fleets,
         selectedPlanetId,
         setSelectedPlanet,
+        constructionPlanetId,
+        setConstructionPlanet,
         playerState,
         nowSeconds,
         factionVisibility,
@@ -217,7 +220,7 @@ export default function GalaxyShell() {
         const dx = (e.clientX - lastMouse.current.x) * (2 / zoom);
         const dy = (e.clientY - lastMouse.current.y) * (2 / zoom);
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) hasMoved.current = true;
-        setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+        setPan((p) => ({ x: p.x - dx, y: p.y - dy }));
         lastMouse.current = { x: e.clientX, y: e.clientY };
     };
 
@@ -359,10 +362,11 @@ export default function GalaxyShell() {
             <OverlayToggleBar />
             <SystemContextPanel />
             <CrisisBottomTray />
+            <ReviewPanel />
 
-            {selectedPlanetId && selectedSystemId && (
+            {constructionPlanetId && selectedSystemId && (
                 <PlanetConstructionPanel
-                    planetId={selectedPlanetId}
+                    planetId={constructionPlanetId}
                     systemId={selectedSystemId}
                     factionId={playerState.factionId}
                     factionCredits={reserves['CREDITS'] || 0}
@@ -371,7 +375,7 @@ export default function GalaxyShell() {
                     factionEnergy={reserves['ENERGY'] || 0}
                     factionRares={reserves['RARES'] || 0}
                     factionManpower={reserves['FOOD'] || 0}
-                    onClose={() => setSelectedPlanet(null)}
+                    onClose={() => setConstructionPlanet(null)}
                 />
             )}
         </div>

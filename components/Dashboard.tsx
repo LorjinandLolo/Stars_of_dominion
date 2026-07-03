@@ -26,13 +26,14 @@ import LeadershipPanel from '@/components/panels/LeadershipPanel';
 import BattleCommandPanel from '@/components/panels/BattleCommandPanel';
 import GovernmentPanel from '@/components/panels/GovernmentPanel';
 import DoctrinePanel from '@/components/panels/DoctrinePanel';
+import MilitaryPanel from '@/components/panels/MilitaryPanel';
 import { establishTradeRouteAction, generateIntrigueOptionsAction, executeIntrigueAction } from '@/app/actions/economy';
 import { getActiveRoutes } from '@/lib/economy/trade';
 import { useRouter } from 'next/navigation';
 
 export default function Dashboard({ state, planets, factions, armies }: any) {
     const router = useRouter();
-    const [activeView, setActiveView] = useState<'none' | 'events' | 'gazette' | 'faction' | 'intrigue' | 'trade' | 'cold-war' | 'corporate' | 'build' | 'research' | 'diplomacy' | 'ship-designer' | 'leadership' | 'battle' | 'government' | 'doctrine'>('none');
+    const [activeView, setActiveView] = useState<'none' | 'events' | 'gazette' | 'faction' | 'intrigue' | 'trade' | 'cold-war' | 'corporate' | 'build' | 'research' | 'diplomacy' | 'ship-designer' | 'leadership' | 'battle' | 'government' | 'doctrine' | 'military'>('none');
     const [selectedHex, setSelectedHex] = useState<{ x: number, y: number } | null>(null);
     const [selectedArmyId, setSelectedArmyId] = useState<string | null>(null);
     const [isMoving, setIsMoving] = useState(false);
@@ -135,6 +136,7 @@ export default function Dashboard({ state, planets, factions, armies }: any) {
                         onOpenBattle={() => setActiveView('battle')}
                         onOpenGovernment={() => setActiveView('government')}
                         onOpenDoctrine={() => setActiveView('doctrine')}
+                        onOpenMilitary={() => setActiveView('military')}
                     />
                 </div>
             </div>
@@ -260,6 +262,11 @@ export default function Dashboard({ state, planets, factions, armies }: any) {
 
             <Modal isOpen={activeView === 'doctrine'} onClose={() => setActiveView('none')} title="Empire Strategy — Doctrine">
                 <DoctrinePanel />
+            </Modal>
+
+            {/* We render MilitaryPanel full screen rather than a small modal, so let's see. Modal is actually full screen in this project usually. */}
+            <Modal isOpen={activeView === 'military'} onClose={() => setActiveView('none')} title="Military Forces">
+                <MilitaryPanel />
             </Modal>
         </div>
     );

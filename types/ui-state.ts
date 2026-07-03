@@ -19,6 +19,7 @@ export type NavTab =
     | 'diplomacy'
     | 'leadership'
     | 'designer'
+    | 'military'
     | 'guide';
 
 import { Resource, CharterPower } from '@/lib/economy/corporate/company-types';

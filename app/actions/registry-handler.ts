@@ -23,7 +23,8 @@ import { recruitLeaderAction, assignLeaderAction } from './leadership';
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 const COLL_FACTIONS = 'factions';
 
-async function checkAndDeductCosts(factionId: string, cost: Partial<Record<ResourceType, number>>): Promise<{ success: boolean; error?: string }> {
+async function checkAndDeductCosts(factionId: string, cost?: Partial<Record<ResourceType, number>>): Promise<{ success: boolean; error?: string }> {
+  if (!cost || Object.keys(cost).length === 0) return { success: true };
   const { db } = await getServerClients();
   let factionDoc;
   try {
@@ -97,7 +98,6 @@ export async function executePlayerAction(action: PlayerAction): Promise<ActionR
         });
         
         console.log(`[Queue] Action ${action.actionId} queued for ${action.issuerId}`);
-        revalidatePath('/');
         return { success: true };
     } catch (e: any) {
         console.error('[Queue] Failed to push action:', e);

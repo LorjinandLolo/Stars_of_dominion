@@ -435,13 +435,32 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'MIL_EMBARK_ARMY': {
             // payload: { armyId, fleetId }
-            console.log(`[Order] Faction ${factionId} embarking army ${payload.armyId} onto fleet ${payload.fleetId}`);
+            const army = world.movement.armies.get(payload.armyId);
+            const fleet = world.movement.fleets.get(payload.fleetId);
+            if (army && fleet && army.factionId === factionId && fleet.factionId === factionId) {
+                army.transportFleetId = fleet.id;
+                army.currentPlanetId = null;
+                if (!fleet.transportedArmyIds) fleet.transportedArmyIds = [];
+                if (!fleet.transportedArmyIds.includes(army.id)) {
+                    fleet.transportedArmyIds.push(army.id);
+                }
+                console.log(`[Order] Faction ${factionId} embarked army ${payload.armyId} onto fleet ${payload.fleetId}`);
+            }
             break;
         }
 
         case 'MIL_DISEMBARK_ARMY': {
             // payload: { armyId, planetId }
-            console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
+            const army = world.movement.armies.get(payload.armyId);
+            if (army && army.factionId === factionId && army.transportFleetId) {
+                const fleet = world.movement.fleets.get(army.transportFleetId);
+                if (fleet) {
+                    fleet.transportedArmyIds = fleet.transportedArmyIds?.filter(id => id !== army.id) || [];
+                }
+                army.transportFleetId = null;
+                army.currentPlanetId = payload.planetId;
+                console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
+            }
             break;
         }
         
@@ -735,10 +754,62 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
                     deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
                 },
-                isDetectable: true
+                isDetectable: true,
+                transportedArmyIds: [],
+                leaderId: undefined
             };
             world.movement.fleets.set(fleetId, newFleet);
             console.log(`[Order] Faction ${factionId} commissioned new fleet ${fleetId} at ${payload.systemId}`);
+            break;
+        }
+
+        case 'MIL_CREATE_ARMY': {
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) return;
+
+            const armyId = `army-${factionId}-${Date.now()}`;
+            if (!world.movement.armies) world.movement.armies = new Map();
+            const newArmy = {
+                id: armyId,
+                factionId,
+                name: `Army Group ${Math.floor(Math.random() * 100)}`,
+                currentPlanetId: payload.planetId,
+                currentSystemId: payload.systemId,
+                transportFleetId: null,
+                composition: {},
+                stance: 'fortified',
+                strength: 1.0,
+                basePower: 100,
+                supplyLevel: 1.0,
+                morale: 100,
+                leaderId: undefined
+            };
+            world.movement.armies.set(armyId, newArmy);
+            console.log(`[Order] Faction ${factionId} raised new army ${armyId} at ${payload.planetId}`);
+            break;
+        }
+
+        case 'MIL_RECRUIT_FORMATION_UNIT': {
+            // Because recruitment takes time, we should queue it using RecruitmentService
+            // However, we need a way for RecruitmentService to assign it to the formation directly.
+            // For now, we will add it instantly for the prototype, or we can use the existing job system 
+            // and attach `formationId` to the job. Let's mutate instantly for now to satisfy UI responsiveness,
+            // OR use the queue but with formationId. The user said: "Production queue arrive over time. Should deduct resources"
+            const job = RecruitmentService.createJob(
+                'formation-' + payload.formationId, // Use formationId as planetId spoof
+                factionId,
+                payload.unitType as GroundUnitType,
+                payload.count,
+                world.nowSeconds
+            );
+            // We'll tag the job with the real formation ID
+            (job as any).targetFormationId = payload.formationId;
+            (job as any).isFleet = payload.isFleet;
+
+            if (!world.combat) world.combat = {};
+            if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
+            world.combat.recruitmentJobs.push(job);
+            console.log(`[Order] Faction ${factionId} queued ${payload.count}x ${payload.unitType} into formation ${payload.formationId}`);
             break;
         }
 

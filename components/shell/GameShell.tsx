@@ -73,13 +73,7 @@ export default function GameShell() {
     // On mount: check auth and localStorage for saved faction
     useEffect(() => {
         const checkAuthAndFaction = async () => {
-            // Development Quick-Play Bypass
-            if (process.env.NODE_ENV === 'development') {
-                const testFaction = 'faction-aurelian'; 
-                console.log(`[Dev Bypass] Auto-joining game as ${testFaction}`);
-                setPlayerFactionId(testFaction);
-                return;
-            }
+
 
             const user = await authService.getCurrentUser();
             if (!user) {

@@ -19,8 +19,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   initRegistries();
 
   return (
-    <html lang="en" className={`${orbitron.variable} ${rajdhani.variable}`}>
-       <body>
+    <html lang="en" className={`${orbitron.variable} ${rajdhani.variable}`} suppressHydrationWarning>
+       <body suppressHydrationWarning>
           {children}
        </body>
     </html>

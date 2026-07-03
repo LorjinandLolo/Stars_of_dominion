@@ -240,12 +240,32 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
             }
         }
         return cells;
-    }, [visibleBounds, ROWS, COLS, grid, HEX_SIZE, processedPlanets, processedArmies, selectedHex, isDragging, playerFactionId, factions, diplomacyState, onHexClick, corners]);
+    }, [visibleBounds.minCol, visibleBounds.maxCol, visibleBounds.minRow, visibleBounds.maxRow, ROWS, COLS, grid, HEX_SIZE, processedPlanets, processedArmies, selectedHex, isDragging, playerFactionId, factions, diplomacyState, onHexClick, corners]);
 
     const selectedPlanet = useMemo(() => {
         if (!selectedHex) return null;
         return processedPlanets.get(`${selectedHex.x},${selectedHex.y}`);
     }, [selectedHex, processedPlanets]);
+
+    const hyperlanes = useMemo(() => {
+        return (
+            <g opacity="0.4">
+                {planets.map(p => p.hyperlaneTo?.map((dest: any, idx: number) => {
+                    if (dest.x === undefined || dest.y === undefined) return null;
+                    const start = grid.hexToPixel(p.x, p.y, HEX_SIZE);
+                    const end = grid.hexToPixel(dest.x, dest.y, HEX_SIZE);
+                    return (
+                        <line 
+                            key={`lane-${p.id}-${idx}`} 
+                            x1={start.x} y1={start.y} x2={end.x} y2={end.y}
+                            stroke="var(--color-neon-cyan)" strokeWidth="1.5" strokeDasharray="4,8"
+                            className="hyperlane-anim"
+                        />
+                    );
+                }))}
+            </g>
+        );
+    }, [planets, grid, HEX_SIZE]);
 
     return (
         <div
@@ -268,21 +288,7 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                     </filter>
                 </defs>
 
-                <g opacity="0.4">
-                    {planets.map(p => p.hyperlaneTo?.map((dest: any, idx: number) => {
-                        if (dest.x === undefined || dest.y === undefined) return null;
-                        const start = grid.hexToPixel(p.x, p.y, HEX_SIZE);
-                        const end = grid.hexToPixel(dest.x, dest.y, HEX_SIZE);
-                        return (
-                            <line 
-                                key={`lane-${p.id}-${idx}`} 
-                                x1={start.x} y1={start.y} x2={end.x} y2={end.y}
-                                stroke="var(--color-neon-cyan)" strokeWidth="1.5" strokeDasharray="4,8"
-                                className="hyperlane-anim"
-                            />
-                        );
-                    }))}
-                </g>
+                {hyperlanes}
 
                 {hexCells}
             </svg>

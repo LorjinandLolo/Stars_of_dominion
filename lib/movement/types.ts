@@ -293,6 +293,40 @@ export interface Fleet {
     hyperdriveProfile: HyperdriveProfile;
     /** Whether this fleet is detectable above threshold (ui hint). */
     isDetectable: boolean;
+    /** IDs of armies currently loaded onto this fleet as transport. */
+    transportedArmyIds?: string[];
+    /** ID of the Admiral commanding this fleet, if any. */
+    leaderId?: string;
+}
+
+// ─── Army (Ground Forces) ─────────────────────────────────────────────────────
+
+export type ArmyStance = 'fortified' | 'patrol' | 'suppression' | 'training';
+
+export interface Army {
+    id: string;
+    factionId: string;
+    name: string;
+    /** Current planet the army is stationed on. Null if in transport. */
+    currentPlanetId: string | null;
+    /** Current system the army is in. */
+    currentSystemId: string;
+    /** Fleet ID this army is currently loaded into for space transport. Null if on the ground. */
+    transportFleetId: string | null;
+    /** Unit breakdown (e.g. { infantry: 5, armor: 2 }). */
+    composition: any; // UnitComposition
+    /** Current stance/orders for the army. */
+    stance: ArmyStance;
+    /** 0–1: aggregate health/strength of the army. */
+    strength: number;
+    /** Aggregate base power. */
+    basePower: number;
+    /** Supply stock remaining (normalised 0–1). */
+    supplyLevel: number;
+    /** Morale of the army. */
+    morale: number;
+    /** ID of the General commanding this army, if any. */
+    leaderId?: string;
 }
 
 // ─── Exploration ─────────────────────────────────────────────────────────────

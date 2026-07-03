@@ -66,6 +66,30 @@ export class RecruitmentService {
     }
 
     private static completeJob(world: any, job: RecruitmentJob) {
+        if ((job as any).targetFormationId) {
+            const formationId = (job as any).targetFormationId;
+            const isFleet = (job as any).isFleet;
+            
+            if (isFleet) {
+                const fleet = world.movement.fleets.get(formationId);
+                if (fleet) {
+                    const currentCount = fleet.composition[job.unitType] || 0;
+                    fleet.composition[job.unitType] = currentCount + job.count;
+                    fleet.basePower += job.count * 10; // rough approximation
+                    console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Fleet ${fleet.name}`);
+                }
+            } else {
+                const army = world.movement.armies.get(formationId);
+                if (army) {
+                    const currentCount = army.composition[job.unitType] || 0;
+                    army.composition[job.unitType] = currentCount + job.count;
+                    army.basePower += job.count * 10;
+                    console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Army ${army.name}`);
+                }
+            }
+            return;
+        }
+
         const planet = world.construction.planets.get(job.planetId);
         if (!planet) return;
 

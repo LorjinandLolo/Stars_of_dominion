@@ -64,9 +64,11 @@ interface PlanetCardProps {
     selectedFleetId: string | null;
     orbitedPlanetId: string | null;
     selectedPlanetId: string | null;
+    armiesPresent: number;
     onOrbit: (planetId: string) => void;
     onSiege: (planetId: string) => void;
     onConstruct: (planetId: string) => void;
+    onSelect: (planetId: string) => void;
     onBombard: (planetId: string) => void;
     onRetreat: (planetId: string) => void;
     onBattleReport?: (report: any) => void;
@@ -83,9 +85,11 @@ function PlanetCard({
     selectedFleetId,
     orbitedPlanetId,
     selectedPlanetId,
+    armiesPresent,
     onOrbit,
     onSiege,
     onConstruct,
+    onSelect,
     onBombard,
     onRetreat,
     onBattleReport,
@@ -157,6 +161,14 @@ function PlanetCard({
                     </div>
                 </div>
 
+                {/* Military Presence Badge */}
+                {armiesPresent > 0 && (
+                    <div className="flex items-center gap-1.5 mb-2 text-red-400 bg-red-900/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border border-red-500/30">
+                        <Shield size={10} />
+                        {armiesPresent} Army {armiesPresent === 1 ? 'Group' : 'Groups'} Present
+                    </div>
+                )}
+
                 {/* Tags row */}
                 {planet.tags && planet.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
@@ -199,14 +211,27 @@ function PlanetCard({
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 mt-2">
+                    {/* Units & Defense (Always available to inspect) */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onSelect(planet.id); }}
+                        className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
+                            isSelected 
+                                ? 'bg-indigo-600/40 border-indigo-500/50 text-indigo-300' 
+                                : 'bg-slate-800/60 hover:bg-slate-700/80 border-slate-700/50 text-slate-400'
+                        }`}
+                    >
+                        <Shield size={10} />
+                        UNITS
+                    </button>
+
                     {/* Construct (always available if player-owned) */}
                     {isOwnedByPlayer && (
                         <button
-                            onClick={() => onConstruct(planet.id)}
-                            className="flex-1 py-1 bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/30 rounded text-[9px] text-emerald-400 font-bold transition-all flex items-center justify-center gap-1"
+                            onClick={(e) => { e.stopPropagation(); onConstruct(planet.id); }}
+                            className="flex-1 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/30 rounded text-[9px] text-emerald-400 font-bold transition-all flex items-center justify-center gap-1"
                         >
-                            <LayoutGrid size={9} />
+                            <LayoutGrid size={10} />
                             BUILD
                         </button>
                     )}
@@ -214,7 +239,7 @@ function PlanetCard({
                     {/* Orbit (if fleet selected and not already orbiting) */}
                     {selectedFleetId && !isOrbitedByFleet && (
                         <button
-                            onClick={() => onOrbit(planet.id)}
+                            onClick={(e) => { e.stopPropagation(); onOrbit(planet.id); }}
                             className="flex-1 py-1 bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/30 rounded text-[9px] text-indigo-400 font-bold transition-all flex items-center justify-center gap-1"
                         >
                             <Crosshair size={9} />
@@ -225,7 +250,7 @@ function PlanetCard({
                     {/* Siege (if fleet is in orbit and planet is enemy-owned or unowned) */}
                     {isOrbitedByFleet && !isOwnedByPlayer && !planet.siege && (
                         <button
-                            onClick={() => onSiege(planet.id)}
+                            onClick={(e) => { e.stopPropagation(); onSiege(planet.id); }}
                             className="flex-1 py-1 bg-red-700/20 hover:bg-red-700/35 border border-red-500/30 rounded text-[9px] text-red-400 font-bold transition-all flex items-center justify-center gap-1 animate-pulse hover:animate-none"
                         >
                             <Swords size={9} />
@@ -237,7 +262,7 @@ function PlanetCard({
                     {planet.siege && planet.siege.aggressorEmpireId === playerFactionId && (
                         <div className="flex gap-1 flex-1">
                             <button
-                                onClick={() => onBombard(planet.id)}
+                                onClick={(e) => { e.stopPropagation(); onBombard(planet.id); }}
                                 className={`flex-1 py-1 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
                                     planet.siege.bombardmentActive 
                                     ? 'bg-orange-600/40 border-orange-400 text-white' 
@@ -248,7 +273,7 @@ function PlanetCard({
                                 {planet.siege.bombardmentActive ? 'BOMBARDING' : 'BOMBARD'}
                             </button>
                             <button
-                                onClick={() => onRetreat(planet.id)}
+                                onClick={(e) => { e.stopPropagation(); onRetreat(planet.id); }}
                                 className="flex-1 py-1 bg-slate-800/60 hover:bg-slate-700 border border-slate-600/40 rounded text-[9px] text-slate-300 font-bold"
                             >
                                 RETREAT
@@ -259,7 +284,7 @@ function PlanetCard({
                     {/* Leave orbit */}
                     {isOrbitedByFleet && (!planet.siege || planet.siege.aggressorEmpireId !== playerFactionId) && (
                         <button
-                            onClick={() => onOrbit(planet.id)} // toggle
+                            onClick={(e) => { e.stopPropagation(); onOrbit(planet.id); }}
                             className="py-1 px-2 bg-slate-800/60 hover:bg-slate-700/60 border border-slate-600/30 rounded text-[9px] text-slate-400 font-bold transition-all"
                             title="Leave orbit"
                         >
@@ -291,7 +316,7 @@ function PlanetCard({
                                             return (
                                                 <button
                                                     key={s}
-                                                    onClick={() => onSetTactic?.(planet.id, s)}
+                                                    onClick={(e) => { e.stopPropagation(); onSetTactic?.(planet.id, s); }}
                                                     className={`w-full py-1 rounded text-[7px] border transition-all ${
                                                         activeStance === s ? 'bg-indigo-600/40 border-indigo-500 text-white shadow-[0_0_8px_rgba(99,102,241,0.4)]' : 'bg-slate-800/40 border-slate-700/50 text-slate-500 hover:text-slate-300'
                                                     }`}
@@ -311,7 +336,7 @@ function PlanetCard({
                                             return (
                                                 <button
                                                     key={s}
-                                                    onClick={() => onSetPrediction?.(planet.id, s)}
+                                                    onClick={(e) => { e.stopPropagation(); onSetPrediction?.(planet.id, s); }}
                                                     className={`w-full py-1 rounded text-[7px] border transition-all ${
                                                         activePred === s ? 'bg-emerald-600/40 border-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-slate-800/40 border-slate-700/50 text-slate-500 hover:text-slate-300'
                                                     }`}
@@ -405,37 +430,6 @@ function PlanetCard({
                                 ))}
                             </div>
                         )}
-
-                        {!recruiting ? (
-                            <button
-                                onClick={() => setRecruiting(true)}
-                                className="w-full py-1.5 px-2 rounded bg-indigo-500/10 border border-indigo-500/30 text-[9px] font-display tracking-widest text-indigo-300 hover:bg-indigo-500/20 transition-colors uppercase"
-                            >
-                                Commission Ground Forces
-                            </button>
-                        ) : (
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[8px] font-bold text-slate-400">SELECT TROOP TYPE</span>
-                                    <button onClick={() => setRecruiting(false)} className="text-[8px] text-slate-500 hover:text-white">CANCEL</button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                    {['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS'].map(type => (
-                                        <button
-                                            key={type}
-                                            onClick={() => {
-                                                onRecruitUnits?.(planet.id, type, 10);
-                                                setRecruiting(false);
-                                            }}
-                                            className="py-1 px-1.5 rounded bg-slate-800/50 border border-slate-700 hover:border-indigo-500/50 text-left group transition-all"
-                                        >
-                                            <div className="text-[8px] font-bold text-slate-300 group-hover:text-indigo-300">{type.replace('_', ' ')}</div>
-                                            <div className="text-[7px] text-slate-500 italic">10 Units</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </div>
@@ -460,9 +454,12 @@ export default function SystemContextPanel() {
         setSystemContested,
         setPlanets,
         setNowSeconds,
+        setConstructionPlanet,
         factionVisibility,
         setFactionVisibility,
         recruitmentJobs,
+        armies,
+        fleets,
     } = useUIStore();
     const [moving, setMoving] = React.useState(false);
     const [surveying, setSurveying] = React.useState(false);
@@ -649,11 +646,23 @@ export default function SystemContextPanel() {
     };
 
     const handleConstruct = (planetId: string) => {
-        setSelectedPlanet(planetId);
+        setConstructionPlanet(planetId);
+    };
+
+    const handleSelectPlanet = (planetId: string) => {
+        if (selectedPlanetId === planetId) {
+            setSelectedPlanet(null); // Toggle off
+        } else {
+            setSelectedPlanet(planetId); // Toggle on
+        }
     };
 
     return (
-        <div className="absolute top-4 right-4 z-30 w-76 pointer-events-auto" style={{ width: '300px' }}>
+        <div 
+            className="absolute top-24 left-4 z-30 w-76 pointer-events-auto" 
+            style={{ width: '300px' }}
+            onWheel={(e) => e.stopPropagation()}
+        >
             <div className="bg-slate-950/95 backdrop-blur-md border border-slate-700/60 rounded-lg shadow-2xl overflow-hidden">
                 {/* Header */}
                 <div className="flex items-start justify-between px-4 py-3 border-b border-slate-700/60">
@@ -968,6 +977,8 @@ export default function SystemContextPanel() {
                                         selectedFleetId={selectedFleetId}
                                         orbitedPlanetId={orbitedPlanetId}
                                         selectedPlanetId={selectedPlanetId}
+                                        armiesPresent={armies.filter(a => (a as any).currentPlanetId === planet.id).length}
+                                        onSelect={handleSelectPlanet}
                                         onOrbit={handleOrbitPlanet}
                                         onSiege={handleSiegePlanet}
                                         onConstruct={handleConstruct}

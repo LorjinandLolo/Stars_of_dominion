@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Eye, TrendingUp, ScrollText, Radio, Users, Flame, Building2, Atom, Handshake, Cpu, UserCircle, Sword, Scale, BookOpen } from 'lucide-react';
+import { Eye, TrendingUp, ScrollText, Radio, Users, Flame, Building2, Atom, Handshake, Cpu, UserCircle, Sword, Scale, BookOpen, Shield } from 'lucide-react';
 
 interface CommandDockProps {
     onOpenEvent: () => void;
@@ -19,9 +19,10 @@ interface CommandDockProps {
     onOpenBattle: () => void;
     onOpenGovernment: () => void;
     onOpenDoctrine: () => void;
+    onOpenMilitary: () => void;
 }
 
-export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction, onOpenIntrigue, onOpenTrade, onOpenColdWar, onOpenCorporate, onOpenBuild, onOpenResearch, onOpenDiplomacy, onOpenShipDesigner, onOpenLeadership, onOpenBattle, onOpenGovernment, onOpenDoctrine }: CommandDockProps) {
+export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction, onOpenIntrigue, onOpenTrade, onOpenColdWar, onOpenCorporate, onOpenBuild, onOpenResearch, onOpenDiplomacy, onOpenShipDesigner, onOpenLeadership, onOpenBattle, onOpenGovernment, onOpenDoctrine, onOpenMilitary }: CommandDockProps) {
     const DockButton = ({ label, icon, onClick, colorClass }: any) => {
         const colors: any = {
             blue: { border: 'group-hover:border-blue-500', bg: 'group-hover:bg-blue-600/20' },
@@ -65,6 +66,13 @@ export default function CommandDock({ onOpenEvent, onOpenGazette, onOpenFaction,
                 colorClass="red"
                 onClick={onOpenBattle}
                 icon={<Sword size={24} />}
+            />
+            
+            <DockButton
+                label="Military Forces"
+                colorClass="red"
+                onClick={onOpenMilitary}
+                icon={<Shield size={24} />}
             />
 
             <DockButton

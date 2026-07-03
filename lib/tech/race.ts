@@ -47,7 +47,7 @@ export class RaceConstraintManager {
         }
 
         // Check Burn
-        if (tech.burnCost && constraint.forbiddenBurn.has(tech.burnCost.type as BurnType)) {
+        if (tech.burnCost && typeof tech.burnCost === 'object' && constraint.forbiddenBurn.has(tech.burnCost.type as BurnType)) {
             violation = true;
         }
 
