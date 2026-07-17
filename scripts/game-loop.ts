@@ -473,14 +473,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_BOMBARD_PLANET': {
+            // Merged handler (there used to be a second, unreachable duplicate case
+            // below). Works with or without an active siege.
             const planet = world.construction.planets.get(payload.targetId || payload.planetId);
-            if (planet && planet.siege && planet.siege.attackerEmpireId === factionId) {
-                // If the user's previously added bombardment button exists, toggle bombardment status
-                // But in Phase 16 we also have specific modes in the payload if provided
-                const mode = payload.mode || 'FORTIFICATION'; // Default
-                planet.siege.attackerState.orbitalSupportPower = (planet as any).bombardmentActive ? 100 : 0; // Simplified
-                console.log(`[Tick Worker] Bombardment mode ${mode} active on ${planet.name}`);
+            if (!planet) return;
+            if (planet.ownerId === factionId) {
+                console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
+                return;
             }
+            // General orbital bombardment: batter stability, stoke unrest.
+            planet.stability = Math.max(0, (planet.stability || 60) - 10);
+            planet.unrest = Math.min(100, (planet.unrest || 0) + 5);
+            // If we're besieging this planet, bombardment also feeds the ground assault.
+            if (planet.siege && planet.siege.attackerEmpireId === factionId) {
+                const mode = payload.mode || 'FORTIFICATION';
+                planet.siege.attackerState.orbitalSupportPower = 100;
+                console.log(`[Tick Worker] Siege bombardment (${mode}) supporting assault on ${planet.name}`);
+            }
+            console.log(`[Order] Faction ${factionId} bombarded planet ${planet.name}`);
             break;
         }
 
@@ -493,7 +503,28 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'MIL_MOVE_ARMY': {
             // payload: { armyId, targetPlanetId }
-            console.log(`[Order] Faction ${factionId} moving army ${payload.armyId} to planet ${payload.targetPlanetId}`);
+            // Real implementation (was a log-only stub): redeploy within the same
+            // system directly; cross-system movement requires a transport fleet
+            // (embark → move fleet → disembark).
+            const army = world.movement.armies?.get(payload.armyId);
+            const target = world.construction.planets.get(payload.targetPlanetId);
+            if (!army || !target) return;
+            if (army.factionId !== factionId) {
+                console.error(`[Security] Unauthorized MOVE_ARMY from ${factionId} on army ${payload.armyId} (Owner: ${army.factionId})`);
+                return;
+            }
+            if (army.transportFleetId) {
+                console.warn(`[Order] Army ${payload.armyId} is embarked on a fleet — disembark it first.`);
+                return;
+            }
+            const currentPlanet = army.currentPlanetId ? world.construction.planets.get(army.currentPlanetId) : null;
+            if (currentPlanet && currentPlanet.systemId !== target.systemId) {
+                console.warn(`[Order] Army ${payload.armyId} cannot cross systems on foot — embark it on a fleet.`);
+                return;
+            }
+            army.currentPlanetId = payload.targetPlanetId;
+            army.currentSystemId = target.systemId;
+            console.log(`[Order] Faction ${factionId} redeployed army ${payload.armyId} to ${target.name}`);
             break;
         }
 
@@ -557,11 +588,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              break;
         }
 
-        case 'PLANET_RECRUIT_UNITS': {
-             // payload: { planetId, unitType, count }
-             console.log(`[Order] Faction ${factionId} recruiting ${payload.count} ${payload.unitType} on ${payload.planetId}`);
-             break;
-        }
+        // NOTE: PLANET_RECRUIT_UNITS is handled further down. A stub case here
+        // used to SHADOW the real handler (first matching case wins in a switch),
+        // which made all army recruitment silently do nothing.
 
         case 'TECH_START_RESEARCH': {
             const techState = world.tech.get(factionId);
@@ -1002,16 +1031,6 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              break;
         }
 
-        case 'MIL_BOMBARD_PLANET': {
-             const planet = world.construction.planets.get(payload.targetId);
-             if (planet) {
-                 planet.stability = Math.max(0, (planet.stability || 60) - 10);
-                 planet.unrest = Math.min(100, (planet.unrest || 0) + 5);
-                 console.log(`[Order] Faction ${factionId} bombarded planet ${planet.name}`);
-             }
-             break;
-        }
-
         case 'MIL_ESTABLISH_GARRISON': {
              const planet = world.construction.planets.get(payload.targetId);
              if (planet && planet.ownerId === factionId) {
@@ -1068,10 +1087,16 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'PLANET_CLAIM': {
              const planet = world.construction.planets.get(payload.planetId);
-             if (planet) {
-                 planet.ownerId = factionId;
-                 console.log(`[Order] Faction ${factionId} claimed planet ${planet.name}`);
+             if (!planet) return;
+             // Only unowned/neutral planets can be claimed outright — owned worlds
+             // must be taken by invasion. (Previously any faction could steal any
+             // planet with a single order.)
+             if (planet.ownerId && planet.ownerId !== 'faction-neutral' && planet.ownerId !== '') {
+                 console.warn(`[Security] ${factionId} tried to claim ${planet.name}, already owned by ${planet.ownerId}`);
+                 return;
              }
+             planet.ownerId = factionId;
+             console.log(`[Order] Faction ${factionId} claimed planet ${planet.name}`);
              break;
         }
 
@@ -1156,9 +1181,18 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'RENAME_PLANET': {
             // payload: { planetId, newName }
-            const planet = world.economy.planets.get(payload.planetId);
-            if (planet && planet.factionId === factionId) {
-                planet.name = payload.newName;
+            // Rename BOTH planet records — economy and construction hold separate
+            // copies, and renaming only one made the new name show in some panels
+            // but not on the map.
+            const econPlanet = world.economy.planets.get(payload.planetId);
+            if (econPlanet && econPlanet.factionId === factionId) {
+                econPlanet.name = payload.newName;
+            }
+            const conPlanet = world.construction.planets.get(payload.planetId);
+            if (conPlanet && conPlanet.ownerId === factionId) {
+                conPlanet.name = payload.newName;
+            }
+            if (econPlanet || conPlanet) {
                 console.log(`[Tick Worker] Faction ${factionId} renamed planet ${payload.planetId} to ${payload.newName}`);
             }
             break;
