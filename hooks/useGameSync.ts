@@ -20,6 +20,65 @@ export function useGameSync() {
     const mappedShardCacheRef = useRef<Map<string, any>>(new Map());
     const updatePendingRef = useRef(false);
 
+    const workerRef = useRef<Worker | null>(null);
+    const pendingRequestsRef = useRef<Map<number, { resolve: (val: any) => void; reject: (err: any) => void }>>(new Map());
+    const msgIdRef = useRef(0);
+
+    // Initialize Web Worker
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const worker = new Worker('/workers/game-sync.worker.js');
+                worker.onmessage = (e) => {
+                    const { id, success, result, error } = e.data;
+                    const pending = pendingRequestsRef.current.get(id);
+                    if (pending) {
+                        pendingRequestsRef.current.delete(id);
+                        if (success) {
+                            pending.resolve(result);
+                        } else {
+                            pending.reject(new Error(error));
+                        }
+                    }
+                };
+                workerRef.current = worker;
+            } catch (err) {
+                console.warn('[GameSync] Failed to initialize Web Worker, falling back to sync execution:', err);
+            }
+        }
+
+        return () => {
+            if (workerRef.current) {
+                workerRef.current.terminate();
+                workerRef.current = null;
+            }
+        };
+    }, []);
+
+    const deserializeWorldAsync = (snapshot: string): Promise<GameWorldState> => {
+        const worker = workerRef.current;
+        if (!worker) {
+            return Promise.resolve(deserializeWorld(snapshot));
+        }
+        const id = ++msgIdRef.current;
+        return new Promise((resolve, reject) => {
+            pendingRequestsRef.current.set(id, { resolve, reject });
+            worker.postMessage({ id, type: 'DESERIALIZE_WORLD', payload: snapshot });
+        });
+    };
+
+    const deserializeShardAsync = (shardJson: string): Promise<any> => {
+        const worker = workerRef.current;
+        if (!worker) {
+            return Promise.resolve(recordsToMaps(JSON.parse(shardJson)));
+        }
+        const id = ++msgIdRef.current;
+        return new Promise((resolve, reject) => {
+            pendingRequestsRef.current.set(id, { resolve, reject });
+            worker.postMessage({ id, type: 'DESERIALIZE_SHARD', payload: shardJson });
+        });
+    };
+
     // ─── Throttled Update Engine ──────────────────────────────────────────────
     const throttledUpdate = () => {
         if (updatePendingRef.current) return;
@@ -38,6 +97,9 @@ export function useGameSync() {
         // 1. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
         const systemList = Array.from(world.movement.systems.values()).map(sys => ({
             ...sys,
+            // Systems store their owner as `ownerFactionId`; the map layer reads `ownerId`.
+            // Normalise so ownership actually renders on the galaxy map.
+            ownerId: (sys as any).ownerFactionId ?? (sys as any).ownerId ?? null,
             escalationLevel: sys.escalationLevel ?? 0,
             security: sys.security ?? 50,
             tradeValue: sys.tradeValue ?? 0
@@ -105,6 +167,7 @@ export function useGameSync() {
             systems: systemList,
             planets: planetList,
             fleets: fleetList,
+            forwardBases: Array.from((world.movement as any).forwardBases?.values?.() || []),
             nowSeconds: world.nowSeconds,
             factionVisibility: visibility,
             diplomacyState,
@@ -157,20 +220,25 @@ export function useGameSync() {
                     databases.listDocuments(DB_ID, COLL_FACTIONS)
                 ]);
 
-                // 2. Initialize Authoritative World
-                const baseWorld = deserializeWorld(sessionDoc.snapshot);
+                // 2. Initialize Authoritative World (Async worker)
+                const baseWorld = await deserializeWorldAsync(sessionDoc.snapshot);
                 worldRef.current = baseWorld;
 
-                // 3. Inject Shards and Populate Cache
-                factionDocs.documents.forEach((fDoc: any) => {
-                    if (fDoc.data) {
-                        try {
-                            const shardObj = JSON.parse(fDoc.data);
-                            shardCacheRef.current.set(fDoc.$id, shardObj);
-                            mappedShardCacheRef.current.set(fDoc.$id, recordsToMaps(shardObj));
-                        } catch (e) {}
-                    }
-                });
+                // 3. Inject Shards and Populate Cache (Async worker)
+                await Promise.all(
+                    factionDocs.documents.map(async (fDoc: any) => {
+                        if (fDoc.data) {
+                            try {
+                                const shardObj = JSON.parse(fDoc.data);
+                                const mapped = await deserializeShardAsync(fDoc.data);
+                                shardCacheRef.current.set(fDoc.$id, shardObj);
+                                mappedShardCacheRef.current.set(fDoc.$id, mapped);
+                            } catch (e) {
+                                console.warn(`[GameSync] Failed to deserialize shard ${fDoc.$id}:`, e);
+                            }
+                        }
+                    })
+                );
 
                 // Apply all shards to world
                 mappedShardCacheRef.current.forEach(mapped => injectMappedShard(baseWorld, mapped));
@@ -179,33 +247,39 @@ export function useGameSync() {
 
                 // 4. Subscribe: Multiplayer Session (The Clock)
                 const sessionChannel = `databases.${DB_ID}.collections.${COLL_SESSIONS}.documents.${SESSION_DOC_ID}`;
-                unsubSession = appwriteClient.subscribe(sessionChannel, (response) => {
+                unsubSession = appwriteClient.subscribe(sessionChannel, async (response) => {
                     if (response.events.some(e => e.includes('.update'))) {
                         const payload = response.payload as any;
                         if (payload.snapshot) {
-                            const newBase = deserializeWorld(payload.snapshot);
-                            // Re-inject cached MAPPED shards into new base snapshot (Zero re-parsing cost!)
-                            mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
-                            worldRef.current = newBase;
-                            throttledUpdate();
+                            try {
+                                const newBase = await deserializeWorldAsync(payload.snapshot);
+                                // Re-inject cached MAPPED shards into new base snapshot (Zero re-parsing cost!)
+                                mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
+                                worldRef.current = newBase;
+                                throttledUpdate();
+                            } catch (e) {
+                                console.warn('[GameSync] Failed to parse updated session snapshot:', e);
+                            }
                         }
                     }
                 });
 
                 // 5. Subscribe: Faction Shards (The Details)
                 const factionChannel = `databases.${DB_ID}.collections.${COLL_FACTIONS}.documents`;
-                unsubFactions = appwriteClient.subscribe(factionChannel, (response) => {
+                unsubFactions = appwriteClient.subscribe(factionChannel, async (response) => {
                     if (response.events.some(e => e.includes('.update') || e.includes('.create'))) {
                         const shardDoc = response.payload as any;
                         if (shardDoc.data && worldRef.current) {
                             try {
                                 const shardObj = JSON.parse(shardDoc.data);
-                                const mapped = recordsToMaps(shardObj);
+                                const mapped = await deserializeShardAsync(shardDoc.data);
                                 shardCacheRef.current.set(shardDoc.$id, shardObj);
                                 mappedShardCacheRef.current.set(shardDoc.$id, mapped);
                                 injectMappedShard(worldRef.current, mapped);
                                 throttledUpdate();
-                            } catch (e) {}
+                            } catch (e) {
+                                console.warn(`[GameSync] Failed to parse updated faction shard ${shardDoc.$id}:`, e);
+                            }
                         }
                     }
                 });

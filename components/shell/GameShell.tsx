@@ -1,34 +1,82 @@
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { useGameSync } from '@/hooks/useGameSync';
 import DraggablePanel from '@/components/ui/DraggablePanel';
-import LeadershipPanel from '@/components/panels/LeadershipPanel';
 import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 import TopNav from '@/components/shell/TopNav';
 import GalaxyShell from '@/components/galaxy/GalaxyShell';
-import EconomyPanel from '@/components/panels/EconomyPanel';
-import GovernmentPanel from '@/components/panels/GovernmentPanel';
-import IntelligencePanel from '@/components/panels/IntelligencePanel';
-import PressPanel from '@/components/panels/PressPanel';
-import EspionageAgencyPanel from '@/components/intrigue/EspionageAgencyPanel';
-import CouncilPanel from '@/components/panels/CouncilPanel';
-import SeasonEndScreen from '@/components/season/SeasonEndScreen';
 import Modal from '@/components/ui/Modal';
-import EconomicTerminal from '@/components/economy/EconomicTerminal';
-import DossierPanel from '@/components/panels/DossierPanel';
-import ResearchPanel from '@/components/panels/ResearchPanel';
-import DiscoursePanel from '@/components/panels/DiscoursePanel';
-import CorporateLedgerPanel from '@/components/panels/CorporateLedgerPanel';
-import BattleCommandPanel from '@/components/panels/BattleCommandPanel';
-import DiplomacyPanel from '@/components/panels/DiplomacyPanel';
-import ShipDesignerPanel from '@/components/panels/ShipDesignerPanel';
-import ManualGuidebook from '@/components/manual/ManualGuidebook';
-import DevToolbox from '@/components/debug/DevToolbox';
+import dynamic from 'next/dynamic';
+
+const LeadershipPanel = dynamic(() => import('@/components/panels/LeadershipPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-amber-500/80 animate-pulse border border-amber-900/20 bg-slate-950 rounded shadow-2xl">LOADING LEADERSHIP CORE...</div>
+});
+const EconomyPanel = dynamic(() => import('@/components/panels/EconomyPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-green-500/80 animate-pulse border border-green-900/20 bg-slate-950 rounded shadow-2xl">LOADING ECONOMIC NETWORK...</div>
+});
+const GovernmentPanel = dynamic(() => import('@/components/panels/GovernmentPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-blue-500/80 animate-pulse border border-blue-900/20 bg-slate-950 rounded shadow-2xl">LOADING ADMINISTRATIVE DATABASE...</div>
+});
+const IntelligencePanel = dynamic(() => import('@/components/panels/IntelligencePanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-purple-500/80 animate-pulse border border-purple-900/20 bg-slate-950 rounded shadow-2xl">DECRYPTING INTELLIGENCE COMMUNIQUE...</div>
+});
+const PressPanel = dynamic(() => import('@/components/panels/PressPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-cyan-500/80 animate-pulse border border-cyan-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO PRESS FEED...</div>
+});
+const EspionageAgencyPanel = dynamic(() => import('@/components/intrigue/EspionageAgencyPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-red-500/80 animate-pulse border border-red-900/20 bg-slate-950 rounded shadow-2xl">SYNCHRONIZING SECURE AGENCY DATA...</div>
+});
+const CouncilPanel = dynamic(() => import('@/components/panels/CouncilPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-yellow-500/80 animate-pulse border border-yellow-900/20 bg-slate-950 rounded shadow-2xl">ESTABLISHING CONCILIAR LINK...</div>
+});
+const DossierPanel = dynamic(() => import('@/components/panels/DossierPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-slate-400 animate-pulse border border-slate-800/20 bg-slate-950 rounded shadow-2xl">COMPILING FACTION DOSSIERS...</div>
+});
+const ResearchPanel = dynamic(() => import('@/components/panels/ResearchPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-blue-400/80 animate-pulse border border-blue-900/20 bg-slate-950 rounded shadow-2xl">SYNCHRONIZING RESEARCH CORES...</div>
+});
+const DiscoursePanel = dynamic(() => import('@/components/panels/DiscoursePanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-indigo-400/80 animate-pulse border border-indigo-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO CHANNELS CONSOLE...</div>
+});
+const CorporateLedgerPanel = dynamic(() => import('@/components/panels/CorporateLedgerPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-emerald-400/80 animate-pulse border border-emerald-900/20 bg-slate-950 rounded shadow-2xl">RETRIEVING LEDGER ARCHIVES...</div>
+});
+const BattleCommandPanel = dynamic(() => import('@/components/panels/BattleCommandPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-rose-500/80 animate-pulse border border-rose-900/20 bg-slate-950 rounded shadow-2xl">INITIALIZING STRATEGIC WARMAP...</div>
+});
+const DiplomacyPanel = dynamic(() => import('@/components/panels/DiplomacyPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-teal-400/80 animate-pulse border border-teal-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO DIPLOMATIC UPLINK...</div>
+});
+const ShipDesignerPanel = dynamic(() => import('@/components/panels/ShipDesignerPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-sky-400/80 animate-pulse border border-sky-900/20 bg-slate-950 rounded shadow-2xl">LOADING SHIPWRIGHT SCHEMATICS...</div>
+});
+
+const SeasonEndScreen = dynamic(() => import('@/components/season/SeasonEndScreen'), { ssr: false });
+const EconomicTerminal = dynamic(() => import('@/components/economy/EconomicTerminal'), {
+    ssr: false,
+    loading: () => <div className="p-12 text-center text-xs font-mono text-cyan-400/80 animate-pulse">CONNECTING TO FINANCIAL SECTOR DATABASE...</div>
+});
+const ManualGuidebook = dynamic(() => import('@/components/manual/ManualGuidebook'), { ssr: false });
+const DevToolbox = dynamic(() => import('@/components/debug/DevToolbox'), { ssr: false });
 
 const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
@@ -51,20 +99,21 @@ const PANEL_MAP = {
 import ResourceBar from '@/components/shell/ResourceBar';
 
 export default function GameShell() {
-    const { 
-        activeTab, 
-        showSeasonEnd, 
-        seasonState, 
-        setFleets, 
-        playerFactionId, 
-        setPlayerFactionId,
-        floatedTabs,
-        closeFloatedTab,
-        updateFloatedTabPos,
-        systems,
-        factions,
-        setFocusTarget
-    } = useUIStore();
+    // Narrow selectors instead of subscribing to the whole store — otherwise this heavy
+    // shell (and its entire panel tree) re-rendered on every field change, including the
+    // rapid useGameSync updates.
+    const activeTab = useUIStore(s => s.activeTab);
+    const showSeasonEnd = useUIStore(s => s.showSeasonEnd);
+    const seasonState = useUIStore(s => s.seasonState);
+    const setFleets = useUIStore(s => s.setFleets);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const setPlayerFactionId = useUIStore(s => s.setPlayerFactionId);
+    const floatedTabs = useUIStore(s => s.floatedTabs);
+    const closeFloatedTab = useUIStore(s => s.closeFloatedTab);
+    const updateFloatedTabPos = useUIStore(s => s.updateFloatedTabPos);
+    const systems = useUIStore(s => s.systems);
+    const factions = useUIStore(s => s.factions);
+    const setFocusTarget = useUIStore(s => s.setFocusTarget);
     const router = useRouter();
 
     // Sync global state via API polling
@@ -93,14 +142,19 @@ export default function GameShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Auto-focus capital on first load once systems and faction matched
+    // Auto-focus the capital ONCE on first load. useGameSync rebuilds `systems`/`factions`
+    // as new references every sync, so depending on them here snapped the camera back to
+    // the home system on every tick. A ref guard fires the focus a single time.
+    const hasAutoFocusedRef = useRef(false);
     useEffect(() => {
+        if (hasAutoFocusedRef.current) return;
         if (playerFactionId && systems.length > 0) {
             const faction = factions[playerFactionId];
             if (faction) {
                 const capital = systems.find(s => s.id === faction.capitalSystemId) || systems[0];
                 if (capital) {
                     setFocusTarget({ x: capital.q, y: capital.r, zoom: 1.5 });
+                    hasAutoFocusedRef.current = true;
                 }
             }
         }
@@ -179,6 +233,7 @@ export default function GameShell() {
 
 function EconomicTerminalModal() {
     const { showEconomicTerminal, setShowEconomicTerminal } = useUIStore();
+    const playerFactionId = useUIStore(s => s.playerFactionId);
     const [econData, setEconData] = React.useState<any>(null);
     const [error, setError] = React.useState<string | null>(null);
     const [loading, setLoading] = React.useState(false);
@@ -188,7 +243,10 @@ function EconomicTerminalModal() {
             console.log("[ECONOMY] Modal Open - Fetching data...");
             setLoading(true);
             setError(null);
-            fetch('/api/game/economy')
+            // Pass the player's own faction so the terminal shows their economy, not a
+            // hardcoded one.
+            const qs = playerFactionId ? `?factionId=${encodeURIComponent(playerFactionId)}` : '';
+            fetch(`/api/game/economy${qs}`)
                 .then(res => res.json())
                 .then(data => {
                     console.log("[ECONOMY] Data received:", data);
@@ -201,7 +259,7 @@ function EconomicTerminalModal() {
                     setLoading(false);
                 });
         }
-    }, [showEconomicTerminal]);
+    }, [showEconomicTerminal, playerFactionId]);
 
     if (!showEconomicTerminal) return null;
 

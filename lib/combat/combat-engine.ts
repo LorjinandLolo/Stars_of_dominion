@@ -238,8 +238,10 @@ export function resolveEngagementRound(
     // Intelligence-based Prediction Simulation
     let attackerPredictionBonus = 0;
     let defenderPredictionBonus = 0;
-    const aIntelProb = config.intelPredictionProbabilities[state.attacker.intelLevel].archetypeExact;
-    const dIntelProb = config.intelPredictionProbabilities[state.defender.intelLevel].archetypeExact;
+    // Fall back to 0 if a combatant has no intelLevel set — indexing with an undefined
+    // key returned undefined and then threw on `.archetypeExact`, aborting the round.
+    const aIntelProb = config.intelPredictionProbabilities[state.attacker.intelLevel]?.archetypeExact ?? 0;
+    const dIntelProb = config.intelPredictionProbabilities[state.defender.intelLevel]?.archetypeExact ?? 0;
 
     if (Math.random() < aIntelProb) attackerPredictionBonus = 0.05;
     if (Math.random() < dIntelProb) defenderPredictionBonus = 0.05;
@@ -290,6 +292,14 @@ export function resolveEngagementRound(
 
     const dBombLosses = Math.min(dBombers, aInterceptors);
     dBombers -= dBombLosses;
+
+    // Persist air attrition back into each combatant's composition. Without this the
+    // dogfight was recomputed from full strength every round, so interceptors/bombers
+    // "killed" in round 1 reappeared in round 2 — air power was effectively immortal.
+    aComp['interceptor'] = aInterceptors;
+    aComp['bomber'] = aBombers;
+    dComp['interceptor'] = dInterceptors;
+    dComp['bomber'] = dBombers;
 
     // 2. Surface Combat Math
     const aLightAtk = aScreens * 4 + aCapitals * 2;
@@ -414,12 +424,15 @@ export function advanceRound(state: CombatState) {
             state.phase = 'ground';
             state.round = 1;
 
-            // Whoever dealt more damage/has higher power holds orbit
-            if (state.attacker.hp > state.defender.hp) {
-                state.orbitalWinnerId = state.attacker.factionId;
-            } else {
-                state.orbitalWinnerId = state.defender.factionId;
-            }
+            // Whoever retained the greater share of their force holds orbit. Comparing
+            // raw hp favoured whichever fleet was simply bigger; comparing hp/maxHp
+            // rewards the side that actually won the exchange. Ties keep the defender in
+            // orbit (the attacker must win outright to seize it).
+            const aFrac = state.attacker.hp / Math.max(1, state.attacker.maxHp);
+            const dFrac = state.defender.hp / Math.max(1, state.defender.maxHp);
+            state.orbitalWinnerId = aFrac > dFrac
+                ? state.attacker.factionId
+                : state.defender.factionId;
         } else if (state.phase === 'ground') {
             // End of Ground phase -> Battle Over
             state.resolved = true;

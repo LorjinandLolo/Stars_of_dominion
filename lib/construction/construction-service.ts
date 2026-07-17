@@ -91,7 +91,11 @@ export function startConstruction(
   tile.buildingId = buildingId;
   
   const stats = recalculatePlanetStats(planet);
-  const buildTime = buildingDef.buildTimeSeconds / stats.constructionSpeedModifier;
+  // Clamp the speed modifier to a small positive floor. A modifier of 0 produced
+  // Infinity (the building never completes); a negative one produced a completion time
+  // in the past (instant build). Either way the queue broke.
+  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier);
+  const buildTime = buildingDef.buildTimeSeconds / buildSpeed;
   const completionTime = now + buildTime;
   tile.constructionCompleteAt = completionTime;
 
@@ -239,7 +243,8 @@ export function repairBuilding(planet: Planet, tileId: string, now: number): boo
 
   // Repairs take half the time and cost? (Conceptual)
   const stats = recalculatePlanetStats(planet);
-  const repairTime = (buildingDef.buildTimeSeconds / 2) / stats.constructionSpeedModifier;
+  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier);
+  const repairTime = (buildingDef.buildTimeSeconds / 2) / buildSpeed;
   tile.constructionState = 'under_construction';
   tile.constructionCompleteAt = now + repairTime;
 

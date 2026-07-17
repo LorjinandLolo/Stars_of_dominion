@@ -6,6 +6,7 @@
 import { getGameWorldState } from '../game-world-state-singleton';
 import { tickEconomy } from '../economy/economy-service';
 import { tickConstructionGlobal, getBuildingsForSystem } from '../construction/construction-service';
+import { tickForwardBases } from '../movement/forward-base-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
 import { computeVisibility } from '../movement/visibility-service';
@@ -70,11 +71,16 @@ export async function runStrategicTick(now: Date, tickIndex: number): Promise<vo
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);
-    step11_pirateSpawning(world);
-    step12_pirateTacticalAI(world);
-    step13_pirateSafeHavens(world);
-    step14_empireFleetRepair(world);
-    step15_intelligence(world, TICK_DELTA_SECONDS);
+    // Steps 11-15 lacked the per-step try/catch that every other step has. A single
+    // throw here (e.g. a system missing hyperlaneNeighbors) propagated all the way out
+    // of the scheduler, which then never advanced its marker — permanently freezing the
+    // game clock. Isolate each so one bad record can't stall the whole simulation.
+    try { step11_pirateSpawning(world); } catch (e) { console.error('[TickProcessor] step11_pirateSpawning failed:', e); }
+    try { step12_pirateTacticalAI(world); } catch (e) { console.error('[TickProcessor] step12_pirateTacticalAI failed:', e); }
+    try { step13_pirateSafeHavens(world); } catch (e) { console.error('[TickProcessor] step13_pirateSafeHavens failed:', e); }
+    try { step14_empireFleetRepair(world); } catch (e) { console.error('[TickProcessor] step14_empireFleetRepair failed:', e); }
+    try { step15_intelligence(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] step15_intelligence failed:', e); }
+    try { tickForwardBases(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickForwardBases failed:', e); }
     step16_population(world, TICK_DELTA_SECONDS);
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
     step18_leadershipXP(world);
@@ -160,34 +166,14 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
 }
 
 function step5_recruitment(world: ReturnType<typeof getGameWorldState>) {
-    // Unit production is handled within the construction space build queue.
-    // A dedicated recruitment queue can be added here when the unit system
-    // exposes a tickRecruitment() function.
-    // For now this is a no-op stub with logging.
-    try {
-        for (let i = world.construction.spaceBuildQueue.length - 1; i >= 0; i--) {
-            const buildItem = world.construction.spaceBuildQueue[i];
-            if (world.nowSeconds >= buildItem.completesAtSeconds) {
-                // Construction complete
-                fireNotification({
-                    id: `ship-complete-${buildItem.orderId}-${Date.now()}`,
-                    factionId: 'unknown', // factionId not in SpaceBuildOrder, could add it or leave unknown
-                    category: 'construction',
-                    priority: 'normal',
-                    title: 'Ship Construction Complete',
-                    body: `${buildItem.shipType ?? 'New ship'} is ready for deployment.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    linkToTab: 'war',
-                    payload: { buildItemId: buildItem.orderId },
-                });
-                // Remove from queue
-                world.construction.spaceBuildQueue.splice(i, 1);
-            }
-        }
-    } catch (e) {
-        console.error('[TickProcessor] step5_recruitment failed:', e);
-    }
+    // Space-ship production is fully handled by step3 (tickConstructionGlobal ->
+    // tickSpaceConstruction), which spawns the finished fleet AND fires the completion
+    // notification. This step used to re-scan the same spaceBuildQueue and delete
+    // completed orders WITHOUT spawning a fleet — so any order that survived step3
+    // (e.g. because step3 threw and was caught) was silently destroyed here, losing the
+    // ship and the resources spent on it. Leaving fleet production to step3 removes that
+    // double-processing hazard. A dedicated ground/army recruitment queue can hook in here
+    // later without touching the ship queue.
 }
 
 function step6_trade(world: ReturnType<typeof getGameWorldState>, delta: number) {
@@ -448,7 +434,10 @@ function step13_pirateSafeHavens(world: ReturnType<typeof getGameWorldState>) {
                 sys.lawlessness = (sys.lawlessness || 0) + 5;
                 if (sys.lawlessness >= 100 && !sys.tags.includes('corsair_den')) {
                     sys.tags.push('corsair_den');
-                    console.log(`[PIRATES] Safe-haven established at ${sys.name} (${sysId})`);
+                    // A fully lawless haven fortifies into a pirate space station that
+                    // preys on nearby trade lanes.
+                    if (!sys.tags.includes('pirate_station')) sys.tags.push('pirate_station');
+                    console.log(`[PIRATES] Pirate station established at ${sys.name} (${sysId})`);
                 }
             }
         }

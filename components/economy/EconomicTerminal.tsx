@@ -339,13 +339,20 @@ function MarketDashboard({
                                 <td className="px-6 py-4 text-right text-slate-400">{m.demand.toLocaleString()}</td>
                                 <td className="px-6 py-4">
                                     <div className="w-24 h-6 flex items-end gap-0.5">
-                                        {[...Array(12)].map((_, j) => (
-                                            <div 
-                                                key={j} 
-                                                className={`w-1.5 rounded-t-sm ${m.resource === playerPolicy?.productionFocus ? 'bg-blue-500/50' : 'bg-slate-700/50'}`} 
-                                                style={{ height: `${20 + Math.random() * 80}%` }}
-                                            ></div>
-                                        ))}
+                                        {[...Array(12)].map((_, j) => {
+                                            // Deterministic bar heights derived from the market's own numbers.
+                                            // Math.random() here re-rolled on every render, so the "sparkline"
+                                            // flickered constantly and represented nothing.
+                                            const seed = Math.floor(m.currentPrice * 10) + m.supply + j * 37;
+                                            const height = 20 + (seed % 80);
+                                            return (
+                                                <div
+                                                    key={j}
+                                                    className={`w-1.5 rounded-t-sm ${m.resource === playerPolicy?.productionFocus ? 'bg-blue-500/50' : 'bg-slate-700/50'}`}
+                                                    style={{ height: `${height}%` }}
+                                                ></div>
+                                            );
+                                        })}
                                     </div>
                                 </td>
                             </tr>

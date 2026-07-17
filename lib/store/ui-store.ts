@@ -92,6 +92,8 @@ export interface UIStore {
     setFleets: (fleets: Fleet[]) => void;
     armies: Army[];
     setArmies: (armies: Army[]) => void;
+    forwardBases: any[];
+    setForwardBases: (bases: any[]) => void;
 
     // ── Planets (Synced from world.construction.planets) ──
     planets: any[]; // Use any[] for now to avoid complex imports, or import Planet type
@@ -296,6 +298,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Fleets & Armies ──
     fleets: [],
     setFleets: (fleets) => set({ fleets }),
+    forwardBases: [],
+    setForwardBases: (forwardBases) => set({ forwardBases }),
     armies: [],
     setArmies: (armies) => set({ armies }),
 

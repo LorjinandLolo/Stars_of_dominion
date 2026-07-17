@@ -14,9 +14,15 @@ interface TickInfo {
 }
 
 export default function TickCountdown() {
-    const [msLeft, setMsLeft] = useState<number>(getMsUntilNextTick());
+    // Time-derived values must not be computed during render/initial state: the server and
+    // the client evaluate `new Date()` at different instants, causing a hydration mismatch.
+    // Start null and fill in after mount (client-only).
+    const [msLeft, setMsLeft] = useState<number | null>(null);
+    const [mounted, setMounted] = useState(false);
     const [tickInfo, setTickInfo] = useState<TickInfo | null>(null);
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => { setMounted(true); }, []);
 
     // Fetch tick state from /api/tick on mount
     useEffect(() => {
@@ -36,15 +42,18 @@ export default function TickCountdown() {
         return () => clearInterval(id);
     }, []);
 
-    const urgency = msLeft < 30 * 60 * 1000   // under 30 min
-        ? 'text-amber-400'
+    const urgency = msLeft === null
+        ? 'text-slate-300'
         : msLeft < 5 * 60 * 1000              // under 5 min
         ? 'text-red-400'
+        : msLeft < 30 * 60 * 1000             // under 30 min
+        ? 'text-amber-400'
         : 'text-slate-300';
 
-    const nextAt = getNextStrategicTick();
-    const nextHH = String(nextAt.getUTCHours()).padStart(2, '0');
-    const nextMM = String(nextAt.getUTCMinutes()).padStart(2, '0');
+    // Only compute the wall-clock target after mount so SSR and first client render agree.
+    const nextAt = mounted ? getNextStrategicTick() : null;
+    const nextHH = nextAt ? String(nextAt.getUTCHours()).padStart(2, '0') : '--';
+    const nextMM = nextAt ? String(nextAt.getUTCMinutes()).padStart(2, '0') : '--';
 
     const handleForceTick = async () => {
         setLoading(true);
@@ -69,7 +78,7 @@ export default function TickCountdown() {
             <div className="flex flex-col leading-none">
                 <span className="text-[9px] text-slate-500 uppercase tracking-widest">Next Cycle</span>
                 <span className={`text-sm font-mono font-bold ${urgency}`}>
-                    {formatCountdown(msLeft)}
+                    {msLeft === null ? '--:--' : formatCountdown(msLeft)}
                 </span>
             </div>
             {tickInfo && (

@@ -184,21 +184,35 @@ export function ReviewPanel() {
                     targetFleetId = alliedFleet.id;
                 } else {
                     alert("No allied fleet in orbit. Commissioning new fleet...");
-                    await executePlayerAction('MIL_BUILD_FLEET', {
-                        planetId: selectedPlanet.id,
-                        systemId: selectedPlanet.systemId
-                    }, playerFactionId || '');
+                    await executePlayerAction({
+                        id: `act_${Date.now()}`,
+                        actionId: 'MIL_BUILD_FLEET',
+                        issuerId: playerFactionId || '',
+                        targetId: selectedPlanet.id,
+                        payload: {
+                            planetId: selectedPlanet.id,
+                            systemId: selectedPlanet.systemId
+                        },
+                        timestamp: Math.floor(Date.now() / 1000)
+                    });
                     return;
                 }
             }
             if (!targetFleetId || !playerFactionId) return;
             try {
-                await executePlayerAction('MIL_RECRUIT_FORMATION_UNIT', {
-                    formationId: targetFleetId,
-                    isFleet: true,
-                    unitType,
-                    count: 1
-                }, playerFactionId);
+                await executePlayerAction({
+                    id: `act_${Date.now()}`,
+                    actionId: 'MIL_RECRUIT_FORMATION_UNIT',
+                    issuerId: playerFactionId,
+                    targetId: targetFleetId,
+                    payload: {
+                        formationId: targetFleetId,
+                        isFleet: true,
+                        unitType,
+                        count: 1
+                    },
+                    timestamp: Math.floor(Date.now() / 1000)
+                });
             } catch (err) {
                 console.error("Fleet recruitment failed:", err);
             }
@@ -317,10 +331,17 @@ export function ReviewPanel() {
                                             className="w-full bg-slate-900 border border-slate-800 p-1 rounded text-[9px] text-slate-300 font-mono"
                                             onChange={async (e) => {
                                                 if (e.target.value) {
-                                                    await executePlayerAction('MIL_EMBARK_ARMY', { 
-                                                        armyId: army.id, 
-                                                        fleetId: e.target.value 
-                                                    }, playerFactionId || '');
+                                                    await executePlayerAction({
+                                                        id: `act_${Date.now()}`,
+                                                        actionId: 'MIL_EMBARK_ARMY',
+                                                        issuerId: playerFactionId || '',
+                                                        targetId: army.id,
+                                                        payload: {
+                                                            armyId: army.id,
+                                                            fleetId: e.target.value
+                                                        },
+                                                        timestamp: Math.floor(Date.now() / 1000)
+                                                    });
                                                 }
                                             }}
                                             defaultValue=""
@@ -359,10 +380,17 @@ export function ReviewPanel() {
                                             className="w-full bg-slate-900 border border-slate-800 p-1 rounded text-[9px] text-slate-300 font-mono"
                                             onChange={async (e) => {
                                                 if (e.target.value) {
-                                                    await executePlayerAction('MIL_DISEMBARK_ARMY', { 
-                                                        armyId: army.id, 
-                                                        planetId: e.target.value 
-                                                    }, playerFactionId || '');
+                                                    await executePlayerAction({
+                                                        id: `act_${Date.now()}`,
+                                                        actionId: 'MIL_DISEMBARK_ARMY',
+                                                        issuerId: playerFactionId || '',
+                                                        targetId: army.id,
+                                                        payload: {
+                                                            armyId: army.id,
+                                                            planetId: e.target.value
+                                                        },
+                                                        timestamp: Math.floor(Date.now() / 1000)
+                                                    });
                                                 }
                                             }}
                                             defaultValue=""

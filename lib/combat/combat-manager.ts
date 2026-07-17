@@ -107,6 +107,15 @@ function handleEngagement(
             applyDamageToFleets(fleetsA, report.defenderDamageDealt);
             applyDamageToFleets(fleetsB, report.attackerDamageDealt);
 
+            // Remove annihilated fleets (strength reduced to 0). Otherwise a wiped fleet
+            // lingered in-system with a hostile faction and a fresh no-op combat was
+            // re-initiated against it every tick ("zombie" engagements).
+            for (const fleet of [...fleetsA, ...fleetsB]) {
+                if (fleet.strength <= 0) {
+                    world.movement.fleets.delete(fleet.id);
+                }
+            }
+
             advanceRound(state);
         } catch (e: any) {
             console.error(`[CombatManager] Resolution failed:`, e.message);
@@ -124,7 +133,12 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
     // Combine compositions
     const mergedComp: UnitComposition = {};
     fleets.forEach(f => {
-        const comp = f.composition || { destroyer: Math.max(1, Math.floor(f.basePower / 150)) };
+        // A fleet can carry an empty composition object ({}), which is truthy — so
+        // `f.composition || fallback` would never trigger. Fall back whenever the
+        // composition has no actual ship entries, so production-built fleets still fight.
+        const comp = (f.composition && Object.keys(f.composition).length > 0)
+            ? f.composition
+            : { destroyer: Math.max(1, Math.floor(f.basePower / 150)) };
         for (const [type, count] of Object.entries(comp)) {
             const uType = type as keyof UnitComposition;
             mergedComp[uType] = (mergedComp[uType] || 0) + (count as number);
@@ -156,7 +170,10 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         composition: mergedComp,
         intelLevel: 'observing',
         supply: fleets[0]?.doctrine.supplyLevel ?? 1.0,
-        morale: (fleets[0]?.doctrine.moraleDrift ?? 0 + 100) / 200, 
+        // NOTE: `+` binds tighter than `??`, so `moraleDrift ?? 0 + 100` parsed as
+        // `moraleDrift ?? 100`, giving morale=0 for a default fleet (a permanent 50%
+        // power penalty). Parenthesise the `?? 0` and clamp the result to [0,1].
+        morale: Math.max(0, Math.min(1, ((fleets[0]?.doctrine.moraleDrift ?? 0) + 100) / 200)),
         doctrine: 'aggressive',
         predictionPoints: 0,
         selectedStance: 'shock'

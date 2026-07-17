@@ -114,7 +114,12 @@ export function tickDoctrineEffects(
     // Morale recovery when not in transit and supply is healthy
     if (!fleet.destinationSystemId && fleet.doctrine.supplyLevel > 0.5) {
         const recovery = dc.moraleRecoveryRatePerHour * hours;
-        fleet.doctrine.moraleDrift = Math.min(0, fleet.doctrine.moraleDrift + recovery);
+        // Recovery heals *negative* morale back toward 0. The old `Math.min(0, ...)`
+        // capped the result at 0 unconditionally, so a fleet with good morale (e.g. a
+        // Raider doctrine's positive drift) had it wiped to 0 every idle tick.
+        if (fleet.doctrine.moraleDrift < 0) {
+            fleet.doctrine.moraleDrift = Math.min(0, fleet.doctrine.moraleDrift + recovery);
+        }
         fleet.doctrine.logisticsStrain = Math.max(0, fleet.doctrine.logisticsStrain - recovery * 0.3);
     }
 

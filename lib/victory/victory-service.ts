@@ -88,14 +88,21 @@ function ensureEnlightenmentProgress(factionId: string, world: GameWorldState): 
  */
 export function checkConquestVictory(world: GameWorldState): string | null {
     const systems = [...world.movement.systems.values()];
+    const total = systems.length;
     const owned = systems.filter(s => s.ownerFactionId != null);
     if (owned.length === 0) return null;
 
     const factionSet = new Set(owned.map(s => s.ownerFactionId!));
-    if (factionSet.size === 1) {
-        return [...factionSet][0];
-    }
-    return null;
+    if (factionSet.size !== 1) return null;
+
+    // Previously this returned a winner as soon as a single faction owned any system,
+    // so early-game (one owned system, the rest neutral) triggered a spurious win that
+    // ended everyone's session. Require the sole owner to control a dominant majority of
+    // ALL systems before declaring conquest. (Threshold is tunable.)
+    const DOMINANCE_THRESHOLD = 0.6;
+    if (total > 0 && owned.length / total < DOMINANCE_THRESHOLD) return null;
+
+    return [...factionSet][0];
 }
 
 /**
@@ -152,7 +159,10 @@ export function applyConquestPressure(
     for (const posture of world.movement.empirePostures.values()) {
         if (posture.factionId !== conquest.factionId) continue;
         for (const bloc of posture.blocs) {
-            bloc.satisfaction = clamp(bloc.satisfaction - cc.blocImbalanceDriftPerHour * hours * 100);
+            // bloc.satisfaction is on a 0-100 scale everywhere else; the local clamp()
+            // defaults to [0,1], which crushed every hegemon bloc to <=1 the tick after
+            // any conquest (instantly firing crisis indicators). Clamp on the 0-100 scale.
+            bloc.satisfaction = clamp(bloc.satisfaction - cc.blocImbalanceDriftPerHour * hours * 100, 0, 100);
         }
     }
 }

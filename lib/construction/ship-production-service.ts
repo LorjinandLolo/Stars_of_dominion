@@ -8,6 +8,7 @@ import {
 } from './construction-types';
 import { MovementWorldState, Fleet, HyperdriveProfile } from '../movement/types';
 import { GameWorldState } from '../game-world-state';
+import { fireNotification } from '../time/notification-hooks';
 
 /**
  * Initiates a space construction order.
@@ -82,6 +83,22 @@ function finalizeShipProduction(world: GameWorldState, order: SpaceBuildOrder): 
     // Normal fleet production
     spawnFleet(world, order.systemId, factionId, order.shipType);
   }
+
+  // Notify the owning faction that the ship is ready. This is the authoritative
+  // completion point (the tick processor's step5 no longer touches the queue), so
+  // the notification carries the real factionId instead of 'unknown'.
+  fireNotification({
+    id: `ship-complete-${order.orderId}`,
+    factionId,
+    category: 'construction',
+    priority: 'normal',
+    title: 'Ship Construction Complete',
+    body: `${order.shipType.replace(/_/g, ' ')} is ready for deployment.`,
+    createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+    read: false,
+    linkToTab: 'war',
+    payload: { orderId: order.orderId, systemId: order.systemId },
+  });
 }
 
 function spawnFleet(world: GameWorldState, systemId: string, factionId: string, shipType: ShipType): void {

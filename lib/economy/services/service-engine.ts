@@ -1,6 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import { PlanetProduction, PlanetServiceState, ServiceStatus } from '../economy-types';
+// Load definitions via a bundler-resolved static import instead of fs.readFileSync from
+// process.cwd(). The old approach returned [] under Next's bundled/serverless runtime,
+// silently disabling upkeep, coverage, and grid-efficiency for every planet.
+import serviceDefinitionsJson from './definitions.json';
 
 export interface ServiceDefinition {
     id: string;
@@ -17,17 +19,9 @@ export interface ServiceDefinition {
     tags: string[];
 }
 
-let serviceDefs: ServiceDefinition[] = [];
+const serviceDefs: ServiceDefinition[] = serviceDefinitionsJson as unknown as ServiceDefinition[];
 
 export function loadServiceDefinitions() {
-    if (serviceDefs.length > 0) return serviceDefs;
-    try {
-        const filePath = path.join(process.cwd(), 'lib', 'economy', 'services', 'definitions.json');
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        serviceDefs = JSON.parse(raw);
-    } catch (e) {
-        console.error('[ServiceEngine] Failed to load service definitions.json', e);
-    }
     return serviceDefs;
 }
 

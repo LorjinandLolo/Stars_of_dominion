@@ -20,6 +20,7 @@ import { Faction, Resource, Market, TradeAgreement } from './trade-system/types'
 import { OPERATION_DEFINITIONS } from './intelligence/operation-definitions';
 import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
 import { initializeFactionHomeWorld } from './economy/services/initialization-service';
+import { assignFlavorTags } from './galaxy/system-tags';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
 
@@ -34,7 +35,16 @@ function buildEmptyMovementState(): MovementWorldState {
             const data = JSON.parse(fs.readFileSync(systemsPath, 'utf-8'));
             if (data.systemNodes) {
                 data.systemNodes.forEach((sys: any) => {
-                    systems.set(sys.id, { ...sys, tags: sys.tags || [] });
+                    // Default array-valued fields so tick steps that call
+                    // `.some(...)`/`.includes(...)` on them can't throw on sparse data.
+                    const baseTags = sys.tags || [];
+                    // Seed deterministic flavour tags so the galaxy has personality on load.
+                    const flavorTags = assignFlavorTags(sys.id, baseTags);
+                    systems.set(sys.id, {
+                        ...sys,
+                        tags: [...baseTags, ...flavorTags],
+                        hyperlaneNeighbors: sys.hyperlaneNeighbors || [],
+                    });
                 });
             }
         }
@@ -49,6 +59,7 @@ function buildEmptyMovementState(): MovementWorldState {
         tradeSegments: new Map(),
         corridors: new Map(),
         fleets: new Map(),
+        armies: new Map(),
         factionVisibility: new Map(),
         sensorSources: [],
         anomalyPool: [],
@@ -58,6 +69,7 @@ function buildEmptyMovementState(): MovementWorldState {
         empirePostures: new Map(),
         degradations: new Map(),
         sorties: new Map(),
+        forwardBases: new Map(),
         nowSeconds: Math.floor(Date.now() / 1000),
     };
 }

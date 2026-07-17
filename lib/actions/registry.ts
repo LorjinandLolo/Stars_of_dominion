@@ -99,6 +99,12 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id" },
     cost: { metals: 100, manpower: 200 }
   },
+  MIL_ESTABLISH_FORWARD_BASE: {
+    id: "MIL_ESTABLISH_FORWARD_BASE",
+    category: "military",
+    params: { systemId: "id" },
+    cost: { credits: 800, metals: 400 }
+  },
   MIL_LEAVE_SIEGE: {
     id: "MIL_LEAVE_SIEGE",
     category: "military",

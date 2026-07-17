@@ -455,7 +455,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (army && army.factionId === factionId && army.transportFleetId) {
                 const fleet = world.movement.fleets.get(army.transportFleetId);
                 if (fleet) {
-                    fleet.transportedArmyIds = fleet.transportedArmyIds?.filter(id => id !== army.id) || [];
+                    fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
                 }
                 army.transportFleetId = null;
                 army.currentPlanetId = payload.planetId;

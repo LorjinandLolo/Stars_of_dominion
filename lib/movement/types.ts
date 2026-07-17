@@ -441,6 +441,23 @@ export interface AirSortie {
 
 // ─── World State (aggregate passed to services) ───────────────────────────────
 
+/**
+ * A temporary forward operating base a faction establishes at a system to stage and
+ * launch invasions. Expires after a set lifetime unless reinforced.
+ */
+export interface ForwardBase {
+    id: string;
+    factionId: string;
+    systemId: string;
+    name: string;
+    establishedAtSeconds: number;
+    expiresAtSeconds: number;
+    /** 0..1 — supply/readiness, decays toward expiry. */
+    supply: number;
+    /** Fleets currently staged at this base. */
+    stagedFleetIds: string[];
+}
+
 export interface MovementWorldState {
     systems: Map<string, SystemNode>;
     planets: Map<string, PlanetNode>;
@@ -448,6 +465,7 @@ export interface MovementWorldState {
     tradeSegments: Map<string, TradeSegment>;
     corridors: Map<string, Corridor>;
     fleets: Map<string, Fleet>;
+    armies: Map<string, Army>;
     factionVisibility: Map<string, FactionVisibility>; // factionId → visibility map
     sensorSources: SensorSource[];
     anomalyPool: Anomaly[];
@@ -457,6 +475,8 @@ export interface MovementWorldState {
     empirePostures: Map<string, EmpirePosture>;
     degradations: Map<string, InfrastructureDegradation>;
     sorties: Map<string, AirSortie>;
+    /** Temporary faction staging bases for launching invasions. */
+    forwardBases: Map<string, ForwardBase>;
     /** Unix epoch in seconds — current simulation time. */
     nowSeconds: number;
 }

@@ -3,6 +3,7 @@ import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { TechEngine } from '@/lib/tech/engine';
 import { tickSeasonModifiers, endSeason, scheduleNextSeason } from '@/lib/seasons/season-service';
 import { processSectorCombats } from '@/lib/combat/combat-manager';
+import { establishForwardBase, dismantleForwardBase } from '@/lib/movement/forward-base-service';
 
 export async function POST(req: NextRequest) {
     try {
@@ -29,6 +30,22 @@ export async function POST(req: NextRequest) {
                 
                 tickSeasonModifiers(world, seconds);
                 return NextResponse.json({ success: true, nowSeconds: world.nowSeconds });
+            }
+
+            case 'establishForwardBase': {
+                const factionId = payload?.factionId || 'faction-aurelian';
+                const systemId = payload?.systemId;
+                if (!systemId) return NextResponse.json({ success: false, error: 'systemId required' }, { status: 400 });
+                const result = establishForwardBase(world, factionId, systemId, {
+                    durationSeconds: payload?.durationSeconds,
+                    name: payload?.name,
+                });
+                return NextResponse.json(result);
+            }
+
+            case 'dismantleForwardBase': {
+                const ok = dismantleForwardBase(world, payload?.baseId);
+                return NextResponse.json({ success: ok });
             }
 
             case 'endSeason': {

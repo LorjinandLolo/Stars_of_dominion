@@ -29,18 +29,23 @@ export class VictoryManager {
 
         // 1. Check Last Standing (Conquest / Elimination)
         let activeRivals = 0;
+        let majorFactions = 0; // excludes pirates/neutral, so the guard below is consistent
         for (const [rId, rEcon] of world.economy.factions) {
-            if (rId === factionId) continue;
             if (rId === 'faction-pirates' || rId === 'faction-neutral') continue;
+            majorFactions++;
+            if (rId === factionId) continue;
 
             // Faction is active if it owns any systems or has significant reserves
             const ownedSystems = Array.from(world.movement.systems.values()).filter(s => s.ownerFactionId === rId);
             const isAlive = ownedSystems.length > 0 || (rEcon.reserves.CREDITS || 0) > 1000;
-            
+
             if (isAlive) activeRivals++;
         }
 
-        if (activeRivals === 0 && world.economy.factions.size > 2) {
+        // Require that at least one real rival existed (majorFactions >= 2), counted the
+        // same way as activeRivals — previously `factions.size > 2` counted pirates/neutral
+        // and could declare an instant win in a world that only nominally had rivals.
+        if (activeRivals === 0 && majorFactions >= 2) {
             return {
                 status: 'VICTORIOUS',
                 type: 'CONQUEST',

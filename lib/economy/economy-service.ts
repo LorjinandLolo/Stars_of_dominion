@@ -21,6 +21,7 @@ import { calculateBiosphereModifiers } from './biosphere-traits';
 import { tickGalacticTrade, initializeGalacticMarkets } from '../trade-system/trade-network-service';
 import { RNG } from '../trade-system/rng';
 import { tickConstructionGlobal } from '../construction/construction-service';
+import { initializePlanetServices, updatePlanetServices } from './services/service-engine';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -90,12 +91,9 @@ export function tickProduction(
     // 1. Initialize Default Data-Driven Services (For unseeded planets)
     if (!planet.services) {
         planet.services = {};
-        const { initializePlanetServices } = require('./services/service-engine');
         initializePlanetServices(planet);
     }
 
-    const { updatePlanetServices } = require('./services/service-engine');
-    
     // 2. Resolve Service Upkeeps, Coverage, and Aggregate Yield Modifiers
     const gridEfficiency = updatePlanetServices(planet, deltaSeconds);
 
@@ -178,16 +176,17 @@ export function tickTradeFlow(
             edge.flowPerHour = drainRate;
             // Drain from stockpile (up to what's available)
             const drain = scaleBundles(drainRate, deltaSeconds / 3600);
+            const toPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.toSystemId);
             for (const [k, v] of Object.entries(drain)) {
                 const key = k as keyof ResourceBundle;
-                fromPlanet.stockpile[key] = Math.max(0, (fromPlanet.stockpile[key] ?? 0) - (v ?? 0));
-            }
-            // Add to destination planet
-            const toPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.toSystemId);
-            if (toPlanet) {
-                for (const [k, v] of Object.entries(drain)) {
-                    const key = k as keyof ResourceBundle;
-                    toPlanet.stockpile[key] = (toPlanet.stockpile[key] ?? 0) + (v ?? 0);
+                // Only move what the source actually has on hand. Previously the source was
+                // clamped to what it held while the destination received the full requested
+                // amount, fabricating resources every tick when the source ran short.
+                const available = fromPlanet.stockpile[key] ?? 0;
+                const moved = Math.max(0, Math.min(available, v ?? 0));
+                fromPlanet.stockpile[key] = available - moved;
+                if (toPlanet) {
+                    toPlanet.stockpile[key] = (toPlanet.stockpile[key] ?? 0) + moved;
                 }
             }
         }
@@ -237,6 +236,12 @@ export function tickCommodityDistribution(
             cultural: stockCult * deliveryFraction * hours,
             rare: stockRare * deliveryFraction * hours,
         };
+
+        // Consume the delivered commodities from the stockpile. Without this, the same
+        // standing stock granted happiness every tick forever (infinite luxury economy).
+        planet.stockpile['luxury'] = Math.max(0, stockLux - (delivered.luxury ?? 0));
+        planet.stockpile['cultural'] = Math.max(0, stockCult - (delivered.cultural ?? 0));
+        planet.stockpile['rare'] = Math.max(0, stockRare - (delivered.rare ?? 0));
 
         deliveries.set(planet.planetId, delivered);
         totalDelivered += deliveryFraction;

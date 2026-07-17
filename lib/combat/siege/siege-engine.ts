@@ -56,7 +56,10 @@ export class GroundSiegeEngine {
         }
 
         // 4. Resolve Cycle (every N ticks - User choice: 4)
-        if (siege.tickCount % siege.cycleLengthTicks === 0) {
+        // Guard against cycleLengthTicks === 0: `x % 0` is NaN, and `NaN === 0` is always
+        // false, so the siege would drain supply forever but never resolve a cycle.
+        const cycleLen = siege.cycleLengthTicks > 0 ? siege.cycleLengthTicks : 4;
+        if (siege.tickCount % cycleLen === 0) {
             this.resolveCycle(siege);
         }
 

@@ -174,8 +174,12 @@ function _applyAcceptedOffer(offer: DiplomaticOffer): void {
         }
 
         case 'peace_offer': {
-            const rivalryId = `rivalry-${offer.fromFactionId}-${offer.toFactionId}`;
-            const rivalry = world.rivalries.get(rivalryId);
+            // Rivalries are stored under whichever faction registered first, so try both
+            // key directions (matching combat-manager). Otherwise accepting peace silently
+            // did nothing when the rivalry was keyed the other way around.
+            const rivalry =
+                world.rivalries.get(`rivalry-${offer.fromFactionId}-${offer.toFactionId}`) ||
+                world.rivalries.get(`rivalry-${offer.toFactionId}-${offer.fromFactionId}`);
             if (rivalry) {
                 rivalry.rivalryScore = Math.max(0, rivalry.rivalryScore - 40);
                 rivalry.escalationLevel = Math.max(0, rivalry.escalationLevel - 3);

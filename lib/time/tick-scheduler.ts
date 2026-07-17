@@ -52,15 +52,23 @@ export async function tryRunStrategicTick(
     }
 
     // ── Run the tick ───────────────────────────────────────────────────────────
+    // Claim the window synchronously BEFORE awaiting. runStrategicTick yields at its
+    // internal awaits; without claiming first, a second concurrent call would pass the
+    // idempotency guard above and re-apply the entire tick (double resources/research).
+    const previousProcessedAt = _lastProcessedTickAt;
+    const previousTickIndex = _tickIndex;
+    _lastProcessedTickAt = lastTickIso;
+    _tickIndex = previousTickIndex + 1;
+
     try {
-        await runStrategicTick(now, _tickIndex + 1);
+        await runStrategicTick(now, _tickIndex);
     } catch (err) {
         console.error('[TickScheduler] Tick processor failed:', err);
+        // Roll back the optimistic claim so a retry can re-run this window.
+        _lastProcessedTickAt = previousProcessedAt;
+        _tickIndex = previousTickIndex;
         throw err; // Let caller handle / retry
     }
-
-    _tickIndex++;
-    _lastProcessedTickAt = lastTickIso;
 
     return {
         ran: true,

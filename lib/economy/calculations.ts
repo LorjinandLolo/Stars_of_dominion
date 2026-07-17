@@ -94,7 +94,12 @@ export function getNetIncome(
         const isOrigin = planetSet.has(route.origin_planet_id);
         const isTarget = planetSet.has(route.target_planet_id);
 
-        if (isOrigin) {
+        if (isOrigin && isTarget) {
+            // Purely internal route (both endpoints owned): moving goods between your own
+            // planets is net-zero. The old code ran only the export branch, destroying the
+            // resource and minting free credits for an internal transfer.
+            // No net change.
+        } else if (isOrigin) {
             // EXPORT: Lose Resource, Gain Credits
             // For now assuming 1 Resource = 1 Credit for simplicity, should look up prices later
             const creditValue = route.amount;

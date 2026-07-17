@@ -7,7 +7,10 @@ export type SectorType = 'deep_space' | 'asteroid_field' | 'nebula' | 'planet' |
 export function getSectorType(x: number, y: number): SectorType {
     // Simple pseudo-random hash based on coordinates
     // We want a static map, so no Math.random()
-    const hash = (x * 37 + y * 17) % 100;
+    // JS `%` returns negative results for negative operands, which pushed the entire
+    // negative-coordinate half of the map into `hash < 15` (asteroid_field = impassable).
+    // Normalise into [0, 99] so terrain is distributed correctly across all coordinates.
+    const hash = (((x * 37 + y * 17) % 100) + 100) % 100;
 
     // 15% chance of Asteroids
     if (hash < 15) {

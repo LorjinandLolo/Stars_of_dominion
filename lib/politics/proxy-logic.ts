@@ -35,8 +35,11 @@ export function sponsorProxyConflict(
         conflict.sponsorIds.push(sponsorId);
     }
 
-    conflict.fundingLevel += amount;
-    
+    // fundingLevel is consumed as a 0-100 value by proxy-service (fundingMultiplier,
+    // blowbackRisk). `amount` is raw energy, so accumulating it unclamped produced
+    // absurd multipliers (5000 energy -> 26x rebel strength). Keep it in the 0-100 domain.
+    conflict.fundingLevel = Math.min(100, conflict.fundingLevel + amount);
+
     // Intensity grows with funding but with diminishing returns
     // Every 500 energy adds ~10-15 intensity
     const intensityGain = (amount / 500) * 12;

@@ -28,12 +28,19 @@ export default function MilitaryPanel() {
     const handleRecruitUnit = async (unitType: string, count: number = 1) => {
         if (!selectedFormationId) return;
         
-        await executePlayerAction('MIL_RECRUIT_FORMATION_UNIT', {
-            formationId: selectedFormationId,
-            isFleet: activeTab === 'fleets',
-            unitType,
-            count
-        }, playerFactionId || '');
+        await executePlayerAction({
+            id: `act_${Date.now()}`,
+            actionId: 'MIL_RECRUIT_FORMATION_UNIT',
+            issuerId: playerFactionId || '',
+            targetId: selectedFormationId,
+            payload: {
+                formationId: selectedFormationId,
+                isFleet: activeTab === 'fleets',
+                unitType,
+                count
+            },
+            timestamp: Math.floor(Date.now() / 1000)
+        });
     };
 
     const handleCreateFormation = async () => {
@@ -43,24 +50,45 @@ export default function MilitaryPanel() {
         }
 
         if (activeTab === 'armies') {
-            await executePlayerAction('MIL_CREATE_ARMY', {
-                planetId: selectedPlanetId,
-                systemId: selectedSystemId
-            }, playerFactionId || '');
+            await executePlayerAction({
+                id: `act_${Date.now()}`,
+                actionId: 'MIL_CREATE_ARMY',
+                issuerId: playerFactionId || '',
+                targetId: selectedPlanetId,
+                payload: {
+                    planetId: selectedPlanetId,
+                    systemId: selectedSystemId
+                },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
         } else {
-            await executePlayerAction('MIL_BUILD_FLEET', {
-                planetId: selectedPlanetId,
-                systemId: selectedSystemId
-            }, playerFactionId || '');
+            await executePlayerAction({
+                id: `act_${Date.now()}`,
+                actionId: 'MIL_BUILD_FLEET',
+                issuerId: playerFactionId || '',
+                targetId: selectedPlanetId,
+                payload: {
+                    planetId: selectedPlanetId,
+                    systemId: selectedSystemId
+                },
+                timestamp: Math.floor(Date.now() / 1000)
+            });
         }
     };
 
     const handleAssignLeader = async (leaderId: string) => {
         if (!selectedFormationId) return;
-        await executePlayerAction('LEADER_ASSIGN', {
-            leaderId,
-            assignmentId: selectedFormationId
-        }, playerFactionId || '');
+        await executePlayerAction({
+            id: `act_${Date.now()}`,
+            actionId: 'LEADER_ASSIGN',
+            issuerId: playerFactionId || '',
+            targetId: selectedFormationId,
+            payload: {
+                leaderId,
+                assignmentId: selectedFormationId
+            },
+            timestamp: Math.floor(Date.now() / 1000)
+        });
     };
 
     return (

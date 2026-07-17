@@ -6,9 +6,11 @@ import { getGameWorldState } from '@/lib/game-world-state-singleton';
 export async function GET(req: NextRequest) {
     try {
         const world = getGameWorldState();
-        // Assume player faction for now or get from params if needed
-        const playerFactionId = 'faction-aurelian'; 
-        
+        // Use the requesting player's faction (falling back to Aurelian only if none was
+        // supplied) so each player sees their own economy rather than a hardcoded one.
+        const { searchParams } = new URL(req.url);
+        const playerFactionId = searchParams.get('factionId') || 'faction-aurelian';
+
         const state = getEconomyState(world, playerFactionId);
 
         return NextResponse.json({

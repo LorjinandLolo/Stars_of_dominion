@@ -117,6 +117,11 @@ async function resolveOperation(op: ActiveOperation, world: GameWorldState) {
   const def = world.intelligence.definitions.get(op.definitionId);
   if (!def) return;
 
+  // Claim the operation synchronously BEFORE any await. resolveOperation awaits
+  // applyEffects/handleExposure, and the op stayed "active" throughout — so a re-entrant
+  // tickIntelligence could pass `progress >= 1.0` again and apply every effect twice.
+  op.status = "resolved";
+
   const roll = Math.random();
   let outcome: OperationOutcome = "failure";
 
