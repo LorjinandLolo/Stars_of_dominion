@@ -76,6 +76,14 @@ async function runGameTick() {
         if (!world.rivalries) world.rivalries = new Map();
         if (!world.movement.sorties) world.movement.sorties = new Map();
 
+        // Normalize snapshot data: systems saved by older snapshots can be missing
+        // array fields, which crashes tick steps that iterate them
+        // (`hyperlaneNeighbors is not iterable`, `tags.includes` throws, etc.).
+        for (const sys of world.movement.systems.values()) {
+            if (!Array.isArray((sys as any).hyperlaneNeighbors)) (sys as any).hyperlaneNeighbors = [];
+            if (!Array.isArray((sys as any).tags)) (sys as any).tags = [];
+        }
+
         // 2. Advance Simulation Time
         const oldNow = world.nowSeconds;
         world.nowSeconds += TIME_STEP_SECONDS;
@@ -84,13 +92,30 @@ async function runGameTick() {
         // Filter server-side on processed=false. The old client-side filter over the
         // first 50 docs meant that once 50+ processed orders accumulated, NEW orders
         // never fit in the window and the queue silently starved forever.
-        const allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
-            Query.equal('processed', false),
-            Query.orderAsc('$createdAt'),
-            Query.limit(100)
-        ]);
+        // If the live collection is missing the `processed` attribute (schema drift),
+        // fall back to an unfiltered scan instead of crash-looping — safe, because
+        // executed orders are deleted, so the queue can no longer starve.
+        let allOrders;
+        try {
+            allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
+                Query.equal('processed', false),
+                Query.orderAsc('$createdAt'),
+                Query.limit(100)
+            ]);
+        } catch (e: any) {
+            if (String(e.message).toLowerCase().includes('processed')) {
+                console.warn('[Tick Worker] "processed" attribute missing in game_orders — using unfiltered scan.');
+                console.warn('[Tick Worker] Fix permanently with:  node scripts/fix-orders-schema.mjs');
+                allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
+                    Query.orderAsc('$createdAt'),
+                    Query.limit(100)
+                ]);
+            } else {
+                throw e;
+            }
+        }
 
-        const pendingOrders = allOrders.documents;
+        const pendingOrders = allOrders.documents.filter((d: any) => d.processed !== true);
 
         if (pendingOrders.length > 0) {
             console.log(`[Tick Worker] Executing ${pendingOrders.length} player orders...`);
@@ -106,7 +131,11 @@ async function runGameTick() {
                     // Mark failed orders processed so they aren't retried in a loop.
                     try {
                         await db.updateDocument(DB_ID, COLL_ORDERS, orderDoc.$id, { processed: true });
-                    } catch { /* best effort */ }
+                    } catch {
+                        // Marking failed (e.g. `processed` attribute missing) — delete
+                        // instead, so a poisoned order can't be retried forever.
+                        try { await db.deleteDocument(DB_ID, COLL_ORDERS, orderDoc.$id); } catch { /* best effort */ }
+                    }
                 }
             }
         }

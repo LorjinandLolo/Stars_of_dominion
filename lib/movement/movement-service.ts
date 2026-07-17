@@ -46,7 +46,8 @@ function buildLayerGraph(
     // 1. Hyperlanes — always available unless explicitly excluded.
     if (availableLayers.includes('hyperlane')) {
         for (const [, sys] of world.systems) {
-            for (const neighborId of sys.hyperlaneNeighbors) {
+            // Snapshot-loaded systems can be missing the neighbors array entirely.
+            for (const neighborId of sys.hyperlaneNeighbors ?? []) {
                 const cost = (1 / (baseSpeed * config.movement.layerSpeedMultipliers.hyperlane)) * 3600;
                 addEdge(sys.id, neighborId, 'hyperlane', cost);
             }

@@ -95,6 +95,11 @@ function strengthToRevealStage(strength: number): RevealStage {
 function visibleTagsForStage(stage: RevealStage, sys: SystemNode): string[] {
     if (stage === 'unknown') return [];
     const reveal = sys.tagReveal;
+    // Systems loaded from a multiplayer snapshot may not carry a tagReveal
+    // structure — fall back to revealing all tags at scan level or better.
+    if (!reveal?.revealedAt) {
+        return stage === 'pinged' ? [] : [...(sys.tags ?? [])];
+    }
     const stagesInOrder: RevealStage[] = ['pinged', 'scanned', 'surveyed'];
     const visible: string[] = [];
     for (const s of stagesInOrder) {
