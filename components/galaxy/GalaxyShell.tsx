@@ -2,7 +2,9 @@
 
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import OverlayToggleBar from './OverlayToggleBar';
+import FleetCommandBar from './FleetCommandBar';
 import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
 import { ReviewPanel } from '../combat/ReviewPanel';
@@ -128,6 +130,9 @@ export default function GalaxyShell() {
     const selectedSystemId = useUIStore(s => s.selectedSystemId);
     const setSelectedSystem = useUIStore(s => s.setSelectedSystem);
     const fleets = useUIStore(s => s.fleets);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const selectedFleetId = useUIStore(s => s.selectedFleetId);
+    const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
     const selectedPlanetId = useUIStore(s => s.selectedPlanetId);
     const setSelectedPlanet = useUIStore(s => s.setSelectedPlanet);
     const constructionPlanetId = useUIStore(s => s.constructionPlanetId);
@@ -279,6 +284,29 @@ export default function GalaxyShell() {
         if (!hasMoved.current) {
             const currentSelected = useUIStore.getState().selectedSystemId;
             setSelectedSystem(currentSelected === id ? null : id);
+        }
+    }, [setSelectedSystem]);
+
+    // Right-click a system: if one of YOUR fleets is selected, order it there
+    // directly (RTS-style). Otherwise behaves like a normal select.
+    const handleOrderToSystem = useCallback((systemId: string) => {
+        const state = useUIStore.getState();
+        const fleet = state.fleets.find((f: any) => f.id === state.selectedFleetId);
+        if (fleet && fleet.factionId === state.playerFactionId) {
+            // Duplicate-order guard: already going there / already there → don't
+            // spam orders (repeat clicks used to reset the route display).
+            if (fleet.destinationSystemId === systemId) return;
+            if (!fleet.destinationSystemId && fleet.currentSystemId === systemId) return;
+            const sysName = state.systems.find((s: any) => s.id === systemId)?.name ?? systemId;
+            dispatchOrder({
+                actionId: 'MIL_MOVE_FLEET',
+                factionId: state.playerFactionId || 'PLAYER_FACTION',
+                payload: { fleetId: fleet.id, destinationId: systemId },
+                label: `Fleet en route to ${sysName}`,
+            });
+        } else {
+            const currentSelected = useUIStore.getState().selectedSystemId;
+            setSelectedSystem(currentSelected === systemId ? null : systemId);
         }
     }, [setSelectedSystem]);
 
@@ -467,6 +495,7 @@ export default function GalaxyShell() {
                             isMobile={isMobile}
                             hexPoints={HEX_POINTS}
                             onSelect={handleSelectSystem}
+                            onOrder={handleOrderToSystem}
                             isCapital={capitalSet.has(sys.id)}
                             ownerColor={factionColor(sys.ownerId)}
                             relationship={sys.ownerId
@@ -501,35 +530,144 @@ export default function GalaxyShell() {
                     );
                 })}
 
-                {/* Fleets */}
-                {fleets.map((fleet: any) => {
-                    let fromSys, x = 0, y = 0;
-                    if (fleet.currentSystemId) {
-                        fromSys = systemMap.get(fleet.currentSystemId);
-                        if (fromSys) {
-                            const px = hexToPixel(fromSys.q, fromSys.r);
-                            const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-                            const buffer = HEX_WIDTH * 2;
-                            const isVisible = (
-                                px.x >= vx - buffer &&
-                                px.x <= vx + vw + buffer &&
-                                px.y >= vy - buffer &&
-                                px.y <= vy + vh + buffer
-                            );
-                            if (!isVisible) return null;
-                            x = px.x; y = px.y - 6;
+                {/* Fleets — clickable, with full in-transit rendering.
+                    A moving fleet's currentSystemId is null while between systems,
+                    which used to make it VANISH from the map until arrival. Now it
+                    glides along its route (interpolated by hop progress), nose
+                    pointed at the next system, with a dashed route line showing
+                    the remaining path for your own fleets. */}
+                {(() => {
+                    const perSystemIndex = new Map<string, number>();
+                    const sysPx = (id: string) => {
+                        const s = systemMap.get(id);
+                        return s ? hexToPixel(s.q, s.r) : null;
+                    };
+                    const inView = (px: { x: number; y: number }) => {
+                        const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
+                        const buffer = HEX_WIDTH * 2;
+                        return px.x >= vx - buffer && px.x <= vx + vw + buffer &&
+                               px.y >= vy - buffer && px.y <= vy + vh + buffer;
+                    };
+
+                    return fleets.map((fleet: any) => {
+                        const isMine = fleet.factionId === playerFactionId;
+                        const isSelected = selectedFleetId === fleet.id;
+                        const color = factionColor(fleet.factionId);
+
+                        let x = 0, y = 0, angle = 0;
+                        let routePoints: Array<{ x: number; y: number }> = [];
+                        let clickSystemId: string | null = null;
+                        const path: string[] = Array.isArray(fleet.plannedPath) ? fleet.plannedPath : [];
+
+                        if (!fleet.currentSystemId && path.length >= 2) {
+                            // ── IN TRANSIT: interpolate along the current hop ──
+                            const fromPx = sysPx(path[0]);
+                            const toPx = sysPx(path[1]);
+                            if (!fromPx || !toPx) return null;
+                            const t = Math.min(1, Math.max(0, fleet.transitProgress ?? 0));
+                            x = fromPx.x + (toPx.x - fromPx.x) * t;
+                            y = fromPx.y + (toPx.y - fromPx.y) * t;
+                            angle = Math.atan2(toPx.y - fromPx.y, toPx.x - fromPx.x) * 180 / Math.PI + 90;
+                            clickSystemId = fleet.destinationSystemId ?? path[path.length - 1];
+                            if (isMine || isSelected) {
+                                routePoints = [{ x, y }, ...path.slice(1).map(sysPx).filter(Boolean) as any];
+                            }
+                            if (!inView({ x, y })) return null;
+                        } else if (fleet.currentSystemId) {
+                            // ── STATIONED (possibly with a queued/optimistic move) ──
+                            const px = sysPx(fleet.currentSystemId);
+                            if (!px || !inView(px)) return null;
+                            const idx = perSystemIndex.get(fleet.currentSystemId) ?? 0;
+                            perSystemIndex.set(fleet.currentSystemId, idx + 1);
+                            x = px.x + (idx % 3) * 7 - ((idx % 3) ? 3.5 : 0);
+                            y = px.y - 6 - Math.floor(idx / 3) * 7;
+                            clickSystemId = fleet.currentSystemId;
+                            // Departure queued (optimistic or awaiting worker): show intent line
+                            if (fleet.destinationSystemId && (isMine || isSelected)) {
+                                const destPx = sysPx(fleet.destinationSystemId);
+                                if (destPx) routePoints = [{ x, y }, destPx];
+                            }
+                        } else {
+                            return null;
                         }
-                    }
-                    if (!fromSys) return null;
-                    const color = factionColor(fleet.factionId);
-                    return (
-                        <g key={fleet.id} transform={`translate(${x}, ${y})`}>
-                            {/* Engine glow */}
-                            <circle r={3.5} fill={color} opacity={0.35} className="gx-breathe" />
-                            <polygon points="0,-4 3,4 -3,4" fill={color} stroke="#fff" strokeWidth={0.5} filter="url(#hex-glow)" />
-                        </g>
-                    );
-                })}
+
+                        return (
+                            <g key={fleet.id}>
+                                {/* Route line (own fleets): remaining path, dashed */}
+                                {routePoints.length >= 2 && (
+                                    <polyline
+                                        points={routePoints.map(p => `${p.x},${p.y}`).join(' ')}
+                                        fill="none"
+                                        stroke={isSelected ? '#a5b4fc' : color}
+                                        strokeWidth={isSelected ? 1 : 0.7}
+                                        strokeDasharray="3 3"
+                                        opacity={0.55}
+                                        pointerEvents="none"
+                                    >
+                                        <animate attributeName="stroke-dashoffset" from="6" to="0" dur="0.8s" repeatCount="indefinite" />
+                                    </polyline>
+                                )}
+                                {/* Destination marker */}
+                                {routePoints.length >= 2 && (
+                                    <circle
+                                        cx={routePoints[routePoints.length - 1].x}
+                                        cy={routePoints[routePoints.length - 1].y}
+                                        r={4.5}
+                                        fill="none"
+                                        stroke={isSelected ? '#a5b4fc' : color}
+                                        strokeWidth={0.7}
+                                        strokeDasharray="2 2"
+                                        opacity={0.6}
+                                        pointerEvents="none"
+                                        className="gx-spin-slow"
+                                    />
+                                )}
+                                <g
+                                    style={{
+                                        // Style-based transform so it can be CSS-transitioned:
+                                        // authoritative positions arrive every ~5s, and the tween
+                                        // makes the ship GLIDE along its route between them
+                                        // (flight-tracker style) instead of jumping in steps.
+                                        transform: `translate(${x}px, ${y}px)`,
+                                        transition: !fleet.currentSystemId ? 'transform 5s linear' : undefined,
+                                        cursor: 'pointer',
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isMine) {
+                                            setSelectedFleetId(fleet.id);
+                                            // Show the FLEET's battle card, not a stale planet's
+                                            setSelectedPlanet(null);
+                                        }
+                                        if (clickSystemId) setSelectedSystem(clickSystemId);
+                                    }}
+                                >
+                                <g transform={`rotate(${angle})`}>
+                                    {/* Invisible hit area so small triangles are easy to click */}
+                                    <circle r={7} fill="transparent" />
+                                    {/* Selection ring */}
+                                    {isSelected && (
+                                        <circle r={6} fill="none" stroke="#818cf8" strokeWidth={0.8} className="gx-pulse-ring" />
+                                    )}
+                                    {/* Engine glow — brighter while under way */}
+                                    <circle r={3.5} fill={color} opacity={fleet.currentSystemId ? 0.35 : 0.55} className="gx-breathe" />
+                                    {/* Engine trail while in transit */}
+                                    {!fleet.currentSystemId && (
+                                        <polygon points="0,4 1.5,8 -1.5,8" fill={color} opacity={0.5} className="gx-breathe" />
+                                    )}
+                                    <polygon
+                                        points="0,-4 3,4 -3,4"
+                                        fill={color}
+                                        stroke={isSelected ? '#c7d2fe' : '#fff'}
+                                        strokeWidth={isSelected ? 1 : 0.5}
+                                        filter="url(#hex-glow)"
+                                    />
+                                </g>
+                                </g>
+                            </g>
+                        );
+                    });
+                })()}
             </svg>
 
             <style>{`
@@ -622,6 +760,7 @@ export default function GalaxyShell() {
             </div>
 
             <OverlayToggleBar />
+            <FleetCommandBar />
             <SystemContextPanel />
             <CrisisBottomTray />
             <ReviewPanel />

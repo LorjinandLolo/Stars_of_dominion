@@ -120,19 +120,45 @@ export default function GameShell() {
     // Sync global state via API polling
     useGameSync();
 
-    // On mount: check auth and localStorage for saved faction
+    // On mount: check auth, then reconcile the played faction with the account's
+    // ACTUAL claim. localStorage can hold a stale faction (e.g. selected before
+    // switching accounts) — playing a faction claimed by someone else makes the
+    // server reject every order with 403 "claimed by another player".
     useEffect(() => {
         const checkAuthAndFaction = async () => {
-
-
             const user = await authService.getCurrentUser();
             if (!user) {
                 router.replace('/login');
                 return;
             }
 
+            // The authoritative source: whichever faction THIS account claimed.
+            let claims: Record<string, { userId: string }> = {};
+            try {
+                const res = await fetch('/api/lobby/claim');
+                const data = await res.json();
+                claims = data.claimedFactions || {};
+                const myClaim = Object.entries(claims).find(
+                    ([, c]: [string, any]) => c.userId === user.$id
+                )?.[0];
+                if (myClaim) {
+                    localStorage.setItem('selectedFactionId', myClaim);
+                    setPlayerFactionId(myClaim);
+                    return;
+                }
+            } catch { /* fall back to local selection below */ }
+
             const saved = localStorage.getItem('selectedFactionId');
             if (saved) {
+                // Stale selection guard: if the locally remembered faction is
+                // claimed by a DIFFERENT account, playing it would just get every
+                // order rejected with 403 — send the player to the lobby instead.
+                const claimant = claims[saved];
+                if (claimant && claimant.userId !== user.$id) {
+                    localStorage.removeItem('selectedFactionId');
+                    router.replace('/lobby');
+                    return;
+                }
                 setPlayerFactionId(saved);
             } else {
                 router.replace('/lobby');

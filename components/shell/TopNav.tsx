@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { getGlobalStateAction } from '@/app/actions/construction-sim';
 import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
+import IdentityBadge from './IdentityBadge';
 
 interface NavItem {
     tab: NavTab;
@@ -301,7 +302,7 @@ export default function TopNav() {
                 })}
             </div>
 
-            {/* Crisis indicators */}
+            {/* Crisis indicators + identity */}
             <div className="flex items-center gap-3 min-w-[200px] justify-end">
                 {councilState.emergencySession && councilState.status !== 'absent' && (
                     <div className="flex items-center gap-1 text-xs text-red-400 animate-pulse font-display">
@@ -309,10 +310,13 @@ export default function TopNav() {
                         <span className="hidden lg:inline">EMERGENCY SESSION</span>
                     </div>
                 )}
-                
-                <div className="text-xs font-mono text-slate-500">
+
+                <div className="text-xs font-mono text-slate-500 hidden lg:block">
                     {crisisWindows.length > 0 ? `${crisisWindows.length} ACTIVE` : 'STABLE'}
                 </div>
+
+                {/* Who am I? — account + faction, always visible */}
+                <IdentityBadge />
             </div>
         </nav>
     );

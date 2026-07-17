@@ -99,8 +99,15 @@ export function PlanetConstructionPanel({
         setActionLoading(true);
         setError(null);
         try {
-            const { queueBuildingAction } = await import('@/app/actions/construction');
-            const res = await queueBuildingAction(planetId, systemId, type, factionId);
+            // Direct order dispatch (HTTP) — bypasses the flaky server-action
+            // transport and shows the optimistic "syncing" chip.
+            const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            const res = await dispatchOrder({
+                actionId: 'PLANET_CONSTRUCT_BUILDING',
+                factionId,
+                payload: { planetId, systemId, buildingType: type },
+                label: `Constructing ${type.replace(/_/g, ' ')}`,
+            });
             if (!res.success) throw new Error(res.error || 'Failed to queue building');
             await loadData();
             setActiveTab('QUEUE');
@@ -115,8 +122,13 @@ export function PlanetConstructionPanel({
         setActionLoading(true);
         setError(null);
         try {
-            const { queueSpaceConstructionAction } = await import('@/app/actions/construction');
-            const res = await queueSpaceConstructionAction(planetId, shipType, factionId);
+            const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            const res = await dispatchOrder({
+                actionId: 'MIL_BUILD_FLEET',
+                factionId,
+                payload: { planetId, systemId, shipType },
+                label: 'Commissioning fleet from shipyard',
+            });
             if (!res.success) throw new Error(res.error || 'Failed to queue space construction');
             await loadData();
             setActiveTab('QUEUE');

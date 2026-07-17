@@ -8,14 +8,7 @@ import {
     FileText, Gavel, TrendingUp, Handshake, Scroll,
     AlertTriangle, ShieldCheck, DollarSign, Info, Eye
 } from 'lucide-react';
-import { 
-    sendEnvoyAction, 
-    declareWarAction, 
-    offerPeaceAction,
-    proposeTreatyAction,
-    demandTributeAction,
-    negotiateTradePactAction
-} from '@/app/actions/politics';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { sponsorProxyAction } from '@/app/actions/proxy';
 import { TreatyType } from '@/lib/politics/cold-war-types';
 import { buildReputationProfile } from '@/lib/integration/reputation-vm';
@@ -227,7 +220,12 @@ export default function DiplomacyPanel() {
                                             return (
                                                 <button
                                                     key={treaty.type}
-                                                    onClick={() => handleAction(`treaty-${treaty.type}`, proposeTreatyAction(treaty.type, [playerState.factionId, selectedFactionId]))}
+                                                    onClick={() => handleAction(`treaty-${treaty.type}`, dispatchOrder({
+                                                        actionId: 'DIP_PROPOSE_TREATY',
+                                                        factionId: playerState.factionId,
+                                                        payload: { targetFactionId: selectedFactionId, treatyType: treaty.type },
+                                                        label: `Proposing ${String(treaty.type).replace(/_/g, ' ').toLowerCase()}`,
+                                                    }))}
                                                     disabled={isActive || !!isProcessing}
                                                     className={`group flex items-center justify-between p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden ${
                                                         isActive 
@@ -274,7 +272,12 @@ export default function DiplomacyPanel() {
 
                                         <div className="grid grid-cols-1 gap-4 pt-4">
                                             <button 
-                                                onClick={() => handleAction('war', declareWarAction(playerState.factionId, selectedFactionId))}
+                                                onClick={() => handleAction('war', dispatchOrder({
+                                                    actionId: 'DIP_DECLARE_WAR',
+                                                    factionId: playerState.factionId,
+                                                    payload: { targetFactionId: selectedFactionId },
+                                                    label: 'Declaration of war',
+                                                }))}
                                                 className="w-full py-4 rounded-xl bg-rose-600/10 border border-rose-600/30 text-rose-500 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all duration-300 shadow-lg shadow-rose-900/10"
                                             >
                                                 Unilateral Hostility Declaration
@@ -296,7 +299,12 @@ export default function DiplomacyPanel() {
                                         <TrendingUp className="w-4 h-4" /> Mercantile Synergies
                                     </h3>
                                     <button 
-                                        onClick={() => handleAction('trade-pact', negotiateTradePactAction(playerState.factionId, selectedFactionId, { credits: 1.1 }, true))}
+                                        onClick={() => handleAction('trade-pact', dispatchOrder({
+                                            actionId: 'DIP_TRADE_PACT',
+                                            factionId: playerState.factionId,
+                                            payload: { targetFactionId: selectedFactionId, resource: 'credits', volume: 100 },
+                                            label: 'Negotiating trade pact',
+                                        }))}
                                         className="w-full p-6 bg-green-500/5 border border-green-500/20 rounded-2xl hover:bg-green-500/10 transition-all text-left group"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
@@ -317,7 +325,12 @@ export default function DiplomacyPanel() {
                                         <Gavel className="w-4 h-4" /> Economic Leverage
                                     </h3>
                                     <button 
-                                        onClick={() => handleAction('tribute', demandTributeAction(selectedFactionId, playerState.factionId, 'credits', 500))}
+                                        onClick={() => handleAction('tribute', dispatchOrder({
+                                            actionId: 'DIP_DEMAND_TRIBUTE',
+                                            factionId: playerState.factionId,
+                                            payload: { targetFactionId: selectedFactionId, amount: 500 },
+                                            label: 'Demanding tribute',
+                                        }))}
                                         className="w-full p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all text-left"
                                     >
                                         <div className="flex items-center gap-4 mb-3">

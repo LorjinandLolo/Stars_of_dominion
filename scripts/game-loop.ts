@@ -18,10 +18,10 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 // `import().then(...)` calls inside executeOrder — the mutation could land AFTER
 // saveWorldState() had already serialized the world, silently losing the order.
 import { launchOperation } from '../lib/espionage/espionage-service';
+import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent } from '../lib/espionage/agent-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { advanceSorties } from '../lib/combat/air-mission-service';
-import { initiateCombat } from '../lib/combat/combat-engine';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
 
@@ -246,6 +246,44 @@ async function runGameTick() {
         }
 
 
+        // 5.7 Starter Infrastructure — every capital gets a working shipyard and
+        // barracks so the core loop (commission ships, recruit troops, repair)
+        // functions out of the box. Idempotent: skips planets that have them.
+        for (const [fId, f] of world.economy.factions) {
+            const capSys = (f as any).capitalSystemId;
+            if (!capSys) continue;
+            const capPlanet = Array.from(world.construction.planets.values())
+                .find((p: any) => p.systemId === capSys && p.ownerId === fId);
+            if (!capPlanet) continue;
+            for (const bId of ['orbital_shipyard', 'barracks']) {
+                if (!Array.isArray((capPlanet as any).tiles)) (capPlanet as any).tiles = [];
+                const has = (capPlanet as any).tiles.some((t: any) => t.buildingId === bId);
+                if (!has) {
+                    (capPlanet as any).tiles.push({
+                        tileId: `${capPlanet.id}-starter-${bId}`,
+                        districtType: 'any',
+                        buildingId: bId,
+                        constructionState: 'active',
+                        constructionCompleteAt: null,
+                    });
+                    console.log(`[Tick Worker] Seeded starter ${bId} on ${capPlanet.name} (${fId})`);
+                }
+            }
+        }
+
+        // 5.8 Continuous dock repair — fleets holding (not moving) in a system
+        // they own patch up a little every cycle. The old repair only ran on the
+        // 6-hour strategic tick (~24 real minutes), far too slow to matter.
+        for (const fleet of world.movement.fleets.values()) {
+            if (fleet.factionId === 'faction-pirates') continue;
+            if (!fleet.currentSystemId || fleet.destinationSystemId) continue;
+            if ((fleet.strength ?? 1) >= 1.0) continue;
+            const sys = world.movement.systems.get(fleet.currentSystemId);
+            if (!sys || sys.ownerFactionId !== fleet.factionId) continue;
+            fleet.strength = Math.min(1.0, (fleet.strength ?? 0) + 0.01);
+            if (fleet.strength >= 1.0) console.log(`[REPAIR] ${fleet.name || fleet.id} fully repaired at ${sys.name}`);
+        }
+
         // 4. Seeding & Administrative recalculations ────────────────────────
         processSieges(world);
         recalculateSystemControl(world);
@@ -344,12 +382,44 @@ function recalculateSystemControl(world: any) {
 
 
 /**
+ * Check & deduct an action's cost from the faction's LIVE economy reserves —
+ * the same numbers the player's resource bar shows. Resources the economy
+ * doesn't track yet (influence, manpower, intel...) are free for now.
+ * Returns false (and skips the order) if an enforced resource is short.
+ */
+function chargeOrderCost(world: any, factionId: string, actionId: string): boolean {
+    const def = (ACTION_DEFINITIONS as any)[actionId];
+    const cost = def?.cost;
+    if (!cost || Object.keys(cost).length === 0) return true;
+
+    const econFaction = world.economy?.factions?.get?.(factionId);
+    const reserves = econFaction?.reserves;
+    if (!reserves) return true; // no economy record — don't block gameplay
+
+    const charges: Array<[string, number]> = [];
+    for (const [res, amt] of Object.entries(cost)) {
+        const key = res.toUpperCase(); // Resource enum keys: CREDITS, METALS, ...
+        if (reserves[key] === undefined) continue; // untracked resource → free
+        if ((reserves[key] ?? 0) < (amt as number)) {
+            console.warn(`[Order] ${factionId} cannot afford ${actionId}: needs ${amt} ${res}, has ${Math.floor(reserves[key] ?? 0)}`);
+            return false;
+        }
+        charges.push([key, amt as number]);
+    }
+    charges.forEach(([key, amt]) => { reserves[key] = (reserves[key] ?? 0) - amt; });
+    return true;
+}
+
+/**
  * Maps database orders to in-memory world state mutations.
  * includes server-side validation to ensure players only control their own assets.
  */
 function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
-    
+
+    // Affordability gate — deducts from the live economy on success.
+    if (!chargeOrderCost(world, factionId, actionId)) return;
+
     switch (actionId) {
         case 'MIL_MOVE_FLEET': {
             const fleet = world.movement.fleets.get(payload.fleetId);
@@ -358,6 +428,52 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.error(`[Security] Unauthorized MOVE from ${factionId} on fleet ${payload.fleetId} (Owner: ${fleet.factionId})`);
                 return;
             }
+
+            // Dedupe: already heading there, or already parked there — no-op.
+            if (fleet.destinationSystemId === payload.destinationId) {
+                console.log(`[Order] Fleet ${payload.fleetId} already en route to ${payload.destinationId} — duplicate order skipped.`);
+                return;
+            }
+            if (!fleet.destinationSystemId && fleet.currentSystemId === payload.destinationId) {
+                console.log(`[Order] Fleet ${payload.fleetId} is already at ${payload.destinationId} — order skipped.`);
+                return;
+            }
+
+            if (!fleet.currentSystemId && Array.isArray(fleet.plannedPath) && fleet.plannedPath.length >= 2) {
+                // MID-TRANSIT COURSE CHANGE (previously silently ignored): finish
+                // the current hop, then reroute from that waypoint to the new target.
+                const hopFrom = fleet.plannedPath[0];
+                const hopTo = fleet.plannedPath[1];
+                const atWaypoint = {
+                    ...fleet,
+                    currentSystemId: hopTo,
+                    destinationSystemId: null,
+                    plannedPath: [],
+                    transitProgress: 0,
+                } as typeof fleet;
+                const rerouted = issueMoveOrder(atWaypoint, payload.destinationId, 'hyperlane', world.movement);
+                if (rerouted.destinationSystemId) {
+                    world.movement.fleets.set(payload.fleetId, {
+                        ...rerouted,
+                        currentSystemId: null,
+                        // rerouted.plannedPath starts at hopTo; prepend the hop in progress
+                        plannedPath: [hopFrom, ...rerouted.plannedPath],
+                        transitProgress: fleet.transitProgress,
+                        activeLayer: fleet.activeLayer,
+                    });
+                    console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId} (via ${hopTo}).`);
+                } else if (hopTo === payload.destinationId) {
+                    // New target IS the next waypoint — just truncate the route there.
+                    world.movement.fleets.set(payload.fleetId, {
+                        ...fleet,
+                        destinationSystemId: hopTo,
+                        plannedPath: [hopFrom, hopTo],
+                    });
+                    console.log(`[Order] Fleet ${payload.fleetId} route truncated at ${hopTo}.`);
+                }
+                return;
+            }
+
             const updated = issueMoveOrder(fleet, payload.destinationId, 'hyperlane', world.movement);
             world.movement.fleets.set(payload.fleetId, updated);
             break;
@@ -724,14 +840,19 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet) return;
             
-            // Military facility check (Simplified requirement for Phase 16)
-            const hasMilitaryFacility = planet.tiles.some((t: any) => 
-                (t.buildingId === 'barracks' || t.buildingId === 'tank_foundry' || t.buildingId === 'military_academy') 
+            // Military facility check (Simplified requirement for Phase 16).
+            // Basic troops (INFANTRY, MILITIA) can always be raised — fresh
+            // colonies have no barracks, and blocking their only recruitment
+            // option made the button feel broken. Specialized units still
+            // require a military facility.
+            const BASIC_UNITS = ['MILITIA', 'INFANTRY'];
+            const hasMilitaryFacility = planet.tiles.some((t: any) =>
+                (t.buildingId === 'barracks' || t.buildingId === 'tank_foundry' || t.buildingId === 'military_academy')
                 && t.constructionState === 'active'
             );
-            
-            if (!hasMilitaryFacility && payload.unitType !== 'MILITIA') {
-                console.warn(`[Security] Faction ${factionId} tried to recruit specialized units without military facility on ${payload.planetId}`);
+
+            if (!hasMilitaryFacility && !BASIC_UNITS.includes(payload.unitType)) {
+                console.warn(`[Order] ${factionId} needs a barracks/foundry on ${payload.planetId} to recruit ${payload.unitType} — order skipped.`);
                 return;
             }
 
@@ -908,16 +1029,169 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             const defender = world.movement.fleets.get(payload.defenderFleetId);
             if (!attacker || !defender || attacker.factionId !== factionId) return;
 
-            // Inline combat init against THIS world instance (static import, synchronous —
-            // guaranteed to land before saveWorldState).
-            const combatId = `combat-${payload.attackerFleetId}-${payload.defenderFleetId}-${Date.now()}`;
-            const combatState = initiateCombat(combatId,
-                { systemId: attacker.currentSystemId || '', terrainModifier: 1.0, infrastructureIntegrity: 1.0 },
-                { factionId: attacker.factionId, role: 'attacker', hp: attacker.strength * 1000, maxHp: attacker.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: attacker.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'aggressive', casualties: 0, predictionPoints: 0 } as any,
-                { factionId: defender.factionId, role: 'defender', hp: defender.strength * 1000, maxHp: defender.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: defender.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'defensive', casualties: 0, military: 0, cost: { credits: 0, manpower: 0 } as any, predictionPoints: 0 } as any
-            );
-            world.activeCombats.set(combatId, combatState);
-            console.log(`[Order] Combat ${combatId} initiated between ${attacker.factionId} and ${defender.factionId}`);
+            // Attacking a fleet IS an act of war. Setting the rivalry to war level
+            // makes the combat-manager start (and keep advancing) the engagement
+            // this same cycle. The old inline initiateCombat created an orphan
+            // combat that no system ever advanced — battles froze at round 1.
+            const skirmishRivalryId = `rivalry-${attacker.factionId}-${defender.factionId}`;
+            const existingRivalry = world.rivalries.get(skirmishRivalryId)
+                || world.rivalries.get(`rivalry-${defender.factionId}-${attacker.factionId}`);
+            if (!existingRivalry || (existingRivalry.escalationLevel ?? 0) < 7) {
+                const warState = {
+                    id: skirmishRivalryId,
+                    empireAId: attacker.factionId,
+                    empireBId: defender.factionId,
+                    rivalryScore: 100,
+                    escalationLevel: 7,
+                    activeSanctionIds: [],
+                    proxyConflictsInvolved: [],
+                    detenteActive: false
+                };
+                world.rivalries.set(skirmishRivalryId, warState);
+                world.rivalries.set(`rivalry-${defender.factionId}-${attacker.factionId}`,
+                    { ...warState, id: `rivalry-${defender.factionId}-${attacker.factionId}`, empireAId: defender.factionId, empireBId: attacker.factionId });
+                console.log(`[Order] SKIRMISH: ${attacker.factionId} opened fire on ${defender.factionId} — state of war declared.`);
+            }
+            console.log(`[Order] Engagement ordered: ${payload.attackerFleetId} vs ${payload.defenderFleetId} — combat begins this cycle.`);
+            break;
+        }
+
+        case 'MIL_MERGE_FLEETS': {
+            // payload: { sourceFleetId, targetFleetId } — source is absorbed into target.
+            const src = world.movement.fleets.get(payload.sourceFleetId);
+            const tgt = world.movement.fleets.get(payload.targetFleetId);
+            if (!src || !tgt || src.id === tgt.id) return;
+            if (src.factionId !== factionId || tgt.factionId !== factionId) {
+                console.error(`[Security] ${factionId} tried to merge fleets they don't own.`);
+                return;
+            }
+            if (!src.currentSystemId || src.currentSystemId !== tgt.currentSystemId) {
+                console.warn(`[Order] MERGE rejected: fleets must be holding in the same system.`);
+                return;
+            }
+            if (src.destinationSystemId || tgt.destinationSystemId) {
+                console.warn(`[Order] MERGE rejected: fleets in transit cannot merge.`);
+                return;
+            }
+
+            // Combine ship compositions
+            if (!tgt.composition) tgt.composition = {};
+            for (const [type, count] of Object.entries(src.composition || {})) {
+                (tgt.composition as any)[type] = ((tgt.composition as any)[type] || 0) + (count as number);
+            }
+
+            // Strength becomes the power-weighted average; power adds up.
+            const srcPower = src.basePower ?? 0;
+            const tgtPower = tgt.basePower ?? 0;
+            if (srcPower + tgtPower > 0) {
+                tgt.strength = ((tgt.strength ?? 1) * tgtPower + (src.strength ?? 1) * srcPower) / (srcPower + tgtPower);
+            }
+            tgt.basePower = tgtPower + srcPower;
+
+            // Carried armies transfer to the merged fleet
+            if (src.transportedArmyIds?.length) {
+                tgt.transportedArmyIds = [...(tgt.transportedArmyIds || []), ...src.transportedArmyIds];
+                for (const armyId of src.transportedArmyIds) {
+                    const army = world.movement.armies?.get(armyId);
+                    if (army) army.transportFleetId = tgt.id;
+                }
+            }
+
+            // In-flight ship recruitment aimed at the absorbed fleet retargets
+            for (const job of (world.combat?.recruitmentJobs || [])) {
+                if ((job as any).targetFormationId === src.id) (job as any).targetFormationId = tgt.id;
+            }
+
+            world.movement.fleets.delete(src.id);
+            console.log(`[Order] ${factionId} merged ${src.name || src.id} into ${tgt.name || tgt.id} (power ${tgt.basePower}).`);
+            break;
+        }
+
+        case 'MIL_SPLIT_FLEET': {
+            // payload: { fleetId, composition?: {shipType: countToDetach}, name? }
+            // Detaches ships into a NEW fleet in the same system. With no
+            // composition (or a shipless fleet), splits base power 50/50.
+            const src = world.movement.fleets.get(payload.fleetId);
+            if (!src) return;
+            if (src.factionId !== factionId) {
+                console.error(`[Security] ${factionId} tried to split a fleet they don't own.`);
+                return;
+            }
+            if (!src.currentSystemId || src.destinationSystemId) {
+                console.warn(`[Order] SPLIT rejected: fleet must be holding in a system.`);
+                return;
+            }
+
+            if (!src.composition) src.composition = {};
+            const totalShips = Object.values(src.composition).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+
+            const moved: Record<string, number> = {};
+            let movedCount = 0;
+            for (const [type, want] of Object.entries(payload.composition || {})) {
+                const have = (src.composition as any)[type] || 0;
+                const take = Math.max(0, Math.min(have, Math.floor(Number(want) || 0)));
+                if (take > 0) { moved[type] = take; movedCount += take; }
+            }
+            if (movedCount > 0 && movedCount >= totalShips) {
+                console.warn(`[Order] SPLIT rejected: cannot detach ALL ships — merge or rename instead.`);
+                return;
+            }
+
+            const srcPower = src.basePower ?? 100;
+            let newPower: number;
+            if (movedCount > 0) {
+                for (const [type, count] of Object.entries(moved)) {
+                    (src.composition as any)[type] -= count;
+                    if ((src.composition as any)[type] <= 0) delete (src.composition as any)[type];
+                }
+                const ratio = totalShips > 0 ? movedCount / totalShips : 0.5;
+                newPower = Math.max(10, Math.round(srcPower * ratio));
+            } else {
+                newPower = Math.max(10, Math.round(srcPower / 2));
+            }
+            src.basePower = Math.max(10, srcPower - newPower);
+
+            const newFleetId = `fleet-${factionId}-${Date.now()}`;
+            world.movement.fleets.set(newFleetId, {
+                ...src,
+                id: newFleetId,
+                name: payload.name || `${src.name || 'Task Force'} Detachment`,
+                composition: moved,
+                basePower: newPower,
+                strength: src.strength ?? 1,
+                transportedArmyIds: [],
+                orders: [],
+                plannedPath: [],
+                destinationSystemId: null,
+                transitProgress: 0,
+                etaSeconds: 0,
+                activeLayer: null,
+            });
+            console.log(`[Order] ${factionId} split ${movedCount > 0 ? `${movedCount} ships` : 'half power'} from ${src.name || src.id} into ${newFleetId}.`);
+            break;
+        }
+
+        case 'MIL_COMBAT_RETREAT': {
+            // Disengage: break off the battle and send this faction's fleets in
+            // the contested system home to lick their wounds.
+            const combat = world.activeCombats.get(payload.combatId);
+            if (!combat) return;
+            if (combat.attacker.factionId !== factionId && combat.defender.factionId !== factionId) {
+                console.error(`[Security] ${factionId} tried to retreat from a battle they're not in.`);
+                return;
+            }
+            const battleSystemId = combat.location?.systemId;
+            const homeSystemId = world.economy.factions.get(factionId)?.capitalSystemId;
+            if (battleSystemId && homeSystemId) {
+                for (const [fid, fleet] of world.movement.fleets) {
+                    if (fleet.factionId === factionId && fleet.currentSystemId === battleSystemId) {
+                        const updated = issueMoveOrder(fleet, homeSystemId, 'hyperlane', world.movement);
+                        world.movement.fleets.set(fid, updated);
+                    }
+                }
+            }
+            world.activeCombats.delete(payload.combatId);
+            console.log(`[Order] ${factionId} DISENGAGED from battle ${payload.combatId} — fleets withdrawing home.`);
             break;
         }
 

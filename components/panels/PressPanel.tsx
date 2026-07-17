@@ -189,7 +189,7 @@ export default function PressPanel() {
                             onClick={() => selectedSystemId && handleJam(selectedSystemId)}
                             disabled={!selectedSystemId}
                             className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                                selectedSystemId && pressState.jammedSystems.has(selectedSystemId)
+                                selectedSystemId && pressState.jammedSystems?.has?.(selectedSystemId)
                                     ? 'bg-red-500/20 border-red-500/50 text-red-400'
                                     : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-600'
                             } disabled:opacity-30`}
@@ -201,7 +201,7 @@ export default function PressPanel() {
                             onClick={() => selectedSystemId && handleQuarantine(selectedSystemId)}
                             disabled={!selectedSystemId}
                             className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                                selectedSystemId && pressState.quarantinedPlanets.has(selectedSystemId)
+                                selectedSystemId && pressState.quarantinedPlanets?.has?.(selectedSystemId)
                                     ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
                                     : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-600'
                             } disabled:opacity-30`}

@@ -460,7 +460,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
         set((state) => ({ corporateState: { ...state.corporateState, ...patch } })),
 
     // ── Press ──
-    pressState: { publishedStories: [], activeStories: [], credibilityByFaction: {} } as any,
+    // jammedSystems/quarantinedPlanets must exist as Sets — PressPanel calls
+    // .has() on them unconditionally and crashed when they were undefined.
+    pressState: { publishedStories: [], activeStories: [], credibilityByFaction: {}, jammedSystems: new Set(), quarantinedPlanets: new Set() } as any,
     updatePress: (patch) =>
         set((state) => ({ pressState: { ...state.pressState, ...patch } })),
 

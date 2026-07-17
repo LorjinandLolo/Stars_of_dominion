@@ -249,6 +249,26 @@ export function findPath(
  * Issue movement orders to a fleet and commit the path into the fleet state.
  * Returns the updated fleet (immutably).
  */
+/**
+ * Travel time for a direct deep-space crossing between two systems (no lane).
+ * Cost scales with hex distance, at the (slow) deepSpace layer speed.
+ */
+export function deepSpaceHopSeconds(
+    fromId: string,
+    toId: string,
+    world: MovementWorldState
+): number | null {
+    const a: any = world.systems.get(fromId);
+    const b: any = world.systems.get(toId);
+    if (!a || !b || a.q === undefined || b.q === undefined) return null;
+    const dq = a.q - b.q;
+    const dr = a.r - b.r;
+    const hexDist = Math.max(1, (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2);
+    const speedMult = (config.movement.layerSpeedMultipliers as any).deepSpace ?? 0.5;
+    const perHex = (1 / (config.movement.baseSpeedUnitsPerSecond * speedMult)) * 3600;
+    return hexDist * perHex;
+}
+
 export function issueMoveOrder(
     fleet: Fleet,
     targetSystemId: string,
@@ -256,7 +276,6 @@ export function issueMoveOrder(
     world: MovementWorldState
 ): Fleet {
     const result = findPath(fleet, targetSystemId, [layer, 'hyperlane'], world);
-    if (!result.canReach) return fleet;
 
     const order: FleetOrder = {
         type: 'move',
@@ -264,6 +283,27 @@ export function issueMoveOrder(
         preferredLayer: layer,
         issuedAt: new Date(world.nowSeconds * 1000).toISOString(),
     };
+
+    if (!result.canReach) {
+        // No lane route exists (disconnected graph or unmapped region). The old
+        // behavior silently returned the fleet unchanged — the player's move
+        // order evaporated with zero feedback. Fall back to a direct deep-space
+        // crossing: slower, but ANY system is reachable.
+        const from = fleet.currentSystemId;
+        if (!from) return fleet;
+        const secs = deepSpaceHopSeconds(from, targetSystemId, world);
+        if (secs == null) return fleet;
+        console.log(`[Movement] No lane path ${from} → ${targetSystemId}; engaging deep-space drive (${Math.round(secs)}s game-time).`);
+        return {
+            ...fleet,
+            plannedPath: [from, targetSystemId],
+            destinationSystemId: targetSystemId,
+            etaSeconds: secs,
+            transitProgress: 0,
+            activeLayer: 'deepSpace' as MovementLayer,
+            orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
+        };
+    }
 
     return {
         ...fleet,
@@ -290,9 +330,17 @@ export function advanceFleet(
     const hopTo = fleet.plannedPath[1];
     const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate', 'deepSpace']);
     const hopEdges = (adj.get(hopFrom) ?? []).filter(e => e.to === hopTo);
-    if (hopEdges.length === 0) return fleet;
 
-    const edge = hopEdges[0];
+    let edge: LayerEdge;
+    if (hopEdges.length === 0) {
+        // No lane edge for this hop — it's a deep-space crossing. Synthesize the
+        // edge so the fleet still advances (previously it froze forever at 0%).
+        const secs = deepSpaceHopSeconds(hopFrom, hopTo, world);
+        if (secs == null) return fleet;
+        edge = { from: hopFrom, to: hopTo, layer: 'deepSpace' as MovementLayer, baseTravelSeconds: secs };
+    } else {
+        edge = hopEdges[0];
+    }
     const hopCost = effectiveEdgeCost(edge, fleet, world);
     const progressGain = deltaSeconds / hopCost; // fraction of this hop completed
 

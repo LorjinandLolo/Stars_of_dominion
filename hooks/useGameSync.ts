@@ -130,11 +130,44 @@ export function useGameSync() {
             ? world.movement.factionVisibility.get(playerFactionId) || {}
             : null;
 
+        // Systems where I physically have a fleet: everything there is visible
+        // to me regardless of scan level — you can always see who's parked next
+        // to you. (Without this, two fleets meeting in an unscanned system were
+        // mutually invisible and could never engage.)
+        const myPresenceSystems = new Set(
+            fleetList
+                .filter(f => f.factionId === playerFactionId && f.currentSystemId)
+                .map(f => f.currentSystemId as string)
+        );
+
         if (playerFactionId && visibility) {
             fleetList = fleetList.filter(f => {
                 if (f.factionId === playerFactionId) return true;
                 const sysId = f.currentSystemId || f.destinationSystemId;
                 if (!sysId) return false;
+                if (f.currentSystemId && myPresenceSystems.has(f.currentSystemId)) return true;
+                const entry = visibility[sysId];
+                return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
+            });
+        }
+
+        // Active fleet combats — the Battle Command panel reads these from the
+        // store, but they were never synced, so the war room always showed
+        // "no active engagements" even mid-battle.
+        const combatList = Array.from(((world as any).activeCombats?.values?.() || [])) as any[];
+        const myCombats = playerFactionId
+            ? combatList.filter((c: any) =>
+                c?.attacker?.factionId === playerFactionId || c?.defender?.factionId === playerFactionId)
+            : combatList;
+
+        // Armies (ground forces). Same visibility rules as fleets.
+        let armyList = Array.from(((world.movement as any).armies?.values?.() || [])) as any[];
+        if (playerFactionId && visibility) {
+            armyList = armyList.filter((a: any) => {
+                if (a.factionId === playerFactionId) return true;
+                const sysId = a.currentSystemId;
+                if (!sysId) return false;
+                if (myPresenceSystems.has(sysId)) return true;
                 const entry = visibility[sysId];
                 return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
             });
@@ -197,6 +230,8 @@ export function useGameSync() {
             systems: systemList,
             planets: planetList,
             fleets: fleetList,
+            armies: armyList,
+            activeCombats: myCombats as any,
             forwardBases: Array.from((world.movement as any).forwardBases?.values?.() || []),
             nowSeconds: world.nowSeconds,
             factionVisibility: visibility,

@@ -101,10 +101,27 @@ function PlanetCard({
 }: PlanetCardProps) {
     const [expanded, setExpanded] = React.useState(false);
     const [recruiting, setRecruiting] = React.useState(false);
+    const [actionBusy, setActionBusy] = React.useState<string | null>(null);
     const isOwnedByPlayer = planet.ownerId === playerFactionId;
     const isUnowned = !planet.ownerId;
+    const isNeutral = !planet.ownerId || planet.ownerId === 'faction-neutral' || planet.ownerId === '';
+    const isEnemyOwned = !!planet.ownerId && planet.ownerId !== playerFactionId && planet.ownerId !== 'faction-neutral';
     const isOrbitedByFleet = orbitedPlanetId === planet.id;
     const isSelected = selectedPlanetId === planet.id;
+
+    const runPlanetAction = async (key: string, actionId: string, payload: Record<string, any>, label: string) => {
+        setActionBusy(key);
+        try {
+            await dispatchOrder({
+                actionId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload,
+                label,
+            });
+        } finally {
+            setActionBusy(null);
+        }
+    };
 
     const typeInfo = PLANET_TYPE_ICONS[planet.planetType] || { icon: '🪐', color: '#94a3b8' };
     const ownerColor = isOwnedByPlayer
@@ -293,6 +310,59 @@ function PlanetCard({
                     )}
                 </div>
 
+                {/* Second action row: expansion & covert operations */}
+                {(isNeutral || isOwnedByPlayer || isEnemyOwned) && (
+                    <div className="flex gap-1.5 mt-1.5">
+                        {/* Claim unowned world */}
+                        {isNeutral && (
+                            <button
+                                disabled={actionBusy === 'claim'}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
+                                }}
+                                title="Claim this unowned world for your faction (1,000 credits)"
+                                className="flex-1 py-1.5 bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/30 rounded text-[9px] text-sky-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                            >
+                                <Globe size={10} />
+                                {actionBusy === 'claim' ? 'CLAIMING…' : 'CLAIM · 1000cr'}
+                            </button>
+                        )}
+
+                        {/* Garrison own world */}
+                        {isOwnedByPlayer && (
+                            <button
+                                disabled={actionBusy === 'garrison'}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    runPlanetAction('garrison', 'MIL_ESTABLISH_GARRISON', { targetId: planet.id, unitCount: 100 }, `Garrisoning ${planet.name}`);
+                                }}
+                                title="Station troops: +15 stability, −10 unrest (200 credits, 100 manpower)"
+                                className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/30 rounded text-[9px] text-amber-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                            >
+                                <Shield size={10} />
+                                {actionBusy === 'garrison' ? 'DEPLOYING…' : 'GARRISON'}
+                            </button>
+                        )}
+
+                        {/* Incite unrest on enemy world */}
+                        {isEnemyOwned && (
+                            <button
+                                disabled={actionBusy === 'incite'}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    runPlanetAction('incite', 'ESP_INCITE_UNREST', { targetPlanetId: planet.id }, `Inciting unrest on ${planet.name}`);
+                                }}
+                                title="Covert op: +20 unrest on this enemy world (150 intel, 800 credits)"
+                                className="flex-1 py-1.5 bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/30 rounded text-[9px] text-purple-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                            >
+                                <Sparkles size={10} />
+                                {actionBusy === 'incite' ? 'INFILTRATING…' : 'INCITE UNREST'}
+                            </button>
+                        )}
+                    </div>
+                )}
+
                 {/* Advanced Siege UI Phase 16 */}
                 {planet.siege && (
                     <div className="mt-3 pt-3 border-t border-slate-700/40 space-y-3">
@@ -433,6 +503,223 @@ function PlanetCard({
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+// ── System Forces (fleet combat + army command) ───────────────────────────────
+// Gives every military asset in the selected system an obvious, clickable home:
+// enemy fleets can be engaged, own armies can be redeployed / embarked /
+// disembarked without hunting through other menus.
+function SystemForcesPanel({
+    system,
+    planets,
+    playerFactionId,
+    selectedFleetId,
+    fleets,
+    armies,
+}: {
+    system: any;
+    planets: any[];
+    playerFactionId: string | null;
+    selectedFleetId: string | null;
+    fleets: any[];
+    armies: any[];
+}) {
+    const [busyId, setBusyId] = React.useState<string | null>(null);
+    const pf = playerFactionId || 'PLAYER_FACTION';
+
+    const fleetsHere = fleets.filter((f: any) => f.currentSystemId === system.id);
+    const myFleetsHere = fleetsHere.filter((f: any) => f.factionId === playerFactionId);
+    const enemyFleets = fleetsHere.filter(
+        (f: any) => f.factionId !== playerFactionId && f.factionId !== 'faction-neutral'
+    );
+
+    const fleetById = (id: string) => fleets.find((f: any) => f.id === id);
+    const planetName = (id: string | null) =>
+        planets.find((p: any) => p.id === id)?.name ?? id ?? 'deep space';
+
+    // My armies in (or being carried through) this system
+    const myArmies = armies.filter((a: any) => {
+        if (a.factionId !== playerFactionId) return false;
+        if (a.currentSystemId === system.id) return true;
+        const carrier = a.transportFleetId ? fleetById(a.transportFleetId) : null;
+        return carrier?.currentSystemId === system.id;
+    });
+
+    const selectedFleetInSystem =
+        selectedFleetId && myFleetsHere.some((f: any) => f.id === selectedFleetId);
+
+    const handleEngage = async (defenderFleetId: string) => {
+        if (!selectedFleetId) return;
+        setBusyId(defenderFleetId);
+        try {
+            await dispatchOrder({
+                actionId: 'MIL_ATTACK_FLEET',
+                factionId: pf,
+                payload: { attackerFleetId: selectedFleetId, defenderFleetId },
+                label: 'Fleet engagement',
+            });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const handleRedeploy = async (armyId: string, targetPlanetId: string) => {
+        if (!targetPlanetId) return;
+        setBusyId(armyId);
+        try {
+            await dispatchOrder({
+                actionId: 'MIL_MOVE_ARMY',
+                factionId: pf,
+                payload: { armyId, targetPlanetId },
+                label: `Army redeploying to ${planetName(targetPlanetId)}`,
+            });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const handleEmbark = async (armyId: string) => {
+        if (!selectedFleetId) return;
+        setBusyId(armyId);
+        try {
+            await dispatchOrder({
+                actionId: 'MIL_EMBARK_ARMY',
+                factionId: pf,
+                payload: { armyId, fleetId: selectedFleetId },
+                label: 'Army boarding transport',
+            });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const handleDisembark = async (armyId: string, planetId: string) => {
+        if (!planetId) return;
+        setBusyId(armyId);
+        try {
+            await dispatchOrder({
+                actionId: 'MIL_DISEMBARK_ARMY',
+                factionId: pf,
+                payload: { armyId, planetId },
+                label: `Army landing on ${planetName(planetId)}`,
+            });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    if (enemyFleets.length === 0 && myArmies.length === 0) return null;
+
+    return (
+        <div className="mt-3 pt-3 border-t border-slate-700/40 space-y-2">
+            <div className="flex items-center gap-1.5 text-[9px] font-display tracking-widest uppercase text-slate-500">
+                <Swords size={10} />
+                System Forces
+            </div>
+
+            {/* ── Enemy fleets ── */}
+            {enemyFleets.map((f: any) => (
+                <div
+                    key={f.id}
+                    className="flex items-center justify-between gap-2 p-2 rounded-lg bg-red-950/30 border border-red-500/20"
+                >
+                    <div className="min-w-0">
+                        <div className="text-[10px] font-bold text-red-300 truncate">{f.name || f.id}</div>
+                        <div className="text-[9px] text-red-400/60">
+                            {(f.factionId || '').replace('faction-', '')} · strength {Math.round((f.strength ?? 0) * 100)}%
+                        </div>
+                    </div>
+                    <button
+                        disabled={!selectedFleetInSystem || busyId === f.id}
+                        onClick={() => handleEngage(f.id)}
+                        title={selectedFleetInSystem ? 'Attack this fleet with your selected fleet' : 'Select one of your fleets in this system first'}
+                        className="px-2.5 py-1.5 bg-red-700/30 hover:bg-red-600/40 border border-red-500/40 rounded text-[9px] text-red-300 font-bold tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
+                    >
+                        <Swords size={9} />
+                        {busyId === f.id ? 'ENGAGING…' : 'ENGAGE'}
+                    </button>
+                </div>
+            ))}
+
+            {/* ── My armies ── */}
+            {myArmies.map((a: any) => {
+                const aboardFleet = a.transportFleetId ? fleetById(a.transportFleetId) : null;
+                const groundPlanets = planets.filter((p: any) => p.id !== a.currentPlanetId);
+                return (
+                    <div
+                        key={a.id}
+                        className="p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/20 space-y-1.5"
+                    >
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="text-[10px] font-bold text-emerald-300 truncate flex items-center gap-1">
+                                    <Users size={9} />
+                                    {a.name || a.id}
+                                </div>
+                                <div className="text-[9px] text-emerald-400/60">
+                                    {aboardFleet
+                                        ? `aboard ${aboardFleet.name || aboardFleet.id}`
+                                        : `stationed on ${planetName(a.currentPlanetId)}`}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {aboardFleet ? (
+                                /* Disembark: pick a planet to land on */
+                                planets.length > 0 && (
+                                    <select
+                                        disabled={busyId === a.id}
+                                        defaultValue=""
+                                        onChange={(e) => handleDisembark(a.id, e.target.value)}
+                                        className="flex-1 min-w-[120px] bg-slate-900 border border-emerald-600/40 rounded px-1.5 py-1 text-[9px] text-emerald-300 font-bold cursor-pointer"
+                                    >
+                                        <option value="" disabled>⇣ DISEMBARK TO…</option>
+                                        {planets.map((p: any) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                )
+                            ) : (
+                                <>
+                                    {/* Redeploy within the system */}
+                                    {groundPlanets.length > 0 && (
+                                        <select
+                                            disabled={busyId === a.id}
+                                            defaultValue=""
+                                            onChange={(e) => handleRedeploy(a.id, e.target.value)}
+                                            className="flex-1 min-w-[120px] bg-slate-900 border border-emerald-600/40 rounded px-1.5 py-1 text-[9px] text-emerald-300 font-bold cursor-pointer"
+                                        >
+                                            <option value="" disabled>➜ REDEPLOY TO…</option>
+                                            {groundPlanets.map((p: any) => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {/* Embark onto the selected fleet */}
+                                    <button
+                                        disabled={!selectedFleetInSystem || busyId === a.id}
+                                        onClick={() => handleEmbark(a.id)}
+                                        title={selectedFleetInSystem ? 'Load this army onto your selected fleet' : 'Select one of your fleets in this system first'}
+                                        className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/30 rounded text-[9px] text-indigo-300 font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                    >
+                                        <Anchor size={9} />
+                                        EMBARK
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+
+            {enemyFleets.length > 0 && !selectedFleetInSystem && (
+                <p className="text-[9px] text-slate-500 italic leading-relaxed">
+                    Select one of your fleets in this system to enable engagement.
+                </p>
+            )}
         </div>
     );
 }
@@ -984,6 +1271,16 @@ export default function SystemContextPanel() {
                                     />
                                 ))
                             )}
+
+                            {/* ── System forces: engage enemy fleets, command armies ── */}
+                            <SystemForcesPanel
+                                system={system}
+                                planets={planets}
+                                playerFactionId={playerFactionId}
+                                selectedFleetId={selectedFleetId}
+                                fleets={fleets}
+                                armies={armies}
+                            />
 
                             {/* System control summary */}
                             {planets.length > 0 && (

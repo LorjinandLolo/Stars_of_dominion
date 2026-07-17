@@ -126,19 +126,20 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 />
             )}
 
+            {/* Sign Out — fixed to the viewport so it can never be clipped off-screen
+                (the old absolute + negative margins pushed it out of view). */}
+            <button
+                onClick={async () => {
+                    await authService.logout();
+                    router.push('/login');
+                }}
+                className="fixed top-4 right-6 z-50 text-slate-400 hover:text-white text-xs uppercase tracking-widest px-4 py-2 border border-slate-700 hover:border-slate-500 rounded-full bg-slate-950/80 backdrop-blur transition-all"
+            >
+                Sign Out
+            </button>
+
             {/* Header */}
             <div className="relative z-10 text-center mb-12">
-                <div className="absolute top-0 right-0 mt-[-20px] mr-[-40px]">
-                    <button 
-                        onClick={async () => {
-                            await authService.logout();
-                            router.push('/login');
-                        }}
-                        className="text-slate-500 hover:text-white text-xs uppercase tracking-widest px-4 py-2 border border-slate-800 hover:border-slate-600 rounded-full transition-all"
-                    >
-                        Sign Out
-                    </button>
-                </div>
                 <div className="text-slate-500 text-xs tracking-[0.4em] uppercase mb-3">Stars of Dominion</div>
                 <h1 className="text-5xl font-bold text-white mb-3" style={{ letterSpacing: '-0.02em' }}>
                     {currentUserHasClaim ? 'Faction Locked' : 'Choose Your Faction'}
@@ -149,6 +150,25 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         : 'Select the empire you will lead to galactic supremacy.'}
                 </p>
                 <div className="text-slate-600 text-[10px] mt-4 uppercase tracking-[0.2em]">Total Factions: {factions.length} | Available: {factions.length - Object.keys(takenFactions).length}</div>
+
+                {/* Signed-in identity — the #1 source of "why can't I enter?" confusion
+                    is being logged into a different account than expected. */}
+                {currentUser && (
+                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-slate-700/60 bg-slate-900/60">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span className="text-[11px] text-slate-400">
+                            Signed in as <span className="text-slate-200 font-semibold">{currentUser.email}</span>
+                            {currentUser.name ? <span className="text-slate-500"> ({currentUser.name})</span> : null}
+                        </span>
+                    </div>
+                )}
+                {currentUser && !currentUserHasClaim && Object.keys(takenFactions).length > 0 && (
+                    <p className="mt-2 text-[10px] text-amber-400/80 max-w-md mx-auto leading-relaxed">
+                        This account hasn't claimed a faction. If you expected one of the claimed
+                        factions to be yours, you're signed into the wrong account — use Sign Out
+                        (top right) and log back in with the right one.
+                    </p>
+                )}
             </div>
 
             {/* Faction Cards - Scrollable area */}

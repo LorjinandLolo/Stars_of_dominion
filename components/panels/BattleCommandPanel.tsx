@@ -15,7 +15,7 @@ import {
     Skull,
     History
 } from 'lucide-react';
-import { selectCombatStanceAction, selectCombatDirectiveAction } from '@/app/actions/combat';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
 import { getPredictionHints } from '@/lib/integration/doctrine-bias';
 import { BrainCircuit, Sparkles } from 'lucide-react';
@@ -67,14 +67,37 @@ export default function BattleCommandPanel() {
     const handleSetStance = async (stance: CombatStance) => {
         if (!selectedCombatId) return;
         setLoading(true);
-        await selectCombatStanceAction(selectedCombatId, playerState.factionId, stance, predictedStance || undefined);
+        await dispatchOrder({
+            actionId: 'MIL_COMBAT_STANCE',
+            factionId: playerState.factionId,
+            payload: { combatId: selectedCombatId, stance, prediction: predictedStance || 'none' },
+            label: `Battle stance: ${stance}`,
+        });
+        setLoading(false);
+    };
+
+    const handleDisengage = async () => {
+        if (!selectedCombatId) return;
+        setLoading(true);
+        await dispatchOrder({
+            actionId: 'MIL_COMBAT_RETREAT',
+            factionId: playerState.factionId,
+            payload: { combatId: selectedCombatId },
+            label: 'Disengaging — fleets withdrawing home',
+        });
         setLoading(false);
     };
 
     const handleSetDirective = async (directive: PostBattleDirective) => {
         if (!selectedCombatId) return;
         setLoading(true);
-        await selectCombatDirectiveAction(selectedCombatId, playerState.factionId, directive);
+        await dispatchOrder({
+            actionId: 'MIL_COMBAT_DIRECTIVE',
+            factionId: playerState.factionId,
+            // Worker reads `stance`, registry validates `directive` — send both.
+            payload: { combatId: selectedCombatId, directive, stance: directive },
+            label: `Battle directive: ${directive.replace(/_/g, ' ')}`,
+        });
         setLoading(false);
     };
 
@@ -92,20 +115,30 @@ export default function BattleCommandPanel() {
                     </h2>
                     <p className="text-[10px] text-slate-500 mt-0.5 tracking-tighter">TACTICAL OVERRIDES & ENGAGEMENT MONITORING</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                     {activeCombats.map((c, i) => (
                         <button
                             key={c.id}
                             onClick={() => setSelectedCombatId(c.id)}
                             className={`w-8 h-8 rounded border flex items-center justify-center transition-all ${
-                                selectedCombatId === c.id 
-                                ? 'bg-red-600 border-red-500 shadow-[0_0_10px_rgba(220,38,38,0.4)]' 
+                                selectedCombatId === c.id
+                                ? 'bg-red-600 border-red-500 shadow-[0_0_10px_rgba(220,38,38,0.4)]'
                                 : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
                             }`}
                         >
                             <span className="text-[10px] font-bold">{i + 1}</span>
                         </button>
                     ))}
+                    {selectedCombatId && (
+                        <button
+                            onClick={handleDisengage}
+                            disabled={loading}
+                            title="Break off this engagement — your fleets in the battle withdraw to your home system"
+                            className="ml-2 px-3 h-8 rounded border border-amber-500/50 bg-amber-900/30 hover:bg-amber-800/40 text-amber-300 text-[10px] font-bold tracking-widest transition-all disabled:opacity-50"
+                        >
+                            DISENGAGE
+                        </button>
+                    )}
                 </div>
             </div>
 

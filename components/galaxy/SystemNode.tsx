@@ -14,6 +14,8 @@ interface SystemNodeProps {
     isMobile: boolean;
     hexPoints: string;
     onSelect: (id: string) => void;
+    /** Right-click: issue an order targeting this system (e.g. fleet move). */
+    onOrder?: (id: string) => void;
     isCapital: boolean;
     ownerColor: string;
     relationship: Relationship | null;
@@ -22,7 +24,7 @@ interface SystemNodeProps {
 }
 
 const SystemNode = memo(({
-    sys, px, isSelected, revealStage, styles, contested, isMobile, hexPoints, onSelect,
+    sys, px, isSelected, revealStage, styles, contested, isMobile, hexPoints, onSelect, onOrder,
     isCapital, ownerColor, relationship, activeOverlay, showLabel,
 }: SystemNodeProps) => {
     const isOwned = !!sys.ownerId;
@@ -48,6 +50,11 @@ const SystemNode = memo(({
         <g
             transform={`translate(${px.x}, ${px.y})`}
             onClick={(e) => { e.stopPropagation(); onSelect(sys.id); }}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (onOrder ?? onSelect)(sys.id);
+            }}
             style={{ cursor: 'pointer', opacity: groupOpacity }}
         >
             {/* Territory tint + click target (owner tint only when scanned) */}

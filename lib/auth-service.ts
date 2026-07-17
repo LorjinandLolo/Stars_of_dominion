@@ -16,14 +16,17 @@ export const authService = {
         try {
             return await account.createEmailSession(email, pass);
         } catch (error: any) {
-            // ONLY swallow the genuine "already logged in" case. The old check
-            // (`error.code === 401`) also matched invalid credentials — every
-            // wrong password looked like a successful login, then the lobby
-            // silently bounced the user back here with no error shown.
+            // "Session already active": a PREVIOUS account is still signed in.
+            // The old behavior kept that stale session and reported success — you
+            // typed dev1's credentials but stayed logged in as whoever you were
+            // before. Replace the old session with the requested account instead.
             if (error.type === 'user_session_already_exists' || error.message?.includes('session is active')) {
-                console.log('Session already active, proceeding to lobby.');
-                return true;
+                console.log('Replacing existing session with new login...');
+                try { await account.deleteSession('current'); } catch { /* best effort */ }
+                return await account.createEmailSession(email, pass);
             }
+            // Everything else (wrong password, unknown account) surfaces as a
+            // real error — never masquerade as success.
             throw error;
         }
     },

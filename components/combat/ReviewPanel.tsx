@@ -5,7 +5,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { UnitCard } from './UnitCard';
 import { GroundUnitType, PlanetaryDefenseState, InvadingForceState } from '@/lib/combat/siege/siege-types';
 import { Shield, Swords, Anchor, X, Users } from 'lucide-react';
-import { executePlayerAction } from '@/app/actions/registry-handler';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 
 const BATTALION_SIZES: Record<GroundUnitType, number> = {
     INFANTRY: 800,
@@ -183,53 +183,43 @@ export function ReviewPanel() {
                 if (alliedFleet) {
                     targetFleetId = alliedFleet.id;
                 } else {
-                    alert("No allied fleet in orbit. Commissioning new fleet...");
-                    await executePlayerAction({
-                        id: `act_${Date.now()}`,
+                    // No fleet here yet: commission one first. Non-blocking — the
+                    // pending chip (bottom-left) tracks it; the new fleet appears
+                    // within ~10s, then recruit ships into it.
+                    await dispatchOrder({
                         actionId: 'MIL_BUILD_FLEET',
-                        issuerId: playerFactionId || '',
-                        targetId: selectedPlanet.id,
+                        factionId: playerFactionId || 'PLAYER_FACTION',
                         payload: {
                             planetId: selectedPlanet.id,
                             systemId: selectedPlanet.systemId
                         },
-                        timestamp: Math.floor(Date.now() / 1000)
+                        label: 'Commissioning new fleet (~10s) — then recruit ships into it',
                     });
                     return;
                 }
             }
             if (!targetFleetId || !playerFactionId) return;
-            try {
-                await executePlayerAction({
-                    id: `act_${Date.now()}`,
-                    actionId: 'MIL_RECRUIT_FORMATION_UNIT',
-                    issuerId: playerFactionId,
-                    targetId: targetFleetId,
-                    payload: {
-                        formationId: targetFleetId,
-                        isFleet: true,
-                        unitType,
-                        count: 1
-                    },
-                    timestamp: Math.floor(Date.now() / 1000)
-                });
-            } catch (err) {
-                console.error("Fleet recruitment failed:", err);
-            }
+            const res = await dispatchOrder({
+                actionId: 'MIL_RECRUIT_FORMATION_UNIT',
+                factionId: playerFactionId,
+                payload: {
+                    formationId: targetFleetId,
+                    isFleet: true,
+                    unitType,
+                    count: 1
+                },
+                label: `Commissioning ${unitType.toLowerCase()}`,
+            });
+            if (!res.success) console.error('Fleet recruitment failed:', res.error);
         } else {
             if (!selectedPlanet || !playerFactionId) return;
-            try {
-                await executePlayerAction({
-                    id: `act_rec_${Date.now()}`,
-                    actionId: 'PLANET_RECRUIT_UNITS',
-                    issuerId: playerFactionId,
-                    targetId: selectedPlanet.id,
-                    payload: { planetId: selectedPlanet.id, unitType, count: 10 },
-                    timestamp: Math.floor(Date.now() / 1000)
-                });
-            } catch (err) {
-                console.error("Recruitment failed:", err);
-            }
+            const res = await dispatchOrder({
+                actionId: 'PLANET_RECRUIT_UNITS',
+                factionId: playerFactionId,
+                payload: { planetId: selectedPlanet.id, unitType, count: 10 },
+                label: `Recruiting 10× ${unitType.toLowerCase()}`,
+            });
+            if (!res.success) console.error('Recruitment failed:', res.error);
         }
     };
 
@@ -331,16 +321,14 @@ export function ReviewPanel() {
                                             className="w-full bg-slate-900 border border-slate-800 p-1 rounded text-[9px] text-slate-300 font-mono"
                                             onChange={async (e) => {
                                                 if (e.target.value) {
-                                                    await executePlayerAction({
-                                                        id: `act_${Date.now()}`,
+                                                    await dispatchOrder({
                                                         actionId: 'MIL_EMBARK_ARMY',
-                                                        issuerId: playerFactionId || '',
-                                                        targetId: army.id,
+                                                        factionId: playerFactionId || 'PLAYER_FACTION',
                                                         payload: {
                                                             armyId: army.id,
                                                             fleetId: e.target.value
                                                         },
-                                                        timestamp: Math.floor(Date.now() / 1000)
+                                                        label: 'Army boarding transport',
                                                     });
                                                 }
                                             }}
@@ -380,16 +368,14 @@ export function ReviewPanel() {
                                             className="w-full bg-slate-900 border border-slate-800 p-1 rounded text-[9px] text-slate-300 font-mono"
                                             onChange={async (e) => {
                                                 if (e.target.value) {
-                                                    await executePlayerAction({
-                                                        id: `act_${Date.now()}`,
+                                                    await dispatchOrder({
                                                         actionId: 'MIL_DISEMBARK_ARMY',
-                                                        issuerId: playerFactionId || '',
-                                                        targetId: army.id,
+                                                        factionId: playerFactionId || 'PLAYER_FACTION',
                                                         payload: {
                                                             armyId: army.id,
                                                             planetId: e.target.value
                                                         },
-                                                        timestamp: Math.floor(Date.now() / 1000)
+                                                        label: 'Army landing',
                                                     });
                                                 }
                                             }}
@@ -410,7 +396,20 @@ export function ReviewPanel() {
                         ))}
 
                         {units.length === 0 ? (
-                            (!isOwner || (isSpaceTheme ? (!selectedFleetId && !selectedPlanet) : viewLayer !== 'ground')) && (
+                            /* Empty fleet with base power: explain WHY the card grid is
+                               empty instead of looking broken, and point at RECRUIT. */
+                            activeData.type === 'fleet' && (activeData.state as any)?.basePower > 0 && isOwner ? (
+                                <div className="w-full flex flex-col items-center justify-center py-6 px-8 text-center">
+                                    <Anchor size={28} className="mb-2 text-indigo-500/70" />
+                                    <span className="text-xs font-display tracking-widest uppercase text-indigo-300">
+                                        Base Power {(activeData.state as any).basePower} — no recruited ships
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 mt-1.5 max-w-xs leading-relaxed">
+                                        This fleet fights with hull power only. Switch to <span className="text-amber-400 font-bold">RECRUIT</span> (top
+                                        right) while docked at your shipyard to commission corvettes, destroyers, and capital ships into it.
+                                    </span>
+                                </div>
+                            ) : (!isOwner || (isSpaceTheme ? (!selectedFleetId && !selectedPlanet) : viewLayer !== 'ground')) && (
                                 <div className="w-full h-full flex flex-col items-center justify-center opacity-50">
                                     {isSpaceTheme ? <Anchor size={32} className="mb-2 text-indigo-500" /> : <Shield size={32} className="mb-2 text-slate-500" />}
                                     <span className={`text-xs font-display tracking-widest uppercase ${isSpaceTheme ? 'text-indigo-400' : 'text-slate-400'}`}>

@@ -9,7 +9,7 @@
 // Server-only module: do not import from client components.
 
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
-import type { PlayerActionId, ResourceType } from '@/lib/actions/types';
+import type { PlayerActionId } from '@/lib/actions/types';
 import { getServerClients } from '@/lib/appwrite';
 
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
@@ -21,6 +21,9 @@ const COLL_FACTIONS = 'factions';
 // They skip schema/cost validation but still go through ownership checks.
 const WORKER_ONLY_ACTIONS = new Set([
     'AIR_LAUNCH_SORTIE',
+    'MIL_COMBAT_RETREAT',
+    'MIL_MERGE_FLEETS',
+    'MIL_SPLIT_FLEET',
     'RENAME_PLANET',
     'SHIP_DESIGN_SAVE',
     'PRESS_SUPPRESS_STORY',
@@ -99,43 +102,13 @@ async function verifyFactionOwnership(
     }
 }
 
-async function checkAndDeductCosts(
-    db: any,
-    factionId: string,
-    cost?: Partial<Record<ResourceType, number>>
-): Promise<{ success: boolean; error?: string }> {
-    if (!cost || Object.keys(cost).length === 0) return { success: true };
-
-    let factionDoc: any;
-    try {
-        factionDoc = await db.getDocument(DB_ID, COLL_FACTIONS, factionId);
-    } catch {
-        // Faction ledger doc doesn't exist (world-state factions aren't mirrored
-        // into the `factions` collection). Skip cost enforcement rather than
-        // hard-blocking every priced action for such factions.
-        return { success: true };
-    }
-
-    const resources = JSON.parse(factionDoc.resources || '{}');
-    const missing: string[] = [];
-
-    for (const [res, amount] of Object.entries(cost)) {
-        const current = resources[res.toLowerCase()] || 0;
-        if (current < (amount as number)) missing.push(res);
-    }
-    if (missing.length > 0) {
-        return { success: false, error: `Insufficient resources: ${missing.join(', ')}` };
-    }
-
-    const updated = { ...resources };
-    for (const [res, amount] of Object.entries(cost)) {
-        updated[res.toLowerCase()] = (updated[res.toLowerCase()] || 0) - (amount as number);
-    }
-    await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
-        resources: JSON.stringify(updated),
-    });
-    return { success: true };
-}
+// NOTE: cost enforcement intentionally does NOT happen here anymore.
+// It used to read the legacy `factions` collection — a stale MVP ledger
+// (≈100 credits, no influence/ammo keys) completely disconnected from the
+// live economy in the world snapshot. Result: actions like "commission fleet"
+// (1000cr) were rejected while the player was looking at 50,000 credits.
+// Costs are now checked and deducted by the game-loop worker against
+// world.economy.factions — the same reserves the resource bar displays.
 
 /**
  * Validate, authorize, price, and queue a player order.
@@ -144,19 +117,25 @@ async function checkAndDeductCosts(
 export async function queueOrder(input: QueueOrderInput): Promise<QueueOrderResult> {
     const { actionId, payload, factionId } = input;
 
+    const reject = (error: string, status: number): QueueOrderResult => {
+        // Always log rejects server-side — silent 400s are undebuggable from logs.
+        console.warn(`[OrderQueue] REJECTED ${actionId ?? '(no action)'} for ${factionId ?? '(no faction)'}: ${error}`);
+        return { success: false, error, status };
+    };
+
     if (!actionId || !factionId) {
-        return { success: false, error: 'Missing actionId or factionId.', status: 400 };
+        return reject('Missing actionId or factionId.', 400);
     }
 
     // 1. Schema validation
     const definition = ACTION_DEFINITIONS[actionId as PlayerActionId];
     if (!definition && !WORKER_ONLY_ACTIONS.has(actionId)) {
-        return { success: false, error: `Unknown action: ${actionId}`, status: 400 };
+        return reject(`Unknown action: ${actionId}`, 400);
     }
     if (definition) {
         for (const key of Object.keys(definition.params)) {
             if (!(key in (payload || {}))) {
-                return { success: false, error: `Missing parameter: ${key}`, status: 400 };
+                return reject(`Missing parameter: ${key}`, 400);
             }
         }
     }
@@ -171,16 +150,10 @@ export async function queueOrder(input: QueueOrderInput): Promise<QueueOrderResu
     }
     const ownership = await verifyFactionOwnership(db, Query, factionId, userId);
     if (!ownership.ok) {
-        return { success: false, error: ownership.error, status: 403 };
+        return reject(ownership.error ?? 'Faction ownership check failed.', 403);
     }
 
-    // 3. Cost check + deduction
-    const costResult = await checkAndDeductCosts(db, factionId, definition?.cost);
-    if (!costResult.success) {
-        return { success: false, error: costResult.error, status: 402 };
-    }
-
-    // 4. Queue. Only write attributes that exist in the game_orders schema
+    // 3. Queue. Only write attributes that exist in the game_orders schema
     // (factionId, actionId, payload, processed) — extra fields like `userId`
     // or `timestamp` make Appwrite reject the document outright.
     try {

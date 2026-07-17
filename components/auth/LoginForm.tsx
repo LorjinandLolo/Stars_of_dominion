@@ -14,6 +14,15 @@ export default function LoginForm() {
     const [name, setName] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [existingUser, setExistingUser] = useState<{ email: string; name: string } | null>(null);
+
+    // Show who is ALREADY signed in — logging in blind was how accounts got
+    // mixed up. The player can continue as-is or knowingly switch.
+    React.useEffect(() => {
+        authService.getCurrentUser().then(u => {
+            if (u) setExistingUser({ email: u.email, name: u.name });
+        });
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,6 +47,22 @@ export default function LoginForm() {
         }
     };
 
+    // Dev-only quick logins — one click straight into a test account,
+    // so playtests never stumble over typed credentials again.
+    const isDev = process.env.NODE_ENV === 'development';
+    const quickLogin = async (devEmail: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            await authService.login(devEmail, 'password123');
+            router.push('/lobby');
+        } catch (err: any) {
+            setError(err.message || 'Quick login failed — run: npm run setup:duel');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="w-full max-w-md p-8 rounded-2xl border border-slate-700/50 bg-slate-900/80 backdrop-blur-xl shadow-2xl relative overflow-hidden group">
             {/* Animated background glow */}
@@ -53,6 +78,28 @@ export default function LoginForm() {
                         {isLogin ? 'Enter your credentials to continue your dominion.' : 'Create a new identity for the stars.'}
                     </p>
                 </div>
+
+                {existingUser && (
+                    <div className="mb-6 p-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5">
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                            You are currently signed in as{' '}
+                            <span className="text-emerald-300 font-semibold">{existingUser.email}</span>
+                            {existingUser.name ? <span className="text-slate-500"> ({existingUser.name})</span> : null}.
+                        </p>
+                        <div className="flex gap-2 mt-2.5">
+                            <button
+                                type="button"
+                                onClick={() => router.push('/lobby')}
+                                className="flex-1 py-2 bg-emerald-600/80 hover:bg-emerald-500/80 text-white text-xs font-bold rounded-lg transition-all"
+                            >
+                                Continue as this account →
+                            </button>
+                        </div>
+                        <p className="text-[9px] text-slate-500 mt-2">
+                            Or log in below with different credentials — the current session will be replaced.
+                        </p>
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     {!isLogin && (
@@ -124,6 +171,30 @@ export default function LoginForm() {
                         {isLogin ? "Don't have an ID? Register now." : "Already have an ID? Signal back."}
                     </button>
                 </div>
+
+                {isDev && (
+                    <div className="mt-5 pt-4 border-t border-slate-800">
+                        <p className="text-[9px] uppercase tracking-widest text-slate-600 text-center mb-2">Dev quick login</p>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                disabled={loading}
+                                onClick={() => quickLogin('dev1@stars.com')}
+                                className="flex-1 py-2 rounded-lg border border-amber-600/40 bg-amber-900/20 hover:bg-amber-800/30 text-amber-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
+                            >
+                                DEV 1 · Aurelian
+                            </button>
+                            <button
+                                type="button"
+                                disabled={loading}
+                                onClick={() => quickLogin('dev2@stars.com')}
+                                className="flex-1 py-2 rounded-lg border border-sky-600/40 bg-sky-900/20 hover:bg-sky-800/30 text-sky-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
+                            >
+                                DEV 2 · Vektori
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
