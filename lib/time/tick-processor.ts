@@ -38,9 +38,19 @@ const TICK_DELTA_SECONDS = 6 * 60 * 60;
 /**
  * Execute a full strategic tick.
  * Order is deterministic and must remain stable for replayability.
+ *
+ * @param worldOverride - The authoritative world to mutate. The multiplayer
+ *   game-loop worker MUST pass its Appwrite-deserialized world here; without it
+ *   the tick falls back to the in-process singleton, which in the worker process
+ *   is a throwaway world that never gets saved — strategic ticks would silently
+ *   do nothing for players (the original split-brain bug).
  */
-export async function runStrategicTick(now: Date, tickIndex: number): Promise<void> {
-    const world = getGameWorldState();
+export async function runStrategicTick(
+    now: Date,
+    tickIndex: number,
+    worldOverride?: ReturnType<typeof getGameWorldState>
+): Promise<void> {
+    const world = worldOverride ?? getGameWorldState();
     world.nowSeconds = Math.floor(now.getTime() / 1000);
 
     console.log(`[TickProcessor] Running tick #${tickIndex} at ${now.toISOString()}`);

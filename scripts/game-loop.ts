@@ -14,6 +14,14 @@ import { initializeFactionHomeWorld } from '../lib/economy/services/initializati
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
 import { tickConstructionGlobal } from '../lib/construction/construction-service';
+// Static imports for order handlers. These used to be fire-and-forget dynamic
+// `import().then(...)` calls inside executeOrder — the mutation could land AFTER
+// saveWorldState() had already serialized the world, silently losing the order.
+import { launchOperation } from '../lib/espionage/espionage-service';
+import { deployAgent } from '../lib/espionage/agent-service';
+import { establishTradeRoute } from '../lib/economy/trade-service';
+import { advanceSorties } from '../lib/combat/air-mission-service';
+import { initiateCombat } from '../lib/combat/combat-engine';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
 
@@ -35,7 +43,17 @@ const client = new Client()
 
 const db = new Databases(client);
 
+// Overlap guard: a cycle that takes longer than POLL_INTERVAL_MS (big snapshot
+// serialize, slow network) used to overlap the next setInterval firing — two
+// concurrent cycles double-advancing time and racing each other's saves.
+let cycleInProgress = false;
+
 async function runGameTick() {
+    if (cycleInProgress) {
+        console.warn('[Tick Worker] Previous cycle still running — skipping this interval.');
+        return;
+    }
+    cycleInProgress = true;
     console.log(`\n[Tick Worker] Starting Cycle at ${new Date().toLocaleTimeString()}...`);
 
     try {
@@ -63,12 +81,16 @@ async function runGameTick() {
         world.nowSeconds += TIME_STEP_SECONDS;
 
         // 3. Process Pending Player Orders
+        // Filter server-side on processed=false. The old client-side filter over the
+        // first 50 docs meant that once 50+ processed orders accumulated, NEW orders
+        // never fit in the window and the queue silently starved forever.
         const allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
+            Query.equal('processed', false),
             Query.orderAsc('$createdAt'),
-            Query.limit(50)
+            Query.limit(100)
         ]);
-        
-        const pendingOrders = allOrders.documents.filter((doc: any) => doc.processed === false);
+
+        const pendingOrders = allOrders.documents;
 
         if (pendingOrders.length > 0) {
             console.log(`[Tick Worker] Executing ${pendingOrders.length} player orders...`);
@@ -76,9 +98,15 @@ async function runGameTick() {
                 try {
                     const payload = JSON.parse(orderDoc.payload);
                     executeOrder(world, orderDoc.actionId, payload, orderDoc.factionId);
-                    await db.updateDocument(DB_ID, COLL_ORDERS, orderDoc.$id, { processed: true });
+                    // Delete on success — keeps the queue collection empty so it can
+                    // never starve, and avoids unbounded growth.
+                    await db.deleteDocument(DB_ID, COLL_ORDERS, orderDoc.$id);
                 } catch (e) {
                     console.error(`[Tick Worker] Order ${orderDoc.$id} failed:`, e);
+                    // Mark failed orders processed so they aren't retried in a loop.
+                    try {
+                        await db.updateDocument(DB_ID, COLL_ORDERS, orderDoc.$id, { processed: true });
+                    } catch { /* best effort */ }
                 }
             }
         }
@@ -103,18 +131,23 @@ async function runGameTick() {
         // 5. Process Ground Recruitment
         RecruitmentService.tick(world);
 
-        // 6. Final cleanup or logging
-        import('../lib/combat/air-mission-service').then(({ advanceSorties }) => {
+        // 6. Advance air sorties (static import — runs before the save, always)
+        try {
             advanceSorties(world);
-        }).catch(e => console.warn('[Tick Worker] Could not load AirMissionService', e.message));
+        } catch (e: any) {
+            console.warn('[Tick Worker] advanceSorties failed:', e.message);
+        }
 
         // 5. Strategic Tick check (6-hour windows)
         const currentTickWindow = Math.floor(world.nowSeconds / (6 * 3600));
         const lastTickWindow = Math.floor(oldNow / (6 * 3600));
-        
+
         if (currentTickWindow > lastTickWindow) {
             console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
-            await runStrategicTick(new Date(world.nowSeconds * 1000), currentTickWindow);
+            // CRITICAL: pass `world` — without it the tick processor mutates the
+            // worker's local singleton, and every strategic-tick result (economy,
+            // research, population...) was thrown away instead of saved/synced.
+            await runStrategicTick(new Date(world.nowSeconds * 1000), currentTickWindow, world);
         }
 
         // 5.5. Faction Initialization Check (Ensures homeworlds exist for all players)
@@ -221,6 +254,8 @@ async function runGameTick() {
 
     } catch (err: any) {
         console.error('[Tick Worker] Fatal loop error:', err.message);
+    } finally {
+        cycleInProgress = false;
     }
 }
 
@@ -605,29 +640,25 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ESP_LAUNCH_OP': {
-            import('../lib/espionage/espionage-service').then(({ launchOperation }) => {
-                launchOperation(
-                    factionId,
-                    payload.targetFactionId,
-                    payload.targetRegionId,
-                    payload.domain,
-                    payload.investmentLevel || 0.5,
-                    payload.riskLevel || 0.5,
-                    world
-                );
-                console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
-            });
+            launchOperation(
+                factionId,
+                payload.targetFactionId,
+                payload.targetRegionId,
+                payload.domain,
+                payload.investmentLevel || 0.5,
+                payload.riskLevel || 0.5,
+                world
+            );
+            console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
             break;
         }
 
         case 'ESP_ASSIGN_AGENT': {
-            import('../lib/espionage/agent-service').then(({ deployAgent }) => {
-                const agent = world.espionage.agents.get(payload.agentId);
-                if (agent && agent.ownerFactionId === factionId) {
-                    deployAgent(agent, payload.systemId, payload.domain, world);
-                    console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
-                }
-            });
+            const agent = world.espionage.agents.get(payload.agentId);
+            if (agent && agent.ownerFactionId === factionId) {
+                deployAgent(agent, payload.systemId, payload.domain, world);
+                console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
+            }
             break;
         }
 
@@ -818,24 +849,17 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             const attacker = world.movement.fleets.get(payload.attackerFleetId);
             const defender = world.movement.fleets.get(payload.defenderFleetId);
             if (!attacker || !defender || attacker.factionId !== factionId) return;
-            
-            // Re-use logic from combat.ts but for the singleton world
-            import('../app/actions/combat').then(({ attackFleetAction }) => {
-                // Note: attackFleetAction currently mutates getGameWorldState() directly.
-                // Since this script runs in a separate process, we must ensure it mutates the 'world' variable passed in.
-                // However, the action is designed for the singleton.
-                // For now, we manually inline the core logic to ensure it targets the correct 'world' instance.
-                const combatId = `combat-${payload.attackerFleetId}-${payload.defenderFleetId}-${Date.now()}`;
-                const { initiateCombat } = require('../lib/combat/combat-engine');
-                
-                const combatState = initiateCombat(combatId, 
-                    { systemId: attacker.currentSystemId || '', terrainModifier: 1.0, infrastructureIntegrity: 1.0 },
-                    { factionId: attacker.factionId, role: 'attacker', hp: attacker.strength * 1000, maxHp: attacker.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: attacker.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'aggressive', casualties: 0, predictionPoints: 0 },
-                    { factionId: defender.factionId, role: 'defender', hp: defender.strength * 1000, maxHp: defender.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: defender.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'defensive', casualties: 0, military: 0, cost: { credits: 0, manpower: 0 } as any, predictionPoints: 0 } as any
-                );
-                world.activeCombats.set(combatId, combatState);
-                console.log(`[Order] Combat ${combatId} initiated between ${attacker.factionId} and ${defender.factionId}`);
-            });
+
+            // Inline combat init against THIS world instance (static import, synchronous —
+            // guaranteed to land before saveWorldState).
+            const combatId = `combat-${payload.attackerFleetId}-${payload.defenderFleetId}-${Date.now()}`;
+            const combatState = initiateCombat(combatId,
+                { systemId: attacker.currentSystemId || '', terrainModifier: 1.0, infrastructureIntegrity: 1.0 },
+                { factionId: attacker.factionId, role: 'attacker', hp: attacker.strength * 1000, maxHp: attacker.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: attacker.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'aggressive', casualties: 0, predictionPoints: 0 } as any,
+                { factionId: defender.factionId, role: 'defender', hp: defender.strength * 1000, maxHp: defender.strength * 1000, organization: 100, maxOrganization: 100, screeningEfficiency: 1.0, baseForceCount: defender.strength * 100, composition: {}, intelLevel: 'observing', supply: 1.0, morale: 1.0, doctrine: 'defensive', casualties: 0, military: 0, cost: { credits: 0, manpower: 0 } as any, predictionPoints: 0 } as any
+            );
+            world.activeCombats.set(combatId, combatState);
+            console.log(`[Order] Combat ${combatId} initiated between ${attacker.factionId} and ${defender.factionId}`);
             break;
         }
 
@@ -940,11 +964,12 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ECON_ESTABLISH_ROUTE': {
-             // maps to the existing internal logic but using the new ordered entry point
-             import('../lib/economy/trade-service').then(({ establishTradeRoute }) => {
+             try {
                  establishTradeRoute(world, factionId, payload);
                  console.log(`[Order] Faction ${factionId} established Trade Route to ${payload.targetFactionId}`);
-             }).catch(e => console.warn('[Tick Worker] Could not load Trade module.', e.message));
+             } catch (e: any) {
+                 console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
+             }
              break;
         }
 
@@ -1034,10 +1059,12 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'TRADE_ESTABLISH_ROUTE': {
             // Deduct freighter amount from faction's fleet and establish a background route
-            import('@/lib/economy/trade-service').then(({ establishTradeRoute }) => {
+            try {
                 establishTradeRoute(world, factionId, payload);
                 console.log(`[Tick Worker] Established Trade Route from ${payload.startSystemId} to ${payload.endSystemId}`);
-            }).catch(e => console.warn('[Tick Worker] Could not load Trade module.', e.message));
+            } catch (e: any) {
+                console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
+            }
             break;
         }
 

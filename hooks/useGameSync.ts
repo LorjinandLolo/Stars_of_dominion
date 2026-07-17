@@ -2,7 +2,12 @@ import { useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { appwriteClient, databases } from '@/lib/appwrite-client';
 import { deserializeWorld, injectFactionShard, recordsToMaps } from '@/lib/persistence/save-service';
+import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import type { GameWorldState } from '@/lib/game-world-state';
+
+// A pending order dispatched more than this long before a snapshot arrived is
+// assumed to be reflected in that snapshot (worker polls every 5s + margin).
+const PENDING_CONFIRM_LAG_MS = 8000;
 
 const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
 const COLL_SESSIONS = 'multiplayer_sessions';
@@ -79,6 +84,18 @@ export function useGameSync() {
         });
     };
 
+    // Safety net: if snapshots stop arriving (worker down, socket dead), don't
+    // leave ghost overlays on screen forever — expire pendings after 45s.
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const { pendingOrders, prunePendingOrders } = useUIStore.getState();
+            if (pendingOrders.length > 0) {
+                prunePendingOrders(Date.now() - 45_000);
+            }
+        }, 10_000);
+        return () => clearInterval(interval);
+    }, []);
+
     // ─── Throttled Update Engine ──────────────────────────────────────────────
     const throttledUpdate = () => {
         if (updatePendingRef.current) return;
@@ -105,7 +122,7 @@ export function useGameSync() {
             tradeValue: sys.tradeValue ?? 0
         }));
 
-        const planetList = Array.from(world.construction.planets.values());
+        let planetList = Array.from(world.construction.planets.values());
         let fleetList = Array.from(world.movement.fleets.values());
         
         // Visibility / Fog-of-War
@@ -161,6 +178,19 @@ export function useGameSync() {
             const uniqueOwners = new Set(owners);
             if (uniqueOwners.size > 1) contestedSystemIds.add(sysId);
         });
+
+        // Re-apply optimistic overlays for still-pending orders. Without this,
+        // every authoritative rebuild would clobber the instant feedback and the
+        // UI would rubber-band (fleet arrow appears → snaps back → reappears).
+        const pendingOrders = useUIStore.getState().pendingOrders;
+        if (pendingOrders.length > 0) {
+            const overlaid = applyPendingOrderOverlays(
+                { fleets: fleetList, planets: planetList },
+                pendingOrders
+            );
+            fleetList = overlaid.fleets;
+            planetList = overlaid.planets;
+        }
 
         // Atomic Batch Update
         useUIStore.setState({
@@ -256,6 +286,12 @@ export function useGameSync() {
                                 // Re-inject cached MAPPED shards into new base snapshot (Zero re-parsing cost!)
                                 mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
                                 worldRef.current = newBase;
+
+                                // Confirm optimistic orders: anything dispatched
+                                // comfortably before this snapshot was produced is
+                                // now reflected authoritatively — drop its overlay.
+                                useUIStore.getState().prunePendingOrders(Date.now() - PENDING_CONFIRM_LAG_MS);
+
                                 throttledUpdate();
                             } catch (e) {
                                 console.warn('[GameSync] Failed to parse updated session snapshot:', e);

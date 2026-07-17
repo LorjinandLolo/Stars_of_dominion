@@ -43,6 +43,25 @@ import {
     defaultEmpireIdentityState 
 } from '../ui/defaults';
 
+// ─── Pending (optimistic) orders ─────────────────────────────────────────────
+
+export interface PendingOrder {
+    /** Client-generated id, stable across the order's lifetime. */
+    localId: string;
+    /** Appwrite document id once the server acknowledged the order. */
+    orderId: string | null;
+    actionId: string;
+    /** Human-readable label for the HUD, e.g. "Fleet en route to Vega". */
+    label: string;
+    factionId: string;
+    payload: Record<string, any>;
+    /** Client wall-clock ms when dispatched. */
+    createdAt: number;
+    status: 'sending' | 'queued' | 'failed';
+    /** Error message when status === 'failed'. */
+    error?: string;
+}
+
 // ─── Store shape ──────────────────────────────────────────────────────────────
 
 export interface UIStore {
@@ -219,6 +238,15 @@ export interface UIStore {
     // ── Multiplayer Mode ──
     isMultiplayer: boolean;
     setIsMultiplayer: (val: boolean) => void;
+
+    // ── Pending (optimistic) orders ──
+    pendingOrders: PendingOrder[];
+    addPendingOrder: (order: PendingOrder) => void;
+    updatePendingOrder: (localId: string, patch: Partial<PendingOrder>) => void;
+    removePendingOrder: (localId: string) => void;
+    /** Drop pending orders created before `cutoffMs` (they're reflected in the
+     *  latest authoritative snapshot) and failed ones older than 10s. */
+    prunePendingOrders: (cutoffMs: number) => void;
 
     // ── Map Focus ──
     focusTarget: { x: number; y: number; zoom?: number } | null;
@@ -514,6 +542,30 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Multiplayer Mode ──
     isMultiplayer: false,
     setIsMultiplayer: (val) => set({ isMultiplayer: val }),
+
+    // ── Pending (optimistic) orders ──
+    pendingOrders: [],
+    addPendingOrder: (order) =>
+        set((state) => ({ pendingOrders: [...state.pendingOrders, order] })),
+    updatePendingOrder: (localId, patch) =>
+        set((state) => ({
+            pendingOrders: state.pendingOrders.map((o) =>
+                o.localId === localId ? { ...o, ...patch } : o
+            ),
+        })),
+    removePendingOrder: (localId) =>
+        set((state) => ({
+            pendingOrders: state.pendingOrders.filter((o) => o.localId !== localId),
+        })),
+    prunePendingOrders: (cutoffMs) =>
+        set((state) => {
+            const now = Date.now();
+            const next = state.pendingOrders.filter((o) => {
+                if (o.status === 'failed') return now - o.createdAt < 10_000;
+                return o.createdAt >= cutoffMs;
+            });
+            return next.length === state.pendingOrders.length ? {} : { pendingOrders: next };
+        }),
 
     // ── Map Focus ──
     focusTarget: null,

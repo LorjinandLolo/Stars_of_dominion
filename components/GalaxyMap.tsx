@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { HexGrid } from '@/lib/hex-grid';
 import { useUIStore } from '@/lib/store/ui-store';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { Activity } from 'lucide-react';
 import HexCell from './map/HexCell';
 
@@ -148,20 +149,17 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
             const targetPlanet = planets.find(p => p.name.toLowerCase() === sortieTargetInput.toLowerCase());
             const targetId = targetPlanet ? targetPlanet.id : sortieTargetInput;
 
-            await fetch('/api/game/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    actionId: 'AIR_LAUNCH_SORTIE',
-                    factionId: playerFactionId,
-                    payload: {
-                        parentBaseId: parentPlanetId,
-                        targetId,
-                        missionType: 'strike_planet',
-                        numInterceptors: sortieInts,
-                        numBombers: sortieBombers
-                    }
-                })
+            await dispatchOrder({
+                actionId: 'AIR_LAUNCH_SORTIE',
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload: {
+                    parentBaseId: parentPlanetId,
+                    targetId,
+                    missionType: 'strike_planet',
+                    numInterceptors: sortieInts,
+                    numBombers: sortieBombers
+                },
+                label: 'Air sortie launch',
             });
             setShowSortieMenu(false);
             setSortieInts(0);
@@ -173,14 +171,11 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
     const handleRenamePlanet = async (planetId: string) => {
         if (!renamePlanetName) return;
         try {
-            await fetch('/api/game/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    actionId: 'RENAME_PLANET',
-                    factionId: playerFactionId,
-                    payload: { planetId, newName: renamePlanetName }
-                })
+            await dispatchOrder({
+                actionId: 'RENAME_PLANET',
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload: { planetId, newName: renamePlanetName },
+                label: `Renaming planet to ${renamePlanetName}`,
             });
             setShowRenameInput(false);
             setRenamePlanetName('');

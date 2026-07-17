@@ -1,41 +1,37 @@
+// app/api/game/order/route.ts
+// Stars of Dominion — Player Order Endpoint
+//
+// Thin HTTP wrapper around lib/multiplayer/order-queue.ts, which owns ALL
+// validation, faction-ownership checks, and cost deduction (shared with the
+// Server Action path so neither can be bypassed).
+
 import { NextRequest, NextResponse } from 'next/server';
-import { Client, Databases, ID } from 'node-appwrite';
+import { queueOrder } from '@/lib/multiplayer/order-queue';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { actionId, payload, factionId } = body;
+        const { actionId, payload, factionId, userId } = body;
 
-        if (!actionId || !factionId) {
-            return NextResponse.json({ error: 'Missing required order fields.' }, { status: 400 });
-        }
-
-        const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-        const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
-        const apiKey = process.env.APPWRITE_API_KEY;
-
-        const client = new Client();
-        if (endpoint) client.setEndpoint(endpoint);
-        if (project) client.setProject(project);
-        if (apiKey) client.setKey(apiKey);
-
-        const db = new Databases(client);
-
-        const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-        const COLL_ORDERS = 'game_orders';
-
-        // Push order to queue
-        await db.createDocument(DB_ID, COLL_ORDERS, ID.unique(), {
+        const result = await queueOrder({
             actionId,
+            payload: payload ?? {},
             factionId,
-            payload: JSON.stringify(payload),
-            processed: false,
-            timestamp: Date.now()
+            userId: userId ?? null,
+            // Optional verified identity: browser sends account.createJWT() output.
+            jwt: req.headers.get('x-appwrite-jwt'),
         });
 
-        return NextResponse.json({ success: true, message: 'Order dispatched successfully.' }, { status: 200 });
+        if (!result.success) {
+            return NextResponse.json({ error: result.error }, { status: result.status ?? 400 });
+        }
+
+        return NextResponse.json(
+            { success: true, orderId: result.orderId, message: 'Order dispatched successfully.' },
+            { status: 200 }
+        );
     } catch (err: any) {
         console.error('[API/game/order] Failed to push order:', err);
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });

@@ -71,6 +71,7 @@ const ShipDesignerPanel = dynamic(() => import('@/components/panels/ShipDesigner
 });
 
 const SeasonEndScreen = dynamic(() => import('@/components/season/SeasonEndScreen'), { ssr: false });
+const PendingOrdersIndicator = dynamic(() => import('@/components/notifications/PendingOrdersIndicator'), { ssr: false });
 const EconomicTerminal = dynamic(() => import('@/components/economy/EconomicTerminal'), {
     ssr: false,
     loading: () => <div className="p-12 text-center text-xs font-mono text-cyan-400/80 animate-pulse">CONNECTING TO FINANCIAL SECTOR DATABASE...</div>
@@ -207,6 +208,9 @@ export default function GameShell() {
                     );
                 })}
             </div>
+
+            {/* ── Pending orders HUD (optimistic feedback) ───────────────────────── */}
+            <PendingOrdersIndicator />
 
             {/* ── Season-end screen (full overlay) ──────────────────────────────── */}
             {(showSeasonEnd || seasonState.phase === 'locked') && <SeasonEndScreen />}

@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev --webpack",
+    "dev:lan": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0",
     "build": "node --max-old-space-size=8192 node_modules/next/dist/bin/next build",
     "start": "node --max-old-space-size=8192 node_modules/next/dist/bin/next start",
     "lint": "next lint",
-    "import:data": "node scripts/importData.mjs"
+    "import:data": "node scripts/importData.mjs",
+    "worker": "npx tsx scripts/game-loop.ts",
+    "setup:duel": "node scripts/setup-dev-duel.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

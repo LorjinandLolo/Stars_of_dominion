@@ -24,11 +24,14 @@ let _tickIndex = 0;
  * @param nowOverride - Optional date for testing/tutorial speed modes
  * @param externalLastTickAt - ISO string from Appwrite world_state (overrides in-memory guard)
  * @param externalTickIndex - Tick index from Appwrite
+ * @param world - Optional authoritative world to tick. Pass this when the caller
+ *   owns a deserialized world (multiplayer worker); omit for singleton/dev mode.
  */
 export async function tryRunStrategicTick(
     nowOverride?: Date,
     externalLastTickAt?: string,
-    externalTickIndex?: number
+    externalTickIndex?: number,
+    world?: Parameters<typeof runStrategicTick>[2]
 ): Promise<TickSchedulerResult> {
     const now = nowOverride ?? new Date();
 
@@ -61,7 +64,7 @@ export async function tryRunStrategicTick(
     _tickIndex = previousTickIndex + 1;
 
     try {
-        await runStrategicTick(now, _tickIndex);
+        await runStrategicTick(now, _tickIndex, world);
     } catch (err) {
         console.error('[TickScheduler] Tick processor failed:', err);
         // Roll back the optimistic claim so a retry can re-run this window.

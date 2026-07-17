@@ -8,7 +8,7 @@ import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, LayoutGrid, C
 import { surveySystemAction } from '@/app/actions/exploration';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
-import { executePlayerAction } from '@/app/actions/registry-handler';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 
 
 function StatBar({ value, color }: { value: number; color: string }) {
@@ -505,13 +505,13 @@ export default function SystemContextPanel() {
         if (!selectedFleetId) return;
         setMoving(true);
         try {
-            const res = await executePlayerAction({
-                id: `act_${Date.now()}`,
+            // dispatchOrder = optimistic path: the fleet arrow appears the same
+            // frame as the click, while the authoritative order syncs behind it.
+            const res = await dispatchOrder({
                 actionId: 'MIL_MOVE_FLEET',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: system.id,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: { fleetId: selectedFleetId, destinationId: system.id },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: `Fleet en route to ${system.name ?? system.id}`,
             });
             if (res.success) {
                 setSelectedFleetId(null);
@@ -536,17 +536,18 @@ export default function SystemContextPanel() {
             // The game-loop.ts worker picks it up every 5 seconds, resolves it
             // server-side (authoritative), then pushes an updated snapshot to all
             // connected clients via the Appwrite Realtime WebSocket channel.
-            await executePlayerAction({
-                id: `act_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'MIL_INVASION_PLANET',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: {
                     fleetId: selectedFleetId,
                     systemId: system.id,
                     planetId,
+                    // Registry schema requires `targetId` — its absence made the
+                    // old path fail validation silently.
+                    targetId: planetId,
                 },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: 'Planetary invasion',
             });
 
             // Optimistic re-fetch so this player sees immediate feedback
@@ -572,13 +573,11 @@ export default function SystemContextPanel() {
 
     const handleRetreatPlanet = async (planetId: string) => {
         try {
-            await executePlayerAction({
-                id: `act_retreat_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'MIL_LEAVE_SIEGE',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: { planetId },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: 'Siege withdrawal',
             });
         } catch (err) {
             console.error("Retreat failed:", err);
@@ -587,13 +586,12 @@ export default function SystemContextPanel() {
 
     const handleBombardPlanet = async (planetId: string) => {
         try {
-            await executePlayerAction({
-                id: `act_bombard_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'MIL_BOMBARD_PLANET',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
-                payload: { targetId: planetId, mode: 'FORTIFICATION' },
-                timestamp: Math.floor(Date.now() / 1000)
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                // `fleetId` is schema-required; its absence failed validation silently.
+                payload: { targetId: planetId, fleetId: selectedFleetId || '', mode: 'FORTIFICATION' },
+                label: 'Orbital bombardment',
             });
         } catch (err) {
             console.error("Bombard failed:", err);
@@ -602,13 +600,11 @@ export default function SystemContextPanel() {
 
     const handleSetGroundTactic = async (planetId: string, tacticId: string) => {
         try {
-            await executePlayerAction({
-                id: `act_tactic_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'MIL_SET_GROUND_TACTIC',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: { planetId, tacticId },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: 'Ground tactic change',
             });
         } catch (err) {
             console.error("Set tactic failed:", err);
@@ -617,13 +613,11 @@ export default function SystemContextPanel() {
 
     const handleSetGroundPrediction = async (planetId: string, tacticId: string) => {
         try {
-            await executePlayerAction({
-                id: `act_pred_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'MIL_SET_GROUND_PREDICTION',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: { planetId, tacticId },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: 'Tactical prediction',
             });
         } catch (err) {
             console.error("Set prediction failed:", err);
@@ -632,13 +626,11 @@ export default function SystemContextPanel() {
 
     const handleRecruitUnits = async (planetId: string, unitType: string, count: number) => {
         try {
-            await executePlayerAction({
-                id: `act_rec_${Date.now()}`,
+            await dispatchOrder({
                 actionId: 'PLANET_RECRUIT_UNITS',
-                issuerId: playerFactionId || 'PLAYER_FACTION',
-                targetId: planetId,
+                factionId: playerFactionId || 'PLAYER_FACTION',
                 payload: { planetId, unitType, count },
-                timestamp: Math.floor(Date.now() / 1000)
+                label: `Recruiting ${count}× ${unitType}`,
             });
         } catch (err) {
             console.error("Recruitment failed:", err);
