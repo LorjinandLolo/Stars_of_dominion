@@ -11,6 +11,7 @@
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { isFleetOperational } from '@/lib/movement/movement-service';
 import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors, Swords, Undo2, Users, X } from 'lucide-react';
 
 export default function FleetCommandBar() {
@@ -131,6 +132,11 @@ export default function FleetCommandBar() {
     const shipCount = (fleet: any) =>
         Object.values(fleet.composition || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
+    // Game rule: an empty fleet (no ships, no Admiral) cannot move — hide the
+    // move affordances and point the player at recruitment instead.
+    const selectedFleet = myFleets.find((f: any) => f.id === selectedFleetId);
+    const selectedFleetCanMove = !selectedFleet || isFleetOperational(selectedFleet);
+
     return (
         <div className="absolute right-3 bottom-16 z-30 w-64 pointer-events-auto">
             <div className="rounded-xl border border-indigo-700/40 bg-slate-950/90 backdrop-blur-md shadow-2xl overflow-hidden">
@@ -209,7 +215,7 @@ export default function FleetCommandBar() {
                                                 )}
                                             </span>
                                             <span className="flex items-center gap-1 flex-shrink-0">
-                                                {inTransit && fleet.originSystemId && fleet.destinationSystemId !== fleet.originSystemId && (
+                                                {inTransit && isFleetOperational(fleet) && fleet.originSystemId && fleet.destinationSystemId !== fleet.originSystemId && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); handleReturnToOrigin(fleet); }}
                                                         className="text-slate-500 hover:text-sky-300"
@@ -338,6 +344,12 @@ export default function FleetCommandBar() {
                             <p className="px-3 py-2 text-[9px] text-emerald-300/80 bg-emerald-950/40 leading-relaxed">
                                 <span className="font-bold">Merging:</span> drop onto a highlighted fleet to combine
                                 them. Fleets must be holding in the same system.
+                            </p>
+                        ) : selectedFleetId && !selectedFleetCanMove ? (
+                            <p className="px-3 py-2 text-[9px] text-amber-300/80 bg-amber-950/40 leading-relaxed">
+                                This fleet has <span className="font-bold text-amber-300">no ships</span> — it cannot move.
+                                Open a planet's <span className="font-bold text-amber-300">UNITS</span> panel to recruit
+                                ships into it first.
                             </p>
                         ) : selectedFleetId ? (
                             <p className="px-3 py-2 text-[9px] text-indigo-300/70 bg-indigo-950/40 leading-relaxed">
