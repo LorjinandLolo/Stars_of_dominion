@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { isFleetOperational } from '@/lib/movement/movement-service';
 import OverlayToggleBar from './OverlayToggleBar';
 import FleetCommandBar from './FleetCommandBar';
 import SystemContextPanel from './SystemContextPanel';
@@ -297,6 +298,9 @@ export default function GalaxyShell() {
             // spam orders (repeat clicks used to reset the route display).
             if (fleet.destinationSystemId === systemId) return;
             if (!fleet.destinationSystemId && fleet.currentSystemId === systemId) return;
+            // Empty fleets can't move; skip the order so no ghost transit arrow
+            // lingers while the worker rejects it.
+            if (!isFleetOperational(fleet)) return;
             const sysName = state.systems.find((s: any) => s.id === systemId)?.name ?? systemId;
             dispatchOrder({
                 actionId: 'MIL_MOVE_FLEET',

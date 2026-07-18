@@ -539,9 +539,10 @@ suite('Fleet operation rule — empty fleet cannot move', () => {
 
     // Worker-guard semantics (MIL_MOVE_FLEET handler): a non-operational fleet
     // is never handed to changeFleetCourse — the order is rejected instead.
-    if (isFleetOperational(fleet)) {
-        fleet = changeFleetCourse(fleet, 'C', 'hyperlane', world);
-    }
+    // Positive control: the identical fleet WITH ships routes fine, proving the
+    // operational check is the only thing standing between this fleet and a move.
+    const withShips = changeFleetCourse({ ...fleet, composition: { interceptor: 1 } }, 'C', 'hyperlane', world);
+    assert(withShips.destinationSystemId === 'C', 'Control: same fleet with ships accepts the route');
     assert(fleet.destinationSystemId === null, 'Empty fleet stays put — no destination set');
     assert(fleet.currentSystemId === 'A', 'Empty fleet remains parked at A');
 });
