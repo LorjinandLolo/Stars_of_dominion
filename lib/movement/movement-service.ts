@@ -315,6 +315,7 @@ export function recoverStrandedFleet(
         ...fleet,
         currentSystemId: snapTo,
         destinationSystemId: null,
+        originSystemId: null,
         plannedPath: [],
         transitProgress: 0,
         activeLayer: null,
@@ -329,6 +330,10 @@ export function issueMoveOrder(
     world: MovementWorldState
 ): Fleet {
     const result = findPath(fleet, targetSystemId, [layer, 'hyperlane'], world);
+
+    // Where this journey began. Recorded once from the parked departure system
+    // and preserved across mid-transit reroutes so return-to-origin has a target.
+    const originSystemId = fleet.originSystemId ?? fleet.currentSystemId ?? null;
 
     const order: FleetOrder = {
         type: 'move',
@@ -351,6 +356,7 @@ export function issueMoveOrder(
             ...fleet,
             plannedPath: [from, targetSystemId],
             destinationSystemId: targetSystemId,
+            originSystemId,
             etaSeconds: secs,
             transitProgress: 0,
             activeLayer: 'deepSpace' as MovementLayer,
@@ -362,9 +368,70 @@ export function issueMoveOrder(
         ...fleet,
         plannedPath: result.path,
         destinationSystemId: targetSystemId,
+        originSystemId,
         etaSeconds: result.totalSeconds,
         transitProgress: 0,
         orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
+    };
+}
+
+/**
+ * Redirect a fleet to a new destination, handling the in-transit case cleanly.
+ *
+ * A parked fleet (or one with no meaningful hop underway) simply receives a
+ * fresh move order. A fleet mid-hop finishes its current hop, then reroutes from
+ * that waypoint toward the new target — hop progress and the recorded origin
+ * system are preserved, so a subsequent return-to-origin still works.
+ *
+ * Course-change semantics: we finish the current hop rather than reversing
+ * mid-hop. This keeps transit bookkeeping simple (no fractional back-tracking)
+ * and matches how the fleet is already committed to the lane it is traversing.
+ */
+export function changeFleetCourse(
+    fleet: Fleet,
+    targetSystemId: string,
+    layer: MovementLayer,
+    world: MovementWorldState
+): Fleet {
+    // Parked, or nothing meaningful in transit — a plain move order suffices.
+    if (fleet.currentSystemId || (fleet.plannedPath?.length ?? 0) < 2) {
+        return issueMoveOrder(fleet, targetSystemId, layer, world);
+    }
+
+    const hopFrom = fleet.plannedPath[0];
+    const hopTo = fleet.plannedPath[1];
+
+    // New target IS the next waypoint — just truncate the route there.
+    if (hopTo === targetSystemId) {
+        return {
+            ...fleet,
+            destinationSystemId: hopTo,
+            plannedPath: [hopFrom, hopTo],
+        };
+    }
+
+    // Plan the new route from the waypoint the fleet is heading toward.
+    const atWaypoint: Fleet = {
+        ...fleet,
+        currentSystemId: hopTo,
+        destinationSystemId: null,
+        plannedPath: [],
+        transitProgress: 0,
+    };
+    const rerouted = issueMoveOrder(atWaypoint, targetSystemId, layer, world);
+    if (!rerouted.destinationSystemId) {
+        // No plottable route from the next waypoint — hold the current course
+        // rather than stranding the fleet with a broken path.
+        return fleet;
+    }
+
+    return {
+        ...rerouted,
+        currentSystemId: null,
+        // rerouted.plannedPath starts at hopTo; prepend the hop already in progress.
+        plannedPath: [hopFrom, ...rerouted.plannedPath],
+        transitProgress: fleet.transitProgress,
+        activeLayer: fleet.activeLayer,
     };
 }
 
@@ -444,6 +511,7 @@ export function advanceFleet(
             ...fleet,
             currentSystemId: arrived ? hopTo : null,
             destinationSystemId: arrived ? null : fleet.destinationSystemId,
+            originSystemId: arrived ? null : fleet.originSystemId,
             transitProgress: arrived ? 0 : newProgress - 1.0,
             plannedPath: arrived ? [] : updatedPath,
             activeLayer: arrived ? null : edge.layer,

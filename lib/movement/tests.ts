@@ -5,6 +5,7 @@
 import {
     findPath,
     issueMoveOrder,
+    changeFleetCourse,
     advanceFleet,
     canAccessLayer,
     weaponizeInfra,
@@ -298,6 +299,66 @@ suite('MovementService.advanceFleet — recovers a stranded/limbo fleet', () => 
     assert(world.systems.has(fleet.currentSystemId!), 'Recovered system exists in the world');
     assert(fleet.destinationSystemId === null, 'Transit state cleared on recovery');
     assert(fleet.plannedPath.length === 0, 'Planned path cleared on recovery');
+});
+
+suite('MovementService.issueMoveOrder — records origin system', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    fleet = issueMoveOrder(fleet, 'C', 'hyperlane', world);
+    assert(fleet.originSystemId === 'A', 'Origin recorded as departure system A');
+
+    // Advance to arrival — origin clears once the journey is over.
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 1000) { fleet = advanceFleet(fleet, 15, world); ticks++; }
+    assert(fleet.currentSystemId === 'C', 'Fleet arrived at C');
+    assert(!fleet.originSystemId, 'Origin cleared on arrival');
+});
+
+suite('MovementService.changeFleetCourse — mid-transit reroute reaches new destination', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // Depart A heading for E along the chain A-B-C-D-E.
+    fleet = issueMoveOrder(fleet, 'E', 'hyperlane', world);
+    assert(fleet.originSystemId === 'A', 'Origin recorded as A');
+
+    // Advance a fraction of the first hop so the fleet is genuinely mid-transit
+    // (currentSystemId null) — the case that used to be silently ignored.
+    fleet = advanceFleet(fleet, fleet.etaSeconds * 0.1, world);
+    assert(fleet.currentSystemId === null, 'Fleet is mid-transit (no current system)');
+    assert(fleet.transitProgress > 0, 'Fleet has made hop progress');
+
+    // Redirect to G (branch off B: B-F-G). Should finish the current hop, then reroute.
+    fleet = changeFleetCourse(fleet, 'G', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'G', 'Destination retargeted to G');
+    assert(fleet.originSystemId === 'A', 'Origin preserved across course change');
+    assert(fleet.plannedPath[0] === 'A', 'Path still anchored at the in-progress hop start');
+
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 2000) { fleet = advanceFleet(fleet, 15, world); ticks++; }
+    assert(fleet.currentSystemId === 'G', 'Rerouted fleet arrived at the new destination G');
+});
+
+suite('MovementService.changeFleetCourse — return to origin lands back at departure', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // Depart A heading for E.
+    fleet = issueMoveOrder(fleet, 'E', 'hyperlane', world);
+    const origin = fleet.originSystemId!;
+    assert(origin === 'A', 'Departure origin recorded as A');
+
+    // Get mid-transit, then turn around toward the recorded origin.
+    fleet = advanceFleet(fleet, fleet.etaSeconds * 0.1, world);
+    assert(fleet.currentSystemId === null, 'Fleet is mid-transit before turning around');
+
+    fleet = changeFleetCourse(fleet, origin, 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'A', 'Fleet now heading back to origin A');
+
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 2000) { fleet = advanceFleet(fleet, 15, world); ticks++; }
+    assert(fleet.currentSystemId === 'A', 'Fleet arrived back at departure system A');
 });
 
 suite('MovementService.weaponizeInfra — blockade', () => {

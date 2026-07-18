@@ -271,6 +271,12 @@ export interface Fleet {
     currentSystemId: string | null;
     /** System the fleet is travelling toward. Set during transit. */
     destinationSystemId: string | null;
+    /**
+     * System the current journey departed from. Recorded when a parked fleet
+     * receives a move order and preserved across mid-transit course changes, so
+     * a fleet can be sent back to where it set out from. Cleared on arrival.
+     */
+    originSystemId?: string | null;
     /** The movement layer being used for the current hop. */
     activeLayer: MovementLayer | null;
     /** 0–1 progress along current hop. */

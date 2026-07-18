@@ -2,7 +2,7 @@ import { Client, Databases, Query, ID } from 'node-appwrite';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
-import { advanceFleet, issueMoveOrder } from '../lib/movement/movement-service';
+import { advanceFleet, issueMoveOrder, changeFleetCourse } from '../lib/movement/movement-service';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
 import { startOperation } from '../lib/intelligence/intelligence-service';
@@ -462,43 +462,21 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 return;
             }
 
-            if (!fleet.currentSystemId && Array.isArray(fleet.plannedPath) && fleet.plannedPath.length >= 2) {
-                // MID-TRANSIT COURSE CHANGE (previously silently ignored): finish
-                // the current hop, then reroute from that waypoint to the new target.
-                const hopFrom = fleet.plannedPath[0];
-                const hopTo = fleet.plannedPath[1];
-                const atWaypoint = {
-                    ...fleet,
-                    currentSystemId: hopTo,
-                    destinationSystemId: null,
-                    plannedPath: [],
-                    transitProgress: 0,
-                } as typeof fleet;
-                const rerouted = issueMoveOrder(atWaypoint, payload.destinationId, 'hyperlane', world.movement);
-                if (rerouted.destinationSystemId) {
-                    world.movement.fleets.set(payload.fleetId, {
-                        ...rerouted,
-                        currentSystemId: null,
-                        // rerouted.plannedPath starts at hopTo; prepend the hop in progress
-                        plannedPath: [hopFrom, ...rerouted.plannedPath],
-                        transitProgress: fleet.transitProgress,
-                        activeLayer: fleet.activeLayer,
-                    });
-                    console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId} (via ${hopTo}).`);
-                } else if (hopTo === payload.destinationId) {
-                    // New target IS the next waypoint — just truncate the route there.
-                    world.movement.fleets.set(payload.fleetId, {
-                        ...fleet,
-                        destinationSystemId: hopTo,
-                        plannedPath: [hopFrom, hopTo],
-                    });
-                    console.log(`[Order] Fleet ${payload.fleetId} route truncated at ${hopTo}.`);
-                }
+            // changeFleetCourse handles both the parked case (plain move order)
+            // and the mid-transit course change (finish current hop, then reroute
+            // from that waypoint) — including return-to-origin, which is just a
+            // move order targeting the fleet's recorded originSystemId.
+            const updated = changeFleetCourse(fleet, payload.destinationId, 'hyperlane', world.movement);
+            if (updated === fleet) {
+                // Reference unchanged → no route could be plotted; the order had no
+                // effect. Surface it instead of deleting it as a silent success.
+                recordOrderFailure(world, factionId, actionId, `No route from the fleet's position to the target system.`);
                 return;
             }
-
-            const updated = issueMoveOrder(fleet, payload.destinationId, 'hyperlane', world.movement);
             world.movement.fleets.set(payload.fleetId, updated);
+            if (!fleet.currentSystemId) {
+                console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
+            }
             break;
         }
 
@@ -1124,6 +1102,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 tgt.strength = ((tgt.strength ?? 1) * tgtPower + (src.strength ?? 1) * srcPower) / (srcPower + tgtPower);
             }
             tgt.basePower = tgtPower + srcPower;
+            tgt.originSystemId = null;
 
             // Carried armies transfer to the merged fleet
             if (src.transportedArmyIds?.length) {
@@ -1200,6 +1179,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 orders: [],
                 plannedPath: [],
                 destinationSystemId: null,
+                originSystemId: null,
                 transitProgress: 0,
                 etaSeconds: 0,
                 activeLayer: null,

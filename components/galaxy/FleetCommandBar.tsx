@@ -11,7 +11,7 @@
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
-import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors, Swords, Users, X } from 'lucide-react';
+import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors, Swords, Undo2, Users, X } from 'lucide-react';
 
 export default function FleetCommandBar() {
     const fleets = useUIStore(s => s.fleets);
@@ -95,6 +95,18 @@ export default function FleetCommandBar() {
             factionId: playerFactionId || 'PLAYER_FACTION',
             payload: { fleetId: fleet.id, composition },
             label: `Detaching forces from ${fleet.name ?? fleet.id}`,
+        });
+    };
+
+    /** Turn an in-transit fleet around and send it back where it set out from. */
+    const handleReturnToOrigin = async (fleet: any) => {
+        const origin = fleet.originSystemId;
+        if (!origin) return;
+        await dispatchOrder({
+            actionId: 'MIL_MOVE_FLEET',
+            factionId: playerFactionId || 'PLAYER_FACTION',
+            payload: { fleetId: fleet.id, destinationId: origin },
+            label: `${fleet.name ?? fleet.id} returning to ${sysName(origin)}`,
         });
     };
 
@@ -197,6 +209,15 @@ export default function FleetCommandBar() {
                                                 )}
                                             </span>
                                             <span className="flex items-center gap-1 flex-shrink-0">
+                                                {inTransit && fleet.originSystemId && fleet.destinationSystemId !== fleet.originSystemId && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleReturnToOrigin(fleet); }}
+                                                        className="text-slate-500 hover:text-sky-300"
+                                                        title={`Turn around — return to ${sysName(fleet.originSystemId)}`}
+                                                    >
+                                                        <Undo2 size={11} />
+                                                    </button>
+                                                )}
                                                 {!inTransit && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); openSplit(fleet); }}
