@@ -3,6 +3,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { appwriteClient, databases } from '@/lib/appwrite-client';
 import { deserializeWorld, injectFactionShard, recordsToMaps } from '@/lib/persistence/save-service';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
+import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
 
 // A pending order dispatched more than this long before a snapshot arrived is
@@ -186,7 +187,27 @@ export function useGameSync() {
         // Economy
         const factionMap: Record<string, any> = {};
         world.economy.factions.forEach((f, id) => factionMap[id] = f);
-        
+
+        // Surface asynchronous order failures reported by the game-loop worker.
+        // The worker stamps a reason on the faction's economy record (rides the
+        // faction shard); the notification store dedupes by id, so each distinct
+        // failure fires exactly once even though this runs on every snapshot.
+        if (playerFactionId) {
+            const failure = factionMap[playerFactionId]?.lastOrderError;
+            if (failure?.id && failure?.reason) {
+                useNotificationStore.getState().addNotification({
+                    id: failure.id,
+                    factionId: playerFactionId,
+                    category: 'system',
+                    priority: 'urgent',
+                    title: 'Order Failed',
+                    body: failure.reason,
+                    createdAt: failure.at ?? new Date().toISOString(),
+                    read: false,
+                });
+            }
+        }
+
         const politicsState = {
             ...useUIStore.getState().politicsState,
             allFactions: Object.values(factionMap)

@@ -119,8 +119,11 @@ function effectiveEdgeCost(
     world: MovementWorldState
 ): number {
     const profile = fleet.hyperdriveProfile[edge.layer];
-    // Speed modifier: higher = faster = lower time cost
-    let cost = edge.baseTravelSeconds / (profile?.speedMultiplier ?? 1.0);
+    // Speed modifier: higher = faster = lower time cost. A zero/negative/missing
+    // multiplier (e.g. a fleet with no deep-space drive, or a partial snapshot
+    // profile) must NOT divide to Infinity/NaN — that froze the fleet at 0%.
+    const speedMult = profile && profile.speedMultiplier > 0 ? profile.speedMultiplier : 1.0;
+    let cost = edge.baseTravelSeconds / speedMult;
 
     // Gate: add cooldown penalty if recently jumped
     if (edge.layer === 'gate') {
@@ -260,13 +263,63 @@ export function deepSpaceHopSeconds(
 ): number | null {
     const a: any = world.systems.get(fromId);
     const b: any = world.systems.get(toId);
-    if (!a || !b || a.q === undefined || b.q === undefined) return null;
-    const dq = a.q - b.q;
-    const dr = a.r - b.r;
-    const hexDist = Math.max(1, (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2);
+    // Only bail when a system genuinely doesn't exist. Coordinates can be missing
+    // on snapshot-loaded systems — in that case fall back to a nominal 1-hex
+    // crossing so the fleet still moves instead of freezing at 0% forever.
+    if (!a || !b) return null;
+    let hexDist = 1;
+    if (a.q !== undefined && b.q !== undefined && a.r !== undefined && b.r !== undefined) {
+        const dq = a.q - b.q;
+        const dr = a.r - b.r;
+        hexDist = Math.max(1, (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2);
+    }
     const speedMult = (config.movement.layerSpeedMultipliers as any).deepSpace ?? 0.5;
     const perHex = (1 / (config.movement.baseSpeedUnitsPerSecond * speedMult)) * 3600;
     return hexDist * perHex;
+}
+
+/**
+ * Pick a real system to anchor a stranded fleet to. Prefers the last known
+ * waypoint on its planned route (the origin of the current hop), then its
+ * current/destination system, then any system as a last resort.
+ */
+function nearestKnownSystem(fleet: Fleet, world: MovementWorldState): string | null {
+    for (const id of fleet.plannedPath ?? []) {
+        if (world.systems.has(id)) return id;
+    }
+    if (fleet.currentSystemId && world.systems.has(fleet.currentSystemId)) return fleet.currentSystemId;
+    if (fleet.destinationSystemId && world.systems.has(fleet.destinationSystemId)) return fleet.destinationSystemId;
+    const first = world.systems.keys().next();
+    return first.done ? null : first.value;
+}
+
+/**
+ * Rescue a fleet whose movement state is invalid/irrecoverable (no valid path,
+ * NaN/Infinity hop cost, unknown hop endpoint). Instead of leaving it invisible
+ * in limbo forever, snap it to a real system, clear its transit state, and warn.
+ * Also repairs already-vanished fleets sitting in existing saves.
+ */
+export function recoverStrandedFleet(
+    fleet: Fleet,
+    world: MovementWorldState,
+    reason: string
+): Fleet {
+    const snapTo = nearestKnownSystem(fleet, world);
+    if (!snapTo) {
+        // Truly nothing to snap to (empty world). Leave the fleet untouched.
+        console.warn(`[Movement] Fleet ${fleet.id} stranded (${reason}) but no system exists to recover to.`);
+        return fleet;
+    }
+    console.warn(`[Movement] Fleet ${fleet.id} stranded (${reason}); snapping to ${snapTo} and clearing transit.`);
+    return {
+        ...fleet,
+        currentSystemId: snapTo,
+        destinationSystemId: null,
+        plannedPath: [],
+        transitProgress: 0,
+        activeLayer: null,
+        etaSeconds: 0,
+    };
 }
 
 export function issueMoveOrder(
@@ -289,7 +342,7 @@ export function issueMoveOrder(
         // behavior silently returned the fleet unchanged — the player's move
         // order evaporated with zero feedback. Fall back to a direct deep-space
         // crossing: slower, but ANY system is reachable.
-        const from = fleet.currentSystemId;
+        const from = fleet.currentSystemId ?? fleet.plannedPath?.[0];
         if (!from) return fleet;
         const secs = deepSpaceHopSeconds(from, targetSystemId, world);
         if (secs == null) return fleet;
@@ -324,27 +377,49 @@ export function advanceFleet(
     deltaSeconds: number,
     world: MovementWorldState
 ): Fleet {
-    if (!fleet.destinationSystemId || fleet.plannedPath.length < 2) return fleet;
+    // Nothing to do — fleet is parked.
+    if (!fleet.destinationSystemId) return fleet;
+
+    // Destination set but no usable route (e.g. a legacy/limbo save whose planned
+    // path was lost). Rescue rather than silently returning every tick, which left
+    // the fleet frozen and — if mid-hop with a null currentSystemId — invisible.
+    if ((fleet.plannedPath?.length ?? 0) < 2) {
+        return recoverStrandedFleet(fleet, world, 'destination set but no planned path');
+    }
 
     const hopFrom = fleet.plannedPath[0];
     const hopTo = fleet.plannedPath[1];
     const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate', 'deepSpace']);
-    const hopEdges = (adj.get(hopFrom) ?? []).filter(e => e.to === hopTo);
+    const candidateEdges = (adj.get(hopFrom) ?? []).filter(e => e.to === hopTo);
 
     let edge: LayerEdge;
-    if (hopEdges.length === 0) {
-        // No lane edge for this hop — it's a deep-space crossing. Synthesize the
-        // edge so the fleet still advances (previously it froze forever at 0%).
+    if (candidateEdges.length === 0) {
+        // No graph edge for this hop — it's a raw deep-space crossing (or an
+        // endpoint missing from the system map). Synthesize the edge so the fleet
+        // still advances (previously it froze forever at 0%).
         const secs = deepSpaceHopSeconds(hopFrom, hopTo, world);
-        if (secs == null) return fleet;
+        if (secs == null) return recoverStrandedFleet(fleet, world, `unknown hop endpoint ${hopFrom}→${hopTo}`);
         edge = { from: hopFrom, to: hopTo, layer: 'deepSpace' as MovementLayer, baseTravelSeconds: secs };
     } else {
-        edge = hopEdges[0];
+        // Pick the cheapest still-traversable edge. A gate/lane may have closed
+        // since the route was planned; taking the first edge blindly could land on
+        // an Infinity-cost hop and freeze the fleet. Deep-space is always an option.
+        edge = candidateEdges
+            .map(e => ({ e, cost: effectiveEdgeCost(e, fleet, world) }))
+            .sort((x, y) => x.cost - y.cost)[0].e;
     }
     const hopCost = effectiveEdgeCost(edge, fleet, world);
+    if (!Number.isFinite(hopCost) || hopCost <= 0) {
+        // Every candidate for this hop is impassable/degenerate. Recover instead of
+        // dividing to Infinity/NaN and freezing the fleet in transit.
+        return recoverStrandedFleet(fleet, world, `no traversable edge ${hopFrom}→${hopTo} (cost=${hopCost})`);
+    }
     const progressGain = deltaSeconds / hopCost; // fraction of this hop completed
 
     const newProgress = fleet.transitProgress + progressGain;
+    if (!Number.isFinite(newProgress)) {
+        return recoverStrandedFleet(fleet, world, 'non-finite transit progress');
+    }
 
     if (newProgress >= 1.0) {
         // Completed this hop — move to next system

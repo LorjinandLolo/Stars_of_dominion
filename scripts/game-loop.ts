@@ -411,6 +411,26 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
 }
 
 /**
+ * Persist a human-readable failure reason onto the faction's economy record.
+ * It rides the existing faction-shard sync back to the client (see
+ * extractFactionShard → game_factions → useGameSync), which surfaces it in the
+ * notification feed. The client dedupes by `id`, so re-writing the same failure
+ * on later ticks is harmless. Without this, a rejected order was a bare `return`
+ * and the queue loop deleted it as if it had succeeded — the player saw nothing.
+ */
+function recordOrderFailure(world: any, factionId: string, actionId: string, reason: string): void {
+    const econFaction = world.economy?.factions?.get?.(factionId);
+    if (!econFaction) return;
+    econFaction.lastOrderError = {
+        id: `ofail-${world.nowSeconds}-${actionId}-${Math.random().toString(36).slice(2, 7)}`,
+        actionId,
+        reason,
+        at: new Date(world.nowSeconds * 1000).toISOString(),
+    };
+    console.warn(`[Order] ${factionId} order ${actionId} failed: ${reason}`);
+}
+
+/**
  * Maps database orders to in-memory world state mutations.
  * includes server-side validation to ensure players only control their own assets.
  */
@@ -418,7 +438,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
 
     // Affordability gate — deducts from the live economy on success.
-    if (!chargeOrderCost(world, factionId, actionId)) return;
+    if (!chargeOrderCost(world, factionId, actionId)) {
+        recordOrderFailure(world, factionId, actionId, 'Insufficient resources in the treasury.');
+        return;
+    }
 
     switch (actionId) {
         case 'MIL_MOVE_FLEET': {
@@ -930,7 +953,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'MIL_BUILD_FLEET': {
             // payload: { planetId, systemId }
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet || planet.ownerId !== factionId) return;
+            if (!planet) {
+                recordOrderFailure(world, factionId, actionId, 'Target planet not found — it may no longer exist.');
+                return;
+            }
+            if (planet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You do not control the selected planet.');
+                return;
+            }
             
             const fleetId = `fleet-${factionId}-${Date.now()}`;
             const newFleet = {
@@ -975,7 +1005,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'MIL_CREATE_ARMY': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet || planet.ownerId !== factionId) return;
+            if (!planet) {
+                recordOrderFailure(world, factionId, actionId, 'Target planet not found — it may no longer exist.');
+                return;
+            }
+            if (planet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You do not control the selected planet.');
+                return;
+            }
 
             const armyId = `army-${factionId}-${Date.now()}`;
             if (!world.movement.armies) world.movement.armies = new Map();

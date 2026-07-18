@@ -228,10 +228,76 @@ suite('MovementService.advanceFleet — continuous travel', () => {
     assert(fleet.destinationSystemId === 'C', 'Destination set to C');
     assert(fleet.plannedPath.length >= 2, 'Path has at least 2 hops');
 
-    const hopCost = fleet.etaSeconds;
-    fleet = advanceFleet(fleet, hopCost * 0.5, world);
+    // Advance by a quarter of the *total* ETA — well under a single hop's cost —
+    // so the fleet lands mid-hop instead of exactly on a hop boundary (which would
+    // roll transitProgress back to 0 and make this assertion flaky).
+    const totalEta = fleet.etaSeconds;
+    fleet = advanceFleet(fleet, totalEta * 0.25, world);
     assert(fleet.transitProgress > 0, 'Transit progress advanced');
     assert(fleet.activeLayer === 'hyperlane', 'Active layer is hyperlane');
+});
+
+suite('MovementService.advanceFleet — order → progress → arrival', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    fleet = issueMoveOrder(fleet, 'C', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'C', 'Destination set to C');
+    assert(fleet.plannedPath.length >= 2, 'Path committed');
+
+    // Bug regression: the first small tick must produce visible progress rather
+    // than sitting frozen at 0% forever.
+    fleet = advanceFleet(fleet, 15, world);
+    assert(fleet.transitProgress > 0, 'Transit progress advances on the first tick');
+
+    // Run bounded ticks until the fleet arrives.
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 1000) {
+        fleet = advanceFleet(fleet, 15, world);
+        ticks++;
+    }
+    assert(fleet.destinationSystemId === null, 'Fleet no longer in transit after arrival');
+    assert(fleet.currentSystemId === 'C', 'Fleet landed at destination C');
+    assert(fleet.transitProgress === 0, 'Transit progress reset on arrival');
+});
+
+suite('MovementService.advanceFleet — deep-space crossing to disconnected system', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // J lives in a hyperlane component (H-I-J) disconnected from A. No lane route
+    // exists, so the fleet must fall back to a deep-space crossing — the leg that
+    // previously froze fleets at 0% (the "genthouli" vanish).
+    fleet = issueMoveOrder(fleet, 'J', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'J', 'Deep-space fallback engaged toward J');
+    assert(fleet.plannedPath.length >= 2, 'Deep-space path committed');
+
+    let ticks = 0;
+    let sawProgress = false;
+    while (fleet.destinationSystemId && ticks < 5000) {
+        const before = fleet.transitProgress;
+        fleet = advanceFleet(fleet, 15, world);
+        if (fleet.transitProgress > before || fleet.currentSystemId === 'J') sawProgress = true;
+        ticks++;
+    }
+    assert(sawProgress, 'Deep-space fleet made progress (never frozen at 0%)');
+    assert(fleet.currentSystemId === 'J', 'Deep-space fleet arrived at J');
+});
+
+suite('MovementService.advanceFleet — recovers a stranded/limbo fleet', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // Reproduce the vanished state seen in live saves: mid-transit (null system),
+    // still carrying a destination, but with a broken/empty planned path. The old
+    // code returned this fleet unchanged every tick, leaving it invisible forever.
+    fleet = { ...fleet, currentSystemId: null, destinationSystemId: 'E', plannedPath: [], transitProgress: 0 };
+
+    fleet = advanceFleet(fleet, 15, world);
+    assert(fleet.currentSystemId !== null, 'Stranded fleet snapped back onto a real system');
+    assert(world.systems.has(fleet.currentSystemId!), 'Recovered system exists in the world');
+    assert(fleet.destinationSystemId === null, 'Transit state cleared on recovery');
+    assert(fleet.plannedPath.length === 0, 'Planned path cleared on recovery');
 });
 
 suite('MovementService.weaponizeInfra — blockade', () => {

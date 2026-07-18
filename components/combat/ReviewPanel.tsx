@@ -120,7 +120,7 @@ export function ReviewPanel() {
                 return { type: 'garrison', state: gState, name: `${selectedPlanet.name} Garrison` };
             } else {
                 // Space View
-                const defendingFleets = fleets.filter(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === selectedPlanet.ownerId);
+                const defendingFleets = fleets.filter(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId);
                 return { type: 'orbital', state: defendingFleets, name: `${selectedPlanet.name} Orbital Space` };
             }
         } else if (selectedFleet) {

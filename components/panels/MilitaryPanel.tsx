@@ -18,6 +18,7 @@ export default function MilitaryPanel() {
 
     const [activeTab, setActiveTab] = useState<'armies' | 'fleets'>('armies');
     const [selectedFormationId, setSelectedFormationId] = useState<string | null>(null);
+    const [createError, setCreateError] = useState<string | null>(null);
 
     const myArmies = armies.filter(a => a.factionId === playerFactionId);
     const myFleets = fleets.filter(f => f.factionId === playerFactionId);
@@ -45,34 +46,28 @@ export default function MilitaryPanel() {
 
     const handleCreateFormation = async () => {
         if (!selectedPlanetId || !selectedSystemId) {
-            alert('Select a planet to create a formation.');
+            setCreateError('Select a planet to create a formation.');
             return;
         }
+        setCreateError(null);
 
-        if (activeTab === 'armies') {
-            await executePlayerAction({
-                id: `act_${Date.now()}`,
-                actionId: 'MIL_CREATE_ARMY',
-                issuerId: playerFactionId || '',
-                targetId: selectedPlanetId,
-                payload: {
-                    planetId: selectedPlanetId,
-                    systemId: selectedSystemId
-                },
-                timestamp: Math.floor(Date.now() / 1000)
-            });
-        } else {
-            await executePlayerAction({
-                id: `act_${Date.now()}`,
-                actionId: 'MIL_BUILD_FLEET',
-                issuerId: playerFactionId || '',
-                targetId: selectedPlanetId,
-                payload: {
-                    planetId: selectedPlanetId,
-                    systemId: selectedSystemId
-                },
-                timestamp: Math.floor(Date.now() / 1000)
-            });
+        // The result only reflects the QUEUE stage (schema/ownership/network).
+        // Execution failures the worker discovers later (insufficient resources,
+        // planet not owned) arrive asynchronously via the notification feed.
+        const res = await executePlayerAction({
+            id: `act_${Date.now()}`,
+            actionId: activeTab === 'armies' ? 'MIL_CREATE_ARMY' : 'MIL_BUILD_FLEET',
+            issuerId: playerFactionId || '',
+            targetId: selectedPlanetId,
+            payload: {
+                planetId: selectedPlanetId,
+                systemId: selectedSystemId
+            },
+            timestamp: Math.floor(Date.now() / 1000)
+        });
+
+        if (!res.success) {
+            setCreateError(res.error || `Command rejected — unable to commission ${activeTab === 'armies' ? 'army' : 'fleet'}.`);
         }
     };
 
@@ -140,7 +135,13 @@ export default function MilitaryPanel() {
                     )}
                 </div>
 
-                <button 
+                {createError && (
+                    <div className="text-xs text-red-300 bg-red-950/40 border border-red-800/50 rounded px-3 py-2">
+                        {createError}
+                    </div>
+                )}
+
+                <button
                     onClick={handleCreateFormation}
                     className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-sm font-bold uppercase tracking-wider text-slate-300"
                 >
