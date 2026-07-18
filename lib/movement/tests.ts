@@ -9,7 +9,10 @@ import {
     advanceFleet,
     canAccessLayer,
     weaponizeInfra,
+    isFleetOperational,
+    TRAVEL_SPEED_MULTIPLIER,
 } from './movement-service';
+import movementConfig from './movement-config.json';
 import {
     computeVisibility,
     getRevealStage,
@@ -523,6 +526,66 @@ suite('DoctrineService.getFleetCardData', () => {
     assert(card!.doctrineType === 'Defensive', 'Doctrine type correct');
     assert(card!.supplyStrainLevel === 'low', 'Supply strain low initially');
     assert(card!.isInTransit === false, 'Fleet not in transit');
+});
+
+suite('Fleet operation rule — empty fleet cannot move', () => {
+    const world = makeWorldState();
+    // Empty shell straight out of MIL_BUILD_FLEET: no ships, no Admiral.
+    let fleet: Fleet = { ...world.fleets.get('fleet-1')!, composition: {}, leaderId: undefined };
+
+    assert(!isFleetOperational(fleet), 'Empty-composition fleet is not operational');
+    assert(!isFleetOperational({ ...fleet, composition: { interceptor: 0, destroyer: 0 } }), 'All-zero composition is not operational');
+    assert(!isFleetOperational({ ...fleet, composition: undefined }), 'Undefined composition is not operational');
+
+    // Worker-guard semantics (MIL_MOVE_FLEET handler): a non-operational fleet
+    // is never handed to changeFleetCourse — the order is rejected instead.
+    if (isFleetOperational(fleet)) {
+        fleet = changeFleetCourse(fleet, 'C', 'hyperlane', world);
+    }
+    assert(fleet.destinationSystemId === null, 'Empty fleet stays put — no destination set');
+    assert(fleet.currentSystemId === 'A', 'Empty fleet remains parked at A');
+});
+
+suite('Fleet operation rule — ships or an Admiral enable movement', () => {
+    const world = makeWorldState();
+    let fleet: Fleet = { ...world.fleets.get('fleet-1')!, composition: { interceptor: 3 } };
+
+    assert(isFleetOperational(fleet), 'Fleet with ships is operational');
+    fleet = changeFleetCourse(fleet, 'C', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'C', 'Fleet with ships accepts a move order');
+
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 1000) { fleet = advanceFleet(fleet, 15, world); ticks++; }
+    assert(fleet.currentSystemId === 'C', 'Fleet with ships still moves and arrives at C');
+
+    // Admiral-only fleet: no ships, but an assigned commander may operate it.
+    const admiralOnly: Fleet = { ...world.fleets.get('fleet-1')!, composition: {}, leaderId: 'admiral-1' };
+    assert(isFleetOperational(admiralOnly), 'Admiral-only fleet is operational');
+});
+
+suite('TRAVEL_SPEED_MULTIPLIER — hop time shortens proportionally', () => {
+    const world = makeWorldState();
+    let fleet: Fleet = { ...world.fleets.get('fleet-1')!, composition: { interceptor: 1 } };
+
+    // Unscaled base cost of one hyperlane hop (test profile speedMultiplier = 1.0).
+    const baseHopSeconds =
+        (1 / (movementConfig.movement.baseSpeedUnitsPerSecond * movementConfig.movement.layerSpeedMultipliers.hyperlane)) * 3600;
+    const expected = baseHopSeconds / TRAVEL_SPEED_MULTIPLIER;
+
+    const result = findPath(fleet, 'B', ['hyperlane'], world); // single hop A→B
+    assert(result.canReach && result.path.length === 2, 'Single-hop route A→B found');
+    assert(Math.abs(result.totalSeconds - expected) < 1e-6,
+        `Hop cost is base/${TRAVEL_SPEED_MULTIPLIER} (${result.totalSeconds}s vs expected ${expected}s)`);
+    assert(Math.abs(result.totalSeconds * TRAVEL_SPEED_MULTIPLIER - baseHopSeconds) < 1e-6,
+        'Scaling is exactly proportional to the multiplier');
+
+    // The fleet actually arrives within one 15s worker tick of the scaled cost.
+    fleet = issueMoveOrder(fleet, 'B', 'hyperlane', world);
+    let gameSeconds = 0;
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 10000) { fleet = advanceFleet(fleet, 15, world); gameSeconds += 15; ticks++; }
+    assert(fleet.currentSystemId === 'B', 'Fleet arrived at B');
+    assert(gameSeconds <= expected + 15, `Arrival within one tick of scaled hop cost (took ${gameSeconds} game-seconds)`);
 });
 
 console.log('\n✅ All tests completed.\n');
