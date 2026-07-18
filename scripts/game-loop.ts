@@ -284,6 +284,13 @@ async function runGameTick() {
             if (fleet.strength >= 1.0) console.log(`[REPAIR] ${fleet.name || fleet.id} fully repaired at ${sys.name}`);
         }
 
+        // 5.9 Genthouli raiders — a hostile NPC battle group guarding Genthouli.
+        // Spawned exactly once (flag survives in the snapshot), so destroying it
+        // is permanent — no respawn loop. The raider faction is at war with every
+        // empire, so any fleet arriving in-system auto-engages via
+        // processSectorCombats the same cycle.
+        seedGenthouliRaiders(world);
+
         // 4. Seeding & Administrative recalculations ────────────────────────
         processSieges(world);
         recalculateSystemControl(world);
@@ -336,6 +343,97 @@ async function saveWorldState(world: any) {
         snapshot: newSnapshot,
         lastTickAt: new Date().toISOString()
     });
+}
+
+// ─── Genthouli raiders (hostile NPC battle group) ────────────────────────────
+
+const GENTHOULI_SYSTEM_ID = 'alpha-fe1c7b05cd1af6875424';
+const RAIDER_FACTION_ID = 'faction-crimson-raiders';
+const RAIDER_FLEET_ID = 'fleet-genthouli-raiders';
+
+/**
+ * Spawn the Crimson Raider Vanguard in Genthouli (once) and keep it on guard
+ * duty. Persistence rides the existing faction-shard sync: the shard-save loop
+ * includes every factionId that owns a fleet, so the raiders get their own
+ * `game_factions` shard without needing an economy record (same as pirates).
+ */
+function seedGenthouliRaiders(world: any) {
+    if (!world.movement.systems.has(GENTHOULI_SYSTEM_ID)) return;
+
+    if (!world.genthouliRaidersSpawned) {
+        world.movement.fleets.set(RAIDER_FLEET_ID, {
+            id: RAIDER_FLEET_ID,
+            factionId: RAIDER_FACTION_ID,
+            name: 'Crimson Raider Vanguard',
+            currentSystemId: GENTHOULI_SYSTEM_ID,
+            destinationSystemId: null,
+            originSystemId: null,
+            activeLayer: null,
+            transitProgress: 0,
+            etaSeconds: 0,
+            plannedPath: [],
+            orders: [],
+            doctrine: {
+                type: 'Defensive',
+                deviationFromPosture: 0,
+                preferredLayers: ['hyperlane'],
+                retreatThreshold: 0.15,
+                logisticsStrain: 0,
+                moraleDrift: 0,
+                supplyLevel: 1.0,
+            },
+            postureId: 'Defensive',
+            strength: 1.0,
+            basePower: 120,
+            composition: { interceptor: 6, destroyer: 4, cruiser: 2 },
+            hyperdriveProfile: {
+                hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                trade: { speedMultiplier: 1.0, detectabilityMultiplier: 1.2, supplyStrainMultiplier: 1.0 },
+                corridor: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                gate: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                deepSpace: { speedMultiplier: 0.6, detectabilityMultiplier: 0.4, supplyStrainMultiplier: 1.0 },
+            },
+            isDetectable: true,
+            transportedArmyIds: [],
+            leaderId: undefined,
+        });
+
+        // Standing state of war with every empire — escalationLevel 7 is the
+        // threshold combat-manager's areAtWar() checks, so co-presence in
+        // Genthouli is enough to start the battle (no attack order needed).
+        for (const empireId of world.economy.factions.keys()) {
+            if (empireId === RAIDER_FACTION_ID) continue;
+            const idAB = `rivalry-${RAIDER_FACTION_ID}-${empireId}`;
+            const idBA = `rivalry-${empireId}-${RAIDER_FACTION_ID}`;
+            const warState = {
+                id: idAB,
+                empireAId: RAIDER_FACTION_ID,
+                empireBId: empireId,
+                rivalryScore: 100,
+                escalationLevel: 7,
+                activeSanctionIds: [],
+                proxyConflictsInvolved: [],
+                detenteActive: false,
+            };
+            if (!world.rivalries.has(idAB)) world.rivalries.set(idAB, warState);
+            if (!world.rivalries.has(idBA)) {
+                world.rivalries.set(idBA, { ...warState, id: idBA, empireAId: empireId, empireBId: RAIDER_FACTION_ID });
+            }
+        }
+
+        world.genthouliRaidersSpawned = true;
+        console.log('[Tick Worker] Spawned Crimson Raider Vanguard guarding Genthouli.');
+    }
+
+    // Guard-post AI: if the vanguard ever ends up parked outside Genthouli
+    // (stranded-fleet recovery, retreat mechanics), order it back home.
+    const raiders = world.movement.fleets.get(RAIDER_FLEET_ID);
+    if (raiders && raiders.currentSystemId && !raiders.destinationSystemId
+        && raiders.currentSystemId !== GENTHOULI_SYSTEM_ID) {
+        const updated = issueMoveOrder(raiders, GENTHOULI_SYSTEM_ID, 'hyperlane', world.movement);
+        world.movement.fleets.set(RAIDER_FLEET_ID, updated);
+        console.log('[Tick Worker] Crimson Raider Vanguard returning to guard Genthouli.');
+    }
 }
 
 /**

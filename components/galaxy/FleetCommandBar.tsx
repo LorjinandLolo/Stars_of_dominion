@@ -12,6 +12,7 @@ import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
+import { formatFleetEta } from '@/lib/movement/eta';
 import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors, Swords, Undo2, Users, X } from 'lucide-react';
 
 export default function FleetCommandBar() {
@@ -26,6 +27,16 @@ export default function FleetCommandBar() {
 
     const [collapsed, setCollapsed] = React.useState(false);
     const activeCombats = useUIStore(s => s.activeCombats);
+
+    // 1Hz clock so transit ETAs count down between ~5s authoritative snapshots.
+    const [nowMs, setNowMs] = React.useState(() => Date.now());
+    React.useEffect(() => {
+        const t = setInterval(() => setNowMs(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    const fleetsReceivedAt = React.useRef(Date.now());
+    React.useEffect(() => { fleetsReceivedAt.current = Date.now(); }, [fleets]);
+    const etaElapsedMs = nowMs - fleetsReceivedAt.current;
 
     // ── Drag & drop fleet merging ──
     const [draggingId, setDraggingId] = React.useState<string | null>(null);
@@ -47,8 +58,13 @@ export default function FleetCommandBar() {
         ?? fleet.destinationSystemId
         ?? null;
 
-    const inCombat = (fleet: any) =>
-        (activeCombats as any[]).some((c: any) => c?.location?.systemId && c.location.systemId === fleet.currentSystemId);
+    const inCombat = (fleet: any) => {
+        if (!fleet.currentSystemId) return false;
+        // CombatState keeps the battleground in `target.systemId` (see
+        // combat-types.ts); `location` was never a real field.
+        return (activeCombats as any[]).some((c: any) =>
+            !c?.resolved && (c?.target?.systemId ?? c?.location?.systemId) === fleet.currentSystemId);
+    };
 
     const handleSelect = (fleet: any, zoom = 1.5) => {
         setSelectedFleetId(fleet.id);
@@ -248,13 +264,22 @@ export default function FleetCommandBar() {
                                             <span className={`flex items-center gap-1 text-[9px] ${inTransit ? 'text-sky-400' : 'text-slate-500'}`}>
                                                 {inTransit ? <Navigation size={8} /> : <Anchor size={8} />}
                                                 {inTransit
-                                                    ? `→ ${sysName(fleet.destinationSystemId)} · ${Math.round((fleet.transitProgress ?? 0) * 100)}%`
+                                                    ? `→ ${sysName(fleet.destinationSystemId)} · ETA ${formatFleetEta(fleet.etaSeconds, etaElapsedMs) ?? '—'}`
                                                     : `holding at ${sysName(fleet.currentSystemId)}`}
                                             </span>
                                             <span className="text-[9px] font-mono text-slate-400">
                                                 {ships > 0 ? `${ships} ships` : `pwr ${fleet.basePower ?? 0}`}
                                             </span>
                                         </div>
+                                        {/* Current-hop progress bar while under way */}
+                                        {inTransit && !fleet.currentSystemId && (
+                                            <div className="mt-1 h-0.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-sky-500 transition-all duration-1000 ease-linear shadow-[0_0_4px_rgba(14,165,233,0.6)]"
+                                                    style={{ width: `${Math.round(Math.min(1, Math.max(0, fleet.transitProgress ?? 0)) * 100)}%` }}
+                                                />
+                                            </div>
+                                        )}
                                         {/* ── Split editor ── */}
                                         {splitFleetId === fleet.id && (() => {
                                             const compEntries = Object.entries(fleet.composition || {}).filter(([, c]) => (Number(c) || 0) > 0);

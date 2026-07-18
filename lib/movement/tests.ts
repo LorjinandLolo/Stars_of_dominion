@@ -364,6 +364,50 @@ suite('MovementService.changeFleetCourse — return to origin lands back at depa
     assert(fleet.currentSystemId === 'A', 'Fleet arrived back at departure system A');
 });
 
+suite('MovementService.changeFleetCourse — picks the fastest route (turns around mid-hop)', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // Depart A heading for E; stop 10% into the first hop (A→B).
+    fleet = issueMoveOrder(fleet, 'E', 'hyperlane', world);
+    fleet = advanceFleet(fleet, fleet.etaSeconds * 0.1 * (1 / (fleet.plannedPath.length - 1)), world);
+    assert(fleet.currentSystemId === null, 'Fleet is mid-transit');
+    const progressBefore = fleet.transitProgress;
+    assert(progressBefore > 0 && progressBefore < 0.5, 'Fleet is early in the hop');
+
+    // Redirect back to A. Backtracking (0.1 hop) beats pressing on to B and
+    // returning (0.9 + 1.0 hops) — the fleet must reverse, not finish the hop.
+    fleet = changeFleetCourse(fleet, 'A', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'A', 'Destination retargeted to A');
+    assert(fleet.plannedPath[0] === 'B' && fleet.plannedPath[1] === 'A', 'Hop reversed: now travelling B→A');
+    assert(Math.abs(fleet.transitProgress - (1 - progressBefore)) < 1e-9, 'Hop progress inverted so map position is continuous');
+
+    // Reversal must arrive MUCH sooner than a full hop would take.
+    const hopSecondsApprox = (1 / (10 * 1.0)) * 3600 / TRAVEL_SPEED_MULTIPLIER; // base hyperlane hop
+    assert(fleet.etaSeconds < hopSecondsApprox * 0.5, `ETA reflects the short backtrack (${Math.round(fleet.etaSeconds)}s)`);
+
+    let ticks = 0;
+    while (fleet.destinationSystemId && ticks < 2000) { fleet = advanceFleet(fleet, 15, world); ticks++; }
+    assert(fleet.currentSystemId === 'A', 'Fleet arrived back at A quickly');
+});
+
+suite('MovementService.changeFleetCourse — presses on when forward is faster', () => {
+    const world = makeWorldState();
+    let fleet = world.fleets.get('fleet-1')!;
+
+    // Depart A heading for E; get 10% of the journey done (still in hop A→B).
+    fleet = issueMoveOrder(fleet, 'E', 'hyperlane', world);
+    fleet = advanceFleet(fleet, fleet.etaSeconds * 0.1, world);
+    assert(fleet.currentSystemId === null, 'Fleet is mid-transit');
+
+    // Redirect to G (B-F-G branch). Forward via B (0.9 + 2 hops) beats turning
+    // around via A (0.1 + 3 hops) — the fleet should finish the current hop.
+    fleet = changeFleetCourse(fleet, 'G', 'hyperlane', world);
+    assert(fleet.destinationSystemId === 'G', 'Destination retargeted to G');
+    assert(fleet.plannedPath[0] === 'A' && fleet.plannedPath[1] === 'B', 'Current hop A→B kept');
+    assert(fleet.plannedPath[fleet.plannedPath.length - 1] === 'G', 'Route ends at G');
+});
+
 suite('MovementService.weaponizeInfra — blockade', () => {
     const world = makeWorldState();
     let emitted = false;

@@ -16,6 +16,8 @@ interface SystemNodeProps {
     onSelect: (id: string) => void;
     /** Right-click: issue an order targeting this system (e.g. fleet move). */
     onOrder?: (id: string) => void;
+    /** A friendly fleet is selected — this system is a valid move target. */
+    targeting?: boolean;
     isCapital: boolean;
     ownerColor: string;
     relationship: Relationship | null;
@@ -25,7 +27,7 @@ interface SystemNodeProps {
 
 const SystemNode = memo(({
     sys, px, isSelected, revealStage, styles, contested, isMobile, hexPoints, onSelect, onOrder,
-    isCapital, ownerColor, relationship, activeOverlay, showLabel,
+    targeting, isCapital, ownerColor, relationship, activeOverlay, showLabel,
 }: SystemNodeProps) => {
     const isOwned = !!sys.ownerId;
     // The star AND its ownership/borders are common knowledge (always shown). "contentsKnown"
@@ -55,7 +57,7 @@ const SystemNode = memo(({
                 e.stopPropagation();
                 (onOrder ?? onSelect)(sys.id);
             }}
-            style={{ cursor: 'pointer', opacity: groupOpacity }}
+            style={{ cursor: targeting ? 'crosshair' : 'pointer', opacity: groupOpacity }}
         >
             {/* Territory tint + click target (owner tint only when scanned) */}
             <polygon
@@ -193,6 +195,7 @@ const SystemNode = memo(({
         prev.px.x === next.px.x &&
         prev.px.y === next.px.y &&
         prev.isSelected === next.isSelected &&
+        prev.targeting === next.targeting &&
         prev.revealStage === next.revealStage &&
         prev.contested === next.contested &&
         prev.isMobile === next.isMobile &&

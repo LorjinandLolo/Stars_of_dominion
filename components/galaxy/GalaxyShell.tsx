@@ -14,6 +14,7 @@ import { Activity } from 'lucide-react';
 import SystemNode from './SystemNode';
 import StellarPhenomenon, { hasPhenomenon } from './StellarPhenomenon';
 import { STAR_CLASSES, factionColor } from './starVisuals';
+import { formatFleetEta } from '@/lib/movement/eta';
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
@@ -288,6 +289,30 @@ export default function GalaxyShell() {
         }
     }, [setSelectedSystem]);
 
+    // ── Movement-order feedback ───────────────────────────────────────────────
+    // 1Hz clock so ETA countdowns tick between the ~5s authoritative snapshots.
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowMs(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    // When a fresh snapshot lands, restart the countdown baseline.
+    const fleetsReceivedAt = useRef(Date.now());
+    useEffect(() => { fleetsReceivedAt.current = Date.now(); }, [fleets]);
+    const etaElapsedMs = nowMs - fleetsReceivedAt.current;
+
+    // EaW-style order confirmation ping at the target system.
+    const [orderPings, setOrderPings] = useState<Array<{ key: number; x: number; y: number }>>([]);
+    const pingKey = useRef(0);
+    const spawnOrderPing = useCallback((systemId: string) => {
+        const sys = useUIStore.getState().systems.find((s: any) => s.id === systemId);
+        if (!sys) return;
+        const px = hexToPixel(sys.q, sys.r);
+        const key = ++pingKey.current;
+        setOrderPings(p => [...p, { key, x: px.x, y: px.y }]);
+        setTimeout(() => setOrderPings(p => p.filter(q => q.key !== key)), 1500);
+    }, []);
+
     // Right-click a system: if one of YOUR fleets is selected, order it there
     // directly (RTS-style). Otherwise behaves like a normal select.
     const handleOrderToSystem = useCallback((systemId: string) => {
@@ -308,11 +333,12 @@ export default function GalaxyShell() {
                 payload: { fleetId: fleet.id, destinationId: systemId },
                 label: `Fleet en route to ${sysName}`,
             });
+            spawnOrderPing(systemId);
         } else {
             const currentSelected = useUIStore.getState().selectedSystemId;
             setSelectedSystem(currentSelected === systemId ? null : systemId);
         }
-    }, [setSelectedSystem]);
+    }, [setSelectedSystem, spawnOrderPing]);
 
     const handleWheel = (e: React.WheelEvent) => {
         setZoom((z) => Math.min(8, Math.max(0.4, z * (e.deltaY < 0 ? 1.1 : 0.9))));
@@ -334,10 +360,15 @@ export default function GalaxyShell() {
     const playerFaction = factions[playerState.factionId || ''];
     const reserves = playerFaction?.reserves || {};
 
+    // With one of your fleets selected, the map is a targeting surface —
+    // crosshair cursor signals "right-click to issue a move order" (EaW-style).
+    const selectedFleetObj = fleets.find((f: any) => f.id === selectedFleetId);
+    const targetingMode = !!selectedFleetObj && selectedFleetObj.factionId === playerFactionId;
+
     return (
         <div
             className="relative w-full h-full overflow-hidden bg-slate-950 select-none nebula-bg"
-            style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+            style={{ cursor: dragging ? 'grabbing' : targetingMode ? 'crosshair' : 'grab' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={() => setDragging(false)}
@@ -500,6 +531,7 @@ export default function GalaxyShell() {
                             hexPoints={HEX_POINTS}
                             onSelect={handleSelectSystem}
                             onOrder={handleOrderToSystem}
+                            targeting={targetingMode}
                             isCapital={capitalSet.has(sys.id)}
                             ownerColor={factionColor(sys.ownerId)}
                             relationship={sys.ownerId
@@ -611,21 +643,38 @@ export default function GalaxyShell() {
                                         <animate attributeName="stroke-dashoffset" from="6" to="0" dur="0.8s" repeatCount="indefinite" />
                                     </polyline>
                                 )}
-                                {/* Destination marker */}
-                                {routePoints.length >= 2 && (
-                                    <circle
-                                        cx={routePoints[routePoints.length - 1].x}
-                                        cy={routePoints[routePoints.length - 1].y}
-                                        r={4.5}
+                                {/* Waypoint diamonds along the remaining route */}
+                                {routePoints.length > 2 && routePoints.slice(1, -1).map((p, i) => (
+                                    <polygon
+                                        key={`wp-${i}`}
+                                        points={`${p.x},${p.y - 2} ${p.x + 2},${p.y} ${p.x},${p.y + 2} ${p.x - 2},${p.y}`}
                                         fill="none"
                                         stroke={isSelected ? '#a5b4fc' : color}
-                                        strokeWidth={0.7}
-                                        strokeDasharray="2 2"
-                                        opacity={0.6}
+                                        strokeWidth={0.6}
+                                        opacity={0.65}
                                         pointerEvents="none"
-                                        className="gx-spin-slow"
                                     />
-                                )}
+                                ))}
+                                {/* Destination reticle — rotating ring + corner ticks (EaW target feel) */}
+                                {routePoints.length >= 2 && (() => {
+                                    const dest = routePoints[routePoints.length - 1];
+                                    const rc = isSelected ? '#a5b4fc' : color;
+                                    return (
+                                        <g transform={`translate(${dest.x}, ${dest.y})`} pointerEvents="none">
+                                            <circle
+                                                r={4.5} fill="none" stroke={rc} strokeWidth={0.7}
+                                                strokeDasharray="2 2" opacity={0.7} className="gx-spin-slow"
+                                            />
+                                            <path
+                                                d="M -7 0 H -5 M 5 0 H 7 M 0 -7 V -5 M 0 5 V 7"
+                                                stroke={rc} strokeWidth={0.8} opacity={0.8}
+                                            />
+                                            {isSelected && (
+                                                <circle r={4.5} fill="none" stroke={rc} strokeWidth={0.6} className="gx-pulse-ring" />
+                                            )}
+                                        </g>
+                                    );
+                                })()}
                                 <g
                                     style={{
                                         // Style-based transform so it can be CSS-transitioned:
@@ -667,11 +716,39 @@ export default function GalaxyShell() {
                                         filter="url(#hex-glow)"
                                     />
                                 </g>
+                                {/* ETA countdown — rides with the ship, ticks every second */}
+                                {!fleet.currentSystemId && (isMine || isSelected) && (() => {
+                                    const eta = formatFleetEta(fleet.etaSeconds, etaElapsedMs);
+                                    if (!eta) return null;
+                                    return (
+                                        <text
+                                            y={-9}
+                                            textAnchor="middle"
+                                            fontSize={4.5}
+                                            fontFamily="monospace"
+                                            fill={isSelected ? '#c7d2fe' : '#94a3b8'}
+                                            style={{ paintOrder: 'stroke', stroke: '#020617', strokeWidth: 0.7 }}
+                                            pointerEvents="none"
+                                        >
+                                            {eta}
+                                        </text>
+                                    );
+                                })()}
                                 </g>
                             </g>
                         );
                     });
                 })()}
+
+                {/* Move-order confirmation pings (EaW-style green pulse at target) */}
+                {orderPings.map(ping => (
+                    <g key={ping.key} transform={`translate(${ping.x}, ${ping.y})`} pointerEvents="none">
+                        <circle r={5} fill="none" stroke="#34d399" strokeWidth={1.2} className="gx-order-ping" />
+                        <circle r={5} fill="none" stroke="#6ee7b7" strokeWidth={0.7} className="gx-order-ping gx-order-ping-late" />
+                        <path d="M -6 0 H -3.5 M 3.5 0 H 6 M 0 -6 V -3.5 M 0 3.5 V 6"
+                            stroke="#34d399" strokeWidth={1} className="gx-order-ping-cross" />
+                    </g>
+                ))}
             </svg>
 
             <style>{`
@@ -714,6 +791,24 @@ export default function GalaxyShell() {
 
                 @keyframes gx-lane-flow { to { stroke-dashoffset: -10; } }
                 .gx-lane-flow { animation: gx-lane-flow 1.1s linear infinite; }
+
+                /* Move-order confirmation ping */
+                .gx-order-ping, .gx-order-ping-late, .gx-order-ping-cross {
+                    transform-box: fill-box;
+                    transform-origin: center;
+                }
+                @keyframes gx-order-ping {
+                    0%   { transform: scale(0.4); opacity: 0.9; }
+                    100% { transform: scale(2.6); opacity: 0; }
+                }
+                .gx-order-ping { animation: gx-order-ping 1.4s ease-out forwards; }
+                .gx-order-ping-late { animation-delay: 0.25s; }
+                @keyframes gx-order-ping-cross {
+                    0%   { transform: scale(1.6); opacity: 1; }
+                    60%  { transform: scale(1);   opacity: 0.9; }
+                    100% { transform: scale(1);   opacity: 0; }
+                }
+                .gx-order-ping-cross { animation: gx-order-ping-cross 1.4s ease-out forwards; }
 
                 /* Whole-galaxy tick pulse (~10s, matches the authoritative clock). */
                 .gx-galaxy-pulse { transform-box: view-box; }

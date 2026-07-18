@@ -411,16 +411,43 @@ export function issueMoveOrder(
 }
 
 /**
+ * Cheapest traversable cost for a single directed hop, matching the edge
+ * selection advanceFleet performs each tick (lane edges first, synthesized
+ * deep-space crossing as fallback). Null only if neither endpoint exists.
+ */
+function hopEdgeCost(
+    fromId: string,
+    toId: string,
+    fleet: Fleet,
+    world: MovementWorldState
+): number | null {
+    const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate']);
+    const laneCosts = (adj.get(fromId) ?? [])
+        .filter(e => e.to === toId)
+        .map(e => effectiveEdgeCost(e, fleet, world))
+        .filter(c => Number.isFinite(c) && c > 0);
+    if (laneCosts.length > 0) return Math.min(...laneCosts);
+
+    const secs = deepSpaceHopSeconds(fromId, toId, world);
+    if (secs == null) return null;
+    const cost = effectiveEdgeCost(
+        { from: fromId, to: toId, layer: 'deepSpace' as MovementLayer, baseTravelSeconds: secs },
+        fleet,
+        world
+    );
+    return Number.isFinite(cost) && cost > 0 ? cost : null;
+}
+
+/**
  * Redirect a fleet to a new destination, handling the in-transit case cleanly.
  *
  * A parked fleet (or one with no meaningful hop underway) simply receives a
- * fresh move order. A fleet mid-hop finishes its current hop, then reroutes from
- * that waypoint toward the new target — hop progress and the recorded origin
- * system are preserved, so a subsequent return-to-origin still works.
- *
- * Course-change semantics: we finish the current hop rather than reversing
- * mid-hop. This keeps transit bookkeeping simple (no fractional back-tracking)
- * and matches how the fleet is already committed to the lane it is traversing.
+ * fresh move order. A fleet mid-hop recalculates from its ACTUAL in-flight
+ * position: it compares finishing the current hop and routing onward from the
+ * next waypoint against turning around and routing from the hop it departed,
+ * then commits to whichever total journey is faster. Hop progress is carried
+ * over (inverted when reversing, so the map position stays continuous) and the
+ * recorded origin system is preserved for return-to-origin.
  */
 export function changeFleetCourse(
     fleet: Fleet,
@@ -435,6 +462,12 @@ export function changeFleetCourse(
 
     const hopFrom = fleet.plannedPath[0];
     const hopTo = fleet.plannedPath[1];
+    const progress = Math.min(1, Math.max(0, fleet.transitProgress ?? 0));
+
+    // Time to finish the current hop, and to backtrack it (the reverse edge can
+    // differ — one-way lanes fall back to a deep-space crossing).
+    const forwardHopCost = hopEdgeCost(hopFrom, hopTo, fleet, world);
+    const reverseHopCost = hopEdgeCost(hopTo, hopFrom, fleet, world);
 
     // New target IS the next waypoint — just truncate the route there.
     if (hopTo === targetSystemId) {
@@ -442,31 +475,61 @@ export function changeFleetCourse(
             ...fleet,
             destinationSystemId: hopTo,
             plannedPath: [hopFrom, hopTo],
+            etaSeconds: forwardHopCost != null
+                ? (1 - progress) * forwardHopCost
+                : fleet.etaSeconds,
         };
     }
 
-    // Plan the new route from the waypoint the fleet is heading toward.
-    const atWaypoint: Fleet = {
+    const anchoredAt = (systemId: string): Fleet => ({
         ...fleet,
-        currentSystemId: hopTo,
+        currentSystemId: systemId,
         destinationSystemId: null,
         plannedPath: [],
         transitProgress: 0,
-    };
-    const rerouted = issueMoveOrder(atWaypoint, targetSystemId, layer, world);
-    if (!rerouted.destinationSystemId) {
-        // No plottable route from the next waypoint — hold the current course
-        // rather than stranding the fleet with a broken path.
+    });
+
+    // Candidate A — press on: finish the hop toward hopTo, route from there.
+    const forward = issueMoveOrder(anchoredAt(hopTo), targetSystemId, layer, world);
+    const forwardTotal = forward.destinationSystemId && forwardHopCost != null
+        ? (1 - progress) * forwardHopCost + forward.etaSeconds
+        : Infinity;
+
+    // Candidate B — turn around: backtrack to hopFrom, route from there.
+    // (Covers targetSystemId === hopFrom too: the onward route is then empty.)
+    const backward = issueMoveOrder(anchoredAt(hopFrom), targetSystemId, layer, world);
+    const backwardTotal = backward.destinationSystemId && reverseHopCost != null
+        ? progress * reverseHopCost + backward.etaSeconds
+        : Infinity;
+
+    if (!Number.isFinite(forwardTotal) && !Number.isFinite(backwardTotal)) {
+        // No plottable route from either end of the hop — hold the current
+        // course rather than stranding the fleet with a broken path.
         return fleet;
     }
 
+    if (backwardTotal < forwardTotal) {
+        return {
+            ...backward,
+            currentSystemId: null,
+            // backward.plannedPath starts at hopFrom; the hop underway becomes
+            // hopTo→hopFrom with inverted progress, so the interpolated map
+            // position is unchanged at the moment of the turn.
+            plannedPath: [hopTo, ...backward.plannedPath],
+            transitProgress: 1 - progress,
+            activeLayer: fleet.activeLayer,
+            etaSeconds: backwardTotal,
+        };
+    }
+
     return {
-        ...rerouted,
+        ...forward,
         currentSystemId: null,
-        // rerouted.plannedPath starts at hopTo; prepend the hop already in progress.
-        plannedPath: [hopFrom, ...rerouted.plannedPath],
-        transitProgress: fleet.transitProgress,
+        // forward.plannedPath starts at hopTo; prepend the hop already in progress.
+        plannedPath: [hopFrom, ...forward.plannedPath],
+        transitProgress: progress,
         activeLayer: fleet.activeLayer,
+        etaSeconds: forwardTotal,
     };
 }
 
