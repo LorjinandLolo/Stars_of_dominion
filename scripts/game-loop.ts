@@ -2,7 +2,7 @@ import { Client, Databases, Query, ID } from 'node-appwrite';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
-import { advanceFleet, issueMoveOrder, changeFleetCourse } from '../lib/movement/movement-service';
+import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
 import { startOperation } from '../lib/intelligence/intelligence-service';
@@ -449,6 +449,15 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (!fleet) return;
             if (fleet.factionId !== factionId) {
                 console.error(`[Security] Unauthorized MOVE from ${factionId} on fleet ${payload.fleetId} (Owner: ${fleet.factionId})`);
+                return;
+            }
+
+            // Game rule: a fleet needs at least one ship aboard — or an assigned
+            // Admiral — to operate. Empty shells (commission-then-recruit flow)
+            // may exist, but movement orders are rejected. This also covers
+            // return-to-origin, which reuses MIL_MOVE_FLEET.
+            if (!isFleetOperational(fleet)) {
+                recordOrderFailure(world, factionId, actionId, 'Fleet has no ships — recruit units first.');
                 return;
             }
 

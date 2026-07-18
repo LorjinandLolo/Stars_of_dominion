@@ -9,6 +9,7 @@ import { surveySystemAction } from '@/app/actions/exploration';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { isFleetOperational } from '@/lib/movement/movement-service';
 
 
 function StatBar({ value, color }: { value: number; color: string }) {
@@ -781,6 +782,11 @@ export default function SystemContextPanel() {
     const modifiers = calculateBiosphereModifiers(system.tags);
     const hasActiveModifiers = Object.values(modifiers).some(m => m !== 1.0 && m !== undefined);
 
+    // Game rule: an empty fleet (no ships, no Admiral) cannot move — hide the
+    // JUMP TO SYSTEM affordance and point the player at recruitment instead.
+    const selectedFleet = (fleets as any[])?.find((f: any) => f.id === selectedFleetId);
+    const selectedFleetCanMove = !selectedFleet || isFleetOperational(selectedFleet);
+
     // ── Contested system logic ─────────────────────────────────────────────────
     const isContested = system.isContested || [...new Set(planets.map(p => p.ownerId).filter(o => o && o !== 'faction-neutral'))].length > 1;
     const playerOwnedCount = planets.filter(p => p.ownerId === playerFactionId).length;
@@ -1157,17 +1163,26 @@ export default function SystemContextPanel() {
                             {/* Fleet Deploy — move to system (then choose planet from planets tab) */}
                             {selectedFleetId && (
                                 <div className="mt-4 pt-4 border-t border-slate-700/60">
-                                    <p className="text-[10px] text-slate-500 italic mb-2 leading-relaxed">
-                                        Fleet will enter this system. Switch to <span className="text-sky-400 font-bold">PLANETS</span> tab to assign orbital positions.
-                                    </p>
-                                    <button
-                                        disabled={moving}
-                                        onClick={handleMoveFleetToSystem}
-                                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs tracking-wider font-bold transition-all shadow-lg flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <Navigation className="w-4 h-4 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
-                                        {moving ? 'PLOTTING COURSE...' : 'JUMP TO SYSTEM'}
-                                    </button>
+                                    {selectedFleetCanMove ? (
+                                        <>
+                                            <p className="text-[10px] text-slate-500 italic mb-2 leading-relaxed">
+                                                Fleet will enter this system. Switch to <span className="text-sky-400 font-bold">PLANETS</span> tab to assign orbital positions.
+                                            </p>
+                                            <button
+                                                disabled={moving}
+                                                onClick={handleMoveFleetToSystem}
+                                                className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs tracking-wider font-bold transition-all shadow-lg flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                <Navigation className="w-4 h-4 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                                {moving ? 'PLOTTING COURSE...' : 'JUMP TO SYSTEM'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <p className="text-[10px] text-amber-400/80 italic leading-relaxed">
+                                            This fleet has no ships aboard — recruit units into it from a
+                                            planet's <span className="font-bold">UNITS</span> panel before issuing movement orders.
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </>

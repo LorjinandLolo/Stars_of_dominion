@@ -17,6 +17,36 @@ import type {
 import { eventBus } from './event-bus';
 import config from './movement-config.json';
 
+// ─── Travel speed tuning ──────────────────────────────────────────────────────
+
+/**
+ * Playtest tuning knob: uniform travel-speed multiplier. Every hop cost —
+ * hyperlane/trade/corridor/gate edges AND deep-space crossings — is divided by
+ * this in `effectiveEdgeCost`, the single choke point all hop costs flow
+ * through (Dijkstra routing/ETAs and advanceFleet's per-tick progress alike),
+ * so all layers scale identically.
+ *
+ * At 1× a typical hyperlane hop is 360 game-seconds; the worker advances
+ * 15 game-seconds per 5 real seconds (game time = 3× real time), so that is
+ * ~120 real seconds per hop. 4× brings a typical hop to ~30 real seconds.
+ */
+export const TRAVEL_SPEED_MULTIPLIER = 4;
+
+// ─── Fleet operation rule ─────────────────────────────────────────────────────
+
+/**
+ * Game rule: a fleet must contain at least one ship — or have an assigned
+ * Admiral (`leaderId`) — to operate. Empty shells are allowed to EXIST (the
+ * commission-then-recruit flow creates an empty fleet, then ships are
+ * recruited into it) but must not be issued movement orders.
+ */
+export function isFleetOperational(fleet: Pick<Fleet, 'composition' | 'leaderId'>): boolean {
+    if (fleet.leaderId) return true;
+    const comp = fleet.composition;
+    if (!comp || typeof comp !== 'object') return false;
+    return Object.values(comp).some(n => (Number(n) || 0) > 0);
+}
+
 // ─── Layer graph building ──────────────────────────────────────────────────────
 
 type LayerEdge = {
@@ -149,7 +179,9 @@ function effectiveEdgeCost(
         }
     }
 
-    return cost;
+    // Single application point for the global playtest speed knob — both lane
+    // edges and (synthesized) deep-space hops pass through here.
+    return cost / TRAVEL_SPEED_MULTIPLIER;
 }
 
 // ─── Dijkstra across layer graph ──────────────────────────────────────────────
@@ -351,13 +383,16 @@ export function issueMoveOrder(
         if (!from) return fleet;
         const secs = deepSpaceHopSeconds(from, targetSystemId, world);
         if (secs == null) return fleet;
-        console.log(`[Movement] No lane path ${from} → ${targetSystemId}; engaging deep-space drive (${Math.round(secs)}s game-time).`);
+        // Display ETA only — the actual hop cost is scaled once, inside
+        // effectiveEdgeCost, when advanceFleet synthesizes the deep-space edge.
+        const displayEta = secs / TRAVEL_SPEED_MULTIPLIER;
+        console.log(`[Movement] No lane path ${from} → ${targetSystemId}; engaging deep-space drive (${Math.round(displayEta)}s game-time).`);
         return {
             ...fleet,
             plannedPath: [from, targetSystemId],
             destinationSystemId: targetSystemId,
             originSystemId,
-            etaSeconds: secs,
+            etaSeconds: displayEta,
             transitProgress: 0,
             activeLayer: 'deepSpace' as MovementLayer,
             orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
