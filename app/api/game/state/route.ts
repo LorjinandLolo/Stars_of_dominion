@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
-import { getServerClients } from '@/lib/appwrite';
+import { prisma } from '@/lib/db';
 import { deserializeWorld } from '@/lib/persistence/save-service';
 
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-const COLL_SESSIONS = 'multiplayer_sessions';
 const SESSION_DOC_ID = 'default-session';
 
 export async function GET(req: NextRequest) {
     try {
-        const { db } = await getServerClients();
-        
         // 1. Fetch Authoritative Snapshot from DB
-        const doc: any = await db.getDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID);
+        const doc = await prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID } });
         if (!doc || !doc.snapshot) {
             throw new Error('No active game session found in database.');
         }

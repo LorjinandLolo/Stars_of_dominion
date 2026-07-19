@@ -1,4 +1,3 @@
-import { Client, Databases, Query, ID } from 'node-appwrite';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
@@ -25,28 +24,136 @@ import { advanceSorties } from '../lib/combat/air-mission-service';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
 
-// Ensure environment variables are loaded
+// Ensure environment variables are loaded BEFORE the db module reads them.
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-const COLL_SESSIONS = 'multiplayer_sessions';
-const COLL_ORDERS = 'game_orders';
+// Imported dynamically-after-dotenv would be cleaner, but lib/db reads
+// DATABASE_URL lazily on first query, so a static import is safe here.
+import { prisma } from '../lib/db';
+
 const SESSION_DOC_ID = 'default-session';
 
 const POLL_INTERVAL_MS = 5000; // Run every 5 seconds
-const TIME_STEP_SECONDS = 15;  // 15 seconds of game time per real tick
+// Game clock: 75 game-seconds per 5s tick (15x real time). This used to be a
+// 15s advance at the top of the tick plus a hidden extra 60s right before the
+// save ("demo speed") — consolidated here so the speed is stated exactly once.
+const TIME_STEP_SECONDS = 75;
+// Fleet physics keep the old top-of-tick 15s step: raising this to
+// TIME_STEP_SECONDS would make every fleet arrive 5x sooner and change pacing.
+const FLEET_STEP_SECONDS = 15;
 
-const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || '')
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '')
-    .setKey(process.env.APPWRITE_API_KEY || '');
+// The full-world snapshot is only written every Nth tick (30s), or immediately
+// on any tick that processed player orders or ran a strategic tick. Faction
+// shards are dirty-checked every tick and written only when changed.
+const SNAPSHOT_SAVE_EVERY_TICKS = 6;
 
-const db = new Databases(client);
+// Worker lease (split-brain guard). The world now lives in worker memory
+// between ticks, so two workers pointed at the same database would silently
+// corrupt state racing each other's saves — a second worker must refuse to
+// start while another holds the lease. The lease is a tiny extra doc in the
+// sessions collection (reusing its existing `snapshot` attribute), so no
+// schema change is needed and clients never see it (they subscribe to the
+// session document channel, not the collection).
+const LEASE_DOC_ID = 'worker-lease';
+const LEASE_TTL_MS = 15 * 60 * 1000;
+const LEASE_RENEW_INTERVAL_MS = 5 * 60 * 1000;
+const WORKER_ID = `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 // Overlap guard: a cycle that takes longer than POLL_INTERVAL_MS (big snapshot
 // serialize, slow network) used to overlap the next setInterval firing — two
 // concurrent cycles double-advancing time and racing each other's saves.
 let cycleInProgress = false;
+
+// In-memory authoritative world. Loaded once, mutated in place every tick;
+// re-loaded from the last saved snapshot only after an error leaves it suspect.
+let cachedWorld: GameWorldState | null = null;
+let tickCounter = 0;
+let lastLeaseRenewal = 0;
+
+// Dirty-tracking: last serialized strings actually written to the database.
+// Writes are skipped while the serialized form is unchanged.
+let lastSnapshotKey = '';
+const lastShardSaved = new Map<string, string>();
+
+// Order-queue polling backs off to every 4th tick (20s) once the queue has
+// been empty for ~2 minutes; any order found snaps it back to every tick.
+const IDLE_ORDER_POLL_EVERY = 4;
+const IDLE_ORDER_POLL_AFTER_EMPTY = 24;
+let emptyOrderPolls = 0;
+let orderPollSkip = 0;
+
+/**
+ * Loads the authoritative world from the session snapshot + faction shards
+ * and normalizes legacy data. Called once at startup and after any tick error.
+ */
+async function loadWorld(): Promise<GameWorldState> {
+    const doc = await prisma.multiplayerSession.findUniqueOrThrow({ where: { id: SESSION_DOC_ID } });
+    const world = deserializeWorld(doc.snapshot);
+
+    // Phase 4: Reconstruct World from Shards
+    try {
+        const factionDocs = await prisma.gameFactionShard.findMany({ take: 50 });
+        for (const fDoc of factionDocs) {
+            injectFactionShard(world, fDoc.data);
+        }
+    } catch (err) {
+        console.log('[Tick Worker] Could not load game_factions shards, proceeding with main session.');
+    }
+
+    // Ensure collections required for combat exist (for 1.0 migration)
+    if (!world.activeCombats) world.activeCombats = new Map();
+    if (!world.rivalries) world.rivalries = new Map();
+    if (!world.movement.sorties) world.movement.sorties = new Map();
+
+    // Normalize snapshot data: systems saved by older snapshots can be missing
+    // array fields, which crashes tick steps that iterate them
+    // (`hyperlaneNeighbors is not iterable`, `tags.includes` throws, etc.).
+    for (const sys of world.movement.systems.values()) {
+        if (!Array.isArray((sys as any).hyperlaneNeighbors)) (sys as any).hyperlaneNeighbors = [];
+        if (!Array.isArray((sys as any).tags)) (sys as any).tags = [];
+    }
+
+    return world;
+}
+
+/**
+ * Acquires or renews the worker lease. Returns false if another live worker
+ * holds it. Read-then-write, so a narrow race window exists — this guards the
+ * realistic failure mode (a forgotten worker on another machine), not
+ * adversarial concurrency.
+ */
+async function acquireLease(): Promise<boolean> {
+    const now = Date.now();
+    const leasePayload = {
+        snapshot: JSON.stringify({ holderId: WORKER_ID, expiresAt: now + LEASE_TTL_MS }),
+        lastTickAt: new Date(now).toISOString(),
+    };
+    const doc = await prisma.multiplayerSession.findUnique({ where: { id: LEASE_DOC_ID } });
+    if (!doc) {
+        await prisma.multiplayerSession.create({ data: { id: LEASE_DOC_ID, ...leasePayload } });
+        lastLeaseRenewal = now;
+        return true;
+    }
+    let holder: { holderId: string; expiresAt: number } | null = null;
+    try { holder = JSON.parse(doc.snapshot); } catch { holder = null; }
+    if (holder && holder.holderId !== WORKER_ID && holder.expiresAt > now) return false;
+    await prisma.multiplayerSession.update({ where: { id: LEASE_DOC_ID }, data: leasePayload });
+    lastLeaseRenewal = now;
+    return true;
+}
+
+/** Marks the lease expired so a replacement worker can start immediately. */
+async function releaseLease(): Promise<void> {
+    try {
+        await prisma.multiplayerSession.update({
+            where: { id: LEASE_DOC_ID },
+            data: {
+                snapshot: JSON.stringify({ holderId: WORKER_ID, expiresAt: 0 }),
+                lastTickAt: new Date().toISOString(),
+            },
+        });
+    } catch { /* best effort */ }
+}
 
 async function runGameTick() {
     if (cycleInProgress) {
@@ -54,68 +161,45 @@ async function runGameTick() {
         return;
     }
     cycleInProgress = true;
-    console.log(`\n[Tick Worker] Starting Cycle at ${new Date().toLocaleTimeString()}...`);
 
     try {
-        // 1. Load authoritative session
-        const doc: any = await db.getDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID);
-        const world = deserializeWorld(doc.snapshot);
-
-        // Phase 4: Reconstruct World from Shards
-        try {
-            const factionDocs = await db.listDocuments(DB_ID, 'game_factions', [Query.limit(50)]);
-            for (const fDoc of factionDocs.documents) {
-                injectFactionShard(world, fDoc.data);
+        // Lease renewal — 2 tiny ops per 5 minutes. If another worker has taken
+        // over (our lease expired while this process was suspended), stop
+        // rather than fight over the world.
+        if (Date.now() - lastLeaseRenewal > LEASE_RENEW_INTERVAL_MS) {
+            if (!(await acquireLease())) {
+                console.error('[Tick Worker] Lost the worker lease to another process — shutting down.');
+                process.exit(1);
             }
-        } catch (err) {
-            console.log('[Tick Worker] Could not load game_factions shards, proceeding with main session.');
         }
 
-        // Ensure collections required for combat exist (for 1.0 migration)
-        if (!world.activeCombats) world.activeCombats = new Map();
-        if (!world.rivalries) world.rivalries = new Map();
-        if (!world.movement.sorties) world.movement.sorties = new Map();
-
-        // Normalize snapshot data: systems saved by older snapshots can be missing
-        // array fields, which crashes tick steps that iterate them
-        // (`hyperlaneNeighbors is not iterable`, `tags.includes` throws, etc.).
-        for (const sys of world.movement.systems.values()) {
-            if (!Array.isArray((sys as any).hyperlaneNeighbors)) (sys as any).hyperlaneNeighbors = [];
-            if (!Array.isArray((sys as any).tags)) (sys as any).tags = [];
-        }
+        // 1. Authoritative world lives in memory across ticks. The worker is
+        // the only writer, so re-reading its own writes every 5s (session doc
+        // + all faction shards, ~35k reads/day) was pure waste.
+        if (!cachedWorld) cachedWorld = await loadWorld();
+        let world = cachedWorld;
+        tickCounter++;
 
         // 2. Advance Simulation Time
         const oldNow = world.nowSeconds;
         world.nowSeconds += TIME_STEP_SECONDS;
 
-        // 3. Process Pending Player Orders
-        // Filter server-side on processed=false. The old client-side filter over the
-        // first 50 docs meant that once 50+ processed orders accumulated, NEW orders
-        // never fit in the window and the queue silently starved forever.
-        // If the live collection is missing the `processed` attribute (schema drift),
-        // fall back to an unfiltered scan instead of crash-looping — safe, because
-        // executed orders are deleted, so the queue can no longer starve.
-        let allOrders;
-        try {
-            allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
-                Query.equal('processed', false),
-                Query.orderAsc('$createdAt'),
-                Query.limit(100)
-            ]);
-        } catch (e: any) {
-            if (String(e.message).toLowerCase().includes('processed')) {
-                console.warn('[Tick Worker] "processed" attribute missing in game_orders — using unfiltered scan.');
-                console.warn('[Tick Worker] Fix permanently with:  node scripts/fix-orders-schema.mjs');
-                allOrders = await db.listDocuments(DB_ID, COLL_ORDERS, [
-                    Query.orderAsc('$createdAt'),
-                    Query.limit(100)
-                ]);
-            } else {
-                throw e;
-            }
+        // 3. Process Pending Player Orders (server-side filter on processed=false;
+        // executed orders are deleted, so the queue can never starve).
+        let pendingOrders: any[] = [];
+        if (emptyOrderPolls >= IDLE_ORDER_POLL_AFTER_EMPTY && orderPollSkip < IDLE_ORDER_POLL_EVERY - 1) {
+            // Queue has been empty for ~2 min — back off to a 20s poll cadence.
+            orderPollSkip++;
+        } else {
+            orderPollSkip = 0;
+            pendingOrders = await prisma.gameOrder.findMany({
+                where: { processed: false },
+                orderBy: { createdAt: 'asc' },
+                take: 100,
+            });
+            if (pendingOrders.length > 0) emptyOrderPolls = 0;
+            else emptyOrderPolls++;
         }
-
-        const pendingOrders = allOrders.documents.filter((d: any) => d.processed !== true);
 
         if (pendingOrders.length > 0) {
             console.log(`[Tick Worker] Executing ${pendingOrders.length} player orders...`);
@@ -123,18 +207,18 @@ async function runGameTick() {
                 try {
                     const payload = JSON.parse(orderDoc.payload);
                     executeOrder(world, orderDoc.actionId, payload, orderDoc.factionId);
-                    // Delete on success — keeps the queue collection empty so it can
+                    // Delete on success — keeps the queue table empty so it can
                     // never starve, and avoids unbounded growth.
-                    await db.deleteDocument(DB_ID, COLL_ORDERS, orderDoc.$id);
+                    await prisma.gameOrder.delete({ where: { id: orderDoc.id } });
                 } catch (e) {
-                    console.error(`[Tick Worker] Order ${orderDoc.$id} failed:`, e);
+                    console.error(`[Tick Worker] Order ${orderDoc.id} failed:`, e);
                     // Mark failed orders processed so they aren't retried in a loop.
                     try {
-                        await db.updateDocument(DB_ID, COLL_ORDERS, orderDoc.$id, { processed: true });
+                        await prisma.gameOrder.update({ where: { id: orderDoc.id }, data: { processed: true } });
                     } catch {
-                        // Marking failed (e.g. `processed` attribute missing) — delete
-                        // instead, so a poisoned order can't be retried forever.
-                        try { await db.deleteDocument(DB_ID, COLL_ORDERS, orderDoc.$id); } catch { /* best effort */ }
+                        // Marking failed — delete instead, so a poisoned order
+                        // can't be retried forever.
+                        try { await prisma.gameOrder.delete({ where: { id: orderDoc.id } }); } catch { /* best effort */ }
                     }
                 }
             }
@@ -144,7 +228,7 @@ async function runGameTick() {
         let fleetsMoved = 0;
         for (const [fleetId, fleet] of world.movement.fleets) {
             if (fleet.destinationSystemId) {
-                const updated = advanceFleet(fleet, TIME_STEP_SECONDS, world.movement);
+                const updated = advanceFleet(fleet, FLEET_STEP_SECONDS, world.movement);
                 world.movement.fleets.set(fleetId, updated);
                 fleetsMoved++;
             }
@@ -171,12 +255,21 @@ async function runGameTick() {
         const currentTickWindow = Math.floor(world.nowSeconds / (6 * 3600));
         const lastTickWindow = Math.floor(oldNow / (6 * 3600));
 
-        if (currentTickWindow > lastTickWindow) {
+        const strategicFired = currentTickWindow > lastTickWindow;
+        if (strategicFired) {
             console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
             // CRITICAL: pass `world` — without it the tick processor mutates the
             // worker's local singleton, and every strategic-tick result (economy,
             // research, population...) was thrown away instead of saved/synced.
             await runStrategicTick(new Date(world.nowSeconds * 1000), currentTickWindow, world);
+
+            // Round-trip normalize (~every 24 real minutes): the old code
+            // re-serialized and re-parsed the whole world every tick, which
+            // coerced Dates to ISO strings and dropped undefined fields. Sim
+            // code may rely on that shape, so keep the normalization at
+            // strategic-tick cadence now that the per-tick round-trip is gone.
+            world = deserializeWorld(serializeWorld(world));
+            cachedWorld = world;
         }
 
         // 5.5. Faction Initialization Check (Ensures homeworlds exist for all players)
@@ -295,54 +388,79 @@ async function runGameTick() {
         processSieges(world);
         recalculateSystemControl(world);
         
-        // Finalize state
-        world.nowSeconds += 60; // 1 minute per tick (demo speed)
-        await saveWorldState(world);
+        // Finalize state — persist only what changed. Orders and strategic
+        // ticks save immediately (an executed order's doc is already deleted,
+        // so its effects must not sit unsaved in memory); everything else
+        // batches to the 30s cadence.
+        const forceSave = pendingOrders.length > 0 || strategicFired
+            || (tickCounter % SNAPSHOT_SAVE_EVERY_TICKS === 0);
+        const snapshotSaved = await saveWorldState(world, forceSave);
 
-        // Save Faction Shards
+        // Save Faction Shards — dirty-checked, written only when changed.
         const factionsToSave = new Set([
             ...world.economy.factions.keys(),
             ...world.tech.keys(),
             ...Array.from(world.movement.fleets.values()).map(f => f.factionId)
         ]);
 
+        let shardsWritten = 0;
         for (const fId of factionsToSave) {
             if (!fId || fId === 'faction-neutral') continue;
             const shardStr = extractFactionShard(world, fId);
+            if (lastShardSaved.get(fId) === shardStr) continue;
             try {
-                await db.updateDocument(DB_ID, 'game_factions', fId, {
-                    factionId: fId,
-                    data: shardStr
+                await prisma.gameFactionShard.upsert({
+                    where: { id: fId },
+                    update: { factionId: fId, data: shardStr },
+                    create: { id: fId, factionId: fId, data: shardStr },
                 });
             } catch (e: any) {
-                if (e.code === 404) {
-                    await db.createDocument(DB_ID, 'game_factions', fId, {
-                        factionId: fId,
-                        data: shardStr
-                    });
-                }
+                console.error(`[Tick Worker] Shard save failed for ${fId}:`, e.message);
+                continue; // not recorded as saved — retried next tick
             }
+            lastShardSaved.set(fId, shardStr);
+            shardsWritten++;
         }
 
-        console.log(`[Tick Worker] Cycle Complete. Synced Main + ${factionsToSave.size} Shards.`);
+        // Idle ticks stay silent; log only when something actually happened.
+        if (snapshotSaved || shardsWritten > 0 || pendingOrders.length > 0 || strategicFired) {
+            console.log(`[Tick Worker] Cycle ${tickCounter}: orders=${pendingOrders.length}, snapshot=${snapshotSaved ? 'saved' : 'clean'}, shards=${shardsWritten}/${factionsToSave.size}.`);
+        }
 
     } catch (err: any) {
         console.error('[Tick Worker] Fatal loop error:', err.message);
+        // The in-memory world may be half-mutated or out of sync with the DB —
+        // discard it and reload from the last saved snapshot next tick, and
+        // forget dirty-tracking so everything is re-synced once after reload.
+        cachedWorld = null;
+        lastSnapshotKey = '';
+        lastShardSaved.clear();
     } finally {
         cycleInProgress = false;
     }
 }
 
 /**
- * Re-shards and saves the world state to the cloud.
+ * Persists the world snapshot, skipping the write when nothing but the clock
+ * has moved since the last save. Returns true if a write happened.
+ * `force` gates real changes to the 30s cadence (or order/strategic ticks);
+ * without it, changed state stays in memory until the next cadence tick.
  */
-async function saveWorldState(world: any) {
+async function saveWorldState(world: any, force: boolean): Promise<boolean> {
     const cleanWorld = cleanWorldForSave(world);
     const newSnapshot = serializeWorld(cleanWorld);
-    await db.updateDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID, {
-        snapshot: newSnapshot,
-        lastTickAt: new Date().toISOString()
+    // The clock advances every tick, so it must not count as a "real" change.
+    const comparisonKey = newSnapshot.replace(/"nowSeconds":\d+(\.\d+)?/g, '"nowSeconds":0');
+    if (comparisonKey === lastSnapshotKey || !force) return false;
+    await prisma.multiplayerSession.update({
+        where: { id: SESSION_DOC_ID },
+        data: {
+            snapshot: newSnapshot,
+            lastTickAt: new Date().toISOString()
+        }
     });
+    lastSnapshotKey = comparisonKey;
+    return true;
 }
 
 // ─── Genthouli raiders (hostile NPC battle group) ────────────────────────────
@@ -1641,5 +1759,26 @@ function processSieges(world: GameWorldState) {
 }
 
 // Start
-console.log('[Tick Worker] Galactic Heartbeat Started.');
-setInterval(runGameTick, POLL_INTERVAL_MS);
+async function main() {
+    console.log(`[Tick Worker] Starting (worker id: ${WORKER_ID})...`);
+    if (!(await acquireLease())) {
+        console.error('[Tick Worker] Another worker already holds the lease — refusing to start.');
+        console.error(`[Tick Worker] If no other worker is running, the stale lease expires within ${LEASE_TTL_MS / 60000} minutes.`);
+        process.exit(1);
+    }
+    console.log('[Tick Worker] Galactic Heartbeat Started.');
+    setInterval(runGameTick, POLL_INTERVAL_MS);
+}
+
+// On shutdown, expire the lease so a replacement worker can start immediately.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, () => {
+        console.log(`\n[Tick Worker] ${sig} received — releasing lease...`);
+        releaseLease().finally(() => process.exit(0));
+    });
+}
+
+main().catch((e) => {
+    console.error('[Tick Worker] Startup failed:', e.message);
+    process.exit(1);
+});

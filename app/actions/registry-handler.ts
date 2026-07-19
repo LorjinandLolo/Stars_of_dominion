@@ -22,7 +22,6 @@ export async function executePlayerAction(action: PlayerAction): Promise<ActionR
       actionId: action.actionId,
       payload: action.payload ?? {},
       factionId: action.issuerId,
-      userId: (action as any).userId ?? null,
     });
 
     if (!result.success) {

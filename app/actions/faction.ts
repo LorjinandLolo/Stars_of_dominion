@@ -1,81 +1,60 @@
 'use server';
-import { getServerClients } from '@/lib/appwrite';
-import { ID, Query } from 'node-appwrite';
+import { prisma, withDocAliases } from '@/lib/db';
 import { FactionRole } from '@/types';
 
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-const COLL_FACTIONS = 'factions';
-const COLL_PROFILES = 'user_profiles';
-
 export async function getUserProfile(userId: string) {
-    const { db } = await getServerClients();
-    const res = await db.listDocuments(DB_ID, COLL_PROFILES, [
-        Query.equal('userId', userId)
-    ]);
-    return res.documents[0] || null;
+    const profile = await prisma.userProfile.findUnique({ where: { userId } });
+    return profile ? withDocAliases(profile) : null;
 }
 
 export async function getFactionMembers(factionId: string) {
-    const { db } = await getServerClients();
-    const res = await db.listDocuments(DB_ID, COLL_PROFILES, [
-        Query.equal('factionId', factionId)
-    ]);
-    return res.documents;
+    const members = await prisma.userProfile.findMany({ where: { factionId } });
+    return members.map(withDocAliases);
 }
 
 export async function updateMemberRole(requesterUserId: string, profileId: string, newRole: FactionRole) {
-    const { db } = await getServerClients();
-    
     // Verify requester is Leader
     const requester = await getUserProfile(requesterUserId);
     if (!requester || requester.role !== 'Leader') {
         throw new Error('Unauthorized: Only the faction leader can change roles.');
     }
 
-    const targetProfile = await db.getDocument(DB_ID, COLL_PROFILES, profileId);
+    const targetProfile = await prisma.userProfile.findUniqueOrThrow({ where: { id: profileId } });
     if (targetProfile.factionId !== requester.factionId) {
         throw new Error('Unauthorized: Target is in a different faction.');
     }
 
-    await db.updateDocument(DB_ID, COLL_PROFILES, profileId, {
-        role: newRole
+    await prisma.userProfile.update({
+        where: { id: profileId },
+        data: { role: newRole }
     });
 }
 
 export async function updateFaction(requesterUserId: string, factionId: string, updates: any) {
-    const { db } = await getServerClients();
-    
     // Verify requester is Leader
     const requester = await getUserProfile(requesterUserId);
     if (!requester || requester.factionId !== factionId || requester.role !== 'Leader') {
         throw new Error('Unauthorized: Only the faction leader can modify faction settings.');
     }
 
-    await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, updates);
+    await prisma.faction.update({ where: { id: factionId }, data: updates });
 }
 
 export async function generateInviteCode(factionId: string) {
-    const { db } = await getServerClients();
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-    await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
-        inviteCode: code
+    await prisma.faction.update({
+        where: { id: factionId },
+        data: { inviteCode: code }
     });
     return code;
 }
 
 export async function joinFaction(userId: string, inviteCode: string) {
-    const { db } = await getServerClients();
-
     // 1. Find Faction by Invite Code
-    const factions = await db.listDocuments(DB_ID, COLL_FACTIONS, [
-        Query.equal('inviteCode', inviteCode)
-    ]);
-
-    if (factions.total === 0) {
+    const faction = await prisma.faction.findFirst({ where: { inviteCode } });
+    if (!faction) {
         throw new Error('Invalid invite code');
     }
-
-    const faction = factions.documents[0];
 
     // 2. Check if user already has a profile
     const existing = await getUserProfile(userId);
@@ -84,35 +63,39 @@ export async function joinFaction(userId: string, inviteCode: string) {
     }
 
     // 3. Create User Profile
-    await db.createDocument(DB_ID, COLL_PROFILES, ID.unique(), {
-        userId,
-        factionId: faction.$id,
-        role: 'Citizen',
-        permissions: JSON.stringify([])
+    await prisma.userProfile.create({
+        data: {
+            userId,
+            factionId: faction.id,
+            role: 'Citizen',
+            permissions: JSON.stringify([])
+        }
     });
 
-    return faction;
+    return withDocAliases(faction);
 }
 
 export async function createFactionWithLeader(userId: string, factionName: string) {
-    const { db } = await getServerClients();
-
     // 1. Create Faction
-    const faction = await db.createDocument(DB_ID, COLL_FACTIONS, ID.unique(), {
-        name: factionName,
-        resources: JSON.stringify({ economic: 100, military: 10, intel: 5 }),
-        traits: JSON.stringify({}),
-        inviteCode: Math.random().toString(36).substring(2, 10).toUpperCase(),
-        governmentType: 'Democracy'
+    const faction = await prisma.faction.create({
+        data: {
+            name: factionName,
+            resources: JSON.stringify({ economic: 100, military: 10, intel: 5 }),
+            traits: JSON.stringify({}),
+            inviteCode: Math.random().toString(36).substring(2, 10).toUpperCase(),
+            governmentType: 'Democracy'
+        }
     });
 
     // 2. Create Leader Profile
-    await db.createDocument(DB_ID, COLL_PROFILES, ID.unique(), {
-        userId,
-        factionId: faction.$id,
-        role: 'Leader',
-        permissions: JSON.stringify(['all'])
+    await prisma.userProfile.create({
+        data: {
+            userId,
+            factionId: faction.id,
+            role: 'Leader',
+            permissions: JSON.stringify(['all'])
+        }
     });
 
-    return faction;
+    return withDocAliases(faction);
 }

@@ -1,36 +1,44 @@
 # 🌌 Stars of Dominion
 
-**Stars of Dominion** is a space-themed grand strategy game built with **Next.js** and **Appwrite**. Command your faction, manage your government, and navigate interstellar crises in a galaxy full of intrigue and danger.
+**Stars of Dominion** is a space-themed grand strategy game built with **Next.js** and **PostgreSQL**. Command your faction, manage your government, and navigate interstellar crises in a galaxy full of intrigue and danger.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-1. **Create Appwrite project** and a **Database** with id `game` (or change `DB_ID` in code).
-2. Create collections:
-   - `world_state` (attributes: `day:int`, `resources:json`)
-   - `events` (attributes as in `appwrite/collections.json`)
-   - `gazettes` (attributes in `collections.json`)
-3. Create a document in `world_state` with `day=1` and resources JSON.
-4. Copy `.env.example` to `.env.local` and fill values:
+1. **Docker Desktop** (runs the PostgreSQL database) and **Node.js 22+**.
+2. Copy `.env.local` values (or create it) with at least:
    ```text
-   NEXT_PUBLIC_APPWRITE_ENDPOINT=...
-   NEXT_PUBLIC_APPWRITE_PROJECT=...
-   APPWRITE_API_KEY=...
+   DATABASE_URL="postgresql://stars:dominion@localhost:5433/stars_dominion"
+   BETTER_AUTH_SECRET=<any long random string>
+   BETTER_AUTH_URL=http://localhost:3000
    GAZETTE_WINDOW_DAYS=2
    ```
 
 ### Installation
-1. **Install Dependencies**:
+1. **Install dependencies**:
    ```bash
    npm install
    ```
 
-2. **Run Development Server**:
+2. **Start the database and apply migrations**:
    ```bash
-   npm run dev
+   npm run db:up
+   npm run db:migrate
    ```
 
-3. **Open the Game**:
+3. **Seed the game world and dev accounts**:
+   ```bash
+   npx tsx scripts/push-init-state.ts
+   npm run setup:duel
+   ```
+
+4. **Run the game** (two terminals):
+   ```bash
+   npm run dev      # the website
+   npm run worker   # the game engine (required)
+   ```
+
+5. **Open the Game**:
    Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 🎮 Gameplay Features
@@ -41,11 +49,11 @@
 - **Advanced Simulation**: Detailed buildings, propaganda, and societal development mechanics.
 
 ## 🛠️ Project Tools
-- **Import events**: 
+- **Import events**:
   ```bash
-  APPWRITE_API_KEY=... npm run import:data -- data/events.json
+  npm run import:data -- data/events.json
   ```
-- **Functions**: Deploy `advanceDay` and `resolveEvent` in Appwrite Console (Node 18+).
+- **Inspect the database**: `npm run db:studio` (Prisma Studio).
 
 ---
 

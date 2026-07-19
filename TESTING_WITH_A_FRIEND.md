@@ -22,15 +22,15 @@ npm run setup:duel
 
 Re-run this any time you want to reset the two dev claims.
 
-**2. Allow your friend's browser to talk to Appwrite (important!):**
+**2. Start the database (once per boot):**
 
-Your friend's browser connects directly to Appwrite Cloud, which blocks
-unknown websites (CORS). In the [Appwrite Console](https://cloud.appwrite.io):
+```
+docker compose up -d
+```
 
-- Open your project → **Settings** → **Platforms** → **Add platform** → **Web app**
-- Hostname: `*`  (a wildcard — fine for development, tighten before launch)
-
-Without this, your friend sees a login screen that silently fails.
+Everything (game state, accounts, sessions) lives in this local PostgreSQL
+container — your friend's browser only ever talks to YOUR computer, so there
+is no cloud console or CORS setup anymore.
 
 ---
 
@@ -101,7 +101,7 @@ one-time setup step 2 covers the tunnel domain too.
 
 | Symptom | Fix |
 |---|---|
-| Friend's page loads but login fails / hangs | CORS: add the `*` Web platform in Appwrite Console (one-time setup step 2) |
+| Friend's page loads but login fails / hangs | Database not running (`docker compose up -d`), or restart `npm run dev:lan` |
 | "Faction already claimed by another player" | `npm run setup:duel` to reset the dev claims |
 | Orders stuck on "syncing", nothing happens | The worker isn't running — start `npm run worker` |
 | Friend can't reach your IP at all | Windows Firewall (allow Node.js), or you're on different networks — use the tunnel instead |

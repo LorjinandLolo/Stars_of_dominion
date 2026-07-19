@@ -1,24 +1,9 @@
-import { Client, Databases, Query } from 'node-appwrite';
+import { prisma } from '@/lib/db';
 import { calculateIncome, applyTimeDelta, EconomyPlanet, getNetIncome } from './calculations';
 import { getAllActiveRoutes } from './trade';
 import { getActiveCrises } from './crisis';
 import { calculateTotalUpkeep, checkEconomicHealth } from './upkeep';
 import { ResourceId, EconomyState, Entity } from '@/types';
-
-// Initialize Appwrite (Server-side) safely and lazily
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-
-function getDb(): Databases {
-    const client = new Client()
-        .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'http://localhost/v1')
-        .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT || process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '')
-        .setKey(process.env.APPWRITE_API_KEY || '');
-    return new Databases(client);
-}
-const COLL_FACTIONS = 'factions';
-const COLL_PLANETS = 'planets';
-const COLL_ARMIES = 'armies';
-const COLL_SHIPS = 'ships';
 
 /**
  * The Main Loop of the Lazy Economy.
@@ -26,7 +11,7 @@ const COLL_SHIPS = 'ships';
  */
 export async function updateEconomy(factionId: string): Promise<EconomyState> {
     // 1. Fetch Faction Data
-    const faction: any = await getDb().getDocument(DB_ID, COLL_FACTIONS, factionId);
+    const faction: any = await prisma.faction.findUniqueOrThrow({ where: { id: factionId } });
 
     // Parse JSON fields
     let resources: any = { metals: 0, chemicals: 0, food: 0, happiness: 50, credits: 0 };
@@ -67,42 +52,42 @@ export async function updateEconomy(factionId: string): Promise<EconomyState> {
 
     // 2. Fetch Assets for Upkeep
     // Planets
-    const planets = await getDb().listDocuments(DB_ID, COLL_PLANETS, [
-        Query.equal('owner_faction_id', factionId),
-        Query.limit(100)
-    ]);
-    const economyPlanets: EconomyPlanet[] = planets.documents.map((p: any) => ({
-        $id: p.$id,
+    const planets = await prisma.planet.findMany({
+        where: { owner_faction_id: factionId },
+        take: 100,
+    });
+    const economyPlanets: EconomyPlanet[] = planets.map((p: any) => ({
+        $id: p.id,
         name: p.name,
         type: p.type || 'terran',
         buildings: p.buildings ? JSON.parse(p.buildings) : {}
     }));
 
     // Armies
-    const armies = await getDb().listDocuments(DB_ID, COLL_ARMIES, [
-        Query.equal('faction_id', factionId),
-        Query.limit(100)
-    ]);
+    const armies = await prisma.army.findMany({
+        where: { faction_id: factionId },
+        take: 100,
+    });
 
     // Ships
-    const ships = await getDb().listDocuments(DB_ID, COLL_SHIPS, [
-        Query.equal('faction_id', factionId),
-        Query.limit(100)
-    ]).catch(() => ({ documents: [] })); // Fallback if collection isn't created yet
+    const ships = await prisma.ship.findMany({
+        where: { faction_id: factionId },
+        take: 100,
+    });
 
     // Convert to Entities for Upkeep
     const entities: Entity[] = [
-        ...armies.documents.map(a => ({
+        ...armies.map(a => ({
             type: 'army',
-            id: a.$id,
+            id: a.id,
             sectorId: '', // Not needed for upkeep
             x: 0,
             y: 0
         } as Entity)),
-        ...ships.documents.map(s => ({
+        ...ships.map(s => ({
             type: 'ship',
-            id: s.$id,
-            sectorId: '', 
+            id: s.id,
+            sectorId: '',
             x: 0,
             y: 0
         } as Entity)),
@@ -148,17 +133,21 @@ export async function updateEconomy(factionId: string): Promise<EconomyState> {
         newResources._health = economicHealth;
 
         // 5. Save to DB
-        await getDb().updateDocument(DB_ID, COLL_FACTIONS, factionId, {
-            resources: JSON.stringify(newResources),
-            income_rates: JSON.stringify(newRates),
-            economy_last_updated: now.toISOString()
+        await prisma.faction.update({
+            where: { id: factionId },
+            data: {
+                resources: JSON.stringify(newResources),
+                income_rates: JSON.stringify(newRates),
+                economy_last_updated: now.toISOString()
+            }
         });
     } else {
         // Just update rates if time hasn't passed significant amount
         // But still verify health status?
         if (JSON.stringify(rates) !== JSON.stringify(newRates)) {
-            await getDb().updateDocument(DB_ID, COLL_FACTIONS, factionId, {
-                income_rates: JSON.stringify(newRates)
+            await prisma.faction.update({
+                where: { id: factionId },
+                data: { income_rates: JSON.stringify(newRates) }
             });
         }
     }
@@ -168,6 +157,7 @@ export async function updateEconomy(factionId: string): Promise<EconomyState> {
     // Or just let it be there.
     return {
         ...faction,
+        $id: faction.id,
         resources: newResources,
         income_rates: newRates, // Return object, not string
         economy_last_updated: now.toISOString(),

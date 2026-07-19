@@ -4,7 +4,7 @@ import { getEconomyState } from '@/lib/economy/economy-service';
 import { Resource, PriceFormula, PolicyRule } from '@/lib/trade-system/types';
 import { revalidatePath } from 'next/cache';
 import { executePlayerAction } from './registry-handler';
-import { getServerClients } from '@/lib/appwrite';
+import { prisma } from '@/lib/db';
 
 /**
  * Propose or update a trade agreement between two factions.
@@ -119,14 +119,10 @@ export async function awardStrategicBonusAction(
     credits: number = 0,
     influence: number = 0
 ) {
-    const { db } = await getServerClients();
-    const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-    const COLL_FACTIONS = 'factions';
-
     try {
-        const factionDoc = await db.getDocument(DB_ID, COLL_FACTIONS, factionId);
+        const factionDoc = await prisma.faction.findUniqueOrThrow({ where: { id: factionId } });
         const resources = factionDoc.resources ? JSON.parse(factionDoc.resources) : {};
-        
+
         if (credits > 0) {
             resources.credits = (resources.credits || 0) + credits;
         }
@@ -134,8 +130,9 @@ export async function awardStrategicBonusAction(
             resources.influence = (resources.influence || 0) + influence;
         }
 
-        await db.updateDocument(DB_ID, COLL_FACTIONS, factionId, {
-            resources: JSON.stringify(resources)
+        await prisma.faction.update({
+            where: { id: factionId },
+            data: { resources: JSON.stringify(resources) }
         });
     } catch (e) {
         console.error('Failed to directly award strategic bonus:', e);

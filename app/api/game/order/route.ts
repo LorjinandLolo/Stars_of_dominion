@@ -13,15 +13,14 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { actionId, payload, factionId, userId } = body;
+        const { actionId, payload, factionId } = body;
 
+        // Caller identity comes from the better-auth session cookie,
+        // resolved inside queueOrder.
         const result = await queueOrder({
             actionId,
             payload: payload ?? {},
             factionId,
-            userId: userId ?? null,
-            // Optional verified identity: browser sends account.createJWT() output.
-            jwt: req.headers.get('x-appwrite-jwt'),
         });
 
         if (!result.success) {

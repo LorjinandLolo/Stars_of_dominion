@@ -6,8 +6,8 @@
 //   1. Register a PendingOrder in the store (HUD chip appears instantly).
 //   2. Apply the optimistic overlay to the currently rendered lists
 //      (fleet arrows / build queues update in the same frame as the click).
-//   3. POST to /api/game/order (with an Appwrite JWT when available, so the
-//      server can verify faction ownership).
+//   3. POST to /api/game/order — the better-auth session cookie rides along,
+//      so the server can verify faction ownership.
 //   4. On ack: mark 'queued'. On rejection/network error: mark 'failed' —
 //      the overlay is dropped on the next sync pass.
 //
@@ -18,47 +18,6 @@
 
 import { useUIStore, type PendingOrder } from '@/lib/store/ui-store';
 import { applyPendingOrderOverlays, describeOrder } from '@/lib/multiplayer/optimistic';
-import { getBrowserClients } from '@/lib/appwrite-browser';
-
-// ─── JWT cache (Appwrite JWTs are valid 15 min; refresh at 10) ───────────────
-let jwtCache: { token: string; fetchedAt: number } | null = null;
-const JWT_TTL_MS = 10 * 60 * 1000;
-
-async function getJwt(): Promise<string | null> {
-    try {
-        if (jwtCache && Date.now() - jwtCache.fetchedAt < JWT_TTL_MS) {
-            return jwtCache.token;
-        }
-        const { account } = getBrowserClients();
-        const res: any = await account.createJWT();
-        if (res?.jwt) {
-            jwtCache = { token: res.jwt, fetchedAt: Date.now() };
-            return res.jwt;
-        }
-        return null;
-    } catch {
-        return null; // anonymous/dev session — server falls back to claim check
-    }
-}
-
-let userIdCache: { id: string; fetchedAt: number } | null = null;
-
-async function getUserId(): Promise<string | null> {
-    try {
-        if (userIdCache && Date.now() - userIdCache.fetchedAt < JWT_TTL_MS) {
-            return userIdCache.id;
-        }
-        const { account } = getBrowserClients();
-        const user = await account.get();
-        if (user?.$id) {
-            userIdCache = { id: user.$id, fetchedAt: Date.now() };
-            return user.$id;
-        }
-        return null;
-    } catch {
-        return null;
-    }
-}
 
 export interface DispatchInput {
     actionId: string;
@@ -108,17 +67,12 @@ export async function dispatchOrder(input: DispatchInput): Promise<DispatchResul
         console.warn('[OrderClient] Optimistic overlay failed (non-fatal):', e);
     }
 
-    // 3. Send to server
+    // 3. Send to server (session cookie carries identity)
     try {
-        const [jwt, userId] = await Promise.all([getJwt(), getUserId()]);
-
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (jwt) headers['x-appwrite-jwt'] = jwt;
-
         const res = await fetch('/api/game/order', {
             method: 'POST',
-            headers,
-            body: JSON.stringify({ actionId, payload, factionId, userId }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actionId, payload, factionId }),
         });
 
         const data = await res.json().catch(() => ({}));

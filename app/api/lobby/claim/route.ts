@@ -1,58 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerClients } from '@/lib/appwrite';
-import { Query } from 'node-appwrite';
-
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-const COLL_PROFILES = 'player_profiles';
+import { prisma } from '@/lib/db';
+import { auth } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { userId, factionId, displayName } = body;
+        const { factionId, displayName } = body;
 
-        if (!userId || !factionId) {
-            return NextResponse.json({ error: 'Missing userId or factionId' }, { status: 400 });
+        // Identity comes from the better-auth session cookie — the client can
+        // no longer claim on behalf of an arbitrary userId.
+        const session = await auth.api.getSession({ headers: req.headers });
+        const userId = session?.user?.id;
+
+        if (!userId) {
+            return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+        }
+        if (!factionId) {
+            return NextResponse.json({ error: 'Missing factionId' }, { status: 400 });
         }
 
-        const { db } = await getServerClients();
-
         // 1. Check if ANY user already claimed this faction
-        const existingFactionClaims = await db.listDocuments(DB_ID, COLL_PROFILES, [
-            Query.equal('factionId', factionId)
-        ]);
-
-        if (existingFactionClaims.total > 0 && existingFactionClaims.documents[0].userId !== userId) {
-            return NextResponse.json({ 
-                error: 'Faction already claimed by another player.' 
+        const existingFactionClaim = await prisma.playerProfile.findUnique({ where: { factionId } });
+        if (existingFactionClaim && existingFactionClaim.userId !== userId) {
+            return NextResponse.json({
+                error: 'Faction already claimed by another player.'
             }, { status: 403 });
         }
 
         // 2. Check if THIS user already has a profile (claimed a different faction)
-        const myProfiles = await db.listDocuments(DB_ID, COLL_PROFILES, [
-            Query.equal('userId', userId)
-        ]);
-
-        if (myProfiles.total > 0) {
-            const existingFactionId = myProfiles.documents[0].factionId;
-            if (existingFactionId !== factionId) {
-                return NextResponse.json({ 
-                    error: `You are already locked into the ${existingFactionId}. Faction hopping is disabled to prevent espionage.` 
+        const myProfile = await prisma.playerProfile.findUnique({ where: { userId } });
+        if (myProfile) {
+            if (myProfile.factionId !== factionId) {
+                return NextResponse.json({
+                    error: `You are already locked into the ${myProfile.factionId}. Faction hopping is disabled to prevent espionage.`
                 }, { status: 403 });
             }
-            
+
             // If they are re-submitting for the same faction (maybe to update name), allow it
-            const docId = myProfiles.documents[0].$id;
-            await db.updateDocument(DB_ID, COLL_PROFILES, docId, {
-                displayName: displayName || myProfiles.documents[0].displayName
+            await prisma.playerProfile.update({
+                where: { id: myProfile.id },
+                data: { displayName: displayName || myProfile.displayName },
             });
             return NextResponse.json({ success: true, message: 'Profile updated' });
         }
 
         // 3. Create fresh profile
-        await db.createDocument(DB_ID, COLL_PROFILES, 'unique()', {
-            userId,
-            factionId,
-            displayName: displayName || 'Commander'
+        await prisma.playerProfile.create({
+            data: {
+                userId,
+                factionId,
+                displayName: displayName || 'Commander',
+            },
         });
 
         return NextResponse.json({ success: true, message: 'Faction claimed successfully' });
@@ -65,15 +63,14 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
     try {
-        const { db } = await getServerClients();
-        const profiles = await db.listDocuments(DB_ID, COLL_PROFILES);
-        
+        const profiles = await prisma.playerProfile.findMany();
+
         // Return a map of { factionId: { userId, displayName } } so the Lobby knows what's taken by whom
         const claimedFactions: Record<string, { userId: string, displayName: string }> = {};
-        profiles.documents.forEach((doc: any) => {
+        profiles.forEach(doc => {
              claimedFactions[doc.factionId] = {
                  userId: doc.userId,
-                 displayName: doc.displayName
+                 displayName: doc.displayName ?? 'Commander'
              };
         });
 

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: stars-dominion-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stars
+      POSTGRES_PASSWORD: dominion
+      POSTGRES_DB: stars_dominion
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stars -d stars_dominion"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

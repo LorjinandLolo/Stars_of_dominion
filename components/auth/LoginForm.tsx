@@ -3,8 +3,6 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
-import { getBrowserClients } from '@/lib/appwrite-browser';
-import { ID } from 'appwrite';
 
 export default function LoginForm() {
     const router = useRouter();
@@ -30,13 +28,11 @@ export default function LoginForm() {
         setError(null);
 
         try {
-            const { account } = getBrowserClients();
             if (isLogin) {
                 await authService.login(email, password);
             } else {
-                const { account } = getBrowserClients();
-                await account.create(ID.unique(), email, password, name);
-                await authService.login(email, password);
+                // Registers AND signs in on success.
+                await authService.register(email, password, name);
             }
             router.push('/lobby');
         } catch (err: any) {

@@ -1,40 +1,45 @@
-import { Models } from 'appwrite';
-import { getBrowserClients } from '@/lib/appwrite-browser';
+// lib/auth-service.ts — thin wrapper over better-auth (replaces Appwrite Account).
+// Keeps the historical surface ({ getCurrentUser, login, logout }) so consumers
+// (LoginForm, LobbyScreen, GameShell, IdentityBadge) stay unchanged. `$id`
+// mirrors the Appwrite user id field those components still read.
+
+import { authClient } from '@/lib/auth-client';
+
+export interface CurrentUser {
+    $id: string;
+    id: string;
+    email: string;
+    name: string;
+}
 
 export const authService = {
-    async getCurrentUser(): Promise<Models.User<Models.Preferences> | null> {
+    async getCurrentUser(): Promise<CurrentUser | null> {
         try {
-            const { account } = getBrowserClients();
-            return await account.get();
-        } catch (error) {
+            const { data } = await authClient.getSession();
+            if (!data?.user) return null;
+            const { id, email, name } = data.user;
+            return { $id: id, id, email, name: name ?? '' };
+        } catch {
             return null;
         }
     },
 
     async login(email: string, pass: string) {
-        const { account } = getBrowserClients();
-        try {
-            return await account.createEmailSession(email, pass);
-        } catch (error: any) {
-            // "Session already active": a PREVIOUS account is still signed in.
-            // The old behavior kept that stale session and reported success — you
-            // typed dev1's credentials but stayed logged in as whoever you were
-            // before. Replace the old session with the requested account instead.
-            if (error.type === 'user_session_already_exists' || error.message?.includes('session is active')) {
-                console.log('Replacing existing session with new login...');
-                try { await account.deleteSession('current'); } catch { /* best effort */ }
-                return await account.createEmailSession(email, pass);
-            }
-            // Everything else (wrong password, unknown account) surfaces as a
-            // real error — never masquerade as success.
-            throw error;
-        }
+        // better-auth replaces any existing session on sign-in, so the old
+        // "session already active" dance from Appwrite is gone.
+        const { error } = await authClient.signIn.email({ email, password: pass });
+        if (error) throw new Error(error.message ?? 'Login failed.');
+    },
+
+    async register(email: string, pass: string, name: string) {
+        // Signs the new account in automatically on success.
+        const { error } = await authClient.signUp.email({ email, password: pass, name });
+        if (error) throw new Error(error.message ?? 'Registration failed.');
     },
 
     async logout() {
         try {
-            const { account } = getBrowserClients();
-            await account.deleteSession('current');
+            await authClient.signOut();
             localStorage.removeItem('selectedFactionId');
             localStorage.removeItem('dev_bypass');
         } catch (error) {

@@ -28,3 +28,5 @@ tmp/
 analyze_map.mjs
 inject_new_systems.mjs
 tsc_full_errors.txt
+
+/lib/generated/

@@ -1,0 +1,278 @@
+// Stars of Dominion — PostgreSQL schema (migrated from Appwrite collections).
+// JSON-bearing fields are stored as TEXT holding JSON strings, exactly as the
+// Appwrite attributes did — call sites JSON.stringify/parse unchanged.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── better-auth ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
+}
+
+// ─── Live multiplayer core ───────────────────────────────────────────────────
+
+// One row per session; `default-session` holds the world snapshot, and the
+// worker lease lives in the `worker-lease` row (same as the Appwrite doc pair).
+model MultiplayerSession {
+  id         String   @id
+  snapshot   String
+  lastTickAt String?
+  updatedAt  DateTime @updatedAt
+
+  @@map("multiplayer_sessions")
+}
+
+model GameOrder {
+  id        String   @id @default(cuid())
+  actionId  String
+  factionId String
+  payload   String
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([processed, createdAt])
+  @@map("game_orders")
+}
+
+// Per-faction world shard (fleets, economy, tech...) keyed by factionId.
+model GameFactionShard {
+  id        String   @id
+  factionId String
+  data      String
+  updatedAt DateTime @updatedAt
+
+  @@map("game_factions")
+}
+
+// Multiplayer lobby claim: which auth user controls which faction.
+model PlayerProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  factionId   String   @unique
+  displayName String?
+  createdAt   DateTime @default(now())
+
+  @@map("player_profiles")
+}
+
+model GameSave {
+  id         String   @id @default(cuid())
+  saveName   String
+  factionId  String
+  savedAt    String
+  tickIndex  Int      @default(0)
+  nowSeconds Float    @default(0)
+  snapshot   String
+  createdAt  DateTime @default(now())
+
+  @@index([factionId])
+  @@map("game_saves")
+}
+
+// ─── Gen-1 MVP collections (server actions / legacy panels) ──────────────────
+
+model WorldState {
+  id        String @id @default(cuid())
+  day       Int
+  resources String
+
+  @@map("world_state")
+}
+
+model GameEvent {
+  id            String   @id @default(cuid())
+  title         String
+  body          String
+  triggers      String
+  choices       String
+  effects       String?
+  cooldown_days Int?
+  repeatable    Boolean?
+  tags          String?
+  newspaper     String?
+
+  @@map("events")
+}
+
+model Gazette {
+  id        String   @id @default(cuid())
+  day       Int
+  headline  String
+  lede      String
+  tone      String?
+  image     String?
+  createdAt DateTime @default(now())
+
+  @@map("gazettes")
+}
+
+model Faction {
+  id                    String  @id @default(cuid())
+  name                  String
+  traits                String?
+  resources             String?
+  home_planet_id        String?
+  inviteCode            String?
+  governmentType        String?
+  last_updated          String?
+  income_rate           String?
+  income_rates          String?
+  economy_last_updated  String?
+
+  @@map("factions")
+}
+
+// Gen-1 faction membership (role/permissions inside a faction).
+model UserProfile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  factionId   String
+  role        String
+  permissions String
+
+  @@map("user_profiles")
+}
+
+model Army {
+  id                 String  @id @default(cuid())
+  faction_id         String
+  location_planet_id String
+  units              String
+  status             String?
+  x                  Int?
+  y                  Int?
+
+  @@map("armies")
+}
+
+model Planet {
+  id               String  @id @default(cuid())
+  name             String
+  x                Int
+  y                Int
+  type             String
+  // gen-1 writers use owner_faction_id; seed-universe writes ownerId — both kept.
+  owner_faction_id String?
+  ownerId          String?
+  systemId         String?
+  population       Int?
+  attributes       String?
+  resource_yield   String?
+  buildings        String?
+
+  @@index([systemId])
+  @@map("planets")
+}
+
+model Ship {
+  id                 String  @id @default(cuid())
+  name               String?
+  faction_id         String
+  location_planet_id String
+  type               String
+  status             String?
+
+  @@map("ships")
+}
+
+model Crisis {
+  id                  String   @id @default(cuid())
+  type                String
+  attacker_id         String
+  defender_id         String
+  target_id           String
+  status              String
+  deadline            String
+  attacker_commitment String?
+  attacker_strategy   String?
+  defender_response   String?
+  resolution_result   String?
+  createdAt           DateTime @default(now())
+
+  @@index([defender_id, status])
+  @@map("crises")
+}
+
+model StarSystem {
+  id         String  @id @default(cuid())
+  name       String
+  x          Float?
+  y          Float?
+  q          Float?
+  r          Float?
+  security   Float?
+  tradeValue Float?
+  regionId   String?
+
+  @@map("systems")
+}
+
+model GameFleet {
+  id        String @id @default(cuid())
+  factionId String
+  data      String
+
+  @@map("game_fleets")
+}

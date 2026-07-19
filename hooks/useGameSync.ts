@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { appwriteClient, databases } from '@/lib/appwrite-client';
 import { deserializeWorld, injectFactionShard, recordsToMaps } from '@/lib/persistence/save-service';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
@@ -10,10 +9,10 @@ import type { GameWorldState } from '@/lib/game-world-state';
 // assumed to be reflected in that snapshot (worker polls every 5s + margin).
 const PENDING_CONFIRM_LAG_MS = 8000;
 
-const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'game';
-const COLL_SESSIONS = 'multiplayer_sessions';
-const COLL_FACTIONS = 'game_factions';
-const SESSION_DOC_ID = 'default-session';
+// Polling cadence against /api/game/sync. The worker ticks every 5s and only
+// writes when something changed, so 4s keeps latency invisible while idle
+// polls return a few bytes (since-filtered on the server).
+const POLL_INTERVAL_MS = 4000;
 
 export function useGameSync() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
@@ -267,11 +266,16 @@ export function useGameSync() {
         setError(null);
     };
 
-    // ─── Initial Fetch + Real-Time Subscriptions ──────────────────────────────
+    // ─── Initial Fetch + Polling Sync ─────────────────────────────────────────
     useEffect(() => {
-        let unsubSession: (() => void) | null = null;
-        let unsubFactions: (() => void) | null = null;
+        let cancelled = false;
+        let pollTimer: NodeJS.Timeout | null = null;
         let retryTimeout: NodeJS.Timeout | null = null;
+        let pollInFlight = false;
+        let pollFailures = 0;
+        // Server-side change filters: only session/shards newer than these are sent.
+        let sessionSince = '';
+        let shardsSince = '';
 
         const injectMappedShard = (world: GameWorldState, mappedShard: any) => {
             if (!mappedShard) return;
@@ -295,89 +299,67 @@ export function useGameSync() {
             }
         };
 
+        /** Parse a shard row from /api/game/sync, cache it, inject into a world. */
+        const applyShardDoc = async (row: { id: string; data: string }, world: GameWorldState | null) => {
+            if (!row.data) return;
+            try {
+                const shardObj = JSON.parse(row.data);
+                const mapped = await deserializeShardAsync(row.data);
+                shardCacheRef.current.set(row.id, shardObj);
+                mappedShardCacheRef.current.set(row.id, mapped);
+                if (world) injectMappedShard(world, mapped);
+            } catch (e) {
+                console.warn(`[GameSync] Failed to deserialize shard ${row.id}:`, e);
+            }
+        };
+
+        const fetchSync = async (withSince: boolean) => {
+            const params = withSince
+                ? `?sessionSince=${encodeURIComponent(sessionSince)}&shardsSince=${encodeURIComponent(shardsSince)}`
+                : '';
+            const res = await fetch(`/api/game/sync${params}`, { cache: 'no-store' });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body?.error || `Sync failed (${res.status})`);
+            }
+            return res.json();
+        };
+
+        const bumpShardsSince = (rows: Array<{ updatedAt: string }>) => {
+            for (const row of rows) {
+                if (row.updatedAt > shardsSince) shardsSince = row.updatedAt;
+            }
+        };
+
         const initSync = async (attempt = 0) => {
             try {
                 if (attempt === 0) setIsLoading(true);
                 console.log(`[GameSync] Full sync attempt ${attempt + 1}...`);
 
-                // 1. Parallel Load: Session + All Faction Shards
-                const [sessionDoc, factionDocs] = await Promise.all([
-                    databases.getDocument(DB_ID, COLL_SESSIONS, SESSION_DOC_ID),
-                    databases.listDocuments(DB_ID, COLL_FACTIONS)
-                ]);
+                // 1. Full load: session snapshot + all faction shards
+                const data = await fetchSync(false);
+                if (cancelled) return;
 
                 // 2. Initialize Authoritative World (Async worker)
-                const baseWorld = await deserializeWorldAsync(sessionDoc.snapshot);
+                const baseWorld = await deserializeWorldAsync(data.session.snapshot);
                 worldRef.current = baseWorld;
+                sessionSince = data.session.updatedAt;
 
                 // 3. Inject Shards and Populate Cache (Async worker)
-                await Promise.all(
-                    factionDocs.documents.map(async (fDoc: any) => {
-                        if (fDoc.data) {
-                            try {
-                                const shardObj = JSON.parse(fDoc.data);
-                                const mapped = await deserializeShardAsync(fDoc.data);
-                                shardCacheRef.current.set(fDoc.$id, shardObj);
-                                mappedShardCacheRef.current.set(fDoc.$id, mapped);
-                            } catch (e) {
-                                console.warn(`[GameSync] Failed to deserialize shard ${fDoc.$id}:`, e);
-                            }
-                        }
-                    })
-                );
+                await Promise.all(data.factions.map((row: any) => applyShardDoc(row, null)));
+                bumpShardsSince(data.factions);
 
                 // Apply all shards to world
                 mappedShardCacheRef.current.forEach(mapped => injectMappedShard(baseWorld, mapped));
                 throttledUpdate();
                 setRetryCount(0);
 
-                // 4. Subscribe: Multiplayer Session (The Clock)
-                const sessionChannel = `databases.${DB_ID}.collections.${COLL_SESSIONS}.documents.${SESSION_DOC_ID}`;
-                unsubSession = appwriteClient.subscribe(sessionChannel, async (response) => {
-                    if (response.events.some(e => e.includes('.update'))) {
-                        const payload = response.payload as any;
-                        if (payload.snapshot) {
-                            try {
-                                const newBase = await deserializeWorldAsync(payload.snapshot);
-                                // Re-inject cached MAPPED shards into new base snapshot (Zero re-parsing cost!)
-                                mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
-                                worldRef.current = newBase;
-
-                                // Confirm optimistic orders: anything dispatched
-                                // comfortably before this snapshot was produced is
-                                // now reflected authoritatively — drop its overlay.
-                                useUIStore.getState().prunePendingOrders(Date.now() - PENDING_CONFIRM_LAG_MS);
-
-                                throttledUpdate();
-                            } catch (e) {
-                                console.warn('[GameSync] Failed to parse updated session snapshot:', e);
-                            }
-                        }
-                    }
-                });
-
-                // 5. Subscribe: Faction Shards (The Details)
-                const factionChannel = `databases.${DB_ID}.collections.${COLL_FACTIONS}.documents`;
-                unsubFactions = appwriteClient.subscribe(factionChannel, async (response) => {
-                    if (response.events.some(e => e.includes('.update') || e.includes('.create'))) {
-                        const shardDoc = response.payload as any;
-                        if (shardDoc.data && worldRef.current) {
-                            try {
-                                const shardObj = JSON.parse(shardDoc.data);
-                                const mapped = await deserializeShardAsync(shardDoc.data);
-                                shardCacheRef.current.set(shardDoc.$id, shardObj);
-                                mappedShardCacheRef.current.set(shardDoc.$id, mapped);
-                                injectMappedShard(worldRef.current, mapped);
-                                throttledUpdate();
-                            } catch (e) {
-                                console.warn(`[GameSync] Failed to parse updated faction shard ${shardDoc.$id}:`, e);
-                            }
-                        }
-                    }
-                });
+                // 4. Poll for changes (replaces the Appwrite realtime channels)
+                pollTimer = setInterval(poll, POLL_INTERVAL_MS);
 
             } catch (err: any) {
                 console.warn(`[GameSync] Sync attempt ${attempt + 1} failed:`, err.message);
+                if (cancelled) return;
                 if (attempt < 5) {
                     const delay = Math.pow(2, attempt) * 1000;
                     retryTimeout = setTimeout(() => initSync(attempt + 1), delay);
@@ -388,13 +370,57 @@ export function useGameSync() {
             }
         };
 
+        const poll = async () => {
+            if (pollInFlight || cancelled) return;
+            pollInFlight = true;
+            try {
+                const data = await fetchSync(true);
+                if (cancelled) return;
+                pollFailures = 0;
+
+                // Updated session snapshot → rebuild the authoritative world.
+                if (data.session?.snapshot) {
+                    const newBase = await deserializeWorldAsync(data.session.snapshot);
+                    // Re-inject cached MAPPED shards into new base snapshot (zero re-parsing cost)
+                    mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
+                    worldRef.current = newBase;
+                    sessionSince = data.session.updatedAt;
+
+                    // Confirm optimistic orders: anything dispatched comfortably
+                    // before this snapshot was produced is now reflected
+                    // authoritatively — drop its overlay.
+                    useUIStore.getState().prunePendingOrders(Date.now() - PENDING_CONFIRM_LAG_MS);
+                    throttledUpdate();
+                } else if (data.sessionUpdatedAt) {
+                    sessionSince = data.sessionUpdatedAt;
+                }
+
+                // Updated faction shards → inject into the current world.
+                if (data.factions?.length) {
+                    for (const row of data.factions) {
+                        await applyShardDoc(row, worldRef.current);
+                    }
+                    bumpShardsSince(data.factions);
+                    throttledUpdate();
+                }
+
+                setError(null);
+            } catch (err: any) {
+                pollFailures++;
+                console.warn(`[GameSync] Poll failed (${pollFailures}):`, err.message);
+                if (pollFailures >= 5) setError("Connection lost.");
+            } finally {
+                pollInFlight = false;
+            }
+        };
+
         if (playerFactionId) {
             initSync();
         }
 
         return () => {
-            if (unsubSession) unsubSession();
-            if (unsubFactions) unsubFactions();
+            cancelled = true;
+            if (pollTimer) clearInterval(pollTimer);
             if (retryTimeout) clearTimeout(retryTimeout);
         };
     }, [playerFactionId, retryCount]);
