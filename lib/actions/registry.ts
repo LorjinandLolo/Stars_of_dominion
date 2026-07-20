@@ -123,6 +123,28 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", tacticId: "string" },
     cost: {}
   },
+  MIL_TACTICAL_ENGAGE: {
+    id: "MIL_TACTICAL_ENGAGE",
+    category: "military",
+    params: { systemId: "id", enemyFactionId: "id" },
+    cost: {}
+  },
+  MIL_TACTICAL_RESULT: {
+    id: "MIL_TACTICAL_RESULT",
+    // Full payload is a TacticalResultPayload (lib/tactical/fleet-adapter.ts);
+    // params lists only the scalar keys the queue can schema-check.
+    category: "military",
+    params: { systemId: "id", enemyFactionId: "id" },
+    cost: {}
+  },
+  MIL_TACTICAL_ABORT: {
+    id: "MIL_TACTICAL_ABORT",
+    // Player closed the battle view without a result — release the
+    // auto-resolve lock immediately instead of waiting for its timeout.
+    category: "military",
+    params: { systemId: "id" },
+    cost: {}
+  },
 
   // --- Diplomacy Actions ---
   DIP_DECLARE_WAR: {

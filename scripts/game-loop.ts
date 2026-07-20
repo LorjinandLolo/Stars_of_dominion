@@ -75,6 +75,12 @@ let lastLeaseRenewal = 0;
 let lastSnapshotKey = '';
 const lastShardSaved = new Map<string, string>();
 
+// Every faction id that has (or had) a shard row. A fleet-only faction (e.g.
+// the Genthouli raiders — no economy/tech record) drops out of the
+// fleet-owner save set the moment its last fleet dies; without one final
+// shard write, the stale shard would resurrect the dead fleet on reload.
+const knownShardFactionIds = new Set<string>();
+
 // Order-queue polling backs off to every 4th tick (20s) once the queue has
 // been empty for ~2 minutes; any order found snaps it back to every tick.
 const IDLE_ORDER_POLL_EVERY = 4;
@@ -95,6 +101,7 @@ async function loadWorld(): Promise<GameWorldState> {
         const factionDocs = await prisma.gameFactionShard.findMany({ take: 50 });
         for (const fDoc of factionDocs) {
             injectFactionShard(world, fDoc.data);
+            knownShardFactionIds.add(fDoc.factionId || fDoc.id);
         }
     } catch (err) {
         console.log('[Tick Worker] Could not load game_factions shards, proceeding with main session.');
@@ -397,10 +404,14 @@ async function runGameTick() {
         const snapshotSaved = await saveWorldState(world, forceSave);
 
         // Save Faction Shards — dirty-checked, written only when changed.
+        // knownShardFactionIds keeps factions with an existing shard in the set
+        // even after their last fleet dies, so the emptied shard gets written
+        // once instead of the stale one resurrecting dead fleets on reload.
         const factionsToSave = new Set([
             ...world.economy.factions.keys(),
             ...world.tech.keys(),
-            ...Array.from(world.movement.fleets.values()).map(f => f.factionId)
+            ...Array.from(world.movement.fleets.values()).map(f => f.factionId),
+            ...knownShardFactionIds,
         ]);
 
         let shardsWritten = 0;
@@ -419,6 +430,7 @@ async function runGameTick() {
                 continue; // not recorded as saved — retried next tick
             }
             lastShardSaved.set(fId, shardStr);
+            knownShardFactionIds.add(fId);
             shardsWritten++;
         }
 
@@ -1293,6 +1305,234 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.log(`[Order] SKIRMISH: ${attacker.factionId} opened fire on ${defender.factionId} — state of war declared.`);
             }
             console.log(`[Order] Engagement ordered: ${payload.attackerFleetId} vs ${payload.defenderFleetId} — combat begins this cycle.`);
+            break;
+        }
+
+        case 'MIL_TACTICAL_ENGAGE': {
+            // payload: { systemId, enemyFactionId }
+            // The player is opening the real-time tactical battle view for this
+            // system. Lock it so the auto-resolver (processSectorCombats) leaves
+            // this PAIR alone until the client submits MIL_TACTICAL_RESULT — or
+            // the lock times out (client crashed / tab closed mid-battle).
+            const { systemId, enemyFactionId } = payload;
+            const allFleets: any[] = Array.from(world.movement.fleets.values());
+            const ownFleets = allFleets.filter((f: any) =>
+                f.factionId === factionId && f.currentSystemId === systemId && isFleetOperational(f));
+            const hostileFleets = allFleets.filter((f: any) =>
+                f.factionId === enemyFactionId && f.currentSystemId === systemId);
+            if (ownFleets.length === 0) {
+                recordOrderFailure(world, factionId, actionId, 'No operational fleet of yours is holding in that system.');
+                return;
+            }
+            if (hostileFleets.length === 0) {
+                recordOrderFailure(world, factionId, actionId, 'No enemy fleets remain in that system to engage.');
+                return;
+            }
+            world.tacticalLocks = world.tacticalLocks || {};
+
+            // One live battle per system: an unexpired lock can't be replaced —
+            // not by another faction (lock theft would discard their in-flight
+            // battle) and not by its own holder (free indefinite renewal would
+            // freeze the system's combats forever).
+            const existingLock = world.tacticalLocks[systemId];
+            if (existingLock && existingLock.until > world.nowSeconds) {
+                recordOrderFailure(world, factionId, actionId, 'A tactical battle is already in progress in that system.');
+                return;
+            }
+
+            // Engaging IS an act of war — same rule as MIL_ATTACK_FLEET. Without
+            // this, tactical combat would bypass the war declaration entirely.
+            const engageRivalryId = `rivalry-${factionId}-${enemyFactionId}`;
+            const engageExisting = world.rivalries.get(engageRivalryId)
+                || world.rivalries.get(`rivalry-${enemyFactionId}-${factionId}`);
+            if (!engageExisting || (engageExisting.escalationLevel ?? 0) < 7) {
+                const warState = {
+                    id: engageRivalryId,
+                    empireAId: factionId,
+                    empireBId: enemyFactionId,
+                    rivalryScore: 100,
+                    escalationLevel: 7,
+                    activeSanctionIds: [],
+                    proxyConflictsInvolved: [],
+                    detenteActive: false
+                };
+                world.rivalries.set(engageRivalryId, warState);
+                world.rivalries.set(`rivalry-${enemyFactionId}-${factionId}`,
+                    { ...warState, id: `rivalry-${enemyFactionId}-${factionId}`, empireAId: enemyFactionId, empireBId: factionId });
+                console.log(`[Order] TACTICAL ENGAGE: ${factionId} opened hostilities with ${enemyFactionId} — state of war declared.`);
+            }
+
+            // Pre-battle snapshot per side — the client-authored result is
+            // clamped against these numbers when it comes back.
+            const snapshotSide = (fleets: any[]) => {
+                const composition: Record<string, number> = {};
+                let totalBasePower = 0;
+                let maxStrength = 0;
+                for (const f of fleets) {
+                    for (const [k, v] of Object.entries(f.composition || {})) {
+                        const n = Math.floor(Number(v) || 0);
+                        if (n > 0) composition[k] = (composition[k] ?? 0) + n;
+                    }
+                    totalBasePower += Number(f.basePower) || 0;
+                    maxStrength = Math.max(maxStrength, Math.min(1, Number(f.strength) || 0));
+                }
+                // Ship-less fleets fight as synthesized corvettes (see
+                // fleetsToReserves) — mirror that so their survivors aren't
+                // clamped out of existence.
+                if (Object.keys(composition).length === 0) {
+                    const power = fleets.reduce((s: number, f: any) => s + (Number(f.basePower) || 0) * (Number(f.strength) || 1), 0);
+                    composition['interceptor'] = Math.max(1, Math.round(power / 25));
+                }
+                const shipCount = Object.values(composition).reduce((a: number, b: any) => a + b, 0);
+                return { composition, maxStrength: maxStrength || 1, totalBasePower, shipCount };
+            };
+
+            // 30 REAL minutes, expressed in sim-seconds. The battle runs on the
+            // player's wall clock while world.nowSeconds advances
+            // TIME_STEP_SECONDS per POLL_INTERVAL_MS cycle (15× real time) —
+            // a plain `+ 1800` expired after ~2 real minutes, mid-battle.
+            const LOCK_SIM_SECONDS = 30 * 60 * (TIME_STEP_SECONDS / (POLL_INTERVAL_MS / 1000));
+            world.tacticalLocks[systemId] = {
+                systemId,
+                factionId,
+                enemyFactionId,
+                until: world.nowSeconds + LOCK_SIM_SECONDS,
+                preBattle: {
+                    player: snapshotSide(ownFleets),
+                    enemy: snapshotSide(hostileFleets),
+                },
+            };
+            console.log(`[Order] TACTICAL ENGAGE at ${systemId}: ${factionId} (${ownFleets.length} fleets) vs ${enemyFactionId} (${hostileFleets.length} fleets) — auto-resolve locked for this pair.`);
+            break;
+        }
+
+        case 'MIL_TACTICAL_ABORT': {
+            // payload: { systemId } — player closed the battle view without a
+            // result. Release the lock so auto-resolve resumes immediately.
+            const lock = world.tacticalLocks?.[payload.systemId];
+            if (lock && lock.factionId === factionId) {
+                delete world.tacticalLocks[payload.systemId];
+                console.log(`[Order] TACTICAL ABORT at ${payload.systemId} by ${factionId} — lock released.`);
+            }
+            break;
+        }
+
+        case 'MIL_TACTICAL_RESULT': {
+            // payload: TacticalResultPayload (lib/tactical/fleet-adapter.ts)
+            // The client-simulated battle finished — apply the outcome to the
+            // strategic fleets, clear any auto-resolve engagement for the pair,
+            // and release the system lock.
+            const { systemId, enemyFactionId, playerResult, enemyResult } = payload;
+            const playerFleetIds: string[] = Array.isArray(payload.playerFleetIds) ? payload.playerFleetIds : [];
+            const enemyFleetIds: string[] = Array.isArray(payload.enemyFleetIds) ? payload.enemyFleetIds : [];
+
+            const lock = world.tacticalLocks?.[systemId];
+            if (!lock || lock.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No tactical battle lock for that system is held by you.');
+                return;
+            }
+            if (world.nowSeconds > lock.until) {
+                // Stale credential — the battle timed out and auto-resolve took
+                // back over; a late result must not rewrite fleets.
+                delete world.tacticalLocks[systemId];
+                recordOrderFailure(world, factionId, actionId, 'The tactical battle lock has expired — auto-resolve already resumed.');
+                return;
+            }
+            if (enemyFactionId !== lock.enemyFactionId) {
+                // The lock only authorizes a result against the faction that was
+                // actually engaged.
+                recordOrderFailure(world, factionId, actionId, 'Result names a different enemy faction than was engaged.');
+                return;
+            }
+
+            // Every listed fleet that still exists must belong to the side it
+            // was submitted for — otherwise the result could rewrite someone
+            // else's fleets.
+            for (const fid of playerFleetIds) {
+                const f = world.movement.fleets.get(fid);
+                if (f && f.factionId !== factionId) {
+                    recordOrderFailure(world, factionId, actionId, `Fleet ${fid} does not belong to your faction.`);
+                    return;
+                }
+            }
+            for (const fid of enemyFleetIds) {
+                const f = world.movement.fleets.get(fid);
+                if (f && f.factionId !== enemyFactionId) {
+                    recordOrderFailure(world, factionId, actionId, `Fleet ${fid} does not belong to ${enemyFactionId}.`);
+                    return;
+                }
+            }
+
+            // Clamp a client-authored side result against the pre-battle
+            // snapshot: no new ship types, no count above what entered, finite
+            // strength capped at the entry maximum.
+            const sanitizeSide = (side: any, pre: any) => {
+                if (!side || typeof side !== 'object') return null;
+                const preComp = pre?.composition ?? null;
+                const composition: Record<string, number> = {};
+                for (const [k, v] of Object.entries(side.composition || {})) {
+                    const n = Math.floor(Number(v) || 0);
+                    if (n <= 0) continue;
+                    if (preComp) {
+                        if (!(k in preComp)) continue;
+                        composition[k] = Math.min(n, preComp[k]);
+                    } else {
+                        composition[k] = n; // legacy lock without snapshot
+                    }
+                }
+                let strength = Number(side.strength);
+                if (!Number.isFinite(strength)) strength = 0;
+                strength = Math.max(0.05, Math.min(strength, pre?.maxStrength ?? 1));
+                const destroyed = !!side.destroyed || Object.keys(composition).length === 0;
+                return { destroyed, composition, strength };
+            };
+
+            // Apply one side's outcome: destroyed → all its listed fleets die;
+            // survived → the FIRST listed fleet that still exists becomes the
+            // merged survivor (composition + strength from the sim), the rest
+            // are deleted (they merged into it). Only fleets still HOLDING in
+            // the locked system are touched — a fleet that jumped out
+            // mid-battle escaped the engagement.
+            const applySideResult = (fleetIds: string[], rawSide: any, pre: any) => {
+                const side = sanitizeSide(rawSide, pre);
+                const existing = fleetIds.filter((fid) => {
+                    const f = world.movement.fleets.get(fid);
+                    return f && f.currentSystemId === systemId && !f.destinationSystemId;
+                });
+                if (!side || existing.length === 0) return;
+                if (side.destroyed) {
+                    for (const fid of existing) world.movement.fleets.delete(fid);
+                    return;
+                }
+                const survivor = world.movement.fleets.get(existing[0]);
+                const pooledBasePower = existing.reduce(
+                    (sum, fid) => sum + (Number(world.movement.fleets.get(fid)?.basePower) || 0), 0);
+                survivor.composition = { ...side.composition };
+                survivor.strength = side.strength;
+                // Keep strategic auto-resolve power (basePower × strength)
+                // consistent with the ships that actually survived.
+                const survivingCount = Object.values(side.composition).reduce((a: number, b: any) => a + b, 0);
+                const preCount = pre?.shipCount ?? 0;
+                const ratio = preCount > 0 ? Math.min(1, survivingCount / preCount) : 1;
+                survivor.basePower = Math.max(1, Math.round((pooledBasePower || pre?.totalBasePower || 100) * ratio));
+                for (const fid of existing.slice(1)) world.movement.fleets.delete(fid);
+            };
+            applySideResult(playerFleetIds, playerResult, lock.preBattle?.player);
+            applySideResult(enemyFleetIds, enemyResult, lock.preBattle?.enemy);
+
+            // Drop any auto-resolve engagement for this pair — ids look like
+            // combat-<systemId>-<facA>-<facB> (either faction order).
+            for (const combatId of Array.from(world.activeCombats.keys()) as string[]) {
+                if (combatId.includes(systemId) && combatId.includes(factionId) && combatId.includes(enemyFactionId)) {
+                    world.activeCombats.delete(combatId);
+                }
+            }
+
+            delete world.tacticalLocks[systemId];
+            const sideSummary = (label: string, side: any) => side?.destroyed
+                ? `${label} destroyed`
+                : `${label} survives at strength ${(side?.strength ?? 0).toFixed(2)}`;
+            console.log(`[Order] TACTICAL RESULT at ${systemId}: winner=${payload.winner} (${payload.reason}) after ${payload.durationSeconds}s — ${sideSummary(factionId, playerResult)}, ${sideSummary(enemyFactionId, enemyResult)}.`);
             break;
         }
 

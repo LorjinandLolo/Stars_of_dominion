@@ -86,6 +86,16 @@ export interface UIStore {
     selectedFleetId: string | null;
     setSelectedFleetId: (id: string | null) => void;
 
+    // ── Tactical battle (live ship combat overlay) ──
+    tacticalBattle: {
+        systemId: string;
+        systemName: string;
+        enemyFactionId: string;
+        playerFleetIds: string[];
+        enemyFleetIds: string[];
+    } | null;
+    setTacticalBattle: (config: UIStore['tacticalBattle']) => void;
+
     // ── Planet selection ──
     selectedPlanetId: string | null;
     setSelectedPlanet: (id: string | null) => void;
@@ -293,6 +303,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Fleet selection ──
     selectedFleetId: null,
     setSelectedFleetId: (id: string | null) => set({ selectedFleetId: id }),
+
+    // ── Tactical battle ──
+    tacticalBattle: null,
+    setTacticalBattle: (config) => set({ tacticalBattle: config }),
 
     // ── Planet selection ──
     selectedPlanetId: null,

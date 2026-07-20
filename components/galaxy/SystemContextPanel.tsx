@@ -566,6 +566,36 @@ function SystemForcesPanel({
         }
     };
 
+    // Live tactical battle: every one of my OPERATIONAL fleets here vs every
+    // fleet of the clicked enemy faction here. Locks the auto-resolver for
+    // this system (MIL_TACTICAL_ENGAGE), then opens the battle overlay — only
+    // if the engage order was actually accepted, otherwise the player would
+    // fight a battle whose result the worker rejects (no lock).
+    const myOperationalFleetsHere = myFleetsHere.filter((f: any) => isFleetOperational(f));
+    const handleTacticalBattle = async (enemyFactionId: string) => {
+        const enemySideFleets = fleetsHere.filter((f: any) => f.factionId === enemyFactionId);
+        if (!myOperationalFleetsHere.length || !enemySideFleets.length) return;
+        setBusyId(`tactical-${enemyFactionId}`);
+        try {
+            const res = await dispatchOrder({
+                actionId: 'MIL_TACTICAL_ENGAGE',
+                factionId: pf,
+                payload: { systemId: system.id, enemyFactionId },
+                label: `Taking tactical command at ${system.name}`,
+            });
+            if (!res?.success) return; // order rejected/failed — no lock, no battle
+            useUIStore.getState().setTacticalBattle({
+                systemId: system.id,
+                systemName: system.name || system.id,
+                enemyFactionId,
+                playerFleetIds: myOperationalFleetsHere.map((f: any) => f.id),
+                enemyFleetIds: enemySideFleets.map((f: any) => f.id),
+            });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
     const handleRedeploy = async (armyId: string, targetPlanetId: string) => {
         if (!targetPlanetId) return;
         setBusyId(armyId);
@@ -632,15 +662,26 @@ function SystemForcesPanel({
                             {(f.factionId || '').replace('faction-', '')} · strength {Math.round((f.strength ?? 0) * 100)}%
                         </div>
                     </div>
-                    <button
-                        disabled={!selectedFleetInSystem || busyId === f.id}
-                        onClick={() => handleEngage(f.id)}
-                        title={selectedFleetInSystem ? 'Attack this fleet with your selected fleet' : 'Select one of your fleets in this system first'}
-                        className="px-2.5 py-1.5 bg-red-700/30 hover:bg-red-600/40 border border-red-500/40 rounded text-[9px] text-red-300 font-bold tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
-                    >
-                        <Swords size={9} />
-                        {busyId === f.id ? 'ENGAGING…' : 'ENGAGE'}
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                            disabled={!selectedFleetInSystem || busyId === f.id}
+                            onClick={() => handleEngage(f.id)}
+                            title={selectedFleetInSystem ? 'Attack this fleet with your selected fleet (auto-resolve)' : 'Select one of your fleets in this system first'}
+                            className="px-2.5 py-1.5 bg-red-700/30 hover:bg-red-600/40 border border-red-500/40 rounded text-[9px] text-red-300 font-bold tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                            <Swords size={9} />
+                            {busyId === f.id ? 'ENGAGING…' : 'ENGAGE'}
+                        </button>
+                        <button
+                            disabled={myFleetsHere.length === 0 || busyId === `tactical-${f.factionId}`}
+                            onClick={() => handleTacticalBattle(f.factionId)}
+                            title={myFleetsHere.length ? 'Take direct command — fight this battle yourself' : 'You need a fleet in this system first'}
+                            className="px-2.5 py-1.5 bg-rose-700/30 hover:bg-rose-600/40 border border-rose-500/40 rounded text-[9px] text-rose-200 font-bold tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                            <Crosshair size={9} />
+                            TACTICAL
+                        </button>
+                    </div>
                 </div>
             ))}
 

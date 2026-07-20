@@ -20,6 +20,15 @@ import {
  * Called every standard game tick (e.g. 5 real seconds / 15 sim seconds).
  */
 export function processSectorCombats(world: GameWorldState) {
+    // Tactical-battle locks: prune expired ones UNCONDITIONALLY (a lock in a
+    // system that has since emptied of fleets would otherwise linger forever
+    // and remain a stale credential for MIL_TACTICAL_RESULT).
+    if (world.tacticalLocks) {
+        for (const [sysId, lock] of Object.entries(world.tacticalLocks)) {
+            if (lock.until <= world.nowSeconds) delete world.tacticalLocks[sysId];
+        }
+    }
+
     const systemsWithFleets = new Map<string, Fleet[]>();
 
     // 1. Group fleets by system
@@ -32,6 +41,8 @@ export function processSectorCombats(world: GameWorldState) {
 
     // 2. Identify potential conflicts
     for (const [systemId, fleets] of systemsWithFleets) {
+        const lock = world.tacticalLocks?.[systemId];
+
         const factionsInSystem = Array.from(new Set(fleets.map(f => f.factionId)));
         if (factionsInSystem.length < 2) continue;
 
@@ -40,6 +51,17 @@ export function processSectorCombats(world: GameWorldState) {
             for (let j = i + 1; j < factionsInSystem.length; j++) {
                 const fA = factionsInSystem[i];
                 const fB = factionsInSystem[j];
+
+                // While a live player-driven tactical battle owns THIS PAIR
+                // (MIL_TACTICAL_ENGAGE), the auto-resolver must neither create
+                // nor advance their engagement — the client sim is
+                // authoritative until MIL_TACTICAL_RESULT lands. Other wars in
+                // the same system keep resolving normally.
+                if (lock &&
+                    ((lock.factionId === fA && lock.enemyFactionId === fB) ||
+                     (lock.factionId === fB && lock.enemyFactionId === fA))) {
+                    continue;
+                }
 
                 if (areAtWar(fA, fB, world)) {
                     handleEngagement(systemId, fA, fB, fleets, world);

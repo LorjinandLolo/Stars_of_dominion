@@ -70,6 +70,11 @@ const ShipDesignerPanel = dynamic(() => import('@/components/panels/ShipDesigner
     loading: () => <div className="p-6 text-xs font-mono text-sky-400/80 animate-pulse border border-sky-900/20 bg-slate-950 rounded shadow-2xl">LOADING SHIPWRIGHT SCHEMATICS...</div>
 });
 
+const TacticalBattleView = dynamic(() => import('@/components/tactical/TacticalBattleView'), {
+    ssr: false,
+    loading: () => <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-xs font-mono text-rose-400/80 animate-pulse">ENTERING ENGAGEMENT ZONE...</div>
+});
+
 const SeasonEndScreen = dynamic(() => import('@/components/season/SeasonEndScreen'), { ssr: false });
 const PendingOrdersIndicator = dynamic(() => import('@/components/notifications/PendingOrdersIndicator'), { ssr: false });
 const EconomicTerminal = dynamic(() => import('@/components/economy/EconomicTerminal'), {
@@ -238,6 +243,9 @@ export default function GameShell() {
             {/* ── Pending orders HUD (optimistic feedback) ───────────────────────── */}
             <PendingOrdersIndicator />
 
+            {/* ── Live tactical battle (full overlay) ────────────────────────────── */}
+            <TacticalBattleOverlay />
+
             {/* ── Season-end screen (full overlay) ──────────────────────────────── */}
             {(showSeasonEnd || seasonState.phase === 'locked') && <SeasonEndScreen />}
 
@@ -258,6 +266,85 @@ export default function GameShell() {
         }
       `}</style>
         </div>
+    );
+}
+
+/**
+ * Bridges the strategic layer and the live tactical battle. Launch config is
+ * set by the "ENGAGE — TACTICAL" button (SystemContextPanel); on resolution the
+ * outcome is sent to the worker as MIL_TACTICAL_RESULT, which applies surviving
+ * compositions to the strategic fleets and releases the auto-combat lock.
+ */
+function TacticalBattleOverlay() {
+    const tacticalBattle = useUIStore(s => s.tacticalBattle);
+    const setTacticalBattle = useUIStore(s => s.setTacticalBattle);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const fleets = useUIStore(s => s.fleets);
+
+    // Snapshot the participating fleets when the battle opens — sync updates
+    // during the fight must not restart or mutate the running sim.
+    const snapshotRef = useRef<{ playerFleets: any[]; enemyFleets: any[] } | null>(null);
+    if (tacticalBattle && !snapshotRef.current) {
+        snapshotRef.current = {
+            playerFleets: fleets.filter((f: any) => tacticalBattle.playerFleetIds.includes(f.id)),
+            enemyFleets: fleets.filter((f: any) => tacticalBattle.enemyFleetIds.includes(f.id)),
+        };
+    }
+    if (!tacticalBattle) {
+        snapshotRef.current = null;
+        return null;
+    }
+    const snap = snapshotRef.current!;
+    if (!snap.playerFleets.length || !snap.enemyFleets.length) {
+        // Fleets vanished between click and open (sync race) — bail out.
+        setTacticalBattle(null);
+        return null;
+    }
+
+    const handleFinish = async (result: import('@/lib/tactical/types').BattleResult) => {
+        const { buildResultPayload } = await import('@/lib/tactical/fleet-adapter');
+        const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+        const payload = buildResultPayload(
+            tacticalBattle.systemId,
+            tacticalBattle.playerFleetIds,
+            tacticalBattle.enemyFleetIds,
+            tacticalBattle.enemyFactionId,
+            result
+        );
+        const res = await dispatchOrder({
+            actionId: 'MIL_TACTICAL_RESULT',
+            factionId: playerFactionId || 'PLAYER_FACTION',
+            payload,
+            label: `Battle of ${tacticalBattle.systemName}: ${result.winner === 'player' ? 'victory' : result.winner === 'enemy' ? 'defeat' : 'stalemate'}`,
+        });
+        // Only leave the battle screen once the result actually reached the
+        // server — the outcome screen stays up on failure, and RETURN TO
+        // GALAXY doubles as the retry button.
+        if (res?.success) setTacticalBattle(null);
+    };
+
+    // Aborting must release the server-side auto-resolve lock; otherwise the
+    // system's combats stay frozen until the lock times out.
+    const handleAbort = async () => {
+        const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+        dispatchOrder({
+            actionId: 'MIL_TACTICAL_ABORT',
+            factionId: playerFactionId || 'PLAYER_FACTION',
+            payload: { systemId: tacticalBattle.systemId },
+            label: `Standing down at ${tacticalBattle.systemName}`,
+        });
+        setTacticalBattle(null);
+    };
+
+    return (
+        <TacticalBattleView
+            title={`BATTLE OF ${tacticalBattle.systemName.toUpperCase()}`}
+            playerFleets={snap.playerFleets}
+            enemyFleets={snap.enemyFleets}
+            enemyName={tacticalBattle.enemyFactionId.replace(/^faction-/, '').replace(/-/g, ' ')}
+            onFinish={handleFinish}
+            onAbort={handleAbort}
+        />
     );
 }
 

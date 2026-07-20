@@ -53,6 +53,42 @@ export interface SharedState {
 
 // ─── Composite world state ────────────────────────────────────────────────────
 
+/**
+ * Lock placed by MIL_TACTICAL_ENGAGE: a live player-driven tactical battle
+ * owns this system, so the strategic auto-resolver must leave it alone until
+ * MIL_TACTICAL_RESULT clears the lock (or `until` expires).
+ */
+/**
+ * Pre-battle snapshot of one side, taken at MIL_TACTICAL_ENGAGE. The result
+ * payload is client-authored, so the worker clamps everything it applies
+ * against these numbers — a battle can never mint ships, exceed the entry
+ * strength, or inflate basePower.
+ */
+export interface TacticalSidePreBattle {
+    /** Summed composition across the side's fleets in the system. */
+    composition: Record<string, number>;
+    /** Highest fleet strength on the side (result strength is capped here). */
+    maxStrength: number;
+    /** Summed basePower (survivor basePower is this × surviving-ship ratio). */
+    totalBasePower: number;
+    /** Total ship count in `composition`. */
+    shipCount: number;
+}
+
+export interface TacticalSystemLock {
+    systemId: string;
+    /** Faction that initiated the tactical battle (lock owner). */
+    factionId: string;
+    enemyFactionId: string;
+    /** Sim-clock deadline (world.nowSeconds); expired locks are pruned. */
+    until: number;
+    /** Snapshots used to validate/clamp the client-submitted result. */
+    preBattle?: {
+        player: TacticalSidePreBattle;
+        enemy: TacticalSidePreBattle;
+    };
+}
+
 export interface GameWorldState {
     // ── Shared integration bus ────────────────────────────────────────────────
     shared: SharedState;
@@ -103,6 +139,13 @@ export interface GameWorldState {
 
     /** Active combat engagements. */
     activeCombats: Map<string, CombatState>;
+
+    /**
+     * Live player-driven tactical battles, keyed by systemId. A PLAIN object
+     * (not a Map) so serializeWorld/cleanWorldForSave carry it automatically
+     * with zero special-casing. Optional: absent on older snapshots.
+     */
+    tacticalLocks?: Record<string, TacticalSystemLock>;
 
     /** Galactic Council state. */
     council: CouncilState;
