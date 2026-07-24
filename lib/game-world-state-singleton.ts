@@ -14,10 +14,8 @@ import type { EconomyWorldState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
 import { CorporateWorldState, createEmptyCorporateWorldState } from './economy/corporate/company-registry';
 import { ConstructionWorldState, Planet } from './construction/construction-types';
-import { IntelligenceWorldState } from './intelligence/types';
 import { defaultCouncilState } from './ui/defaults';
 import { Faction, Resource, Market, TradeAgreement } from './trade-system/types';
-import { OPERATION_DEFINITIONS } from './intelligence/operation-definitions';
 import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
 import { initializeFactionHomeWorld } from './economy/services/initialization-service';
 import { assignFlavorTags } from './galaxy/system-tags';
@@ -153,17 +151,6 @@ function buildEmptyLeadershipState(): LeadershipWorldState {
     };
 }
 
-function buildEmptyIntelligenceState(): IntelligenceWorldState {
-    const definitions = new Map<string, typeof OPERATION_DEFINITIONS[0]>();
-    OPERATION_DEFINITIONS.forEach(def => definitions.set(def.id, def));
-    return {
-        operations: new Map(),
-        networks: new Map(),
-        sleeperCells: new Map(),
-        definitions
-    };
-}
-
 export function getGameWorldState(): GameWorldState {
     if (!globalGameStateInstance) {
         globalGameStateInstance = {
@@ -191,7 +178,6 @@ export function getGameWorldState(): GameWorldState {
             construction: buildEmptyConstructionState(),
             council: defaultCouncilState,
             press: { tick: 0, empires: new Map(), planets: new Map(), pressFactions: new Map(), activeStories: new Map(), publishedStories: [], crises: new Map(), quarantinedPlanets: new Set(), jammedSystems: new Set(), counterNarratives: new Map() },
-            intelligence: buildEmptyIntelligenceState(),
             leadership: buildEmptyLeadershipState(),
             doctrines: new Map(),
             reputation: new Map(),

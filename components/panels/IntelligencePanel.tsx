@@ -1,27 +1,38 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { Radio, MapPin, AlertTriangle, Users, Target, Search, Info, Shield, Layers } from 'lucide-react';
 import { AgentCard } from '@/components/panels/espionage/AgentCard';
-import { 
-    recruitAgentAction, 
-    recallAgentAction, 
-    assignAgentAction, 
-    launchCovertOpAction 
+import {
+    recruitAgentAction,
+    recallAgentAction,
+    assignAgentAction,
+    launchCovertOpAction,
+    getRecruitPoolAction
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 
 type TabType = 'operations' | 'agents' | 'recruitment';
 
 export default function IntelligencePanel() {
-    const { regions, espionageState, updateEspionage } = useUIStore();
+    const { regions, espionageState, updateEspionage, playerFactionId } = useUIStore();
     const [activeTab, setActiveTab] = useState<TabType>('operations');
-    
+
     // Deployment Selection State
     const [deployingAgentId, setDeployingAgentId] = useState<string | null>(null);
     const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
     const [selectedDomain, setSelectedDomain] = useState<OperationDomain>('infrastructureSabotage');
+
+    // Load a recruit pool when the recruitment tab is first opened.
+    useEffect(() => {
+        if (activeTab !== 'recruitment' || !playerFactionId) return;
+        if (espionageState.candidates.length > 0) return;
+        getRecruitPoolAction(playerFactionId)
+            .then(candidates => updateEspionage({ candidates }))
+            .catch(e => console.warn('[Intelligence] Failed to load recruit pool:', e));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, playerFactionId]);
 
     const handleDeploy = (agentId: string) => {
         setDeployingAgentId(agentId);
@@ -29,17 +40,17 @@ export default function IntelligencePanel() {
     };
 
     const confirmDeployment = async () => {
-        if (!deployingAgentId || !selectedSystemId) return;
-        
-        const result = await assignAgentAction(deployingAgentId, selectedSystemId, selectedDomain);
+        if (!deployingAgentId || !selectedSystemId || !playerFactionId) return;
+
+        const result = await assignAgentAction(playerFactionId, deployingAgentId, selectedSystemId, selectedDomain);
         if (result.success) {
             updateEspionage({
-                agents: espionageState.agents.map(a => 
-                    a.id === deployingAgentId ? { 
-                        ...a, 
-                        status: 'deployed', 
+                agents: espionageState.agents.map(a =>
+                    a.id === deployingAgentId ? {
+                        ...a,
+                        status: 'deployed',
                         deployedToSystemId: selectedSystemId,
-                        deployedDomain: selectedDomain 
+                        deployedDomain: selectedDomain
                     } : a
                 )
             });
@@ -49,12 +60,13 @@ export default function IntelligencePanel() {
     };
 
     const handleRecall = async (agentId: string) => {
-        const result = await recallAgentAction(agentId);
+        if (!playerFactionId) return;
+        const result = await recallAgentAction(playerFactionId, agentId);
         if (result.success) {
             // Optimistic / Local State Update
             updateEspionage({
-                agents: espionageState.agents.map(a => 
-                    a.id === agentId ? { ...a, status: 'available', deployedToSystemId: null } : a
+                agents: espionageState.agents.map(a =>
+                    a.id === agentId ? { ...a, status: 'on_cooldown', deployedToSystemId: null } : a
                 )
             });
         }
@@ -62,15 +74,13 @@ export default function IntelligencePanel() {
 
     const handleRecruit = async (candidateId: string) => {
         const candidate = espionageState.candidates.find(c => c.id === candidateId);
-        if (!candidate) return;
+        if (!candidate || !playerFactionId) return;
 
-        // In the real app, we use our mocked faction info
-        const factionId = 'player-faction'; 
-        
-        const result = await recruitAgentAction(candidate as any, factionId);
-        if (result.success && result.data) {
+        const result = await recruitAgentAction(candidate, playerFactionId);
+        if (result.success) {
+            // Order queued: the new agent arrives via the next shard sync.
+            // Optimistically remove the candidate so it can't be double-recruited.
             updateEspionage({
-                agents: [...espionageState.agents, result.data],
                 candidates: espionageState.candidates.filter(c => c.id !== candidateId),
             });
         }
@@ -168,14 +178,14 @@ export default function IntelligencePanel() {
                                     </select>
                                 </div>
                                 <div className="flex items-end">
-                                    <button 
-                                        disabled={!selectedSystemId}
+                                    <button
+                                        disabled={!selectedSystemId || !playerFactionId}
                                         onClick={async () => {
-                                            if (!selectedSystemId) return;
-                                            const res = await launchCovertOpAction('player-faction', 'enemy-faction', selectedSystemId, selectedDomain, 0.5, 0.2);
-                                            if (res.success) {
-                                                // Success: could add local notification or refresh here
-                                            }
+                                            if (!selectedSystemId || !playerFactionId) return;
+                                            const region: any = regions.find(r => r.id === selectedSystemId);
+                                            const targetFactionId = region?.ownerId ?? region?.ownerFactionId ?? '';
+                                            if (!targetFactionId || targetFactionId === playerFactionId) return;
+                                            await launchCovertOpAction(playerFactionId, targetFactionId, selectedSystemId, selectedDomain, 0.5, 0.2);
                                         }}
                                         className={`w-full py-1.5 rounded uppercase font-display text-[10px] tracking-widest transition-all ${
                                             selectedSystemId 

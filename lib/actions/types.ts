@@ -73,6 +73,8 @@ export type PlayerActionId =
   | "DIP_TRADE_PACT"
   // Espionage
   | "ESP_ASSIGN_AGENT"
+  | "ESP_RECRUIT_AGENT"
+  | "ESP_RECALL_AGENT"
   | "ESP_LAUNCH_OP"
   | "ESP_INFILTRATE_NETWORK"
   | "ESP_SABOTAGE_FACILITY"
@@ -117,7 +119,7 @@ export interface ActionResult<T = void> {
 export interface ActionSchema {
   id: PlayerActionId;
   category: ActionCategory;
-  params: Record<string, "string" | "number" | "boolean" | "id">;
+  params: Record<string, "string" | "number" | "boolean" | "id" | "object">;
   cost: Partial<Record<ResourceType, number>>;
   requirements?: {
     techIds?: string[];

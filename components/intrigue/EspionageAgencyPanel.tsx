@@ -99,7 +99,7 @@ interface RosterProps {
 }
 
 function AgentRosterTab({ agents, refresh }: RosterProps) {
-    const { systems } = useUIStore();
+    const { systems, playerFactionId } = useUIStore();
     const [selectedSystemId, setSelectedSystemId] = useState<string>(systems[0]?.id || '');
     const [selected, setSelected] = useState<string | null>(null);
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
@@ -118,7 +118,7 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
             const res = await fetch('/api/espionage', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ factionId: 'PLAYER_FACTION' }),
+                body: JSON.stringify({ factionId: playerFactionId }),
             });
             const candidates = await res.json();
             if (Array.isArray(candidates) && candidates.length > 0) {
@@ -134,8 +134,9 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
     };
 
     const handleHire = (c: any) => {
+        if (!playerFactionId) return;
         startTransition(async () => {
-            const res = await recruitAgentAction(c, 'PLAYER_FACTION');
+            const res = await recruitAgentAction(c, playerFactionId);
             if (res.success) {
                 showToast(`Recruited ${c.codename}`, true);
                 setRecruitModalOpen(false);
@@ -152,14 +153,14 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
     }
 
     function handleDeploy() {
-        if (!agent) return;
+        if (!agent || !playerFactionId || !selectedSystemId) return;
         startTransition(async () => {
              const res = await executePlayerAction({
                 id: `act_${Date.now()}`,
                 actionId: 'ESP_ASSIGN_AGENT',
-                issuerId: 'PLAYER_FACTION',
-                targetId: selectedSystemId || 'sys-kerath-prime',
-                payload: { agentId: agent.id, systemId: selectedSystemId || 'sys-kerath-prime', domain: 'infrastructureSabotage' },
+                issuerId: playerFactionId,
+                targetId: selectedSystemId,
+                payload: { agentId: agent.id, systemId: selectedSystemId, domain: 'infrastructureSabotage' },
                 timestamp: Math.floor(Date.now() / 1000)
             });
             if (res.success) {
@@ -172,9 +173,9 @@ function AgentRosterTab({ agents, refresh }: RosterProps) {
     }
 
     function handleRecall() {
-        if (!agent) return;
+        if (!agent || !playerFactionId) return;
         startTransition(async () => {
-            const res = await recallAgentAction(agent.id);
+            const res = await recallAgentAction(playerFactionId, agent.id);
             if (res.success) {
                 showToast('Agent recalled', true);
                 await refresh();
@@ -407,7 +408,7 @@ const OP_CARDS: { domain: DomainKey; label: string; desc: string; icon: React.Re
 ];
 
 function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => Promise<void> }) {
-    const { systems } = useUIStore();
+    const { systems, playerFactionId } = useUIStore();
     const [selectedSystemId, setSelectedSystemId] = useState<string>(systems[0]?.id || '');
     const [selectedDomain, setSelectedDomain] = useState<DomainKey | null>(null);
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -430,12 +431,18 @@ function CovertOpsTab({ agents, refresh }: { agents: SpyAgent[]; refresh: () => 
     }
 
     function handleLaunch() {
-        if (!selectedDomain || !selectedAgent) return;
+        if (!selectedDomain || !selectedAgent || !playerFactionId || !selectedSystemId) return;
+        const targetSystem: any = systems.find((s: any) => s.id === selectedSystemId);
+        const targetFactionId = targetSystem?.ownerId ?? targetSystem?.ownerFactionId ?? '';
+        if (!targetFactionId || targetFactionId === playerFactionId) {
+            showToast('Target a system owned by another faction.', false);
+            return;
+        }
         startTransition(async () => {
             const res = await launchCovertOpAction(
-                'PLAYER_FACTION',
-                'enemy-faction',
-                selectedSystemId || 'sys-kerath-prime',
+                playerFactionId,
+                targetFactionId,
+                selectedSystemId,
                 selectedDomain,
                 invest,
                 risk

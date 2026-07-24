@@ -4,8 +4,8 @@
  */
 
 import { GameWorldState } from '../game-world-state';
-import { startOperation } from '../intelligence/intelligence-service';
-import { OPERATION_DEFINITIONS } from '../intelligence/operation-definitions';
+import { launchCatalogOperation } from '../espionage/espionage-service';
+import { getOrCreateFactionIntel } from '../espionage/faction-intel';
 
 export type AIIntelligenceArchetype = 
   | "paranoid_security_state"
@@ -31,12 +31,11 @@ const AI_PROFILES: Record<string, AIIntelProfile> = {
  * Called during the strategic tick for each non-player faction.
  */
 export function processEmpireIntelligenceTurn(factionId: string, world: GameWorldState) {
-    const network = world.intelligence.networks.get(factionId);
-    if (!network) return;
+    const intel = getOrCreateFactionIntel(world, factionId);
 
     // 1. Don't act if at capacity or low on points
-    if (network.usedAgentCapacity >= network.agentCapacity) return;
-    if (network.intelPoints < 50) return;
+    if (intel.usedAgentCapacity >= intel.agentCapacity) return;
+    if (intel.intelPoints < 50) return;
 
     // 2. Identify potential targets (rivals or strong neighbors)
     const targets = identifyPotentialTargets(factionId, world);
@@ -48,8 +47,10 @@ export function processEmpireIntelligenceTurn(factionId: string, world: GameWorl
     for (const targetId of targets) {
         const opId = chooseOperationForArchetype(profile.archetype, factionId, targetId, world);
         if (opId) {
-            // Attempt to start
-            const res = startOperation(factionId, targetId, targetId, opId, world);
+            // Target the victim's capital system so region-based mechanics
+            // (escalation, sensors, instability) hit a real system.
+            const targetRegionId = world.economy.factions.get(targetId)?.capitalSystemId ?? targetId;
+            const res = launchCatalogOperation(factionId, targetId, targetRegionId, opId, world);
             if (res.success) {
                 console.log(`[AI-INTEL] ${factionId} (${profile.archetype}) launched ${opId} against ${targetId}`);
                 break; // Only one per tick for now
@@ -88,7 +89,7 @@ function chooseOperationForArchetype(
     targetId: string, 
     world: GameWorldState
 ): string | null {
-    const infiltration = world.intelligence.networks.get(attackerId)?.infiltrationLevels[targetId] || 0;
+    const infiltration = world.espionage.factionIntel.get(attackerId)?.infiltrationLevels[targetId] ?? 0;
 
     switch (archetype) {
         case "economic_subverter":

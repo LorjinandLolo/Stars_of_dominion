@@ -175,27 +175,10 @@ export interface EmpireIdentityState {
 }
 
 // ─── Espionage ──────────────────────────────────────────────────────────────
-import type { SpyAgent, IntelNetwork, AgentStatus } from '@/lib/espionage/agent-types';
-export type { SpyAgent, IntelNetwork, AgentStatus };
-
-export interface EspionageOperation {
-    id: string;
-    targetFactionId: string;
-    targetRegionId: string;
-    domain: string;
-    status: 'pending' | 'active' | 'resolved' | 'failed';
-    startedAt: string;
-    completesAt: string;
-    investmentLevel: number;
-}
-
-export interface AgentCandidate {
-    id: string;
-    name: string;
-    codename: string;
-    traitIds: string[];
-    recruitmentCost: number;
-}
+// Single source of truth: lib/espionage types, re-exported for UI consumers.
+import type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate } from '@/lib/espionage/agent-types';
+import type { EspionageOperation } from '@/lib/espionage/espionage-types';
+export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation };
 
 export interface EspionageState {
     agents: SpyAgent[];

@@ -15,6 +15,10 @@ import { clampShared } from '../game-world-state';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { getDeepNetworkAttributionBonus, tickAgentNetworks } from './agent-service';
+import { OPERATION_CATALOG_BY_ID, domainForCategory } from './operation-catalog';
+import type { OperationDefinition, OperationRisk } from './operation-catalog';
+import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
+import { triggerCrisis } from '../crisis-manager';
 
 const espCfg = config.espionage;
 const visCfg = config.visibility;
@@ -80,6 +84,65 @@ export function launchOperation(
     return { success: true, operation: op, message: `Operation ${id} launched` };
 }
 
+/** Bridge catalog risk tiers onto the legacy 0–1 riskLevel scale. */
+const RISK_LEVEL_VALUES: Record<OperationRisk, number> = {
+    low: 0.25,
+    medium: 0.5,
+    high: 0.75,
+    extreme: 1.0,
+};
+
+/**
+ * Launch a catalog-defined covert operation (consolidated path).
+ * Costs Intel from the actor's FactionIntelState and occupies operation
+ * capacity until resolution. Resolution happens in tickOperations.
+ */
+export function launchCatalogOperation(
+    actorFactionId: string,
+    targetFactionId: string,
+    targetRegionId: string,
+    definitionId: string,
+    world: GameWorldState
+): LaunchResult {
+    const def = OPERATION_CATALOG_BY_ID.get(definitionId);
+    if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
+
+    const intel = getOrCreateFactionIntel(world, actorFactionId);
+    if (intel.usedAgentCapacity >= intel.agentCapacity) {
+        return { success: false, message: 'Maximum operation capacity reached.' };
+    }
+    if (intel.intelPoints < def.intelCost) {
+        return { success: false, message: 'Insufficient Intel.' };
+    }
+
+    intel.intelPoints -= def.intelCost;
+    intel.usedAgentCapacity += 1;
+
+    const now = world.nowSeconds;
+    const durationHours = def.durationHoursMin + Math.random() * (def.durationHoursMax - def.durationHoursMin);
+    const id = `op-${actorFactionId}-${def.id}-${Date.now()}`;
+
+    const op: EspionageOperation = {
+        id,
+        actorFactionId,
+        targetFactionId,
+        targetRegionId,
+        domain: domainForCategory(def.category),
+        definitionId: def.id,
+        investmentLevel: 0.5,
+        riskLevel: RISK_LEVEL_VALUES[def.risk],
+        startedAt: toISO(now),
+        completesAt: toISO(now + durationHours * 3600),
+        status: 'active',
+        attributionState: 'invisible',
+    };
+
+    world.espionage.operations.set(id, op);
+    updateEscalation(targetRegionId, world.espionage, now);
+
+    return { success: true, operation: op, message: `Operation ${def.name} launched.` };
+}
+
 function updateEscalation(regionId: string, esp: EspionageWorldState, now: number): void {
     const existing = esp.regionEscalation.get(regionId);
     if (existing) {
@@ -140,11 +203,30 @@ export function tickOperations(
         resolveOperation(op, world);
     }
 
+    // Prune long-resolved operations. Operations persist (global snapshot +
+    // faction shards), so without this the map grows for the life of a season.
+    const PRUNE_AFTER_SECONDS = 72 * 3600;
+    for (const [id, op] of world.espionage.operations) {
+        if (op.status === 'active' || op.status === 'pending') continue;
+        if (now - fromISO(op.completesAt) > PRUNE_AFTER_SECONDS) {
+            world.espionage.operations.delete(id);
+        }
+    }
+
     // Phase 15: tick agent networks (build strength, decay, promote FoW levels)
     tickAgentNetworks(world, deltaSeconds);
 }
 
 function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
+    // Consolidated path: catalog-defined ops resolve on catalog numbers.
+    if (op.definitionId) {
+        const def = OPERATION_CATALOG_BY_ID.get(op.definitionId);
+        if (def) {
+            resolveCatalogOperation(op, def, world);
+            return;
+        }
+    }
+
     const domCfg = espCfg.domains[op.domain];
     const escalation = world.espionage.regionEscalation.get(op.targetRegionId);
 
@@ -176,6 +258,141 @@ function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
         op.narrative = buildNarrative(op.domain, true, attribution);
     } else {
         op.narrative = buildNarrative(op.domain, false, attribution);
+    }
+}
+
+// ─── Catalog operation resolution (consolidated path) ─────────────────────────
+
+type CatalogOutcome = 'critical_success' | 'success' | 'partial_success' | 'failure' | 'exposed_failure' | 'backfire';
+
+function catalogSucceeded(outcome: CatalogOutcome): boolean {
+    return outcome === 'critical_success' || outcome === 'success' || outcome === 'partial_success';
+}
+
+function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
+    const actorIntel = world.espionage.factionIntel.get(actorId);
+    const targetIntel = world.espionage.factionIntel.get(targetId);
+
+    const infiltration = actorIntel?.infiltrationLevels[targetId] ?? 0;
+    const infiltrationBonus = infiltration / 200; // max +0.5 at 100 infiltration
+
+    const counterIntelPenalty = (targetIntel?.counterIntelStrength ?? 0) / 200;
+    const securityPenalty = (targetIntel?.internalSecurity ?? 0) / 200;
+
+    const chance = def.baseSuccessChance + infiltrationBonus - counterIntelPenalty - securityPenalty;
+    return Math.max(0.05, Math.min(0.95, chance));
+}
+
+function computeCatalogExposureChance(def: OperationDefinition, targetId: string, world: GameWorldState): number {
+    const targetIntel = world.espionage.factionIntel.get(targetId);
+    let chance = def.baseExposureChance + (targetIntel?.surveillanceStrength ?? 0) / 100;
+
+    if (def.risk === 'extreme') chance += 0.3;
+    if (def.risk === 'high') chance += 0.15;
+    if (def.risk === 'low') chance -= 0.05;
+
+    return Math.max(0.02, Math.min(0.90, chance));
+}
+
+function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
+    const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.targetFactionId, world);
+    const exposureChance = computeCatalogExposureChance(def, op.targetFactionId, world);
+
+    const roll = Math.random();
+    let outcome: CatalogOutcome = 'failure';
+    if (roll < successChance / 4) outcome = 'critical_success';
+    else if (roll < successChance) outcome = 'success';
+    else if (roll < successChance * 1.3) outcome = 'partial_success';
+
+    const exposed = Math.random() < exposureChance;
+    if (!catalogSucceeded(outcome) && exposed) outcome = 'exposed_failure';
+    else if (roll > 0.95 && exposed) outcome = 'backfire';
+
+    op.succeeded = catalogSucceeded(outcome);
+    op.status = op.succeeded ? 'resolved' : 'failed';
+
+    // Exposure roll decides 'exposed'; otherwise the deterministic attribution
+    // formula grades invisible vs suspected.
+    op.attributionState = exposed
+        ? 'exposed'
+        : (resolveAttribution(op, world) === 'invisible' ? 'invisible' : 'suspected');
+
+    world.espionage.attributionRecords.push({
+        operationId: op.id,
+        suspectedFactionId: op.actorFactionId,
+        attributionState: op.attributionState,
+        probability: exposed ? 1 : computeAttributionProbability(op, world),
+        tensionApplied: op.attributionState === 'exposed' ? espCfg.attribution.diplomaticPenaltyOnExpose :
+            op.attributionState === 'suspected' ? espCfg.attribution.tensionIncreaseOnSuspected : 0,
+        resolvedAt: toISO(world.nowSeconds),
+    });
+
+    if (op.succeeded) {
+        applyCatalogEffects(op, def, outcome, world);
+        updateInfiltration(world, op.actorFactionId, op.targetFactionId, 5);
+    }
+    if (exposed || outcome === 'backfire') {
+        world.shared.stability = clampShared(world.shared.stability - 0.05);
+        updateInfiltration(world, op.actorFactionId, op.targetFactionId, -15);
+    }
+
+    // Release operation capacity
+    const intel = world.espionage.factionIntel.get(op.actorFactionId);
+    if (intel) intel.usedAgentCapacity = Math.max(0, intel.usedAgentCapacity - 1);
+
+    op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${exposed ? ' (exposed)' : ''}`;
+
+    eventBus.emit({
+        type: 'intelligenceOperationResolve',
+        opId: op.id,
+        outcome,
+        exposed,
+    });
+}
+
+function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, outcome: CatalogOutcome, world: GameWorldState): void {
+    const mult = outcome === 'critical_success' ? 1.5 : outcome === 'partial_success' ? 0.5 : 1.0;
+
+    for (const effect of def.effects) {
+        if (effect.type === 'instability_increase') {
+            const sys = world.movement.systems.get(op.targetRegionId);
+            if (sys) sys.instability = Math.min(100, sys.instability + effect.value * mult);
+        }
+        if (effect.type === 'research_boost') {
+            const attackerTech = world.tech.get(op.actorFactionId);
+            if (attackerTech) attackerTech.researchPoints += effect.value * mult;
+        }
+    }
+
+    // Crisis triggers fire-and-forget: tickOperations is sync, and the legacy
+    // step15 never awaited these either.
+    if (def.crisisTriggers && outcome !== 'partial_success') {
+        for (const trigger of def.crisisTriggers) {
+            triggerCrisis(
+                'sabotage',
+                op.actorFactionId,
+                op.targetFactionId,
+                op.targetRegionId,
+                trigger.type,
+                { title: trigger.title, description: trigger.description, severity: trigger.severity * mult }
+            ).catch(e => console.error(`[ESPIONAGE] Failed to trigger crisis: ${e}`));
+        }
+    }
+}
+
+// ─── Per-faction intel resource tick ──────────────────────────────────────────
+
+/**
+ * Passive Intel generation for every faction (1.5/hour, capped at 1000).
+ * Ensures each economy faction has a FactionIntelState so AI and players
+ * accumulate the resource without an explicit bootstrap step.
+ */
+export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): void {
+    const hours = deltaSeconds / 3600;
+    for (const factionId of world.economy.factions.keys()) {
+        if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
+        const intel = getOrCreateFactionIntel(world, factionId);
+        intel.intelPoints = Math.min(1000, intel.intelPoints + 1.5 * hours);
     }
 }
 

@@ -10,7 +10,6 @@ import FactionCouncil from '@/components/FactionCouncil';
 import CommandDock from '@/components/CommandDock';
 import Modal from '@/components/ui/Modal';
 import CrisisDashboard from '@/components/CrisisDashboard';
-import IntriguePanel from '@/components/intrigue/IntriguePanel';
 import EspionageAgencyPanel from '@/components/intrigue/EspionageAgencyPanel';
 import TradePanel from '@/components/economy/TradePanel';
 import ColdWarPanel from '@/components/panels/ColdWarPanel';

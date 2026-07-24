@@ -14,7 +14,7 @@ import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
 import { BUILDINGS } from '../../data/buildings';
-import { tickIntelligence } from '../intelligence/intelligence-service';
+import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
@@ -89,7 +89,7 @@ export async function runStrategicTick(
     try { step12_pirateTacticalAI(world); } catch (e) { console.error('[TickProcessor] step12_pirateTacticalAI failed:', e); }
     try { step13_pirateSafeHavens(world); } catch (e) { console.error('[TickProcessor] step13_pirateSafeHavens failed:', e); }
     try { step14_empireFleetRepair(world); } catch (e) { console.error('[TickProcessor] step14_empireFleetRepair failed:', e); }
-    try { step15_intelligence(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] step15_intelligence failed:', e); }
+    // step15 (legacy intelligence system) merged into step8_intelligence.
     try { tickForwardBases(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickForwardBases failed:', e); }
     step16_population(world, TICK_DELTA_SECONDS);
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
@@ -286,16 +286,18 @@ function step19_strategicAI(world: ReturnType<typeof getGameWorldState>) {
 }
 
 function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: number) {
-    // Decay stale intel and passively grow espionage networks.
+    // Unified espionage tick: resolve operations (also ticks agent networks),
+    // advance shadow economy nodes, generate Intel, then run AI covert turns.
+    // Agent network growth/decay lives in tickAgentNetworks (via tickOperations);
+    // the old flat +0.01/hr growth here fought its decay logic and is gone.
     try {
-        const hours = delta / 3600;
-        for (const network of world.espionage.intelNetworks.values()) {
-            // Passive network growth
-            network.strength = Math.min(1, network.strength + 0.01 * hours);
-            // Decay old intel
-            if (network.penetrationLevel === 'confirmed' && Math.random() < 0.05) {
-                network.penetrationLevel = 'rumor';
-            }
+        tickOperations(world, delta);
+        tickShadowEconomy(world, delta);
+        tickFactionIntel(world, delta);
+
+        for (const factionId of world.economy.factions.keys()) {
+            if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
+            processEmpireIntelligenceTurn(factionId, world);
         }
     } catch (e) {
         console.error('[TickProcessor] step8_intelligence failed:', e);
@@ -499,22 +501,6 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
         if (fleet.strength >= 1.0) {
             console.log(`[REPAIR] Fleet ${fleet.id} fully repaired at ${currentSys.name}`);
         }
-    }
-}
-
-/**
- * Step 15: Intelligence Operations
- * Advance operation phases and regenerate intel points.
- */
-function step15_intelligence(world: ReturnType<typeof getGameWorldState>, deltaSeconds: number) {
-    // 1. Advance active operations
-    tickIntelligence(world, deltaSeconds);
-
-    // 2. AI Decision turn
-    for (const factionId of world.economy.factions.keys()) {
-        // Skip player if we have a way to identify one, for now all non-pirates
-        if (factionId === 'faction-pirates') continue;
-        processEmpireIntelligenceTurn(factionId, world);
     }
 }
 

@@ -71,7 +71,32 @@ export function serializeWorld(world: GameWorldState): string {
 }
 
 export function deserializeWorld(snapshot: string): GameWorldState {
-    return recordsToMaps(JSON.parse(snapshot)) as GameWorldState;
+    const world = recordsToMaps(JSON.parse(snapshot)) as GameWorldState;
+    normalizeEspionageState(world);
+    return world;
+}
+
+/**
+ * Ensure the espionage sub-state has every collection the consolidated system
+ * expects, and strip structures from pre-consolidation snapshots. Runs in
+ * deserializeWorld; the client calls it separately after its web-worker
+ * deserialize path (which bypasses this module).
+ */
+export function normalizeEspionageState(world: GameWorldState): void {
+    const w = world as any;
+    if (!w.espionage) w.espionage = {};
+    const esp = w.espionage;
+    if (!(esp.operations instanceof Map)) esp.operations = new Map();
+    if (!(esp.factionIntel instanceof Map)) esp.factionIntel = new Map();
+    if (!Array.isArray(esp.attributionRecords)) esp.attributionRecords = [];
+    if (!(esp.shadowEconomyNodes instanceof Map)) esp.shadowEconomyNodes = new Map();
+    if (!(esp.regionEscalation instanceof Map)) esp.regionEscalation = new Map();
+    if (!(esp.agents instanceof Map)) esp.agents = new Map();
+    if (!(esp.intelNetworks instanceof Map)) esp.intelNetworks = new Map();
+    // Pre-consolidation leftovers: never-written counterIntel map and the
+    // parallel V2 intelligence system.
+    delete esp.counterIntel;
+    delete w.intelligence;
 }
 
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────
@@ -87,6 +112,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         tech: world.tech.get(factionId),
         espionageAgents: Array.from(world.espionage.agents.values()).filter((a: any) => a.ownerFactionId === factionId),
         intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId),
+        espionageFactionIntel: world.espionage.factionIntel.get(factionId) ?? null,
+        espionageOperations: Array.from(world.espionage.operations.values()).filter(op => op.actorFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId)
     };
     return JSON.stringify(mapsToRecords(shard));
@@ -109,6 +136,12 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.intelNetworks) {
         shard.intelNetworks.forEach((n: any) => world.espionage.intelNetworks.set(n.id, n));
     }
+    if (shard.espionageFactionIntel) {
+        world.espionage.factionIntel.set(shard.factionId, shard.espionageFactionIntel);
+    }
+    if (shard.espionageOperations) {
+        shard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
+    }
     if (shard.recruitmentJobs) {
         if (!world.combat) world.combat = { recruitmentJobs: [] };
         // Merge - unique by ID
@@ -130,6 +163,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.tech.clear();
     cloned.espionage.agents.clear();
     cloned.espionage.intelNetworks.clear();
+    cloned.espionage.factionIntel.clear();
+    cloned.espionage.operations.clear();
     if (cloned.combat) cloned.combat.recruitmentJobs = [];
     return cloned;
 }

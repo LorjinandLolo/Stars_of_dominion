@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { deserializeWorld, injectFactionShard, recordsToMaps } from '@/lib/persistence/save-service';
+import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
@@ -245,6 +245,23 @@ export function useGameSync() {
             planetList = overlaid.planets;
         }
 
+        // Espionage: player-scoped slices of the synced world. Candidates are a
+        // client-side concern (recruit pool fetched on demand) — preserve them.
+        const espWorld = world.espionage;
+        const espionageState = {
+            agents: playerFactionId
+                ? Array.from(espWorld.agents.values()).filter(a => a.ownerFactionId === playerFactionId)
+                : Array.from(espWorld.agents.values()),
+            networks: playerFactionId
+                ? Array.from(espWorld.intelNetworks.values()).filter(n => n.ownerFactionId === playerFactionId)
+                : Array.from(espWorld.intelNetworks.values()),
+            operations: playerFactionId
+                ? Array.from(espWorld.operations.values()).filter(op => op.actorFactionId === playerFactionId)
+                : Array.from(espWorld.operations.values()),
+            candidates: useUIStore.getState().espionageState.candidates,
+            exposureRisk: Math.round((world.shared?.espionagePressure ?? 0) * 100),
+        };
+
         // Atomic Batch Update
         useUIStore.setState({
             systems: systemList,
@@ -259,7 +276,8 @@ export function useGameSync() {
             factions: factionMap,
             politicsState,
             techState,
-            contestedSystemIds
+            contestedSystemIds,
+            espionageState
         });
 
         setIsLoading(false);
@@ -289,6 +307,12 @@ export function useGameSync() {
             }
             if (mappedShard.intelNetworks) {
                 mappedShard.intelNetworks.forEach((n: any) => world.espionage.intelNetworks.set(n.id, n));
+            }
+            if (mappedShard.espionageFactionIntel) {
+                world.espionage.factionIntel.set(mappedShard.factionId, mappedShard.espionageFactionIntel);
+            }
+            if (mappedShard.espionageOperations) {
+                mappedShard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };
@@ -342,6 +366,8 @@ export function useGameSync() {
 
                 // 2. Initialize Authoritative World (Async worker)
                 const baseWorld = await deserializeWorldAsync(data.session.snapshot);
+                // Worker path bypasses save-service deserializeWorld — normalize here.
+                normalizeEspionageState(baseWorld);
                 worldRef.current = baseWorld;
                 sessionSince = data.session.updatedAt;
 
@@ -381,6 +407,7 @@ export function useGameSync() {
                 // Updated session snapshot → rebuild the authoritative world.
                 if (data.session?.snapshot) {
                     const newBase = await deserializeWorldAsync(data.session.snapshot);
+                    normalizeEspionageState(newBase);
                     // Re-inject cached MAPPED shards into new base snapshot (zero re-parsing cost)
                     mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
                     worldRef.current = newBase;

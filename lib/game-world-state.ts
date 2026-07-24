@@ -12,7 +12,6 @@ import type { CombatState } from './combat/combat-types';
 import type { ConstructionWorldState } from './construction/construction-types';
 import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
-import type { IntelligenceWorldState } from './intelligence/types';
 import type { LeadershipWorldState } from './leadership/types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
@@ -101,13 +100,6 @@ export interface GameWorldState {
 
     // ── Pillar 6 — Espionage ─────────────────────────────────────────────────
     espionage: EspionageWorldState;
-    /**
-     * @deprecated Consolidation Phase 2 removes this. Per-faction intel state
-     * now lives in espionage.factionIntel; op definitions in
-     * lib/espionage/operation-catalog.ts. Only intelligence-service and
-     * intelligence-ai-service still read it.
-     */
-    intelligence: IntelligenceWorldState;
 
 
     // ── Milestone & Seasonal Cycle ──────────────────────────────────────────────

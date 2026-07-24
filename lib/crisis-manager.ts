@@ -1,6 +1,14 @@
 import { prisma, withDocAliases } from '@/lib/db';
 import { CrisisType, resolveLogic } from './crisis-shared';
 
+/**
+ * Hours the defender has to respond before the crisis auto-expires.
+ * Override with CRISIS_RESPONSE_HOURS (e.g. 0.03 ≈ 2 minutes for local testing).
+ */
+const CRISIS_RESPONSE_HOURS = Number(process.env.CRISIS_RESPONSE_HOURS) > 0
+    ? Number(process.env.CRISIS_RESPONSE_HOURS)
+    : 12;
+
 // --- Actions ---
 
 /**
@@ -15,10 +23,7 @@ export async function triggerCrisis(
     attackerStrategyId: string,
     initialPayload: any = {}
 ) {
-    // 1. Calculate Deadline (e.g. 12 hours from now)
-    // For Demo: 2 minutes to allow quick testing
-    const hours = 0.03; // ~2 mins
-    const deadline = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+    const deadline = new Date(Date.now() + CRISIS_RESPONSE_HOURS * 60 * 60 * 1000).toISOString();
 
     // 2. Create Crisis Document
     const crisis = await prisma.crisis.create({

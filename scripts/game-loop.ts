@@ -4,7 +4,6 @@ import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShar
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
-import { startOperation } from '../lib/intelligence/intelligence-service';
 import { applyPolicyEffect } from '../lib/politics/politics-service';
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { calculateEscalationLevel } from '../lib/politics/cold-war-service';
@@ -18,7 +17,7 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 // saveWorldState() had already serialized the world, silently losing the order.
 import { launchOperation } from '../lib/espionage/espionage-service';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
-import { deployAgent } from '../lib/espionage/agent-service';
+import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { advanceSorties } from '../lib/combat/air-mission-service';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
@@ -1052,13 +1051,15 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ESP_LAUNCH_OP': {
+            // Client sends `investment`/`risk` (see launchCovertOpAction); older
+            // callers sent `investmentLevel`/`riskLevel` — accept both.
             launchOperation(
                 factionId,
                 payload.targetFactionId,
                 payload.targetRegionId,
                 payload.domain,
-                payload.investmentLevel || 0.5,
-                payload.riskLevel || 0.5,
+                payload.investment ?? payload.investmentLevel ?? 0.5,
+                payload.risk ?? payload.riskLevel ?? 0.5,
                 world
             );
             console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
@@ -1070,6 +1071,34 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (agent && agent.ownerFactionId === factionId) {
                 deployAgent(agent, payload.systemId, payload.domain, world);
                 console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
+            }
+            break;
+        }
+
+        case 'ESP_RECRUIT_AGENT': {
+            const candidate = payload.candidate;
+            if (!candidate?.id || !Array.isArray(candidate.traitIds)) {
+                recordOrderFailure(world, factionId, actionId, 'Malformed recruit candidate.');
+                return;
+            }
+            // Cost varies per candidate, so it bypasses the static cost gate.
+            const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
+            const cost = Math.max(0, Number(candidate.recruitmentCost) || 0);
+            if (reserves && (reserves.CREDITS ?? 0) < cost) {
+                recordOrderFailure(world, factionId, actionId, `Recruiting ${candidate.codename} costs ${cost} credits.`);
+                return;
+            }
+            if (reserves) reserves.CREDITS = (reserves.CREDITS ?? 0) - cost;
+            const agent = recruitAgent(candidate, factionId, world.nowSeconds, world);
+            console.log(`[Tick Worker] Recruited Agent ${agent.codename} for ${factionId}`);
+            break;
+        }
+
+        case 'ESP_RECALL_AGENT': {
+            const agent = world.espionage.agents.get(payload.agentId);
+            if (agent && agent.ownerFactionId === factionId) {
+                recallAgent(agent, world);
+                console.log(`[Tick Worker] Recalled Agent ${agent.codename} for ${factionId}`);
             }
             break;
         }

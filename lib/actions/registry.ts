@@ -197,6 +197,20 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { targetFactionId: "id", targetRegionId: "id", domain: "string", investment: "number" },
     cost: { credits: 500, intel: 50 }
   },
+  ESP_RECRUIT_AGENT: {
+    id: "ESP_RECRUIT_AGENT",
+    category: "espionage",
+    // Credits cost varies per candidate — deducted by the worker handler
+    // from payload.candidate.recruitmentCost, not via the static cost gate.
+    params: { candidate: "object" },
+    cost: {}
+  },
+  ESP_RECALL_AGENT: {
+    id: "ESP_RECALL_AGENT",
+    category: "espionage",
+    params: { agentId: "id" },
+    cost: {}
+  },
   ESP_INFILTRATE_NETWORK: {
     id: "ESP_INFILTRATE_NETWORK",
     category: "espionage",
