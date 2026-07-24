@@ -6,7 +6,6 @@ import type {
     EspionageOperation,
     OperationDomain,
     AttributionState,
-    CounterIntelState,
     ShadowEconomyNode,
     RegionEscalation,
     AttributionRecord,
@@ -223,8 +222,8 @@ export function computeAttributionProbability(
     const regionStability = targetSys ? 1 - targetSys.instability / 100 : 0.5;
 
     // Counter-intel investment by the target faction
-    const ciState = world.espionage.counterIntel.get(op.targetFactionId);
-    const ciLevel = ciState?.regionalInvestment.get(op.targetRegionId) ?? 0;
+    const ciState = world.espionage.factionIntel.get(op.targetFactionId);
+    const ciLevel = ciState?.regionalCounterIntel[op.targetRegionId] ?? 0;
 
     // Escalation multiplier
     const escalation = world.espionage.regionEscalation.get(op.targetRegionId);

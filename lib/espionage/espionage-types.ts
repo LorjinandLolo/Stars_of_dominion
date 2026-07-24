@@ -32,6 +32,11 @@ export interface EspionageOperation {
     /** Galaxy region/system targeted. */
     targetRegionId: string;
     domain: OperationDomain;
+    /**
+     * Catalog definition id (lib/espionage/operation-catalog.ts).
+     * Optional: legacy domain-only ops predate the catalog.
+     */
+    definitionId?: string;
     /** 0–1: investment level. Higher = better success rate + more detectable. */
     investmentLevel: number;
     /** 0–1: how risky the method chosen is. Affects attribution probability. */
@@ -48,16 +53,33 @@ export interface EspionageOperation {
     narrative?: string;
 }
 
-// ─── Counter-intelligence ─────────────────────────────────────────────────────
+// ─── Per-faction intelligence state ───────────────────────────────────────────
 
-export interface CounterIntelState {
+/**
+ * Unified per-faction espionage state: the Intel resource, operation capacity,
+ * per-target infiltration, and all counter-intelligence stats.
+ * Absorbs the former CounterIntelState (regional investments) and the former
+ * lib/intelligence IntelligenceNetwork (intel points, infiltration, defense).
+ * Plain Records instead of Maps so faction shards serialize without special-casing.
+ */
+export interface FactionIntelState {
     factionId: string;
-    /** Region IDs where counter-intel is actively deployed. */
-    activeRegionIds: string[];
-    /** Counter-intel investment level per region (0–1). */
-    regionalInvestment: Map<string, number>;
+    /** Accumulated Intel resource; spent to launch covert operations. */
+    intelPoints: number;
+    /** Max simultaneous catalog operations. */
+    agentCapacity: number;
+    usedAgentCapacity: number;
+    // Defensive stats (0–100 scales).
+    counterIntelStrength: number;
+    surveillanceStrength: number;
+    propagandaResistance: number;
+    internalSecurity: number;
+    /** Infiltration score (0–100) keyed by target factionId. */
+    infiltrationLevels: Record<string, number>;
+    /** Counter-intel investment level per region (0–1), keyed by regionId. */
+    regionalCounterIntel: Record<string, number>;
     /** Total counter-intel budget allocated (0–1 fraction of max). */
-    totalBudget: number;
+    counterIntelBudget: number;
 }
 
 // ─── Attribution tracking ─────────────────────────────────────────────────────
@@ -104,7 +126,7 @@ export interface RegionEscalation {
 
 export interface EspionageWorldState {
     operations: Map<string, EspionageOperation>;
-    counterIntel: Map<string, CounterIntelState>; // factionId → state
+    factionIntel: Map<string, FactionIntelState>; // factionId → state
     attributionRecords: AttributionRecord[];
     shadowEconomyNodes: Map<string, ShadowEconomyNode>; // systemId → node
     regionEscalation: Map<string, RegionEscalation>;    // regionId → escalation

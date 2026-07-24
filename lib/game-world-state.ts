@@ -101,7 +101,12 @@ export interface GameWorldState {
 
     // ── Pillar 6 — Espionage ─────────────────────────────────────────────────
     espionage: EspionageWorldState;
-    /** V2 Intelligence & Covert Ops System. */
+    /**
+     * @deprecated Consolidation Phase 2 removes this. Per-faction intel state
+     * now lives in espionage.factionIntel; op definitions in
+     * lib/espionage/operation-catalog.ts. Only intelligence-service and
+     * intelligence-ai-service still read it.
+     */
     intelligence: IntelligenceWorldState;
 
 

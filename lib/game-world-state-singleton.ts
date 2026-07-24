@@ -170,7 +170,7 @@ export function getGameWorldState(): GameWorldState {
             shared: defaultSharedState(),
             movement: buildEmptyMovementState(),
             economy: buildEmptyEconomyState(),
-            espionage: { operations: new Map(), counterIntel: new Map(), attributionRecords: [], shadowEconomyNodes: new Map(), regionEscalation: new Map(), agents: new Map(), intelNetworks: new Map() },
+            espionage: { operations: new Map(), factionIntel: new Map(), attributionRecords: [], shadowEconomyNodes: new Map(), regionEscalation: new Map(), agents: new Map(), intelNetworks: new Map() },
             activeSeason: null,
             seasonHistory: [],
             hallOfFame: [],

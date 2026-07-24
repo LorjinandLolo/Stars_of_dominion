@@ -140,6 +140,12 @@ export interface IntelNetwork {
     /** IDs of SpyAgents currently assigned here. */
     agentIds: string[];
     /**
+     * Planted covert assets in this system (e.g. 'sleeper_cell', 'listening_post').
+     * Absorbs the former lib/intelligence SleeperCell entity. Optional: absent
+     * on networks created before consolidation.
+     */
+    assetTags?: string[];
+    /**
      * Unix-seconds: network begins decaying if no agent assigned past this point.
      * Refreshed every time an agent is assigned here.
      */

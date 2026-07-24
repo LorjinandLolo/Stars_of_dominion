@@ -167,7 +167,7 @@ function makeMovementWorld(factionId: string): MovementWorldState {
 function makeEspionageWorld(): EspionageWorldState {
     return {
         operations: new Map(),
-        counterIntel: new Map(),
+        factionIntel: new Map(),
         attributionRecords: [],
         shadowEconomyNodes: new Map(),
         regionEscalation: new Map(),

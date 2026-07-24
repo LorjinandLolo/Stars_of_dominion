@@ -138,7 +138,7 @@ function makeGate(id: string, integrity = 1.0): GateObject {
 function makeEspionage(): EspionageWorldState {
     return {
         operations: new Map(),
-        counterIntel: new Map(),
+        factionIntel: new Map(),
         attributionRecords: [],
         shadowEconomyNodes: new Map(),
         regionEscalation: new Map(),
