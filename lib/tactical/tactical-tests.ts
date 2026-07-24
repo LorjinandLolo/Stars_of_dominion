@@ -1,45 +1,66 @@
 // lib/tactical/tactical-tests.ts
-// Test suite for the tactical combat sim (lib/tactical).
+// Test suite for the tactical combat sim V2 (lib/tactical).
 // Run with: npx tsx lib/tactical/tactical-tests.ts
 //
 // Conventions under test (see lib/tactical/sim.ts):
 //   - player enters/retreats on the LEFT edge (x <= state.edgeZone), enemy RIGHT
-//   - headings in radians, 0 = +x
+//   - headings in radians, 0 = +x; +y is STARBOARD of a ship heading 0
+//   - shields are per-facing tuples [fore, starboard, aft, port], each capped
+//     at maxShield/4; armour is directional (fore/side/aft)
 //   - all order functions mutate BattleState in place
 //   - state.outcome is non-null once the battle is over
 //
 // Tests deliberately reach into BattleState internals (teleporting ships,
-// zeroing speed, applying raw damage) to keep every scenario deterministic.
+// zeroing speed/shields, applying raw damage, injecting squadrons) to keep
+// every scenario deterministic. The only Math.random call site in the sim is
+// the called-shot miss roll inside tickWeapons; suites exercising subsystem
+// damage go through applyDamage directly to stay deterministic.
 
 import {
     createBattle,
     update,
     issueMove,
+    issueFormationMove,
     setTarget,
+    setTargetSubsystem,
     orderRetreat,
     fleetWithdraw,
     deployReinforcement,
     useAbility,
+    setSquadronOrder,
+    useCommandAbility,
     activeDeploymentPoints,
     computeResult,
     inArcAndRange,
     applyDamage,
+    totalShield,
+    facingIndexForImpact,
+    hasLineOfSight,
+    insideHazard,
     normalizeAngle,
     angleDiff,
     type BattleConfig,
 } from './sim';
-import { SHIP_CLASSES, classForCompositionKey } from './ship-defs';
+import { SHIP_CLASSES, SQUADRON_DEFS, freshSubsystems, classForCompositionKey } from './ship-defs';
 import {
     fleetsToReserves,
     fleetsStrength,
     defaultEnemyPlan,
     buildResultPayload,
 } from './fleet-adapter';
+import {
+    FACING_FORE,
+    FACING_STARBOARD,
+    FACING_AFT,
+    FACING_PORT,
+} from './types';
 import type {
     BattleResult,
     BattleState,
     ReserveEntry,
     ShipClassId,
+    Squadron,
+    SquadronType,
     TacticalShip,
     TacticalSide,
     WeaponDef,
@@ -93,6 +114,30 @@ function runPinned(state: BattleState, seconds: number): void {
     }
 }
 
+/**
+ * Advance the sim while holding specific ships at fixed spots with orders
+ * cleared (enemy AI re-issues orders every 0.5s; the re-park each 0.1s bounds
+ * drift below a unit). Used to park hostiles at exact ranges near hazards.
+ */
+function runHolding(
+    state: BattleState,
+    seconds: number,
+    holds: Array<{ ship: TacticalShip; x: number; y: number }>
+): void {
+    const iters = Math.round(seconds / 0.1);
+    for (let i = 0; i < iters; i++) {
+        for (const h of holds) {
+            if (h.ship.status === 'destroyed' || h.ship.status === 'withdrawn') continue;
+            h.ship.x = h.x;
+            h.ship.y = h.y;
+            h.ship.speed = 0;
+            h.ship.moveOrder = null;
+            h.ship.targetId = null;
+        }
+        update(state, 0.1);
+    }
+}
+
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -110,9 +155,10 @@ function reserveCount(state: BattleState, sideId: TacticalSide, classId: ShipCla
     return st.reserves.filter(r => r.classId === classId).reduce((sum, r) => sum + r.count, 0);
 }
 
-/** Hand-built ship for pure-math weapon arc tests (never inserted into a state). */
+/** Hand-built V2 ship for pure-math weapon arc tests (never inserted into a state). */
 function mkShip(sideId: TacticalSide, classId: ShipClassId, x: number, y: number, heading: number): TacticalShip {
     const def = SHIP_CLASSES[classId];
+    const facing = def.maxShield / 4;
     return {
         id: `test-${sideId}-${classId}-${x}-${y}`,
         side: sideId,
@@ -123,13 +169,16 @@ function mkShip(sideId: TacticalSide, classId: ShipClassId, x: number, y: number
         heading,
         speed: 0,
         hull: def.maxHull,
-        shield: def.maxShield,
+        shields: [facing, facing, facing, facing],
         lastHitAt: -999,
         weaponCooldowns: def.weapons.map(() => 0),
         abilityCooldown: 0,
         abilityActiveUntil: 0,
         moveOrder: null,
         targetId: null,
+        targetSubsystem: null,
+        subsystems: def.hasSubsystems ? freshSubsystems() : undefined,
+        hangarCooldowns: def.hangar ? def.hangar.squadrons.map(() => 0) : undefined,
         status: 'active',
         arrivalAt: 0,
     };
@@ -139,6 +188,11 @@ function weaponOf(classId: ShipClassId, weaponId: string): WeaponDef {
     const w = SHIP_CLASSES[classId].weapons.find(wd => wd.id === weaponId);
     if (!w) throw new Error(`FAIL: weapon ${weaponId} not found on ${classId}`);
     return w;
+}
+
+/** First live squadron of a side/type (craft > 0). */
+function liveSquadron(state: BattleState, sideId: TacticalSide, type: SquadronType): Squadron | undefined {
+    return state.squadrons.find(q => q.side === sideId && q.type === type && q.craft > 0);
 }
 
 // ─── Test runner ──────────────────────────────────────────────────────────────
@@ -272,36 +326,50 @@ suite('Arc gating — inArcAndRange pure math', () => {
     assert(!inArcAndRange(cv, turret, mkShip('enemy', 'corvette', -200, 0, 0)), '360° turret still range-gated (200 > 180)');
 });
 
-suite('Shields before hull + regen after delay', () => {
+suite('Shields before hull + per-facing regen', () => {
     const state = freshBattle([R('corvette', 1)]);
     const cor = fielded(state, 'player', 'corvette')[0];
-    assert(cor.shield === 40 && cor.hull === 60, 'corvette starts at full shield (40) and hull (60)');
+    const cap = SHIP_CLASSES.corvette.maxShield / 4; // 10 per facing
+    assert(totalShield(cor) === 40 && cor.hull === 60, 'corvette starts at full shield (40 total) and hull (60)');
+    assert(cor.shields.every(f => f === cap), 'shields split evenly across the 4 facings at spawn (10 each)');
 
-    applyDamage(state, cor, 10);
-    assert(cor.shield === 30, 'light hit absorbed entirely by shield (40 → 30)');
-    assert(cor.hull === 60, 'hull untouched while the shield holds');
+    applyDamage(state, cor, 6); // no source → bow hit
+    assert(cor.shields[FACING_FORE] === cap - 6, 'light bow hit absorbed entirely by the FORE facing (10 → 4)');
+    assert(totalShield(cor) === 34 && cor.hull === 60, 'hull untouched while the facing holds');
 
-    applyDamage(state, cor, 50);
-    assert(cor.shield === 0, 'heavy hit strips the remaining shield');
-    assert(cor.hull === 40, 'overflow bleeds into hull (60 → 40)');
+    applyDamage(state, cor, 6, { sourceX: cor.x - 200, sourceY: cor.y }); // from astern
+    assert(cor.shields[FACING_AFT] === cap - 6, 'hit from astern drains the AFT facing (10 → 4)');
+    assert(cor.shields[FACING_STARBOARD] === cap && cor.shields[FACING_PORT] === cap,
+        'unhit facings untouched (starboard/port still 10)');
+    assert(totalShield(cor) === 28 && cor.hull === 60, 'hull still untouched');
+
+    applyDamage(state, cor, 14); // fore has 4 left → 10 overflow through fore armour 0.1
+    assert(cor.shields[FACING_FORE] === 0, 'heavy hit strips the remaining FORE facing');
+    assert(Math.abs(cor.hull - 51) < 1e-9, 'overflow bleeds into hull through fore armour (60 → 51)');
 
     runPinned(state, 3.5);
-    assert(cor.shield === 0, 'no regen before shieldRegenDelay elapses (t=3.5s < 4s)');
+    assert(totalShield(cor) === 24, 'no regen before shieldRegenDelay elapses (t=3.5s < 4s)');
+    assert(cor.shields[FACING_FORE] === 0 && cor.shields[FACING_AFT] === 4, 'damaged facings unchanged before the delay');
 
     runPinned(state, 1);
-    const s1 = cor.shield;
-    assert(s1 > 0, `regen kicks in after the delay (shield ${s1.toFixed(1)})`);
+    const foreGain = cor.shields[FACING_FORE] - 0;
+    const aftGain = cor.shields[FACING_AFT] - 4;
+    assert(foreGain > 0.5, `regen kicks in after the delay (fore +${foreGain.toFixed(1)})`);
+    assert(Math.abs(foreGain - aftGain) < 1e-6,
+        `regen spread evenly across the damaged facings (fore +${foreGain.toFixed(2)}, aft +${aftGain.toFixed(2)})`);
+    assert(cor.shields[FACING_STARBOARD] === cap && cor.shields[FACING_PORT] === cap,
+        'full facings receive no regen (already at the maxShield/4 cap)');
+    const s1 = totalShield(cor);
 
     runPinned(state, 1);
-    const s2 = cor.shield;
-    assert(s2 > s1, `shield strictly increasing while unhit (${s1.toFixed(1)} → ${s2.toFixed(1)})`);
+    const s2 = totalShield(cor);
+    assert(s2 > s1, `total shield strictly increasing while unhit (${s1.toFixed(1)} → ${s2.toFixed(1)})`);
+    assert(cor.shields.every(f => f <= cap + 1e-9), 'no facing ever exceeds the per-facing cap maxShield/4');
 
-    runPinned(state, 1);
-    assert(cor.shield > s2, 'still climbing a second later');
-
-    runPinned(state, 6);
-    assert(cor.shield === 40, 'shield caps at maxShield');
-    assert(cor.hull === 40, 'regen never touches hull');
+    runPinned(state, 3);
+    assert(cor.shields.every(f => f === cap), 'every facing regenerates exactly to the per-facing cap (10)');
+    assert(totalShield(cor) === 40, 'total shield caps at maxShield');
+    assert(Math.abs(cor.hull - 51) < 1e-9, 'regen never touches hull');
 });
 
 suite('Torpedoes — spawn, pursue, hit', () => {
@@ -314,7 +382,7 @@ suite('Torpedoes — spawn, pursue, hit', () => {
     ec.x = pd.x + 300;
     ec.y = pd.y;
     ec.speed = 0;
-    const total0 = ec.hull + ec.shield;
+    const total0 = ec.hull + totalShield(ec);
     setTarget(state, [pd.id], ec.id);
 
     update(state, 0.1);
@@ -335,7 +403,7 @@ suite('Torpedoes — spawn, pursue, hit', () => {
         iters++;
     }
     assert(!state.torpedoes.some(t => t.id === torp.id), `torpedo resolved (hit) within ${iters} updates`);
-    const totalNow = ec.hull + ec.shield;
+    const totalNow = ec.hull + totalShield(ec);
     assert(totalNow < total0 - 40,
         `cruiser hull+shield dropped by ~torpedo (45) + gunfire (${total0.toFixed(0)} → ${totalNow.toFixed(0)})`);
 });
@@ -436,7 +504,10 @@ suite('Outcome & result mapping — sourceKeys survive the round trip', () => {
     });
 
     const carrierShip = state.ships.find(sh => sh.sourceKey === 'carrier');
-    assert(carrierShip !== undefined && carrierShip!.classId === 'cruiser', 'carrier fielded as the cruiser tactical class');
+    assert(carrierShip !== undefined && carrierShip!.classId === 'carrier',
+        'carrier fielded as the CARRIER tactical class (V2 mapping)');
+    assert(carrierShip!.hangarCooldowns !== undefined && carrierShip!.subsystems !== undefined,
+        'fielded carrier carries hangar cooldowns and subsystems');
     assert(state.ships.filter(sh => sh.sourceKey === 'interceptor' && sh.classId === 'corvette').length === 2,
         'interceptors fielded as corvettes, sourceKey preserved');
 
@@ -496,7 +567,7 @@ suite('fleetsToReserves — edge cases', () => {
     assert(merged.length === 2 && ic !== undefined && ic!.count === 5, 'interceptor counts summed across fleets (2+3)');
     assert(dc !== undefined && dc!.count === 1 && dc!.classId === 'destroyer', 'destroyer entry carried through the merge');
 
-    assert(classForCompositionKey('carrier') === 'cruiser', 'carrier key → cruiser class');
+    assert(classForCompositionKey('carrier') === 'carrier', 'carrier key → carrier class (V2 mapping)');
     assert(classForCompositionKey('dreadnought') === 'battleship', 'dreadnought key → battleship class');
     assert(classForCompositionKey('totally-unknown') === 'corvette', 'unknown key falls back to corvette');
 });
@@ -627,6 +698,467 @@ suite('deployReinforcement disambiguates same-class reserves by sourceKey', () =
     assert(!!ship && ship!.sourceKey === 'bomber', 'bomber-sourced corvette fielded on request');
     const after = state.player.reserves.find(r => r.sourceKey === 'bomber')?.count ?? 0;
     assert(after === before - 1, 'the BOMBER reserve row was decremented, not the interceptor row');
+});
+
+// ─── V2 suites ────────────────────────────────────────────────────────────────
+
+suite('Directional shields — impact bearing selects the facing', () => {
+    const state = freshBattle([R('cruiser', 1)]);
+    const cr = fielded(state, 'player', 'cruiser')[0]; // heading 0 (+x)
+    const cap = SHIP_CLASSES.cruiser.maxShield / 4;    // 37.5 per facing
+
+    assert(facingIndexForImpact(cr, cr.x + 100, cr.y) === FACING_FORE, 'impact from ahead maps to FORE');
+    assert(facingIndexForImpact(cr, cr.x - 100, cr.y) === FACING_AFT, 'impact from astern maps to AFT');
+    assert(facingIndexForImpact(cr, cr.x, cr.y + 100) === FACING_STARBOARD, 'impact from +y maps to STARBOARD');
+    assert(facingIndexForImpact(cr, cr.x, cr.y - 100) === FACING_PORT, 'impact from -y maps to PORT');
+
+    applyDamage(state, cr, 20, { sourceX: cr.x - 300, sourceY: cr.y });
+    assert(cr.shields[FACING_AFT] === cap - 20, 'shot from behind drains ONLY the AFT facing (37.5 → 17.5)');
+    assert(cr.shields[FACING_FORE] === cap && cr.shields[FACING_STARBOARD] === cap && cr.shields[FACING_PORT] === cap,
+        'fore/starboard/port untouched by the stern hit');
+    assert(totalShield(cr) === SHIP_CLASSES.cruiser.maxShield - 20, 'total shield conserved: exactly 20 lost');
+
+    applyDamage(state, cr, 15, { sourceX: cr.x + 300, sourceY: cr.y });
+    assert(cr.shields[FACING_FORE] === cap - 15, 'shot from the bow drains ONLY the FORE facing (37.5 → 22.5)');
+    assert(cr.shields[FACING_AFT] === cap - 20, 'aft facing keeps its earlier damage');
+    assert(totalShield(cr) === SHIP_CLASSES.cruiser.maxShield - 35, 'total shield conserved across both hits');
+
+    applyDamage(state, cr, 10, { sourceX: cr.x, sourceY: cr.y + 300 });
+    assert(cr.shields[FACING_STARBOARD] === cap - 10, 'beam from +y drains the STARBOARD facing');
+
+    applyDamage(state, cr, 5); // omitted source defaults to a bow hit
+    assert(cr.shields[FACING_FORE] === cap - 20, 'sourceless damage defaults to the FORE facing');
+    assert(cr.shields[FACING_PORT] === cap, 'port facing never touched');
+    assert(cr.hull === SHIP_CLASSES.cruiser.maxHull, 'hull untouched — every hit fully absorbed by its facing');
+});
+
+suite('Directional armour — battleship bow shrugs, stern bleeds', () => {
+    const state = freshBattle([R('battleship', 2)], undefined, { playerCapacity: 14 });
+    const ships = fielded(state, 'player', 'battleship');
+    assert(ships.length === 2, 'two identical battleships fielded (capacity raised to 14)');
+    const [bow, stern] = ships;
+    const maxHull = SHIP_CLASSES.battleship.maxHull;
+
+    // Strip shields first so the same 100 damage lands on hull from each aspect.
+    for (let i = 0; i < 4; i++) { bow.shields[i] = 0; stern.shields[i] = 0; }
+
+    applyDamage(state, bow, 100, { sourceX: bow.x + 300, sourceY: bow.y });     // into the bow
+    applyDamage(state, stern, 100, { sourceX: stern.x - 300, sourceY: stern.y }); // into the stern
+    const bowLoss = maxHull - bow.hull;
+    const sternLoss = maxHull - stern.hull;
+
+    assert(Math.abs(bowLoss - 55) < 1e-6, `bow hit filtered by fore armour 0.45 (hull -${bowLoss.toFixed(1)})`);
+    assert(Math.abs(sternLoss - 90) < 1e-6, `stern hit filtered by aft armour 0.1 (hull -${sternLoss.toFixed(1)})`);
+    assert(sternLoss > bowLoss, 'same damage costs more hull from the stern than the bow');
+});
+
+suite('Shield pierce — bombing runs bypass full shields', () => {
+    const state = freshBattle([R('cruiser', 2)]);
+    const [a, b] = fielded(state, 'player', 'cruiser');
+    const cap = SHIP_CLASSES.cruiser.maxShield / 4;
+    const maxHull = SHIP_CLASSES.cruiser.maxHull;
+
+    applyDamage(state, a, 30, { shieldPierce: 0.4 }); // fore facing holds 37.5 ≥ 30
+    const pierced = 30 * 0.4 * (1 - SHIP_CLASSES.cruiser.armor.fore);
+    assert(a.hull < maxHull, 'part of the damage lands on hull even with a full shield facing');
+    assert(Math.abs((maxHull - a.hull) - pierced) < 1e-6,
+        `hull loss is the pierce share through armour (${(maxHull - a.hull).toFixed(2)} = 30×0.4×(1-0.22))`);
+    assert(Math.abs(a.shields[FACING_FORE] - (cap - 18)) < 1e-9, 'the other 60% still drains the facing (37.5 → 19.5)');
+
+    applyDamage(state, b, 30); // control: no pierce, same hit
+    assert(b.hull === maxHull, 'without pierce the full shield facing absorbs everything');
+    assert(b.shields[FACING_FORE] === cap - 30, 'control facing drained by the full 30');
+});
+
+suite('Subsystems — engines, weapons, shields; called-shot bookkeeping', () => {
+    // Engines: called shots degrade the subsystem toward 0; at 0 speed collapses.
+    const state = freshBattle([R('cruiser', 2)]);
+    const [a, healthy] = fielded(state, 'player', 'cruiser');
+    assert(a.subsystems !== undefined && healthy.subsystems !== undefined, 'capital hulls expose subsystems');
+    assert(a.subsystems!.engines === 1, 'subsystems start at full integrity');
+    for (let i = 0; i < 4; i++) a.shields[i] = 0;
+
+    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, subsystem: 'engines' });
+    const e1 = a.subsystems!.engines;
+    assert(e1 > 0 && e1 < 1, `called shot degrades engines toward 0 (now ${e1.toFixed(2)})`);
+    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, subsystem: 'engines' });
+    assert(a.subsystems!.engines === 0, 'second called shot disables the engines (clamped at 0)');
+    assert(a.hull > SHIP_CLASSES.cruiser.maxHull * 0.5, 'ship still well above the low-hull slowdown threshold');
+
+    const aStart = { x: a.x, y: a.y };
+    const hStart = { x: healthy.x, y: healthy.y };
+    issueMove(state, [a.id], a.x + 400, a.y);
+    issueMove(state, [healthy.id], healthy.x + 400, healthy.y);
+    runPinned(state, 3);
+    const aTravelled = dist(a, aStart);
+    const hTravelled = dist(healthy, hStart);
+    assert(a.speed <= SHIP_CLASSES.cruiser.maxSpeed * 0.25 + 1e-6,
+        `disabled engines cap speed at 25% (${a.speed.toFixed(1)} ≤ 17.5)`);
+    assert(hTravelled > aTravelled * 2,
+        `healthy twin outruns the crippled ship (${hTravelled.toFixed(0)} vs ${aTravelled.toFixed(0)} units)`);
+
+    // Weapons: at 0 the ship stops firing even with an enemy in easy range.
+    const st2 = freshBattle([R('cruiser', 1)]);
+    const cr = fielded(st2, 'player', 'cruiser')[0]; // heading 0 → port battery bears on -y
+    const foe = fielded(st2, 'enemy', 'corvette')[0];
+    cr.subsystems!.weapons = 0;
+    const foeSpot = { x: cr.x, y: cr.y - 200 }; // port side: in battery range 300, outside foe turret 180
+    const foeTotal0 = foe.hull + totalShield(foe);
+    runHolding(st2, 2, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(foe.hull + totalShield(foe) === foeTotal0,
+        'weapons at 0 → no beams: enemy in easy range takes zero damage over 2s');
+
+    cr.subsystems!.weapons = 1;
+    runHolding(st2, 1, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(foe.hull + totalShield(foe) < foeTotal0, 'restored weapons resume fire (control)');
+
+    // Shields: at 0 the generator never regenerates, even past the delay.
+    const st3 = freshBattle([R('cruiser', 1)]);
+    const cr3 = fielded(st3, 'player', 'cruiser')[0];
+    cr3.subsystems!.shields = 0;
+    applyDamage(st3, cr3, 20);
+    const drained = cr3.shields[FACING_FORE];
+    runPinned(st3, 8); // regen delay is 5s — well past it
+    assert(cr3.shields[FACING_FORE] === drained && totalShield(cr3) === SHIP_CLASSES.cruiser.maxShield - 20,
+        'shields subsystem at 0 → no regen after the delay');
+    cr3.subsystems!.shields = 1;
+    runPinned(st3, 1);
+    assert(cr3.shields[FACING_FORE] > drained, 'restored generator resumes regen (control)');
+
+    // setTargetSubsystem bookkeeping (no updates → no miss-chance randomness).
+    const st4 = freshBattle([R('destroyer', 1)], [R('cruiser', 1)]);
+    const dd = fielded(st4, 'player', 'destroyer')[0];
+    const ecr = fielded(st4, 'enemy', 'cruiser')[0];
+    setTargetSubsystem(st4, [dd.id], 'engines');
+    assert(dd.targetSubsystem === null, 'called shot refused without a locked target');
+    setTarget(st4, [dd.id], ecr.id);
+    setTargetSubsystem(st4, [dd.id], 'engines');
+    assert(dd.targetSubsystem === 'engines', 'called shot accepted against a capital target');
+    setTarget(st4, [dd.id], null);
+    assert(dd.targetSubsystem === null, 'clearing the lock resets the called shot');
+});
+
+suite('Line of sight — asteroid fields block beams', () => {
+    const hazards = [
+        { kind: 'asteroid' as const, x: 800, y: 500, r: 120 },
+        { kind: 'nebula' as const, x: 400, y: 800, r: 100 },
+    ];
+    const state = freshBattle([R('cruiser', 1)], [R('corvette', 1)], { hazards });
+
+    assert(!hasLineOfSight(state, 600, 500, 1000, 500), 'segment through the asteroid core is blocked');
+    assert(hasLineOfSight(state, 600, 200, 1000, 200), 'parallel segment 300 units clear of the rock passes');
+    assert(hasLineOfSight(state, 300, 800, 500, 800), 'nebulae do NOT block line of sight (only asteroids do)');
+    assert(insideHazard(state, 'asteroid', 800, 500) && !insideHazard(state, 'asteroid', 800, 700),
+        'insideHazard: centre inside, 200 units out is not');
+    assert(insideHazard(state, 'nebula', 400, 800) && !insideHazard(state, 'nebula', 800, 500),
+        'insideHazard distinguishes hazard kinds');
+
+    // Cruiser and corvette on opposite sides of the rock, 290 apart (battery
+    // range 300). Heading π/2 swings the port battery onto +x — in arc, but
+    // the asteroid sits square on the firing line.
+    const cr = fielded(state, 'player', 'cruiser')[0];
+    cr.x = 660; cr.y = 500; cr.heading = Math.PI / 2; cr.speed = 0; cr.moveOrder = null;
+    const foe = fielded(state, 'enemy', 'corvette')[0];
+    const foeTotal0 = foe.hull + totalShield(foe);
+    runHolding(state, 2, [{ ship: foe, x: 950, y: 500 }]);
+    assert(foe.hull + totalShield(foe) === foeTotal0, 'no beam damage flows through the asteroid over 2s');
+
+    // Same geometry shifted to y=200 — clear of the rock — damage flows.
+    const state2 = freshBattle([R('cruiser', 1)], [R('corvette', 1)], { hazards });
+    const cr2 = fielded(state2, 'player', 'cruiser')[0];
+    cr2.x = 660; cr2.y = 200; cr2.heading = Math.PI / 2; cr2.speed = 0; cr2.moveOrder = null;
+    const foe2 = fielded(state2, 'enemy', 'corvette')[0];
+    const foe2Total0 = foe2.hull + totalShield(foe2);
+    runHolding(state2, 2, [{ ship: foe2, x: 950, y: 200 }]);
+    assert(foe2.hull + totalShield(foe2) < foe2Total0 - 10,
+        `same setup clear of the rock: battery fire lands (total ${foe2Total0.toFixed(0)} → ${(foe2.hull + totalShield(foe2)).toFixed(0)})`);
+});
+
+suite('Nebulae — sensor veil and torpedo lock scrambling', () => {
+    // Sensor veil: a target parked inside a nebula is invisible beyond 180.
+    const veil = [{ kind: 'nebula' as const, x: 700, y: 500, r: 150 }];
+    const state = freshBattle([R('cruiser', 1)], [R('corvette', 1)], { hazards: veil });
+    const cr = fielded(state, 'player', 'cruiser')[0];
+    cr.x = 400; cr.y = 500; cr.heading = Math.PI / 2; cr.speed = 0; cr.moveOrder = null;
+    const foe = fielded(state, 'enemy', 'corvette')[0];
+    assert(insideHazard(state, 'nebula', 660, 500), 'target parking spot sits inside the nebula');
+
+    const foeTotal0 = foe.hull + totalShield(foe);
+    runHolding(state, 2, [{ ship: foe, x: 660, y: 500 }]);
+    assert(foe.hull + totalShield(foe) === foeTotal0,
+        'target inside the nebula is NOT auto-engaged from 260 units (beyond the 180 veil)');
+
+    cr.x = 520; // now 140 from the target — inside the 180-unit detection range
+    runHolding(state, 2, [{ ship: foe, x: 660, y: 500 }]);
+    assert(foe.hull + totalShield(foe) < foeTotal0, 'closing inside 180 restores the engagement (control)');
+
+    // Torpedo fizzle: a pursued ship diving into a nebula shakes the lock.
+    const st2 = freshBattle([R('destroyer', 1)], [R('cruiser', 1)],
+        { hazards: [{ kind: 'nebula' as const, x: 1200, y: 800, r: 150 }] });
+    const pd = fielded(st2, 'player', 'destroyer')[0];
+    const ec = fielded(st2, 'enemy', 'cruiser')[0];
+    ec.x = pd.x + 300; ec.y = pd.y; ec.speed = 0;
+    setTarget(st2, [pd.id], ec.id);
+    update(st2, 0.1);
+    const torp = st2.torpedoes[0];
+    assert(torp !== undefined && torp.targetId === ec.id, 'torpedo launched and locked before the target hides');
+    assert(torp.expiresAt > st2.time + 10, 'fresh torpedo carries its full ~12s lifetime');
+    const ecTotal0 = ec.hull + totalShield(ec);
+
+    runHolding(st2, 0.1, [{ ship: ec, x: 1200, y: 800 }]); // target dives into the nebula
+    assert(torp.expiresAt <= st2.time + 1.5 + 1e-6, 'lock scrambled: lifetime clamped to ~1.5s');
+    runHolding(st2, 1.0, [{ ship: ec, x: 1200, y: 800 }]);
+    assert(st2.torpedoes.some(t => t.id === torp.id), 'torpedo still chasing inside the fizzle window');
+    runHolding(st2, 1.0, [{ ship: ec, x: 1200, y: 800 }]);
+    assert(!st2.torpedoes.some(t => t.id === torp.id), 'torpedo expired early (~1.5s) instead of tracking to impact');
+    assert(ec.hull + totalShield(ec) === ecTotal0, 'hidden cruiser never took the torpedo hit');
+});
+
+suite('Squadrons — launch, strikes, interception, relaunch, recovery', () => {
+    const state = freshBattle([R('carrier', 1)], [R('cruiser', 1)]);
+    const car = fielded(state, 'player', 'carrier')[0];
+    const foe = fielded(state, 'enemy', 'cruiser')[0];
+    assert(car.hangarCooldowns !== undefined, 'carrier spawns with hangar cooldown slots');
+    // Hold the enemy cruiser 400 units east: outside its 300 batteries and the
+    // carrier PD, but reachable by strike craft.
+    const foeSpot = { x: car.x + 400, y: car.y };
+
+    runHolding(state, 0.3, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    const ic = liveSquadron(state, 'player', 'interceptor');
+    const bomber = liveSquadron(state, 'player', 'bomber');
+    assert(ic !== undefined && bomber !== undefined, 'carrier auto-launches interceptor + bomber squadrons');
+    assert(ic!.carrierId === car.id && bomber!.carrierId === car.id, 'squadrons belong to their carrier');
+    assert(ic!.craft === SQUADRON_DEFS.interceptor.craft && bomber!.craft === SQUADRON_DEFS.bomber.craft,
+        'squadrons launch at full craft strength');
+    assert(state.squadrons.every(q => q.side === 'player'), 'hangarless enemy cruiser fields no squadrons');
+
+    // Bomber strike on the held cruiser; interceptor sent to a patrol point
+    // where an injected enemy squadron loiters (away from all ship guns).
+    setSquadronOrder(state, [bomber!.id], 'attack', foe.id);
+    setSquadronOrder(state, [ic!.id], 'patrol', null, 610, 800);
+    state.squadrons.push({
+        id: 'sq-injected-1',
+        side: 'enemy',
+        type: 'bomber',
+        carrierId: foe.id,
+        x: 610,
+        y: 800,
+        craft: 6,
+        craftDamage: 0,
+        order: 'patrol',
+        targetShipId: null,
+        patrolX: 610,
+        patrolY: 800,
+    });
+
+    const foeHull0 = foe.hull;
+    const foeShield0 = totalShield(foe);
+    runHolding(state, 6, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(foe.hull < foeHull0,
+        `bombing runs pierce partially through FULL shields into hull (${foeHull0.toFixed(0)} → ${foe.hull.toFixed(0)})`);
+    assert(totalShield(foe) < foeShield0, 'the non-pierced share of the strike drains the shields');
+    const injected = state.squadrons.find(q => q.id === 'sq-injected-1');
+    assert(injected === undefined || injected.craft < 6,
+        `interceptors thin the enemy squadron (${injected ? injected.craft : 0}/6 craft left)`);
+    assert(liveSquadron(state, 'player', 'interceptor') !== undefined, 'interceptor squadron survives the dogfight');
+
+    // Death → the hangar waits out its ~25s rebuild unless rushed.
+    const b1 = liveSquadron(state, 'player', 'bomber');
+    assert(b1 !== undefined, 'bomber squadron still flying before being wiped');
+    b1!.craft = 0;
+    runHolding(state, 2, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(liveSquadron(state, 'player', 'bomber') === undefined,
+        'dead squadron NOT rebuilt after 2s (relaunch timer is ~25s)');
+
+    assert(useAbility(state, car.id) === true, 'rapid_relaunch ability accepted');
+    runHolding(state, 0.2, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    const b2 = liveSquadron(state, 'player', 'bomber');
+    assert(b2 !== undefined && b2!.craft === SQUADRON_DEFS.bomber.craft,
+        'rapid_relaunch rebuilds the squadron instantly at full strength');
+
+    // Recovery: 'return' flies the squadron home and despawns it at the carrier.
+    setSquadronOrder(state, [b2!.id], 'return');
+    runHolding(state, 1, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(liveSquadron(state, 'player', 'bomber') === undefined,
+        'returned squadron recovered aboard (despawns at the carrier)');
+
+    // Natural relaunch: the hangar rebuilds the recovered squadron after ~25s.
+    runHolding(state, 26, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
+    assert(liveSquadron(state, 'player', 'bomber') !== undefined,
+        'carrier rebuilds and relaunches the squadron after ~25s');
+});
+
+suite('Formations — line spreads abreast, column strings along the axis', () => {
+    const state = freshBattle([R('corvette', 5)]);
+    const ships = fielded(state, 'player', 'corvette');
+    assert(ships.length === 5, 'five corvettes fielded');
+    const ids = ships.map(s => s.id);
+
+    issueFormationMove(state, ids, 800, 500, 0, 'line');
+    const line = ships.map(s => s.moveOrder);
+    assert(line.every(d => d !== null), 'every selected ship received its own move order');
+    let minPair = Infinity;
+    for (let i = 0; i < line.length; i++) {
+        for (let j = i + 1; j < line.length; j++) {
+            minPair = Math.min(minPair, Math.hypot(line[i]!.x - line[j]!.x, line[i]!.y - line[j]!.y));
+        }
+    }
+    assert(minPair >= 30, `line slots pairwise ≥ 30 units apart (min ${minPair.toFixed(0)})`);
+    assert(line.every(d => Math.abs(d!.x - 800) < 1e-6),
+        'line abreast: slots spread perpendicular to the facing axis (all x = 800)');
+    assert(new Set(line.map(d => Math.round(d!.y))).size === 5, 'five distinct line slots');
+    assert(line.every(d => d!.face === 0), 'requested facing carried into every slot');
+
+    issueFormationMove(state, ids, 800, 500, 0, 'column');
+    const col = ships.map(s => s.moveOrder!);
+    assert(col.every(d => Math.abs(d.y - 500) < 1e-6), 'column: every slot lies ON the facing axis (y = 500)');
+    const xs = col.map(d => d.x).sort((a, b) => b - a);
+    assert(Math.abs(xs[0] - 800) < 1e-6, 'column lead holds the ordered point');
+    assert(xs.every((x, i) => i === 0 || Math.abs((xs[i - 1] - x) - 46) < 1e-6),
+        'followers strung astern at uniform 46-unit spacing, ordered along the axis');
+    assert(new Set(xs.map(x => Math.round(x))).size === 5, 'five distinct column slots (≥ 30 apart)');
+});
+
+suite('Command abilities — admiral gating, volley, shield pulse', () => {
+    const s0 = freshBattle([R('corvette', 2)]);
+    assert(s0.player.commandAbilities.length === 0, 'no admiral → commandAbilities empty');
+    assert(useCommandAbility(s0, 'player', 'coordinated_volley') === false, 'volley refused without an admiral');
+    assert(useCommandAbility(s0, 'player', 'shield_pulse') === false, 'pulse refused without an admiral');
+
+    const s1 = freshBattle([R('cruiser', 2)], undefined, { playerHasAdmiral: true });
+    assert(s1.player.commandAbilities.length === 2, 'admiral unlocks both command abilities');
+    assert(s1.enemy.commandAbilities.length === 0, 'enemy side (no admiral) has none');
+    assert(useCommandAbility(s1, 'enemy', 'coordinated_volley') === false, 'enemy cannot borrow the player admiral');
+
+    const ships = fielded(s1, 'player', 'cruiser');
+    for (const sh of ships) sh.weaponCooldowns = sh.weaponCooldowns.map(() => 5);
+    assert(useCommandAbility(s1, 'player', 'coordinated_volley') === true, 'volley fires with an admiral');
+    assert(ships.every(sh => sh.weaponCooldowns.every(cd => cd === 0)),
+        'coordinated volley zeroes every active ship weapon cooldown');
+    assert(useCommandAbility(s1, 'player', 'coordinated_volley') === false, 'second volley refused while cooling down');
+
+    const cap = SHIP_CLASSES.cruiser.maxShield / 4; // 37.5
+    const a = ships[0];
+    a.shields[0] = 0; a.shields[1] = 30; a.shields[2] = cap; a.shields[3] = 20;
+    assert(useCommandAbility(s1, 'player', 'shield_pulse') === true, 'shield pulse fires with an admiral');
+    assert(Math.abs(a.shields[0] - 11.25) < 1e-9, 'pulse adds maxShield×0.3/4 = 11.25 to a drained facing');
+    assert(a.shields[1] === cap && a.shields[2] === cap,
+        'boosted facings clamp at the maxShield/4 cap — never above it');
+    assert(Math.abs(a.shields[3] - 31.25) < 1e-9, 'partially drained facing gains the full pulse');
+    assert(ships[1].shields.every(f => f === cap), 'undamaged fleetmate stays exactly at cap');
+    assert(useCommandAbility(s1, 'player', 'shield_pulse') === false, 'second pulse refused while cooling down');
+});
+
+suite('Carrier mapping — strategic carriers field the carrier class', () => {
+    const reserves = fleetsToReserves([{ id: 'cf', factionId: 'me', composition: { carrier: 2 } }]);
+    assert(reserves.length === 1 && reserves[0].classId === 'carrier'
+        && reserves[0].sourceKey === 'carrier' && reserves[0].count === 2,
+        'fleetsToReserves maps composition key "carrier" to the carrier class (V2)');
+
+    const state = createBattle({
+        playerReserves: reserves,
+        enemyReserves: [R('corvette', 1)],
+        enemyPlan: { posture: 'balanced', retreatBelowFleetStrength: 0 },
+    });
+    const carriers = fielded(state, 'player', 'carrier');
+    assert(carriers.length === 2, 'both carriers fielded (2×6 pts within capacity 12)');
+    assert(carriers.every(c => c.hangarCooldowns !== undefined && c.subsystems !== undefined),
+        'fielded carriers carry hangars and subsystems');
+
+    const foe = fielded(state, 'enemy', 'corvette')[0];
+    applyDamage(state, foe, 99_999);
+    update(state, 0.1);
+    assert(state.outcome !== null && state.outcome!.winner === 'player', 'battle resolves for the player');
+    const r = computeResult(state);
+    assert(r.player.composition['carrier'] === 2, 'computeResult maps survivors back to sourceKey "carrier"');
+    assert(r.player.destroyed === false && r.player.strength > 0.99, 'carriers survive at full strength');
+});
+
+// ─── Regression suites (V2 adversarial-review fixes) ──────────────────────────
+
+suite('Nebula veil is symmetric — no outbound sniping from cover', () => {
+    // Player battleship INSIDE a nebula, enemy corvette parked 300 away
+    // (inside battery/spinal range, outside the 180 detect range).
+    const state = freshBattle([R('battleship', 1)], [R('corvette', 1)], {
+        hazards: [{ kind: 'nebula', x: 400, y: 500, r: 150 }],
+    });
+    const bs = fielded(state, 'player', 'battleship')[0];
+    const target = fielded(state, 'enemy', 'corvette')[0];
+    bs.x = 400; bs.y = 500; bs.heading = 0; bs.moveOrder = null;
+    setTarget(state, [bs.id], target.id);
+
+    const before = target.hull + totalShield(target);
+    runHolding(state, 4, [{ ship: target, x: 700, y: 500 }]);
+    const after = target.hull + totalShield(target);
+    assert(insideHazard(state, 'nebula', bs.x, bs.y), 'battleship sits inside the nebula');
+    assert(Math.abs(after - before) < 1e-6, 'veiled battleship cannot engage beyond detect range');
+
+    // Same geometry with the target INSIDE detect range → fire flows.
+    runHolding(state, 4, [{ ship: target, x: 550, y: 500 }]);
+    assert(target.hull + totalShield(target) < before, 'target inside 180 units gets engaged');
+});
+
+suite('Torpedo called shots deliver subsystem damage (no launch-miss)', () => {
+    const state = freshBattle([R('destroyer', 1)], [R('cruiser', 1)]);
+    const dd = fielded(state, 'player', 'destroyer')[0];
+    const cr = fielded(state, 'enemy', 'cruiser')[0];
+    dd.x = 500; dd.y = 500; dd.heading = 0; dd.moveOrder = null;
+    setTarget(state, [dd.id], cr.id);
+    setTargetSubsystem(state, [dd.id], 'engines');
+
+    // Park the cruiser dead ahead inside torpedo arc/range; strip shields so
+    // hull (and thus subsystem) damage lands on the first impact.
+    cr.shields = [0, 0, 0, 0];
+    let seconds = 0;
+    while (seconds < 20 && cr.subsystems!.engines >= 1) {
+        runHolding(state, 0.5, [{ ship: cr, x: 800, y: 500 }]);
+        cr.shields = [0, 0, 0, 0];
+        seconds += 0.5;
+    }
+    assert(cr.subsystems!.engines < 1, 'torpedo impacts degrade the called engines subsystem');
+});
+
+suite('Command abilities refund when they would do nothing', () => {
+    const state = freshBattle([R('corvette', 2)], undefined, { playerHasAdmiral: true });
+    // Kill every player ship so none is 'active'.
+    for (const sh of fielded(state, 'player')) applyDamage(state, sh, 100000);
+    const ok = useCommandAbility(state, 'player', 'coordinated_volley');
+    assert(ok === false, 'volley with zero active ships is rejected');
+    const ability = state.player.commandAbilities.find(a => a.id === 'coordinated_volley')!;
+    assert(ability.cooldownRemaining === 0, 'cooldown NOT consumed on the dead click');
+});
+
+suite('Rapid Relaunch refunds when no squadron is missing', () => {
+    const state = freshBattle([R('carrier', 1)], undefined);
+    const cv = fielded(state, 'player', 'carrier')[0];
+    runPinned(state, 0.5); // hangar fields both squadrons
+    const mine = state.squadrons.filter(sq => sq.side === 'player');
+    assert(mine.length === 2, 'carrier fields interceptors + bombers');
+
+    const ok = useAbility(state, cv.id);
+    assert(ok === false, 'rapid relaunch with full decks is refused');
+    assert(cv.abilityCooldown === 0, 'ability cooldown refunded');
+
+    // Lose a squadron → the ability now works instantly.
+    const bombers = mine.find(sq => sq.type === 'bomber')!;
+    bombers.craft = 0;
+    runPinned(state, 0.2); // prune the dead squadron
+    const ok2 = useAbility(state, cv.id);
+    assert(ok2 === true, 'rapid relaunch fires once a squadron is lost');
+    assert(state.squadrons.filter(sq => sq.side === 'player' && sq.type === 'bomber' && sq.craft > 0).length === 1,
+        'lost bomber squadron relaunched immediately');
+});
+
+suite('Stale squadron attack orders self-heal to carrier defence', () => {
+    const state = freshBattle([R('carrier', 1)], [R('corvette', 2)]);
+    runPinned(state, 0.5);
+    const bombers = state.squadrons.find(sq => sq.side === 'player' && sq.type === 'bomber')!;
+    const victim = fielded(state, 'enemy', 'corvette')[0];
+    setSquadronOrder(state, [bombers.id], 'attack', victim.id);
+    applyDamage(state, victim, 100000); // target dies
+    runPinned(state, 0.5);
+    assert(bombers.order === 'defend', 'attack order on a dead target resets to defend');
+    assert(bombers.targetShipId === bombers.carrierId, 'squadron falls back to guarding its carrier');
 });
 
 console.log('\n✅ All tests completed.\n');

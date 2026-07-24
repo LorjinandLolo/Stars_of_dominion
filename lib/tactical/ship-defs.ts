@@ -1,19 +1,24 @@
 // lib/tactical/ship-defs.ts
-// Static ship class balance for tactical combat V1.
+// Static ship class balance for tactical combat V2.
 //
 // Class fantasy (per design doc §6):
 //   Corvette   — fast flanker, screens, dies to concentrated fire.
 //   Destroyer  — aggressive forward damage, torpedoes, anti-capital.
-//   Cruiser    — flexible line ship, broadsides, strong sustain.
-//   Battleship — slow centrepiece, devastating spinal + broadsides, weak rear.
+//   Cruiser    — flexible line ship, broadsides, strong sustain. Subsystems.
+//   Battleship — slow centrepiece, devastating spinal + broadsides, heavy
+//                frontal armour, weak engines/rear. Subsystems.
+//   Carrier    — stays behind the line, fields interceptor + bomber squadrons,
+//                point-defence only. Subsystems. Depends on escorts.
 //
 // Numbers tuned so a corvette dies in ~4s of focus, a battleship survives
 // ~40s of a cruiser's broadside — battles resolve in the 1–4 minute band.
 
-import type { ShipClassDef, ShipClassId } from './types';
+import type { ArmorProfile, ShipClassDef, ShipClassId, SquadronDef, SquadronType } from './types';
 
 const TURRET_ARC = Math.PI * 2;
 const deg = (d: number) => (d * Math.PI) / 180;
+
+const NO_ARMOR: ArmorProfile = { fore: 0, side: 0, aft: 0 };
 
 export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
     corvette: {
@@ -27,6 +32,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
         maxShield: 40,
         shieldRegen: 8,
         shieldRegenDelay: 4,
+        armor: { fore: 0.1, side: 0.08, aft: 0.05 },
         preferredRange: 140,
         deploymentCost: 1,
         weapons: [
@@ -39,6 +45,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 damage: 4,
                 cooldown: 0.5,
                 projectile: 'beam',
+                antiSquadron: true,
             },
         ],
         ability: {
@@ -61,6 +68,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
         maxShield: 80,
         shieldRegen: 10,
         shieldRegenDelay: 4,
+        armor: { fore: 0.18, side: 0.1, aft: 0.06 },
         preferredRange: 240,
         deploymentCost: 3,
         weapons: [
@@ -73,6 +81,9 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 damage: 9,
                 cooldown: 1.0,
                 projectile: 'beam',
+                // Fast-tracking mounts — a destroyer that keeps its nose on a
+                // bomber squadron can defend itself (its only anti-craft answer).
+                antiSquadron: true,
             },
             {
                 id: 'torpedo',
@@ -106,8 +117,10 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
         maxShield: 150,
         shieldRegen: 12,
         shieldRegenDelay: 5,
+        armor: { fore: 0.22, side: 0.16, aft: 0.1 },
         preferredRange: 260,
         deploymentCost: 4,
+        hasSubsystems: true,
         weapons: [
             {
                 id: 'port-battery',
@@ -138,6 +151,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 damage: 2.5,
                 cooldown: 0.4,
                 projectile: 'beam',
+                antiSquadron: true,
             },
         ],
         ability: {
@@ -160,8 +174,11 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
         maxShield: 240,
         shieldRegen: 14,
         shieldRegenDelay: 6,
+        // The doc's flagship trade-off: dominant bow, soft stern.
+        armor: { fore: 0.45, side: 0.25, aft: 0.1 },
         preferredRange: 340,
         deploymentCost: 7,
+        hasSubsystems: true,
         weapons: [
             {
                 id: 'spinal-lance',
@@ -202,6 +219,21 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 damage: 6,
                 cooldown: 1.0,
                 projectile: 'beam',
+                antiSquadron: true,
+            },
+            {
+                // Without a 360° PD net a battleship had literally no answer to
+                // a bomber squadron parked off its bow (batteries can't target
+                // strike craft) — a free 400-hull kill.
+                id: 'point-defence',
+                name: 'Point Defence Net',
+                mountAngle: 0,
+                arc: TURRET_ARC,
+                range: 130,
+                damage: 2,
+                cooldown: 0.45,
+                projectile: 'beam',
+                antiSquadron: true,
             },
         ],
         ability: {
@@ -212,9 +244,81 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
             duration: 8,
         },
     },
+
+    carrier: {
+        id: 'carrier',
+        name: 'Carrier',
+        maxSpeed: 45,
+        acceleration: 16,
+        turnRate: 0.7,
+        radius: 22,
+        maxHull: 300,
+        maxShield: 180,
+        shieldRegen: 12,
+        shieldRegenDelay: 6,
+        armor: { fore: 0.15, side: 0.15, aft: 0.1 },
+        // Stays behind the front line, controls space through strike craft.
+        preferredRange: 430,
+        deploymentCost: 6,
+        hasSubsystems: true,
+        hangar: {
+            squadrons: ['interceptor', 'bomber'],
+            relaunchSeconds: 25,
+        },
+        weapons: [
+            {
+                id: 'point-defence',
+                name: 'Point Defence Grid',
+                mountAngle: 0,
+                arc: TURRET_ARC,
+                range: 160,
+                damage: 3,
+                cooldown: 0.4,
+                projectile: 'beam',
+                antiSquadron: true,
+            },
+        ],
+        ability: {
+            id: 'rapid_relaunch',
+            name: 'Rapid Relaunch',
+            description: 'Instantly rebuild and relaunch all lost squadrons.',
+            cooldown: 60,
+            duration: 0,
+        },
+    },
 };
 
-/** Map a strategic composition key to a tactical ship class (V1 approximations). */
+/** Strike-craft squadron balance. */
+export const SQUADRON_DEFS: Record<SquadronType, SquadronDef> = {
+    interceptor: {
+        type: 'interceptor',
+        craft: 6,
+        hpPerCraft: 10,
+        speed: 165,
+        range: 90,
+        shipDps: 3,
+        shieldPierce: 0,
+        squadronDps: 14,
+    },
+    bomber: {
+        type: 'bomber',
+        craft: 6,
+        hpPerCraft: 12,
+        speed: 125,
+        range: 80,
+        shipDps: 13,
+        // Bombing runs slip a share of their damage straight through shields.
+        shieldPierce: 0.4,
+        squadronDps: 3,
+    },
+};
+
+/** Fresh subsystem block for capital hulls. */
+export function freshSubsystems() {
+    return { engines: 1, shields: 1, weapons: 1, sensors: 1 };
+}
+
+/** Map a strategic composition key to a tactical ship class (V2 mapping). */
 export function classForCompositionKey(key: string): ShipClassId {
     switch (key.toLowerCase()) {
         case 'corvette':
@@ -224,8 +328,9 @@ export function classForCompositionKey(key: string): ShipClassId {
         case 'destroyer':
             return 'destroyer';
         case 'cruiser':
-        case 'carrier':
             return 'cruiser';
+        case 'carrier':
+            return 'carrier';
         case 'battleship':
         case 'dreadnought':
             return 'battleship';

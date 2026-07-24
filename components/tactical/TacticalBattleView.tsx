@@ -1,27 +1,46 @@
 "use client";
 
 // components/tactical/TacticalBattleView.tsx
-// Stars of Dominion — real-time tactical battle view (V1).
+// Stars of Dominion — real-time tactical battle view (V2).
 //
 // Full-screen canvas renderer over the mutation-in-place sim in lib/tactical.
 // The BattleState lives in a ref and is mutated by the rAF loop and player
 // orders; React only re-renders the DOM HUD on a slow 250ms tick. The player
 // enters/retreats on the LEFT edge, the enemy on the RIGHT.
+//
+// V2 layers on: directional shield arcs, hazard rendering (asteroid fields,
+// nebulae), strike-craft squadrons with their own selection set + orders,
+// subsystem call-shots, formation moves and fleet-command (admiral) abilities.
 
 import React from 'react';
-import type { BattleResult, BattleState, TacticalShip, Torpedo } from '@/lib/tactical/types';
-import { SHIP_CLASSES } from '@/lib/tactical/ship-defs';
+import type {
+    BattleResult,
+    BattleState,
+    CommandAbilityId,
+    FormationId,
+    Hazard,
+    Squadron,
+    SubsystemId,
+    TacticalShip,
+    Torpedo,
+} from '@/lib/tactical/types';
+import { SHIP_CLASSES, SQUADRON_DEFS } from '@/lib/tactical/ship-defs';
 import {
     activeDeploymentPoints,
     computeResult,
     createBattle,
     deployReinforcement,
     fleetWithdraw,
+    issueFormationMove,
     issueMove,
     orderRetreat,
+    setSquadronOrder,
     setTarget,
+    setTargetSubsystem,
+    totalShield,
     update,
     useAbility as triggerAbility,
+    useCommandAbility as triggerCommandAbility,
 } from '@/lib/tactical/sim';
 import {
     defaultEnemyPlan,
@@ -36,12 +55,26 @@ const ARRIVAL_WARP_SECONDS = 4;   // mirrors ARRIVAL_DELAY in lib/tactical/sim.t
 const BEAM_FADE_SECONDS = 0.12;   // mirrors beam expiry in lib/tactical/sim.ts
 const DRAG_THRESHOLD_PX = 5;
 const MAX_SELECTED_ROWS = 6;
+const SQUADRON_GRAB_RADIUS = 12;  // world units for squadron click-select
+
+const FORMATIONS: FormationId[] = ['line', 'column', 'wedge', 'screen', 'circle'];
+const SUBSYSTEM_IDS: SubsystemId[] = ['engines', 'shields', 'weapons', 'sensors'];
+const FACING_LABELS = ['Fore', 'Starboard', 'Aft', 'Port'] as const;
+const COMMAND_LABELS: Record<CommandAbilityId, string> = {
+    coordinated_volley: 'Coordinated Volley',
+    shield_pulse: 'Shield Pulse',
+};
 
 interface TacticalBattleViewProps {
     title?: string;
     playerFleets: StrategicFleetLike[];
     enemyFleets: StrategicFleetLike[];
     enemyName?: string;
+    /** Battlefield hazards (asteroid fields, nebulae) forwarded to createBattle. */
+    hazards?: Hazard[];
+    /** Admirals unlock the side's fleet-command abilities. */
+    playerHasAdmiral?: boolean;
+    enemyHasAdmiral?: boolean;
     /** Player closed the battle before any resolution (only offered pre-outcome). */
     onAbort: () => void;
     /** Battle is over and the player clicked RETURN TO GALAXY. */
@@ -84,6 +117,16 @@ function mulberry32(seed: number): () => number {
     };
 }
 
+/** FNV-1a — stable numeric seed from a squadron id. */
+function hashStr(s: string): number {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
 function fmtTime(seconds: number): string {
     const s = Math.max(0, Math.floor(seconds));
     return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -98,6 +141,9 @@ export default function TacticalBattleView({
     playerFleets,
     enemyFleets,
     enemyName = 'Enemy Fleet',
+    hazards,
+    playerHasAdmiral,
+    enemyHasAdmiral,
     onAbort,
     onFinish,
 }: TacticalBattleViewProps) {
@@ -110,6 +156,9 @@ export default function TacticalBattleView({
             playerStrength: fleetsStrength(playerFleets),
             enemyStrength: fleetsStrength(enemyFleets),
             enemyPlan: defaultEnemyPlan(),
+            hazards,
+            playerHasAdmiral,
+            enemyHasAdmiral,
         });
     }
     const state = stateRef.current;
@@ -125,6 +174,22 @@ export default function TacticalBattleView({
         }));
     }
 
+    // Static hazard dressing: rock speckle per asteroid field, seeded from the
+    // hazard position so it never shimmers between frames.
+    const hazardRocksRef = React.useRef<Array<Array<{ x: number; y: number; r: number }>> | null>(null);
+    if (hazardRocksRef.current === null) {
+        hazardRocksRef.current = state.hazards.map(h => {
+            if (h.kind !== 'asteroid') return [];
+            const rand = mulberry32((Math.round(h.x * 31 + h.y * 17 + h.r * 7) >>> 0) || 1);
+            const count = Math.max(18, Math.min(60, Math.round((h.r * h.r) / 350)));
+            return Array.from({ length: count }, () => {
+                const rr = h.r * Math.sqrt(rand()) * 0.92;
+                const a = rand() * TAU;
+                return { x: h.x + Math.cos(a) * rr, y: h.y + Math.sin(a) * rr, r: 0.8 + rand() * 2.2 };
+            });
+        });
+    }
+
     // ── Speed / selection (mirrored into refs for the render loop) ──
     const [speed, setSpeedState] = React.useState(1);
     const speedRef = React.useRef(1);
@@ -135,9 +200,32 @@ export default function TacticalBattleView({
 
     const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
     const selectionRef = React.useRef<string[]>([]);
+
+    // Squadron selection is a SEPARATE set — ship and squadron selections
+    // never mix (selecting one clears the other).
+    const [selectedSquadronIds, setSelectedSquadronIds] = React.useState<string[]>([]);
+    const squadronSelectionRef = React.useRef<string[]>([]);
+    const setSquadronSelection = React.useCallback((ids: string[]) => {
+        squadronSelectionRef.current = ids;
+        setSelectedSquadronIds(ids);
+    }, []);
+
+    // Armed formation: the NEXT right-click issues a formation move, then disarms.
+    const [armedFormation, setArmedFormationState] = React.useState<FormationId | null>(null);
+    const armedFormationRef = React.useRef<FormationId | null>(null);
+    const setArmedFormation = React.useCallback((f: FormationId | null) => {
+        armedFormationRef.current = f;
+        setArmedFormationState(f);
+    }, []);
+
     const setSelection = React.useCallback((ids: string[]) => {
         selectionRef.current = ids;
         setSelectedIds(ids);
+        // Formations need ≥2 ships; disarm when the selection drops below that.
+        if (ids.length < 2) {
+            armedFormationRef.current = null;
+            setArmedFormationState(null);
+        }
     }, []);
 
     const [confirmingWithdraw, setConfirmingWithdraw] = React.useState(false);
@@ -160,6 +248,17 @@ export default function TacticalBattleView({
                 if (live.length !== selectionRef.current.length) {
                     selectionRef.current = live;
                     setSelectedIds(live);
+                    // Mirror setSelection's rule: the formation bar needs ≥2
+                    // ships, so a death-shrunk selection must also disarm —
+                    // otherwise an invisible armed formation hijacks the next
+                    // right-click into a formation move.
+                    if (live.length < 2) setArmedFormation(null);
+                }
+                const liveSq = squadronSelectionRef.current.filter(id =>
+                    st.squadrons.some(q => q.id === id && q.craft > 0));
+                if (liveSq.length !== squadronSelectionRef.current.length) {
+                    squadronSelectionRef.current = liveSq;
+                    setSelectedSquadronIds(liveSq);
                 }
             }
             forceHud();
@@ -231,6 +330,20 @@ export default function TacticalBattleView({
             return best;
         };
 
+        const squadronAt = (st: BattleState, wx: number, wy: number): Squadron | null => {
+            let best: Squadron | null = null;
+            let bestDist = Infinity;
+            for (const sq of st.squadrons) {
+                if (sq.side !== 'player' || sq.craft <= 0) continue;
+                const d = Math.hypot(sq.x - wx, sq.y - wy);
+                if (d <= SQUADRON_GRAB_RADIUS && d < bestDist) {
+                    best = sq;
+                    bestDist = d;
+                }
+            }
+            return best;
+        };
+
         // ── Mouse ──
         const onMouseDown = (e: MouseEvent) => {
             const st = stateRef.current;
@@ -269,17 +382,25 @@ export default function TacticalBattleView({
             const p = toLocal(e.clientX, e.clientY);
             const wp = screenToWorld(p.x, p.y);
 
-            // Right button: move order. Press point is the destination; a drag
-            // sets the final facing along the drag vector.
+            // Right button: ship move (or armed-formation move) — press point is
+            // the destination, a drag sets the final facing along the drag
+            // vector. With squadrons selected instead: patrol at that point.
             if (d.button === 2) {
-                const sel = selectionRef.current;
-                if (!sel.length) return;
                 const dest = screenToWorld(d.startX, d.startY);
-                if (d.moved) {
-                    const face = Math.atan2(wp.y - dest.y, wp.x - dest.x);
-                    issueMove(st, sel, dest.x, dest.y, face);
-                } else {
-                    issueMove(st, sel, dest.x, dest.y, null);
+                const face = d.moved ? Math.atan2(wp.y - dest.y, wp.x - dest.x) : null;
+                const sel = selectionRef.current;
+                if (sel.length) {
+                    const formation = armedFormationRef.current;
+                    if (formation) {
+                        issueFormationMove(st, sel, dest.x, dest.y, face, formation);
+                        setArmedFormation(null);
+                    } else {
+                        issueMove(st, sel, dest.x, dest.y, face);
+                    }
+                    return;
+                }
+                if (squadronSelectionRef.current.length) {
+                    setSquadronOrder(st, squadronSelectionRef.current, 'patrol', null, dest.x, dest.y);
                 }
                 return;
             }
@@ -296,11 +417,14 @@ export default function TacticalBattleView({
                         sh.side === 'player' && sh.status === 'active' &&
                         sh.x >= x0 && sh.x <= x1 && sh.y >= y0 && sh.y <= y1)
                     .map(sh => sh.id);
-                setSelection(d.shift ? [...new Set([...selectionRef.current, ...inBox])] : inBox);
+                const next = d.shift ? [...new Set([...selectionRef.current, ...inBox])] : inBox;
+                setSelection(next);
+                if (next.length) setSquadronSelection([]);
                 return;
             }
 
-            // Left click: own ship → select; enemy ship → target; empty → clear.
+            // Left click: own ship → select; own squadron → select squadron;
+            // enemy ship → target (ships) / strike order (squadrons); empty → clear.
             const own = shipAt(st, wp.x, wp.y, sh => sh.side === 'player' && sh.status === 'active');
             if (own) {
                 if (d.shift) {
@@ -309,15 +433,41 @@ export default function TacticalBattleView({
                 } else {
                     setSelection([own.id]);
                 }
+                setSquadronSelection([]);
                 return;
             }
+            // With a selection in hand, ORDERING on an enemy ship outranks
+            // selecting an own squadron — attack squadrons park on top of
+            // their targets, and squadron-first made the target un-clickable
+            // (every click grabbed the squadron and wiped the selection).
             const hostile = shipAt(st, wp.x, wp.y, sh =>
                 sh.side === 'enemy' && (sh.status === 'active' || sh.status === 'retreating'));
-            if (hostile && selectionRef.current.length) {
-                setTarget(st, selectionRef.current, hostile.id);
+            if (hostile) {
+                if (squadronSelectionRef.current.length) {
+                    setSquadronOrder(st, squadronSelectionRef.current, 'attack', hostile.id);
+                    return;
+                }
+                if (selectionRef.current.length) {
+                    setTarget(st, selectionRef.current, hostile.id);
+                    return;
+                }
+            }
+            const ownSq = squadronAt(st, wp.x, wp.y);
+            if (ownSq) {
+                if (d.shift) {
+                    const cur = squadronSelectionRef.current;
+                    setSquadronSelection(
+                        cur.includes(ownSq.id) ? cur.filter(id => id !== ownSq.id) : [...cur, ownSq.id]);
+                } else {
+                    setSquadronSelection([ownSq.id]);
+                }
+                setSelection([]);
                 return;
             }
-            if (!d.shift) setSelection([]);
+            if (!d.shift) {
+                setSelection([]);
+                setSquadronSelection([]);
+            }
         };
 
         const onContextMenu = (e: MouseEvent) => e.preventDefault();
@@ -327,6 +477,7 @@ export default function TacticalBattleView({
             if (!st || st.outcome) return;
             if (e.key === 'Escape') {
                 setSelection([]);
+                setSquadronSelection([]);
             } else if (e.key === 'r' || e.key === 'R') {
                 if (selectionRef.current.length) orderRetreat(st, selectionRef.current);
             }
@@ -446,14 +597,22 @@ export default function TacticalBattleView({
             ctx.stroke();
             ctx.restore();
 
-            // Shield ring: arc length proportional to shield fraction, centred on heading.
-            if (!arriving && sh.shield > 0.5) {
-                const frac = Math.min(1, sh.shield / def.maxShield);
-                ctx.beginPath();
-                ctx.arc(0, 0, r + 4.5, sh.heading - Math.PI * frac, sh.heading + Math.PI * frac);
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
-                ctx.lineWidth = 1.4;
-                ctx.stroke();
+            // Directional shields: one quadrant arc per facing (F/S/A/P),
+            // rotated with the heading. Opacity + thickness track that
+            // facing's fraction of its maxShield/4 share.
+            if (!arriving) {
+                const facingCap = def.maxShield / 4;
+                for (let i = 0; i < 4; i++) {
+                    const val = sh.shields[i];
+                    if (val <= 0.5) continue;
+                    const frac = Math.min(1, val / facingCap);
+                    const centre = sh.heading + (i * Math.PI) / 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r + 4.5, centre - Math.PI / 4 + 0.09, centre + Math.PI / 4 - 0.09);
+                    ctx.strokeStyle = `rgba(56, 189, 248, ${0.22 + 0.55 * frac})`;
+                    ctx.lineWidth = 0.8 + 1.3 * frac;
+                    ctx.stroke();
+                }
             }
 
             // Hull bar.
@@ -490,6 +649,119 @@ export default function TacticalBattleView({
                 ctx.fillText(`${Math.ceil(remaining)}`, 0, -r - 13);
             }
             ctx.restore();
+        };
+
+        // Squadron: tight cluster of tiny triangles, one per surviving craft,
+        // jittered deterministically from the squadron id + craft index.
+        const drawSquadron = (sq: Squadron, isSelected: boolean) => {
+            const isPlayer = sq.side === 'player';
+            const full = SQUADRON_DEFS[sq.type].craft;
+            const rand = mulberry32(hashStr(sq.id));
+            ctx.save();
+            ctx.translate(sq.x, sq.y);
+            ctx.fillStyle = isPlayer ? 'rgba(129, 140, 248, 0.55)' : 'rgba(248, 113, 113, 0.5)';
+            for (let i = 0; i < full; i++) {
+                const jx = (rand() - 0.5) * 18;
+                const jy = (rand() - 0.5) * 18;
+                const ja = rand() * TAU;
+                if (i >= sq.craft) continue; // dead slot — keep the jitter stream aligned
+                ctx.save();
+                ctx.translate(jx, jy);
+                ctx.rotate(ja);
+                ctx.beginPath();
+                ctx.moveTo(2.6, 0);
+                ctx.lineTo(-1.8, -1.7);
+                ctx.lineTo(-1.8, 1.7);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+            if (isSelected) {
+                ctx.setLineDash([3, 3]);
+                ctx.strokeStyle = 'rgba(199, 210, 254, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(0, 0, SQUADRON_GRAB_RADIUS + 1, 0, TAU);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        };
+
+        // Small rose crosshair on a ship a called shot is aimed at.
+        const drawCalledShot = (t: TacticalShip) => {
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            ctx.strokeStyle = '#fb7185';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 6, 0, TAU);
+            ctx.moveTo(-11, 0); ctx.lineTo(-4, 0);
+            ctx.moveTo(4, 0); ctx.lineTo(11, 0);
+            ctx.moveTo(0, -11); ctx.lineTo(0, -4);
+            ctx.moveTo(0, 4); ctx.lineTo(0, 11);
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        // Hazards render under the ships: rock speckle for asteroid fields,
+        // soft purple/pink blobs for nebulae, tiny low-alpha caption at centre.
+        const drawHazards = (st: BattleState) => {
+            const rocksPerHazard = hazardRocksRef.current ?? [];
+            ctx.textAlign = 'center';
+            st.hazards.forEach((h, i) => {
+                if (h.kind === 'asteroid') {
+                    ctx.fillStyle = 'rgba(30, 41, 59, 0.55)';
+                    ctx.beginPath();
+                    ctx.arc(h.x, h.y, h.r, 0, TAU);
+                    ctx.fill();
+                    ctx.setLineDash([4, 6]);
+                    ctx.strokeStyle = 'rgba(100, 116, 139, 0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(h.x, h.y, h.r, 0, TAU);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
+                    for (const rock of rocksPerHazard[i] ?? []) {
+                        ctx.beginPath();
+                        ctx.arc(rock.x, rock.y, rock.r, 0, TAU);
+                        ctx.fill();
+                    }
+                    ctx.font = '600 9px sans-serif';
+                    ctx.fillStyle = 'rgba(148, 163, 184, 0.28)';
+                    ctx.fillText('A S T E R O I D   F I E L D', h.x, h.y + 3);
+                } else {
+                    const g1 = ctx.createRadialGradient(
+                        h.x - h.r * 0.22, h.y - h.r * 0.12, 0,
+                        h.x - h.r * 0.22, h.y - h.r * 0.12, h.r * 0.9);
+                    g1.addColorStop(0, 'rgba(168, 85, 247, 0.2)');
+                    g1.addColorStop(1, 'rgba(168, 85, 247, 0)');
+                    ctx.fillStyle = g1;
+                    ctx.beginPath();
+                    ctx.arc(h.x - h.r * 0.22, h.y - h.r * 0.12, h.r * 0.9, 0, TAU);
+                    ctx.fill();
+                    const g2 = ctx.createRadialGradient(
+                        h.x + h.r * 0.2, h.y + h.r * 0.14, 0,
+                        h.x + h.r * 0.2, h.y + h.r * 0.14, h.r * 0.85);
+                    g2.addColorStop(0, 'rgba(236, 72, 153, 0.16)');
+                    g2.addColorStop(1, 'rgba(236, 72, 153, 0)');
+                    ctx.fillStyle = g2;
+                    ctx.beginPath();
+                    ctx.arc(h.x + h.r * 0.2, h.y + h.r * 0.14, h.r * 0.85, 0, TAU);
+                    ctx.fill();
+                    ctx.setLineDash([4, 8]);
+                    ctx.strokeStyle = 'rgba(216, 180, 254, 0.14)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(h.x, h.y, h.r, 0, TAU);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.font = '600 9px sans-serif';
+                    ctx.fillStyle = 'rgba(216, 180, 254, 0.3)';
+                    ctx.fillText('N E B U L A', h.x, h.y + 3);
+                }
+            });
         };
 
         const drawReticle = (t: TacticalShip) => {
@@ -608,6 +880,9 @@ export default function TacticalBattleView({
             ctx.lineWidth = 1.5;
             ctx.strokeRect(0, 0, st.width, st.height);
 
+            // Hazards sit under everything that flies.
+            drawHazards(st);
+
             const selected = new Set(selectionRef.current);
 
             // Weapon arcs + move orders under the ships (selected own ships only).
@@ -624,6 +899,13 @@ export default function TacticalBattleView({
                 drawShip(st, sh, selected.has(sh.id));
             }
 
+            // Squadrons: dim strike-craft clusters over the ships.
+            const selectedSq = new Set(squadronSelectionRef.current);
+            for (const sq of st.squadrons) {
+                if (sq.craft <= 0) continue;
+                drawSquadron(sq, selectedSq.has(sq.id));
+            }
+
             // Explicit-target reticles for the current selection.
             const targetIds = new Set<string>();
             for (const sh of st.ships) {
@@ -632,6 +914,16 @@ export default function TacticalBattleView({
             for (const id of targetIds) {
                 const t = st.ships.find(s2 => s2.id === id);
                 if (t && (t.status === 'active' || t.status === 'retreating')) drawReticle(t);
+            }
+
+            // Called-shot crosshairs (subsystem targeting) on top of reticles.
+            const calledIds = new Set<string>();
+            for (const sh of st.ships) {
+                if (selected.has(sh.id) && sh.targetId && sh.targetSubsystem) calledIds.add(sh.targetId);
+            }
+            for (const id of calledIds) {
+                const t = st.ships.find(s2 => s2.id === id);
+                if (t && (t.status === 'active' || t.status === 'retreating')) drawCalledShot(t);
             }
 
             // Torpedoes.
@@ -729,7 +1021,7 @@ export default function TacticalBattleView({
             window.removeEventListener('mouseup', onMouseUp);
             window.removeEventListener('keydown', onKeyDown);
         };
-    }, [setSelection]);
+    }, [setSelection, setSquadronSelection, setArmedFormation]);
 
     // ── HUD data (read straight off the mutable state; refreshed by the tick) ──
     const outcome = state.outcome;
@@ -741,6 +1033,21 @@ export default function TacticalBattleView({
         .map(id => state.ships.find(sh => sh.id === id))
         .filter((sh): sh is TacticalShip =>
             !!sh && sh.status !== 'destroyed' && sh.status !== 'withdrawn');
+    const selectedSquadrons = selectedSquadronIds
+        .map(id => state.squadrons.find(q => q.id === id))
+        .filter((q): q is Squadron => !!q && q.craft > 0);
+
+    // Subsystem targeting card: shown when the WHOLE ship selection shares one
+    // explicit enemy target and that target is a capital hull with subsystems.
+    const calledTarget = (() => {
+        if (!selectedShips.length) return null;
+        const tid = selectedShips[0].targetId;
+        if (!tid || !selectedShips.every(sh => sh.targetId === tid)) return null;
+        const t = state.ships.find(sh => sh.id === tid);
+        if (!t || t.side !== 'enemy' || !t.subsystems) return null;
+        if (t.status !== 'active' && t.status !== 'retreating') return null;
+        return { ship: t, subsystems: t.subsystems, active: selectedShips[0].targetSubsystem };
+    })();
 
     return (
         <div ref={wrapperRef} className="fixed inset-0 z-50 bg-slate-950 overflow-hidden select-none">
@@ -757,6 +1064,34 @@ export default function TacticalBattleView({
                     </span>
                 </div>
                 <div className="flex items-center gap-3 pointer-events-auto">
+                    {state.player.commandAbilities.length > 0 && (
+                        <div className="flex items-center gap-1.5 mr-1">
+                            <span className="text-[8px] font-bold tracking-widest text-amber-300/70 uppercase">
+                                Admiral on deck
+                            </span>
+                            {state.player.commandAbilities.map(a => {
+                                const cooling = a.cooldownRemaining > 0;
+                                return (
+                                    <button
+                                        key={a.id}
+                                        onClick={() => {
+                                            triggerCommandAbility(state, 'player', a.id);
+                                            forceHud();
+                                        }}
+                                        disabled={cooling || !!outcome}
+                                        className="flex items-center gap-1 px-2 py-1 rounded border border-amber-600/40 bg-amber-950/30 text-[8px] font-bold tracking-widest text-amber-200 uppercase hover:bg-amber-900/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {COMMAND_LABELS[a.id]}
+                                        {cooling && (
+                                            <span className="font-mono text-amber-400/80 tabular-nums">
+                                                {Math.ceil(a.cooldownRemaining)}s
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                     <span className="text-[11px] font-mono text-slate-300 tabular-nums">{fmtTime(state.time)}</span>
                     <div className="flex items-center rounded border border-slate-700/70 overflow-hidden">
                         {[0, 1, 2].map(v => (
@@ -810,13 +1145,86 @@ export default function TacticalBattleView({
             {/* Controls hint */}
             {!outcome && (
                 <div className="absolute top-11 left-4 text-[8px] tracking-widest text-slate-600 uppercase pointer-events-none">
-                    LMB select · drag box-select · LMB enemy = target · RMB move · RMB-drag move + facing · R retreat · ESC deselect
+                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect
+                </div>
+            )}
+
+            {/* ── Top-right: subsystem targeting card ── */}
+            {calledTarget && !outcome && (
+                <div className="absolute top-11 right-3 w-60 rounded border border-rose-700/40 bg-slate-950/85 backdrop-blur-sm p-2 space-y-1.5 pointer-events-auto">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-display font-bold tracking-widest text-rose-300 uppercase">
+                            Target — {SHIP_CLASSES[calledTarget.ship.classId].name}
+                        </span>
+                        <button
+                            onClick={() => {
+                                setTargetSubsystem(state, selectedIds, null);
+                                forceHud();
+                            }}
+                            disabled={!calledTarget.active}
+                            className="text-[8px] font-bold tracking-widest text-slate-500 uppercase hover:text-rose-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Call off
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                        {SUBSYSTEM_IDS.map(id => {
+                            const integrity = calledTarget.subsystems[id];
+                            const active = calledTarget.active === id;
+                            const dead = integrity <= 0;
+                            return (
+                                <button
+                                    key={id}
+                                    onClick={() => {
+                                        setTargetSubsystem(state, selectedIds, active ? null : id);
+                                        forceHud();
+                                    }}
+                                    disabled={dead}
+                                    className={`rounded border px-1.5 py-1 text-left transition-colors ${
+                                        active
+                                            ? 'bg-rose-900/40 border-rose-500/60'
+                                            : 'bg-slate-900/60 border-slate-700/60 hover:border-rose-700/50'
+                                    } ${dead ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    <span className={`text-[8px] font-bold tracking-widest uppercase ${
+                                        dead ? 'line-through text-slate-500' : active ? 'text-rose-200' : 'text-slate-300'
+                                    }`}>
+                                        {id}
+                                    </span>
+                                    <div className="mt-0.5 h-0.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full ${active ? 'bg-rose-400' : 'bg-slate-400'}`}
+                                            style={{ width: `${Math.round(Math.max(0, Math.min(1, integrity)) * 100)}%` }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
             {/* ── Bottom-left: selected ships ── */}
             {selectedShips.length > 0 && !outcome && (
                 <div className="absolute left-3 bottom-3 w-72 space-y-1 pointer-events-auto">
+                    {selectedShips.length >= 2 && (
+                        <div className="flex gap-1 px-1 pb-0.5">
+                            {FORMATIONS.map(f => (
+                                <button
+                                    key={f}
+                                    onClick={() => setArmedFormation(armedFormation === f ? null : f)}
+                                    title={`Arm ${f} formation — next right-click issues the formation move`}
+                                    className={`flex-1 py-1 rounded border text-[8px] font-bold tracking-widest uppercase transition-colors ${
+                                        armedFormation === f
+                                            ? 'bg-emerald-600/40 border-emerald-400/60 text-emerald-200'
+                                            : 'bg-slate-950/85 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-indigo-600/40'
+                                    }`}
+                                >
+                                    {f}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     <div className="px-1 text-[9px] font-display font-bold tracking-widest text-indigo-300 uppercase">
                         Selected — {selectedShips.length} {selectedShips.length === 1 ? 'ship' : 'ships'}
                     </div>
@@ -826,7 +1234,11 @@ export default function TacticalBattleView({
                         const cooling = sh.abilityCooldown > 0;
                         const canUse = sh.status === 'active' && !cooling && !abilityActive;
                         return (
-                            <div key={sh.id} className="rounded border border-indigo-700/30 bg-slate-950/85 backdrop-blur-sm px-2 py-1.5">
+                            <div
+                                key={sh.id}
+                                title={`Hull ${Math.round(sh.hull)}/${def.maxHull} · Shields ${Math.round(totalShield(sh))}/${def.maxShield}`}
+                                className="rounded border border-indigo-700/30 bg-slate-950/85 backdrop-blur-sm px-2 py-1.5"
+                            >
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-bold tracking-widest text-slate-200 uppercase">
                                         {def.name}
@@ -844,11 +1256,20 @@ export default function TacticalBattleView({
                                             style={{ width: `${Math.round(Math.max(0, Math.min(1, sh.hull / def.maxHull)) * 100)}%` }}
                                         />
                                     </div>
-                                    <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-sky-400"
-                                            style={{ width: `${Math.round(Math.max(0, Math.min(1, sh.shield / def.maxShield)) * 100)}%` }}
-                                        />
+                                    {/* Directional shields: F / S / A / P segments. */}
+                                    <div className="flex gap-0.5">
+                                        {FACING_LABELS.map((label, i) => (
+                                            <div
+                                                key={label}
+                                                title={`${label} shield ${Math.round(sh.shields[i])}/${Math.round(def.maxShield / 4)}`}
+                                                className="h-1 flex-1 bg-slate-800 rounded-full overflow-hidden"
+                                            >
+                                                <div
+                                                    className="h-full bg-sky-400"
+                                                    style={{ width: `${Math.round(Math.max(0, Math.min(1, sh.shields[i] / (def.maxShield / 4))) * 100)}%` }}
+                                                />
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                                 <button
@@ -875,6 +1296,53 @@ export default function TacticalBattleView({
                             +{selectedShips.length - MAX_SELECTED_ROWS} more selected
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Bottom-left: selected squadrons (mutually exclusive with ships) ── */}
+            {selectedSquadrons.length > 0 && !outcome && (
+                <div className="absolute left-3 bottom-3 w-72 space-y-1 pointer-events-auto">
+                    <div className="px-1 text-[9px] font-display font-bold tracking-widest text-indigo-300 uppercase">
+                        Squadrons — {selectedSquadrons.length} selected
+                    </div>
+                    {selectedSquadrons.map(sq => {
+                        const sdef = SQUADRON_DEFS[sq.type];
+                        return (
+                            <div key={sq.id} className="rounded border border-indigo-700/30 bg-slate-950/85 backdrop-blur-sm px-2 py-1.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold tracking-widest text-slate-200 uppercase">
+                                        {sq.type}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-slate-400 tabular-nums">
+                                        {sq.craft}/{sdef.craft} craft
+                                    </span>
+                                </div>
+                                <div className="mt-0.5 text-[8px] tracking-widest text-slate-500 uppercase">
+                                    Order: {sq.order}
+                                </div>
+                                <div className="mt-1 flex gap-1">
+                                    <button
+                                        onClick={() => {
+                                            setSquadronOrder(state, [sq.id], 'defend', sq.carrierId);
+                                            forceHud();
+                                        }}
+                                        className="flex-1 py-1 rounded bg-indigo-900/30 border border-indigo-600/30 text-[8px] font-bold tracking-widest text-indigo-200 uppercase hover:bg-indigo-800/40 transition-colors"
+                                    >
+                                        Defend
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setSquadronOrder(state, [sq.id], 'return');
+                                            forceHud();
+                                        }}
+                                        className="flex-1 py-1 rounded bg-slate-900/60 border border-slate-700/60 text-[8px] font-bold tracking-widest text-slate-300 uppercase hover:bg-slate-800/60 transition-colors"
+                                    >
+                                        Return
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 

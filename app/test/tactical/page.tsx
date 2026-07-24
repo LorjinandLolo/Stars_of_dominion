@@ -6,7 +6,7 @@
 
 import React from 'react';
 import TacticalBattleView from '@/components/tactical/TacticalBattleView';
-import type { BattleResult } from '@/lib/tactical/types';
+import type { BattleResult, Hazard } from '@/lib/tactical/types';
 import type { StrategicFleetLike } from '@/lib/tactical/fleet-adapter';
 
 const PLAYER_FLEETS: StrategicFleetLike[] = [
@@ -14,7 +14,7 @@ const PLAYER_FLEETS: StrategicFleetLike[] = [
         id: 'fleet-test-player',
         factionId: 'PLAYER_FACTION',
         name: 'First Strike Group',
-        composition: { interceptor: 4, destroyer: 2, cruiser: 1 },
+        composition: { interceptor: 3, destroyer: 2, cruiser: 1, carrier: 1 },
         strength: 1,
     },
 ];
@@ -24,9 +24,15 @@ const ENEMY_FLEETS: StrategicFleetLike[] = [
         id: 'fleet-test-raiders',
         factionId: 'CRIMSON_RAIDERS',
         name: 'Crimson Raider Vanguard',
-        composition: { interceptor: 6, destroyer: 4, cruiser: 2 },
+        composition: { interceptor: 6, destroyer: 4, cruiser: 2, carrier: 1 },
         strength: 1,
     },
+];
+
+const HAZARDS: Hazard[] = [
+    { kind: 'asteroid', x: 800, y: 380, r: 110 },
+    { kind: 'asteroid', x: 620, y: 700, r: 90 },
+    { kind: 'nebula', x: 1050, y: 560, r: 150 },
 ];
 
 type Done =
@@ -66,6 +72,8 @@ export default function TacticalTestPage() {
             playerFleets={PLAYER_FLEETS}
             enemyFleets={ENEMY_FLEETS}
             enemyName="Crimson Raider Vanguard"
+            hazards={HAZARDS}
+            playerHasAdmiral
             onFinish={result => setDone({ kind: 'finished', result })}
             onAbort={() => setDone({ kind: 'aborted' })}
         />

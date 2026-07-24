@@ -270,6 +270,35 @@ export default function GameShell() {
 }
 
 /**
+ * Battlefield features derived from the system's tags: asteroid/belt/debris
+ * tags seed asteroid fields, nebula tags seed sensor-veiling clouds. Layout is
+ * deterministic per system so refights happen on the same terrain.
+ */
+function hazardsForSystem(systemId: string, tags: string[]): import('@/lib/tactical/types').Hazard[] {
+    const t = (tags || []).map(x => String(x).toLowerCase());
+    const hasAsteroids = t.some(x => x.includes('asteroid') || x.includes('belt') || x.includes('debris'));
+    const hasNebula = t.some(x => x.includes('nebula'));
+    if (!hasAsteroids && !hasNebula) return [];
+    let seed = 0;
+    for (let i = 0; i < systemId.length; i++) seed = (seed * 31 + systemId.charCodeAt(i)) >>> 0;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+    const out: import('@/lib/tactical/types').Hazard[] = [];
+    if (hasAsteroids) {
+        const n = 2 + Math.floor(rand() * 2);
+        for (let i = 0; i < n; i++) {
+            out.push({ kind: 'asteroid', x: 420 + rand() * 760, y: 220 + rand() * 560, r: 70 + rand() * 70 });
+        }
+    }
+    if (hasNebula) {
+        const n = 1 + Math.floor(rand() * 2);
+        for (let i = 0; i < n; i++) {
+            out.push({ kind: 'nebula', x: 420 + rand() * 760, y: 220 + rand() * 560, r: 120 + rand() * 80 });
+        }
+    }
+    return out;
+}
+
+/**
  * Bridges the strategic layer and the live tactical battle. Launch config is
  * set by the "ENGAGE — TACTICAL" button (SystemContextPanel); on resolution the
  * outcome is sent to the worker as MIL_TACTICAL_RESULT, which applies surviving
@@ -280,6 +309,7 @@ function TacticalBattleOverlay() {
     const setTacticalBattle = useUIStore(s => s.setTacticalBattle);
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const fleets = useUIStore(s => s.fleets);
+    const systems = useUIStore(s => s.systems);
 
     // Snapshot the participating fleets when the battle opens — sync updates
     // during the fight must not restart or mutate the running sim.
@@ -290,16 +320,31 @@ function TacticalBattleOverlay() {
             enemyFleets: fleets.filter((f: any) => tacticalBattle.enemyFleetIds.includes(f.id)),
         };
     }
-    if (!tacticalBattle) {
-        snapshotRef.current = null;
-        return null;
-    }
+    if (!tacticalBattle) snapshotRef.current = null;
+
+    // Fleets vanished between click and open (sync race) — bail out. Runs in
+    // an effect (no store writes during render) and MUST release the
+    // server-side lock, or the system's combats stay frozen for the full
+    // lock timeout and re-engagement is rejected.
+    const mustBail = !!tacticalBattle && !!snapshotRef.current
+        && (!snapshotRef.current.playerFleets.length || !snapshotRef.current.enemyFleets.length);
+    useEffect(() => {
+        if (!mustBail || !tacticalBattle) return;
+        (async () => {
+            const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            dispatchOrder({
+                actionId: 'MIL_TACTICAL_ABORT',
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload: { systemId: tacticalBattle.systemId },
+                label: `Standing down at ${tacticalBattle.systemName}`,
+            });
+            setTacticalBattle(null);
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mustBail]);
+
+    if (!tacticalBattle || mustBail) return null;
     const snap = snapshotRef.current!;
-    if (!snap.playerFleets.length || !snap.enemyFleets.length) {
-        // Fleets vanished between click and open (sync race) — bail out.
-        setTacticalBattle(null);
-        return null;
-    }
 
     const handleFinish = async (result: import('@/lib/tactical/types').BattleResult) => {
         const { buildResultPayload } = await import('@/lib/tactical/fleet-adapter');
@@ -336,12 +381,17 @@ function TacticalBattleOverlay() {
         setTacticalBattle(null);
     };
 
+    const sys = systems.find((s: any) => s.id === tacticalBattle.systemId);
+
     return (
         <TacticalBattleView
             title={`BATTLE OF ${tacticalBattle.systemName.toUpperCase()}`}
             playerFleets={snap.playerFleets}
             enemyFleets={snap.enemyFleets}
             enemyName={tacticalBattle.enemyFactionId.replace(/^faction-/, '').replace(/-/g, ' ')}
+            hazards={hazardsForSystem(tacticalBattle.systemId, (sys as any)?.tags ?? [])}
+            playerHasAdmiral={snap.playerFleets.some((f: any) => !!f.leaderId)}
+            enemyHasAdmiral={snap.enemyFleets.some((f: any) => !!f.leaderId)}
             onFinish={handleFinish}
             onAbort={handleAbort}
         />
