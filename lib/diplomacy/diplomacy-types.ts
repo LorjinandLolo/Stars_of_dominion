@@ -131,6 +131,19 @@ export interface DiplomacyWorldState {
     leverage: Map<string, number>;
     /** Active timed mandates, keyed by factionId. */
     mandates: Map<string, DiplomaticMandate>;
+    /** Active sanction regimes, keyed by `${imposerId}|${targetId}`. */
+    sanctions: Map<string, SanctionRecord>;
+}
+
+/**
+ * One empire sanctioning another (§20). Effects scale with coalition size —
+ * every additional empire sanctioning the same target multiplies the bite.
+ */
+export interface SanctionRecord {
+    id: string; // `${imposerId}|${targetId}`
+    imposerId: string;
+    targetId: string;
+    sinceSeconds: number;
 }
 
 // ─── Tuning ──────────────────────────────────────────────────────────────────

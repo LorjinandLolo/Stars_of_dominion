@@ -40,6 +40,7 @@ export function ensureDiplomacyState(world: GameWorldState): DiplomacyWorldState
     if (!(w.diplomacy.gambits instanceof Map)) w.diplomacy.gambits = new Map();
     if (!(w.diplomacy.leverage instanceof Map)) w.diplomacy.leverage = new Map();
     if (!(w.diplomacy.mandates instanceof Map)) w.diplomacy.mandates = new Map();
+    if (!(w.diplomacy.sanctions instanceof Map)) w.diplomacy.sanctions = new Map();
     return w.diplomacy as DiplomacyWorldState;
 }
 

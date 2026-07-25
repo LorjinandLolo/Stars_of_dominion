@@ -19,7 +19,8 @@ export type DiplomaticActionKind =
     | 'break_treaty'
     | 'ultimatum'
     | 'accusation'
-    | 'show_of_force';
+    | 'show_of_force'
+    | 'sanctions';
 
 export interface BlocSupportInput {
     id: string;          // 'military' | 'trade' | 'frontier' | 'science'
@@ -33,6 +34,11 @@ export interface SupportContext {
     warFatigue: number;
     /** Tension with the action's target 0-100 (colors whether a war feels justified). */
     rivalryScore: number;
+    /**
+     * The government's public trust 0-100 (press system). A distrusted
+     * government struggles to sell ANY initiative. Optional; 60 = neutral.
+     */
+    publicTrust?: number;
 }
 
 export type SupportBand = 'mandate' | 'supported' | 'divided' | 'unpopular' | 'opposition';
@@ -63,6 +69,8 @@ const BLOC_STANCES: Record<DiplomaticActionKind, Record<string, number>> = {
     ultimatum:      { military: 0.6,  trade: -0.2, frontier: 0.0,  science: -0.4 },
     accusation:     { military: 0.3,  trade: -0.3, frontier: 0.0,  science: 0.2  },
     show_of_force:  { military: 0.7,  trade: -0.4, frontier: 0.2,  science: -0.3 },
+    // Merchants hate embargoes cutting into business; hawks like the pressure.
+    sanctions:      { military: 0.4,  trade: -0.6, frontier: -0.1, science: 0.1  },
 };
 
 /** Actions the population reads as belligerent (war fatigue sours them). */
