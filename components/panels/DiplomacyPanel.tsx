@@ -59,6 +59,27 @@ const FACTIONS = [
     },
 ];
 
+const ESCALATION_LABELS: Record<number, string> = {
+    0: 'CALM',
+    1: 'RIVALRY',
+    2: 'TENSE',
+    3: 'CONFRONTATION',
+    4: 'COVERT WAR',
+    5: 'COLD WAR',
+    6: 'NEAR-HOT',
+    7: 'AT WAR',
+};
+
+function describeOffer(offer: import('@/types/ui-state').DiplomaticOfferView): string {
+    switch (offer.kind) {
+        case 'treaty': return `${String(offer.treatyType ?? 'treaty').replace(/_/g, ' ')} treaty`;
+        case 'trade_pact': return `Trade pact — ${offer.volumePerHour}/hr ${offer.resource}`;
+        case 'tribute_demand': return `Tribute demand — ${offer.tributeAmountPerTick} ${offer.tributeResourceType}/tick`;
+        case 'peace_offer': return 'Peace offer';
+        default: return 'Proposal';
+    }
+}
+
 const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
     { type: 'non_aggression', label: 'Non-Aggression Pact', icon: ShieldCheck },
     { type: 'mutual_defense', label: 'Mutual Defense Treaty', icon: Shield },
@@ -99,12 +120,24 @@ export default function DiplomacyPanel() {
         );
     }
 
-    const rivalry = (diplomacyState.rivalries || []).find(r => 
+    const rivalry = (diplomacyState.rivalries || []).find(r =>
         (r.empireAId === playerState.factionId && r.empireBId === selectedFactionId) ||
         (r.empireBId === playerState.factionId && r.empireAId === selectedFactionId)
     );
 
-    const activeTreaties = (diplomacyState.treaties || []).filter(t => t.signatories.includes(selectedFactionId));
+    const activeTreaties = (diplomacyState.treaties || []).filter(t =>
+        t.status === 'active' &&
+        t.signatories.includes(playerState.factionId) &&
+        t.signatories.includes(selectedFactionId)
+    );
+
+    // Bilateral offers with the selected faction (either direction).
+    const pairOffers = (diplomacyState.offers || []).filter(o =>
+        (o.fromFactionId === playerState.factionId && o.toFactionId === selectedFactionId) ||
+        (o.toFactionId === playerState.factionId && o.fromFactionId === selectedFactionId)
+    );
+    const pendingOffers = pairOffers.filter(o => o.status === 'pending');
+    const isAtWar = (rivalry?.escalationLevel ?? 0) >= 7;
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
@@ -187,10 +220,12 @@ export default function DiplomacyPanel() {
                                 </div>
                             </div>
                             <div className="text-right glass-panel p-4 rounded-2xl border-white/10 group cursor-help transition-all hover:bg-white/5">
-                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Influence Rating</span>
+                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Tension Index</span>
                                 <div className="flex items-center gap-3 justify-end">
-                                    <div className="text-3xl font-mono text-white tracking-tighter">{(rivalry?.rivalryScore || 45.2).toFixed(1)}</div>
-                                    <TrendingUp className="w-5 h-5 text-emerald-400 animate-bounce" />
+                                    <div className="text-3xl font-mono text-white tracking-tighter">
+                                        {rivalry ? rivalry.rivalryScore.toFixed(0) : '—'}
+                                    </div>
+                                    <Activity className={`w-5 h-5 ${(rivalry?.rivalryScore ?? 0) >= 70 ? 'text-rose-400' : 'text-emerald-400'}`} />
                                 </div>
                             </div>
                             
@@ -204,6 +239,74 @@ export default function DiplomacyPanel() {
                         </div>
 
                         {activeTab === 'statecraft' ? (
+                            <div className="space-y-10">
+                            {/* Pending bilateral offers — the consent loop */}
+                            {pendingOffers.length > 0 && (
+                                <div className="space-y-4">
+                                    <h3 className="text-[11px] font-display text-amber-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Send className="w-4 h-4" /> Pending Proposals
+                                    </h3>
+                                    {pendingOffers.map(offer => {
+                                        const incoming = offer.toFactionId === playerState.factionId;
+                                        return (
+                                            <div key={offer.id} className="flex items-center justify-between p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5">
+                                                <div>
+                                                    <span className="text-xs font-bold text-white uppercase tracking-widest block">
+                                                        {describeOffer(offer)}
+                                                    </span>
+                                                    <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                        {incoming ? `Proposed by ${selectedFaction.name}` : 'Awaiting their response'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    {incoming ? (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleAction(`accept-${offer.id}`, dispatchOrder({
+                                                                    actionId: 'DIP_RESPOND_OFFER',
+                                                                    factionId: playerState.factionId,
+                                                                    payload: { offerId: offer.id, response: 'accept' },
+                                                                    label: 'Accepting proposal',
+                                                                }))}
+                                                                disabled={!!isProcessing}
+                                                                className="px-5 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-emerald-600 hover:text-white transition-all"
+                                                            >
+                                                                Accept
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleAction(`reject-${offer.id}`, dispatchOrder({
+                                                                    actionId: 'DIP_RESPOND_OFFER',
+                                                                    factionId: playerState.factionId,
+                                                                    payload: { offerId: offer.id, response: 'reject' },
+                                                                    label: 'Rejecting proposal',
+                                                                }))}
+                                                                disabled={!!isProcessing}
+                                                                className="px-5 py-2 rounded-xl bg-rose-600/10 border border-rose-500/30 text-rose-400 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all"
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleAction(`withdraw-${offer.id}`, dispatchOrder({
+                                                                actionId: 'DIP_WITHDRAW_OFFER',
+                                                                factionId: playerState.factionId,
+                                                                payload: { offerId: offer.id },
+                                                                label: 'Withdrawing proposal',
+                                                            }))}
+                                                            disabled={!!isProcessing}
+                                                            className="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-white/10 transition-all"
+                                                        >
+                                                            Withdraw
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                                 {/* Treaties & Accords */}
                                 <div className="space-y-6">
@@ -216,34 +319,57 @@ export default function DiplomacyPanel() {
                                     <div className="grid grid-cols-1 gap-3">
                                         {TREATY_TYPES.map(treaty => {
                                             const Icon = treaty.icon;
-                                            const isActive = activeTreaties.some(t => t.type === treaty.type);
+                                            const activeTreaty = activeTreaties.find(t => t.type === treaty.type);
+                                            const isActive = !!activeTreaty;
+                                            const isPendingOut = pendingOffers.some(o =>
+                                                o.kind === 'treaty' && o.treatyType === treaty.type && o.fromFactionId === playerState.factionId);
                                             return (
-                                                <button
+                                                <div
                                                     key={treaty.type}
-                                                    onClick={() => handleAction(`treaty-${treaty.type}`, dispatchOrder({
-                                                        actionId: 'DIP_PROPOSE_TREATY',
-                                                        factionId: playerState.factionId,
-                                                        payload: { targetFactionId: selectedFactionId, treatyType: treaty.type },
-                                                        label: `Proposing ${String(treaty.type).replace(/_/g, ' ').toLowerCase()}`,
-                                                    }))}
-                                                    disabled={isActive || !!isProcessing}
                                                     className={`group flex items-center justify-between p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden ${
-                                                        isActive 
-                                                        ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-400' 
+                                                        isActive
+                                                        ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-400'
+                                                        : isPendingOut
+                                                        ? 'bg-amber-500/5 border-amber-500/30 text-amber-400'
                                                         : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
                                                     }`}
                                                 >
-                                                    <div className="flex items-center gap-4 relative z-10">
+                                                    <button
+                                                        onClick={() => handleAction(`treaty-${treaty.type}`, dispatchOrder({
+                                                            actionId: 'DIP_PROPOSE_TREATY',
+                                                            factionId: playerState.factionId,
+                                                            payload: { targetFactionId: selectedFactionId, treatyType: treaty.type },
+                                                            label: `Proposing ${String(treaty.type).replace(/_/g, ' ').toLowerCase()}`,
+                                                        }))}
+                                                        disabled={isActive || isPendingOut || !!isProcessing}
+                                                        className="flex items-center gap-4 relative z-10 text-left disabled:cursor-default"
+                                                    >
                                                         <div className={`p-3 rounded-xl transition-colors ${isActive ? 'bg-emerald-500/20' : 'bg-black/60 border border-white/5 group-hover:border-indigo-500/50'}`}>
-                                                            <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-indigo-400'}`} />
+                                                            <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-400' : isPendingOut ? 'text-amber-400' : 'text-slate-400 group-hover:text-indigo-400'}`} />
                                                         </div>
                                                         <div>
                                                             <span className="text-xs font-bold uppercase tracking-widest block">{treaty.label}</span>
-                                                            <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Requires Mutual Consensus</span>
+                                                            <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                                {isActive ? 'In Force' : isPendingOut ? 'Awaiting Their Response' : 'Requires Mutual Consensus'}
+                                                            </span>
                                                         </div>
-                                                    </div>
-                                                    {isActive && <ShieldCheck className="w-5 h-5 opacity-50" />}
-                                                </button>
+                                                    </button>
+                                                    {isActive && (
+                                                        <button
+                                                            onClick={() => handleAction(`break-${activeTreaty!.id}`, dispatchOrder({
+                                                                actionId: 'DIP_BREAK_TREATY',
+                                                                factionId: playerState.factionId,
+                                                                payload: { treatyId: activeTreaty!.id },
+                                                                label: `Repudiating ${treaty.label.toLowerCase()}`,
+                                                            }))}
+                                                            disabled={!!isProcessing}
+                                                            className="px-3 py-1.5 rounded-lg bg-rose-600/10 border border-rose-500/30 text-rose-400 text-[9px] font-display tracking-widest uppercase hover:bg-rose-600 hover:text-white transition-all relative z-10"
+                                                            title="Repudiating a treaty damages reliability and raises tension"
+                                                        >
+                                                            Break
+                                                        </button>
+                                                    )}
+                                                </div>
                                             );
                                         })}
                                     </div>
@@ -260,37 +386,58 @@ export default function DiplomacyPanel() {
                                         <div className="space-y-4">
                                             <div className="flex justify-between items-end">
                                                 <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Hostility Level</span>
-                                                <span className="text-sm font-mono text-rose-400">CRITICAL</span>
+                                                <span className={`text-sm font-mono ${(rivalry?.escalationLevel ?? 0) >= 5 ? 'text-rose-400' : (rivalry?.escalationLevel ?? 0) >= 3 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                    {ESCALATION_LABELS[rivalry?.escalationLevel ?? 0]}
+                                                </span>
                                             </div>
                                             <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5 p-0.5">
-                                                <div 
+                                                <div
                                                     className="h-full bg-gradient-to-r from-orange-500 to-rose-600 rounded-full shadow-[0_0_15px_rgba(225,29,72,0.5)] transition-all duration-1000"
-                                                    style={{ width: `${(rivalry?.escalationLevel || 4) * 14.28}%` }}
+                                                    style={{ width: `${(rivalry?.escalationLevel ?? 0) * 14.28}%` }}
                                                 />
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-4 pt-4">
-                                            <button 
-                                                onClick={() => handleAction('war', dispatchOrder({
-                                                    actionId: 'DIP_DECLARE_WAR',
-                                                    factionId: playerState.factionId,
-                                                    payload: { targetFactionId: selectedFactionId },
-                                                    label: 'Declaration of war',
-                                                }))}
-                                                className="w-full py-4 rounded-xl bg-rose-600/10 border border-rose-600/30 text-rose-500 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all duration-300 shadow-lg shadow-rose-900/10"
-                                            >
-                                                Unilateral Hostility Declaration
-                                            </button>
+                                            {isAtWar ? (
+                                                <button
+                                                    onClick={() => handleAction('peace', dispatchOrder({
+                                                        actionId: 'DIP_OFFER_PEACE',
+                                                        factionId: playerState.factionId,
+                                                        payload: { targetFactionId: selectedFactionId },
+                                                        label: 'Suing for peace',
+                                                    }))}
+                                                    disabled={!!isProcessing || pendingOffers.some(o => o.kind === 'peace_offer')}
+                                                    className="w-full py-4 rounded-xl bg-emerald-600/10 border border-emerald-600/30 text-emerald-400 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-emerald-600 hover:text-white transition-all duration-300 shadow-lg shadow-emerald-900/10 disabled:opacity-40"
+                                                >
+                                                    {pendingOffers.some(o => o.kind === 'peace_offer') ? 'Peace Talks Underway' : 'Sue For Peace'}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleAction('war', dispatchOrder({
+                                                        actionId: 'DIP_DECLARE_WAR',
+                                                        factionId: playerState.factionId,
+                                                        payload: { targetFactionId: selectedFactionId },
+                                                        label: 'Declaration of war',
+                                                    }))}
+                                                    disabled={!!isProcessing}
+                                                    className="w-full py-4 rounded-xl bg-rose-600/10 border border-rose-600/30 text-rose-500 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all duration-300 shadow-lg shadow-rose-900/10"
+                                                >
+                                                    Unilateral Hostility Declaration
+                                                </button>
+                                            )}
                                             <div className="flex items-start gap-3 p-4 bg-black/40 rounded-xl border border-white/5">
                                                 <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                                                 <p className="text-[9px] text-slate-500 leading-relaxed italic uppercase font-mono tracking-tighter">
-                                                    Declaring war suspends all active trade pacts and treaties. Infamy penalty of +15.2 accumulation expected.
+                                                    {isAtWar
+                                                        ? 'Peace requires the enemy to accept your offer. Rejection hardens their resolve.'
+                                                        : 'Declaring war collapses all treaties and trade pacts. Attacking through a non-aggression pact brands you an oathbreaker. Mutual-defense allies of the target will join the war.'}
                                                 </p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             </div>
                         ) : activeTab === 'economy' ? (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">

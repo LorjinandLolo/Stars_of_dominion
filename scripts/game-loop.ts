@@ -6,7 +6,6 @@ import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
 import { applyPolicyEffect } from '../lib/politics/politics-service';
 import { LeadershipService } from '../lib/leadership/leadership-service';
-import { calculateEscalationLevel } from '../lib/politics/cold-war-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
@@ -16,6 +15,7 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 // `import().then(...)` calls inside executeOrder — the mutation could land AFTER
 // saveWorldState() had already serialized the world, silently losing the order.
 import { launchOperation } from '../lib/espionage/espionage-service';
+import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfWar, ensureDiplomacyState, shiftRivalry, isAtWar } from '../lib/diplomacy/offer-service';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -114,6 +114,7 @@ async function loadWorld(): Promise<GameWorldState> {
     // Ensure collections required for combat exist (for 1.0 migration)
     if (!world.activeCombats) world.activeCombats = new Map();
     if (!world.rivalries) world.rivalries = new Map();
+    ensureDiplomacyState(world);
     if (!world.movement.sorties) world.movement.sorties = new Map();
 
     // Normalize snapshot data: systems saved by older snapshots can be missing
@@ -976,55 +977,45 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'DIP_DECLARE_WAR': {
-             const rivalryId = `rivalry-${factionId}-${payload.targetFactionId}`;
-             const state = {
-                 id: rivalryId,
-                 empireAId: factionId,
-                 empireBId: payload.targetFactionId,
-                 rivalryScore: 100,
-                 escalationLevel: 7,
-                 activeSanctionIds: [],
-                 proxyConflictsInvolved: [],
-                 detenteActive: false
-             };
-             world.rivalries.set(rivalryId, state);
-             const reverseRivalryId = `rivalry-${payload.targetFactionId}-${factionId}`;
-             world.rivalries.set(reverseRivalryId, { ...state, id: reverseRivalryId, empireAId: payload.targetFactionId, empireBId: factionId });
+             // Central war path: NAP auto-break (oathbreaker penalty), collapse
+             // of treaties/pacts between the pair, mutual-defense allies join.
+             registerActOfWar(world, factionId, payload.targetFactionId);
              console.log(`[Order] Faction ${factionId} declared War on ${payload.targetFactionId}`);
              break;
         }
 
         case 'DIP_SEND_ENVOY': {
-             const rivalryId = `rivalry-${factionId}-${payload.targetFactionId}`;
-             let rivalry = world.rivalries.get(rivalryId);
-             if (!rivalry) {
-                 rivalry = {
-                     id: rivalryId,
-                     empireAId: factionId,
-                     empireBId: payload.targetFactionId,
-                     rivalryScore: 20,
-                     escalationLevel: 0,
-                     activeSanctionIds: [],
-                     proxyConflictsInvolved: [],
-                     detenteActive: false
-                 };
-                 world.rivalries.set(rivalryId, rivalry);
-             } else {
-                 rivalry.rivalryScore = Math.max(0, rivalry.rivalryScore - 15);
-                 rivalry.escalationLevel = calculateEscalationLevel(rivalry.rivalryScore);
-             }
+             shiftRivalry(world, factionId, payload.targetFactionId, -15, 'envoy_received');
              console.log(`[Order] Faction ${factionId} sent Envoy to ${payload.targetFactionId}`);
              break;
         }
 
         case 'DIP_OFFER_PEACE': {
-             const rivalryId = `rivalry-${factionId}-${payload.targetFactionId}`;
-             const rivalry = world.rivalries.get(rivalryId);
-             if (rivalry) {
-                  rivalry.rivalryScore = 50;
-                  rivalry.escalationLevel = calculateEscalationLevel(50);
-                  rivalry.detenteActive = true;
-             }
+             // Peace now requires the enemy's consent — this queues an offer.
+             const result = createOffer(world, factionId, { kind: 'peace_offer', toFactionId: payload.targetFactionId });
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} sued for peace with ${payload.targetFactionId}`);
+             break;
+        }
+
+        case 'DIP_RESPOND_OFFER': {
+             const response = payload.response === 'accept' ? 'accept' : 'reject';
+             const result = respondToOffer(world, factionId, payload.offerId, response);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} ${response}ed offer ${payload.offerId}`);
+             break;
+        }
+
+        case 'DIP_WITHDRAW_OFFER': {
+             const result = withdrawOffer(world, factionId, payload.offerId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             break;
+        }
+
+        case 'DIP_BREAK_TREATY': {
+             const result = breakTreaty(world, factionId, payload.treatyId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} broke treaty ${payload.treatyId}`);
              break;
         }
 
@@ -1327,25 +1318,11 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
             // Attacking a fleet IS an act of war. Setting the rivalry to war level
             // makes the combat-manager start (and keep advancing) the engagement
-            // this same cycle. The old inline initiateCombat created an orphan
-            // combat that no system ever advanced — battles froze at round 1.
-            const skirmishRivalryId = `rivalry-${attacker.factionId}-${defender.factionId}`;
-            const existingRivalry = world.rivalries.get(skirmishRivalryId)
-                || world.rivalries.get(`rivalry-${defender.factionId}-${attacker.factionId}`);
-            if (!existingRivalry || (existingRivalry.escalationLevel ?? 0) < 7) {
-                const warState = {
-                    id: skirmishRivalryId,
-                    empireAId: attacker.factionId,
-                    empireBId: defender.factionId,
-                    rivalryScore: 100,
-                    escalationLevel: 7,
-                    activeSanctionIds: [],
-                    proxyConflictsInvolved: [],
-                    detenteActive: false
-                };
-                world.rivalries.set(skirmishRivalryId, warState);
-                world.rivalries.set(`rivalry-${defender.factionId}-${attacker.factionId}`,
-                    { ...warState, id: `rivalry-${defender.factionId}-${attacker.factionId}`, empireAId: defender.factionId, empireBId: attacker.factionId });
+            // this same cycle. registerActOfWar also auto-breaks a live NAP with
+            // an oathbreaker reputation hit and pulls the defender's
+            // mutual-defense allies into the war.
+            if (!isAtWar(world, attacker.factionId, defender.factionId)) {
+                registerActOfWar(world, attacker.factionId, defender.factionId);
                 console.log(`[Order] SKIRMISH: ${attacker.factionId} opened fire on ${defender.factionId} — state of war declared.`);
             }
             console.log(`[Order] Engagement ordered: ${payload.attackerFleetId} vs ${payload.defenderFleetId} — combat begins this cycle.`);
@@ -1386,23 +1363,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
             // Engaging IS an act of war — same rule as MIL_ATTACK_FLEET. Without
             // this, tactical combat would bypass the war declaration entirely.
-            const engageRivalryId = `rivalry-${factionId}-${enemyFactionId}`;
-            const engageExisting = world.rivalries.get(engageRivalryId)
-                || world.rivalries.get(`rivalry-${enemyFactionId}-${factionId}`);
-            if (!engageExisting || (engageExisting.escalationLevel ?? 0) < 7) {
-                const warState = {
-                    id: engageRivalryId,
-                    empireAId: factionId,
-                    empireBId: enemyFactionId,
-                    rivalryScore: 100,
-                    escalationLevel: 7,
-                    activeSanctionIds: [],
-                    proxyConflictsInvolved: [],
-                    detenteActive: false
-                };
-                world.rivalries.set(engageRivalryId, warState);
-                world.rivalries.set(`rivalry-${enemyFactionId}-${factionId}`,
-                    { ...warState, id: `rivalry-${enemyFactionId}-${factionId}`, empireAId: enemyFactionId, empireBId: factionId });
+            if (!isAtWar(world, factionId, enemyFactionId)) {
+                registerActOfWar(world, factionId, enemyFactionId);
                 console.log(`[Order] TACTICAL ENGAGE: ${factionId} opened hostilities with ${enemyFactionId} — state of war declared.`);
             }
 
@@ -1743,56 +1705,39 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'DIP_PROPOSE_TREATY': {
-            const treatyId = `treaty-${factionId}-${payload.targetFactionId}-${payload.treatyType}`;
-            world.treaties.set(treatyId, {
-                id: treatyId,
-                type: payload.treatyType,
-                signatories: [factionId, payload.targetFactionId],
-                signedAtTick: world.nowSeconds,
-                status: 'proposal'
+            // Bilateral consent: this queues an offer; the treaty only becomes
+            // active when the target accepts via DIP_RESPOND_OFFER.
+            const result = createOffer(world, factionId, {
+                kind: 'treaty',
+                toFactionId: payload.targetFactionId,
+                treatyType: payload.treatyType,
             });
+            if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+            else console.log(`[Order] ${factionId} proposed ${payload.treatyType} to ${payload.targetFactionId}`);
             break;
         }
 
         case 'DIP_DEMAND_TRIBUTE': {
-            const tributeId = `tribute-${factionId}-${payload.targetFactionId}`;
-            world.tributes.set(tributeId, {
-                id: tributeId,
-                vassalId: payload.targetFactionId,
-                overlordId: factionId,
-                resourceType: 'credits',
-                amountPerTick: payload.amount,
-                status: 'active'
+            const result = createOffer(world, factionId, {
+                kind: 'tribute_demand',
+                toFactionId: payload.targetFactionId,
+                tributeResourceType: 'credits',
+                tributeAmountPerTick: payload.amount,
             });
+            if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+            else console.log(`[Order] ${factionId} demanded tribute from ${payload.targetFactionId}`);
             break;
         }
 
         case 'DIP_TRADE_PACT': {
-            const pactId = `pact-${factionId}-${payload.targetFactionId}`;
-            world.tradePacts.set(pactId, {
-                id: pactId,
-                empireAId: factionId,
-                empireBId: payload.targetFactionId,
-                resourceAdjustments: {},
-                tariffExemption: true,
-                signedAtTick: world.nowSeconds
+            const result = createOffer(world, factionId, {
+                kind: 'trade_pact',
+                toFactionId: payload.targetFactionId,
+                resource: payload.resource,
+                volumePerHour: payload.volume,
             });
-            // Phase 2: the pact's cargo terms become a live TradeAgreement — the
-            // trade tick pathfinds a route for it and settles goods + credits.
-            if (payload.resource && payload.volume > 0) {
-                world.economy.tradeAgreements.set(pactId, {
-                    id: pactId,
-                    aFactionId: factionId,
-                    bFactionId: payload.targetFactionId,
-                    resource: payload.resource,
-                    volumePerHour: payload.volume,
-                    startTick: world.nowSeconds,
-                    endTick: Number.MAX_SAFE_INTEGER,
-                    priceFormula: payload.priceFormula ?? 'market',
-                    fixedPrice: payload.fixedPrice
-                });
-                console.log(`[Order] Trade agreement ${pactId}: ${payload.volume}/hr ${payload.resource} ${factionId} → ${payload.targetFactionId}`);
-            }
+            if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+            else console.log(`[Order] ${factionId} proposed trade pact to ${payload.targetFactionId}`);
             break;
         }
 

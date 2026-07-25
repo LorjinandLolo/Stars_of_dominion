@@ -8,6 +8,7 @@ import type { EspionageWorldState } from './espionage/espionage-types';
 import type { ActiveSeason, SeasonRecord, VictoryState, PostVictoryTransition, TerritoryPersistenceRecord } from './seasons/season-types';
 import type { PlayerTechState } from './tech/types';
 import type { RivalryState, Bloc, PropagandaCampaign, ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-types';
+import type { DiplomacyWorldState } from './diplomacy/diplomacy-types';
 import type { CombatState } from './combat/combat-types';
 import type { ConstructionWorldState } from './construction/construction-types';
 import type { CouncilState } from '@/types/ui-state';
@@ -130,6 +131,8 @@ export interface GameWorldState {
     tech: Map<string, PlayerTechState>;
 
     /** Diplomacy state. */
+    /** Bilateral offers + initiative cooldowns (worker-mutated via DIP_* orders). */
+    diplomacy: DiplomacyWorldState;
     rivalries: Map<string, RivalryState>;
     blocs: Map<string, Bloc>;
     propagandaCampaigns: Map<string, PropagandaCampaign>;

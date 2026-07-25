@@ -204,6 +204,25 @@ export interface RivalryState {
     escalationLevel: number; // 0-7
     activeSanctionIds: string[];
     detenteActive: boolean;
+    /** Per-pair diplomatic memory (newest last). Optional on old snapshots. */
+    recentEvents?: Array<{ atSeconds: number; kind: string; scoreDelta: number; note?: string }>;
+}
+
+/** Client view of a bilateral diplomatic offer (world.diplomacy.offers). */
+export interface DiplomaticOfferView {
+    id: string;
+    kind: 'treaty' | 'trade_pact' | 'tribute_demand' | 'peace_offer';
+    fromFactionId: string;
+    toFactionId: string;
+    treatyType?: string;
+    resource?: string;
+    volumePerHour?: number;
+    tributeResourceType?: string;
+    tributeAmountPerTick?: number;
+    createdAtSeconds: number;
+    expiresAtSeconds: number;
+    status: 'pending' | 'accepted' | 'rejected' | 'expired' | 'withdrawn';
+    respondedAtSeconds?: number;
 }
 
 export interface DiplomacyState {
@@ -212,6 +231,8 @@ export interface DiplomacyState {
     treaties: Treaty[];
     tradePacts: TradePact[];
     tributes: Tribute[];
+    /** Offers involving the local player (both directions), pending first. */
+    offers: DiplomaticOfferView[];
 }
 
 // ─── Politics & Blocs ───────────────────────────────────────────────────────

@@ -14,6 +14,13 @@ export interface RivalryState {
     activeSanctionIds: string[];
     proxyConflictsInvolved: string[];
     detenteActive: boolean;  // If true, rivalryScore is slowly decaying / capped
+    /**
+     * Per-pair diplomatic memory (capped ring buffer, newest last).
+     * Optional: absent on pre-Phase-1 snapshots. Shape mirrors
+     * lib/diplomacy/diplomacy-types RelationEvent (kept inline to avoid a
+     * politics → diplomacy import cycle).
+     */
+    recentEvents?: Array<{ atSeconds: number; kind: string; scoreDelta: number; note?: string }>;
 }
 
 /**

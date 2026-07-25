@@ -71,6 +71,9 @@ export type PlayerActionId =
   | "DIP_DEMAND_TRIBUTE"
   | "DIP_SEND_ENVOY"
   | "DIP_TRADE_PACT"
+  | "DIP_RESPOND_OFFER"
+  | "DIP_WITHDRAW_OFFER"
+  | "DIP_BREAK_TREATY"
   // Espionage
   | "ESP_ASSIGN_AGENT"
   | "ESP_RECRUIT_AGENT"

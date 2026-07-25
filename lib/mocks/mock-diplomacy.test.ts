@@ -24,5 +24,17 @@ export const mockDiplomacyState: DiplomacyState = {
     ],
     tributes: [
         { id: 'tribute-1', vassalId: 'faction-null-syndicate', overlordId: 'faction-vektori', resourceType: 'credits', amountPerTick: 50, status: 'active' }
+    ],
+    offers: [
+        {
+            id: 'offer-faction-covenant-faction-aurelian-treaty-1000',
+            kind: 'treaty',
+            fromFactionId: 'faction-covenant',
+            toFactionId: 'faction-aurelian',
+            treatyType: 'research_share',
+            createdAtSeconds: 1000,
+            expiresAtSeconds: 1000 + 48 * 3600,
+            status: 'pending'
+        }
     ]
 };

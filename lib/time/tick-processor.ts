@@ -15,6 +15,7 @@ import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
 import { BUILDINGS } from '../../data/buildings';
 import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
+import { tickDiplomacy } from '../diplomacy/offer-service';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
@@ -82,6 +83,9 @@ export async function runStrategicTick(
 
     // 9: Ongoing effects (sanctions, propaganda, rebellion, seasonal)
     step9_ongoingEffects(world);
+
+    // 9b: Diplomacy — expire lapsed offers/treaties, prune initiative cooldowns
+    try { tickDiplomacy(world); } catch (e) { console.error('[TickProcessor] tickDiplomacy failed:', e); }
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);

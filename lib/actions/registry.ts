@@ -183,6 +183,24 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { targetFactionId: "id", resource: "string", volume: "number" },
     cost: { influence: 15 }
   },
+  DIP_RESPOND_OFFER: {
+    id: "DIP_RESPOND_OFFER",
+    category: "diplomatic",
+    params: { offerId: "id", response: "string" },
+    cost: {}
+  },
+  DIP_WITHDRAW_OFFER: {
+    id: "DIP_WITHDRAW_OFFER",
+    category: "diplomatic",
+    params: { offerId: "id" },
+    cost: {}
+  },
+  DIP_BREAK_TREATY: {
+    id: "DIP_BREAK_TREATY",
+    category: "diplomatic",
+    params: { treatyId: "id" },
+    cost: { influence: 25 }
+  },
 
   // --- Espionage Actions ---
   ESP_ASSIGN_AGENT: {

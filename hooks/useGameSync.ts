@@ -175,13 +175,20 @@ export function useGameSync() {
         }
 
         // Diplomacy
+        // Offers are private between the two parties — only surface the ones
+        // involving the local player. Pending first, then newest.
+        const myOffers = Array.from(((world as any).diplomacy?.offers?.values?.() ?? []) as Iterable<any>)
+            .filter(o => o.fromFactionId === playerFactionId || o.toFactionId === playerFactionId)
+            .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1)
+                || b.createdAtSeconds - a.createdAtSeconds);
         const diplomacyState = {
             ...useUIStore.getState().diplomacyState,
             rivalries: Array.from(world.rivalries.values()),
             treaties: Array.from(world.treaties.values()),
             tradePacts: Array.from(world.tradePacts.values()),
             tributes: Array.from(world.tributes.values()),
-            proxyConflicts: Array.from(world.proxyConflicts.values())
+            proxyConflicts: Array.from(world.proxyConflicts.values()),
+            offers: myOffers
         };
 
         // Economy
