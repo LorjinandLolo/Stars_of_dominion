@@ -70,6 +70,39 @@ const ESCALATION_LABELS: Record<number, string> = {
     7: 'AT WAR',
 };
 
+const GAMBIT_META: Record<string, { label: string; desc: string; responses: { id: string; label: string }[] }> = {
+    ultimatum: {
+        label: 'Ultimatum',
+        desc: 'Demand credits under threat. Requires escalation ≥ 2.',
+        responses: [
+            { id: 'concede', label: 'Concede' },
+            { id: 'reject', label: 'Reject' },
+            { id: 'stall', label: 'Stall' },
+        ],
+    },
+    espionage_accusation: {
+        label: 'Public Accusation',
+        desc: 'Accuse them of espionage. Backfires without evidence.',
+        responses: [
+            { id: 'admit', label: 'Admit' },
+            { id: 'deny', label: 'Deny' },
+        ],
+    },
+    show_of_force: {
+        label: 'Show of Force',
+        desc: 'Military posturing. Bluffs can be called.',
+        responses: [
+            { id: 'submit', label: 'Submit' },
+            { id: 'defy', label: 'Defy' },
+        ],
+    },
+};
+
+function describeGambit(g: import('@/types/ui-state').DiplomaticGambitView): string {
+    const base = GAMBIT_META[g.kind]?.label ?? g.kind;
+    return g.kind === 'ultimatum' && g.demandCredits ? `${base} — ${g.demandCredits} credits` : base;
+}
+
 function describeOffer(offer: import('@/types/ui-state').DiplomaticOfferView): string {
     switch (offer.kind) {
         case 'treaty': return `${String(offer.treatyType ?? 'treaty').replace(/_/g, ' ')} treaty`;
@@ -93,6 +126,9 @@ export default function DiplomacyPanel() {
     const [activeTab, setActiveTab] = useState<'intel' | 'statecraft' | 'economy' | 'intrigue'>('statecraft');
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     const [showDiscourse, setShowDiscourse] = useState(false);
+    const [gambitKind, setGambitKind] = useState<'ultimatum' | 'espionage_accusation' | 'show_of_force'>('show_of_force');
+    const [gambitPrediction, setGambitPrediction] = useState<string>('');
+    const [gambitDemand, setGambitDemand] = useState<number>(500);
 
     const liveFactions = useMemo(() => {
         return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
@@ -138,6 +174,15 @@ export default function DiplomacyPanel() {
     );
     const pendingOffers = pairOffers.filter(o => o.status === 'pending');
     const isAtWar = (rivalry?.escalationLevel ?? 0) >= 7;
+
+    const pairGambits = (diplomacyState.gambits || []).filter(g =>
+        (g.initiatorId === playerState.factionId && g.targetId === selectedFactionId) ||
+        (g.targetId === playerState.factionId && g.initiatorId === selectedFactionId)
+    );
+    const pendingGambits = pairGambits.filter(g => g.status === 'pending');
+    const recentGambits = pairGambits.filter(g => g.status !== 'pending').slice(0, 3);
+    const leverageHeld = diplomacyState.leverage?.[`${playerState.factionId}|${selectedFactionId}`] ?? 0;
+    const leverageAgainst = diplomacyState.leverage?.[`${selectedFactionId}|${playerState.factionId}`] ?? 0;
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
@@ -227,6 +272,12 @@ export default function DiplomacyPanel() {
                                     </div>
                                     <Activity className={`w-5 h-5 ${(rivalry?.rivalryScore ?? 0) >= 70 ? 'text-rose-400' : 'text-emerald-400'}`} />
                                 </div>
+                                {(leverageHeld > 0 || leverageAgainst > 0) && (
+                                    <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mt-2">
+                                        Leverage <span className="text-emerald-400">{leverageHeld}</span> held
+                                        {' / '}<span className="text-rose-400">{leverageAgainst}</span> against
+                                    </div>
+                                )}
                             </div>
                             
                             <button 
@@ -304,6 +355,71 @@ export default function DiplomacyPanel() {
                                             </div>
                                         );
                                     })}
+                                </div>
+                            )}
+
+                            {/* Confrontations — gambits with a prediction layer */}
+                            {(pendingGambits.length > 0 || recentGambits.length > 0) && (
+                                <div className="space-y-4">
+                                    <h3 className="text-[11px] font-display text-rose-300 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Target className="w-4 h-4" /> Confrontations
+                                    </h3>
+                                    {pendingGambits.map(g => {
+                                        const incoming = g.targetId === playerState.factionId;
+                                        return (
+                                            <div key={g.id} className="p-5 rounded-2xl border border-rose-500/20 bg-rose-500/5 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-xs font-bold text-white uppercase tracking-widest block">{describeGambit(g)}</span>
+                                                        <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                            {incoming
+                                                                ? `Issued by ${selectedFaction.name} — respond or your doctrine decides for you`
+                                                                : 'Awaiting their move — your prediction is sealed'}
+                                                        </span>
+                                                    </div>
+                                                    {!incoming && g.prediction && (
+                                                        <span className="text-[9px] font-mono text-amber-400 uppercase px-2 py-1 rounded bg-black/40 border border-amber-500/20">
+                                                            Predicted: {g.prediction}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {incoming && (
+                                                    <div className="flex gap-3">
+                                                        {(GAMBIT_META[g.kind]?.responses ?? []).map(r => (
+                                                            <button
+                                                                key={r.id}
+                                                                onClick={() => handleAction(`gambit-${g.id}-${r.id}`, dispatchOrder({
+                                                                    actionId: 'DIP_RESPOND_GAMBIT',
+                                                                    factionId: playerState.factionId,
+                                                                    payload: { gambitId: g.id, response: r.id },
+                                                                    label: `Responding: ${r.label.toLowerCase()}`,
+                                                                }))}
+                                                                disabled={!!isProcessing}
+                                                                className="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-indigo-600 hover:text-white transition-all"
+                                                            >
+                                                                {r.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {recentGambits.map(g => (
+                                        <div key={g.id} className="p-4 rounded-2xl border border-white/5 bg-black/30 flex items-center justify-between">
+                                            <div>
+                                                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest block">
+                                                    {describeGambit(g)} — {g.response}{g.autoResolved ? ' (auto)' : ''}
+                                                </span>
+                                                <span className="text-[9px] text-slate-500 italic">{g.outcome}</span>
+                                            </div>
+                                            {g.prediction && (
+                                                <span className={`text-[9px] font-mono uppercase px-2 py-1 rounded bg-black/40 ${g.predictionMatched ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {g.predictionMatched ? 'Prediction hit' : 'Prediction missed'}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
 
@@ -434,6 +550,71 @@ export default function DiplomacyPanel() {
                                                         : 'Declaring war collapses all treaties and trade pacts. Attacking through a non-aggression pact brands you an oathbreaker. Mutual-defense allies of the target will join the war.'}
                                                 </p>
                                             </div>
+
+                                            {/* Gambit launcher */}
+                                            {!isAtWar && (
+                                                <div className="space-y-3 pt-2 border-t border-white/5">
+                                                    <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono block pt-2">Launch Gambit</span>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {(Object.keys(GAMBIT_META) as Array<typeof gambitKind>).map(k => (
+                                                            <button
+                                                                key={k}
+                                                                onClick={() => { setGambitKind(k); setGambitPrediction(''); }}
+                                                                className={`px-2 py-2 rounded-lg text-[9px] font-display tracking-widest uppercase border transition-all ${
+                                                                    gambitKind === k
+                                                                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                                                                    : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'
+                                                                }`}
+                                                            >
+                                                                {GAMBIT_META[k].label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[9px] text-slate-500 italic">{GAMBIT_META[gambitKind].desc}</p>
+                                                    {gambitKind === 'ultimatum' && (
+                                                        <input
+                                                            type="number"
+                                                            value={gambitDemand}
+                                                            min={1}
+                                                            onChange={e => setGambitDemand(Math.max(1, Number(e.target.value) || 1))}
+                                                            className="w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white"
+                                                            placeholder="Credits demanded"
+                                                        />
+                                                    )}
+                                                    <div className="flex gap-2 items-center">
+                                                        <select
+                                                            value={gambitPrediction}
+                                                            onChange={e => setGambitPrediction(e.target.value)}
+                                                            className="flex-1 bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-mono text-slate-200 uppercase"
+                                                        >
+                                                            <option value="">No prediction (safe)</option>
+                                                            {GAMBIT_META[gambitKind].responses.map(r => (
+                                                                <option key={r.id} value={r.id}>Predict: {r.label}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button
+                                                            onClick={() => handleAction('gambit-launch', dispatchOrder({
+                                                                actionId: 'DIP_LAUNCH_GAMBIT',
+                                                                factionId: playerState.factionId,
+                                                                payload: {
+                                                                    targetFactionId: selectedFactionId,
+                                                                    kind: gambitKind,
+                                                                    prediction: gambitPrediction || undefined,
+                                                                    demandCredits: gambitKind === 'ultimatum' ? gambitDemand : undefined,
+                                                                },
+                                                                label: `Launching ${GAMBIT_META[gambitKind].label.toLowerCase()}`,
+                                                            }))}
+                                                            disabled={!!isProcessing || pendingGambits.some(g => g.initiatorId === playerState.factionId)}
+                                                            className="px-5 py-2 rounded-lg bg-rose-600/20 border border-rose-500/40 text-rose-300 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-rose-600 hover:text-white transition-all disabled:opacity-40"
+                                                        >
+                                                            Launch
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-[9px] text-slate-600 italic">
+                                                        Correct predictions amplify your gains ×1.35. Wrong ones hand them the initiative.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

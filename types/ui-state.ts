@@ -225,6 +225,25 @@ export interface DiplomaticOfferView {
     respondedAtSeconds?: number;
 }
 
+/** Client view of a diplomatic gambit (world.diplomacy.gambits). */
+export interface DiplomaticGambitView {
+    id: string;
+    kind: 'ultimatum' | 'espionage_accusation' | 'show_of_force';
+    initiatorId: string;
+    targetId: string;
+    /** Only present on the initiator's own gambits (secret from the target). */
+    prediction?: string;
+    demandCredits?: number;
+    createdAtSeconds: number;
+    respondBySeconds: number;
+    status: 'pending' | 'resolved' | 'expired';
+    response?: string;
+    predictionMatched?: boolean;
+    autoResolved?: boolean;
+    outcome?: string;
+    resolvedAtSeconds?: number;
+}
+
 export interface DiplomacyState {
     rivalries: RivalryState[];
     proxyConflicts: ProxyConflict[];
@@ -233,6 +252,10 @@ export interface DiplomacyState {
     tributes: Tribute[];
     /** Offers involving the local player (both directions), pending first. */
     offers: DiplomaticOfferView[];
+    /** Gambits involving the local player, pending first. */
+    gambits: DiplomaticGambitView[];
+    /** Leverage pairs involving the local player: `${holderId}|${overId}` → points. */
+    leverage: Record<string, number>;
 }
 
 // ─── Politics & Blocs ───────────────────────────────────────────────────────

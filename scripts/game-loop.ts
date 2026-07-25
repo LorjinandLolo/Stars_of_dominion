@@ -16,6 +16,7 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 // saveWorldState() had already serialized the world, silently losing the order.
 import { launchOperation } from '../lib/espionage/espionage-service';
 import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfWar, ensureDiplomacyState, shiftRivalry, isAtWar } from '../lib/diplomacy/offer-service';
+import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -1016,6 +1017,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              const result = breakTreaty(world, factionId, payload.treatyId);
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              else console.log(`[Order] ${factionId} broke treaty ${payload.treatyId}`);
+             break;
+        }
+
+        case 'DIP_LAUNCH_GAMBIT': {
+             const result = launchGambit(world, factionId, {
+                 kind: payload.kind,
+                 targetId: payload.targetFactionId,
+                 prediction: payload.prediction,
+                 demandCredits: payload.demandCredits,
+             });
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} launched ${payload.kind} gambit vs ${payload.targetFactionId}`);
+             break;
+        }
+
+        case 'DIP_RESPOND_GAMBIT': {
+             const result = respondToGambit(world, factionId, payload.gambitId, payload.response);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              break;
         }
 

@@ -181,6 +181,17 @@ export function useGameSync() {
             .filter(o => o.fromFactionId === playerFactionId || o.toFactionId === playerFactionId)
             .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1)
                 || b.createdAtSeconds - a.createdAtSeconds);
+        // Gambits: the initiator's prediction stays secret from the target
+        // until the confrontation resolves.
+        const myGambits = Array.from(((world as any).diplomacy?.gambits?.values?.() ?? []) as Iterable<any>)
+            .filter(g => g.initiatorId === playerFactionId || g.targetId === playerFactionId)
+            .map(g => (g.initiatorId === playerFactionId || g.status !== 'pending') ? g : { ...g, prediction: undefined })
+            .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1)
+                || b.createdAtSeconds - a.createdAtSeconds);
+        const myLeverage: Record<string, number> = {};
+        for (const [key, pts] of (((world as any).diplomacy?.leverage?.entries?.() ?? []) as Iterable<[string, number]>)) {
+            if (playerFactionId && key.split('|').includes(playerFactionId)) myLeverage[key] = pts;
+        }
         const diplomacyState = {
             ...useUIStore.getState().diplomacyState,
             rivalries: Array.from(world.rivalries.values()),
@@ -188,7 +199,9 @@ export function useGameSync() {
             tradePacts: Array.from(world.tradePacts.values()),
             tributes: Array.from(world.tributes.values()),
             proxyConflicts: Array.from(world.proxyConflicts.values()),
-            offers: myOffers
+            offers: myOffers,
+            gambits: myGambits,
+            leverage: myLeverage
         };
 
         // Economy

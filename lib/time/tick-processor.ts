@@ -16,6 +16,8 @@ import { Fleet } from '../movement/types';
 import { BUILDINGS } from '../../data/buildings';
 import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
 import { tickDiplomacy } from '../diplomacy/offer-service';
+import { tickGambits } from '../diplomacy/gambit-service';
+import { tickPressureDrift } from '../diplomacy/pressure-service';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
@@ -86,6 +88,10 @@ export async function runStrategicTick(
 
     // 9b: Diplomacy — expire lapsed offers/treaties, prune initiative cooldowns
     try { tickDiplomacy(world); } catch (e) { console.error('[TickProcessor] tickDiplomacy failed:', e); }
+    // 9c: Gambits — doctrine auto-resolve for overdue confrontations
+    try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }
+    // 9d: Organic pressure — rivalry drifts toward its ideological baseline
+    try { tickPressureDrift(world); } catch (e) { console.error('[TickProcessor] tickPressureDrift failed:', e); }
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);

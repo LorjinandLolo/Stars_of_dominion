@@ -100,11 +100,13 @@ export function normalizeEspionageState(world: GameWorldState): void {
     delete esp.counterIntel;
     delete w.intelligence;
 
-    // Diplomacy Phase 1: bilateral offers + cooldowns — default for snapshots
-    // written before world.diplomacy existed.
+    // Diplomacy Phase 1/2: offers, cooldowns, gambits, leverage — defaults for
+    // snapshots written before world.diplomacy (or its later fields) existed.
     if (!w.diplomacy) w.diplomacy = {};
     if (!(w.diplomacy.offers instanceof Map)) w.diplomacy.offers = new Map();
     if (!(w.diplomacy.cooldowns instanceof Map)) w.diplomacy.cooldowns = new Map();
+    if (!(w.diplomacy.gambits instanceof Map)) w.diplomacy.gambits = new Map();
+    if (!(w.diplomacy.leverage instanceof Map)) w.diplomacy.leverage = new Map();
 
     // Phase 14: corporate state — default for snapshots written before it
     // moved into GameWorldState.
