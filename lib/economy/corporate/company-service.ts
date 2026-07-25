@@ -23,7 +23,7 @@ import { TradeRoute } from '../../trade-system/types';
 const INITIAL_SHARES = 1_000_000;
 const INITIAL_SHARE_PRICE = 10;           // credits per share
 const INITIAL_TREASURY = 50_000;          // starting operating capital
-const DIVIDEND_PERIOD_TICKS = 100;        // how often dividends are paid
+const DIVIDEND_PERIOD_TICKS = 20;         // how often dividends are paid (strategic ticks)
 const DIVIDEND_PAYOUT_RATIO = 0.6;        // 60% of pending profit → dividends
 const TOLL_RATE_BASE = 0.04;              // 4% of flow value per system owned
 const PIRACY_SUPPRESSION_PER_FLEET = 0.02; // each fleet unit reduces piracyRisk by 2%
@@ -45,9 +45,11 @@ export function foundCompany(
     nowSeconds: number,
     unlockedTechIds: Set<string> = new Set()
 ): CharteredCompany {
-    // 0. Tech check
-    if (!unlockedTechIds.has('eco_tra_1')) {
-        throw new Error('Faction lacks "Chartered Companies" technology to found a company.');
+    // 0. Tech check — gated on tier-1 trade tech "Trade Route Initialization".
+    // (The old gate id 'eco_tra_1' existed in no tech tree, so chartering
+    // always threw.)
+    if (!unlockedTechIds.has('eco_t1_2')) {
+        throw new Error('Faction lacks "Trade Route Initialization" technology to found a company.');
     }
 
     const charter: CompanyCharter = {
@@ -149,6 +151,7 @@ export function adjustSharePrice(
     // NAV per share, with a small volatility range ±5%
     const navPerShare = nav / Math.max(1, company.sharesOutstanding);
     const volatility = 1 + (Math.random() * 0.1 - 0.05);
+    company.sharePricePrev = company.sharePrice;
     company.sharePrice = Math.max(0.01, navPerShare * volatility);
 }
 
@@ -160,7 +163,8 @@ export function issueDividends(
     company: CharteredCompany,
     factionStates: Map<string, FactionCorporateState>,
     events: CompanyEvent[],
-    nowSeconds: number
+    nowSeconds: number,
+    creditFaction?: (factionId: string, amount: number) => void
 ): void {
     if (company.pendingProfit <= 0) return;
 
@@ -181,6 +185,8 @@ export function issueDividends(
         if (factionState) {
             factionState.totalDividendsReceived += dividendAmount;
         }
+        // Pay real credits into the shareholder's treasury.
+        creditFaction?.(factionId, dividendAmount);
     }
 
     events.push({
@@ -211,7 +217,8 @@ export function tickCompanyLogistics(
     tollLog: CorporateTollRecord[],
     events: CompanyEvent[],
     tick: number,
-    nowSeconds: number
+    nowSeconds: number,
+    creditFaction?: (factionId: string, amount: number) => void
 ): void {
     let tickRevenue = 0;
 
@@ -231,9 +238,11 @@ export function tickCompanyLogistics(
             const intersectingSystems = route.path.filter(sysId => systemIds.includes(sysId));
             if (intersectingSystems.length === 0) continue;
 
-            // Collect toll for each monopoly system the route passes through
+            // Collect toll for each monopoly system the route passes through.
+            // routePriority ≈ volumePerHour/100; a strategic tick is ~6h of flow
+            // at ~10cr/unit, so ×600 makes the toll a real 4% cut of flow value.
             for (const systemId of intersectingSystems) {
-                const tollAmount = route.routePriority * TOLL_RATE_BASE * 100; // credit proxy
+                const tollAmount = route.routePriority * TOLL_RATE_BASE * 600;
                 tickRevenue += tollAmount;
 
                 tollLog.push({
@@ -256,20 +265,22 @@ export function tickCompanyLogistics(
     company.treasury += tickRevenue - totalCosts;
     company.pendingProfit += Math.max(0, tickRevenue - totalCosts);
 
-    // 4. Check for Going Rogue
-    if (company.autonomyLevel >= AUTONOMY_ROGUE_THRESHOLD && !company.charterRevocationPending) {
-        // Company is functionally independent — emit event
+    // 4. Check for Going Rogue — latched, fires once.
+    if (company.autonomyLevel >= AUTONOMY_ROGUE_THRESHOLD && !company.charterRevocationPending && !company.hasGoneRogue) {
+        company.hasGoneRogue = true;
         events.push({
             type: 'went_rogue',
             companyId: company.id,
             payload: { autonomyLevel: company.autonomyLevel, treasury: company.treasury },
             timestamp: nowSeconds,
         });
+    } else if (company.autonomyLevel < AUTONOMY_ROGUE_THRESHOLD && company.hasGoneRogue) {
+        company.hasGoneRogue = false; // brought back under control
     }
 
     // 5. Issue dividends on a fixed period
     if (tick % DIVIDEND_PERIOD_TICKS === 0) {
-        issueDividends(company, factionStates, events, nowSeconds);
+        issueDividends(company, factionStates, events, nowSeconds, creditFaction);
         adjustSharePrice(company, company.activeTradeRouteIds.length * 1000);
     }
 

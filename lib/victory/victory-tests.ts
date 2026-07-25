@@ -139,6 +139,8 @@ function makeEspionage(): EspionageWorldState {
     return {
         operations: new Map(),
         factionIntel: new Map(),
+        reports: new Map(),
+        boardOpportunities: new Map(),
         attributionRecords: [],
         shadowEconomyNodes: new Map(),
         regionEscalation: new Map(),

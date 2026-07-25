@@ -177,8 +177,8 @@ export interface EmpireIdentityState {
 // ─── Espionage ──────────────────────────────────────────────────────────────
 // Single source of truth: lib/espionage types, re-exported for UI consumers.
 import type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate } from '@/lib/espionage/agent-types';
-import type { EspionageOperation } from '@/lib/espionage/espionage-types';
-export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation };
+import type { EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity } from '@/lib/espionage/espionage-types';
+export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity };
 
 export interface EspionageState {
     agents: SpyAgent[];
@@ -186,6 +186,12 @@ export interface EspionageState {
     operations: EspionageOperation[];
     candidates: AgentCandidate[];
     exposureRisk: number; // 0-100
+    /** The player's own faction intel (Intel points, infiltration levels). Null until synced. */
+    intel: FactionIntelState | null;
+    /** Intelligence reports delivered to the player. Confidence is displayed; accuracy is never shown. */
+    reports: IntelReport[];
+    /** The player's Intelligence Operations Board: live, expiring opportunities and threats. */
+    board: BoardOpportunity[];
 }
 
 // ─── Diplomacy & Rivalries ──────────────────────────────────────────────────

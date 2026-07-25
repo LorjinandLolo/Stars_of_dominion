@@ -18,6 +18,8 @@ import { getDeepNetworkAttributionBonus, tickAgentNetworks } from './agent-servi
 import { OPERATION_CATALOG_BY_ID, domainForCategory } from './operation-catalog';
 import type { OperationDefinition, OperationRisk } from './operation-catalog';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
+import { canLaunchCategory, stageInfo } from './network-stages';
+import { generateReportForOperation, pruneExpiredReports } from './intel-reports';
 import { triggerCrisis } from '../crisis-manager';
 
 const espCfg = config.espionage;
@@ -108,6 +110,17 @@ export function launchCatalogOperation(
     if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
 
     const intel = getOrCreateFactionIntel(world, actorFactionId);
+
+    // Network stage gate: advanced categories need deeper infiltration.
+    const infiltration = intel.infiltrationLevels[targetFactionId] ?? 0;
+    const gate = canLaunchCategory(infiltration, def.category);
+    if (!gate.allowed) {
+        return {
+            success: false,
+            message: `${def.name} requires a ${stageInfo(gate.requiredStage).label} network (current: ${stageInfo(gate.currentStage).label}).`,
+        };
+    }
+
     if (intel.usedAgentCapacity >= intel.agentCapacity) {
         return { success: false, message: 'Maximum operation capacity reached.' };
     }
@@ -212,6 +225,9 @@ export function tickOperations(
             world.espionage.operations.delete(id);
         }
     }
+
+    // Stale intelligence ages out.
+    pruneExpiredReports(world);
 
     // Phase 15: tick agent networks (build strength, decay, promote FoW levels)
     tickAgentNetworks(world, deltaSeconds);
@@ -330,6 +346,8 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     if (op.succeeded) {
         applyCatalogEffects(op, def, outcome, world);
         updateInfiltration(world, op.actorFactionId, op.targetFactionId, 5);
+        // Intelligence product: imperfect report delivered to the actor.
+        generateReportForOperation(op, def, outcome, world);
     }
     if (exposed || outcome === 'backfire') {
         world.shared.stability = clampShared(world.shared.stability - 0.05);
@@ -350,8 +368,23 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     });
 }
 
+/** Raw goods that espionage can siphon or spoil. */
+const SIPHONABLE: Array<'metals' | 'chemicals' | 'food' | 'energy' | 'rare'> =
+    ['metals', 'chemicals', 'food', 'energy', 'rare'];
+
 function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, outcome: CatalogOutcome, world: GameWorldState): void {
     const mult = outcome === 'critical_success' ? 1.5 : outcome === 'partial_success' ? 0.5 : 1.0;
+
+    // Target-side lookups shared by the economic effects.
+    const targetEcoPlanets = [...world.economy.planets.values()]
+        .filter(p => p.factionId === op.targetFactionId);
+    const regionPlanet = targetEcoPlanets.find(p => p.systemId === op.targetRegionId) ?? targetEcoPlanets[0];
+    const actorPlanet = [...world.economy.planets.values()].find(p => p.factionId === op.actorFactionId);
+    const targetReserves = world.economy.factions.get(op.targetFactionId)?.reserves as Record<string, number> | undefined;
+    const targetRoutes = [...(world.economy.tradeRoutes?.values() ?? [])].filter(r => {
+        const agr = world.economy.tradeAgreements?.get(r.agreementId);
+        return !!agr && (agr.aFactionId === op.targetFactionId || agr.bFactionId === op.targetFactionId);
+    });
 
     for (const effect of def.effects) {
         if (effect.type === 'instability_increase') {
@@ -361,6 +394,67 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
         if (effect.type === 'research_boost') {
             const attackerTech = world.tech.get(op.actorFactionId);
             if (attackerTech) attackerTech.researchPoints += effect.value * mult;
+        }
+
+        // ── Economic effects (previously inert strings) ──────────────────────
+        if (effect.type === 'resource_siphon' && regionPlanet) {
+            // Covert piracy: a cut of the target's stockpiles is diverted to
+            // the actor's nearest holdings (fenced if no planet to receive it).
+            for (const res of SIPHONABLE) {
+                const taken = (regionPlanet.stockpile[res] ?? 0) * effect.value * mult;
+                if (taken <= 0) continue;
+                regionPlanet.stockpile[res] = (regionPlanet.stockpile[res] ?? 0) - taken;
+                if (actorPlanet) {
+                    actorPlanet.stockpile[res] = (actorPlanet.stockpile[res] ?? 0) + taken;
+                }
+            }
+        }
+        if (effect.type === 'trade_efficiency_debuff') {
+            // The target's convoys become soft targets: piracy risk ratchets on
+            // every route they are a party to, and their core region strains.
+            for (const route of targetRoutes) {
+                route.piracyRisk = Math.min(0.95, route.piracyRisk + effect.value * mult);
+            }
+            const collapse = world.economy.collapseStates.get(`region-${op.targetFactionId}`);
+            if (collapse) collapse.pressure = Math.min(1, collapse.pressure + effect.value * mult * 0.5);
+        }
+        if (effect.type === 'inflation_spike' && targetReserves) {
+            // Currency manipulation: the target's credit reserves lose real value.
+            targetReserves['CREDITS'] = (targetReserves['CREDITS'] ?? 0) * (1 - effect.value * mult);
+        }
+        if (effect.type === 'market_inefficiency') {
+            // Market rumours: artificial demand distortion on the galactic
+            // exchange — prices spike on the next pricing passes via the EMA.
+            for (const market of world.economy.markets.values()) {
+                market.demand += market.demand * effect.value * mult;
+            }
+        }
+        if (effect.type === 'ammo_shortage') {
+            // Sabotaged ammunition stores across the target's worlds.
+            for (const p of targetEcoPlanets) {
+                p.stockpile.ammo = (p.stockpile.ammo ?? 0) * (1 - effect.value * mult);
+            }
+        }
+        if (effect.type === 'disable_building') {
+            // Ruin an active military/industrial installation in the target
+            // system. Stays offline until the owner pays for repairs
+            // (PLANET_REPAIR_BUILDING) — the repair bill IS the cost penalty,
+            // so 'repair_cost_penalty' needs no separate mechanic.
+            const constrPlanets = [...world.construction.planets.values()]
+                .filter(p => p.ownerId === op.targetFactionId)
+                .sort((a, b) =>
+                    (a.systemId === op.targetRegionId ? 0 : 1) - (b.systemId === op.targetRegionId ? 0 : 1));
+            for (const planet of constrPlanets) {
+                const tile = planet.tiles.find(t => t.constructionState === 'active' && t.buildingId &&
+                    /shipyard|factory|plant|mine/.test(t.buildingId))
+                    ?? planet.tiles.find(t => t.constructionState === 'active' && t.buildingId);
+                if (tile) {
+                    tile.constructionState = 'ruined';
+                    tile.constructionCompleteAt = null;
+                    console.log(`[ESPIONAGE] Sabotage ruined ${tile.buildingId} on ${planet.id}`);
+                    break;
+                }
+            }
         }
     }
 
@@ -387,12 +481,22 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
  * Ensures each economy faction has a FactionIntelState so AI and players
  * accumulate the resource without an explicit bootstrap step.
  */
+/** Infiltration lost per hour with no reinforcement (~0.7/day). Networks need maintenance. */
+const INFILTRATION_DECAY_PER_HOUR = 0.03;
+
 export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): void {
     const hours = deltaSeconds / 3600;
     for (const factionId of world.economy.factions.keys()) {
         if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
         const intel = getOrCreateFactionIntel(world, factionId);
         intel.intelPoints = Math.min(1000, intel.intelPoints + 1.5 * hours);
+
+        // Idle decay — deployed agents (tickAgentNetworks) and successful ops
+        // outpace this; abandoned networks slowly regress through the stages.
+        for (const [targetId, level] of Object.entries(intel.infiltrationLevels)) {
+            if (level <= 0) continue;
+            intel.infiltrationLevels[targetId] = Math.max(0, level - INFILTRATION_DECAY_PER_HOUR * hours);
+        }
     }
 }
 

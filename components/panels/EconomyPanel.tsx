@@ -129,7 +129,9 @@ export default function EconomyPanel() {
     const [tab, setTab] = useState<'metrics' | 'policy'>('metrics');
 
     const totalVolume = regions.reduce((s, r) => s + r.metrics.tradeVolume, 0);
-    const avgStability = Math.round(regions.reduce((s, r) => s + r.metrics.stabilityIndex, 0) / regions.length);
+    const avgStability = regions.length
+        ? Math.round(regions.reduce((s, r) => s + r.metrics.stabilityIndex, 0) / regions.length)
+        : 0;
     const tradeEvents = crisisEvents.filter((e) => e.type === 'trade_war' && !e.resolved);
 
     return (

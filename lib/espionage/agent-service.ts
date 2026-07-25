@@ -19,11 +19,16 @@ import {
 } from './agent-types';
 import type { GameWorldState } from '../game-world-state';
 import type { OperationDomain } from './espionage-types';
+import { updateInfiltration } from './faction-intel';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const NETWORK_BUILD_RATE_PER_HOUR = 0.03;     // strength gained per agent per hour
 const NETWORK_DECAY_RATE_PER_HOUR = 0.01;     // strength lost per hour with no agents
+// Empire-level infiltration gained per hour from an active network in a system
+// owned by another faction, scaled by network strength (~1–3/day). This is the
+// main path up the network stages (Recon Cell → ... → Shadow Government).
+const INFILTRATION_GROWTH_PER_HOUR = 0.12;
 const COVER_DECAY_PER_OP = 0.10;              // cover drops 10% each op
 const LOYALTY_DECAY_RATE_PER_HOUR = 0.0005;  // slow passive decay in hostile systems
 const AGENT_COOLDOWN_HOURS = 12;             // hours after an op before agent is available
@@ -280,6 +285,18 @@ export function tickAgentNetworks(world: GameWorldState, deltaSeconds: number): 
                 const growthRate = verifiedAgents * NETWORK_BUILD_RATE_PER_HOUR * hours;
                 network.strength = Math.min(1.0, network.strength + growthRate);
                 network.activeUntil = now + 30 * 24 * 3600; // refresh window
+
+                // Staffed network on foreign soil feeds empire-level infiltration
+                // against the system's owner.
+                const ownerId = world.movement.systems.get(network.systemId)?.ownerFactionId;
+                if (ownerId && ownerId !== network.ownerFactionId) {
+                    updateInfiltration(
+                        world,
+                        network.ownerFactionId,
+                        ownerId,
+                        INFILTRATION_GROWTH_PER_HOUR * network.strength * hours
+                    );
+                }
             } else {
                 // All agents gone — start decaying
                 decayNetwork(network, hours);

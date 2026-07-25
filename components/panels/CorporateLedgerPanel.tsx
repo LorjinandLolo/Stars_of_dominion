@@ -17,10 +17,11 @@ import {
 } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { CompanySnapshot, MarketTicker, CharterPower, Resource } from '@/types/ui-state';
-import { 
-    charterCompanyAction, 
-    commandPrivateersAction, 
-    taxColoniesAction 
+import {
+    charterCompanyAction,
+    commandPrivateersAction,
+    taxColoniesAction,
+    issueSharesAction
 } from '@/app/actions/company';
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -97,10 +98,15 @@ function CompanyCard({ c, selected, onClick }: { c: CompanySnapshot; selected: b
     );
 }
 
-function FoundCharterDialog({ onClose }: { onClose: () => void }) {
+function FoundCharterDialog({ onClose, playerFactionId, capitalSystemId }: {
+    onClose: () => void;
+    playerFactionId: string;
+    capitalSystemId: string;
+}) {
     const [name, setName] = useState('');
     const [powers, setPowers] = useState<CharterPower[]>([CharterPower.MONOPOLY]);
     const [isFounding, setIsFounding] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const togglePower = (p: CharterPower) => {
         if (p === CharterPower.MONOPOLY) return; // Basic monopoly is always granted
@@ -109,12 +115,12 @@ function FoundCharterDialog({ onClose }: { onClose: () => void }) {
 
     const handleFound = async () => {
         setIsFounding(true);
-        // In a real app we'd get player faction info from store
-        const result = await charterCompanyAction(name, 'faction-aurelian', 'crimson-expanse', powers);
+        setError(null);
+        const result = await charterCompanyAction(name, playerFactionId, capitalSystemId, powers);
         if (result.success) {
             onClose();
         } else {
-            console.error(result.error);
+            setError(result.error ?? 'Charter failed.');
         }
         setIsFounding(false);
     };
@@ -171,7 +177,11 @@ function FoundCharterDialog({ onClose }: { onClose: () => void }) {
                         ))}
                     </div>
 
-                    <button 
+                    {error && (
+                        <div className="text-[10px] text-rose-400 bg-rose-950/30 border border-rose-800/40 rounded px-3 py-2">{error}</div>
+                    )}
+
+                    <button
                         onClick={handleFound}
                         disabled={isFounding || !name}
                         className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-black font-display text-xs tracking-widest py-3 rounded-lg transition-all shadow-lg shadow-amber-900/20"
@@ -187,36 +197,41 @@ function FoundCharterDialog({ onClose }: { onClose: () => void }) {
 // ─── Main Panel ────────────────────────────────────────────────────────────────
 
 export default function CorporateLedgerPanel() {
-    const { corporateState, playerFactionId } = useUIStore();
+    const { corporateState, playerFactionId, factions } = useUIStore();
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [tab, setTab] = useState<'market' | 'companies'>('market');
     const [showFoundDialog, setShowFoundDialog] = useState(false);
 
     const selected = corporateState.companies.find(c => c.id === selectedId) ?? null;
+    const capitalSystemId = playerFactionId
+        ? (factions as Record<string, any>)?.[playerFactionId]?.capitalSystemId ?? ''
+        : '';
 
     const handlePrivateers = async () => {
         if (!selectedId || !playerFactionId) return;
-        const res = await commandPrivateersAction(selectedId, playerFactionId);
-        if (res.success) {
-            // Revalidation handles state
-        }
+        await commandPrivateersAction(selectedId, playerFactionId);
     };
 
     const handleTax = async () => {
         if (!selectedId || !selected || !playerFactionId) return;
-        const res = await taxColoniesAction(selectedId, playerFactionId);
-        if (res.success) {
-            // Revalidation handles state
-        }
+        await taxColoniesAction(selectedId, playerFactionId);
     };
 
     const handleEquities = async () => {
-        // Feature not yet finalized
+        if (!selectedId || !selected || !playerFactionId) return;
+        // Buy a 10k-share block of newly issued equity at the current price.
+        await issueSharesAction(selectedId, playerFactionId, 10_000, selected.sharePrice);
     };
 
     return (
         <div className="h-full flex flex-col overflow-hidden bg-slate-950/50 backdrop-blur-xl">
-            {showFoundDialog && <FoundCharterDialog onClose={() => setShowFoundDialog(false)} />}
+            {showFoundDialog && playerFactionId && (
+                <FoundCharterDialog
+                    onClose={() => setShowFoundDialog(false)}
+                    playerFactionId={playerFactionId}
+                    capitalSystemId={capitalSystemId}
+                />
+            )}
             
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-700/40 flex justify-between items-center bg-slate-900/20">

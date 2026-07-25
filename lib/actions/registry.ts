@@ -211,6 +211,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { agentId: "id" },
     cost: {}
   },
+  ESP_SEIZE_OPPORTUNITY: {
+    id: "ESP_SEIZE_OPPORTUNITY",
+    category: "espionage",
+    // Cost varies per opportunity — validated and deducted by seizeOpportunity.
+    params: { opportunityId: "id" },
+    cost: {}
+  },
   ESP_INFILTRATE_NETWORK: {
     id: "ESP_INFILTRATE_NETWORK",
     category: "espionage",
@@ -258,14 +265,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
   ECON_ESTABLISH_COMPANY: {
     id: "ECON_ESTABLISH_COMPANY",
     category: "economic",
-    params: { name: "string", sector: "string", planetId: "id" },
+    params: { baseName: "string", headquartersSystemId: "id" },
     cost: { credits: 5000, influence: 100 }
   },
   ECON_INVEST_COMPANY: {
     id: "ECON_INVEST_COMPANY",
     category: "economic",
     params: { companyId: "id", amount: "number" },
-    cost: { credits: 1000 }
+    cost: {} // dynamic: the invested amount is charged in the handler
   },
   ECON_LIQUIDATE_COMPANY: {
     id: "ECON_LIQUIDATE_COMPANY",
@@ -276,14 +283,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
   ECON_GRANT_MONOPOLY: {
     id: "ECON_GRANT_MONOPOLY",
     category: "economic",
-    params: { companyId: "id", resource: "string", systemId: "id" },
+    params: { companyId: "id", resource: "string", systemIds: "object" },
     cost: { influence: 100 }
   },
   ECON_ISSUE_SHARES: {
     id: "ECON_ISSUE_SHARES",
     category: "economic",
     params: { companyId: "id", shareCount: "number" },
-    cost: {}
+    cost: {} // dynamic: share cost charged in the handler
   },
   ECON_COMMAND_PRIVATEERS: {
     id: "ECON_COMMAND_PRIVATEERS",
@@ -302,6 +309,24 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     category: "economic",
     params: { credits: "number", influence: "number" },
     cost: {}
+  },
+  ECON_MARKET_BUY: {
+    id: "ECON_MARKET_BUY",
+    category: "economic",
+    params: { resource: "string", amount: "number" },
+    cost: {} // credits settled at market price inside the handler
+  },
+  ECON_MARKET_SELL: {
+    id: "ECON_MARKET_SELL",
+    category: "economic",
+    params: { resource: "string", amount: "number" },
+    cost: {} // goods drawn from planet stockpile inside the handler
+  },
+  ECON_ASSIGN_ESCORTS: {
+    id: "ECON_ASSIGN_ESCORTS",
+    category: "economic",
+    params: { routeId: "id", level: "number" },
+    cost: { credits: 500 }
   },
 
   // --- Economic / Development Actions ---

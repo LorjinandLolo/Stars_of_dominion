@@ -15,6 +15,7 @@ import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
 import { BUILDINGS } from '../../data/buildings';
 import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
+import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
@@ -23,6 +24,9 @@ import { StrategicAIService } from '../ai/strategic-ai-service';
 import { MilestoneService } from '../victory/milestone-service';
 import { DefeatManager } from '../defeat/manager';
 import { fromISO } from '../seasons/season-service';
+import { registry as techRegistry } from '../tech/engine';
+import { TechEffectType } from '../tech/types';
+import '../tech/techData'; // side effect: registers all tech trees
 
 
 
@@ -153,6 +157,26 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
                     // Mark tech as unlocked
                     if (slot.techId && !techState.unlockedTechIds.includes(slot.techId)) {
                         techState.unlockedTechIds.push(slot.techId);
+
+                        // Apply the tech's modifier effects (same semantics as
+                        // TechEngine.applyEffect). Without this, research only
+                        // ever recorded ids — globalModifiers stayed empty and
+                        // no tech had any mechanical impact.
+                        const techDef = techRegistry.get(slot.techId);
+                        if (techDef) {
+                            if (!techState.globalModifiers) techState.globalModifiers = {};
+                            if (!techState.activeEffects) techState.activeEffects = [];
+                            for (const effect of techDef.effects ?? []) {
+                                if (effect.modifierKey && effect.type === TechEffectType.MODIFIER_PERCENT) {
+                                    techState.globalModifiers[effect.modifierKey] =
+                                        (techState.globalModifiers[effect.modifierKey] ?? 1.0) + (effect.value ?? 0);
+                                } else if (effect.modifierKey && effect.type === TechEffectType.MODIFIER_FLAT) {
+                                    techState.globalModifiers[effect.modifierKey] =
+                                        (techState.globalModifiers[effect.modifierKey] ?? 0) + (effect.value ?? 0);
+                                }
+                                techState.activeEffects.push(effect);
+                            }
+                        }
                     }
                     // Notification fired below
                     fireNotification({
@@ -294,6 +318,7 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         tickOperations(world, delta);
         tickShadowEconomy(world, delta);
         tickFactionIntel(world, delta);
+        tickOpportunityBoard(world, delta);
 
         for (const factionId of world.economy.factions.keys()) {
             if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;

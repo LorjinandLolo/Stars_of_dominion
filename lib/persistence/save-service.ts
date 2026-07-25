@@ -88,6 +88,8 @@ export function normalizeEspionageState(world: GameWorldState): void {
     const esp = w.espionage;
     if (!(esp.operations instanceof Map)) esp.operations = new Map();
     if (!(esp.factionIntel instanceof Map)) esp.factionIntel = new Map();
+    if (!(esp.reports instanceof Map)) esp.reports = new Map();
+    if (!(esp.boardOpportunities instanceof Map)) esp.boardOpportunities = new Map();
     if (!Array.isArray(esp.attributionRecords)) esp.attributionRecords = [];
     if (!(esp.shadowEconomyNodes instanceof Map)) esp.shadowEconomyNodes = new Map();
     if (!(esp.regionEscalation instanceof Map)) esp.regionEscalation = new Map();
@@ -97,6 +99,16 @@ export function normalizeEspionageState(world: GameWorldState): void {
     // parallel V2 intelligence system.
     delete esp.counterIntel;
     delete w.intelligence;
+
+    // Phase 14: corporate state — default for snapshots written before it
+    // moved into GameWorldState.
+    if (!w.corporate) w.corporate = {};
+    const corp = w.corporate;
+    if (!(corp.companies instanceof Map)) corp.companies = new Map();
+    if (!(corp.factionStates instanceof Map)) corp.factionStates = new Map();
+    if (!Array.isArray(corp.tollLog)) corp.tollLog = [];
+    if (!Array.isArray(corp.eventLog)) corp.eventLog = [];
+    if (typeof corp.tick !== 'number') corp.tick = 0;
 }
 
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────
@@ -114,6 +126,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId),
         espionageFactionIntel: world.espionage.factionIntel.get(factionId) ?? null,
         espionageOperations: Array.from(world.espionage.operations.values()).filter(op => op.actorFactionId === factionId),
+        espionageReports: Array.from(world.espionage.reports.values()).filter(r => r.ownerFactionId === factionId),
+        espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId)
     };
     return JSON.stringify(mapsToRecords(shard));
@@ -142,6 +156,12 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.espionageOperations) {
         shard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
     }
+    if (shard.espionageReports) {
+        shard.espionageReports.forEach((r: any) => world.espionage.reports.set(r.id, r));
+    }
+    if (shard.espionageBoard) {
+        shard.espionageBoard.forEach((o: any) => world.espionage.boardOpportunities.set(o.id, o));
+    }
     if (shard.recruitmentJobs) {
         if (!world.combat) world.combat = { recruitmentJobs: [] };
         // Merge - unique by ID
@@ -165,6 +185,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.intelNetworks.clear();
     cloned.espionage.factionIntel.clear();
     cloned.espionage.operations.clear();
+    cloned.espionage.reports.clear();
+    cloned.espionage.boardOpportunities.clear();
     if (cloned.combat) cloned.combat.recruitmentJobs = [];
     return cloned;
 }

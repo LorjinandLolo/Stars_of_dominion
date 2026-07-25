@@ -1,7 +1,5 @@
 'use server';
 import { prisma, withDocAliases } from '@/lib/db';
-import { updateEconomy } from '@/lib/economy';
-import { DefeatManager } from '@/lib/defeat/manager';
 
 export async function getFactions() {
   const factions = await prisma.faction.findMany();
@@ -109,92 +107,6 @@ async function ensureState() {
     }
   }
   return { ...doc, $id: doc.id, resources };
-}
-
-import { MilestoneService } from '@/lib/victory/milestone-service';
-import { getGameWorldState } from '@/lib/game-world-state-singleton';
-
-export async function getState() {
-  try {
-    const st = await ensureState();
-
-    // One available event per day (demo)
-    const eventDoc = await prisma.gameEvent.findFirst();
-    const event: any = eventDoc ? { ...eventDoc, $id: eventDoc.id } : null;
-
-    if (event) {
-      try {
-        if (typeof event.choices === 'string') event.choices = JSON.parse(event.choices);
-        if (typeof event.triggers === 'string') event.triggers = JSON.parse(event.triggers);
-        if (typeof event.effects === 'string') event.effects = JSON.parse(event.effects);
-      } catch (e) {
-        console.error('Failed to parse event JSON', e);
-      }
-    }
-
-    // Fetch active crises
-    const crises = await prisma.crisis.findMany({ take: 20 });
-
-    // Update Economy for Human Player (Terran Dominion - Hardcoded for MVP)
-    const myFactionId = '692db2fa000cd91f9852';
-    let myResources = st.resources;
-    let myRates: any = {};
-    let myExpenses: any = {};
-    let myHealth: any = { stability: 100, deficit_counter: 0, status: 'solvent' };
-    let myDefeatStatus: any = null;
-    let myVictoryStatus: any = null;
-
-    try {
-      const faction: any = await updateEconomy(myFactionId);
-      myResources = typeof faction.resources === 'string' ? JSON.parse(faction.resources) : faction.resources;
-      myRates = typeof faction.income_rates === 'string' ? JSON.parse(faction.income_rates) : faction.income_rates;
-      myExpenses = faction.expenses || {}; // From updateEconomy return
-      myHealth = faction.economic_health || myHealth; // From return
-
-      // Check Defeat Conditions
-      const world = getGameWorldState();
-      myDefeatStatus = DefeatManager.checkDefeatConditions(myFactionId, world);
-
-      // Check Victory/Prestige Conditions
-      const prestige = MilestoneService.calculateFactionPrestige(myFactionId, world);
-      const activeMilestones = Array.from(world.milestones.entries())
-          .filter(([mId, data]) => data.factionId === myFactionId)
-          .map(([mId]) => mId);
-
-      myVictoryStatus = {
-          status: 'PENDING',
-          prestige,
-          milestones: activeMilestones
-      };
-
-    } catch (e) {
-      console.error("Economy Update Failed:", e);
-    }
-
-    return {
-      day: st.day,
-      resources: myResources,
-      income_rates: myRates,
-      incomeRate: myRates, // Legacy compatibility if anything else uses it
-      expenses: myExpenses,
-      economic_health: myHealth,
-      defeat_status: myDefeatStatus,
-      victory_status: myVictoryStatus,
-      last_updated: new Date().toISOString(),
-      event: event,
-      crises: crises.map(withDocAliases)
-    };
-  } catch (error: any) {
-    console.error("CRITICAL GETSTATE ERROR:", error);
-    return {
-      error: error.message || "Unknown State Error",
-      stack: error.stack,
-      day: 0,
-      resources: {},
-      income_rates: {},
-      crises: []
-    };
-  }
 }
 
 export async function advanceDay() {

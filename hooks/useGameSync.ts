@@ -4,6 +4,7 @@ import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionage
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
+import type { Region, RegionStatus, MarketTicker } from '@/types/ui-state';
 
 // A pending order dispatched more than this long before a snapshot arrived is
 // assumed to be reflected in that snapshot (worker polls every 5s + margin).
@@ -245,6 +246,79 @@ export function useGameSync() {
             planetList = overlaid.planets;
         }
 
+        // Economy: galactic market tickers + regional trade state simulated by
+        // the worker. Previously never synced, so EconomyPanel and the Policy
+        // Bureau resource list always rendered empty.
+        const marketTickers: MarketTicker[] = Array.from(world.economy.markets?.values?.() || []).map((m: any) => ({
+            resource: m.resource,
+            currentPrice: Math.round(m.currentPrice * 100) / 100,
+            basePrice: m.basePrice,
+            supply: Math.round(m.supply),
+            demand: Math.round(m.demand),
+        }));
+        const corpWorld = (world as any).corporate;
+        const companySnapshots = corpWorld?.companies
+            ? Array.from(corpWorld.companies.values() as Iterable<any>).map((c: any) => ({
+                id: c.id,
+                fullName: c.charter?.fullName ?? c.id,
+                foundingFactionId: c.foundingFactionId,
+                sharePrice: c.sharePrice,
+                sharePricePrev: c.sharePricePrev ?? c.sharePrice,
+                sharesOutstanding: c.sharesOutstanding,
+                treasury: c.treasury,
+                dividendsPaidTotal: c.dividendsPaidTotal,
+                privateFleetSize: c.privateFleetSize,
+                autonomyLevel: c.autonomyLevel,
+                corruptionIndex: c.corruptionIndex,
+                activeTradeRouteIds: c.activeTradeRouteIds ?? [],
+                monopolySystemsCount: new Set(Object.values(c.monopolyRights ?? {}).flat()).size,
+                corporateColoniesCount: (c.corporateColonies ?? []).length,
+                powers: c.charter?.powers ?? [],
+            }))
+            : [];
+        const playerCorpState = playerFactionId ? corpWorld?.factionStates?.get?.(playerFactionId) : null;
+        const playerPortfolioValue = playerCorpState
+            ? Object.entries(playerCorpState.companySharesOwned ?? {}).reduce((sum, [cid, shares]) => {
+                const c = corpWorld.companies.get(cid);
+                return sum + (c ? (shares as number) * c.sharePrice : 0);
+            }, 0)
+            : 0;
+        const corporateState = {
+            companies: companySnapshots,
+            markets: marketTickers,
+            playerPortfolioValue,
+            totalDividendsReceived: playerCorpState?.totalDividendsReceived ?? 0,
+        };
+
+        const stageColors: Record<string, string> = {
+            stable: '#22c55e', strained: '#f59e0b', critical: '#f97316', collapsing: '#ef4444',
+        };
+        const stageStatus: Record<string, RegionStatus> = {
+            stable: 'stable', strained: 'emerging', critical: 'dissolving', collapsing: 'dissolving',
+        };
+        const flowEdges = Array.from(world.economy.tradeFlowEdges?.values?.() || []) as any[];
+        const regionList: Region[] = Array.from(world.economy.regions?.values?.() || []).map((r: any) => {
+            const volume = flowEdges
+                .filter(e => r.systemIds.includes(e.fromSystemId) || r.systemIds.includes(e.toSystemId))
+                .reduce((s, e) => s + Object.values(e.flowPerHour || {}).reduce((a: number, v: any) => a + (v || 0), 0), 0);
+            return {
+                id: r.id,
+                name: r.name,
+                systemIds: r.systemIds,
+                status: stageStatus[r.collapseStage] ?? 'stable',
+                color: stageColors[r.collapseStage] ?? '#22c55e',
+                metrics: {
+                    stabilityIndex: Math.round((1 - (r.collapsePressure ?? 0)) * 100),
+                    tradeVolume: Math.round(volume),
+                    pirateShare: 0,
+                    escalationAvg: 0,
+                    dominantIdeology: 'mercantile',
+                    institutionalInfluence: 50,
+                    strengthScore: Math.round((r.tradeEfficiency ?? 1) * 100),
+                },
+            };
+        });
+
         // Espionage: player-scoped slices of the synced world. Candidates are a
         // client-side concern (recruit pool fetched on demand) — preserve them.
         const espWorld = world.espionage;
@@ -260,6 +334,15 @@ export function useGameSync() {
                 : Array.from(espWorld.operations.values()),
             candidates: useUIStore.getState().espionageState.candidates,
             exposureRisk: Math.round((world.shared?.espionagePressure ?? 0) * 100),
+            intel: playerFactionId ? (espWorld.factionIntel.get(playerFactionId) ?? null) : null,
+            reports: (playerFactionId
+                ? Array.from(espWorld.reports.values()).filter(r => r.ownerFactionId === playerFactionId)
+                : Array.from(espWorld.reports.values())
+            ).sort((a, b) => b.createdAt - a.createdAt),
+            board: (playerFactionId
+                ? Array.from(espWorld.boardOpportunities.values()).filter(o => o.ownerFactionId === playerFactionId)
+                : Array.from(espWorld.boardOpportunities.values())
+            ).sort((a, b) => a.expiresAt - b.expiresAt),
         };
 
         // Atomic Batch Update
@@ -277,7 +360,9 @@ export function useGameSync() {
             politicsState,
             techState,
             contestedSystemIds,
-            espionageState
+            espionageState,
+            corporateState,
+            regions: regionList
         });
 
         setIsLoading(false);
@@ -313,6 +398,12 @@ export function useGameSync() {
             }
             if (mappedShard.espionageOperations) {
                 mappedShard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
+            }
+            if (mappedShard.espionageReports) {
+                mappedShard.espionageReports.forEach((r: any) => world.espionage.reports.set(r.id, r));
+            }
+            if (mappedShard.espionageBoard) {
+                mappedShard.espionageBoard.forEach((o: any) => world.espionage.boardOpportunities.set(o.id, o));
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };

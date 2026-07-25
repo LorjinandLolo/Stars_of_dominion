@@ -2,22 +2,41 @@
 
 import React, { useEffect, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { Radio, MapPin, AlertTriangle, Users, Target, Search, Info, Shield, Layers } from 'lucide-react';
+import { Radio, MapPin, AlertTriangle, Users, Target, Search, Info, Shield, Layers, FileText } from 'lucide-react';
 import { AgentCard } from '@/components/panels/espionage/AgentCard';
 import {
     recruitAgentAction,
     recallAgentAction,
     assignAgentAction,
     launchCovertOpAction,
-    getRecruitPoolAction
+    getRecruitPoolAction,
+    seizeOpportunityAction
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
+import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 
-type TabType = 'operations' | 'agents' | 'recruitment';
+type TabType = 'board' | 'operations' | 'reports' | 'agents' | 'recruitment';
+
+/** Countdown label from sim-clock seconds. */
+function expiryCountdown(nowSeconds: number, expiresAt: number): string {
+    const hours = (expiresAt - nowSeconds) / 3600;
+    if (hours <= 0) return 'Expired';
+    if (hours < 1) return `${Math.max(1, Math.floor(hours * 60))}m left`;
+    if (hours < 24) return `${Math.floor(hours)}h left`;
+    return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h left`;
+}
+
+/** Report age label from sim-clock seconds. */
+function reportAge(nowSeconds: number, createdAt: number): string {
+    const hours = Math.max(0, (nowSeconds - createdAt) / 3600);
+    if (hours < 1) return 'Fresh';
+    if (hours < 24) return `${Math.floor(hours)}h old`;
+    return `${Math.floor(hours / 24)}d old`;
+}
 
 export default function IntelligencePanel() {
-    const { regions, espionageState, updateEspionage, playerFactionId } = useUIStore();
-    const [activeTab, setActiveTab] = useState<TabType>('operations');
+    const { regions, espionageState, updateEspionage, playerFactionId, factions, nowSeconds } = useUIStore();
+    const [activeTab, setActiveTab] = useState<TabType>('board');
 
     // Deployment Selection State
     const [deployingAgentId, setDeployingAgentId] = useState<string | null>(null);
@@ -72,6 +91,19 @@ export default function IntelligencePanel() {
         }
     };
 
+    const handleSeize = async (opportunityId: string) => {
+        if (!playerFactionId) return;
+        const result = await seizeOpportunityAction(playerFactionId, opportunityId);
+        if (result.success) {
+            // Optimistic: mark seized; authoritative state arrives via shard sync.
+            updateEspionage({
+                board: espionageState.board.map(o =>
+                    o.id === opportunityId ? { ...o, status: 'seized' as const } : o
+                )
+            });
+        }
+    };
+
     const handleRecruit = async (candidateId: string) => {
         const candidate = espionageState.candidates.find(c => c.id === candidateId);
         if (!candidate || !playerFactionId) return;
@@ -95,8 +127,8 @@ export default function IntelligencePanel() {
                         <h2 className="font-display text-sm tracking-widest text-amber-500 uppercase">Intelligence Agency</h2>
                         <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-tight">Clandestine Network & Field Ops</p>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 border border-slate-700 rounded text-slate-400 bg-slate-800/30">
-                        OPSEC LEVEL 4
+                    <span className="text-[10px] font-mono px-2 py-0.5 border border-amber-500/30 rounded text-amber-400 bg-amber-500/5">
+                        INTEL {Math.floor(espionageState.intel?.intelPoints ?? 0)}
                     </span>
                 </div>
             </div>
@@ -123,7 +155,7 @@ export default function IntelligencePanel() {
             {/* Navigation Tabs */}
             <div className="px-6 bg-slate-900/10 border-b border-slate-800/40">
                 <div className="flex gap-6">
-                    {(['operations', 'agents', 'recruitment'] as TabType[]).map((tab) => (
+                    {(['board', 'operations', 'reports', 'agents', 'recruitment'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -134,7 +166,9 @@ export default function IntelligencePanel() {
                             }`}
                         >
                             <div className="flex items-center gap-2">
+                                {tab === 'board' && <Radio size={12} />}
                                 {tab === 'operations' && <Target size={12} />}
+                                {tab === 'reports' && <FileText size={12} />}
                                 {tab === 'agents' && <Users size={12} />}
                                 {tab === 'recruitment' && <Search size={12} />}
                                 {tab}
@@ -249,6 +283,52 @@ export default function IntelligencePanel() {
                             </div>
                         </div>
 
+                        {/* Spy Network Stages (per target empire) */}
+                        <div>
+                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
+                                <Shield size={10} /> Spy Networks
+                            </div>
+                            <div className="space-y-2">
+                                {Object.entries(espionageState.intel?.infiltrationLevels ?? {})
+                                    .filter(([, level]) => level > 0)
+                                    .sort(([, a], [, b]) => b - a)
+                                    .map(([targetId, level]) => {
+                                        const stage = stageForInfiltration(level);
+                                        const info = stageInfo(stage);
+                                        const next = nextStage(stage);
+                                        const progressPct = next
+                                            ? ((level - info.minInfiltration) / (next.minInfiltration - info.minInfiltration)) * 100
+                                            : 100;
+                                        return (
+                                            <div key={targetId} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-3">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[11px] text-slate-300 uppercase tracking-tight font-medium">
+                                                        {factions[targetId]?.name ?? targetId}
+                                                    </span>
+                                                    <span className="text-[9px] font-display px-1.5 py-0.5 rounded border border-purple-500/30 text-purple-300 bg-purple-500/10 uppercase tracking-widest">
+                                                        {info.label}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-1">
+                                                    <span>Infiltration {Math.floor(level)}/100</span>
+                                                    <span>{next ? `Next: ${next.label} at ${next.minInfiltration}` : 'Maximum reach'}</span>
+                                                </div>
+                                                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" style={{ width: `${Math.min(100, Math.max(3, progressPct))}%` }} />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                {Object.values(espionageState.intel?.infiltrationLevels ?? {}).every(l => l <= 0) && (
+                                    <div className="py-8 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
+                                        <Shield size={20} className="mb-2 opacity-20" />
+                                        <p className="text-[10px] uppercase tracking-widest font-display">No foreign networks established</p>
+                                        <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Deploy agents to rival systems to begin infiltration</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
                         {/* Network Coverage */}
                         <div>
                             <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
@@ -350,6 +430,111 @@ export default function IntelligencePanel() {
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'board' && (
+                    <div className="space-y-3">
+                        {espionageState.board.map((opp) => {
+                            const isThreat = opp.kind === 'threat';
+                            const expired = opp.status === 'expired' || nowSeconds >= opp.expiresAt;
+                            const seized = opp.status === 'seized';
+                            const accent = isThreat ? '#ef4444' : '#f59e0b';
+                            const costParts = [
+                                opp.cost.intelPoints ? `${opp.cost.intelPoints} Intel` : null,
+                                opp.cost.credits ? `§ ${opp.cost.credits}` : null,
+                            ].filter(Boolean).join(' + ') || 'Free';
+                            return (
+                                <div
+                                    key={opp.id}
+                                    className={`bg-slate-900/50 border rounded-lg p-4 transition-colors ${
+                                        seized || expired ? 'border-slate-800/40 opacity-50' : 'border-slate-800/60 hover:border-slate-700/80'
+                                    }`}
+                                >
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="text-[9px] font-display px-1.5 py-0.5 rounded border uppercase tracking-widest"
+                                                style={{ color: accent, borderColor: `${accent}50`, backgroundColor: `${accent}15` }}
+                                            >
+                                                {isThreat ? 'Threat' : 'Opportunity'}
+                                            </span>
+                                            <span className="text-xs font-mono tracking-wider text-slate-200 uppercase">{opp.title}</span>
+                                        </div>
+                                        <span className={`text-[9px] font-mono uppercase shrink-0 ${expired ? 'text-slate-600' : seized ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                            {seized ? 'Seized' : expired ? 'Expired' : expiryCountdown(nowSeconds, opp.expiresAt)}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 leading-relaxed mb-3">{opp.description}</p>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] text-slate-500 font-mono uppercase tracking-tighter">Cost: {costParts}</span>
+                                        {!seized && !expired && (
+                                            <button
+                                                onClick={() => handleSeize(opp.id)}
+                                                className="px-4 py-1.5 rounded uppercase font-display text-[10px] tracking-widest transition-all text-slate-950 hover:brightness-110 active:scale-95"
+                                                style={{ backgroundColor: accent }}
+                                            >
+                                                {isThreat ? 'Respond' : 'Seize'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {espionageState.board.length === 0 && (
+                            <div className="py-16 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
+                                <Radio size={24} className="mb-2 opacity-20" />
+                                <p className="text-[10px] uppercase tracking-widest font-display">Board quiet</p>
+                                <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Field stations report opportunities as they develop</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'reports' && (
+                    <div className="space-y-3">
+                        {espionageState.reports.map((report) => {
+                            const confPct = Math.round(report.confidence * 100);
+                            const confColor = confPct >= 75 ? '#10b981' : confPct >= 55 ? '#f59e0b' : '#ef4444';
+                            return (
+                                <div key={report.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4 hover:border-slate-700/80 transition-colors">
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div>
+                                            <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{report.title}</div>
+                                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 uppercase tracking-tighter">
+                                                <span>Subject: {factions[report.targetFactionId]?.name ?? report.targetFactionId}</span>
+                                                <span className="text-slate-700">•</span>
+                                                <span className="text-[9px] px-1 py-0.5 border border-slate-800 rounded font-mono">{report.domain}</span>
+                                                <span className="text-slate-700">•</span>
+                                                <span>{reportAge(nowSeconds, report.createdAt)}</span>
+                                            </div>
+                                        </div>
+                                        <span
+                                            className="text-[9px] font-display px-1.5 py-0.5 rounded border uppercase tracking-widest shrink-0"
+                                            style={{ color: confColor, borderColor: `${confColor}50`, backgroundColor: `${confColor}15` }}
+                                        >
+                                            {confPct}% confidence
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 leading-relaxed">{report.body}</p>
+                                </div>
+                            );
+                        })}
+                        {espionageState.reports.length === 0 && (
+                            <div className="py-16 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
+                                <FileText size={24} className="mb-2 opacity-20" />
+                                <p className="text-[10px] uppercase tracking-widest font-display">No intelligence on file</p>
+                                <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Successful intelligence operations deliver reports here</p>
+                            </div>
+                        )}
+                        {espionageState.reports.length > 0 && (
+                            <div className="flex items-center gap-2 pt-1">
+                                <AlertTriangle size={10} className="text-slate-600" />
+                                <span className="text-[9px] text-slate-600 uppercase tracking-tighter italic">
+                                    Confidence is an estimate. Reports may be outdated, incomplete, or deliberately falsified.
+                                </span>
                             </div>
                         )}
                     </div>

@@ -12,12 +12,14 @@ import {
 import { findBestRoute, getEdgeCost } from './pathfinding';
 import { RNG } from './rng';
 
-interface TradeFlowResult {
+export interface TradeFlowResult {
     netFlows: Map<string, Map<Resource, number>>; // TheatreID -> Resource -> Amount
     tariffRevenue: Map<string, number>; // FactionID -> Credits
     subsidyCost: Map<string, number>; // FactionID -> Credits
     piracyLoss: Map<string, number>; // FactionID -> Value Lost
     activeRoutes: TradeRoute[];
+    /** RouteID -> fraction of the agreed volume that got through this tick (0 = blockaded). */
+    deliveredRatio: Map<string, number>;
 }
 
 /**
@@ -94,14 +96,32 @@ export function updateTradeRoutes(
                     theatreId: factionA.theatreId,
                     exposureScore: pathResult.riskScore,
                     piracyRisk: 0.01 * pathResult.path.length,
-                    blockadeRisk: 0,
+                    // Contested space raises the odds a convoy is caught by a blockade.
+                    blockadeRisk: Math.min(0.9, pathResult.riskScore / 500),
                     deepSpaceRisk: 0,
-                    escortLevel: 0,
-                    routePriority: 1
+                    // Escorts are player investments — survive rerouting.
+                    escortLevel: route?.escortLevel ?? 0,
+                    // Priority doubles as a flow-volume proxy for toll/piracy math.
+                    routePriority: route?.routePriority ?? Math.max(1, agreement.volumePerHour / 100)
                 };
                 nextRoutes.set(agreement.id, newRoute);
             }
         }
+    }
+
+    // Refresh exposure/blockade risk for EVERY route against the current war
+    // picture. Without this, a route computed in peacetime kept exposure 0
+    // forever — blockades only mattered if the path physically broke.
+    for (const route of nextRoutes.values()) {
+        let risk = 0;
+        for (const sys of route.path) {
+            for (const ws of warStates.values()) {
+                if (ws.blockadeSystems.has(sys)) risk += 50;
+                if (ws.hostileFleetsPresence.has(sys)) risk += (ws.hostileFleetsPresence.get(sys) || 0) * 5;
+            }
+        }
+        route.exposureScore = risk;
+        route.blockadeRisk = Math.min(0.9, risk / 100);
     }
 
     return nextRoutes;
@@ -125,6 +145,7 @@ export function simulateTradeFlows(
     const subsidyCost = new Map<string, number>();
     const piracyLoss = new Map<string, number>();
     const activeRoutes: TradeRoute[] = [];
+    const deliveredRatio = new Map<string, number>();
 
     const getFlow = (theatreId: string, res: Resource) => {
         if (!netFlows.has(theatreId)) netFlows.set(theatreId, new Map());
@@ -151,13 +172,15 @@ export function simulateTradeFlows(
 
         // 1. Check Blockade (Binary fail)
         if (rng.check(route.blockadeRisk)) {
+            deliveredRatio.set(route.id, 0);
             continue;
         }
 
         let flowAmount = agreement.volumePerHour;
 
-        // 2. Piracy (Percentage loss)
-        if (rng.check(route.piracyRisk)) {
+        // 2. Piracy (Percentage loss) — escorts mitigate the intercept chance.
+        const escortMitigation = Math.min(0.8, route.escortLevel * 0.1);
+        if (rng.check(route.piracyRisk * (1 - escortMitigation))) {
             const lossPct = rng.next() * 0.5; // Up to 50% loss
             const lostAmount = flowAmount * lossPct;
             flowAmount -= lostAmount;
@@ -206,9 +229,10 @@ export function simulateTradeFlows(
 
         // 5. Update Net Flows
         activeRoutes.push(route);
+        deliveredRatio.set(route.id, agreement.volumePerHour > 0 ? flowAmount / agreement.volumePerHour : 0);
         addFlow(route.path[0], agreement.resource, -flowAmount);
         addFlow(route.path[route.path.length - 1], agreement.resource, flowAmount);
     }
 
-    return { netFlows, tariffRevenue, subsidyCost, piracyLoss, activeRoutes };
+    return { netFlows, tariffRevenue, subsidyCost, piracyLoss, activeRoutes, deliveredRatio };
 }

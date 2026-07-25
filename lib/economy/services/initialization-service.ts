@@ -160,4 +160,27 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
             movementIntentVisible: true
         };
     });
+
+    // 10. Seed the faction's economic region + collapse tracker. Without a
+    // region, tickCollapseState iterates an empty map and the whole collapse
+    // pillar is a no-op.
+    const regionId = `region-${factionId}`;
+    if (!world.economy.regions.has(regionId)) {
+        world.economy.regions.set(regionId, {
+            id: regionId,
+            name: `${faction.name} Core Region`,
+            systemIds: [capitalSystemId],
+            factionId,
+            tradeEfficiency: 1,
+            collapsePressure: 0,
+            collapseStage: 'stable',
+            identityDrifting: false,
+        });
+        world.economy.collapseStates.set(regionId, {
+            regionId,
+            stage: 'stable',
+            cause: '',
+            pressure: 0,
+        });
+    }
 }

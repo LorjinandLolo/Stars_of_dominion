@@ -1,7 +1,6 @@
 'use server';
 
-import { getEconomyState } from '@/lib/economy/economy-service';
-import { Resource, PriceFormula, PolicyRule } from '@/lib/trade-system/types';
+import { Resource, PriceFormula } from '@/lib/trade-system/types';
 import { revalidatePath } from 'next/cache';
 import { executePlayerAction } from './registry-handler';
 import { prisma } from '@/lib/db';
@@ -71,23 +70,23 @@ export async function updateProductionFocusAction(resource: Resource | null) {
 }
 
 /**
- * Fetch current live economy state for the UI.
+ * Place a buy/sell order on the galactic market. Settlement happens in the
+ * worker at the tick's market price: buys deduct faction credits and deliver
+ * goods to a planet stockpile; sells do the reverse.
  */
-export async function getEconomyStateAction() {
-    // Note: This remains a read-only operation
-    return getEconomyState(null as any, 'faction-aurelian');
-}
-
-/**
- * Establish a trade route (used by Dashboard.tsx)
- */
-export async function establishTradeRouteAction(playerFactionId: string, targetFactionId: string, resource: any, amount: number) {
+export async function placeMarketOrderAction(
+    playerFactionId: string,
+    side: 'buy' | 'sell',
+    resource: Resource,
+    amount: number,
+    planetId?: string
+) {
     const result = await executePlayerAction({
-        id: `route-${Date.now()}`,
-        actionId: 'ECON_ESTABLISH_ROUTE',
+        id: `mkt-${Date.now()}`,
+        actionId: side === 'buy' ? 'ECON_MARKET_BUY' : 'ECON_MARKET_SELL',
         issuerId: playerFactionId,
-        targetId: targetFactionId,
-        payload: { targetFactionId, resource, amount },
+        targetId: 'GLOBAL',
+        payload: { resource, amount, planetId },
         timestamp: Math.floor(Date.now() / 1000)
     });
 
@@ -96,20 +95,27 @@ export async function establishTradeRouteAction(playerFactionId: string, targetF
 }
 
 /**
- * Stub for generateIntrigueOptionsAction (used by Dashboard.tsx)
+ * Assign escort strength (0-8) to one of your trade routes. Escorts cut the
+ * piracy intercept chance by 10% per level (max 80%).
  */
-export async function generateIntrigueOptionsAction(targetFactionId: string) {
-    console.log(`[INTRIGUE] Stub: generateIntrigueOptionsAction for ${targetFactionId}`);
-    return [];
+export async function assignEscortsAction(
+    playerFactionId: string,
+    routeId: string,
+    level: number
+) {
+    const result = await executePlayerAction({
+        id: `escort-${Date.now()}`,
+        actionId: 'ECON_ASSIGN_ESCORTS',
+        issuerId: playerFactionId,
+        targetId: routeId,
+        payload: { routeId, level },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
-/**
- * Stub for executeIntrigueAction (used by Dashboard.tsx)
- */
-export async function executeIntrigueAction(optionId: string, type: string, targetId: string) {
-    console.log(`[INTRIGUE] Stub: executeIntrigueAction ${type} on ${targetId}`);
-    return { success: true };
-}
 /**
  * Awards a strategic bonus (credits/influence) to a faction.
  * Typically called after successful predictions or missions.

@@ -17,7 +17,7 @@ import {
     ShieldOff as ShieldSlash
 } from 'lucide-react';
 import { Resource, Market, TradeAgreement, TradeRoute, Faction } from '@/lib/trade-system/types';
-import { proposeTradeAgreementAction, updateEconomicPolicyAction, updateProductionFocusAction } from '@/app/actions/economy';
+import { proposeTradeAgreementAction, updateEconomicPolicyAction, updateProductionFocusAction, placeMarketOrderAction, assignEscortsAction } from '@/app/actions/economy';
 import { Zap, Factory, Shield, Atom, Users, Landmark, AlertTriangle } from 'lucide-react';
 
 interface EconomicTerminalProps {
@@ -159,7 +159,7 @@ export default function EconomicTerminal({
                             onUpdatePolicy={updateEconomicPolicyAction}
                         />
                     )}
-                    {activeTab === 'routes' && <RoutesPanel routes={routes} />}
+                    {activeTab === 'routes' && <RoutesPanel routes={routes} playerFactionId={playerFactionId} />}
                 </div>
             </div>
         </div>
@@ -194,12 +194,27 @@ function MarketDashboard({
     policies: any; 
 }) {
     const playerFaction = factions.find(f => f.id === playerFactionId);
-    const playerPolicy = Array.isArray(policies) 
-        ? policies.find(([id]: [string, any]) => id === playerFactionId)?.[1] 
+    const playerPolicy = Array.isArray(policies)
+        ? policies.find(([id]: [string, any]) => id === playerFactionId)?.[1]
         : null;
 
     const handleFocusChange = async (res: Resource | null) => {
         await updateProductionFocusAction(res);
+    };
+
+    const [orderQty, setOrderQty] = useState<Record<string, number>>({});
+    const [orderPending, setOrderPending] = useState<string | null>(null);
+    const [orderNotice, setOrderNotice] = useState<string | null>(null);
+
+    const handleOrder = async (side: 'buy' | 'sell', res: Resource) => {
+        const qty = orderQty[res] ?? 100;
+        setOrderPending(`${side}-${res}`);
+        setOrderNotice(null);
+        const result = await placeMarketOrderAction(playerFactionId, side, res, qty);
+        setOrderPending(null);
+        setOrderNotice(result.success
+            ? `${side.toUpperCase()} order queued: ${qty} ${res}. Settles at the next tick's market price.`
+            : `Order rejected: ${result.error ?? 'unknown error'}`);
     };
 
     return (
@@ -304,6 +319,14 @@ function MarketDashboard({
                 </div>
             </div>
 
+            {orderNotice && (
+                <div className={`px-4 py-2 rounded-lg text-xs border ${orderNotice.startsWith('Order rejected')
+                    ? 'bg-red-950/40 border-red-800/50 text-red-300'
+                    : 'bg-green-950/40 border-green-800/50 text-green-300'}`}>
+                    {orderNotice}
+                </div>
+            )}
+
             <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-[#0a0c10] text-[10px] text-slate-500 font-bold uppercase tracking-widest border-b border-[#1e293b]">
@@ -313,6 +336,7 @@ function MarketDashboard({
                             <th className="px-6 py-4 text-right">Supply</th>
                             <th className="px-6 py-4 text-right">Demand</th>
                             <th className="px-6 py-4">Activity</th>
+                            <th className="px-6 py-4 text-right">Trade</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1e293b]">
@@ -353,6 +377,32 @@ function MarketDashboard({
                                                 ></div>
                                             );
                                         })}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={10000}
+                                            value={orderQty[m.resource] ?? 100}
+                                            onChange={e => setOrderQty(q => ({ ...q, [m.resource]: Math.max(1, Number(e.target.value) || 1) }))}
+                                            className="w-20 bg-[#0a0c10] border border-slate-700 rounded px-2 py-1 text-right font-mono text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                                        />
+                                        <button
+                                            disabled={orderPending !== null}
+                                            onClick={() => handleOrder('buy', m.resource)}
+                                            className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-green-600/20 border border-green-600/40 text-green-400 hover:bg-green-600/40 disabled:opacity-40 transition-colors"
+                                        >
+                                            {orderPending === `buy-${m.resource}` ? '…' : 'Buy'}
+                                        </button>
+                                        <button
+                                            disabled={orderPending !== null}
+                                            onClick={() => handleOrder('sell', m.resource)}
+                                            className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-red-600/20 border border-red-600/40 text-red-400 hover:bg-red-600/40 disabled:opacity-40 transition-colors"
+                                        >
+                                            {orderPending === `sell-${m.resource}` ? '…' : 'Sell'}
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -583,7 +633,15 @@ function WarfarePanel({ factions, onUpdatePolicy }: { factions: Faction[], onUpd
     );
 }
 
-function RoutesPanel({ routes }: { routes: TradeRoute[] }) {
+function RoutesPanel({ routes, playerFactionId }: { routes: TradeRoute[]; playerFactionId: string }) {
+    const [escortPending, setEscortPending] = useState<string | null>(null);
+
+    const handleEscorts = async (routeId: string, level: number) => {
+        setEscortPending(routeId);
+        await assignEscortsAction(playerFactionId, routeId, level);
+        setEscortPending(null);
+    };
+
     return (
         <div className="space-y-4">
             {routes.length === 0 ? (
@@ -617,13 +675,31 @@ function RoutesPanel({ routes }: { routes: TradeRoute[] }) {
                             </div>
                             <div className="flex gap-4 items-center">
                                 <div className="text-right">
-                                    <div className="text-xs text-slate-400">Integrity</div>
-                                    <div className="text-sm font-bold text-blue-400">98%</div>
+                                    <div className="text-xs text-slate-400">Piracy Risk</div>
+                                    <div className="text-sm font-bold text-amber-400">{Math.round(route.piracyRisk * 100)}%</div>
                                 </div>
                                 <div className="h-8 w-px bg-slate-800"></div>
-                                <button className="p-2 hover:bg-slate-800 rounded text-slate-500 hover:text-blue-400 transition-colors">
-                                    <ArrowUpRight size={18} />
-                                </button>
+                                <div className="text-right">
+                                    <div className="text-xs text-slate-400 flex items-center gap-1 justify-end">
+                                        <Shield size={10} /> Escorts
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                        {[0, 2, 4, 8].map(lvl => (
+                                            <button
+                                                key={lvl}
+                                                disabled={escortPending !== null}
+                                                onClick={() => handleEscorts(route.id, lvl)}
+                                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors ${
+                                                    route.escortLevel === lvl
+                                                        ? 'bg-blue-600 border-blue-400 text-white'
+                                                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                                                } disabled:opacity-40`}
+                                            >
+                                                {escortPending === route.id ? '…' : lvl}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     ))}

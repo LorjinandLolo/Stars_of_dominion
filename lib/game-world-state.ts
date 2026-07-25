@@ -16,6 +16,7 @@ import type { LeadershipWorldState } from './leadership/types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
+import type { CorporateWorldState } from './economy/corporate/company-registry';
 
 
 // ─── Shared cross-pillar variables ────────────────────────────────────────────
@@ -97,6 +98,9 @@ export interface GameWorldState {
 
     // ── Pillar 3 — Flow-Based Economy ────────────────────────────────────────
     economy: EconomyWorldState;
+
+    // ── Phase 14 — Chartered Companies ───────────────────────────────────────
+    corporate: CorporateWorldState;
 
     // ── Pillar 6 — Espionage ─────────────────────────────────────────────────
     espionage: EspionageWorldState;

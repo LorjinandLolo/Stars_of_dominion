@@ -68,10 +68,11 @@ export function charterNewCompany(
     foundingFactionId: string,
     headquartersSystemId: string,
     powers: CharterPower[],
-    nowSeconds: number
+    nowSeconds: number,
+    unlockedTechIds: Set<string> = new Set()
 ): CharteredCompany {
     const factionState = getOrCreateFactionState(corpState, foundingFactionId);
-    const company = foundCompany(baseName, foundingFactionId, headquartersSystemId, factionState, powers, nowSeconds);
+    const company = foundCompany(baseName, foundingFactionId, headquartersSystemId, factionState, powers, nowSeconds, unlockedTechIds);
     corpState.companies.set(company.id, company);
     return company;
 }
@@ -90,9 +91,24 @@ export function tickAllCompanies(
 
     const allRoutes = world.economy.tradeRoutes ?? new Map<string, TradeRoute>();
 
+    // Dividends pay real credits into shareholder treasuries.
+    const creditFaction = (factionId: string, amount: number) => {
+        const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+        if (reserves && amount > 0) reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + amount;
+    };
+
     for (const company of corpState.companies.values()) {
         // Skip revoked companies
         if (company.charterRevocationPending && company.treasury <= 0) continue;
+
+        // A company operates every route its founding faction is a party to —
+        // this drives piracy suppression and share-price volume.
+        company.activeTradeRouteIds = [...allRoutes.values()]
+            .filter(r => {
+                const agr = world.economy.tradeAgreements?.get(r.agreementId);
+                return !!agr && (agr.aFactionId === company.foundingFactionId || agr.bFactionId === company.foundingFactionId);
+            })
+            .map(r => r.id);
 
         tickCompanyLogistics(
             company,
@@ -101,13 +117,29 @@ export function tickAllCompanies(
             corpState.tollLog,
             corpState.eventLog,
             corpState.tick,
-            world.nowSeconds
+            world.nowSeconds,
+            creditFaction
         );
+
+        // Corruption destabilizes corporate colonies (the service computed the
+        // signal but nobody applied it — do it here where we have the world).
+        if (company.corruptionIndex > 50) {
+            const unrest = (company.corruptionIndex - 50) * 0.3;
+            for (const colonySystemId of company.corporateColonies) {
+                for (const planet of world.economy.planets.values()) {
+                    if (planet.systemId !== colonySystemId) continue;
+                    planet.instability = Math.min(100, planet.instability + unrest * 0.01);
+                }
+            }
+        }
     }
 
-    // Prune toll log — keep only last 500 records to avoid unbounded growth
+    // Prune logs — keep bounded to avoid unbounded snapshot growth
     if (corpState.tollLog.length > 500) {
         corpState.tollLog = corpState.tollLog.slice(corpState.tollLog.length - 500);
+    }
+    if (corpState.eventLog.length > 200) {
+        corpState.eventLog = corpState.eventLog.slice(corpState.eventLog.length - 200);
     }
 }
 

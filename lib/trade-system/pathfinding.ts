@@ -66,12 +66,18 @@ export function getEdgeCost(
             }
 
             // Check Embargoes
-            const embroidery = ownerPolicy.embargoes.find(e => e.factionId === traderFactionId);
-            if (embroidery) {
+            const embargo = ownerPolicy.embargoes.find(e => e.factionId === traderFactionId);
+            if (embargo) {
                 // If it's a total embargo (empty resources list) or contains specific resource
-                if (embroidery.resources.length === 0 || embroidery.resources.includes(resource)) {
+                if (embargo.resources.length === 0 || embargo.resources.includes(resource)) {
                     return Infinity;
                 }
+            }
+
+            // Sanctions: sanctioned factions may not route trade through the
+            // sanctioner's space at all. (Field existed, was read nowhere.)
+            if (ownerPolicy.sanctions?.has?.(traderFactionId)) {
+                return Infinity;
             }
         }
     }
@@ -115,6 +121,7 @@ export function findBestRoute(
 
     const costs = new Map<string, number>();
     const cameFrom = new Map<string, string>();
+    const visited = new Set<string>();
     const pq = new PriorityQueue<string>();
 
     costs.set(startSys, 0);
@@ -122,6 +129,8 @@ export function findBestRoute(
 
     while (!pq.isEmpty()) {
         const current = pq.dequeue()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
 
         if (current === endSys) {
             // Reconstruct path
@@ -160,7 +169,12 @@ export function findBestRoute(
             if (edgeCost === Infinity) continue;
 
             const newCost = costs.get(current)! + edgeCost;
-            if (newCost < (costs.get(edge.to) || Infinity)) {
+            // NOTE: must be .has(), not `|| Infinity` — the start node's
+            // legitimate cost of 0 is falsy, so `||` treated it as unreachable,
+            // let neighbors re-parent the start, and the resulting cameFrom
+            // cycle hung path reconstruction forever.
+            const knownCost = costs.has(edge.to) ? costs.get(edge.to)! : Infinity;
+            if (newCost < knownCost) {
                 costs.set(edge.to, newCost);
                 cameFrom.set(edge.to, current);
                 pq.enqueue(edge.to, newCost);

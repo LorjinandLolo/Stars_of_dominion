@@ -96,6 +96,76 @@ export interface AttributionRecord {
     resolvedAt: string;
 }
 
+// ─── Intelligence reports (imperfect intel) ───────────────────────────────────
+
+/**
+ * A finding delivered to a faction by a successful intelligence operation.
+ * Reports are IMPERFECT: `confidence` is what the player sees; `accurate` is
+ * the hidden truth flag (false = distorted, fabricated, or planted by enemy
+ * counter-intelligence). Never expose `accurate` to the report's owner.
+ */
+export interface IntelReport {
+    id: string;
+    /** Faction that received the report. */
+    ownerFactionId: string;
+    /** Faction the report is about. */
+    targetFactionId: string;
+    /** Intel domain, e.g. 'military' | 'political' | 'scientific' | 'counterintel'. */
+    domain: string;
+    title: string;
+    /** Human-readable finding, numbers possibly distorted. */
+    body: string;
+    /** 0–1: displayed reliability estimate. */
+    confidence: number;
+    /**
+     * HIDDEN truth flag. False = the body's key figures are wrong (bad tradecraft
+     * or an enemy counter-intelligence plant). UI must never render this.
+     */
+    accurate: boolean;
+    /** Operation that produced this report. */
+    sourceOperationId?: string;
+    createdAt: number;  // unix seconds (sim clock)
+    expiresAt: number;  // unix seconds — stale reports are pruned
+}
+
+// ─── Intelligence Operations Board ────────────────────────────────────────────
+
+/** What seizing an opportunity grants. One reward per opportunity. */
+export type OpportunityReward =
+    | { type: 'infiltration'; amount: number }        // vs targetFactionId
+    | { type: 'intel'; amount: number }               // Intel points
+    | { type: 'credits'; amount: number }
+    | { type: 'report'; domain: 'military' | 'political' | 'scientific' } // instant intel report on target
+    | { type: 'counterIntel'; amount: number }        // own counterIntelStrength
+    | { type: 'instability'; amount: number };        // target capital system instability
+
+export type OpportunityKind = 'opportunity' | 'threat';
+
+export type OpportunityStatus = 'available' | 'seized' | 'expired';
+
+/**
+ * A time-limited entry on a faction's Intelligence Operations Board.
+ * Spawned from opportunity-templates.ts; expires if not seized in time.
+ */
+export interface BoardOpportunity {
+    id: string;
+    /** Faction whose board this appears on. */
+    ownerFactionId: string;
+    templateId: string;
+    kind: OpportunityKind;
+    /** Faction the opportunity concerns (threats: usually the owner itself). */
+    targetFactionId: string;
+    /** System involved, when relevant. */
+    systemId?: string;
+    title: string;
+    description: string;
+    cost: { intelPoints?: number; credits?: number };
+    reward: OpportunityReward;
+    createdAt: number;   // unix seconds (sim clock)
+    expiresAt: number;   // unix seconds — gone if not seized
+    status: OpportunityStatus;
+}
+
 // ─── Shadow economy activity ──────────────────────────────────────────────────
 
 export interface ShadowEconomyNode {
@@ -127,6 +197,8 @@ export interface RegionEscalation {
 export interface EspionageWorldState {
     operations: Map<string, EspionageOperation>;
     factionIntel: Map<string, FactionIntelState>; // factionId → state
+    reports: Map<string, IntelReport>;            // reportId → report
+    boardOpportunities: Map<string, BoardOpportunity>; // opportunityId → entry
     attributionRecords: AttributionRecord[];
     shadowEconomyNodes: Map<string, ShadowEconomyNode>; // systemId → node
     regionEscalation: Map<string, RegionEscalation>;    // regionId → escalation

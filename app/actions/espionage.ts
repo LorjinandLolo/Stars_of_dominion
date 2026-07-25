@@ -64,6 +64,24 @@ export async function assignAgentAction(
 }
 
 /**
+ * Seize a time-limited opportunity from the Intelligence Operations Board.
+ * Cost is validated and deducted by the worker (varies per opportunity).
+ */
+export async function seizeOpportunityAction(factionId: string, opportunityId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `seize-${Date.now()}`,
+        actionId: 'ESP_SEIZE_OPPORTUNITY',
+        issuerId: factionId,
+        targetId: opportunityId,
+        payload: { opportunityId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/**
  * Recall an agent from the field (goes on cooldown, network starts decaying).
  */
 export async function recallAgentAction(factionId: string, agentId: string): Promise<ActionResult> {

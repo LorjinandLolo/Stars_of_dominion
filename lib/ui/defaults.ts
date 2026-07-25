@@ -47,6 +47,9 @@ export const defaultEspionageState: EspionageState = {
     operations: [],
     candidates: [],
     exposureRisk: 0,
+    intel: null,
+    reports: [],
+    board: [],
 };
 
 export const defaultDiplomacyState: DiplomacyState = {

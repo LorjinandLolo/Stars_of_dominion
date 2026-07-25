@@ -2,6 +2,7 @@
 // Pillar 3 — Flow-Based Economy data schemas.
 
 import { Market, TradeRoute, TradeAgreement, Faction, PolicyState, WarState } from '../trade-system/types';
+import type { PiracyFleet } from '../trade-system/piracy-service';
 
 // ─── Resource identifiers ─────────────────────────────────────────────────────
 
@@ -80,6 +81,16 @@ export interface PlanetProduction {
      * Current accumulated stockpile for this planet.
      */
     stockpile: ResourceBundle;
+    /**
+     * Per-second consumption rates (population upkeep + industrial offtake).
+     * Optional: absent on pre-phase-1 snapshots.
+     */
+    consumptionRates?: ResourceBundle;
+    /**
+     * Local market prices per resource, derived from stock cover vs demand.
+     * Optional: absent on pre-phase-1 snapshots.
+     */
+    localPrices?: ResourceBundle;
     /** Derived capacities (non-tradeable) */
     derived: {
         construction: number;
@@ -97,6 +108,8 @@ export interface PlanetProduction {
     instability: number;
     /** True when commodities are below scarcity threshold. */
     commodityScarcity: boolean;
+    /** True when the last tick could not fully feed/power the population. */
+    essentialShortage?: boolean;
 }
 
 // ─── Trade flow ───────────────────────────────────────────────────────────────
@@ -184,6 +197,8 @@ export interface EconomyWorldState {
     factions: Map<string, Faction>;
     policies: Map<string, PolicyState>;
     warStates: Map<string, WarState>;
+    /** Active pirate/privateer fleets preying on trade routes. Optional: absent on older snapshots. */
+    piracyFleets?: Map<string, PiracyFleet>;
 
     /**
      * Last flow update unix-seconds.

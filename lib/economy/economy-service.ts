@@ -15,6 +15,7 @@ import type {
 } from './economy-types';
 import type { GameWorldState } from '../game-world-state';
 import { clampShared, recomputeInfraIntegrity } from '../game-world-state';
+import { Resource } from '../trade-system/types';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { calculateBiosphereModifiers } from './biosphere-traits';
@@ -22,6 +23,8 @@ import { tickGalacticTrade, initializeGalacticMarkets } from '../trade-system/tr
 import { RNG } from '../trade-system/rng';
 import { tickConstructionGlobal } from '../construction/construction-service';
 import { initializePlanetServices, updatePlanetServices } from './services/service-engine';
+import { tickAllCompanies } from './corporate/company-registry';
+import { getEmpireDoctrineModifiers } from '../doctrine/doctrine-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -77,6 +80,44 @@ function planetBaseRates(planet: PlanetProduction): ResourceBundle {
     return result;
 }
 
+// ─── Faction Economy Modifiers (tech + doctrine) ─────────────────────────────
+
+export interface FactionEconomyMods {
+    /** Multiplier on raw extraction rates. */
+    production: number;
+    /** Multiplier on recipe (manufactured) output. */
+    manufacturing: number;
+    /** Multiplier on state tax revenue. */
+    tax: number;
+    /** Multiplier on service upkeep costs. */
+    upkeep: number;
+    /** Multiplier on population growth rate. */
+    popGrowth: number;
+}
+
+const NEUTRAL_MODS: FactionEconomyMods = { production: 1, manufacturing: 1, tax: 1, upkeep: 1, popGrowth: 1 };
+
+/**
+ * Aggregate a faction's economic modifiers from researched tech
+ * (PlayerTechState.globalModifiers — written by the tech engine and, until
+ * now, read by nothing) and its active doctrines.
+ */
+export function getFactionEconomyMods(world: GameWorldState, factionId: string): FactionEconomyMods {
+    const tech = (world.tech?.get?.(factionId)?.globalModifiers ?? {}) as Record<string, number>;
+    let doctrine: Record<string, number> = {};
+    try {
+        doctrine = getEmpireDoctrineModifiers(world, factionId);
+    } catch { /* doctrine state absent on minimal worlds */ }
+
+    return {
+        production: (tech['eco_production_mult'] ?? 1) * (1 + (doctrine['productionCoordination'] ?? 0)),
+        manufacturing: tech['eco_manufacturing_mult'] ?? 1,
+        tax: (tech['eco_tax_mult'] ?? 1) * (1 + (doctrine['taxationRate'] ?? 0)),
+        upkeep: tech['eco_upkeep_mult'] ?? 1,
+        popGrowth: 1 + (doctrine['popGrowth'] ?? 0),
+    };
+}
+
 // ─── Pillar 3A: Local Production ──────────────────────────────────────────────
 
 /**
@@ -86,7 +127,8 @@ function planetBaseRates(planet: PlanetProduction): ResourceBundle {
 export function tickProduction(
     planet: PlanetProduction,
     deltaSeconds: number,
-    world: GameWorldState
+    world: GameWorldState,
+    mods: FactionEconomyMods = NEUTRAL_MODS
 ): void {
     // 1. Initialize Default Data-Driven Services (For unseeded planets)
     if (!planet.services) {
@@ -94,27 +136,326 @@ export function tickProduction(
         initializePlanetServices(planet);
     }
 
-    // 2. Resolve Service Upkeeps, Coverage, and Aggregate Yield Modifiers
-    const gridEfficiency = updatePlanetServices(planet, deltaSeconds);
+    // 2. Resolve Service Upkeeps, Coverage, and Aggregate Yield Modifiers.
+    // Credit upkeep is paid from the owning faction's treasury.
+    const factionReserves = world.economy.factions.get(planet.factionId)?.reserves as Record<string, number> | undefined;
+    const gridEfficiency = updatePlanetServices(planet, deltaSeconds, factionReserves, mods.upkeep);
+
+    // Doctrine-driven population growth adjustment (services set the baseline).
+    planet.demographics.growthRate *= mods.popGrowth;
 
     // 3. Compute Production Modifiers
     const rates = planetBaseRates(planet);
-    
+
+    // Production focus policy (ECON_SET_FOCUS): +25% on the chosen resource,
+    // −10% on everything else. Was only ever read by dead simulation code.
+    const focus = world.economy.policies?.get?.(planet.factionId)?.productionFocus;
+    if (focus) {
+        const focusKey = MARKET_RESOURCE_TO_KEY[focus];
+        if (focusKey) {
+            for (const k of Object.keys(rates)) {
+                const key = k as keyof ResourceBundle;
+                rates[key] = (rates[key] ?? 0) * (key === focusKey ? 1.25 : 0.9);
+            }
+        }
+    }
+
     // If the grid fails, it zeroes out industrial output efficiency natively
     let efficiencyMod = gridEfficiency - (world.shared.seasonalModifiers['tradeEfficiency'] ?? 0) * 0.3;
     efficiencyMod = Math.max(0, efficiencyMod);
 
-    // 4. Update Stockpiles
+    // 4. Update Stockpiles — raw extraction only. Goods covered by a recipe are
+    // MANUFACTURED below: they consume stockpile inputs instead of appearing free.
+    const recipes = econ.production.recipes as unknown as Array<{
+        output: string;
+        inputs: Record<string, number>;
+        happinessScaled?: boolean;
+    }>;
+    const manufactured = new Set(recipes.map(r => r.output));
+
     for (const [k, v] of Object.entries(rates)) {
         const key = k as keyof ResourceBundle;
-        const delta = (v ?? 0) * deltaSeconds * efficiencyMod;
-        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + delta;
-        planet.currentRates[key] = (v ?? 0) * efficiencyMod; // Track effective rate
+        if (manufactured.has(key)) continue;
+        const effectiveRate = (v ?? 0) * efficiencyMod * mods.production;
+        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + effectiveRate * deltaSeconds;
+        planet.currentRates[key] = effectiveRate; // Track effective rate
+    }
+
+    // 4b. Production chains, in declared tier order (so e.g. luxury exists
+    // before cultural tries to consume it). Output throttled by the scarcest
+    // input (bottleneck ratio); inputs are drawn from the planet stockpile.
+    const mfgDraw: ResourceBundle = {}; // per-second input draw, reported as demand
+    for (const recipe of recipes) {
+        const key = recipe.output as keyof ResourceBundle;
+        let desired = (rates[key] ?? 0) * deltaSeconds * efficiencyMod * mods.manufacturing;
+        if (recipe.happinessScaled) desired *= planet.happiness / 100;
+        if (desired <= 0) {
+            planet.currentRates[key] = 0;
+            continue;
+        }
+
+        let ratio = 1;
+        for (const [inK, perUnit] of Object.entries(recipe.inputs)) {
+            const need = desired * perUnit;
+            if (need <= 0) continue;
+            const have = planet.stockpile[inK as keyof ResourceBundle] ?? 0;
+            ratio = Math.min(ratio, have / need);
+        }
+        ratio = clamp(ratio);
+
+        const actual = desired * ratio;
+        for (const [inK, perUnit] of Object.entries(recipe.inputs)) {
+            const inKey = inK as keyof ResourceBundle;
+            const draw = actual * perUnit;
+            planet.stockpile[inKey] = Math.max(0, (planet.stockpile[inKey] ?? 0) - draw);
+            mfgDraw[inKey] = (mfgDraw[inKey] ?? 0) + draw / deltaSeconds;
+        }
+        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + actual;
+        planet.currentRates[key] = actual / deltaSeconds;
     }
 
     // 5. Research and military capacity
-    planet.derived.research = (rates['research'] ?? 0) * efficiencyMod;
-    planet.derived.military = clamp((rates['military'] ?? 0) / (econ.production.baseRates.military * 2.2)) * efficiencyMod;
+    planet.derived.research = planet.currentRates['research'] ?? 0;
+    planet.derived.military = clamp((planet.currentRates['military'] ?? 0) / (econ.production.baseRates.military * 2.2));
+
+    // 6. Consumption: population upkeep + industrial offtake. Deducted from the
+    // stockpile so it only holds true surplus; the aggregate (including the
+    // manufacturing draw above) feeds real market demand.
+    tickConsumption(planet, deltaSeconds, mfgDraw);
+
+    // 7. Local prices from stock cover vs local demand
+    updateLocalPrices(planet);
+}
+
+/** Population + industrial resource drain for one planet. */
+function tickConsumption(planet: PlanetProduction, deltaSeconds: number, mfgDraw?: ResourceBundle): void {
+    const cc = econ.consumption;
+    const hours = deltaSeconds / 3600;
+    const pop = planet.demographics?.population ?? 0;
+
+    const consumption: ResourceBundle = {
+        food: (pop * cc.foodPerPopPerHour) / 3600,
+        energy: (pop * cc.energyPerPopPerHour) / 3600,
+    };
+    // Residual industrial offtake (construction industry etc.) on top of the
+    // real production-chain draw.
+    for (const [k, factor] of Object.entries(cc.industrialOfftakeFactors)) {
+        const key = k as keyof ResourceBundle;
+        consumption[key] = (consumption[key] ?? 0) + (planet.currentRates[key] ?? 0) * (factor as number);
+    }
+
+    let essentialsShort = false;
+    for (const [k, ratePerSec] of Object.entries(consumption)) {
+        const key = k as keyof ResourceBundle;
+        const want = (ratePerSec ?? 0) * deltaSeconds;
+        if (want <= 0) continue;
+        const available = planet.stockpile[key] ?? 0;
+        const eaten = Math.min(available, want);
+        planet.stockpile[key] = available - eaten;
+        if ((key === 'food' || key === 'energy') && eaten < want * 0.999) {
+            essentialsShort = true;
+        }
+    }
+    // Reported demand = what was deducted here + what manufacturing already
+    // drew this tick (deducted in the recipe loop, so only reported here).
+    const reported: ResourceBundle = { ...consumption };
+    for (const [k, v] of Object.entries(mfgDraw ?? {})) {
+        const key = k as keyof ResourceBundle;
+        reported[key] = (reported[key] ?? 0) + (v ?? 0);
+    }
+    planet.consumptionRates = reported;
+    planet.essentialShortage = essentialsShort;
+
+    if (essentialsShort) {
+        planet.happiness = Math.max(0, planet.happiness - cc.shortageHappinessDriftPerHour * hours);
+        planet.instability = Math.min(100, planet.instability + cc.shortageInstabilityDriftPerHour * hours);
+    }
+}
+
+/**
+ * Local price per resource: base price scaled by how far the stockpile is from
+ * a target "days of cover" relative to local consumption. Scarce → expensive.
+ */
+function updateLocalPrices(planet: PlanetProduction): void {
+    const mc = econ.market;
+    const basePrices = mc.localBasePrices as Record<string, number>;
+    const prices: ResourceBundle = {};
+    const keys = new Set([
+        ...Object.keys(planet.currentRates),
+        ...Object.keys(planet.consumptionRates ?? {}),
+    ]);
+    for (const k of keys) {
+        const key = k as keyof ResourceBundle;
+        const demandPerHour = (planet.consumptionRates?.[key] ?? 0) * 3600;
+        const targetStock = Math.max(demandPerHour * mc.localStockCoverHours, 1);
+        const stock = Math.max(planet.stockpile[key] ?? 0, 0.001);
+        const mult = Math.max(mc.localPriceMin, Math.min(mc.localPriceMax, Math.pow(targetStock / stock, mc.localPriceElasticity)));
+        prices[key] = (basePrices[key] ?? 10) * mult;
+    }
+    planet.localPrices = prices;
+}
+
+// ─── Pillar 3A½: Faction Taxation ─────────────────────────────────────────────
+
+/** Market-priced resources eligible for the production tax skim. */
+const TAXABLE_RESOURCES: Array<[keyof ResourceBundle, Resource]> = [
+    ['metals', Resource.METALS],
+    ['chemicals', Resource.CHEMICALS],
+    ['food', Resource.FOOD],
+    ['energy', Resource.ENERGY],
+    ['rare', Resource.RARES],
+];
+
+/**
+ * Collect state taxes on planetary production. The government skims a fraction
+ * of each planet's newly produced market goods and monetizes it at the current
+ * galactic price, crediting the owning faction's CREDITS reserve. This is the
+ * primary faction income stream — without it reserves only ever drain.
+ */
+export function collectFactionTaxes(
+    ecoWorld: EconomyWorldState,
+    deltaSeconds: number,
+    modsByFaction?: Map<string, FactionEconomyMods>
+): void {
+    const taxRate = econ.taxation.productionTaxRate;
+    if (taxRate <= 0) return;
+
+    for (const planet of ecoWorld.planets.values()) {
+        const faction = ecoWorld.factions.get(planet.factionId);
+        if (!faction) continue;
+        const taxMult = modsByFaction?.get(planet.factionId)?.tax ?? 1;
+
+        let credits = 0;
+        for (const [resKey, marketRes] of TAXABLE_RESOURCES) {
+            const produced = (planet.currentRates[resKey] ?? 0) * deltaSeconds;
+            if (produced <= 0) continue;
+            // Skim from the stockpile the production tick just filled — never more
+            // than what is actually on hand.
+            const available = planet.stockpile[resKey] ?? 0;
+            const taken = Math.min(available, produced * taxRate);
+            if (taken <= 0) continue;
+            planet.stockpile[resKey] = available - taken;
+            const price = ecoWorld.markets.get(`galactic:${marketRes}`)?.currentPrice ?? 10;
+            credits += taken * price;
+        }
+
+        if (credits > 0) {
+            faction.reserves[Resource.CREDITS] = (faction.reserves[Resource.CREDITS] ?? 0) + credits * taxMult;
+        }
+    }
+}
+
+// ─── Imperial Internal Distribution ──────────────────────────────────────────
+
+const ESSENTIAL_RESOURCES: Array<keyof ResourceBundle> = ['food', 'energy'];
+
+/**
+ * Imperial-market tier: pool essential goods between same-faction planets in
+ * the same system, allocated proportionally to each planet's demand. Without
+ * this, an agricultural colony sits on a food mountain while the industrial
+ * capital next door starves.
+ */
+export function tickInternalDistribution(ecoWorld: EconomyWorldState): void {
+    const groups = new Map<string, PlanetProduction[]>();
+    for (const planet of ecoWorld.planets.values()) {
+        const key = `${planet.factionId}:${planet.systemId}`;
+        const group = groups.get(key);
+        if (group) group.push(planet);
+        else groups.set(key, [planet]);
+    }
+
+    for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        for (const res of ESSENTIAL_RESOURCES) {
+            let totalStock = 0;
+            let totalDemand = 0;
+            for (const p of group) {
+                totalStock += p.stockpile[res] ?? 0;
+                totalDemand += p.consumptionRates?.[res] ?? 0;
+            }
+            if (totalStock <= 0 || totalDemand <= 0) continue;
+            // Everyone ends up with the same hours-of-cover.
+            for (const p of group) {
+                const share = (p.consumptionRates?.[res] ?? 0) / totalDemand;
+                p.stockpile[res] = totalStock * share;
+            }
+        }
+    }
+}
+
+// ─── Galactic Market Orders ───────────────────────────────────────────────────
+
+/** Reverse map of TAXABLE_RESOURCES plus manufactured tradables: market enum → stockpile key. */
+const MARKET_RESOURCE_TO_KEY: Partial<Record<Resource, keyof ResourceBundle>> = {
+    ...Object.fromEntries(TAXABLE_RESOURCES.map(([key, res]) => [res, key])),
+    [Resource.AMMO]: 'ammo',
+};
+
+export interface MarketOrderResult {
+    success: boolean;
+    reason?: string;
+    unitsFilled?: number;
+    creditsDelta?: number;
+    pricePerUnit?: number;
+}
+
+/**
+ * Settle a faction buy/sell order against the galactic market at the current
+ * price (plus a broker spread). Sells draw goods from a planet stockpile;
+ * buys deliver to one. Order volume nudges market supply/demand so large
+ * trades move the price on subsequent ticks.
+ */
+export function executeMarketOrder(
+    world: GameWorldState,
+    factionId: string,
+    side: 'buy' | 'sell',
+    resource: Resource,
+    amount: number,
+    planetId?: string
+): MarketOrderResult {
+    const mc = econ.market;
+    const eco = world.economy;
+    const fail = (reason: string): MarketOrderResult => ({ success: false, reason });
+
+    const faction = eco.factions.get(factionId);
+    if (!faction) return fail('Faction has no economy record.');
+
+    const stockKey = MARKET_RESOURCE_TO_KEY[resource];
+    if (!stockKey) return fail(`${resource} is not traded on the galactic exchange.`);
+
+    const market = eco.markets.get(`galactic:${resource}`);
+    if (!market) return fail('Galactic market is not initialized.');
+
+    const qty = Math.min(Math.max(Math.floor(amount), 1), mc.maxOrderVolume);
+
+    // Settle against a specific owned planet, defaulting to the faction's first.
+    let planet = planetId ? eco.planets.get(planetId) : undefined;
+    if (planet && planet.factionId !== factionId) return fail('Planet is not controlled by your faction.');
+    if (!planet) {
+        planet = [...eco.planets.values()].find(p => p.factionId === factionId);
+    }
+    if (!planet) return fail('No owned planet available to settle goods.');
+
+    const price = market.currentPrice;
+
+    if (side === 'buy') {
+        const cost = qty * price * (1 + mc.orderSpread);
+        const held = faction.reserves[Resource.CREDITS] ?? 0;
+        if (held < cost) return fail(`Insufficient credits: need ${Math.ceil(cost)}, have ${Math.floor(held)}.`);
+        faction.reserves[Resource.CREDITS] = held - cost;
+        planet.stockpile[stockKey] = (planet.stockpile[stockKey] ?? 0) + qty;
+        market.supply = Math.max(1, market.supply - qty);
+        market.demand += qty * 0.5;
+        return { success: true, unitsFilled: qty, creditsDelta: -cost, pricePerUnit: price };
+    } else {
+        const held = planet.stockpile[stockKey] ?? 0;
+        if (held < qty) return fail(`Insufficient stockpile: need ${qty} ${stockKey}, have ${Math.floor(held)}.`);
+        planet.stockpile[stockKey] = held - qty;
+        const proceeds = qty * price * (1 - mc.orderSpread);
+        faction.reserves[Resource.CREDITS] = (faction.reserves[Resource.CREDITS] ?? 0) + proceeds;
+        market.supply += qty;
+        return { success: true, unitsFilled: qty, creditsDelta: proceeds, pricePerUnit: price };
+    }
 }
 
 // ─── Pillar 3B: Network Trade Flow ────────────────────────────────────────────
@@ -255,8 +596,9 @@ export function tickCommodityDistribution(
             // Scarcity drives instability
             planet.instability = Math.min(100, planet.instability + cc.scarcityInstabilityDriftPerHour * hours);
             // Espionage vulnerability increases (written to shared state below)
-        } else {
-            // Happiness bonus from commodity access
+        } else if (!planet.essentialShortage) {
+            // Happiness bonus from commodity access — luxuries can't paper over
+            // a population that is starving or without power.
             const happinessGain = Math.min(
                 cc.maxHappinessBonusPerPlanet,
                 totalCommodity * cc.baseHappinessPerUnit * hours
@@ -345,6 +687,7 @@ export function tickCollapseState(
         }
 
         region.collapseStage = collapse.stage;
+        region.collapsePressure = collapse.pressure;
         region.tradeEfficiency = clamp(world.shared.tradeEfficiency * (1 - collapse.pressure * 0.5));
     }
 }
@@ -384,10 +727,32 @@ export function tickEconomy(
     // 0. Construction Tick (Global)
     tickConstructionGlobal(world);
 
+    // Markets must exist before taxation prices the skim. Merge in any market
+    // added since the snapshot was written (e.g. AMMO on pre-phase-3 saves).
+    if (!eco.markets || eco.markets.size === 0) {
+        eco.markets = initializeGalacticMarkets();
+    } else {
+        for (const [key, market] of initializeGalacticMarkets()) {
+            if (!eco.markets.has(key)) eco.markets.set(key, market);
+        }
+    }
+
+    // 0½. Aggregate per-faction tech + doctrine modifiers once per tick.
+    const modsByFaction = new Map<string, FactionEconomyMods>();
+    for (const factionId of eco.factions.keys()) {
+        modsByFaction.set(factionId, getFactionEconomyMods(world, factionId));
+    }
+
     // 1. Local production
     for (const planet of eco.planets.values()) {
-        tickProduction(planet, deltaSeconds, world);
+        tickProduction(planet, deltaSeconds, world, modsByFaction.get(planet.factionId) ?? NEUTRAL_MODS);
     }
+
+    // 1¼. Imperial tier: pool essentials between same-faction planets in-system
+    tickInternalDistribution(eco);
+
+    // 1½. State taxation of new production → faction credit income
+    collectFactionTaxes(eco, deltaSeconds, modsByFaction);
 
     // 2. Trade flow (lazy, throttled internally)
     tickTradeFlow(eco, world, deltaSeconds);
@@ -403,10 +768,12 @@ export function tickEconomy(
 
     // 6. Phase 14: Galactic Market Pricing — fluctuates commodity prices based on
     //    real planetary output vs. consumption and active trade route volumes.
-    if (!eco.markets || eco.markets.size === 0) {
-        eco.markets = initializeGalacticMarkets();
-    }
     tickGalacticTrade(world, deltaSeconds, tradeRng);
+
+    // 7. Chartered companies: tolls, dividends, piracy suppression, corruption.
+    if (world.corporate) {
+        tickAllCompanies(world.corporate, world);
+    }
 }
 
 /**

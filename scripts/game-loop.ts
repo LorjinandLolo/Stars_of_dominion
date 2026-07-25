@@ -18,7 +18,12 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 import { launchOperation } from '../lib/espionage/espionage-service';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
+import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
+import { executeMarketOrder } from '../lib/economy/economy-service';
+import { charterNewCompany, getOrCreateFactionState } from '../lib/economy/corporate/company-registry';
+import { issueNewShares, grantMonopolyRight, commandPrivateers, collectCorporateTax } from '../lib/economy/corporate/company-service';
+import { CharterPower } from '../lib/economy/corporate/company-types';
 import { advanceSorties } from '../lib/combat/air-mission-service';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
@@ -1103,6 +1108,16 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'ESP_SEIZE_OPPORTUNITY': {
+            const result = seizeOpportunity(factionId, payload.opportunityId, world);
+            if (!result.success) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId}: ${result.message}`);
+            break;
+        }
+
         case 'PLANET_RECRUIT_UNITS': {
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet) return;
@@ -1762,6 +1777,38 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 tariffExemption: true,
                 signedAtTick: world.nowSeconds
             });
+            // Phase 2: the pact's cargo terms become a live TradeAgreement — the
+            // trade tick pathfinds a route for it and settles goods + credits.
+            if (payload.resource && payload.volume > 0) {
+                world.economy.tradeAgreements.set(pactId, {
+                    id: pactId,
+                    aFactionId: factionId,
+                    bFactionId: payload.targetFactionId,
+                    resource: payload.resource,
+                    volumePerHour: payload.volume,
+                    startTick: world.nowSeconds,
+                    endTick: Number.MAX_SAFE_INTEGER,
+                    priceFormula: payload.priceFormula ?? 'market',
+                    fixedPrice: payload.fixedPrice
+                });
+                console.log(`[Order] Trade agreement ${pactId}: ${payload.volume}/hr ${payload.resource} ${factionId} → ${payload.targetFactionId}`);
+            }
+            break;
+        }
+
+        case 'ECON_ASSIGN_ESCORTS': {
+            const route = world.economy.tradeRoutes?.get(payload.routeId);
+            if (!route) {
+                recordOrderFailure(world, factionId, actionId, 'Trade route not found.');
+                break;
+            }
+            const agreement = world.economy.tradeAgreements?.get(route.agreementId);
+            if (!agreement || (agreement.aFactionId !== factionId && agreement.bFactionId !== factionId)) {
+                recordOrderFailure(world, factionId, actionId, 'You are not a party to this trade route.');
+                break;
+            }
+            route.escortLevel = Math.max(0, Math.min(8, Math.floor(payload.level ?? 0)));
+            console.log(`[Order] Faction ${factionId} set escort level ${route.escortLevel} on route ${route.id}`);
             break;
         }
 
@@ -1782,6 +1829,19 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              }
              if (payload.updates.tariffs) {
                  payload.updates.tariffs.forEach((t: any) => policy.tariffsByResource.set(t.resource, t.value));
+             }
+             if (payload.updates.subsidies) {
+                 payload.updates.subsidies.forEach((s: any) => policy.subsidiesByResource.set(s.resource, s.value));
+             }
+             if (payload.updates.sanctions) {
+                 payload.updates.sanctions.forEach((fid: string) => policy.sanctions.add(fid));
+             }
+             if (payload.updates.embargoes) {
+                 for (const emb of payload.updates.embargoes) {
+                     const existing = policy.embargoes.findIndex((e: any) => e.factionId === emb.factionId);
+                     if (existing >= 0) policy.embargoes[existing] = emb;
+                     else policy.embargoes.push(emb);
+                 }
              }
              console.log(`[Order] Faction ${factionId} updated Economic Policy`);
              break;
@@ -1806,6 +1866,18 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              break;
         }
 
+        case 'ECON_MARKET_BUY':
+        case 'ECON_MARKET_SELL': {
+            const side = actionId === 'ECON_MARKET_BUY' ? 'buy' as const : 'sell' as const;
+            const result = executeMarketOrder(world, factionId, side, payload.resource, payload.amount, payload.planetId);
+            if (!result.success) {
+                recordOrderFailure(world, factionId, actionId, result.reason ?? 'Market order failed.');
+            } else {
+                console.log(`[Order] Faction ${factionId} ${side} ${result.unitsFilled} ${payload.resource} @ ${result.pricePerUnit?.toFixed(2)} (Δ credits ${Math.round(result.creditsDelta ?? 0)})`);
+            }
+            break;
+        }
+
         case 'ECON_ESTABLISH_ROUTE': {
              try {
                  establishTradeRoute(world, factionId, payload);
@@ -1827,39 +1899,147 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ECON_ESTABLISH_COMPANY': {
-             // payload: { name, sector, planetId }
-             console.log(`[Order] Faction ${factionId} established company "${payload.name}" in ${payload.sector} sector.`);
+             // payload: { baseName, headquartersSystemId, powers? }
+             try {
+                 const unlocked = new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? []);
+                 const company = charterNewCompany(
+                     world.corporate,
+                     payload.baseName,
+                     factionId,
+                     payload.headquartersSystemId,
+                     payload.powers ?? [CharterPower.MONOPOLY],
+                     world.nowSeconds,
+                     unlocked
+                 );
+                 console.log(`[Order] Faction ${factionId} chartered "${company.charter.fullName}" (HQ ${company.headquartersSystemId})`);
+             } catch (e: any) {
+                 recordOrderFailure(world, factionId, actionId, e.message ?? 'Charter failed.');
+             }
              break;
         }
 
         case 'ECON_INVEST_COMPANY': {
-             // payload: { companyId, amount }
-             console.log(`[Order] Faction ${factionId} invested ${payload.amount} in company ${payload.companyId}`);
+             // payload: { companyId, amount } — buys newly issued shares at the
+             // current share price; capital lands in the company treasury.
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             const amount = Math.max(0, Number(payload.amount) || 0);
+             const reserves = world.economy.factions.get(factionId)?.reserves;
+             if (!reserves || (reserves['CREDITS'] ?? 0) < amount || amount <= 0) {
+                 recordOrderFailure(world, factionId, actionId, 'Insufficient credits for investment.');
+                 break;
+             }
+             const shares = Math.floor(amount / Math.max(0.01, company.sharePrice));
+             if (shares <= 0) { recordOrderFailure(world, factionId, actionId, 'Investment too small for a single share.'); break; }
+             reserves['CREDITS'] -= amount;
+             issueNewShares(
+                 company, shares, factionId, company.sharePrice,
+                 getOrCreateFactionState(world.corporate, factionId),
+                 world.corporate.eventLog, world.nowSeconds
+             );
+             console.log(`[Order] Faction ${factionId} invested ${amount} in ${company.charter.fullName} (${shares} shares)`);
              break;
         }
 
         case 'ECON_LIQUIDATE_COMPANY': {
-             console.log(`[Order] Faction ${factionId} liquidated company ${payload.companyId}`);
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             if (company.foundingFactionId !== factionId) {
+                 recordOrderFailure(world, factionId, actionId, 'Only the founding faction can liquidate a company.');
+                 break;
+             }
+             // Distribute remaining treasury to shareholders pro-rata, then dissolve.
+             const totalShares = Math.max(1, company.sharesOutstanding);
+             for (const [holderId, shares] of Object.entries(company.shareholders)) {
+                 if ((shares as number) <= 0) continue;
+                 const payout = company.treasury * ((shares as number) / totalShares);
+                 const holderReserves = world.economy.factions.get(holderId)?.reserves;
+                 if (holderReserves && payout > 0) holderReserves['CREDITS'] = (holderReserves['CREDITS'] ?? 0) + payout;
+                 const st = world.corporate.factionStates.get(holderId);
+                 if (st) {
+                     delete st.companySharesOwned[company.id];
+                     st.charteredCompanyIds = st.charteredCompanyIds.filter((id: string) => id !== company.id);
+                 }
+             }
+             world.corporate.companies.delete(company.id);
+             console.log(`[Order] Faction ${factionId} liquidated ${company.charter.fullName} (treasury ${Math.round(company.treasury)} distributed)`);
              break;
         }
 
         case 'ECON_GRANT_MONOPOLY': {
-             console.log(`[Order] Faction ${factionId} granted monopoly to company ${payload.companyId} on ${payload.resource}`);
+             // payload: { companyId, resource, systemIds }
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             if (company.foundingFactionId !== factionId) {
+                 recordOrderFailure(world, factionId, actionId, 'Only the founding faction can grant monopolies.');
+                 break;
+             }
+             const systemIds: string[] = payload.systemIds ?? (payload.systemId ? [payload.systemId] : []);
+             if (systemIds.length === 0) { recordOrderFailure(world, factionId, actionId, 'No systems specified.'); break; }
+             grantMonopolyRight(company, payload.resource, systemIds, world.corporate.eventLog, world.nowSeconds);
+             console.log(`[Order] Faction ${factionId} granted ${payload.resource} monopoly in ${systemIds.length} system(s) to ${company.charter.fullName}`);
              break;
         }
 
         case 'ECON_ISSUE_SHARES': {
-             console.log(`[Order] Faction ${factionId} issued shares for ${payload.companyId}`);
+             // payload: { companyId, shareCount, pricePerShare? } — buyer is the issuer faction.
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             const shareCount = Math.max(0, Math.floor(Number(payload.shareCount) || 0));
+             const price = Number(payload.pricePerShare) > 0 ? Number(payload.pricePerShare) : company.sharePrice;
+             const cost = shareCount * price;
+             const reserves = world.economy.factions.get(factionId)?.reserves;
+             if (shareCount <= 0) { recordOrderFailure(world, factionId, actionId, 'Share count must be positive.'); break; }
+             if (!reserves || (reserves['CREDITS'] ?? 0) < cost) {
+                 recordOrderFailure(world, factionId, actionId, `Insufficient credits: need ${Math.ceil(cost)}.`);
+                 break;
+             }
+             reserves['CREDITS'] -= cost;
+             issueNewShares(
+                 company, shareCount, factionId, price,
+                 getOrCreateFactionState(world.corporate, factionId),
+                 world.corporate.eventLog, world.nowSeconds
+             );
+             console.log(`[Order] Faction ${factionId} bought ${shareCount} new shares of ${company.charter.fullName} @ ${price.toFixed(2)}`);
              break;
         }
 
         case 'ECON_COMMAND_PRIVATEERS': {
-             console.log(`[Order] Faction ${factionId} commanded privateers for ${payload.companyId}`);
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             if (company.foundingFactionId !== factionId) {
+                 recordOrderFailure(world, factionId, actionId, 'Only the founding faction can command privateers.');
+                 break;
+             }
+             try {
+                 commandPrivateers(company, world.corporate.eventLog, world.nowSeconds);
+                 console.log(`[Order] ${company.charter.fullName} expanded privateer fleet to ${company.privateFleetSize}`);
+             } catch (e: any) {
+                 recordOrderFailure(world, factionId, actionId, e.message ?? 'Privateer expansion failed.');
+             }
              break;
         }
 
         case 'ECON_TAX_COLONIES': {
-             console.log(`[Order] Faction ${factionId} taxed colonies of ${payload.companyId}`);
+             const company = world.corporate?.companies?.get?.(payload.companyId);
+             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
+             if (company.foundingFactionId !== factionId) {
+                 recordOrderFailure(world, factionId, actionId, 'Only the founding faction can tax the company.');
+                 break;
+             }
+             try {
+                 const amount = collectCorporateTax(
+                     company,
+                     getOrCreateFactionState(world.corporate, factionId),
+                     world.corporate.eventLog,
+                     world.nowSeconds
+                 );
+                 const reserves = world.economy.factions.get(factionId)?.reserves;
+                 if (reserves) reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + amount;
+                 console.log(`[Order] Faction ${factionId} taxed ${company.charter.fullName} for ${Math.round(amount)} credits`);
+             } catch (e: any) {
+                 recordOrderFailure(world, factionId, actionId, e.message ?? 'Corporate tax failed.');
+             }
              break;
         }
 

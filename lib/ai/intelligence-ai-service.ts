@@ -6,6 +6,8 @@
 import { GameWorldState } from '../game-world-state';
 import { launchCatalogOperation } from '../espionage/espionage-service';
 import { getOrCreateFactionIntel } from '../espionage/faction-intel';
+import { OPERATION_CATALOG_BY_ID } from '../espionage/operation-catalog';
+import { canLaunchCategory } from '../espionage/network-stages';
 
 export type AIIntelligenceArchetype = 
   | "paranoid_security_state"
@@ -83,32 +85,30 @@ function identifyPotentialTargets(factionId: string, world: GameWorldState): str
     return targets;
 }
 
+/** Each archetype's signature ops, most-preferred first. */
+const ARCHETYPE_PREFERENCES: Record<AIIntelligenceArchetype, string[]> = {
+    economic_subverter: ["manipulate_market", "raid_trade_route", "infiltrate_government"],
+    paranoid_security_state: ["infiltrate_military", "infiltrate_government"],
+    revolution_exporter: ["incite_rebellion", "disinformation_fake_fleet", "infiltrate_government"],
+    precision_assassin: ["assassinate_governor", "sabotage_shipyard", "infiltrate_military", "infiltrate_government"],
+    shadow_empire: ["steal_research", "raid_trade_route", "infiltrate_government"],
+};
+
 function chooseOperationForArchetype(
-    archetype: AIIntelligenceArchetype, 
-    attackerId: string, 
-    targetId: string, 
+    archetype: AIIntelligenceArchetype,
+    attackerId: string,
+    targetId: string,
     world: GameWorldState
 ): string | null {
     const infiltration = world.espionage.factionIntel.get(attackerId)?.infiltrationLevels[targetId] ?? 0;
 
-    switch (archetype) {
-        case "economic_subverter":
-            return infiltration > 40 ? "raid_trade_route" : "infiltrate_government";
-        
-        case "paranoid_security_state":
-            // Focus on defense and gathering info
-            return infiltration > 30 ? "infiltrate_military" : "infiltrate_government";
-
-        case "revolution_exporter":
-            // Look for unstable colonies
-            return infiltration > 50 ? "incite_rebellion" : "infiltrate_government";
-
-        case "precision_assassin":
-            return infiltration > 60 ? "assassinate_governor" : "infiltrate_government";
-
-        case "shadow_empire":
-        default:
-            // Flexible, starts with theft
-            return infiltration > 40 ? "steal_research" : "infiltrate_government";
+    // Most-preferred op whose category the current network stage can support.
+    // Low infiltration naturally degrades to intel gathering, which is also
+    // how the network climbs toward the preferred ops.
+    for (const opId of ARCHETYPE_PREFERENCES[archetype] ?? ARCHETYPE_PREFERENCES.shadow_empire) {
+        const def = OPERATION_CATALOG_BY_ID.get(opId);
+        if (!def) continue;
+        if (canLaunchCategory(infiltration, def.category).allowed) return opId;
     }
+    return null;
 }

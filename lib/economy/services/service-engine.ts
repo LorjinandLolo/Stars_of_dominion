@@ -21,17 +21,34 @@ export interface ServiceDefinition {
 
 const serviceDefs: ServiceDefinition[] = serviceDefinitionsJson as unknown as ServiceDefinition[];
 
+/** Demand each service must cover, per unit of population. */
+const SERVICE_DEMAND_PER_POP: Record<string, number> = {
+    housing: 15,
+    healthcare: 5,
+    food_distribution: 5,
+    energy_grid: 10,
+};
+
+/** Smallest service level whose capacity covers the population's demand. */
+function requiredServiceLevel(def: ServiceDefinition, population: number): number {
+    const demand = population * (SERVICE_DEMAND_PER_POP[def.id] ?? 0);
+    return Math.max(1, Math.ceil((demand - def.baseCapacity) / def.scaling.capacityPerLevel));
+}
+
 export function loadServiceDefinitions() {
     return serviceDefs;
 }
 
 export function initializePlanetServices(planet: PlanetProduction) {
     const defs = loadServiceDefinitions();
-    // Start with level 1 of each core service so the planet doesn't instantly die
+    const pop = planet.demographics?.population ?? 10;
+    // Size each service to the starting population. Seeding everything at
+    // level 1 left capitals (pop 150) with every service "collapsed" from the
+    // first tick, throttling the whole planet to 10% output forever.
     defs.forEach(def => {
         planet.services[def.id] = {
             serviceId: def.id,
-            level: 1,
+            level: requiredServiceLevel(def, pop),
             capacity: 0,
             demand: 0,
             efficiency: 1.0,
@@ -55,7 +72,12 @@ export function initializePlanetServices(planet: PlanetProduction) {
     }
 }
 
-export function updatePlanetServices(planet: PlanetProduction, deltaSeconds: number) {
+export function updatePlanetServices(
+    planet: PlanetProduction,
+    deltaSeconds: number,
+    factionReserves?: Record<string, number>,
+    upkeepMult: number = 1
+) {
     const defs = loadServiceDefinitions();
 
     // Reset loop accumulators before applying effects
@@ -80,17 +102,36 @@ export function updatePlanetServices(planet: PlanetProduction, deltaSeconds: num
         const state = planet.services[def.id];
         if (!state) return;
 
+        // Civilian infrastructure tracks population growth automatically (until
+        // player-controlled service investment exists). Never shrinks.
+        state.level = Math.max(state.level, requiredServiceLevel(def, planet.demographics.population));
+
         // 2. Capacity Calculation
         state.capacity = def.baseCapacity + (state.level * def.scaling.capacityPerLevel);
 
         // 3. Demand Assignment
         state.demand = baseDemand[def.id] || 0;
 
-        // 4. Upkeep resolution (cost strictly per second, evaluated every tick)
+        // 4. Upkeep resolution. Costs are per HOUR with linear level scaling —
+        // the old per-second exponential (base × mult^level × deltaSeconds)
+        // burned a capital's entire 50k credit stock in a single strategic tick,
+        // guaranteeing collapse. Credits are paid from the faction treasury
+        // (planet stockpile credits never regenerate); physical resources come
+        // from the planet stockpile.
+        const hours = deltaSeconds / 3600;
+        const levelMult = 1 + (def.scaling.upkeepMultiplier - 1) * (state.level - 1);
         let canPayUpkeep = true;
         for (const [res, amount] of Object.entries(def.baseUpkeep)) {
+            const cost = amount * levelMult * hours * Math.max(0.1, upkeepMult);
+            if (res === 'credits' && factionReserves) {
+                if ((factionReserves['CREDITS'] ?? 0) >= cost) {
+                    factionReserves['CREDITS'] = (factionReserves['CREDITS'] ?? 0) - cost;
+                } else {
+                    canPayUpkeep = false;
+                }
+                continue;
+            }
             const key = res as keyof typeof planet.stockpile;
-            const cost = amount * Math.pow(def.scaling.upkeepMultiplier, state.level) * deltaSeconds;
             if ((planet.stockpile[key] || 0) >= cost) {
                 planet.stockpile[key] = (planet.stockpile[key] || 0) - cost;
             } else {
@@ -134,8 +175,15 @@ export function updatePlanetServices(planet: PlanetProduction, deltaSeconds: num
     planet.demographics.unrestRisk = Math.max(0, Math.min(100, totalUnrestRisk));
     planet.demographics.growthRate = 0.05 + totalGrowthModifier; // 5% baseline abstract growth
 
-    // Apply exact unrest risk conversion directly to Instability
-    planet.instability = Math.max(0, Math.min(100, (planet.instability || 0) + (totalUnrestRisk * deltaSeconds * 0.1) - (totalHappinessModifier > 0 ? deltaSeconds * 0.1 : 0)));
+    // Apply unrest risk conversion directly to Instability. Scaled per HOUR —
+    // the old per-second scaling (deltaSeconds * 0.1) pegged instability at
+    // ~100 on the very first strategic tick, drowning every other signal.
+    const hours = deltaSeconds / 3600;
+    planet.instability = Math.max(0, Math.min(100,
+        (planet.instability || 0)
+        + totalUnrestRisk * hours * 0.2
+        - (totalHappinessModifier > 0 ? hours * 0.5 : 0)
+    ));
 
     // Return the grid efficiency so the `tickProduction` heartbeat knows how to throttle the rest of the planet's yields
     return gridEfficiency;

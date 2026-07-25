@@ -23,7 +23,6 @@ import { assignFlavorTags } from './galaxy/system-tags';
 // ─── Module-Level Singletons ───────────────────────────────────────────────
 
 let globalGameStateInstance: GameWorldState | null = null;
-let globalCorporateStateInstance: CorporateWorldState | null = null;
 
 function buildEmptyMovementState(): MovementWorldState {
     const systems = new Map();
@@ -157,7 +156,8 @@ export function getGameWorldState(): GameWorldState {
             shared: defaultSharedState(),
             movement: buildEmptyMovementState(),
             economy: buildEmptyEconomyState(),
-            espionage: { operations: new Map(), factionIntel: new Map(), attributionRecords: [], shadowEconomyNodes: new Map(), regionEscalation: new Map(), agents: new Map(), intelNetworks: new Map() },
+            corporate: createEmptyCorporateWorldState(),
+            espionage: { operations: new Map(), factionIntel: new Map(), reports: new Map(), boardOpportunities: new Map(), attributionRecords: [], shadowEconomyNodes: new Map(), regionEscalation: new Map(), agents: new Map(), intelNetworks: new Map() },
             activeSeason: null,
             seasonHistory: [],
             hallOfFame: [],
@@ -205,10 +205,9 @@ export function getGameWorldState(): GameWorldState {
 }
 
 export function getCorporateWorldState(): CorporateWorldState {
-    if (!globalCorporateStateInstance) {
-        globalCorporateStateInstance = createEmptyCorporateWorldState();
-    }
-    return globalCorporateStateInstance!;
+    // Corporate state now lives INSIDE the world state so it is ticked,
+    // serialized, and synced with everything else.
+    return getGameWorldState().corporate;
 }
 
 /**

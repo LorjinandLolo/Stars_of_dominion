@@ -106,6 +106,11 @@ export interface CharteredCompany {
 
     /** Whether the founding faction has issued a revocation demand. */
     charterRevocationPending: boolean;
+
+    /** Latch: set once when autonomy crosses the rogue threshold. */
+    hasGoneRogue?: boolean;
+    /** Share price before the last adjustment (for UI tickers). */
+    sharePricePrev?: number;
 }
 
 // ─── Faction-side Corporate State ────────────────────────────────────────────

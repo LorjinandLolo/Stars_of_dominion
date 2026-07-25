@@ -75,6 +75,40 @@ export async function issueSharesAction(
 }
 
 /**
+ * Invest credits into a company (buys newly issued shares at market price).
+ */
+export async function investCompanyAction(companyId: string, factionId: string, amount: number): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `invest-${Date.now()}`,
+        actionId: 'ECON_INVEST_COMPANY',
+        issuerId: factionId,
+        targetId: companyId,
+        payload: { companyId, amount },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/**
+ * Liquidate a company you founded; treasury is distributed to shareholders.
+ */
+export async function liquidateCompanyAction(companyId: string, factionId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `liquidate-${Date.now()}`,
+        actionId: 'ECON_LIQUIDATE_COMPANY',
+        issuerId: factionId,
+        targetId: companyId,
+        payload: { companyId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/**
  * Command the company to expand its privateer fleet.
  */
 export async function commandPrivateersAction(companyId: string, factionId: string): Promise<ActionResult> {
