@@ -201,7 +201,10 @@ export function useGameSync() {
             proxyConflicts: Array.from(world.proxyConflicts.values()),
             offers: myOffers,
             gambits: myGambits,
-            leverage: myLeverage
+            leverage: myLeverage,
+            mandate: playerFactionId
+                ? ((world as any).diplomacy?.mandates?.get?.(playerFactionId) ?? null)
+                : null
         };
 
         // Economy
@@ -228,9 +231,19 @@ export function useGameSync() {
             }
         }
 
+        const playerPosture = playerFactionId ? world.movement.empirePostures.get(playerFactionId) : undefined;
         const politicsState = {
             ...useUIStore.getState().politicsState,
-            allFactions: Object.values(factionMap)
+            allFactions: Object.values(factionMap),
+            blocs: (playerPosture as any)?.blocs?.map((b: any) => ({
+                id: b.id, name: b.name, influence: b.influence,
+                satisfaction: b.satisfaction, trend: b.trend ?? 0,
+            })) ?? useUIStore.getState().politicsState.blocs,
+            shared: {
+                warFatigue: world.shared?.warFatigue ?? 0,
+                stability: world.shared?.stability ?? 1,
+                tradeEfficiency: world.shared?.tradeEfficiency ?? 1,
+            }
         };
 
         // Tech

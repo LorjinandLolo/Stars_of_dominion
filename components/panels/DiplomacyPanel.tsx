@@ -12,6 +12,7 @@ import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { sponsorProxyAction } from '@/app/actions/proxy';
 import { TreatyType } from '@/lib/politics/cold-war-types';
 import { buildReputationProfile } from '@/lib/integration/reputation-vm';
+import { computeActionSupport, SUPPORT_BAND_LABELS, DiplomaticActionKind } from '@/lib/politics/support-service';
 import { ReputationSignal } from '@/lib/integration/types';
 import DiscourseTerminal from '../politics/DiscourseTerminal';
 import { MessageSquare } from 'lucide-react';
@@ -69,6 +70,47 @@ const ESCALATION_LABELS: Record<number, string> = {
     6: 'NEAR-HOT',
     7: 'AT WAR',
 };
+
+const BAND_COLORS: Record<string, string> = {
+    mandate: 'text-emerald-400',
+    supported: 'text-emerald-300',
+    divided: 'text-amber-400',
+    unpopular: 'text-orange-400',
+    opposition: 'text-rose-400',
+};
+
+function SupportMeter({ result, compact }: { result: ReturnType<typeof computeActionSupport> | null; compact?: boolean }) {
+    if (!result) return null;
+    return (
+        <div className="space-y-1.5">
+            <div className="flex justify-between items-end">
+                <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono">Public Support</span>
+                <span className={`text-[10px] font-mono uppercase ${BAND_COLORS[result.band]}`}>
+                    {result.total}% — {SUPPORT_BAND_LABELS[result.band]}
+                </span>
+            </div>
+            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                <div
+                    className={`h-full rounded-full transition-all duration-500 ${result.total >= 60 ? 'bg-emerald-500' : result.total >= 40 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                    style={{ width: `${result.total}%` }}
+                />
+            </div>
+            {!compact && (
+                <div className="flex gap-2 flex-wrap pt-1">
+                    {result.blocs.map(b => (
+                        <span
+                            key={b.id}
+                            title={`${b.name}: ${b.support}% (influence ${Math.round(b.influence)}%)`}
+                            className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded bg-black/40 border border-white/5 ${b.support >= 60 ? 'text-emerald-400' : b.support >= 40 ? 'text-slate-400' : 'text-rose-400'}`}
+                        >
+                            {b.name} {b.support}%
+                        </span>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
 const GAMBIT_META: Record<string, { label: string; desc: string; responses: { id: string; label: string }[] }> = {
     ultimatum: {
@@ -183,6 +225,16 @@ export default function DiplomacyPanel() {
     const recentGambits = pairGambits.filter(g => g.status !== 'pending').slice(0, 3);
     const leverageHeld = diplomacyState.leverage?.[`${playerState.factionId}|${selectedFactionId}`] ?? 0;
     const leverageAgainst = diplomacyState.leverage?.[`${selectedFactionId}|${playerState.factionId}`] ?? 0;
+    const mandate = diplomacyState.mandate;
+
+    // Public-support preview: same pure function the worker uses for consequences.
+    const supportFor = (kind: DiplomaticActionKind) => {
+        if (!politicsState.blocs?.length) return null;
+        return computeActionSupport(politicsState.blocs, kind, {
+            warFatigue: politicsState.shared?.warFatigue ?? 0,
+            rivalryScore: rivalry?.rivalryScore ?? 20,
+        });
+    };
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
@@ -276,6 +328,12 @@ export default function DiplomacyPanel() {
                                     <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mt-2">
                                         Leverage <span className="text-emerald-400">{leverageHeld}</span> held
                                         {' / '}<span className="text-rose-400">{leverageAgainst}</span> against
+                                    </div>
+                                )}
+                                {mandate && (
+                                    <div className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest mt-1"
+                                         title={`Granted at ${mandate.supportAtGrant}% public support`}>
+                                        ★ {mandate.label}
                                     </div>
                                 )}
                             </div>
@@ -515,6 +573,7 @@ export default function DiplomacyPanel() {
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-4 pt-4">
+                                            <SupportMeter result={supportFor(isAtWar ? 'offer_peace' : 'declare_war')} />
                                             {isAtWar ? (
                                                 <button
                                                     onClick={() => handleAction('peace', dispatchOrder({
@@ -581,6 +640,10 @@ export default function DiplomacyPanel() {
                                                             placeholder="Credits demanded"
                                                         />
                                                     )}
+                                                    <SupportMeter
+                                                        compact
+                                                        result={supportFor((gambitKind === 'espionage_accusation' ? 'accusation' : gambitKind) as DiplomaticActionKind)}
+                                                    />
                                                     <div className="flex gap-2 items-center">
                                                         <select
                                                             value={gambitPrediction}

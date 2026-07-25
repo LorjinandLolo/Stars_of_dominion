@@ -17,7 +17,9 @@ import { BUILDINGS } from '../../data/buildings';
 import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
 import { tickDiplomacy } from '../diplomacy/offer-service';
 import { tickGambits } from '../diplomacy/gambit-service';
-import { tickPressureDrift } from '../diplomacy/pressure-service';
+import { tickPressureDrift, tickWarFatigue } from '../diplomacy/pressure-service';
+import { tickMandates } from '../diplomacy/mandate-service';
+import { tickBlocDrift } from '../politics/politics-service';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
@@ -92,6 +94,16 @@ export async function runStrategicTick(
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }
     // 9d: Organic pressure — rivalry drifts toward its ideological baseline
     try { tickPressureDrift(world); } catch (e) { console.error('[TickProcessor] tickPressureDrift failed:', e); }
+    // 9e: War exhaustion accrues while wars burn, ebbs in peace
+    try { tickWarFatigue(world); } catch (e) { console.error('[TickProcessor] tickWarFatigue failed:', e); }
+    // 9f: Internal politics — bloc satisfaction finally drifts live (was
+    // previously only exercised by tests) + mandate expiry
+    try {
+        for (const factionId of world.movement.empirePostures.keys()) {
+            tickBlocDrift(factionId, world, TICK_DELTA_SECONDS);
+        }
+    } catch (e) { console.error('[TickProcessor] tickBlocDrift failed:', e); }
+    try { tickMandates(world); } catch (e) { console.error('[TickProcessor] tickMandates failed:', e); }
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);

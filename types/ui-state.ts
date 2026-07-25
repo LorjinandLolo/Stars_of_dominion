@@ -256,6 +256,14 @@ export interface DiplomacyState {
     gambits: DiplomaticGambitView[];
     /** Leverage pairs involving the local player: `${holderId}|${overId}` → points. */
     leverage: Record<string, number>;
+    /** The local player's active mandate, if any. */
+    mandate?: {
+        kind: 'war' | 'peace' | 'trade' | 'coercion';
+        label: string;
+        supportAtGrant: number;
+        grantedAtSeconds: number;
+        expiresAtSeconds: number;
+    } | null;
 }
 
 // ─── Politics & Blocs ───────────────────────────────────────────────────────
@@ -275,6 +283,12 @@ export interface PoliticsState {
     crisisConditionMet: boolean;
     activeIndicators: string[];
     allFactions: any[]; // Phase 3: Live faction data for diplomacy
+    /** Snapshot of the shared integration bus scalars the UI needs. */
+    shared?: {
+        warFatigue: number;   // 0-100
+        stability: number;    // 0-1
+        tradeEfficiency: number; // 0-1
+    };
 }
 
 // ─── Tech & Research ────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ import { tickConstructionGlobal } from '../lib/construction/construction-service
 import { launchOperation } from '../lib/espionage/espionage-service';
 import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfWar, ensureDiplomacyState, shiftRivalry, isAtWar } from '../lib/diplomacy/offer-service';
 import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
+import { evaluateSupportAndApply } from '../lib/diplomacy/mandate-service';
+import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -116,6 +118,9 @@ async function loadWorld(): Promise<GameWorldState> {
     if (!world.activeCombats) world.activeCombats = new Map();
     if (!world.rivalries) world.rivalries = new Map();
     ensureDiplomacyState(world);
+    // Seed empire postures + blocs (internal politics) for factions lacking
+    // them — pre-Phase-3 worlds never created any.
+    try { ensureEmpirePostures(world); } catch (e) { console.error('[Tick Worker] Posture bootstrap failed:', e); }
     if (!world.movement.sorties) world.movement.sorties = new Map();
 
     // Normalize snapshot data: systems saved by older snapshots can be missing
@@ -978,6 +983,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'DIP_DECLARE_WAR': {
+             // Public support is read BEFORE the war state lands so the rivalry
+             // score still reflects the pre-war standoff ("was this justified?").
+             evaluateSupportAndApply(world, factionId, 'declare_war', payload.targetFactionId);
              // Central war path: NAP auto-break (oathbreaker penalty), collapse
              // of treaties/pacts between the pair, mutual-defense allies join.
              registerActOfWar(world, factionId, payload.targetFactionId);
@@ -995,7 +1003,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              // Peace now requires the enemy's consent — this queues an offer.
              const result = createOffer(world, factionId, { kind: 'peace_offer', toFactionId: payload.targetFactionId });
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-             else console.log(`[Order] ${factionId} sued for peace with ${payload.targetFactionId}`);
+             else {
+                 evaluateSupportAndApply(world, factionId, 'offer_peace', payload.targetFactionId);
+                 console.log(`[Order] ${factionId} sued for peace with ${payload.targetFactionId}`);
+             }
              break;
         }
 
@@ -1016,7 +1027,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'DIP_BREAK_TREATY': {
              const result = breakTreaty(world, factionId, payload.treatyId);
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-             else console.log(`[Order] ${factionId} broke treaty ${payload.treatyId}`);
+             else {
+                 evaluateSupportAndApply(world, factionId, 'break_treaty');
+                 console.log(`[Order] ${factionId} broke treaty ${payload.treatyId}`);
+             }
              break;
         }
 
@@ -1028,7 +1042,11 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  demandCredits: payload.demandCredits,
              });
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-             else console.log(`[Order] ${factionId} launched ${payload.kind} gambit vs ${payload.targetFactionId}`);
+             else {
+                 const supportKind = payload.kind === 'espionage_accusation' ? 'accusation' : payload.kind;
+                 evaluateSupportAndApply(world, factionId, supportKind, payload.targetFactionId);
+                 console.log(`[Order] ${factionId} launched ${payload.kind} gambit vs ${payload.targetFactionId}`);
+             }
              break;
         }
 
@@ -1732,7 +1750,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 treatyType: payload.treatyType,
             });
             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-            else console.log(`[Order] ${factionId} proposed ${payload.treatyType} to ${payload.targetFactionId}`);
+            else {
+                evaluateSupportAndApply(world, factionId, 'treaty', payload.targetFactionId);
+                console.log(`[Order] ${factionId} proposed ${payload.treatyType} to ${payload.targetFactionId}`);
+            }
             break;
         }
 
@@ -1744,7 +1765,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 tributeAmountPerTick: payload.amount,
             });
             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-            else console.log(`[Order] ${factionId} demanded tribute from ${payload.targetFactionId}`);
+            else {
+                evaluateSupportAndApply(world, factionId, 'tribute_demand', payload.targetFactionId);
+                console.log(`[Order] ${factionId} demanded tribute from ${payload.targetFactionId}`);
+            }
             break;
         }
 
@@ -1756,7 +1780,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 volumePerHour: payload.volume,
             });
             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
-            else console.log(`[Order] ${factionId} proposed trade pact to ${payload.targetFactionId}`);
+            else {
+                evaluateSupportAndApply(world, factionId, 'trade_pact', payload.targetFactionId);
+                console.log(`[Order] ${factionId} proposed trade pact to ${payload.targetFactionId}`);
+            }
             break;
         }
 

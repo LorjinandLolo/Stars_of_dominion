@@ -97,6 +97,24 @@ export interface DiplomaticGambit {
     resolvedAtSeconds?: number;
 }
 
+// ─── Mandates (Phase 3: public support §8) ───────────────────────────────────
+
+export type MandateKind = 'war' | 'peace' | 'trade' | 'coercion';
+
+/**
+ * Granted when a diplomatic action launches with ≥80% public support.
+ * Timed; one active mandate per faction (newest wins).
+ */
+export interface DiplomaticMandate {
+    factionId: string;
+    kind: MandateKind;
+    label: string;
+    /** Support total that earned it. */
+    supportAtGrant: number;
+    grantedAtSeconds: number;
+    expiresAtSeconds: number;
+}
+
 export interface DiplomacyWorldState {
     offers: Map<string, DiplomaticOffer>;
     /**
@@ -111,6 +129,8 @@ export interface DiplomacyWorldState {
      * won gambits, exposed spies, honored guarantees; spent in later phases.
      */
     leverage: Map<string, number>;
+    /** Active timed mandates, keyed by factionId. */
+    mandates: Map<string, DiplomaticMandate>;
 }
 
 // ─── Tuning ──────────────────────────────────────────────────────────────────
@@ -132,6 +152,9 @@ export const GAMBIT_COOLDOWN_SECONDS = 24 * 3600;
 
 /** Resolved gambits kept 7 sim-days as a record, then pruned. */
 export const GAMBIT_RETENTION_SECONDS = 7 * 24 * 3600;
+
+/** Mandates last 72 sim-hours. */
+export const MANDATE_DURATION_SECONDS = 72 * 3600;
 
 /** Prediction multipliers — mirrors lib/time/auto-resolve.ts crisis logic. */
 export const PREDICTION_MATCH_BONUS = 1.35;

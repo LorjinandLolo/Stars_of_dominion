@@ -35,6 +35,30 @@ function recentTension(rivalry: (RivalryState & { recentEvents?: Array<{ atSecon
 }
 
 /**
+ * Wars finally generate exhaustion (before Phase 3 only espionage subversion
+ * moved warFatigue). Any active war among real empires adds fatigue each
+ * strategic tick; full peace lets it ebb.
+ */
+export function tickWarFatigue(world: GameWorldState): void {
+    let warPairs = 0;
+    const seen = new Set<string>();
+    for (const r of world.rivalries.values()) {
+        if ((r.escalationLevel ?? 0) < 7) continue;
+        // Only empire-vs-empire wars exhaust the population — the perpetual
+        // raider hostilities (fleet-only factions with no economy record)
+        // would otherwise ratchet fatigue to 100 forever.
+        if (!world.economy.factions.has(r.empireAId) || !world.economy.factions.has(r.empireBId)) continue;
+        const key = [r.empireAId, r.empireBId].sort().join('|');
+        if (!seen.has(key)) { seen.add(key); warPairs++; }
+    }
+    if (warPairs > 0) {
+        world.shared.warFatigue = Math.min(100, world.shared.warFatigue + 2 * Math.min(warPairs, 3));
+    } else {
+        world.shared.warFatigue = Math.max(0, world.shared.warFatigue - 1);
+    }
+}
+
+/**
  * Drift every empire pair's rivalry toward its systemic baseline.
  * Wars (escalation 7) are frozen — only a peace settlement ends them.
  */

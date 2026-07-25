@@ -82,12 +82,16 @@ function accusationHasEvidence(world: GameWorldState, accuserId: string, accused
  * crises — no JSON config dependency, safe in the worker).
  */
 export function pickAutoResponse(world: GameWorldState, gambit: DiplomaticGambit): GambitResponse {
-    const stance = String((world.movement.empirePostures.get(gambit.targetId) as any)?.stance ?? '').toLowerCase();
+    // EmpirePosture stores its stance in `current` (Militarist/Mercantile/...);
+    // society tags add flavor (shadow societies stall and deny).
+    const posture = world.movement.empirePostures.get(gambit.targetId) as any;
+    const stance = String(posture?.current ?? posture?.stance ?? '').toLowerCase();
+    const tags: string[] = posture?.society_tags ?? [];
     const bias: 'aggressive' | 'cooperative' | 'deceptive' | 'isolationist' | 'default' =
-        /militar|aggress|expansion/.test(stance) ? 'aggressive'
-        : /diplomat|economic|trade/.test(stance) ? 'cooperative'
-        : /shadow|intel/.test(stance) ? 'deceptive'
-        : /isolation/.test(stance) ? 'isolationist'
+        tags.some(t => /shadow|information|covert/.test(t)) ? 'deceptive'
+        : /militar|aggress|expansion/.test(stance) ? 'aggressive'
+        : /pacif|mercantile|diplomat|economic|trade/.test(stance) ? 'cooperative'
+        : /consolidat|isolation/.test(stance) ? 'isolationist'
         : 'default';
 
     switch (gambit.kind) {

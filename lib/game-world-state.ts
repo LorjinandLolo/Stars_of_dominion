@@ -188,7 +188,7 @@ export function clampShared(v: number): number {
 export function recomputeBlocSatisfaction(world: GameWorldState): void {
     const allBlocs: InfluenceBloc[] = [];
     for (const posture of world.movement.empirePostures.values()) {
-        allBlocs.push(...posture.blocs);
+        if (Array.isArray(posture.blocs)) allBlocs.push(...posture.blocs);
     }
     if (allBlocs.length === 0) return;
     const avg = allBlocs.reduce((s, b) => s + b.satisfaction, 0) / allBlocs.length;
