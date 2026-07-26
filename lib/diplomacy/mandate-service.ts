@@ -18,6 +18,7 @@ import {
 } from '@/lib/politics/support-service';
 import { DiplomaticMandate, MandateKind, MANDATE_DURATION_SECONDS } from './diplomacy-types';
 import { ensureDiplomacyState } from './offer-service';
+import { getPublicTrust } from '@/lib/press-system/integration';
 
 const MANDATE_KIND_BY_ACTION: Record<DiplomaticActionKind, MandateKind> = {
     declare_war: 'war',
@@ -29,6 +30,7 @@ const MANDATE_KIND_BY_ACTION: Record<DiplomaticActionKind, MandateKind> = {
     accusation: 'coercion',
     show_of_force: 'coercion',
     break_treaty: 'coercion',
+    sanctions: 'coercion',
 };
 
 const MANDATE_LABELS: Record<MandateKind, string> = {
@@ -61,6 +63,7 @@ export function evaluateSupportAndApply(
     const result = computeActionSupport(posture.blocs, kind, {
         warFatigue: world.shared.warFatigue,
         rivalryScore: rivalry?.rivalryScore ?? 20,
+        publicTrust: getPublicTrust(world, factionId),
     });
 
     if (result.band === 'unpopular' || result.band === 'opposition') {

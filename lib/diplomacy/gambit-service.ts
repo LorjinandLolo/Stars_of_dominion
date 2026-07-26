@@ -25,6 +25,8 @@ import {
 } from './diplomacy-types';
 import { ensureDiplomacyState, getOrCreateRivalry, shiftRivalry, isAtWar } from './offer-service';
 import type { DiplomacyResult } from './offer-service';
+import { pushWorldStory } from '@/lib/press-system/integration';
+import { StorySource, StoryTruth } from '@/lib/press-system/types';
 
 const ok = (message: string): DiplomacyResult => ({ success: true, message });
 const fail = (message: string): DiplomacyResult => ({ success: false, message });
@@ -94,8 +96,12 @@ export function pickAutoResponse(world: GameWorldState, gambit: DiplomaticGambit
         : /consolidat|isolation/.test(stance) ? 'isolationist'
         : 'default';
 
+    // Heavy leverage backing a demand cows everyone but hardened aggressors.
+    const leveraged = (gambit.leverageSpent ?? 0) >= 3 && bias !== 'aggressive';
+
     switch (gambit.kind) {
         case 'ultimatum': {
+            if (leveraged) return 'concede';
             if (bias === 'aggressive') return 'reject';
             if (bias === 'deceptive' || bias === 'isolationist') return 'stall';
             // Cooperative/default: pay small demands, refuse extortion.
@@ -104,8 +110,9 @@ export function pickAutoResponse(world: GameWorldState, gambit: DiplomaticGambit
         }
         case 'espionage_accusation':
             // Only a cooperative government owns up, and only when caught.
-            return bias === 'cooperative' && gambit.accusationTrue ? 'admit' : 'deny';
+            return (bias === 'cooperative' || leveraged) && gambit.accusationTrue ? 'admit' : 'deny';
         case 'show_of_force':
+            if (leveraged) return 'submit';
             if (bias === 'aggressive') return 'defy';
             if (bias === 'isolationist' || bias === 'cooperative') return 'submit';
             return gambit.initiatorStronger ? 'submit' : 'defy';
@@ -119,6 +126,8 @@ export interface LaunchGambitParams {
     targetId: string;
     prediction?: GambitResponse;
     demandCredits?: number;
+    /** Leverage points to spend backing this gambit (clamped 0-5, must be held). */
+    spendLeverage?: number;
 }
 
 export function launchGambit(world: GameWorldState, initiatorId: string, params: LaunchGambitParams): DiplomacyResult {
@@ -158,6 +167,14 @@ export function launchGambit(world: GameWorldState, initiatorId: string, params:
         return fail(`Their court will not entertain another gambit yet (~${hours}h).`);
     }
 
+    // Spend leverage to raise the stakes (§12): must actually hold the points.
+    let leverageSpent = Math.max(0, Math.min(5, Math.floor(Number(params.spendLeverage) || 0)));
+    if (leverageSpent > 0) {
+        const held = getLeverage(world, initiatorId, targetId);
+        if (held < leverageSpent) return fail(`You hold only ${held} leverage over them.`);
+        dip.leverage.set(`${initiatorId}|${targetId}`, held - leverageSpent);
+    }
+
     const gambit: DiplomaticGambit = {
         id: `gambit-${initiatorId}-${targetId}-${world.nowSeconds}`,
         kind,
@@ -165,6 +182,7 @@ export function launchGambit(world: GameWorldState, initiatorId: string, params:
         targetId,
         prediction: params.prediction,
         demandCredits: params.demandCredits,
+        leverageSpent,
         createdAtSeconds: world.nowSeconds,
         respondBySeconds: world.nowSeconds + GAMBIT_TTL_SECONDS,
         status: 'pending',
@@ -214,6 +232,13 @@ function resolveGambit(world: GameWorldState, gambit: DiplomaticGambit, response
     const initGain = (pts: number) => addLeverage(world, init, tgt, Math.round(pts * initMult));
     const tgtGain = (pts: number) => addLeverage(world, tgt, init, Math.round(pts * tgtMult));
 
+    // Refusing a leverage-backed demand burns real goodwill: the spent points
+    // convert into extra pressure on the refuser.
+    const refusals: GambitResponse[] = ['reject', 'defy', 'deny'];
+    if ((gambit.leverageSpent ?? 0) > 0 && refusals.includes(response)) {
+        shiftRivalry(world, init, tgt, 2 * (gambit.leverageSpent ?? 0), 'refused_backed_demand');
+    }
+
     switch (gambit.kind) {
         case 'ultimatum': {
             if (response === 'concede') {
@@ -250,12 +275,26 @@ function resolveGambit(world: GameWorldState, gambit: DiplomaticGambit, response
                 shiftRivalry(world, init, tgt, 8, 'accusation_proved');
                 ReputationService.updateScore(world, tgt, { deception: 10, honor: -4 }, 'caught_spying_denied');
                 initGain(4);
+                pushWorldStory(world, {
+                    targetEmpireId: tgt,
+                    subject: 'Espionage denial collapses under published evidence',
+                    magnitude: 55,
+                    source: StorySource.ESPIONAGE_LEAK,
+                    truth: StoryTruth.TRUE,
+                });
                 gambit.outcome = 'Their denial collapsed under the evidence.';
             } else {
                 // Baseless accusation — it backfires (§10: false accusations damage the accuser).
                 shiftRivalry(world, init, tgt, 8, 'accusation_baseless');
                 ReputationService.updateScore(world, init, { reliability: -10, deception: 5 }, 'false_accusation');
                 tgtGain(2);
+                pushWorldStory(world, {
+                    targetEmpireId: init,
+                    subject: 'Espionage accusation unravels — no evidence found',
+                    magnitude: 40,
+                    source: StorySource.RUMOR_MILL,
+                    truth: StoryTruth.TRUE,
+                });
                 gambit.outcome = 'The accusation found no evidence — your credibility suffers.';
             }
             break;

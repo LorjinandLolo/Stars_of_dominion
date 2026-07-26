@@ -21,6 +21,9 @@ import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { canLaunchCategory, stageInfo } from './network-stages';
 import { generateReportForOperation, pruneExpiredReports } from './intel-reports';
 import { triggerCrisis } from '../crisis-manager';
+import { pushWorldStory } from '../press-system/integration';
+import { StorySource, StoryTruth } from '../press-system/types';
+import { shiftRivalry } from '../diplomacy/offer-service';
 
 const espCfg = config.espionage;
 const visCfg = config.visibility;
@@ -666,6 +669,23 @@ export function applyOperationEffect(
         world.shared.stability = clampShared(
             world.shared.stability - espCfg.attribution.diplomaticPenaltyOnExpose / 100
         );
+        // Phase 4: an exposed operation is a diplomatic incident, not just a
+        // stability dent — the victim's pressure spikes and the galaxy reads
+        // about it (the ESPIONAGE_LEAK source finally has a producer).
+        try {
+            if (op.targetFactionId && op.targetFactionId !== op.actorFactionId) {
+                shiftRivalry(world, op.targetFactionId, op.actorFactionId, 10, 'spy_exposed', op.domain);
+            }
+            pushWorldStory(world, {
+                targetEmpireId: op.actorFactionId,
+                subject: `Covert ${op.domain} operation exposed`,
+                magnitude: 40 + Math.round(op.investmentLevel * 30),
+                source: StorySource.ESPIONAGE_LEAK,
+                truth: StoryTruth.TRUE,
+            });
+        } catch (e) {
+            console.error('[Espionage] Exposure fallout failed:', e);
+        }
     }
 }
 

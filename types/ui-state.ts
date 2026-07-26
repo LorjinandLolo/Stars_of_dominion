@@ -234,6 +234,7 @@ export interface DiplomaticGambitView {
     /** Only present on the initiator's own gambits (secret from the target). */
     prediction?: string;
     demandCredits?: number;
+    leverageSpent?: number;
     createdAtSeconds: number;
     respondBySeconds: number;
     status: 'pending' | 'resolved' | 'expired';
@@ -264,6 +265,8 @@ export interface DiplomacyState {
         grantedAtSeconds: number;
         expiresAtSeconds: number;
     } | null;
+    /** Sanction regimes involving the local player (either side). */
+    sanctions?: Array<{ id: string; imposerId: string; targetId: string; sinceSeconds: number }>;
 }
 
 // ─── Politics & Blocs ───────────────────────────────────────────────────────
@@ -288,6 +291,8 @@ export interface PoliticsState {
         warFatigue: number;   // 0-100
         stability: number;    // 0-1
         tradeEfficiency: number; // 0-1
+        /** Player government's public trust 0-100 (press system). */
+        publicTrust?: number;
     };
 }
 

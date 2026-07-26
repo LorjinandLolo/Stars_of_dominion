@@ -80,6 +80,11 @@ export interface DiplomaticGambit {
     prediction?: GambitResponse;
     /** Ultimatum: credits demanded. */
     demandCredits?: number;
+    /**
+     * Leverage points spent to back this gambit (0-5). Spent leverage biases
+     * a doctrine auto-resolve toward concession and makes refusal costlier.
+     */
+    leverageSpent?: number;
     createdAtSeconds: number;
     /** Sim-clock deadline; unanswered gambits auto-resolve by target doctrine. */
     respondBySeconds: number;

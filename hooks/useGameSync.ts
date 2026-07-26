@@ -204,7 +204,9 @@ export function useGameSync() {
             leverage: myLeverage,
             mandate: playerFactionId
                 ? ((world as any).diplomacy?.mandates?.get?.(playerFactionId) ?? null)
-                : null
+                : null,
+            sanctions: Array.from(((world as any).diplomacy?.sanctions?.values?.() ?? []) as Iterable<any>)
+                .filter(s => s.imposerId === playerFactionId || s.targetId === playerFactionId)
         };
 
         // Economy
@@ -243,6 +245,9 @@ export function useGameSync() {
                 warFatigue: world.shared?.warFatigue ?? 0,
                 stability: world.shared?.stability ?? 1,
                 tradeEfficiency: world.shared?.tradeEfficiency ?? 1,
+                publicTrust: playerFactionId
+                    ? ((world as any).press?.empires?.get?.(playerFactionId)?.publicTrust ?? 60)
+                    : 60,
             }
         };
 

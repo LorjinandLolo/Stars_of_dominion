@@ -76,6 +76,8 @@ export type PlayerActionId =
   | "DIP_BREAK_TREATY"
   | "DIP_LAUNCH_GAMBIT"
   | "DIP_RESPOND_GAMBIT"
+  | "DIP_IMPOSE_SANCTIONS"
+  | "DIP_LIFT_SANCTIONS"
   // Espionage
   | "ESP_ASSIGN_AGENT"
   | "ESP_RECRUIT_AGENT"

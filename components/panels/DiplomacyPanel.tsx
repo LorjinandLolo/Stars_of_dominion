@@ -171,6 +171,7 @@ export default function DiplomacyPanel() {
     const [gambitKind, setGambitKind] = useState<'ultimatum' | 'espionage_accusation' | 'show_of_force'>('show_of_force');
     const [gambitPrediction, setGambitPrediction] = useState<string>('');
     const [gambitDemand, setGambitDemand] = useState<number>(500);
+    const [gambitLeverage, setGambitLeverage] = useState<number>(0);
 
     const liveFactions = useMemo(() => {
         return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
@@ -233,8 +234,14 @@ export default function DiplomacyPanel() {
         return computeActionSupport(politicsState.blocs, kind, {
             warFatigue: politicsState.shared?.warFatigue ?? 0,
             rivalryScore: rivalry?.rivalryScore ?? 20,
+            publicTrust: politicsState.shared?.publicTrust ?? 60,
         });
     };
+
+    const sanctionByMe = (diplomacyState.sanctions || []).find(s =>
+        s.imposerId === playerState.factionId && s.targetId === selectedFactionId);
+    const sanctionOnMe = (diplomacyState.sanctions || []).find(s =>
+        s.targetId === playerState.factionId && s.imposerId === selectedFactionId);
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
@@ -655,6 +662,18 @@ export default function DiplomacyPanel() {
                                                                 <option key={r.id} value={r.id}>Predict: {r.label}</option>
                                                             ))}
                                                         </select>
+                                                        {leverageHeld > 0 && (
+                                                            <select
+                                                                value={gambitLeverage}
+                                                                onChange={e => setGambitLeverage(Number(e.target.value))}
+                                                                title="Spend leverage to bias their answer toward concession — refusing a backed demand costs them dearly"
+                                                                className="bg-black/60 border border-emerald-500/20 rounded-lg px-2 py-2 text-[10px] font-mono text-emerald-300 uppercase"
+                                                            >
+                                                                {Array.from({ length: Math.min(5, leverageHeld) + 1 }, (_, i) => (
+                                                                    <option key={i} value={i}>{i === 0 ? 'No leverage' : `Spend ${i} leverage`}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
                                                         <button
                                                             onClick={() => handleAction('gambit-launch', dispatchOrder({
                                                                 actionId: 'DIP_LAUNCH_GAMBIT',
@@ -664,6 +683,7 @@ export default function DiplomacyPanel() {
                                                                     kind: gambitKind,
                                                                     prediction: gambitPrediction || undefined,
                                                                     demandCredits: gambitKind === 'ultimatum' ? gambitDemand : undefined,
+                                                                    spendLeverage: gambitLeverage || undefined,
                                                                 },
                                                                 label: `Launching ${GAMBIT_META[gambitKind].label.toLowerCase()}`,
                                                             }))}
@@ -735,6 +755,43 @@ export default function DiplomacyPanel() {
                                         </div>
                                         <p className="text-[10px] text-slate-400 italic">Requires significant military superiority or leverage.</p>
                                     </button>
+
+                                    {/* Sanctions regime */}
+                                    <div className={`w-full p-6 rounded-2xl border text-left ${sanctionByMe ? 'bg-rose-500/10 border-rose-500/30' : 'bg-rose-500/5 border-rose-500/20'}`}>
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="p-3 bg-rose-500/20 rounded-xl">
+                                                <Gavel className="w-5 h-5 text-rose-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">
+                                                    {sanctionByMe ? 'Sanctions In Force' : 'Impose Sanctions'}
+                                                </span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                    {sanctionOnMe ? 'They are sanctioning you' : 'Coalition-scaled embargo · escalation ≥ 2'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {!sanctionByMe && <div className="mb-3"><SupportMeter compact result={supportFor('sanctions')} /></div>}
+                                        <button
+                                            onClick={() => handleAction('sanctions', dispatchOrder({
+                                                actionId: sanctionByMe ? 'DIP_LIFT_SANCTIONS' : 'DIP_IMPOSE_SANCTIONS',
+                                                factionId: playerState.factionId,
+                                                payload: { targetFactionId: selectedFactionId },
+                                                label: sanctionByMe ? 'Lifting sanctions' : 'Imposing sanctions',
+                                            }))}
+                                            disabled={!!isProcessing}
+                                            className={`w-full py-3 rounded-xl text-[10px] font-display tracking-[0.2em] uppercase transition-all border ${
+                                                sanctionByMe
+                                                ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white'
+                                                : 'bg-rose-600/10 border-rose-500/30 text-rose-400 hover:bg-rose-600 hover:text-white'
+                                            }`}
+                                        >
+                                            {sanctionByMe ? 'Lift Sanctions' : 'Impose Sanctions'}
+                                        </button>
+                                        <p className="text-[10px] text-slate-400 italic mt-2">
+                                            Severs trade, drains their treasury each cycle — and costs your merchants too.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         ) : activeTab === 'intrigue' ? (

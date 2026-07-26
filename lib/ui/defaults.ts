@@ -62,6 +62,7 @@ export const defaultDiplomacyState: DiplomacyState = {
     gambits: [],
     leverage: {},
     mandate: null,
+    sanctions: [],
 };
 
 export const defaultPoliticsState: PoliticsState = {

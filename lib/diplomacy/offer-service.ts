@@ -9,6 +9,8 @@ import type { GameWorldState } from '@/lib/game-world-state';
 import type { RivalryState, Treaty, TreatyType } from '@/lib/politics/cold-war-types';
 import { calculateEscalationLevel } from '@/lib/politics/cold-war-service';
 import { ReputationService } from '@/lib/reputation/reputation-service';
+import { pushWorldStory } from '@/lib/press-system/integration';
+import { StorySource, StoryTruth } from '@/lib/press-system/types';
 import {
     DiplomaticOffer,
     DiplomaticOfferKind,
@@ -332,6 +334,13 @@ export function breakTreaty(world: GameWorldState, factionId: string, treatyId: 
     const other = treaty.signatories.find(s => s !== factionId);
     if (other) shiftRivalry(world, factionId, other, 25, 'treaty_broken', treaty.type);
     ReputationService.updateScore(world, factionId, { reliability: -20, honor: -10 }, `broke_${treaty.type}`);
+    pushWorldStory(world, {
+        targetEmpireId: factionId,
+        subject: `Government repudiates ${treaty.type.replace(/_/g, ' ')} treaty`,
+        magnitude: 40,
+        source: StorySource.RUMOR_MILL,
+        truth: StoryTruth.TRUE,
+    });
     return ok(`${treaty.type.replace(/_/g, ' ')} treaty repudiated.`);
 }
 
@@ -353,6 +362,13 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
     if (nap) {
         nap.status = 'broken';
         ReputationService.updateScore(world, aggressorId, { reliability: -30, deception: 20, honor: -15 }, 'violated_non_aggression');
+        pushWorldStory(world, {
+            targetEmpireId: aggressorId,
+            subject: 'OATHBREAKERS: attack launched through a standing non-aggression pact',
+            magnitude: 70,
+            source: StorySource.WAR_REPORT,
+            truth: StoryTruth.TRUE,
+        });
         console.log(`[Diplomacy] ${aggressorId} VIOLATED a non-aggression pact attacking ${defenderId}`);
     }
 
@@ -361,6 +377,13 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
     if (alreadyAtWar) return; // consequences below fire once per war
 
     ReputationService.updateScore(world, aggressorId, { aggression: 15 }, 'declared_war');
+    pushWorldStory(world, {
+        targetEmpireId: defenderId,
+        subject: `War declared by ${aggressorId}`,
+        magnitude: 60,
+        source: StorySource.WAR_REPORT,
+        truth: StoryTruth.TRUE,
+    });
 
     // Wartime collapse of standing agreements between the belligerents.
     for (const t of world.treaties.values()) {

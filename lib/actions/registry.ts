@@ -213,6 +213,18 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { gambitId: "id", response: "string" },
     cost: {}
   },
+  DIP_IMPOSE_SANCTIONS: {
+    id: "DIP_IMPOSE_SANCTIONS",
+    category: "diplomatic",
+    params: { targetFactionId: "id" },
+    cost: { influence: 30 }
+  },
+  DIP_LIFT_SANCTIONS: {
+    id: "DIP_LIFT_SANCTIONS",
+    category: "diplomatic",
+    params: { targetFactionId: "id" },
+    cost: { influence: 10 }
+  },
 
   // --- Espionage Actions ---
   ESP_ASSIGN_AGENT: {

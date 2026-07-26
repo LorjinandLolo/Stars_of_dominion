@@ -19,6 +19,8 @@ import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfW
 import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
 import { evaluateSupportAndApply } from '../lib/diplomacy/mandate-service';
 import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
+import { imposeSanctions, liftSanctions } from '../lib/diplomacy/sanctions-service';
+import { ensurePressState } from '../lib/press-system/integration';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -121,6 +123,7 @@ async function loadWorld(): Promise<GameWorldState> {
     // Seed empire postures + blocs (internal politics) for factions lacking
     // them — pre-Phase-3 worlds never created any.
     try { ensureEmpirePostures(world); } catch (e) { console.error('[Tick Worker] Posture bootstrap failed:', e); }
+    try { ensurePressState(world); } catch (e) { console.error('[Tick Worker] Press bootstrap failed:', e); }
     if (!world.movement.sorties) world.movement.sorties = new Map();
 
     // Normalize snapshot data: systems saved by older snapshots can be missing
@@ -1040,6 +1043,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  targetId: payload.targetFactionId,
                  prediction: payload.prediction,
                  demandCredits: payload.demandCredits,
+                 spendLeverage: payload.spendLeverage,
              });
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              else {
@@ -1053,6 +1057,23 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'DIP_RESPOND_GAMBIT': {
              const result = respondToGambit(world, factionId, payload.gambitId, payload.response);
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             break;
+        }
+
+        case 'DIP_IMPOSE_SANCTIONS': {
+             const result = imposeSanctions(world, factionId, payload.targetFactionId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else {
+                 evaluateSupportAndApply(world, factionId, 'sanctions', payload.targetFactionId);
+                 console.log(`[Order] ${factionId} imposed sanctions on ${payload.targetFactionId}`);
+             }
+             break;
+        }
+
+        case 'DIP_LIFT_SANCTIONS': {
+             const result = liftSanctions(world, factionId, payload.targetFactionId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} lifted sanctions on ${payload.targetFactionId}`);
              break;
         }
 

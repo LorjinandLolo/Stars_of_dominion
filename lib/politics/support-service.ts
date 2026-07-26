@@ -118,9 +118,11 @@ export function computeActionSupport(
         stance = Math.max(-1, Math.min(1, stance));
 
         // Satisfied blocs extend the government goodwill; unhappy ones oppose
-        // almost anything it proposes.
+        // almost anything it proposes. A distrusted government (press system)
+        // struggles to sell any initiative at all.
+        const trustShift = ((ctx.publicTrust ?? 60) - 60) * 0.25;
         const support = Math.max(0, Math.min(100,
-            50 + stance * 45 + (bloc.satisfaction - 50) * 0.3
+            50 + stance * 45 + (bloc.satisfaction - 50) * 0.3 + trustShift
         ));
 
         return {
