@@ -267,6 +267,27 @@ export interface DiplomacyState {
     } | null;
     /** Sanction regimes involving the local player (either side). */
     sanctions?: Array<{ id: string; imposerId: string; targetId: string; sinceSeconds: number }>;
+    /** Promises involving the local player (either side), active first. */
+    promises?: Array<{
+        id: string;
+        promiserId: string;
+        beneficiaryId: string;
+        kind: 'deliver_credits' | 'non_aggression';
+        amount?: number;
+        madeAtSeconds: number;
+        deadlineSeconds: number;
+        status: 'active' | 'fulfilled' | 'broken';
+    }>;
+    /** Open (and recently closed) intervention windows — public to all. */
+    interventions?: Array<{
+        id: string;
+        aggressorId: string;
+        defenderId: string;
+        openedAtSeconds: number;
+        closesAtSeconds: number;
+        responses: Record<string, string>;
+        status: 'open' | 'closed';
+    }>;
 }
 
 // ─── Politics & Blocs ───────────────────────────────────────────────────────

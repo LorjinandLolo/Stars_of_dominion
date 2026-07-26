@@ -11,6 +11,10 @@ import { calculateEscalationLevel } from '@/lib/politics/cold-war-service';
 import { ReputationService } from '@/lib/reputation/reputation-service';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
+// Runtime-only circular imports (both modules import from this one); safe
+// because these are only invoked inside function bodies, never at module init.
+import { breakNonAggressionPromises } from './promise-service';
+import { openInterventionWindow } from './intervention-service';
 import {
     DiplomaticOffer,
     DiplomaticOfferKind,
@@ -43,6 +47,8 @@ export function ensureDiplomacyState(world: GameWorldState): DiplomacyWorldState
     if (!(w.diplomacy.leverage instanceof Map)) w.diplomacy.leverage = new Map();
     if (!(w.diplomacy.mandates instanceof Map)) w.diplomacy.mandates = new Map();
     if (!(w.diplomacy.sanctions instanceof Map)) w.diplomacy.sanctions = new Map();
+    if (!(w.diplomacy.promises instanceof Map)) w.diplomacy.promises = new Map();
+    if (!(w.diplomacy.interventions instanceof Map)) w.diplomacy.interventions = new Map();
     return w.diplomacy as DiplomacyWorldState;
 }
 
@@ -384,6 +390,10 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
         source: StorySource.WAR_REPORT,
         truth: StoryTruth.TRUE,
     });
+    // Phase 5: an act of war breaks any standing non-aggression promise to the
+    // victim, and the outbreak opens a third-party intervention window.
+    breakNonAggressionPromises(world, aggressorId, defenderId);
+    openInterventionWindow(world, aggressorId, defenderId);
 
     // Wartime collapse of standing agreements between the belligerents.
     for (const t of world.treaties.values()) {

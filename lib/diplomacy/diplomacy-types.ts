@@ -138,6 +138,57 @@ export interface DiplomacyWorldState {
     mandates: Map<string, DiplomaticMandate>;
     /** Active sanction regimes, keyed by `${imposerId}|${targetId}`. */
     sanctions: Map<string, SanctionRecord>;
+    /** Promises (active + recently judged), keyed by id. */
+    promises: Map<string, DiplomaticPromise>;
+    /** Intervention windows opened by war outbreaks, keyed by id. */
+    interventions: Map<string, InterventionWindow>;
+}
+
+// ─── Promises (Phase 5, §13-14) ──────────────────────────────────────────────
+
+export type PromiseKind =
+    | 'deliver_credits'   // send N credits before the deadline (explicit fulfill order)
+    | 'non_aggression';   // commit no act of war against the beneficiary until the deadline
+
+export type PromiseStatus = 'active' | 'fulfilled' | 'broken';
+
+/**
+ * A promise is an enforceable game object: it is judged automatically.
+ * Keeping promises builds reliability and eases tension; breaking them
+ * brands you, hands the beneficiary leverage, and makes headlines.
+ */
+export interface DiplomaticPromise {
+    id: string;
+    promiserId: string;
+    beneficiaryId: string;
+    kind: PromiseKind;
+    /** deliver_credits: amount pledged. */
+    amount?: number;
+    madeAtSeconds: number;
+    deadlineSeconds: number;
+    status: PromiseStatus;
+    resolvedAtSeconds?: number;
+}
+
+// ─── Intervention windows (Phase 5, §23) ─────────────────────────────────────
+
+export type InterventionStance = 'condemn' | 'endorse' | 'mediate';
+
+/**
+ * A new war briefly opens the conflict to third parties: condemn the
+ * aggressor, endorse the war, or offer mediation. Mass condemnation
+ * costs the aggressor public trust; mediation clears the way for
+ * immediate peace talks.
+ */
+export interface InterventionWindow {
+    id: string;
+    aggressorId: string;
+    defenderId: string;
+    openedAtSeconds: number;
+    closesAtSeconds: number;
+    /** Third-party factionId → chosen stance (one response each). */
+    responses: Record<string, InterventionStance>;
+    status: 'open' | 'closed';
 }
 
 /**
@@ -173,6 +224,26 @@ export const GAMBIT_RETENTION_SECONDS = 7 * 24 * 3600;
 
 /** Mandates last 72 sim-hours. */
 export const MANDATE_DURATION_SECONDS = 72 * 3600;
+
+/** Promise duration bounds (sim-hours → seconds). */
+export const PROMISE_MIN_DURATION_SECONDS = 6 * 3600;
+export const PROMISE_MAX_DURATION_SECONDS = 168 * 3600;
+
+/** Judged promises linger 7 sim-days as a record, then prune. */
+export const PROMISE_RETENTION_SECONDS = 7 * 24 * 3600;
+
+/** Intervention windows stay open 24 sim-hours. */
+export const INTERVENTION_WINDOW_SECONDS = 24 * 3600;
+
+/** Closed windows linger 3 sim-days for the record. */
+export const INTERVENTION_RETENTION_SECONDS = 3 * 24 * 3600;
+
+/** Condemnations needed for a "galactic condemnation" trust penalty. */
+export const CONDEMNATION_THRESHOLD = 2;
+
+/** Rumor planting: cooldown per (planter, target) and exposure risk. */
+export const RUMOR_COOLDOWN_SECONDS = 24 * 3600;
+export const RUMOR_EXPOSURE_CHANCE = 0.25;
 
 /** Prediction multipliers — mirrors lib/time/auto-resolve.ts crisis logic. */
 export const PREDICTION_MATCH_BONUS = 1.35;

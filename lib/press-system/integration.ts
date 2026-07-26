@@ -152,6 +152,14 @@ export function getPublicTrust(world: GameWorldState, factionId: string): number
     return (world as any).press?.empires?.get?.(factionId)?.publicTrust ?? 60;
 }
 
+/** Nudge an empire's public trust (clamped 0-100). Seeds press state if needed. */
+export function adjustPublicTrust(world: GameWorldState, factionId: string, delta: number): void {
+    const press = ensurePressState(world);
+    const empire = press.empires.get(factionId);
+    if (!empire) return;
+    empire.publicTrust = Math.max(0, Math.min(100, empire.publicTrust + delta));
+}
+
 const MAX_PUBLISHED = 50;
 const MAX_ACTIVE = 100;
 

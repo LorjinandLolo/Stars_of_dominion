@@ -167,7 +167,7 @@ export function getGameWorldState(): GameWorldState {
             postVictoryTransition: null,
             territoryHistory: [],
             tech: new Map(),
-            diplomacy: { offers: new Map(), cooldowns: new Map(), gambits: new Map(), leverage: new Map(), mandates: new Map(), sanctions: new Map() },
+            diplomacy: { offers: new Map(), cooldowns: new Map(), gambits: new Map(), leverage: new Map(), mandates: new Map(), sanctions: new Map(), promises: new Map(), interventions: new Map() },
             rivalries: new Map(),
             blocs: new Map(),
             proxyConflicts: new Map(),

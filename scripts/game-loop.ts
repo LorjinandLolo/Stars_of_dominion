@@ -20,6 +20,8 @@ import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
 import { evaluateSupportAndApply } from '../lib/diplomacy/mandate-service';
 import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
 import { imposeSanctions, liftSanctions } from '../lib/diplomacy/sanctions-service';
+import { makePromise, fulfillPromise } from '../lib/diplomacy/promise-service';
+import { intervene, plantRumor } from '../lib/diplomacy/intervention-service';
 import { ensurePressState } from '../lib/press-system/integration';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
@@ -1074,6 +1076,39 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              const result = liftSanctions(world, factionId, payload.targetFactionId);
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              else console.log(`[Order] ${factionId} lifted sanctions on ${payload.targetFactionId}`);
+             break;
+        }
+
+        case 'DIP_MAKE_PROMISE': {
+             const result = makePromise(world, factionId, {
+                 kind: payload.kind,
+                 beneficiaryId: payload.targetFactionId,
+                 amount: payload.amount,
+                 durationSeconds: payload.durationHours ? payload.durationHours * 3600 : undefined,
+             });
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} promised ${payload.kind} to ${payload.targetFactionId}`);
+             break;
+        }
+
+        case 'DIP_FULFILL_PROMISE': {
+             const result = fulfillPromise(world, factionId, payload.promiseId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId}: ${result.message}`);
+             break;
+        }
+
+        case 'DIP_INTERVENE': {
+             const result = intervene(world, factionId, payload.windowId, payload.stance);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} intervened (${payload.stance}) in ${payload.windowId}`);
+             break;
+        }
+
+        case 'DIP_PLANT_RUMOR': {
+             const result = plantRumor(world, factionId, payload.targetFactionId);
+             if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+             else console.log(`[Order] ${factionId} planted a rumor about ${payload.targetFactionId}`);
              break;
         }
 

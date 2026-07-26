@@ -172,6 +172,9 @@ export default function DiplomacyPanel() {
     const [gambitPrediction, setGambitPrediction] = useState<string>('');
     const [gambitDemand, setGambitDemand] = useState<number>(500);
     const [gambitLeverage, setGambitLeverage] = useState<number>(0);
+    const [promiseKind, setPromiseKind] = useState<'deliver_credits' | 'non_aggression'>('non_aggression');
+    const [promiseAmount, setPromiseAmount] = useState<number>(500);
+    const [promiseDuration, setPromiseDuration] = useState<number>(48);
 
     const liveFactions = useMemo(() => {
         return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
@@ -242,6 +245,13 @@ export default function DiplomacyPanel() {
         s.imposerId === playerState.factionId && s.targetId === selectedFactionId);
     const sanctionOnMe = (diplomacyState.sanctions || []).find(s =>
         s.targetId === playerState.factionId && s.imposerId === selectedFactionId);
+
+    // Open third-party intervention windows (wars the player is NOT in).
+    const openInterventions = (diplomacyState.interventions || []).filter(w =>
+        w.status === 'open' && w.aggressorId !== playerState.factionId && w.defenderId !== playerState.factionId);
+    const pairPromises = (diplomacyState.promises || []).filter(p =>
+        (p.promiserId === playerState.factionId && p.beneficiaryId === selectedFactionId) ||
+        (p.beneficiaryId === playerState.factionId && p.promiserId === selectedFactionId));
 
     const handleAction = async (actionId: string, promise: Promise<any>) => {
         setIsProcessing(actionId);
@@ -356,6 +366,53 @@ export default function DiplomacyPanel() {
 
                         {activeTab === 'statecraft' ? (
                             <div className="space-y-10">
+                            {/* Third-party intervention windows (§23) */}
+                            {openInterventions.length > 0 && (
+                                <div className="space-y-4">
+                                    <h3 className="text-[11px] font-display text-orange-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <AlertTriangle className="w-4 h-4" /> Wars Awaiting Your Position
+                                    </h3>
+                                    {openInterventions.map(w => {
+                                        const myStance = w.responses[playerState.factionId];
+                                        return (
+                                            <div key={w.id} className="p-5 rounded-2xl border border-orange-500/20 bg-orange-500/5 flex items-center justify-between">
+                                                <div>
+                                                    <span className="text-xs font-bold text-white uppercase tracking-widest block">
+                                                        {w.aggressorId.replace('faction-', '')} attacks {w.defenderId.replace('faction-', '')}
+                                                    </span>
+                                                    <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                        {myStance ? `Position taken: ${myStance}` : 'The galaxy is watching — take a stand or stay silent'}
+                                                    </span>
+                                                </div>
+                                                {!myStance && (
+                                                    <div className="flex gap-2">
+                                                        {(['condemn', 'mediate', 'endorse'] as const).map(stance => (
+                                                            <button
+                                                                key={stance}
+                                                                onClick={() => handleAction(`intervene-${w.id}-${stance}`, dispatchOrder({
+                                                                    actionId: 'DIP_INTERVENE',
+                                                                    factionId: playerState.factionId,
+                                                                    payload: { windowId: w.id, stance },
+                                                                    label: `Intervening: ${stance}`,
+                                                                }))}
+                                                                disabled={!!isProcessing}
+                                                                className={`px-4 py-2 rounded-xl border text-[10px] font-display tracking-[0.2em] uppercase transition-all ${
+                                                                    stance === 'condemn' ? 'bg-rose-600/10 border-rose-500/30 text-rose-400 hover:bg-rose-600 hover:text-white'
+                                                                    : stance === 'mediate' ? 'bg-indigo-600/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-600 hover:text-white'
+                                                                    : 'bg-amber-600/10 border-amber-500/30 text-amber-400 hover:bg-amber-600 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                {stance}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
                             {/* Pending bilateral offers — the consent loop */}
                             {pendingOffers.length > 0 && (
                                 <div className="space-y-4">
@@ -535,7 +592,7 @@ export default function DiplomacyPanel() {
                                                             </span>
                                                         </div>
                                                     </button>
-                                                    {isActive && (
+                                    {isActive && (
                                                         <button
                                                             onClick={() => handleAction(`break-${activeTreaty!.id}`, dispatchOrder({
                                                                 actionId: 'DIP_BREAK_TREATY',
@@ -553,6 +610,93 @@ export default function DiplomacyPanel() {
                                                 </div>
                                             );
                                         })}
+                                    </div>
+
+                                    {/* Promises — enforceable pledges (§13) */}
+                                    <div className="space-y-3 pt-4 border-t border-white/5">
+                                        <h3 className="text-[11px] font-display text-cyan-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                            <Handshake className="w-4 h-4" /> Binding Promises
+                                        </h3>
+                                        {pairPromises.map(p => {
+                                            const mine = p.promiserId === playerState.factionId;
+                                            const statusColor = p.status === 'active' ? 'text-cyan-300'
+                                                : p.status === 'fulfilled' ? 'text-emerald-400' : 'text-rose-400';
+                                            return (
+                                                <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-white uppercase tracking-widest block">
+                                                            {p.kind === 'deliver_credits' ? `Deliver ${p.amount} credits` : 'Non-aggression pledge'}
+                                                        </span>
+                                                        <span className={`text-[9px] font-mono uppercase ${statusColor}`}>
+                                                            {mine ? 'Your pledge' : 'Their pledge'} · {p.status}
+                                                        </span>
+                                                    </div>
+                                                    {mine && p.status === 'active' && p.kind === 'deliver_credits' && (
+                                                        <button
+                                                            onClick={() => handleAction(`fulfill-${p.id}`, dispatchOrder({
+                                                                actionId: 'DIP_FULFILL_PROMISE',
+                                                                factionId: playerState.factionId,
+                                                                payload: { promiseId: p.id },
+                                                                label: 'Fulfilling promise',
+                                                            }))}
+                                                            disabled={!!isProcessing}
+                                                            className="px-4 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 text-[9px] font-display tracking-widest uppercase hover:bg-emerald-600 hover:text-white transition-all"
+                                                        >
+                                                            Fulfill Now
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                        <div className="flex gap-2 items-center">
+                                            <select
+                                                value={promiseKind}
+                                                onChange={e => setPromiseKind(e.target.value as any)}
+                                                className="flex-1 bg-black/60 border border-white/10 rounded-lg px-2 py-2 text-[10px] font-mono text-slate-200 uppercase"
+                                            >
+                                                <option value="non_aggression">Pledge non-aggression</option>
+                                                <option value="deliver_credits">Pledge credit delivery</option>
+                                            </select>
+                                            {promiseKind === 'deliver_credits' && (
+                                                <input
+                                                    type="number"
+                                                    value={promiseAmount}
+                                                    min={1}
+                                                    onChange={e => setPromiseAmount(Math.max(1, Number(e.target.value) || 1))}
+                                                    className="w-24 bg-black/60 border border-white/10 rounded-lg px-2 py-2 text-xs font-mono text-white"
+                                                />
+                                            )}
+                                            <select
+                                                value={promiseDuration}
+                                                onChange={e => setPromiseDuration(Number(e.target.value))}
+                                                className="bg-black/60 border border-white/10 rounded-lg px-2 py-2 text-[10px] font-mono text-slate-200"
+                                            >
+                                                <option value={24}>24h</option>
+                                                <option value={48}>48h</option>
+                                                <option value={72}>72h</option>
+                                                <option value={168}>7d</option>
+                                            </select>
+                                            <button
+                                                onClick={() => handleAction('promise', dispatchOrder({
+                                                    actionId: 'DIP_MAKE_PROMISE',
+                                                    factionId: playerState.factionId,
+                                                    payload: {
+                                                        targetFactionId: selectedFactionId,
+                                                        kind: promiseKind,
+                                                        amount: promiseKind === 'deliver_credits' ? promiseAmount : undefined,
+                                                        durationHours: promiseDuration,
+                                                    },
+                                                    label: 'Making a promise',
+                                                }))}
+                                                disabled={!!isProcessing}
+                                                className="px-4 py-2 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 text-[10px] font-display tracking-[0.2em] uppercase hover:bg-cyan-600 hover:text-white transition-all"
+                                            >
+                                                Pledge
+                                            </button>
+                                        </div>
+                                        <p className="text-[9px] text-slate-600 italic">
+                                            Promises are judged automatically at the deadline. Keeping them builds reliability; breaking them hands your rival leverage and makes headlines.
+                                        </p>
                                     </div>
                                 </div>
 
@@ -821,19 +965,28 @@ export default function DiplomacyPanel() {
                                     <h3 className="text-[11px] font-display text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2">
                                         <Activity className="w-4 h-4" /> Perception Management
                                     </h3>
-                                    <button 
-                                        className="w-full p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl hover:bg-blue-500/10 transition-all text-left opacity-50 cursor-not-allowed"
+                                    <button
+                                        onClick={() => handleAction('rumor', dispatchOrder({
+                                            actionId: 'DIP_PLANT_RUMOR',
+                                            factionId: playerState.factionId,
+                                            payload: { targetFactionId: selectedFactionId },
+                                            label: 'Planting a rumor',
+                                        }))}
+                                        disabled={!!isProcessing}
+                                        className="w-full p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl hover:bg-blue-500/10 transition-all text-left"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
                                             <div className="p-3 bg-blue-500/20 rounded-xl">
                                                 <FileText className="w-5 h-5 text-blue-400" />
                                             </div>
                                             <div>
-                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Propaganda Campaign</span>
-                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Ideological saturation</span>
+                                                <span className="text-xs font-bold text-white uppercase tracking-widest block">Plant Rumor</span>
+                                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Information warfare · deniable</span>
                                             </div>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 italic">Slowly shifts local population alignment towards your ideology.</p>
+                                        <p className="text-[10px] text-slate-400 italic">
+                                            Feed a false story about them into the pirate press. If traced, the scandal is yours.
+                                        </p>
                                     </button>
                                 </div>
                             </div>

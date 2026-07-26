@@ -225,6 +225,31 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { targetFactionId: "id" },
     cost: { influence: 10 }
   },
+  DIP_MAKE_PROMISE: {
+    id: "DIP_MAKE_PROMISE",
+    category: "diplomatic",
+    params: { targetFactionId: "id", kind: "string" },
+    cost: { influence: 10 }
+  },
+  DIP_FULFILL_PROMISE: {
+    id: "DIP_FULFILL_PROMISE",
+    // Credits transferred by the handler from the pledged amount.
+    category: "diplomatic",
+    params: { promiseId: "id" },
+    cost: {}
+  },
+  DIP_INTERVENE: {
+    id: "DIP_INTERVENE",
+    category: "diplomatic",
+    params: { windowId: "id", stance: "string" },
+    cost: { influence: 15 }
+  },
+  DIP_PLANT_RUMOR: {
+    id: "DIP_PLANT_RUMOR",
+    category: "diplomatic",
+    params: { targetFactionId: "id" },
+    cost: { influence: 20 }
+  },
 
   // --- Espionage Actions ---
   ESP_ASSIGN_AGENT: {

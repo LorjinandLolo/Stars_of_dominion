@@ -206,7 +206,14 @@ export function useGameSync() {
                 ? ((world as any).diplomacy?.mandates?.get?.(playerFactionId) ?? null)
                 : null,
             sanctions: Array.from(((world as any).diplomacy?.sanctions?.values?.() ?? []) as Iterable<any>)
-                .filter(s => s.imposerId === playerFactionId || s.targetId === playerFactionId)
+                .filter(s => s.imposerId === playerFactionId || s.targetId === playerFactionId),
+            promises: Array.from(((world as any).diplomacy?.promises?.values?.() ?? []) as Iterable<any>)
+                .filter(p => p.promiserId === playerFactionId || p.beneficiaryId === playerFactionId)
+                .sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1)
+                    || b.madeAtSeconds - a.madeAtSeconds),
+            interventions: Array.from(((world as any).diplomacy?.interventions?.values?.() ?? []) as Iterable<any>)
+                .sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1)
+                    || b.openedAtSeconds - a.openedAtSeconds)
         };
 
         // Economy

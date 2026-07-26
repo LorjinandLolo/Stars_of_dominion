@@ -20,6 +20,8 @@ import { tickGambits } from '../diplomacy/gambit-service';
 import { tickPressureDrift, tickWarFatigue } from '../diplomacy/pressure-service';
 import { tickMandates } from '../diplomacy/mandate-service';
 import { tickSanctions } from '../diplomacy/sanctions-service';
+import { tickPromises } from '../diplomacy/promise-service';
+import { tickInterventions } from '../diplomacy/intervention-service';
 import { tickPress } from '../press-system/integration';
 import { tickBlocDrift } from '../politics/politics-service';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
@@ -108,6 +110,9 @@ export async function runStrategicTick(
     try { tickMandates(world); } catch (e) { console.error('[TickProcessor] tickMandates failed:', e); }
     // 9g: Sanctions bite (coalition-scaled) and the press cycle runs
     try { tickSanctions(world); } catch (e) { console.error('[TickProcessor] tickSanctions failed:', e); }
+    // 9h: Promises judged at deadline, intervention windows close
+    try { tickPromises(world); } catch (e) { console.error('[TickProcessor] tickPromises failed:', e); }
+    try { tickInterventions(world); } catch (e) { console.error('[TickProcessor] tickInterventions failed:', e); }
     try { tickPress(world, tickIndex); } catch (e) { console.error('[TickProcessor] tickPress failed:', e); }
 
     // 10: Visibility refresh (Fog of War)
