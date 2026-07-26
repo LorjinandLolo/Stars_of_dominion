@@ -281,6 +281,16 @@ async function runGameTick() {
         const strategicFired = currentTickWindow > lastTickWindow;
         if (strategicFired) {
             console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
+            // Diplomacy Phase 6: tell the diplomatic AI which factions are
+            // human-claimed so it never answers on a player's behalf. Fresh
+            // query each strategic tick (cheap: one small table, every ~24min).
+            try {
+                const claims = await prisma.playerProfile.findMany({ select: { factionId: true } });
+                (world as any).claimedFactionIds = claims.map(c => c.factionId).filter(Boolean);
+            } catch {
+                // Table unreadable — keep the previous list rather than letting
+                // the AI speak for humans.
+            }
             // CRITICAL: pass `world` — without it the tick processor mutates the
             // worker's local singleton, and every strategic-tick result (economy,
             // research, population...) was thrown away instead of saved/synced.

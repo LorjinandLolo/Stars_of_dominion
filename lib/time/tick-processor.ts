@@ -22,6 +22,7 @@ import { tickMandates } from '../diplomacy/mandate-service';
 import { tickSanctions } from '../diplomacy/sanctions-service';
 import { tickPromises } from '../diplomacy/promise-service';
 import { tickInterventions } from '../diplomacy/intervention-service';
+import { runDiplomaticAI } from '../ai/diplomatic-ai-service';
 import { tickPress } from '../press-system/integration';
 import { tickBlocDrift } from '../politics/politics-service';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
@@ -113,6 +114,9 @@ export async function runStrategicTick(
     // 9h: Promises judged at deadline, intervention windows close
     try { tickPromises(world); } catch (e) { console.error('[TickProcessor] tickPromises failed:', e); }
     try { tickInterventions(world); } catch (e) { console.error('[TickProcessor] tickInterventions failed:', e); }
+    // 9i: AI factions answer offers/gambits/interventions and act on their own
+    // (claimed player factions are skipped — see world.claimedFactionIds).
+    try { runDiplomaticAI(world); } catch (e) { console.error('[TickProcessor] runDiplomaticAI failed:', e); }
     try { tickPress(world, tickIndex); } catch (e) { console.error('[TickProcessor] tickPress failed:', e); }
 
     // 10: Visibility refresh (Fog of War)
