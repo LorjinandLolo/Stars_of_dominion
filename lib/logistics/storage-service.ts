@@ -180,20 +180,41 @@ export function applyStorageCaps(
     return state;
 }
 
+/** Capacity and handling rating for one planet, computed once per tick. */
+export interface StorageProfile {
+    capacity: ResourceBundle;
+    throughput: number;
+}
+
 /**
- * Per-tick entry point: recompute capacity for every economy planet and clamp
- * its stockpile. Called from tickEconomy after all resource movement has landed.
+ * Compute every planet's storage profile once per tick. Both the distribution
+ * pass (which needs warehouse handling speed up front) and the end-of-tick clamp
+ * read from this, so tile scanning happens once rather than twice.
+ */
+export function buildStorageProfiles(world: GameWorldState): Map<string, StorageProfile> {
+    const profiles = new Map<string, StorageProfile>();
+    for (const planet of world.economy.planets.values()) {
+        const constructionPlanet = world.construction?.planets?.get(planet.planetId);
+        profiles.set(planet.planetId, computeStorageCapacity(constructionPlanet));
+    }
+    return profiles;
+}
+
+/**
+ * Per-tick entry point: clamp every economy planet's stockpile to its capacity.
+ * Called from tickEconomy after all resource movement has landed.
  */
 export function tickStorage(
     world: GameWorldState,
     snapshots: Map<string, StockpileSnapshot>,
-    deltaSeconds: number
+    deltaSeconds: number,
+    profiles?: Map<string, StorageProfile>
 ): void {
     for (const planet of world.economy.planets.values()) {
-        const constructionPlanet = world.construction?.planets?.get(planet.planetId);
-        const { capacity, throughput } = computeStorageCapacity(constructionPlanet);
+        const profile = profiles?.get(planet.planetId)
+            ?? computeStorageCapacity(world.construction?.planets?.get(planet.planetId));
         const before = snapshots.get(planet.planetId) ?? snapshotStorables(planet);
-        applyStorageCaps(planet, capacity, throughput, before, deltaSeconds);
+        applyStorageCaps(planet, profile.capacity, profile.throughput, before, deltaSeconds);
     }
 }
 

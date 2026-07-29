@@ -4,6 +4,7 @@
 import { Market, TradeRoute, TradeAgreement, Faction, PolicyState, WarState } from '../trade-system/types';
 import type { PiracyFleet } from '../trade-system/piracy-service';
 import type { PlanetStorageState } from '../logistics/storage-types';
+import type { PlanetLogisticsState, LogisticsPriority } from '../logistics/distribution-types';
 
 // ─── Resource identifiers ─────────────────────────────────────────────────────
 
@@ -88,6 +89,16 @@ export interface PlanetProduction {
      * economy tick. Optional: absent on pre-storage snapshots until first tick.
      */
     storage?: PlanetStorageState;
+    /**
+     * Haulage capacity vs demand and the resulting distribution efficiency,
+     * recomputed each economy tick before production runs.
+     */
+    logistics?: PlanetLogisticsState;
+    /**
+     * Player-set haulage priority. Persisted; the derived split lives in
+     * `logistics.channels`. Defaults to 'balanced'.
+     */
+    logisticsPriority?: LogisticsPriority;
     /**
      * Per-second consumption rates (population upkeep + industrial offtake).
      * Optional: absent on pre-phase-1 snapshots.

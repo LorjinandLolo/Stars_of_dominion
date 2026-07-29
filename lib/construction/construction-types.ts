@@ -148,6 +148,18 @@ export interface Planet {
   // Phase 16: Ground Combat Expansion
   garrison?: PlanetaryDefenseState;
   siege?: GroundSiegeState | null;
+
+  /**
+   * Logistics Phase 2: mirrored from the economy planet each tick so the build
+   * queue can price in distribution without reaching for the whole world state.
+   * Absent until the first economy tick after this system shipped.
+   */
+  logistics?: {
+    /** Blended distribution efficiency for the planet. */
+    efficiency: number;
+    /** Build-speed multiplier after the priority split. */
+    constructionMultiplier: number;
+  };
 }
 
 export interface PlanetStats {

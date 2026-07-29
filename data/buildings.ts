@@ -655,4 +655,45 @@ export const BUILDINGS: BuildingDefinition[] = [
     ],
     tags: ['logistics', 'storage', 'military'],
   },
+
+  // ─── Distribution (Phase 2) ────────────────────────────────────────────────
+  // Warehouses store; depots move. A world can hold full silos and idle
+  // factories at once if nothing connects the two.
+  {
+    id: 'logistics_depot',
+    name: 'Logistics Depot',
+    description: 'Marshalling yards and automated haulers routing stored goods to the industry that needs them.',
+    category: 'logistics',
+    tier: 2,
+    allowedDistricts: ['industrial', 'any'],
+    infrastructureRequired: 2,
+    cost: { metals: 200, chemicals: 80, food: 0, manpower: 80, credits: 250 },
+    upkeep: { energy: 12, manpower: 25 },
+    buildTimeSeconds: 540,
+    effects: [
+      { type: 'logistics_capacity', value: 45 },
+      { type: 'storage_throughput', value: 10 },
+    ],
+    tags: ['logistics', 'distribution'],
+  },
+  {
+    id: 'distribution_hub',
+    name: 'Distribution Hub',
+    description: 'A planet-wide routing authority scheduling every convoy, crane and rail slot from one floor.',
+    category: 'logistics',
+    tier: 3,
+    allowedDistricts: ['industrial', 'any'],
+    infrastructureRequired: 3,
+    cost: { metals: 520, chemicals: 240, food: 0, manpower: 160, credits: 700 },
+    upkeep: { energy: 30, manpower: 60, credits: 20 },
+    buildTimeSeconds: 1200,
+    effects: [
+      { type: 'logistics_capacity', value: 130 },
+      { type: 'storage_throughput', value: 25 },
+      { type: 'construction_speed_percent', value: 10 },
+    ],
+    tags: ['logistics', 'distribution'],
+    upgradesFrom: 'logistics_depot',
+    uniquePerPlanet: true,
+  },
 ];

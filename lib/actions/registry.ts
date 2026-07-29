@@ -323,6 +323,12 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { resource: "string" },
     cost: { influence: 10 }
   },
+  PLANET_SET_LOGISTICS_PRIORITY: {
+    id: "PLANET_SET_LOGISTICS_PRIORITY",
+    category: "economic",
+    params: { planetId: "id", priority: "string" },
+    cost: {}
+  },
   ECON_ESTABLISH_ROUTE: {
     id: "ECON_ESTABLISH_ROUTE",
     category: "economic",

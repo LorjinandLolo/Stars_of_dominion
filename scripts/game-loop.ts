@@ -32,6 +32,7 @@ import { charterNewCompany, getOrCreateFactionState } from '../lib/economy/corpo
 import { issueNewShares, grantMonopolyRight, commandPrivateers, collectCorporateTax } from '../lib/economy/corporate/company-service';
 import { CharterPower } from '../lib/economy/corporate/company-types';
 import { advanceSorties } from '../lib/combat/air-mission-service';
+import { LOGISTICS_PRIORITIES } from '../lib/logistics/distribution-types';
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
 
@@ -430,6 +431,13 @@ async function runGameTick() {
         const snapshotSaved = await saveWorldState(world, forceSave);
 
         // Save Faction Shards — dirty-checked, written only when changed.
+        // These run EVERY tick, unlike the snapshot: cleanWorldForSave strips
+        // fleets from the snapshot, so shards are not merely the durability
+        // store, they are the client's only live channel for fleet position,
+        // strength, economy and espionage state (/api/game/sync returns shard
+        // rows by `updatedAt`, and useGameSync rebuilds fleets from them).
+        // Moving them to the snapshot's 30s cadence freezes fleet markers on
+        // the galaxy map between writes — do not gate this on forceSave.
         // knownShardFactionIds keeps factions with an existing shard in the set
         // even after their last fleet dies, so the emptied shard gets written
         // once instead of the stale one resurrecting dead fleets on reload.
@@ -485,11 +493,14 @@ async function runGameTick() {
  * without it, changed state stays in memory until the next cadence tick.
  */
 async function saveWorldState(world: any, force: boolean): Promise<boolean> {
+    // Off-cadence ticks return before serializing: the clone + stringify of the
+    // full world costs more than everything else in an idle tick combined.
+    if (!force) return false;
     const cleanWorld = cleanWorldForSave(world);
     const newSnapshot = serializeWorld(cleanWorld);
     // The clock advances every tick, so it must not count as a "real" change.
     const comparisonKey = newSnapshot.replace(/"nowSeconds":\d+(\.\d+)?/g, '"nowSeconds":0');
-    if (comparisonKey === lastSnapshotKey || !force) return false;
+    if (comparisonKey === lastSnapshotKey) return false;
     await prisma.multiplayerSession.update({
         where: { id: SESSION_DOC_ID },
         data: {
@@ -952,6 +963,23 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 completesAtSeconds: world.nowSeconds + 3600,
                 status: 'active'
             });
+            break;
+        }
+
+        case 'PLANET_SET_LOGISTICS_PRIORITY': {
+            // payload: { planetId, priority }
+            const planet = world.economy.planets.get(payload.planetId);
+            if (!planet) return;
+            if (planet.factionId !== factionId) {
+                console.error(`[Security] Unauthorized LOGISTICS priority from ${factionId} on planet ${payload.planetId} (Owner: ${planet.factionId})`);
+                return;
+            }
+            if (!LOGISTICS_PRIORITIES.includes(payload.priority)) {
+                console.error(`[Tick Worker] Unknown logistics priority '${payload.priority}' for planet ${payload.planetId}`);
+                return;
+            }
+            planet.logisticsPriority = payload.priority;
+            console.log(`[Tick Worker] Planet ${payload.planetId} logistics priority set to ${payload.priority}`);
             break;
         }
 

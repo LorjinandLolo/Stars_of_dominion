@@ -25,8 +25,9 @@ import { tickConstructionGlobal } from '../construction/construction-service';
 import { initializePlanetServices, updatePlanetServices } from './services/service-engine';
 import { tickAllCompanies } from './corporate/company-registry';
 import { getEmpireDoctrineModifiers } from '../doctrine/doctrine-service';
-import { tickStorage, snapshotStorables } from '../logistics/storage-service';
+import { tickStorage, snapshotStorables, buildStorageProfiles } from '../logistics/storage-service';
 import type { StockpileSnapshot } from '../logistics/storage-service';
+import { tickDistribution, chainThroughputMultiplier, poolingEfficiency } from '../logistics/distribution-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -190,6 +191,10 @@ export function tickProduction(
     for (const recipe of recipes) {
         const key = recipe.output as keyof ResourceBundle;
         let desired = (rates[key] ?? 0) * deltaSeconds * efficiencyMod * mods.manufacturing;
+        // Planetary haulage gates the chain: inputs sitting in a silo the depot
+        // network cannot reach are inputs the factory never sees. The military /
+        // civilian split means prioritising one lane genuinely starves the other.
+        desired *= chainThroughputMultiplier(planet, recipe.output);
         if (recipe.happinessScaled) desired *= planet.happiness / 100;
         if (desired <= 0) {
             planet.currentRates[key] = 0;
@@ -368,6 +373,10 @@ export function tickInternalDistribution(ecoWorld: EconomyWorldState): void {
 
     for (const group of groups.values()) {
         if (group.length < 2) continue;
+        // Pooling is only as good as the local distribution networks. Goods that
+        // arrive in orbit still have to reach the people who need them, so a
+        // congested system equalizes partially rather than perfectly.
+        const pooling = poolingEfficiency(group);
         for (const res of ESSENTIAL_RESOURCES) {
             let totalStock = 0;
             let totalDemand = 0;
@@ -376,10 +385,12 @@ export function tickInternalDistribution(ecoWorld: EconomyWorldState): void {
                 totalDemand += p.consumptionRates?.[res] ?? 0;
             }
             if (totalStock <= 0 || totalDemand <= 0) continue;
-            // Everyone ends up with the same hours-of-cover.
+            // Blend between "keep your own" and "everyone on the same hours of
+            // cover". The blend conserves the group total either way.
             for (const p of group) {
                 const share = (p.consumptionRates?.[res] ?? 0) / totalDemand;
-                p.stockpile[res] = totalStock * share;
+                const own = p.stockpile[res] ?? 0;
+                p.stockpile[res] = own * (1 - pooling) + totalStock * share * pooling;
             }
         }
     }
@@ -753,6 +764,12 @@ export function tickEconomy(
         storageSnapshots.set(planet.planetId, snapshotStorables(planet));
     }
 
+    // 0⅞. Distribution. Must precede production: the production chains read the
+    // channel multipliers it derives. Storage profiles are computed once here and
+    // reused by the end-of-tick clamp.
+    const storageProfiles = buildStorageProfiles(world);
+    tickDistribution(world, storageProfiles);
+
     // 1. Local production
     for (const planet of eco.planets.values()) {
         tickProduction(planet, deltaSeconds, world, modsByFaction.get(planet.factionId) ?? NEUTRAL_MODS);
@@ -773,7 +790,7 @@ export function tickEconomy(
     // 3½. Storage caps. Runs after every path that can add goods to a planet
     //      (production, internal pooling, trade flow, commodity delivery) so a
     //      single clamp covers them all.
-    tickStorage(world, storageSnapshots, deltaSeconds);
+    tickStorage(world, storageSnapshots, deltaSeconds, storageProfiles);
 
     // 4. Collapse drift
     tickCollapseState(eco, world, deltaSeconds);
