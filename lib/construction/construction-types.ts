@@ -26,7 +26,7 @@ export type PlanetType =
 
 export type DistrictType = "industrial" | "research" | "military" | "civilian" | "agricultural" | "any";
 export type ConstructionState = "empty" | "under_construction" | "active" | "ruined";
-export type BuildingCategory = "resource" | "industrial" | "military" | "research" | "society" | "defense" | "space";
+export type BuildingCategory = "resource" | "industrial" | "military" | "research" | "society" | "defense" | "space" | "logistics";
 export type BuildingType = string;
 
 export type ShipType = "trade_fleet" | "corvette" | "frigate" | "destroyer" | "sensor_relay" | "exploration_node";

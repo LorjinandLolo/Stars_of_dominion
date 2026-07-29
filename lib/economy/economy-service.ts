@@ -25,6 +25,8 @@ import { tickConstructionGlobal } from '../construction/construction-service';
 import { initializePlanetServices, updatePlanetServices } from './services/service-engine';
 import { tickAllCompanies } from './corporate/company-registry';
 import { getEmpireDoctrineModifiers } from '../doctrine/doctrine-service';
+import { tickStorage, snapshotStorables } from '../logistics/storage-service';
+import type { StockpileSnapshot } from '../logistics/storage-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -743,6 +745,14 @@ export function tickEconomy(
         modsByFaction.set(factionId, getFactionEconomyMods(world, factionId));
     }
 
+    // 0¾. Snapshot storable stock BEFORE anything moves. The storage clamp needs
+    // to tell "arrived this tick and does not fit" (wasted outright) apart from
+    // "was already over capacity" (drains gradually).
+    const storageSnapshots = new Map<string, StockpileSnapshot>();
+    for (const planet of eco.planets.values()) {
+        storageSnapshots.set(planet.planetId, snapshotStorables(planet));
+    }
+
     // 1. Local production
     for (const planet of eco.planets.values()) {
         tickProduction(planet, deltaSeconds, world, modsByFaction.get(planet.factionId) ?? NEUTRAL_MODS);
@@ -759,6 +769,11 @@ export function tickEconomy(
 
     // 3. Commodity distribution
     tickCommodityDistribution(eco, world, deltaSeconds);
+
+    // 3½. Storage caps. Runs after every path that can add goods to a planet
+    //      (production, internal pooling, trade flow, commodity delivery) so a
+    //      single clamp covers them all.
+    tickStorage(world, storageSnapshots, deltaSeconds);
 
     // 4. Collapse drift
     tickCollapseState(eco, world, deltaSeconds);

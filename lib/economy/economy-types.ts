@@ -3,6 +3,7 @@
 
 import { Market, TradeRoute, TradeAgreement, Faction, PolicyState, WarState } from '../trade-system/types';
 import type { PiracyFleet } from '../trade-system/piracy-service';
+import type { PlanetStorageState } from '../logistics/storage-types';
 
 // ─── Resource identifiers ─────────────────────────────────────────────────────
 
@@ -78,9 +79,15 @@ export interface PlanetProduction {
      */
     currentRates: ResourceBundle;
     /**
-     * Current accumulated stockpile for this planet.
+     * Current accumulated stockpile for this planet. Bounded by `storage` —
+     * anything produced past the warehouse capacity is wasted, not banked.
      */
     stockpile: ResourceBundle;
+    /**
+     * Warehouse capacity, overflow waste and storage pressure, recomputed each
+     * economy tick. Optional: absent on pre-storage snapshots until first tick.
+     */
+    storage?: PlanetStorageState;
     /**
      * Per-second consumption rates (population upkeep + industrial offtake).
      * Optional: absent on pre-phase-1 snapshots.
