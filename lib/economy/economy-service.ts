@@ -737,8 +737,8 @@ export function tickEconomy(
 ): void {
     const eco = world.economy;
 
-    // 0. Construction Tick (Global)
-    tickConstructionGlobal(world);
+    // 0. Construction Tick (Global) — surface, orbital and space queues
+    tickConstructionGlobal(world, deltaSeconds);
 
     // Markets must exist before taxation prices the skim. Merge in any market
     // added since the snapshot was written (e.g. AMMO on pre-phase-3 saves).

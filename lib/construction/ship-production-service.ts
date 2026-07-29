@@ -9,6 +9,8 @@ import {
 import { MovementWorldState, Fleet, HyperdriveProfile } from '../movement/types';
 import { GameWorldState } from '../game-world-state';
 import { fireNotification } from '../time/notification-hooks';
+import { computeOrbitalRatings } from '../orbital/orbital-service';
+import { SHIPYARD_TIER_UNLOCKS } from '../orbital/orbital-types';
 
 /**
  * Initiates a space construction order.
@@ -23,17 +25,37 @@ export function startSpaceConstruction(
   const planet = world.construction.planets.get(planetId);
   if (!planet) return { success: false, error: 'Planet not found' };
 
-  // Check if planet has a shipyard
-  const hasShipyard = planet.tiles.some(t => 
-    (t.buildingId === 'orbital_shipyard' || t.buildingId === 'fleet_drydock') && 
+  // A real orbital spaceyard is the modern path; the legacy surface buildings
+  // still count so worlds built before the orbital layer keep working.
+  const orbitalTier = computeOrbitalRatings(planet).shipyardTier;
+  const hasLegacyShipyard = planet.tiles.some(t =>
+    (t.buildingId === 'orbital_shipyard' || t.buildingId === 'fleet_drydock') &&
     t.constructionState === 'active'
   );
 
-  if (!hasShipyard) {
+  if (orbitalTier <= 0 && !hasLegacyShipyard) {
     return { success: false, error: 'Planet does not have an active shipyard' };
   }
 
+  // Hull class is gated by yard tier: a slipway that can turn out corvettes
+  // cannot lay a capital keel. Legacy surface yards are treated as tier 1.
+  if (orbitalTier > 0) {
+    const unlocked = SHIPYARD_TIER_UNLOCKS[orbitalTier] ?? [];
+    if (!unlocked.includes(shipType)) {
+      return { success: false, error: `Shipyard tier ${orbitalTier} cannot build ${shipType.replace(/_/g, ' ')}` };
+    }
+  } else {
+    const unlocked = SHIPYARD_TIER_UNLOCKS[1] ?? [];
+    if (!unlocked.includes(shipType)) {
+      return { success: false, error: `A surface shipyard cannot build ${shipType.replace(/_/g, ' ')}` };
+    }
+  }
+
   // Resource subtraction should be handled by the caller (server action)
+
+  // Better yards build faster. Clamped to a positive floor so a wrecked yard
+  // never produces an infinite or negative completion time.
+  const yardSpeed = Math.max(0.1, 1 + computeOrbitalRatings(planet).shipProductionBonus / 100);
 
   const order: SpaceBuildOrder = {
     orderId: `ship_${Math.random().toString(36).substr(2, 9)}`,
@@ -41,7 +63,7 @@ export function startSpaceConstruction(
     planetId,
     systemId: planet.systemId,
     startedAtSeconds: world.nowSeconds,
-    completesAtSeconds: world.nowSeconds + buildTimeSeconds,
+    completesAtSeconds: world.nowSeconds + buildTimeSeconds / yardSpeed,
     cost
   };
 

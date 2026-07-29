@@ -5,6 +5,7 @@
 
 import { ResourceId } from '../../types/index';
 import { PlanetaryDefenseState, GroundSiegeState } from '../combat/siege/siege-types';
+import type { OrbitalState } from '../orbital/orbital-types';
 
 export type PlanetType = 
   | "standard" 
@@ -64,6 +65,8 @@ export interface BuildingUpkeep {
   manpower?: number;
   energy?: number;
   credits?: number;
+  /** Standing munitions draw — orbital weapon platforms burn through magazines. */
+  ammo?: number;
 }
 
 export interface BuildingDefinition {
@@ -148,6 +151,12 @@ export interface Planet {
   // Phase 16: Ground Combat Expansion
   garrison?: PlanetaryDefenseState;
   siege?: GroundSiegeState | null;
+
+  /**
+   * Phase 3: the orbital layer above this world — stations, yards, defenses and
+   * orbital logistics. Absent until something is built there.
+   */
+  orbital?: OrbitalState;
 
   /**
    * Logistics Phase 2: mirrored from the economy planet each tick so the build

@@ -33,6 +33,21 @@ import { issueNewShares, grantMonopolyRight, commandPrivateers, collectCorporate
 import { CharterPower } from '../lib/economy/corporate/company-types';
 import { advanceSorties } from '../lib/combat/air-mission-service';
 import { LOGISTICS_PRIORITIES } from '../lib/logistics/distribution-types';
+import {
+    startOrbitalConstruction,
+    cancelOrbitalConstruction,
+    applyOrbitalDamage,
+    isOrbitSuppressed,
+    ensureOrbitalState,
+} from '../lib/orbital/orbital-service';
+import { ORBITAL_STRUCTURE_BY_ID } from '../data/orbital-structures';
+
+/**
+ * Fleet basePower converts to orbital volley damage at this rate. Tuned so a
+ * mid-sized fleet needs several passes to break a fortified orbit, and a token
+ * raider needs many.
+ */
+const ORBITAL_ASSAULT_POWER_FACTOR = 4;
 import type { GroundSiegeState, PlanetaryDefenseState, GroundUnitType, TacticalStanceId } from '../lib/combat/siege/siege-types';
 import type { GameWorldState } from '../lib/game-world-state';
 
@@ -762,6 +777,22 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (!planet || !fleet || fleet.factionId !== factionId) return;
             if (planet.ownerId === factionId) return; // Already owner
 
+            // Orbital Phase 3: a defended orbit has to fall before anything lands.
+            // The order still does something useful when it cannot land — the
+            // fleet works the orbital layer over — so repeating it grinds the
+            // defenses down instead of silently failing.
+            if (!isOrbitSuppressed(planet)) {
+                const volley = fleet.basePower * ORBITAL_ASSAULT_POWER_FACTOR;
+                const result = applyOrbitalDamage(planet, volley);
+                console.log(
+                    `[Tick Worker] ORBITAL ASSAULT on ${planet.name}: ${Math.round(result.hullDamageApplied)} hull damage, ` +
+                    `${Math.round(result.shieldAbsorbed)} absorbed by shields` +
+                    (result.destroyedSlotIds.length ? `, ${result.destroyedSlotIds.length} structure(s) destroyed` : '') +
+                    (result.orbitControlLost ? ' — ORBIT SUPPRESSED, landing may proceed' : ' — orbit still contested')
+                );
+                if (!result.orbitControlLost) break;
+            }
+
             // Phase 16: Initialize or Reinforce Ground Siege
             if (!planet.siege) {
                 const defenseState: PlanetaryDefenseState = (planet as any).garrison || {
@@ -770,7 +801,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     garrisonTroops: 500,
                     unitComposition: { INFANTRY: 400, MILITIA: 100 } as any,
                     fortificationLevel: 2,
-                    fortificationLayers: { orbitalSuppressed: false, outerDefenses: 100, innerDefenses: 100, commandBunkers: 100 },
+                    fortificationLayers: { orbitalSuppressed: true, outerDefenses: 100, innerDefenses: 100, commandBunkers: 100 },
                     supply: 1000,
                     maxSupply: 1000,
                     morale: 100,
@@ -872,9 +903,26 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
                 return;
             }
-            // General orbital bombardment: batter stability, stoke unrest.
-            planet.stability = Math.max(0, (planet.stability || 60) - 10);
-            planet.unrest = Math.min(100, (planet.unrest || 0) + 5);
+            // Orbital structures are shot at before the surface is. While the
+            // layer holds, shields and hulls soak the volley and the ground gets
+            // off comparatively lightly.
+            const orbitHeld = !isOrbitSuppressed(planet);
+            if (orbitHeld) {
+                const bombardFleet = world.movement.fleets.get(payload.fleetId);
+                const volley = (bombardFleet?.basePower ?? 100) * ORBITAL_ASSAULT_POWER_FACTOR;
+                const orbitResult = applyOrbitalDamage(planet, volley);
+                console.log(
+                    `[Tick Worker] Bombardment worked the orbital layer of ${planet.name}: ` +
+                    `${Math.round(orbitResult.hullDamageApplied)} hull damage` +
+                    (orbitResult.orbitControlLost ? ' — ORBIT SUPPRESSED' : '')
+                );
+            }
+
+            // General orbital bombardment: batter stability, stoke unrest. A
+            // standing orbital layer blunts what reaches the surface.
+            const surfaceFactor = orbitHeld ? 0.35 : 1;
+            planet.stability = Math.max(0, (planet.stability || 60) - 10 * surfaceFactor);
+            planet.unrest = Math.min(100, (planet.unrest || 0) + 5 * surfaceFactor);
             // If we're besieging this planet, bombardment also feeds the ground assault.
             if (planet.siege && planet.siege.attackerEmpireId === factionId) {
                 const mode = payload.mode || 'FORTIFICATION';
@@ -963,6 +1011,55 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 completesAtSeconds: world.nowSeconds + 3600,
                 status: 'active'
             });
+            break;
+        }
+
+        case 'ORBITAL_CONSTRUCT': {
+            // payload: { planetId, structureId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet) return;
+            if (planet.ownerId !== factionId) {
+                console.error(`[Security] Unauthorized ORBITAL build from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
+                return;
+            }
+            const def = ORBITAL_STRUCTURE_BY_ID[payload.structureId];
+            if (!def) {
+                console.error(`[Tick Worker] Unknown orbital structure '${payload.structureId}'`);
+                return;
+            }
+            const unlocked = new Set<string>(world.tech.get(factionId)?.unlockedTechIds ?? []);
+            const result = startOrbitalConstruction(planet, payload.structureId, world.nowSeconds, unlocked);
+            if (!result.success) {
+                console.warn(`[Tick Worker] Orbital build rejected on ${planet.name}: ${result.error}`);
+                return;
+            }
+            console.log(`[Tick Worker] ${def.name} laid down in orbit of ${planet.name} (slot ${result.order?.slotId})`);
+            break;
+        }
+
+        case 'ORBITAL_CANCEL': {
+            // payload: { planetId, slotId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) return;
+            if (cancelOrbitalConstruction(planet, payload.slotId)) {
+                console.log(`[Tick Worker] Orbital construction cancelled on ${planet.name} slot ${payload.slotId}`);
+            }
+            break;
+        }
+
+        case 'ORBITAL_DEMOLISH': {
+            // payload: { planetId, slotId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) return;
+            const orbital = ensureOrbitalState(planet);
+            const slot = orbital.slots.find(s => s.slotId === payload.slotId);
+            if (!slot || slot.state === 'empty' || slot.state === 'under_construction') return;
+            const removed = slot.structureId;
+            slot.structureId = null;
+            slot.state = 'empty';
+            slot.integrity = 100;
+            slot.completesAt = null;
+            console.log(`[Tick Worker] ${removed} scrapped in orbit of ${planet.name}`);
             break;
         }
 

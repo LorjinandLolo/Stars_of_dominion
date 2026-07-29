@@ -329,6 +329,25 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", priority: "string" },
     cost: {}
   },
+  ORBITAL_CONSTRUCT: {
+    id: "ORBITAL_CONSTRUCT",
+    category: "economic",
+    // Cost is per-structure and charged from the orbital catalog by the handler.
+    params: { planetId: "id", structureId: "string" },
+    cost: {}
+  },
+  ORBITAL_CANCEL: {
+    id: "ORBITAL_CANCEL",
+    category: "economic",
+    params: { planetId: "id", slotId: "id" },
+    cost: {}
+  },
+  ORBITAL_DEMOLISH: {
+    id: "ORBITAL_DEMOLISH",
+    category: "economic",
+    params: { planetId: "id", slotId: "id" },
+    cost: {}
+  },
   ECON_ESTABLISH_ROUTE: {
     id: "ECON_ESTABLISH_ROUTE",
     category: "economic",

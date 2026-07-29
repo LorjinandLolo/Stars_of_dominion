@@ -168,21 +168,26 @@ export function processConstructionQueue(planet: Planet, now: number): string[] 
 }
 
 import { tickSpaceConstruction } from './ship-production-service';
+import { tickOrbitalGlobal } from '../orbital/orbital-service';
 import { GameWorldState } from '../game-world-state';
 
 /**
  * Global tick for the construction system.
- * Processes the build queue for all planets and space build queue.
+ * Processes the build queue for all planets, the orbital layer, and the space
+ * build queue.
  */
-export function tickConstructionGlobal(world: GameWorldState): void {
+export function tickConstructionGlobal(world: GameWorldState, deltaSeconds = 0): void {
   const now = world.nowSeconds;
-  
+
   // 1. Process planetary build queues
   for (const planet of world.construction.planets.values()) {
     processConstructionQueue(planet, now);
   }
 
-  // 2. Process space build queue
+  // 2. Orbital layer: finish structures and repair battle damage
+  tickOrbitalGlobal(world, deltaSeconds);
+
+  // 3. Process space build queue
   tickSpaceConstruction(world);
 }
 

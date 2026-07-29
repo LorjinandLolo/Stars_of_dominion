@@ -12,6 +12,7 @@ import type { Planet as ConstructionPlanet } from '../construction/construction-
 import { BUILDINGS } from '../../data/buildings';
 import type { StorageProfile } from './storage-service';
 import { computeStorageCapacity } from './storage-service';
+import { computeOrbitalRatings } from '../orbital/orbital-service';
 import {
     INFRA_LOGISTICS_PER_LEVEL,
     WAREHOUSE_THROUGHPUT_WEIGHT,
@@ -118,9 +119,14 @@ export function updatePlanetLogistics(
         ? collectDepotCapacity(constructionPlanet)
         : { capacity: 0, depotCount: 0 };
 
+    // Orbital logistics hubs and stations route goods down the well as well as
+    // across it, so they count toward planetary haulage.
+    const orbitalHaulage = computeOrbitalRatings(constructionPlanet).logisticsCapacity;
+
     const capacity = infraLevel * INFRA_LOGISTICS_PER_LEVEL
         + storageProfile.throughput * WAREHOUSE_THROUGHPUT_WEIGHT
-        + depots.capacity;
+        + depots.capacity
+        + orbitalHaulage;
 
     const demand = computeLogisticsDemand(econPlanet, constructionPlanet);
     // A planet with nothing on it is trivially well served.

@@ -10,6 +10,7 @@ import type { GameWorldState } from '../game-world-state';
 import type { PlanetProduction, ResourceBundle } from '../economy/economy-types';
 import type { Planet as ConstructionPlanet } from '../construction/construction-types';
 import { BUILDINGS } from '../../data/buildings';
+import { computeOrbitalRatings } from '../orbital/orbital-service';
 import config from '../movement/movement-config.json';
 import {
     STORABLE_RESOURCES,
@@ -98,6 +99,15 @@ export function computeStorageCapacity(
         ? collectWarehouseContribution(constructionPlanet)
         : { capacity: {}, throughput: 0, buildingCount: 0 };
 
+    // Orbital warehouses hold stock a ground invasion cannot reach. Their
+    // capacity is declared by storage class, so expand it the same way.
+    const orbital = computeOrbitalRatings(constructionPlanet);
+    for (const [target, value] of Object.entries(orbital.storageCapacity)) {
+        for (const res of resourcesForTarget(target as StorageTarget)) {
+            contribution.capacity[res] = (contribution.capacity[res] ?? 0) + (value ?? 0);
+        }
+    }
+
     const infraLevel = constructionPlanet?.infrastructureLevel ?? 1;
     const infraMult = 1 + INFRA_CAPACITY_BONUS_PER_LEVEL * Math.max(0, infraLevel - 1);
 
@@ -106,7 +116,7 @@ export function computeStorageCapacity(
         capacity[res] = (baseCapacityFor(res) + (contribution.capacity[res] ?? 0)) * infraMult;
     }
 
-    return { capacity, throughput: contribution.throughput };
+    return { capacity, throughput: contribution.throughput + orbital.storageThroughput };
 }
 
 /** Snapshot of the storable part of a stockpile, taken before the tick mutates it. */
