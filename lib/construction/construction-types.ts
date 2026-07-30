@@ -175,6 +175,16 @@ export interface Planet {
   specializationState?: SpecializationState;
 
   /**
+   * Phase 6: mirrored from the economy planet each tick so the storage pass can
+   * tell whether the surface can still reach its orbital warehouses.
+   */
+  blockade?: {
+    active: boolean;
+    severity: number;
+    orbitalStoresCut: boolean;
+  };
+
+  /**
    * Logistics Phase 2: mirrored from the economy planet each tick so the build
    * queue can price in distribution without reaching for the whole world state.
    * Absent until the first economy tick after this system shipped.

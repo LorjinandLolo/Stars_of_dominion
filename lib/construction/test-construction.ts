@@ -2,6 +2,7 @@ import { Planet, PlanetTile } from './construction-types';
 import { canBuildOnTile, startConstruction, processConstructionQueue } from './construction-service';
 import { recalculatePlanetStats } from './recalculation';
 import { BUILDINGS } from '../../data/buildings';
+import { suggestSpecialization } from '../specialization/specialization-service';
 
 function createTestPlanet(): Planet {
   const tiles: PlanetTile[] = [];
@@ -75,11 +76,14 @@ async function runTest() {
   console.log('Building ID on tile:', industrialTile.buildingId);
 
   // 4. Test Specialization
-  console.log('Building 3 more industrial buildings to trigger specialization...');
+  // Specialization is DECLARED, not inferred — building industry no longer
+  // assigns a role by itself. `suggestSpecialization` reports what the world
+  // looks like; PLANET_SET_SPECIALIZATION is what actually makes it one.
+  console.log('Building 3 more industrial buildings...');
   const habitat = BUILDINGS.find(b => b.id === 'habitat_block')!;
   const gym = BUILDINGS.find(b => b.id === 'media_network')!; // Society
   const factory = BUILDINGS.find(b => b.id === 'planetary_factory')!;
-  
+
   // Quick hack to force buildings for test
   planet.tiles[1].buildingId = 'planetary_factory';
   planet.tiles[1].constructionState = 'active';
@@ -91,7 +95,8 @@ async function runTest() {
   const statsAfter = recalculatePlanetStats(planet);
   console.log('--- Recalculated Stats ---');
   console.log('Metals Output:', statsAfter.metalsOutput);
-  console.log('Specialization:', planet.specialization);
+  console.log('Declared specialization:', planet.specialization ?? 'none');
+  console.log('Suggested specialization:', suggestSpecialization(planet) ?? 'none');
   console.log('Construction Speed Mod:', statsAfter.constructionSpeedModifier);
 
   // 5. Check District Bonus

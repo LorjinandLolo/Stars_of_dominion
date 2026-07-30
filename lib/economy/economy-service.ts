@@ -29,6 +29,12 @@ import { tickStorage, snapshotStorables, buildStorageProfiles } from '../logisti
 import type { StockpileSnapshot } from '../logistics/storage-service';
 import { tickDistribution, chainThroughputMultiplier, poolingEfficiency } from '../logistics/distribution-service';
 import { tickInfrastructure, computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
+import {
+    tickBlockades,
+    tickGarrisonSupply,
+    importsBlocked,
+    tradeThroughputUnderBlockade,
+} from '../logistics/blockade-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -378,6 +384,9 @@ const ESSENTIAL_RESOURCES: Array<keyof ResourceBundle> = ['food', 'energy'];
 export function tickInternalDistribution(ecoWorld: EconomyWorldState): void {
     const groups = new Map<string, PlanetProduction[]>();
     for (const planet of ecoWorld.planets.values()) {
+        // A blockaded world is cut out of the pool entirely. Its neighbours cannot
+        // ship it food, and it cannot ship them its surplus — which is the point.
+        if (importsBlocked(planet)) continue;
         const key = `${planet.factionId}:${planet.systemId}`;
         const group = groups.get(key);
         if (group) group.push(planet);
@@ -539,11 +548,17 @@ export function tickTradeFlow(
         // Source planet's stockpile drains into flow
         const fromPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.fromSystemId);
         if (fromPlanet) {
-            const drainRate = scaleBundles(fromPlanet.currentRates, 0.5 * eff * hubMult);
+            const toPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.toSystemId);
+            // A cordon throttles what crosses it in both directions: nothing lifts
+            // from a blockaded exporter, nothing lands on a blockaded importer.
+            const blockadeFactor = Math.min(
+                tradeThroughputUnderBlockade(fromPlanet),
+                tradeThroughputUnderBlockade(toPlanet)
+            );
+            const drainRate = scaleBundles(fromPlanet.currentRates, 0.5 * eff * hubMult * blockadeFactor);
             edge.flowPerHour = drainRate;
             // Drain from stockpile (up to what's available)
             const drain = scaleBundles(drainRate, deltaSeconds / 3600);
-            const toPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.toSystemId);
             for (const [k, v] of Object.entries(drain)) {
                 const key = k as keyof ResourceBundle;
                 // Only move what the source actually has on hand. Previously the source was
@@ -777,6 +792,11 @@ export function tickEconomy(
         storageSnapshots.set(planet.planetId, snapshotStorables(planet));
     }
 
+    // 0⅘. Blockades. Must precede the storage profiles and distribution: both
+    // read the flags it sets, and the storage cap drops when orbital stores are
+    // cut off. Runs after the snapshot so the drop drains rather than confiscates.
+    tickBlockades(world);
+
     // 0⅚. Infrastructure. Must precede distribution and production: it completes
     // track upgrades, charges upkeep, moves integrity, and republishes the derived
     // `infrastructureLevel` those two passes read.
@@ -804,6 +824,10 @@ export function tickEconomy(
 
     // 3. Commodity distribution
     tickCommodityDistribution(eco, world, deltaSeconds);
+
+    // 3¼. Besieged garrisons eat the planet's own stores. A world with a
+    //      strategic reserve holds out; a world running lean surrenders on time.
+    tickGarrisonSupply(world, deltaSeconds);
 
     // 3½. Storage caps. Runs after every path that can add goods to a planet
     //      (production, internal pooling, trade flow, commodity delivery) so a

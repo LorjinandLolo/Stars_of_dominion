@@ -5,6 +5,7 @@ import { Market, TradeRoute, TradeAgreement, Faction, PolicyState, WarState } fr
 import type { PiracyFleet } from '../trade-system/piracy-service';
 import type { PlanetStorageState } from '../logistics/storage-types';
 import type { PlanetLogisticsState, LogisticsPriority } from '../logistics/distribution-types';
+import type { BlockadeState } from '../logistics/blockade-service';
 
 // ─── Resource identifiers ─────────────────────────────────────────────────────
 
@@ -99,6 +100,11 @@ export interface PlanetProduction {
      * `logistics.channels`. Defaults to 'balanced'.
      */
     logisticsPriority?: LogisticsPriority;
+    /**
+     * Phase 6: whether hostile forces have cut this world off, how completely,
+     * and how long its essential stores will last. Recomputed each tick.
+     */
+    blockade?: BlockadeState;
     /**
      * Per-second consumption rates (population upkeep + industrial offtake).
      * Optional: absent on pre-phase-1 snapshots.

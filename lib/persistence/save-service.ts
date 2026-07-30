@@ -4,6 +4,10 @@
 
 import type { GameWorldState } from '@/lib/game-world-state';
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from '@/lib/combat/siege/siege-types';
+import { getEmpireStorageReport } from '@/lib/logistics/storage-service';
+import { getBlockadeReport } from '@/lib/logistics/blockade-service';
+import { computeOrbitalRatings } from '@/lib/orbital/orbital-service';
+import { isRetooling } from '@/lib/specialization/specialization-effects';
 
 export interface GameSaveMetadata {
     id: string;
@@ -126,6 +130,70 @@ export function normalizeEspionageState(world: GameWorldState): void {
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────
 
 /**
+ * Empire-wide planet-layer rollup: storage pressure, haulage, blockades and the
+ * orbital layer. Cheap to compute here and saves the client recomputing it on
+ * every poll.
+ */
+function buildPlanetaryLogisticsSummary(world: GameWorldState, factionId: string) {
+    const storage = getEmpireStorageReport(world, factionId);
+    const blockade = getBlockadeReport(world, factionId);
+
+    let congestedPlanetIds: string[] = [];
+    let totalHaulageCapacity = 0;
+    let totalHaulageDemand = 0;
+    for (const planet of world.economy.planets.values()) {
+        if (planet.factionId !== factionId) continue;
+        const logistics = planet.logistics;
+        if (!logistics) continue;
+        totalHaulageCapacity += logistics.capacity;
+        totalHaulageDemand += logistics.demand;
+        if (logistics.congested) congestedPlanetIds.push(planet.planetId);
+    }
+
+    const orbital: Array<{
+        planetId: string;
+        activeStructures: number;
+        defensePower: number;
+        shipyardTier: number;
+        orbitControlLost: boolean;
+    }> = [];
+    const specializations: Array<{ planetId: string; specializationId: string; retooling: boolean }> = [];
+
+    for (const planet of world.construction.planets.values()) {
+        if (planet.ownerId !== factionId) continue;
+        if (planet.orbital?.slots?.length) {
+            const ratings = computeOrbitalRatings(planet, world.nowSeconds);
+            orbital.push({
+                planetId: planet.id,
+                activeStructures: ratings.activeStructures,
+                defensePower: ratings.defensePower,
+                shipyardTier: ratings.shipyardTier,
+                orbitControlLost: Boolean(planet.orbital.orbitControlLost),
+            });
+        }
+        if (planet.specializationState) {
+            specializations.push({
+                planetId: planet.id,
+                specializationId: planet.specializationState.id,
+                retooling: isRetooling(planet.specializationState, world.nowSeconds),
+            });
+        }
+    }
+
+    return {
+        storage,
+        blockade,
+        haulage: {
+            totalCapacity: totalHaulageCapacity,
+            totalDemand: totalHaulageDemand,
+            congestedPlanetIds,
+        },
+        orbital,
+        specializations,
+    };
+}
+
+/**
  * Extracts a specific faction's data into a sharded JSON string.
  */
 export function extractFactionShard(world: GameWorldState, factionId: string): string {
@@ -140,7 +208,11 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         espionageOperations: Array.from(world.espionage.operations.values()).filter(op => op.actorFactionId === factionId),
         espionageReports: Array.from(world.espionage.reports.values()).filter(r => r.ownerFactionId === factionId),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
-        recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId)
+        recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
+        // Planet-layer rollups. The per-planet detail already rides along in the
+        // snapshot; these are the empire-wide aggregates the UI would otherwise
+        // have to recompute on every poll.
+        planetaryLogistics: buildPlanetaryLogisticsSummary(world, factionId)
     };
     return JSON.stringify(mapsToRecords(shard));
 }

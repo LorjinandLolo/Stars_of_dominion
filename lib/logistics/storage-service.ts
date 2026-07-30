@@ -13,6 +13,7 @@ import { BUILDINGS } from '../../data/buildings';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import { specializationMultiplier } from '../specialization/specialization-effects';
+import { orbitalStoresUnreachable } from './blockade-service';
 import config from '../movement/movement-config.json';
 import {
     STORABLE_RESOURCES,
@@ -102,12 +103,16 @@ export function computeStorageCapacity(
         ? collectWarehouseContribution(constructionPlanet)
         : { capacity: {}, throughput: 0, buildingCount: 0 };
 
-    // Orbital warehouses hold stock a ground invasion cannot reach. Their
-    // capacity is declared by storage class, so expand it the same way.
+    // Orbital warehouses hold stock a ground invasion cannot reach — but only
+    // while the surface can still reach THEM. Under a tight blockade the orbital
+    // stores are cut off, the cap drops, and the excess drains away.
     const orbital = computeOrbitalRatings(constructionPlanet);
-    for (const [target, value] of Object.entries(orbital.storageCapacity)) {
-        for (const res of resourcesForTarget(target as StorageTarget)) {
-            contribution.capacity[res] = (contribution.capacity[res] ?? 0) + (value ?? 0);
+    const orbitalReachable = !orbitalStoresUnreachable(constructionPlanet);
+    if (orbitalReachable) {
+        for (const [target, value] of Object.entries(orbital.storageCapacity)) {
+            for (const res of resourcesForTarget(target as StorageTarget)) {
+                contribution.capacity[res] = (contribution.capacity[res] ?? 0) + (value ?? 0);
+            }
         }
     }
 
@@ -127,7 +132,8 @@ export function computeStorageCapacity(
 
     return {
         capacity,
-        throughput: contribution.throughput + orbital.storageThroughput + infraThroughput,
+        throughput: contribution.throughput + infraThroughput
+            + (orbitalReachable ? orbital.storageThroughput : 0),
     };
 }
 
