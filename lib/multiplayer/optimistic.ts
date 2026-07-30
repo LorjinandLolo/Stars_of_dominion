@@ -224,6 +224,14 @@ export function describeOrder(actionId: string, payload: Record<string, any>): s
         case 'RENAME_PLANET': return 'Renaming planet';
         case 'DIP_DECLARE_WAR': return 'Declaration of war';
         case 'DIP_SEND_ENVOY': return 'Diplomatic envoy';
+        case 'ORBITAL_CONSTRUCT': return `Orbital: ${String(payload?.structureId ?? 'structure').replace(/_/g, ' ')}`;
+        case 'ORBITAL_CANCEL': return 'Halting orbital construction';
+        case 'ORBITAL_DEMOLISH': return 'Scrapping orbital structure';
+        case 'INFRA_UPGRADE_TRACK': return `Infrastructure: ${String(payload?.trackId ?? 'network').replace(/_/g, ' ')}`;
+        case 'INFRA_CANCEL_TRACK': return 'Abandoning infrastructure upgrade';
+        case 'PLANET_SET_SPECIALIZATION': return `Declaring ${String(payload?.specializationId ?? 'role').replace(/_/g, ' ')}`;
+        case 'PLANET_CLEAR_SPECIALIZATION': return 'Abandoning planetary role';
+        case 'PLANET_SET_LOGISTICS_PRIORITY': return `Haulage priority: ${payload?.priority ?? 'balanced'}`;
         default: return actionId.replace(/_/g, ' ').toLowerCase();
     }
 }

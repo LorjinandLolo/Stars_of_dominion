@@ -6,8 +6,11 @@ import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construct
 import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
 import { cancelBuildingAction } from '@/app/actions/construction';
 import { executePlayerAction } from '@/app/actions/registry-handler';
-import { Navigation } from 'lucide-react';
+import { Navigation, Satellite, Route, Truck } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { OrbitalLayerTab } from './OrbitalLayerTab';
+import { InfrastructureTab } from './InfrastructureTab';
+import { LogisticsTab } from './LogisticsTab';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -46,11 +49,13 @@ export function PlanetConstructionPanel({
     onClose
 }: PlanetConstructionPanelProps) {
     const { playerFactionId, diplomacyState } = useUIStore();
-    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY'>('BUILD');
+    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY' | 'ORBITAL' | 'INFRA' | 'LOGISTICS'>('BUILD');
     const [buildings, setBuildings] = useState<PlacedBuilding[]>([]);
     const [queue, setQueue] = useState<ConstructionOrder[]>([]);
     const [spaceQueue, setSpaceQueue] = useState<any[]>([]);
     const [planet, setPlanet] = useState<any | null>(null);
+    const [planetLayer, setPlanetLayer] = useState<any | null>(null);
+    const [worldNowSeconds, setWorldNowSeconds] = useState<number>(() => Math.floor(Date.now() / 1000));
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -80,6 +85,10 @@ export function PlanetConstructionPanel({
                 if ('spaceBuildQueue' in res.data) {
                     setSpaceQueue(res.data.spaceBuildQueue.filter((q: any) => q.planetId === planetId));
                 }
+                // Planet-layer detail (orbital ratings, infrastructure effects,
+                // storage, haulage, blockade, specialization qualification).
+                setPlanetLayer(res.data.planetLayers?.[planetId] ?? null);
+                if (typeof res.data.nowSeconds === 'number') setWorldNowSeconds(res.data.nowSeconds);
                 setError(null);
             } else if (!res.success) {
                 setError(res.error || 'Failed to load construction data');
@@ -132,6 +141,26 @@ export function PlanetConstructionPanel({
             if (!res.success) throw new Error(res.error || 'Failed to queue space construction');
             await loadData();
             setActiveTab('QUEUE');
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    /**
+     * Shared dispatcher for the planet-layer tabs. They all follow the same
+     * shape — fire the order, surface the rejection reason, reload — so the
+     * three of them share one handler instead of copying this five times.
+     */
+    const handleLayerOrder = async (actionId: string, payload: Record<string, any>, label: string) => {
+        setActionLoading(true);
+        setError(null);
+        try {
+            const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            const res = await dispatchOrder({ actionId, factionId, payload, label });
+            if (!res.success) throw new Error(res.error || `Failed: ${label}`);
+            await loadData();
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -296,6 +325,42 @@ export function PlanetConstructionPanel({
                             }`}
                     >
                         ACTIVE QUEUE & STRUCTURES
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('INFRA')}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'INFRA'
+                            ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
+                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <Route className="w-3.5 h-3.5" />
+                        INFRASTRUCTURE
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('ORBITAL')}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'ORBITAL'
+                            ? 'border-fuchsia-500 text-fuchsia-400 bg-fuchsia-500/10'
+                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <Satellite className="w-3.5 h-3.5" />
+                        ORBITAL
+                        {planet?.orbital?.orbitControlLost && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('LOGISTICS')}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'LOGISTICS'
+                            ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <Truck className="w-3.5 h-3.5" />
+                        LOGISTICS & ROLE
+                        {(planetLayer?.blockade?.active || planetLayer?.logistics?.congested) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        )}
                     </button>
                     <button
                         onClick={() => setActiveTab('SOCIETY')}
@@ -576,6 +641,36 @@ export function PlanetConstructionPanel({
                                 )}
                             </div>
                         </div>
+                    )}
+
+                    {activeTab === 'ORBITAL' && planet && (
+                        <OrbitalLayerTab
+                            planet={planet}
+                            layer={planetLayer}
+                            nowSeconds={worldNowSeconds}
+                            actionLoading={actionLoading}
+                            onDispatch={handleLayerOrder}
+                        />
+                    )}
+
+                    {activeTab === 'INFRA' && planet && (
+                        <InfrastructureTab
+                            planet={planet}
+                            layer={planetLayer}
+                            nowSeconds={worldNowSeconds}
+                            actionLoading={actionLoading}
+                            onDispatch={handleLayerOrder}
+                        />
+                    )}
+
+                    {activeTab === 'LOGISTICS' && planet && (
+                        <LogisticsTab
+                            planet={planet}
+                            layer={planetLayer}
+                            nowSeconds={worldNowSeconds}
+                            actionLoading={actionLoading}
+                            onDispatch={handleLayerOrder}
+                        />
                     )}
 
                     {activeTab === 'SPACE' && (
