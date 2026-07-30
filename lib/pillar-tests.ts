@@ -6,6 +6,11 @@ import { defaultSharedState, recomputeBlocSatisfaction, recomputeInfraIntegrity 
 import type { GameWorldState } from './game-world-state';
 import type { EconomyWorldState, PlanetProduction, TradeHub, TradeFlowEdge, EconomicRegion, CollapseState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
+import type { Planet as ConstructionPlanet, ConstructionWorldState } from './construction/construction-types';
+import type { DiplomacyWorldState } from './diplomacy/diplomacy-types';
+import type { CouncilState } from '@/types/ui-state';
+import type { SimulationState as PressSimulationState } from './press-system/types';
+import { createEmptyCorporateWorldState } from './economy/corporate/company-registry';
 import { tickEconomy, tickCommodityDistribution, tickCollapseState } from './economy/economy-service';
 import { tickBlocDrift, getBlocReport, isCrisisCondition, applyPolicyEffect } from './politics/politics-service';
 import { launchOperation, tickOperations, resolveAttribution, computeAttributionProbability, getEspionagePressure } from './espionage/espionage-service';
@@ -50,12 +55,19 @@ function expectFalse(v: boolean, msg?: string): void {
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
+/**
+ * launchOperation gates shadowEconomy behind "Shadow Governance". Without it the
+ * call returns `{ success: false }` and every test that dereferenced
+ * `result.operation!` threw instead of asserting.
+ */
+const SHADOW_ECONOMY_TECH = new Set(['dip_sha_1']);
+
 function makeSystem(id: string, ownerFactionId?: string): SystemNode {
     return {
         id, name: id, q: 0, r: 0,
         tags: [], tagReveal: { allTags: [], revealedAt: {} },
         hyperlaneNeighbors: [], tradeSegmentIds: [], corridorIds: [],
-        ownerFactionId, instability: 20,
+        ownerFactionId, instability: 20, escalationLevel: 0,
     };
 }
 
@@ -98,11 +110,48 @@ function makePlanet(id: string, systemId: string, factionId: string): PlanetProd
         planetId: id, systemId, factionId,
         planetType: 'commercial',
         tags: [],
-        baseRates: { luxury: 1.0, cultural: 0.8, credits: 1.0 },
+        services: {},
+        demographics: {
+            population: 2000,
+            growthRate: 0,
+            housingCapacity: 20000,
+            serviceSatisfaction: 60,
+            unrestRisk: 0,
+            manpowerEfficiency: 1,
+        },
+        currentRates: {},
         stockpile: { luxury: 10, cultural: 8, rare: 2 },
+        derived: { construction: 0, military: 0.5, research: 0.3, cultural: 0 },
+        energyLoad: 0,
+        energyProduced: 0,
         happiness: 60, instability: 20,
-        militaryCapacity: 0.5, researchOutput: 0.3,
         commodityScarcity: false,
+    };
+}
+
+/** Construction-pillar twin of an economy planet, keyed by the same id. */
+function makeConstructionPlanet(id: string, systemId: string, factionId: string): ConstructionPlanet {
+    return {
+        id,
+        name: id,
+        ownerId: factionId,
+        systemId,
+        planetType: 'standard',
+        infrastructureLevel: 2,
+        stability: 60,
+        happiness: 60,
+        specialization: null,
+        maxTiles: 10,
+        tiles: [],
+        buildQueue: [],
+        activeModifiers: [],
+        tags: [],
+        population: 2000,
+        popCapacity: 20000,
+        popGrowth: 0,
+        unrest: 0,
+        isOccupied: false,
+        demographics: [],
     };
 }
 
@@ -138,7 +187,58 @@ function makeEcoWorld(): EconomyWorldState {
         markets: new Map(),
         tradeRoutes: new Map(),
         tradeAgreements: new Map(),
+        factions: new Map(),
+        policies: new Map(),
+        warStates: new Map(),
         lastFlowUpdateAt: 0,
+    };
+}
+
+function makeConstructionWorld(factionId: string): ConstructionWorldState {
+    return {
+        planets: new Map([['p1', makeConstructionPlanet('p1', 'sys-alpha', factionId)]]),
+        spaceBuildQueue: [],
+        nowSeconds: 1000000,
+    };
+}
+
+function makeDiplomacyWorld(): DiplomacyWorldState {
+    return {
+        offers: new Map(),
+        cooldowns: new Map(),
+        gambits: new Map(),
+        leverage: new Map(),
+        mandates: new Map(),
+        sanctions: new Map(),
+        promises: new Map(),
+        interventions: new Map(),
+    };
+}
+
+function makeCouncilState(): CouncilState {
+    return {
+        status: 'founded',
+        legitimacy: 70,
+        cohesion: 70,
+        polarization: 20,
+        enforcementCapacity: 60,
+        corruptionExposure: 10,
+        emergencySession: false,
+    };
+}
+
+function makePressWorld(): PressSimulationState {
+    return {
+        tick: 0,
+        empires: new Map(),
+        planets: new Map(),
+        pressFactions: new Map(),
+        activeStories: new Map(),
+        publishedStories: [],
+        crises: new Map(),
+        quarantinedPlanets: new Set(),
+        jammedSystems: new Set(),
+        counterNarratives: new Map(),
     };
 }
 
@@ -160,6 +260,9 @@ function makeMovementWorld(factionId: string): MovementWorldState {
         automationDoctrines: new Map(),
         empirePostures: new Map([[factionId, makePosture(factionId)]]),
         degradations: new Map(),
+        armies: new Map(),
+        sorties: new Map(),
+        forwardBases: new Map(),
         nowSeconds: 1000000,
     };
 }
@@ -178,24 +281,45 @@ function makeEspionageWorld(): EspionageWorldState {
     };
 }
 
+/**
+ * A complete GameWorldState. Every field the interface declares has to be here:
+ * tickEconomy walks the construction, corporate and infrastructure pillars, so a
+ * fixture that omits them does not fail an assertion, it throws.
+ */
 function makeWorld(): GameWorldState {
     const factionId = 'factionA';
     return {
         shared: defaultSharedState(),
         movement: makeMovementWorld(factionId),
         economy: makeEcoWorld(),
+        corporate: createEmptyCorporateWorldState(),
         espionage: makeEspionageWorld(),
         activeSeason: null,
         seasonHistory: [],
+        hallOfFame: [],
+        milestones: new Map(),
+        legacyPrestigeBonuses: new Map(),
         victoryState: null,
         postVictoryTransition: null,
         territoryHistory: [],
         tech: new Map(),
+        diplomacy: makeDiplomacyWorld(),
         rivalries: new Map(),
         blocs: new Map(),
         propagandaCampaigns: new Map(),
+        proxyConflicts: new Map(),
+        treaties: new Map(),
+        tradePacts: new Map(),
+        tributes: new Map(),
         activeCombats: new Map(),
+        council: makeCouncilState(),
+        press: makePressWorld(),
+        construction: makeConstructionWorld(factionId),
+        leadership: { leaders: new Map(), recruitmentPool: [], nowSeconds: 1000000 },
+        doctrines: new Map(),
+        reputation: new Map(),
         nowSeconds: 1000000,
+        combat: { recruitmentJobs: [] },
     };
 }
 
@@ -347,15 +471,15 @@ test('attribution probability uses sensor strength', () => {
 test('repeated operations escalate detection', () => {
     const world = makeWorld();
     // Two operations in same region
-    launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.3, world);
-    launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.3, world);
+    launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.3, world, SHADOW_ECONOMY_TECH);
+    launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.3, world, SHADOW_ECONOMY_TECH);
     const escalation = world.espionage.regionEscalation.get('sys-alpha');
     expectTrue((escalation?.operationCount ?? 0) >= 2, 'escalation count should accumulate');
 });
 
 test('resolveAttribution returns invisible with no sensors', () => {
     const world = makeWorld();
-    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.1, world);
+    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 0.5, 0.1, world, SHADOW_ECONOMY_TECH);
     const op = result.operation!;
     // No sensors in target system
     const attribution = resolveAttribution(op, world);
@@ -364,7 +488,7 @@ test('resolveAttribution returns invisible with no sensors', () => {
 
 test('tickOperations resolves expired operations', () => {
     const world = makeWorld();
-    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 1.0, 0.2, world);
+    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 1.0, 0.2, world, SHADOW_ECONOMY_TECH);
     const op = result.operation!;
     // Force the operation to be past its completion time
     op.completesAt = new Date((world.nowSeconds - 10) * 1000).toISOString();
@@ -375,7 +499,7 @@ test('tickOperations resolves expired operations', () => {
 test('shadow economy reduces trade efficiency', () => {
     const world = makeWorld();
     world.shared.tradeEfficiency = 0.9;
-    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 1.0, 0.2, world);
+    const result = launchOperation('factionB', 'factionA', 'sys-alpha', 'shadowEconomy', 1.0, 0.2, world, SHADOW_ECONOMY_TECH);
     const op = result.operation!;
     op.completesAt = new Date((world.nowSeconds - 10) * 1000).toISOString();
     op.succeeded = false; // force success in apply
@@ -470,8 +594,12 @@ console.log('\nCross-Pillar Integration');
 
 test('trade disruption → raises espionage vulnerability', () => {
     const world = makeWorld();
-    world.shared.commodityAccess = 0.1; // severe scarcity
+    // Scarcity has to be real, not asserted. tickCommodityDistribution DERIVES
+    // shared.commodityAccess from what it actually manages to deliver, so
+    // presetting the scalar was overwritten before the espionage check ran.
+    world.economy.planets.get('p1')!.stockpile = { luxury: 0, cultural: 0, rare: 0 };
     tickCommodityDistribution(world.economy, world, 3600);
+    expectTrue(world.shared.commodityAccess < 0.5, 'delivery shortfall should show up as low commodity access');
     expectTrue(world.shared.espionagePressure > 0, 'scarcity should raise espionage vulnerability');
 });
 
