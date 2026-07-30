@@ -9,6 +9,7 @@
 import type { Planet as ConstructionPlanet } from '../construction/construction-types';
 import type { GameWorldState } from '../game-world-state';
 import { ORBITAL_STRUCTURE_BY_ID } from '../../data/orbital-structures';
+import { specializationMultiplier } from '../specialization/specialization-effects';
 import {
     BASE_ORBITAL_SLOTS,
     ORBITAL_SLOT_INFRA_THRESHOLDS,
@@ -113,7 +114,10 @@ const ZERO_RATINGS: OrbitalRatings = {
  * Everything the rest of the game reads off a planet's orbit.
  * Cheap enough to call per tick; nothing is cached.
  */
-export function computeOrbitalRatings(planet: ConstructionPlanet | undefined): OrbitalRatings {
+export function computeOrbitalRatings(
+    planet: ConstructionPlanet | undefined,
+    nowSeconds = 0
+): OrbitalRatings {
     if (!planet?.orbital?.slots?.length) return { ...ZERO_RATINGS, storageCapacity: {} };
 
     const ratings: OrbitalRatings = { ...ZERO_RATINGS, storageCapacity: {} };
@@ -358,7 +362,11 @@ export interface OrbitalDamageResult {
  * spread across standing structures in proportion to their hull, so a fortress
  * absorbs more than a sensor mast rather than everything dying at once.
  */
-export function applyOrbitalDamage(planet: ConstructionPlanet, incoming: number): OrbitalDamageResult {
+export function applyOrbitalDamage(
+    planet: ConstructionPlanet,
+    incoming: number,
+    nowSeconds = 0
+): OrbitalDamageResult {
     const orbital = ensureOrbitalState(planet);
     const result: OrbitalDamageResult = {
         hullDamageApplied: 0,
@@ -369,11 +377,18 @@ export function applyOrbitalDamage(planet: ConstructionPlanet, incoming: number)
     if (incoming <= 0) return result;
 
     const ratings = computeOrbitalRatings(planet);
+
+    // A world that declared itself a fortress has hardened its orbit; a trade
+    // world has not. This is where that declaration is actually felt, because
+    // defensePower alone cancels out of the suppression ratio.
+    const hardening = specializationMultiplier(planet, 'orbitalDefense', nowSeconds);
+    const effectiveIncoming = incoming / Math.max(0.1, hardening);
+
     // Shields soak a share of the incoming volley rather than a flat amount, so
     // they stay relevant against big fleets instead of being one-shot through.
     const soakFraction = Math.min(0.8, ratings.shieldStrength / (ratings.shieldStrength + 200));
-    result.shieldAbsorbed = incoming * soakFraction;
-    let remaining = incoming - result.shieldAbsorbed;
+    result.shieldAbsorbed = effectiveIncoming * soakFraction;
+    const remaining = effectiveIncoming - result.shieldAbsorbed;
     result.hullDamageApplied = remaining;
 
     const targets = orbital.slots.filter(s =>

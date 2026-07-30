@@ -12,6 +12,7 @@ import type { Planet as ConstructionPlanet } from '../construction/construction-
 import { BUILDINGS } from '../../data/buildings';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
+import { specializationMultiplier } from '../specialization/specialization-effects';
 import config from '../movement/movement-config.json';
 import {
     STORABLE_RESOURCES,
@@ -94,7 +95,8 @@ export function collectWarehouseContribution(planet: ConstructionPlanet): Wareho
  * still get their native baseline rather than a capacity of zero.
  */
 export function computeStorageCapacity(
-    constructionPlanet: ConstructionPlanet | undefined
+    constructionPlanet: ConstructionPlanet | undefined,
+    nowSeconds = 0
 ): { capacity: ResourceBundle; throughput: number } {
     const contribution = constructionPlanet
         ? collectWarehouseContribution(constructionPlanet)
@@ -112,9 +114,12 @@ export function computeStorageCapacity(
     const infraLevel = constructionPlanet?.infrastructureLevel ?? 1;
     const infraMult = 1 + INFRA_CAPACITY_BONUS_PER_LEVEL * Math.max(0, infraLevel - 1);
 
+    // A trade or mining world is built around holding stock; a research world is not.
+    const specMult = specializationMultiplier(constructionPlanet, 'storageCapacity', nowSeconds);
+
     const capacity: ResourceBundle = {};
     for (const res of STORABLE_RESOURCES) {
-        capacity[res] = (baseCapacityFor(res) + (contribution.capacity[res] ?? 0)) * infraMult;
+        capacity[res] = (baseCapacityFor(res) + (contribution.capacity[res] ?? 0)) * infraMult * specMult;
     }
 
     // Freight terminals are where the warehouse network plugs into everything else.
@@ -212,7 +217,7 @@ export function buildStorageProfiles(world: GameWorldState): Map<string, Storage
     const profiles = new Map<string, StorageProfile>();
     for (const planet of world.economy.planets.values()) {
         const constructionPlanet = world.construction?.planets?.get(planet.planetId);
-        profiles.set(planet.planetId, computeStorageCapacity(constructionPlanet));
+        profiles.set(planet.planetId, computeStorageCapacity(constructionPlanet, world.nowSeconds));
     }
     return profiles;
 }
@@ -229,7 +234,7 @@ export function tickStorage(
 ): void {
     for (const planet of world.economy.planets.values()) {
         const profile = profiles?.get(planet.planetId)
-            ?? computeStorageCapacity(world.construction?.planets?.get(planet.planetId));
+            ?? computeStorageCapacity(world.construction?.planets?.get(planet.planetId), world.nowSeconds);
         const before = snapshots.get(planet.planetId) ?? snapshotStorables(planet);
         applyStorageCaps(planet, profile.capacity, profile.throughput, before, deltaSeconds);
     }

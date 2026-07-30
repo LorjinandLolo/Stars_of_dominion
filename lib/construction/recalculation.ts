@@ -1,11 +1,12 @@
 import { Planet, PlanetStats, BuildingDefinition, PlanetTile, Modifier } from './construction-types';
 import { BUILDINGS } from '../../data/buildings';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
+import { computeSpecializationEffects } from '../specialization/specialization-effects';
 
 /**
  * Aggregates all modifiers and recalculates planet-wide stats.
  */
-export function recalculatePlanetStats(planet: Planet): PlanetStats {
+export function recalculatePlanetStats(planet: Planet, nowSeconds = 0): PlanetStats {
   const stats: PlanetStats = {
     metalsOutput: 0,
     chemicalsOutput: 0,
@@ -46,12 +47,11 @@ export function recalculatePlanetStats(planet: Planet): PlanetStats {
   // 2. Apply Planet Type Base Modifiers
   applyPlanetTypeBaseModifiers(stats, planet.planetType);
 
-  // 3. Determine and Apply Specialization
-  const spec = determinePlanetSpecialization(planet);
-  planet.specialization = spec;
-  if (spec) {
-    applySpecializationModifier(stats, spec);
-  }
+  // 3. Apply the world's DECLARED specialization.
+  // This used to infer one from building counts and write it onto the planet as a
+  // side effect of recomputing stats, which meant a player could never choose.
+  // The inference survives as `suggestSpecialization`, an advisory hint only.
+  applySpecializationEffects(stats, planet, nowSeconds);
 
   // 3½. Infrastructure network: a wired, powered, watered world is a calmer one.
   stats.stability += computeInfrastructureEffects(planet).stability;
@@ -125,50 +125,28 @@ function applyDistrictBonus(stats: PlanetStats, building: BuildingDefinition, bo
 }
 
 /**
- * Pathfinding/Specialization Logic:
- * If a planet has 4 or more active buildings from the same strategic family, assign a specialization.
+ * Apply the effects of the world's declared specialization to its stats.
+ * Multipliers scale the output that buildings and planet type have already
+ * produced; flats are added on top.
  */
-export function determinePlanetSpecialization(planet: Planet): string | null {
-  const categoryCounts: Record<string, number> = {};
-  
-  planet.tiles.forEach(tile => {
-    if (tile.constructionState === 'active' && tile.buildingId) {
-      const buildingDef = BUILDINGS.find(b => b.id === tile.buildingId);
-      if (buildingDef) {
-        categoryCounts[buildingDef.category] = (categoryCounts[buildingDef.category] || 0) + 1;
-      }
-    }
-  });
+function applySpecializationEffects(stats: PlanetStats, planet: Planet, nowSeconds: number) {
+  const effects = computeSpecializationEffects(planet, nowSeconds);
+  if (Object.keys(effects).length === 0) return;
 
-  if (categoryCounts['industrial'] >= 4 || categoryCounts['resource'] >= 4) return 'Industrial World';
-  if (categoryCounts['research'] >= 4) return 'Research World';
-  if (categoryCounts['military'] >= 4 || categoryCounts['defense'] >= 4) return 'Fortress World';
-  if (categoryCounts['resource'] >= 4 && categoryCounts['resource_type_food'] >= 2) return 'Agricultural World'; // Simplified
-  if (categoryCounts['society'] >= 4) return 'Civilian Core';
+  stats.metalsOutput *= effects.metalsOutput ?? 1;
+  stats.chemicalsOutput *= effects.chemicalsOutput ?? 1;
+  stats.foodOutput *= effects.foodOutput ?? 1;
+  stats.energyOutput *= effects.energyOutput ?? 1;
+  stats.manpowerOutput *= effects.manpowerOutput ?? 1;
+  stats.researchOutput *= effects.researchOutput ?? 1;
+  stats.defenseStrength *= effects.defenseStrength ?? 1;
+  stats.constructionSpeedModifier *= effects.constructionSpeed ?? 1;
+  stats.shipProductionModifier *= effects.shipProduction ?? 1;
+  stats.troopRecruitmentModifier *= effects.troopRecruitment ?? 1;
 
-  return null;
-}
-
-function applySpecializationModifier(stats: PlanetStats, spec: string) {
-  switch (spec) {
-    case 'Industrial World':
-      stats.constructionSpeedModifier += 0.25;
-      stats.shipProductionModifier += 0.20;
-      break;
-    case 'Research World':
-      stats.researchOutput *= 1.25; // +25%
-      break;
-    case 'Fortress World':
-      stats.defenseStrength *= 1.30; // +30%
-      break;
-    case 'Agricultural World':
-      stats.foodOutput *= 1.25; // +25%
-      break;
-    case 'Civilian Core':
-      stats.stability += 15;
-      stats.happiness += 10;
-      break;
-  }
+  stats.stability += effects.stability ?? 0;
+  stats.happiness += effects.happiness ?? 0;
+  stats.espionageResistance += effects.espionageResistance ?? 0;
 }
 
 function applyPlanetTypeBaseModifiers(stats: PlanetStats, planetType: string) {

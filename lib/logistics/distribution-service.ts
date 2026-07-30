@@ -14,6 +14,7 @@ import type { StorageProfile } from './storage-service';
 import { computeStorageCapacity } from './storage-service';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
+import { specializationMultiplier } from '../specialization/specialization-effects';
 import {
     INFRA_LOGISTICS_PER_LEVEL,
     WAREHOUSE_THROUGHPUT_WEIGHT,
@@ -113,7 +114,8 @@ export function applyPriorityWeights(efficiency: number, priority: LogisticsPrio
 export function updatePlanetLogistics(
     econPlanet: PlanetProduction,
     constructionPlanet: ConstructionPlanet | undefined,
-    storageProfile: StorageProfile
+    storageProfile: StorageProfile,
+    nowSeconds = 0
 ): PlanetLogisticsState {
     const infraLevel = constructionPlanet?.infrastructureLevel ?? 1;
     const depots = constructionPlanet
@@ -127,11 +129,14 @@ export function updatePlanetLogistics(
     // Transit and freight tracks are the roads and terminals the haulers use.
     const infraHaulage = computeInfrastructureEffects(constructionPlanet).haulageBonus;
 
-    const capacity = infraLevel * INFRA_LOGISTICS_PER_LEVEL
+    const rawCapacity = infraLevel * INFRA_LOGISTICS_PER_LEVEL
         + storageProfile.throughput * WAREHOUSE_THROUGHPUT_WEIGHT
         + depots.capacity
         + orbitalHaulage
         + infraHaulage;
+
+    // A trade or forge world routes goods better than a research campus does.
+    const capacity = rawCapacity * specializationMultiplier(constructionPlanet, 'haulage', nowSeconds);
 
     const demand = computeLogisticsDemand(econPlanet, constructionPlanet);
     // A planet with nothing on it is trivially well served.
@@ -170,8 +175,9 @@ export function tickDistribution(
 ): void {
     for (const planet of world.economy.planets.values()) {
         const constructionPlanet = world.construction?.planets?.get(planet.planetId);
-        const profile = profiles?.get(planet.planetId) ?? computeStorageCapacity(constructionPlanet);
-        updatePlanetLogistics(planet, constructionPlanet, profile);
+        const profile = profiles?.get(planet.planetId)
+            ?? computeStorageCapacity(constructionPlanet, world.nowSeconds);
+        updatePlanetLogistics(planet, constructionPlanet, profile, world.nowSeconds);
     }
 }
 

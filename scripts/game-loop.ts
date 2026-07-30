@@ -48,6 +48,11 @@ import {
     damageInfrastructure,
 } from '../lib/infrastructure/infrastructure-service';
 import { INFRASTRUCTURE_TRACK_IDS } from '../lib/infrastructure/infrastructure-types';
+import {
+    canDeclareSpecialization,
+    declareSpecialization,
+    clearSpecialization,
+} from '../lib/specialization/specialization-service';
 
 /**
  * Fleet basePower converts to orbital volley damage at this rate. Tuned so a
@@ -1021,6 +1026,53 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 completesAtSeconds: world.nowSeconds + 3600,
                 status: 'active'
             });
+            break;
+        }
+
+        case 'PLANET_SET_SPECIALIZATION': {
+            // payload: { planetId, specializationId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet) { recordOrderFailure(world, factionId, actionId, 'Planet not found.'); break; }
+            if (planet.ownerId !== factionId) {
+                console.error(`[Security] Unauthorized SPECIALIZATION from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
+                break;
+            }
+
+            const specCheck = canDeclareSpecialization(planet, payload.specializationId, world.nowSeconds, world);
+            if (!specCheck.allowed) {
+                recordOrderFailure(world, factionId, actionId, specCheck.reason ?? 'Cannot specialize.');
+                break;
+            }
+
+            const specReserves = world.economy.factions.get(factionId)?.reserves;
+            const specCost = specCheck.cost ?? 0;
+            if (specCost > 0 && (specReserves?.['CREDITS'] ?? 0) < specCost) {
+                recordOrderFailure(world, factionId, actionId, `Insufficient credits: need ${specCost}.`);
+                break;
+            }
+
+            const declared = declareSpecialization(planet, payload.specializationId, world.nowSeconds, world);
+            if (!declared.success) {
+                recordOrderFailure(world, factionId, actionId, declared.error ?? 'Declaration failed.');
+                break;
+            }
+            if (specReserves && specCost > 0) specReserves['CREDITS'] -= specCost;
+            console.log(`[Tick Worker] ${planet.name} declared as ${planet.specialization}` +
+                `${specCheck.isSwitch ? ' (retooled)' : ''} for ${specCost} credits`);
+            break;
+        }
+
+        case 'PLANET_CLEAR_SPECIALIZATION': {
+            // payload: { planetId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) break;
+            const previous = planet.specialization;
+            if (clearSpecialization(planet, world.nowSeconds)) {
+                console.log(`[Tick Worker] ${planet.name} abandoned its ${previous} role`);
+            } else {
+                recordOrderFailure(world, factionId, actionId,
+                    'Cannot abandon the role yet — the world is still under its retooling lockout.');
+            }
             break;
         }
 

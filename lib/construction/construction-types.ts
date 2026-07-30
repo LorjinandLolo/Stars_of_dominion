@@ -7,6 +7,7 @@ import { ResourceId } from '../../types/index';
 import { PlanetaryDefenseState, GroundSiegeState } from '../combat/siege/siege-types';
 import type { OrbitalState } from '../orbital/orbital-types';
 import type { InfrastructureNetwork } from '../infrastructure/infrastructure-types';
+import type { SpecializationState } from '../specialization/specialization-types';
 
 export type PlanetType = 
   | "standard" 
@@ -165,6 +166,13 @@ export interface Planet {
    * pre-Phase-4 snapshots until the first tick backfills it from the scalar.
    */
   infrastructure?: InfrastructureNetwork;
+
+  /**
+   * Phase 5: the world's DECLARED specialization, its retooling window and its
+   * switch lockout. `specialization` above is the display name kept in step with
+   * this; the state here is authoritative. Absent on unspecialized worlds.
+   */
+  specializationState?: SpecializationState;
 
   /**
    * Logistics Phase 2: mirrored from the economy planet each tick so the build

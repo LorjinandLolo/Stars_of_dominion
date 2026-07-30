@@ -361,6 +361,19 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", trackId: "string" },
     cost: {}
   },
+  PLANET_SET_SPECIALIZATION: {
+    id: "PLANET_SET_SPECIALIZATION",
+    category: "economic",
+    // Cost is per-specialization and doubled when retooling; priced by the handler.
+    params: { planetId: "id", specializationId: "string" },
+    cost: {}
+  },
+  PLANET_CLEAR_SPECIALIZATION: {
+    id: "PLANET_CLEAR_SPECIALIZATION",
+    category: "economic",
+    params: { planetId: "id" },
+    cost: {}
+  },
   ECON_ESTABLISH_ROUTE: {
     id: "ECON_ESTABLISH_ROUTE",
     category: "economic",
