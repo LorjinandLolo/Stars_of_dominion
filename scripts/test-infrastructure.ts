@@ -33,6 +33,7 @@ import {
     TRACK_EFFECTS,
     MULTIPLICATIVE_EFFECTS,
 } from '../lib/infrastructure/infrastructure-types';
+import type { InfrastructureTrackId } from '../lib/infrastructure/infrastructure-types';
 import { INFRASTRUCTURE_TRACKS, INFRASTRUCTURE_TRACK_BY_ID } from '../data/infrastructure-tracks';
 import { startConstruction } from '../lib/construction/construction-service';
 import { computeStorageCapacity } from '../lib/logistics/storage-service';
@@ -117,7 +118,7 @@ function makeEconomyPlanet(id: string, stockpile: Record<string, number> = {}): 
 }
 
 /** Set a track straight to a level, bypassing the build queue. */
-function setTrack(planet: ConstructionPlanet, trackId: any, level: number) {
+function setTrack(planet: ConstructionPlanet, trackId: InfrastructureTrackId, level: number) {
     const network = ensureInfrastructureNetwork(planet);
     network.tracks[trackId].level = level;
     recomputeInfrastructureLevel(planet);
