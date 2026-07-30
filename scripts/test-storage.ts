@@ -14,6 +14,7 @@ import {
 } from '../lib/logistics/storage-service';
 import { BASE_COVER_HOURS, OVERFLOW_SPOILAGE_PER_HOUR } from '../lib/logistics/storage-types';
 import { BUILDINGS } from '../data/buildings';
+import { computeInfrastructureEffects } from '../lib/infrastructure/infrastructure-service';
 
 let passed = 0;
 let failed = 0;
@@ -130,7 +131,12 @@ console.log('\n2. Native capacity (no warehouses)');
     const expectedMetals = 0.8 * BASE_COVER_HOURS * 3600;
     check('metals capacity = base rate x cover hours', near(capacity.metals ?? 0, expectedMetals),
         `got ${capacity.metals}, expected ${expectedMetals}`);
-    check('throughput is zero without warehouses', throughput === 0, `got ${throughput}`);
+    // Phase 4 note: a backfilled freight track contributes handling on its own,
+    // so a warehouse-free planet is no longer at exactly zero. What must hold is
+    // that no *warehouse* handling is being counted.
+    const freightBaseline = computeInfrastructureEffects(bare).storageThroughputBonus;
+    check('no warehouse handling without warehouses',
+        near(throughput, freightBaseline), `got ${throughput}, freight baseline ${freightBaseline}`);
     check('credits are uncapped (not a storable)', capacity.credits === undefined);
     check('research is uncapped (not a storable)', capacity.research === undefined);
 }
@@ -150,7 +156,9 @@ console.log('\n3. Warehouse contribution');
         near((withTwo.capacity.metals ?? 0) - (bare.capacity.metals ?? 0), 60000));
     check('a bulk silo does NOT add volatile capacity',
         near(withSilo.capacity.energy ?? 0, bare.capacity.energy ?? 0));
-    check('silo throughput is reported', withSilo.throughput === 10, `got ${withSilo.throughput}`);
+    check('silo throughput is reported on top of the infrastructure baseline',
+        near(withSilo.throughput - bare.throughput, 10),
+        `delta ${withSilo.throughput - bare.throughput}`);
 
     const bunker = computeStorageCapacity(makeConstructionPlanet('p-bunker', ['munitions_bunker']));
     check('munitions bunker adds ordnance capacity',

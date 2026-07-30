@@ -6,6 +6,7 @@
 import { ResourceId } from '../../types/index';
 import { PlanetaryDefenseState, GroundSiegeState } from '../combat/siege/siege-types';
 import type { OrbitalState } from '../orbital/orbital-types';
+import type { InfrastructureNetwork } from '../infrastructure/infrastructure-types';
 
 export type PlanetType = 
   | "standard" 
@@ -157,6 +158,13 @@ export interface Planet {
    * orbital logistics. Absent until something is built there.
    */
   orbital?: OrbitalState;
+
+  /**
+   * Phase 4: the five engineering tracks beneath the buildings. `infrastructureLevel`
+   * above is DERIVED from these; the network is authoritative. Absent on
+   * pre-Phase-4 snapshots until the first tick backfills it from the scalar.
+   */
+  infrastructure?: InfrastructureNetwork;
 
   /**
    * Logistics Phase 2: mirrored from the economy planet each tick so the build

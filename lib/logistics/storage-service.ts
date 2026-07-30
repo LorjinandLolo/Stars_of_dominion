@@ -11,6 +11,7 @@ import type { PlanetProduction, ResourceBundle } from '../economy/economy-types'
 import type { Planet as ConstructionPlanet } from '../construction/construction-types';
 import { BUILDINGS } from '../../data/buildings';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
+import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import config from '../movement/movement-config.json';
 import {
     STORABLE_RESOURCES,
@@ -116,7 +117,13 @@ export function computeStorageCapacity(
         capacity[res] = (baseCapacityFor(res) + (contribution.capacity[res] ?? 0)) * infraMult;
     }
 
-    return { capacity, throughput: contribution.throughput + orbital.storageThroughput };
+    // Freight terminals are where the warehouse network plugs into everything else.
+    const infraThroughput = computeInfrastructureEffects(constructionPlanet).storageThroughputBonus;
+
+    return {
+        capacity,
+        throughput: contribution.throughput + orbital.storageThroughput + infraThroughput,
+    };
 }
 
 /** Snapshot of the storable part of a stockpile, taken before the tick mutates it. */

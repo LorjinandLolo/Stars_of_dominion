@@ -13,6 +13,7 @@ import { BUILDINGS } from '../../data/buildings';
 import type { StorageProfile } from './storage-service';
 import { computeStorageCapacity } from './storage-service';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
+import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import {
     INFRA_LOGISTICS_PER_LEVEL,
     WAREHOUSE_THROUGHPUT_WEIGHT,
@@ -123,10 +124,14 @@ export function updatePlanetLogistics(
     // across it, so they count toward planetary haulage.
     const orbitalHaulage = computeOrbitalRatings(constructionPlanet).logisticsCapacity;
 
+    // Transit and freight tracks are the roads and terminals the haulers use.
+    const infraHaulage = computeInfrastructureEffects(constructionPlanet).haulageBonus;
+
     const capacity = infraLevel * INFRA_LOGISTICS_PER_LEVEL
         + storageProfile.throughput * WAREHOUSE_THROUGHPUT_WEIGHT
         + depots.capacity
-        + orbitalHaulage;
+        + orbitalHaulage
+        + infraHaulage;
 
     const demand = computeLogisticsDemand(econPlanet, constructionPlanet);
     // A planet with nothing on it is trivially well served.

@@ -1,5 +1,6 @@
 import { Planet, PlanetStats, BuildingDefinition, PlanetTile, Modifier } from './construction-types';
 import { BUILDINGS } from '../../data/buildings';
+import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 
 /**
  * Aggregates all modifiers and recalculates planet-wide stats.
@@ -52,7 +53,10 @@ export function recalculatePlanetStats(planet: Planet): PlanetStats {
     applySpecializationModifier(stats, spec);
   }
 
-  // 3. Apply Active Planet Modifiers (from events, etc.)
+  // 3½. Infrastructure network: a wired, powered, watered world is a calmer one.
+  stats.stability += computeInfrastructureEffects(planet).stability;
+
+  // 4. Apply Active Planet Modifiers (from events, etc.)
   planet.activeModifiers.forEach(mod => {
     applyModifier(stats, mod);
   });

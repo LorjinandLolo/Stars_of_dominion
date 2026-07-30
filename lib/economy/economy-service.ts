@@ -28,6 +28,7 @@ import { getEmpireDoctrineModifiers } from '../doctrine/doctrine-service';
 import { tickStorage, snapshotStorables, buildStorageProfiles } from '../logistics/storage-service';
 import type { StockpileSnapshot } from '../logistics/storage-service';
 import { tickDistribution, chainThroughputMultiplier, poolingEfficiency } from '../logistics/distribution-service';
+import { tickInfrastructure, computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -144,11 +145,20 @@ export function tickProduction(
     const factionReserves = world.economy.factions.get(planet.factionId)?.reserves as Record<string, number> | undefined;
     const gridEfficiency = updatePlanetServices(planet, deltaSeconds, factionReserves, mods.upkeep);
 
-    // Doctrine-driven population growth adjustment (services set the baseline).
-    planet.demographics.growthRate *= mods.popGrowth;
+    // Infrastructure Phase 4: the engineering tracks under the buildings. The
+    // grid decides how much output survives distribution, the water system feeds
+    // both farms and families.
+    const infra = computeInfrastructureEffects(world.construction?.planets?.get(planet.planetId));
+
+    // Doctrine-driven population growth adjustment (services set the baseline),
+    // then the water system on top of it.
+    planet.demographics.growthRate *= mods.popGrowth * infra.populationGrowth;
 
     // 3. Compute Production Modifiers
     const rates = planetBaseRates(planet);
+
+    // Water infrastructure lifts agricultural yield specifically.
+    if (rates.food) rates.food *= infra.foodOutput;
 
     // Production focus policy (ECON_SET_FOCUS): +25% on the chosen resource,
     // −10% on everything else. Was only ever read by dead simulation code.
@@ -166,6 +176,9 @@ export function tickProduction(
     // If the grid fails, it zeroes out industrial output efficiency natively
     let efficiencyMod = gridEfficiency - (world.shared.seasonalModifiers['tradeEfficiency'] ?? 0) * 0.3;
     efficiencyMod = Math.max(0, efficiencyMod);
+    // Power-grid infrastructure decides how much of that output actually reaches
+    // a machine rather than being lost in transmission.
+    efficiencyMod *= infra.productionEfficiency;
 
     // 4. Update Stockpiles — raw extraction only. Goods covered by a recipe are
     // MANUFACTURED below: they consume stockpile inputs instead of appearing free.
@@ -763,6 +776,11 @@ export function tickEconomy(
     for (const planet of eco.planets.values()) {
         storageSnapshots.set(planet.planetId, snapshotStorables(planet));
     }
+
+    // 0⅚. Infrastructure. Must precede distribution and production: it completes
+    // track upgrades, charges upkeep, moves integrity, and republishes the derived
+    // `infrastructureLevel` those two passes read.
+    tickInfrastructure(world, deltaSeconds);
 
     // 0⅞. Distribution. Must precede production: the production chains read the
     // channel multipliers it derives. Storage profiles are computed once here and

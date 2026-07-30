@@ -41,6 +41,13 @@ import {
     ensureOrbitalState,
 } from '../lib/orbital/orbital-service';
 import { ORBITAL_STRUCTURE_BY_ID } from '../data/orbital-structures';
+import {
+    canUpgradeTrack,
+    startTrackUpgrade,
+    cancelTrackUpgrade,
+    damageInfrastructure,
+} from '../lib/infrastructure/infrastructure-service';
+import { INFRASTRUCTURE_TRACK_IDS } from '../lib/infrastructure/infrastructure-types';
 
 /**
  * Fleet basePower converts to orbital volley damage at this rate. Tuned so a
@@ -923,6 +930,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             const surfaceFactor = orbitHeld ? 0.35 : 1;
             planet.stability = Math.max(0, (planet.stability || 60) - 10 * surfaceFactor);
             planet.unrest = Math.min(100, (planet.unrest || 0) + 5 * surfaceFactor);
+            // Roads, grids and relays are what bombardment actually breaks. The
+            // damage outlives the raid: the network has to be paid back up.
+            damageInfrastructure(planet, 6 * surfaceFactor);
             // If we're besieging this planet, bombardment also feeds the ground assault.
             if (planet.siege && planet.siege.attackerEmpireId === factionId) {
                 const mode = payload.mode || 'FORTIFICATION';
@@ -1011,6 +1021,67 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 completesAtSeconds: world.nowSeconds + 3600,
                 status: 'active'
             });
+            break;
+        }
+
+        case 'INFRA_UPGRADE_TRACK': {
+            // payload: { planetId, trackId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet) { recordOrderFailure(world, factionId, actionId, 'Planet not found.'); break; }
+            if (planet.ownerId !== factionId) {
+                console.error(`[Security] Unauthorized INFRA upgrade from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
+                break;
+            }
+            if (!INFRASTRUCTURE_TRACK_IDS.includes(payload.trackId)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown infrastructure track '${payload.trackId}'.`);
+                break;
+            }
+
+            const check = canUpgradeTrack(planet, payload.trackId);
+            if (!check.allowed) {
+                recordOrderFailure(world, factionId, actionId, check.reason ?? 'Upgrade not allowed.');
+                break;
+            }
+
+            // Credits come from the treasury; materials come off the planet's own
+            // stockpile, so a blockaded world cannot build its way out.
+            const cost = check.cost!;
+            const reserves = world.economy.factions.get(factionId)?.reserves;
+            const econPlanet = world.economy.planets.get(payload.planetId);
+            if ((cost.credits ?? 0) > 0 && (reserves?.['CREDITS'] ?? 0) < (cost.credits ?? 0)) {
+                recordOrderFailure(world, factionId, actionId, `Insufficient credits: need ${cost.credits}.`);
+                break;
+            }
+            const materialKeys = ['metals', 'chemicals', 'food', 'energy'] as const;
+            const shortfall = materialKeys.find(k => (cost[k] ?? 0) > 0 && (econPlanet?.stockpile[k] ?? 0) < (cost[k] ?? 0));
+            if (shortfall) {
+                recordOrderFailure(world, factionId, actionId,
+                    `Insufficient ${shortfall} on ${planet.name}: need ${cost[shortfall]}.`);
+                break;
+            }
+
+            const started = startTrackUpgrade(planet, payload.trackId, world.nowSeconds);
+            if (!started.success) {
+                recordOrderFailure(world, factionId, actionId, started.error ?? 'Upgrade failed.');
+                break;
+            }
+            if (reserves && (cost.credits ?? 0) > 0) reserves['CREDITS'] -= cost.credits ?? 0;
+            if (econPlanet) {
+                for (const k of materialKeys) {
+                    if ((cost[k] ?? 0) > 0) econPlanet.stockpile[k] = (econPlanet.stockpile[k] ?? 0) - (cost[k] ?? 0);
+                }
+            }
+            console.log(`[Tick Worker] ${planet.name}: ${payload.trackId} upgrade started, completes at ${started.completesAtSeconds}`);
+            break;
+        }
+
+        case 'INFRA_CANCEL_TRACK': {
+            // payload: { planetId, trackId }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) break;
+            if (cancelTrackUpgrade(planet, payload.trackId)) {
+                console.log(`[Tick Worker] ${planet.name}: ${payload.trackId} upgrade abandoned (no refund)`);
+            }
             break;
         }
 

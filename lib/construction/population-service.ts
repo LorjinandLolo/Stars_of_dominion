@@ -6,6 +6,7 @@
 import { GameWorldState } from '../game-world-state';
 import { Planet } from './construction-types';
 import { eventBus } from '../movement/event-bus';
+import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 
 export class PopulationService {
     /**
@@ -53,6 +54,13 @@ export class PopulationService {
         // Unrest decays naturally if happiness is high
         if (planet.happiness > 70) {
             unrestDelta -= (planet.happiness - 70) * 0.02 * hours;
+        }
+
+        // Communication infrastructure is emergency response: a wired world puts
+        // out fires the neglected one lets spread. Only the decay side is scaled —
+        // relays do not stop grievances, they stop them compounding.
+        if (unrestDelta < 0) {
+            unrestDelta *= computeInfrastructureEffects(planet).unrestRecovery;
         }
 
         planet.unrest = Math.max(0, Math.min(100, planet.unrest + unrestDelta));

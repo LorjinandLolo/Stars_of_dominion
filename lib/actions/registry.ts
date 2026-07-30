@@ -348,6 +348,19 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", slotId: "id" },
     cost: {}
   },
+  INFRA_UPGRADE_TRACK: {
+    id: "INFRA_UPGRADE_TRACK",
+    category: "economic",
+    // Cost scales with the level already held; the handler prices it per track.
+    params: { planetId: "id", trackId: "string" },
+    cost: {}
+  },
+  INFRA_CANCEL_TRACK: {
+    id: "INFRA_CANCEL_TRACK",
+    category: "economic",
+    params: { planetId: "id", trackId: "string" },
+    cost: {}
+  },
   ECON_ESTABLISH_ROUTE: {
     id: "ECON_ESTABLISH_ROUTE",
     category: "economic",

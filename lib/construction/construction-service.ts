@@ -12,6 +12,7 @@ import {
 import { BUILDINGS } from '../../data/buildings';
 import { recalculatePlanetStats } from './recalculation';
 import { constructionLogisticsMultiplier } from '../logistics/distribution-service';
+import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 
 /**
  * Validates if a building can be built on a specific tile.
@@ -96,7 +97,9 @@ export function startConstruction(
   // Infinity (the building never completes); a negative one produced a completion time
   // in the past (instant build). Either way the queue broke.
   // Site haulage scales it: materials still have to reach the site.
-  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier * constructionLogisticsMultiplier(planet));
+  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
+    * constructionLogisticsMultiplier(planet)
+    * computeInfrastructureEffects(planet).constructionSpeed);
   const buildTime = buildingDef.buildTimeSeconds / buildSpeed;
   const completionTime = now + buildTime;
   tile.constructionCompleteAt = completionTime;
@@ -250,7 +253,9 @@ export function repairBuilding(planet: Planet, tileId: string, now: number): boo
 
   // Repairs take half the time and cost? (Conceptual)
   const stats = recalculatePlanetStats(planet);
-  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier * constructionLogisticsMultiplier(planet));
+  const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
+    * constructionLogisticsMultiplier(planet)
+    * computeInfrastructureEffects(planet).constructionSpeed);
   const repairTime = (buildingDef.buildTimeSeconds / 2) / buildSpeed;
   tile.constructionState = 'under_construction';
   tile.constructionCompleteAt = now + repairTime;
