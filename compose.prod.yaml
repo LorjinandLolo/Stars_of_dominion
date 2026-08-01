@@ -47,6 +47,8 @@ services:
   # Game loop — the game does not advance without it.
   worker:
     image: stardom-app
+    # Image is produced locally by the app service's build — never pull it.
+    pull_policy: never
     container_name: stardom-worker
     restart: unless-stopped
     depends_on:
