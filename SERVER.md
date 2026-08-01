@@ -23,11 +23,14 @@ Players (LAN browsers)
 ### 1.1 Stop the hand-made Postgres from the earlier tutorial
 
 The prod compose file manages its own Postgres with the same container name,
-so the old one must go first (its database is still empty, nothing is lost):
+so the old one must go first. `-v` also deletes its data volume — important,
+because Postgres only reads user/password from the environment when it
+initializes an empty volume; a leftover volume would ignore the credentials in
+your new `.env`. The old database is still empty, so nothing is lost:
 
 ```bash
 cd ~/servers/stardom
-docker compose down
+docker compose down -v
 ```
 
 ### 1.2 Clone the repo
