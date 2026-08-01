@@ -1,0 +1,59 @@
+# Production stack for the home server. Run from a clone of this repo:
+#   docker compose -f compose.prod.yaml up -d --build
+# Reads secrets from a .env file next to this compose file (see .env.server.example).
+name: stardom
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: stardom-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host-only: lets you run psql/pg_dump from the server itself,
+      # without exposing Postgres to the LAN.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    image: stardom-app
+    container_name: stardom-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &app-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      LLM_PROVIDER: ${LLM_PROVIDER:-template}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      GAZETTE_WINDOW_DAYS: ${GAZETTE_WINDOW_DAYS:-2}
+    ports:
+      - "3000:3000"
+
+  # Game loop — the game does not advance without it.
+  worker:
+    image: stardom-app
+    container_name: stardom-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-env
+    command: ["npx", "tsx", "scripts/game-loop.ts"]
+
+volumes:
+  pgdata:

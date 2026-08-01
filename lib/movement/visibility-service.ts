@@ -17,17 +17,16 @@ import config from './movement-config.json';
 // ─── Sensor fusion ─────────────────────────────────────────────────────────────
 
 /**
- * Returns hex-grid hop distance between two systems using BFS on hyperlane adjacency.
- * Capped at maxHops for performance.
+ * Hop distances from one system to every system reachable within maxHops,
+ * via a single BFS over hyperlane adjacency. Replaces the old per-pair BFS
+ * (O(systems) per source×target pair) in coverage aggregation.
  */
-function hopDistance(
+function hopDistancesFrom(
     fromId: string,
-    toId: string,
     systems: Map<string, SystemNode>,
-    maxHops = 12
-): number {
-    if (fromId === toId) return 0;
-    const visited = new Set<string>([fromId]);
+    maxHops: number
+): Map<string, number> {
+    const dist = new Map<string, number>([[fromId, 0]]);
     let frontier = [fromId];
     let hops = 0;
     while (frontier.length > 0 && hops < maxHops) {
@@ -36,35 +35,19 @@ function hopDistance(
         for (const sid of frontier) {
             const sys = systems.get(sid);
             for (const n of sys?.hyperlaneNeighbors ?? []) {
-                if (n === toId) return hops;
-                if (!visited.has(n)) { visited.add(n); next.push(n); }
+                if (!dist.has(n)) { dist.set(n, hops); next.push(n); }
             }
         }
         frontier = next;
     }
-    return Infinity;
-}
-
-/**
- * Effective strength of a sensor source at a target system.
- * Decays exponentially with distance.
- */
-function sensorStrengthAt(
-    source: SensorSource,
-    targetSystemId: string,
-    systems: Map<string, SystemNode>
-): number {
-    const d = hopDistance(source.systemId, targetSystemId, systems);
-    if (d > source.detectionRadius) return 0;
-    const decay = config.visibility.sensorDecayExponent;
-    // Exponential decay: strength × (1 - d/radius)^decay
-    const ratio = (source.detectionRadius - d) / Math.max(source.detectionRadius, 1);
-    return source.detectionStrength * Math.pow(ratio, decay);
+    return dist;
 }
 
 /**
  * Aggregate all sensor sources for a faction and produce a normalised
- * strength value (0–1) per system.
+ * strength value (0–1) per system. One BFS per source; per system the
+ * strength is the clamped sum over sources, decaying exponentially with
+ * distance: strength × (1 - d/radius)^decay.
  */
 function aggregateSensorCoverage(
     factionId: string,
@@ -72,14 +55,20 @@ function aggregateSensorCoverage(
     systems: Map<string, SystemNode>
 ): Map<string, number> {
     const coverage = new Map<string, number>();
-    const factionSources = sources.filter(s => s.factionId === factionId);
+    const decay = config.visibility.sensorDecayExponent;
 
-    for (const sys of systems.values()) {
-        let strength = 0;
-        for (const src of factionSources) {
-            strength = Math.min(1, strength + sensorStrengthAt(src, sys.id, systems));
+    for (const src of sources) {
+        if (src.factionId !== factionId) continue;
+        // The old per-pair BFS was capped at 12 hops regardless of radius, so
+        // sources never reached past 12 — keep that cap for identical results.
+        const dists = hopDistancesFrom(src.systemId, systems, Math.min(src.detectionRadius, 12));
+        for (const [sysId, d] of dists) {
+            if (d > src.detectionRadius) continue;
+            const ratio = (src.detectionRadius - d) / Math.max(src.detectionRadius, 1);
+            const strength = src.detectionStrength * Math.pow(ratio, decay);
+            if (strength <= 0) continue;
+            coverage.set(sysId, Math.min(1, (coverage.get(sysId) ?? 0) + strength));
         }
-        if (strength > 0) coverage.set(sys.id, strength);
     }
     return coverage;
 }
@@ -139,19 +128,35 @@ export function computeVisibility(
     const nowISO = new Date(world.nowSeconds * 1000).toISOString();
     const visibility: FactionVisibility = {};
 
+    // Group fleets by system once — the old per-system spread+filter over the
+    // whole fleet map was O(systems × fleets) per faction.
+    const foreignFleetsBySystem = new Map<string, Fleet[]>();
+    for (const f of world.fleets.values()) {
+        if (!f.currentSystemId || f.factionId === factionId) continue;
+        const arr = foreignFleetsBySystem.get(f.currentSystemId);
+        if (arr) arr.push(f); else foreignFleetsBySystem.set(f.currentSystemId, [f]);
+    }
+
+    const prevVisibility = world.factionVisibility.get(factionId);
+
     for (const [sysId, sys] of world.systems) {
         const strength = coverage.get(sysId) ?? 0;
-        const stage = strengthToRevealStage(strength);
 
         // Preserve previous reveal stage (never downgrade past pinged even when out of range)
-        const existing = world.factionVisibility.get(factionId)?.[sysId];
+        const existing = prevVisibility?.[sysId];
+
+        // Fast path: no sensor coverage, nothing previously known, and no
+        // foreign fleet to observe — the entry would be fully default, and
+        // those are omitted from the result anyway (readers treat a missing
+        // system as 'unknown').
+        if (strength === 0 && !existing && !foreignFleetsBySystem.has(sysId)) continue;
+
+        const stage = strengthToRevealStage(strength);
         const effectiveStage: RevealStage = existing
             ? pickHigherStage(existing.revealStage, stage)
             : stage;
 
-        const fleetsHere = [...world.fleets.values()].filter(
-            f => f.currentSystemId === sysId && f.factionId !== factionId
-        );
+        const fleetsHere = foreignFleetsBySystem.get(sysId) ?? [];
         const observedFl = strength >= config.visibility.minimumStrengthForPing
             ? fleetsHere.filter(f => f.isDetectable).map(f => f.id)
             : [];
@@ -160,9 +165,19 @@ export function computeVisibility(
             movementIntentVisible(strength, f)
         );
 
+        const lastSeenAt = strength > 0 ? nowISO : (existing?.lastSeenAt ?? '');
+
+        // Omit fully-default entries (never seen, nothing observed): every
+        // reader treats a missing system as 'unknown', and writing all ~550
+        // unknown systems per faction bloated the snapshot by ~1 MB.
+        if (effectiveStage === 'unknown' && !lastSeenAt
+            && observedFl.length === 0 && !hasMovementHint) {
+            continue;
+        }
+
         visibility[sysId] = {
             revealStage: effectiveStage,
-            lastSeenAt: strength > 0 ? nowISO : (existing?.lastSeenAt ?? ''),
+            lastSeenAt,
             visibleTags: visibleTagsForStage(effectiveStage, sys),
             observedFleetIds: observedFl,
             movementIntentVisible: hasMovementHint,

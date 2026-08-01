@@ -12,8 +12,15 @@ export const auth = betterAuth({
         // Game accounts, not banking — keep friction low for playtests.
         minPasswordLength: 6,
     },
-    // Allow LAN playtesting (npm run dev:lan serves on 0.0.0.0).
-    trustedOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    // Allow LAN playtesting (npm run dev:lan serves on 0.0.0.0). In production
+    // the public origin comes from BETTER_AUTH_URL (e.g. http://192.168.x.x:3000);
+    // TRUSTED_ORIGINS can list extra comma-separated origins.
+    trustedOrigins: [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
+        ...(process.env.TRUSTED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? []),
+    ],
 });
 
 export type AuthSession = typeof auth.$Infer.Session;
