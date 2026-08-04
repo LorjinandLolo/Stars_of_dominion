@@ -98,6 +98,12 @@ export interface PlanetTile {
   buildingId: string | null;
   constructionState: ConstructionState;
   constructionCompleteAt: number | null; // Unix timestamp in seconds
+  /**
+   * 0-63 position on the planet's circular surface board (8 rings × 8 wedges).
+   * Optional: tiles from before the surface board existed have none and are
+   * auto-placed deterministically for display (lib/planet-surface/generator).
+   */
+  sectorIndex?: number;
 }
 
 export interface BuildOrder {
@@ -107,6 +113,8 @@ export interface BuildOrder {
   planetId: string; // Added for UI filtering
   startedAtSeconds: number;
   completesAtSeconds: number; // Changed to match UI
+  /** Surface board position this order will occupy on completion (0-63). */
+  sectorIndex?: number;
 }
 
 export interface Modifier {

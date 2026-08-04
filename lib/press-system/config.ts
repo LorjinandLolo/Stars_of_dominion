@@ -81,7 +81,34 @@ export const PressConfig = {
             trustCost: 5,
             pressureReduction: -15,
             stabilityBonus: 0
+        },
+        [CrisisChoice.DENY]: {
+            trustCost: 0,
+            pressureReduction: -25, // Strong relief when it holds
+            stabilityBonus: 0
+        },
+        [CrisisChoice.DISTRACT]: {
+            trustCost: -2,
+            pressureReduction: -20, // Fast relief, but the story keeps circulating
+            stabilityBonus: 0
         }
+    },
+
+    // Denial only holds when the story is poorly documented.
+    denial: {
+        exposureEvidenceThreshold: 60, // evidenceStrength >= this → denial exposed
+        exposedTrustPenalty: -15,
+        exposedCredibilityPenalty: -25,
+        exposedPressureSpike: 15,
+        heldCredibilityBonus: 3
+    },
+
+    // Credibility side-effects of the classic choices.
+    credibility: {
+        admitReformBonus: 8,
+        suppressFailPenalty: -10,
+        suppressMediaFreedomCost: -5,
+        jamMediaFreedomCost: -3
     },
 
     // Propagation

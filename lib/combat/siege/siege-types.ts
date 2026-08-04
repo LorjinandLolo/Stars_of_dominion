@@ -85,6 +85,27 @@ export interface InvadingForceState {
     devastationCaused: number; // Collateral damage tracker
 }
 
+/**
+ * Who holds a surface district during an invasion. The key is the district's
+ * sectorIndex (0-63) on the planet's Voronoi board, so the world the player
+ * developed in peacetime IS the battlefield.
+ */
+export type DistrictController = 'attacker' | 'defender';
+
+export interface DistrictWarState {
+    /** sectorIndex -> current holder. Absent entries are defender-held. */
+    control: Record<number, DistrictController>;
+    /** Districts the invasion came down on — the beachhead. */
+    landingZones: number[];
+    /**
+     * Contested districts this cycle: defender-held ground adjacent to the
+     * attacker's line, where the fighting is actually happening.
+     */
+    contested: number[];
+    /** Per-district dug-in value 0-100, raised by fortifications/terrain. */
+    entrenchment: Record<number, number>;
+}
+
 export interface GroundSiegeState {
     siegeId: string;
     planetId: string;
@@ -96,6 +117,8 @@ export interface GroundSiegeState {
     cycleLengthTicks: number; // e.g. 4
     currentFrontage: number;
     maxFrontage: number;
+    /** The ground war laid out on the 64-district surface board. */
+    districts?: DistrictWarState;
     attackerState: InvadingForceState;
     defenderState: PlanetaryDefenseState;
     battleLog: Array<{

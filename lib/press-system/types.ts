@@ -25,7 +25,9 @@ export enum CrisisChoice {
     COUNTER_LEAK = 'COUNTER_LEAK', // Attack the source.
     QUARANTINE = 'QUARANTINE', // Local information lockdown.
     JAM_SIGNAL = 'JAM_SIGNAL', // Targeted system-wide blackouts.
-    COUNTER_NARRATIVE = 'COUNTER_NARRATIVE' // Active resistance/debunking.
+    COUNTER_NARRATIVE = 'COUNTER_NARRATIVE', // Active resistance/debunking.
+    DENY = 'DENY', // Claim the story is false. Cheap vs weak evidence; credibility collapse vs strong.
+    DISTRACT = 'DISTRACT' // Flood the cycle with another story. Relieves pressure, story keeps circulating.
 }
 
 export interface PressFactionState {
@@ -44,6 +46,9 @@ export interface EmpireState {
     publicTrust: number; // 0-100
     informationPressure: number; // 0-100. High = Volatile, Crisis likely.
     activeCrises: Set<string>; // IDs of active MediaCrises
+    credibility: number; // 0-100. How much official statements are believed. Burned by exposed denials.
+    mediaFreedom: number; // 0-100. Eroded by suppression/jamming; feeds independent-press behavior later.
+    narrativeInfluence: number; // 0-100. Reach beyond own borders; budget for foreign campaigns later.
 }
 
 export interface PlanetState {
@@ -63,6 +68,7 @@ export interface Story {
     targetEmpireId: string;
     subject: string; // Description or Event ID
     baseMagnitude: number; // 0-100 impact potential
+    evidenceStrength: number; // 0-100. How well-documented the story is; gates DENY.
     tickCreated: number;
     // Metadata for procedural generation
     details?: any;
@@ -79,6 +85,34 @@ export interface PublishedStory {
     jammedSystems: Set<string>; // Systems where spread is blocked
 }
 
+export enum InvestigationStage {
+    RUMOUR = 'RUMOUR',
+    INQUIRY = 'INQUIRY',
+    EVIDENCE = 'EVIDENCE',
+    PUBLICATION = 'PUBLICATION',
+    SCANDAL = 'SCANDAL'
+}
+
+/** A journalist-driven dig into an empire: Rumour → Inquiry → Evidence → Publication → Scandal. */
+export interface Investigation {
+    id: string;
+    targetEmpireId: string;
+    investigatorId: string; // press faction doing the digging
+    subject: string;
+    storyId?: string; // triggering story, if one exists
+    stage: InvestigationStage;
+    progress: number; // 0-100 within the current stage
+    evidence: number; // 0-100; grows while digging, jumps on botched cover-ups
+    /** Times the government has stonewalled; each attempt is likelier to leak than the last. */
+    obstructions?: number;
+    startedTick: number;
+    updatedTick: number;
+    resolved: boolean;
+    outcome?: string;
+}
+
+export type CrisisReaction = 'AMPLIFY' | 'DEFEND' | 'NEUTRAL';
+
 export interface MediaCrisis {
     id: string;
     storyId: string; // The triggering story
@@ -87,6 +121,31 @@ export interface MediaCrisis {
     severity: number; // 0-100
     resolved: boolean;
     choiceMade?: CrisisChoice;
+    outcome?: string;
+    /** Foreign factions' public stances (phase 2 of the crisis mini-game). */
+    reactions?: Record<string, CrisisReaction>;
+    /** Hidden predictions of the government's response — correct calls pay out on resolve. */
+    predictions?: Record<string, CrisisChoice>;
+}
+
+export enum CampaignObjective {
+    UNDERMINE_TRUST = 'UNDERMINE_TRUST',       // drains the target's publicTrust
+    DAMAGE_CREDIBILITY = 'DAMAGE_CREDIBILITY', // drains the target's credibility
+    STOKE_UNREST = 'STOKE_UNREST'              // pumps the target's informationPressure
+}
+
+/** A covert foreign information campaign running inside a rival empire. */
+export interface MediaCampaign {
+    id: string;
+    attackerId: string;
+    targetEmpireId: string;
+    objective: CampaignObjective;
+    strength: number;  // 0-100; spins up while funded, knocked down by counter-messaging
+    exposure: number;  // 0-100; target gets a signal story at 30, tracing becomes viable beyond
+    signaled: boolean; // signal story already injected
+    discoveredBy?: string; // set once traced — attribution unlocked
+    tickStarted: number;
+    active: boolean;
     outcome?: string;
 }
 
@@ -98,6 +157,8 @@ export interface SimulationState {
     activeStories: Map<string, Story>; // Available to be picked up
     publishedStories: PublishedStory[]; // History/Active propagation
     crises: Map<string, MediaCrisis>;
+    investigations: Map<string, Investigation>;
+    campaigns: Map<string, MediaCampaign>;
     quarantinedPlanets: Set<string>; // Planet IDs under lockdown
     jammedSystems: Set<string>; // System IDs under blackout
     counterNarratives: Map<string, number>; // System ID -> Resistance Strength (0-100)

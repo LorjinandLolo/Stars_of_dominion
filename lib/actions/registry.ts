@@ -117,6 +117,12 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", tacticId: "string" },
     cost: {}
   },
+  POW_DISPOSE: {
+    id: "POW_DISPOSE",
+    category: "military",
+    params: { groupId: "id", disposition: "string" },
+    cost: {}
+  },
   MIL_SET_GROUND_PREDICTION: {
     id: "MIL_SET_GROUND_PREDICTION",
     category: "military",

@@ -69,6 +69,7 @@ interface PlanetCardProps {
     onOrbit: (planetId: string) => void;
     onSiege: (planetId: string) => void;
     onConstruct: (planetId: string) => void;
+    onSurface: (planetId: string) => void;
     onSelect: (planetId: string) => void;
     onBombard: (planetId: string) => void;
     onRetreat: (planetId: string) => void;
@@ -90,6 +91,7 @@ function PlanetCard({
     onOrbit,
     onSiege,
     onConstruct,
+    onSurface,
     onSelect,
     onBombard,
     onRetreat,
@@ -230,12 +232,21 @@ function PlanetCard({
 
                 {/* Action buttons */}
                 <div className="flex gap-1.5 mt-2">
+                    {/* Surface board — Layer 2 planet view, open to everyone */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onSurface(planet.id); }}
+                        className="flex-1 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/30 rounded text-[9px] text-emerald-400 font-bold transition-all flex items-center justify-center gap-1"
+                    >
+                        <Globe size={10} />
+                        SURFACE
+                    </button>
+
                     {/* Units & Defense (Always available to inspect) */}
                     <button
                         onClick={(e) => { e.stopPropagation(); onSelect(planet.id); }}
                         className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
-                            isSelected 
-                                ? 'bg-indigo-600/40 border-indigo-500/50 text-indigo-300' 
+                            isSelected
+                                ? 'bg-indigo-600/40 border-indigo-500/50 text-indigo-300'
                                 : 'bg-slate-800/60 hover:bg-slate-700/80 border-slate-700/50 text-slate-400'
                         }`}
                     >
@@ -243,14 +254,14 @@ function PlanetCard({
                         UNITS
                     </button>
 
-                    {/* Construct (always available if player-owned) */}
+                    {/* Systems management (legacy multi-tab sheet, player-owned) */}
                     {isOwnedByPlayer && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onConstruct(planet.id); }}
-                            className="flex-1 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/30 rounded text-[9px] text-emerald-400 font-bold transition-all flex items-center justify-center gap-1"
+                            className="flex-1 py-1.5 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/50 rounded text-[9px] text-slate-400 font-bold transition-all flex items-center justify-center gap-1"
                         >
                             <LayoutGrid size={10} />
-                            BUILD
+                            SYSTEMS
                         </button>
                     )}
 
@@ -327,22 +338,6 @@ function PlanetCard({
                             >
                                 <Globe size={10} />
                                 {actionBusy === 'claim' ? 'CLAIMING…' : 'CLAIM · 1000cr'}
-                            </button>
-                        )}
-
-                        {/* Garrison own world */}
-                        {isOwnedByPlayer && (
-                            <button
-                                disabled={actionBusy === 'garrison'}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    runPlanetAction('garrison', 'MIL_ESTABLISH_GARRISON', { targetId: planet.id, unitCount: 100 }, `Garrisoning ${planet.name}`);
-                                }}
-                                title="Station troops: +15 stability, −10 unrest (200 credits, 100 manpower)"
-                                className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/30 rounded text-[9px] text-amber-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
-                            >
-                                <Shield size={10} />
-                                {actionBusy === 'garrison' ? 'DEPLOYING…' : 'GARRISON'}
                             </button>
                         )}
 
@@ -975,6 +970,10 @@ export default function SystemContextPanel() {
         setConstructionPlanet(planetId);
     };
 
+    const handleSurface = (planetId: string) => {
+        useUIStore.getState().setSurfacePlanet(planetId);
+    };
+
     const handleSelectPlanet = (planetId: string) => {
         if (selectedPlanetId === planetId) {
             setSelectedPlanet(null); // Toggle off
@@ -1014,6 +1013,16 @@ export default function SystemContextPanel() {
                             Contested System — {playerOwnedCount} allied / {enemyOwnedCount} hostile
                         </span>
                     </div>
+                )}
+
+                {/* Dive in: the system as a place, worlds as objects */}
+                {revealStage !== 'unknown' && (
+                    <button
+                        onClick={() => useUIStore.getState().setSystemView(system.id)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 border-b border-slate-700/60 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-[10px] font-display tracking-[0.2em] transition-all"
+                    >
+                        <Globe size={12} /> ENTER SYSTEM
+                    </button>
                 )}
 
                 {/* Tab Bar (if planets available) */}
@@ -1317,6 +1326,7 @@ export default function SystemContextPanel() {
                                         onOrbit={handleOrbitPlanet}
                                         onSiege={handleSiegePlanet}
                                         onConstruct={handleConstruct}
+                                        onSurface={handleSurface}
                                         onBombard={handleBombardPlanet}
                                         onRetreat={handleRetreatPlanet}
                                         onSetTactic={handleSetGroundTactic}

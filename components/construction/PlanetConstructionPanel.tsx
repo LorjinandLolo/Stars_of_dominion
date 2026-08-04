@@ -254,11 +254,11 @@ export function PlanetConstructionPanel({
 
     return (
         <div 
-            className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 translate-y-0 w-[90vw] max-w-6xl"
+            className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 translate-y-0 w-[90vw] max-w-6xl"
             onWheel={(e) => e.stopPropagation()}
         >
             <div 
-                className="bg-slate-950/95 backdrop-blur-md border-t border-l border-r border-slate-700/60 rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[85vh] overflow-hidden"
+                className="bg-slate-950/95 backdrop-blur-md border-t border-l border-r border-slate-700/60 rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[78vh] overflow-hidden"
                 style={{ borderTopColor: ownerColor }}
             >
                 {/* Header */}

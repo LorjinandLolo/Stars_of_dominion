@@ -61,7 +61,7 @@ function overlayMoveFleet(lists: OverlayLists, order: PendingOrder): OverlayList
 }
 
 function overlayConstructBuilding(lists: OverlayLists, order: PendingOrder): OverlayLists {
-    const { planetId, buildingType } = order.payload;
+    const { planetId, buildingType, sectorIndex } = order.payload;
     if (!planetId || !buildingType) return lists;
     return {
         ...lists,
@@ -79,6 +79,7 @@ function overlayConstructBuilding(lists: OverlayLists, order: PendingOrder): Ove
                         id: ghostId,
                         buildingId: buildingType,
                         status: 'pending',
+                        ...(Number.isInteger(sectorIndex) ? { sectorIndex } : {}),
                         [OPTIMISTIC_FLAG]: true,
                     },
                 ],

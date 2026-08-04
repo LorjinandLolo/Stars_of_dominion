@@ -101,6 +101,12 @@ export interface UIStore {
     setSelectedPlanet: (id: string | null) => void;
     constructionPlanetId: string | null;
     setConstructionPlanet: (id: string | null) => void;
+    /** Planet whose 64-sector surface board is open (Layer 2 planet view). */
+    surfacePlanetId: string | null;
+    setSurfacePlanet: (id: string | null) => void;
+    /** System whose orbital view is open (galaxy → system → planet → surface). */
+    systemViewId: string | null;
+    setSystemView: (id: string | null) => void;
 
     // ── Orbital engagement (fleet in orbit around a specific planet) ──
     orbitedPlanetId: string | null;
@@ -208,6 +214,10 @@ export interface UIStore {
     // ── Combat ──
     activeCombats: CombatState[];
     updateCombat: (id: string, patch: Partial<CombatState>) => void;
+    /** Prisoner-of-war groups from the session snapshot (all factions). */
+    prisoners: any[];
+    setPrisoners: (groups: any[]) => void;
+
     recruitmentJobs: RecruitmentJob[];
     setRecruitmentJobs: (jobs: RecruitmentJob[]) => void;
 
@@ -313,6 +323,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setSelectedPlanet: (id: string | null) => set({ selectedPlanetId: id }),
     constructionPlanetId: null,
     setConstructionPlanet: (id: string | null) => set({ constructionPlanetId: id }),
+    surfacePlanetId: null,
+    setSurfacePlanet: (id: string | null) => set({ surfacePlanetId: id }),
+    systemViewId: null,
+    setSystemView: (id: string | null) => set({ systemViewId: id }),
 
     // ── Orbital engagement ──
     orbitedPlanetId: null,
@@ -474,9 +488,23 @@ export const useUIStore = create<UIStore>((set, get) => ({
         set((state) => ({ corporateState: { ...state.corporateState, ...patch } })),
 
     // ── Press ──
-    // jammedSystems/quarantinedPlanets must exist as Sets — PressPanel calls
-    // .has() on them unconditionally and crashed when they were undefined.
-    pressState: { publishedStories: [], activeStories: [], credibilityByFaction: {}, jammedSystems: new Set(), quarantinedPlanets: new Set() } as any,
+    // Every collection PressPanel touches must exist with its real type —
+    // the panel calls .has()/.values()/.get() on them unconditionally and
+    // crashed when any was undefined (crises was, before sync populated it).
+    pressState: {
+        tick: 0,
+        empires: new Map(),
+        planets: new Map(),
+        pressFactions: new Map(),
+        activeStories: new Map(),
+        publishedStories: [],
+        crises: new Map(),
+        investigations: new Map(),
+        campaigns: new Map(),
+        quarantinedPlanets: new Set(),
+        jammedSystems: new Set(),
+        counterNarratives: new Map(),
+    } as any,
     updatePress: (patch) =>
         set((state) => ({ pressState: { ...state.pressState, ...patch } })),
 
@@ -486,6 +514,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
         set((state) => ({
             activeCombats: (state as any).activeCombats.map((c: any) => (c.id === id ? { ...c, ...patch } : c)),
         })),
+    prisoners: [],
+    setPrisoners: (groups: any[]) => set({ prisoners: groups }),
+
     recruitmentJobs: [],
     setRecruitmentJobs: (jobs) => set({ recruitmentJobs: jobs }),
 

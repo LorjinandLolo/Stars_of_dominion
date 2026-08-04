@@ -9,8 +9,27 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
+import {
+    initDistrictWar,
+    advanceFront,
+    occupationShare,
+    capitalTaken,
+    frontDefenseMultiplier,
+    computeFront,
+    CAPITAL_SECTOR,
+} from '../lib/combat/siege/district-front';
+import {
+    capturedFromLosses,
+    resolveDisposition,
+    ensureLedger,
+    type PrisonerDisposition,
+} from '../lib/combat/siege/prisoners';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
-import { tickConstructionGlobal } from '../lib/construction/construction-service';
+import { tickConstructionGlobal, startConstruction } from '../lib/construction/construction-service';
+import { BUILDINGS } from '../data/buildings';
+import { generateSurface, autoPlaceBuilding } from '../lib/planet-surface/generator';
+import { SURFACE_SECTOR_COUNT } from '../lib/planet-surface/types';
+import { computeSectorOccupancy } from '../lib/planet-surface/occupancy';
 // Static imports for order handlers. These used to be fire-and-forget dynamic
 // `import().then(...)` calls inside executeOrder — the mutation could land AFTER
 // saveWorldState() had already serialized the world, silently losing the order.
@@ -22,7 +41,35 @@ import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
 import { imposeSanctions, liftSanctions } from '../lib/diplomacy/sanctions-service';
 import { makePromise, fulfillPromise } from '../lib/diplomacy/promise-service';
 import { intervene, plantRumor } from '../lib/diplomacy/intervention-service';
-import { ensurePressState } from '../lib/press-system/integration';
+import { ensurePressState, pushWorldStory } from '../lib/press-system/integration';
+import { resolveCrisis, reactToCrisis, applyPredictionPayouts } from '../lib/press-system/crisis';
+import { CrisisChoice, StorySource, StoryTruth, CampaignObjective } from '../lib/press-system/types';
+import {
+    CampaignConfig,
+    counterCampaign,
+    traceCampaign,
+    accuseCampaign,
+} from '../lib/press-system/campaigns';
+import {
+    respondCooperate,
+    respondObstruct,
+    respondSacrificeOfficial,
+    respondPublishFirst,
+} from '../lib/press-system/investigations';
+import { RNG as PressRNG } from '../lib/press-system/utils';
+
+/**
+ * Seed a press RNG per order. Seeding purely from world.nowSeconds gave every
+ * order resolved in the same worker cycle an identical roll, so a player could
+ * batch actions and get correlated outcomes.
+ */
+function pressRngFor(world: any, ...parts: string[]): PressRNG {
+    let hash = 0;
+    for (const part of parts.join('|')) {
+        hash = (Math.imul(hash, 31) + part.charCodeAt(0)) | 0;
+    }
+    return new PressRNG((world.nowSeconds | 0) ^ hash);
+}
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -860,16 +907,87 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     },
                     defenderState: defenseState,
                     battleLog: [],
-                    lastResolvedCycle: 0
+                    lastResolvedCycle: 0,
+                    // The ground war is fought on the planet's own 64-district
+                    // board: the invasion establishes a beachhead and has to
+                    // fight its way inward from there.
+                    districts: initDistrictWar(
+                        generateSurface(planet.id, planet.planetType, planet.tags),
+                        defenseState.fortificationLevel ?? 2,
+                        Number.isInteger(payload.landingSector) ? payload.landingSector : null,
+                    ),
                 };
                 (planet as any).garrison = defenseState;
-                console.log(`[Tick Worker] SIEGE EXPANSIONS INITIATED on ${planet.name} by ${factionId}`);
+                const lz = planet.siege.districts?.landingZones ?? [];
+                console.log(`[Tick Worker] LANDING on ${planet.name} by ${factionId} — beachhead at district${lz.length > 1 ? 's' : ''} ${lz.join(', ')}`);
             } else if (planet.siege.attackerEmpireId === factionId) {
                 // Reinforce
                 planet.siege.attackerState.unitComposition.INFANTRY += fleet.basePower * 5;
                 planet.siege.attackerState.totalLandedTroops += fleet.basePower * 5;
                 console.log(`[Tick Worker] SIEGE REINFORCED on ${planet.name} by ${factionId}`);
             }
+            break;
+        }
+
+        case 'POW_DISPOSE': {
+            // payload: { groupId, disposition } — what becomes of prisoners
+            // this faction is holding. Every path buys something and costs
+            // something: credits, labour, recruits, or reputation.
+            const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
+            const group = ledger.groups.find((g: any) => g.id === payload.groupId);
+            if (!group) { recordOrderFailure(world, factionId, actionId, 'Those prisoners are no longer in your hands.'); break; }
+            if (group.captorEmpireId !== factionId) {
+                console.error(`[Security] ${factionId} tried to dispose of prisoners held by ${group.captorEmpireId}`);
+                recordOrderFailure(world, factionId, actionId, 'You do not hold those prisoners.');
+                break;
+            }
+            if (group.resolved) { recordOrderFailure(world, factionId, actionId, 'Their fate is already decided.'); break; }
+
+            const valid: PrisonerDisposition[] = ['ransom', 'labour', 'recruit', 'imprison', 'execute'];
+            const disposition = payload.disposition as PrisonerDisposition;
+            if (!valid.includes(disposition)) { recordOrderFailure(world, factionId, actionId, 'Unknown disposition.'); break; }
+
+            const outcome = resolveDisposition(group, disposition);
+            const reserves = world.economy.factions.get(factionId)?.reserves;
+
+            // Imprisonment costs upkeep the captor may not have.
+            if (outcome.credits && outcome.credits < 0) {
+                if ((reserves?.['CREDITS'] ?? 0) < -outcome.credits) {
+                    recordOrderFailure(world, factionId, actionId, `Cannot feed them: need ${-outcome.credits} credits.`);
+                    break;
+                }
+            }
+            if (reserves) {
+                if (outcome.credits) reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + outcome.credits;
+                if (outcome.metals) reserves['METALS'] = (reserves['METALS'] ?? 0) + outcome.metals;
+            }
+
+            const powPlanet = world.construction.planets.get(group.planetId);
+            if (powPlanet) {
+                if (outcome.stability) powPlanet.stability = Math.max(0, Math.min(100, (powPlanet.stability ?? 60) + outcome.stability));
+                if (outcome.unrest) powPlanet.unrest = Math.max(0, Math.min(100, (powPlanet.unrest ?? 0) + outcome.unrest));
+                // Turned prisoners join the garrison as militia.
+                if (outcome.recruits && (powPlanet as any).garrison) {
+                    const g: any = (powPlanet as any).garrison;
+                    g.unitComposition = g.unitComposition || {};
+                    g.unitComposition.MILITIA = (g.unitComposition.MILITIA ?? 0) + outcome.recruits;
+                    g.garrisonTroops = (g.garrisonTroops ?? 0) + outcome.recruits;
+                }
+            }
+
+            // Their empire remembers.
+            if (outcome.rivalry && group.ownerEmpireId && group.ownerEmpireId !== factionId) {
+                try {
+                    shiftRivalry(world, factionId, group.ownerEmpireId, outcome.rivalry, 'prisoners_' + disposition);
+                } catch { /* diplomacy state not ready — the deed still stands */ }
+            }
+            if (outcome.infamy) {
+                const ps = world.politics?.empires?.get?.(factionId);
+                if (ps) ps.infamy = (ps.infamy ?? 0) + outcome.infamy;
+            }
+
+            group.resolved = disposition;
+            console.log(`[Order] ${factionId} — ${outcome.summary}`);
             break;
         }
 
@@ -1014,18 +1132,132 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
         
         case 'PLANET_CONSTRUCT_BUILDING': {
+            // payload: { planetId, systemId, buildingType, sectorIndex? }
+            // Creates a REAL tile-backed build order (the old handler pushed a
+            // tile-less entry that processConstructionQueue silently discarded,
+            // so nothing ever finished). sectorIndex is the 0-63 position on
+            // the planet's surface board; legacy/AI callers omit it and get a
+            // deterministic auto-placement.
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet) return;
+            if (!planet) { recordOrderFailure(world, factionId, actionId, 'Planet not found.'); break; }
             if (planet.ownerId !== factionId) {
                 console.error(`[Security] Unauthorized BUILD from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
-                return;
+                // Also surface it: the usual cause is a stale client whose target
+                // planet changed hands between the click and this poll.
+                recordOrderFailure(world, factionId, actionId, 'Planet is not under your control.');
+                break;
             }
-            planet.buildQueue.push({
-                id: `build-${Date.now()}`,
-                buildingId: payload.buildingType,
-                completesAtSeconds: world.nowSeconds + 3600,
-                status: 'active'
+            const def = BUILDINGS.find(b => b.id === payload.buildingType);
+            if (!def) { recordOrderFailure(world, factionId, actionId, `Unknown building '${payload.buildingType}'.`); break; }
+
+            planet.tiles = Array.isArray(planet.tiles) ? planet.tiles : [];
+            planet.buildQueue = Array.isArray(planet.buildQueue) ? planet.buildQueue : [];
+
+            // Requirement gates. The worker is authoritative — the client's
+            // catalog filters are advisory and a crafted POST to /api/game/order
+            // bypasses them entirely.
+            const builderEcon = world.economy.factions.get(factionId);
+            if (def.civilizationId && def.civilizationId !== builderEcon?.civilizationId) {
+                recordOrderFailure(world, factionId, actionId, 'Building is unique to another civilization.');
+                break;
+            }
+            const unlockedTech = new Set<string>(world.tech.get(factionId)?.unlockedTechIds ?? []);
+            if (def.techRequired && !unlockedTech.has(def.techRequired)) {
+                recordOrderFailure(world, factionId, actionId, `Technology '${def.techRequired}' required.`);
+                break;
+            }
+            if ((def.infrastructureRequired ?? 0) > (planet.infrastructureLevel ?? 1)) {
+                recordOrderFailure(world, factionId, actionId, `Infrastructure level ${def.infrastructureRequired} required.`);
+                break;
+            }
+            if (Array.isArray(def.tagRequirements) && def.tagRequirements.length > 0) {
+                const planetTags = new Set<string>(planet.tags ?? []);
+                const missingTag = def.tagRequirements.find((t: string) => !planetTags.has(t));
+                if (missingTag) {
+                    recordOrderFailure(world, factionId, actionId, `Requires planet trait '${missingTag}'.`);
+                    break;
+                }
+            }
+
+            if (def.uniquePerPlanet) {
+                const already = planet.tiles.some((t: any) => t.buildingId === def.id && t.constructionState !== 'ruined')
+                    || planet.buildQueue.some((q: any) => q.buildingId === def.id);
+                if (already) { recordOrderFailure(world, factionId, actionId, `${def.name} is unique per planet.`); break; }
+            }
+
+            // Sectors already occupied by tiles or in-flight orders (shared
+            // helper — the client draws the board from the same computation,
+            // so legacy tiles reserve the same deterministic display slots).
+            const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+            const occupied = new Set<number>(computeSectorOccupancy(planet, surface).keys());
+
+            let sectorIdx: number | null = Number.isInteger(payload.sectorIndex) ? payload.sectorIndex : null;
+            if (sectorIdx !== null) {
+                if (sectorIdx < 0 || sectorIdx >= SURFACE_SECTOR_COUNT) {
+                    recordOrderFailure(world, factionId, actionId, 'Invalid sector.'); break;
+                }
+                if (occupied.has(sectorIdx)) {
+                    recordOrderFailure(world, factionId, actionId, 'Sector is already developed.'); break;
+                }
+                const sector = surface.sectors[sectorIdx];
+                const oceanCapable = /naval|port|harbor|fish/i.test(def.id);
+                if (sector.terrain === 'ocean' && !oceanCapable) {
+                    recordOrderFailure(world, factionId, actionId, 'Cannot build on open ocean.'); break;
+                }
+            } else {
+                sectorIdx = autoPlaceBuilding(surface, def.id, occupied);
+                if (sectorIdx === null) {
+                    recordOrderFailure(world, factionId, actionId, 'No free sector on the surface.'); break;
+                }
+            }
+
+            // Charge the building cost from faction reserves (manpower has no
+            // reserve pool yet and is not charged).
+            const reserves = builderEcon?.reserves;
+            if (!reserves) { recordOrderFailure(world, factionId, actionId, 'Faction economy not found.'); break; }
+            const costPairs: Array<[number | undefined, string]> = [
+                [def.cost.metals, 'METALS'],
+                [def.cost.chemicals, 'CHEMICALS'],
+                [def.cost.food, 'FOOD'],
+                [def.cost.credits, 'CREDITS'],
+                [def.cost.energy, 'ENERGY'],
+                [def.cost.rares, 'RARES'],
+            ];
+            const short = costPairs.find(([amt, key]) => (amt ?? 0) > 0 && (reserves[key] ?? 0) < (amt ?? 0));
+            if (short) {
+                recordOrderFailure(world, factionId, actionId, `Insufficient ${short[1].toLowerCase()}: need ${short[0]}.`);
+                break;
+            }
+            for (const [amt, key] of costPairs) {
+                if ((amt ?? 0) > 0) reserves[key] = (reserves[key] ?? 0) - (amt as number);
+            }
+
+            // Create the sector's tile, then hand off to the canonical
+            // startConstruction so build time honours the construction-speed
+            // model (infrastructure, logistics congestion, speed modifiers) —
+            // the same formula repairs already use.
+            const tileId = `${planet.id}-s${sectorIdx}`;
+            planet.tiles.push({
+                tileId,
+                districtType: 'any',
+                buildingId: null,
+                constructionState: 'empty',
+                constructionCompleteAt: null,
+                sectorIndex: sectorIdx,
             });
+            const started = startConstruction(planet, tileId, def.id, world.nowSeconds);
+            if (!started.success) {
+                // Roll back: refund the charge, drop the placeholder tile.
+                for (const [amt, key] of costPairs) {
+                    if ((amt ?? 0) > 0) reserves[key] = (reserves[key] ?? 0) + (amt as number);
+                }
+                planet.tiles = planet.tiles.filter((t: any) => t.tileId !== tileId);
+                recordOrderFailure(world, factionId, actionId, started.error ?? 'Construction failed.');
+                break;
+            }
+            const queued = planet.buildQueue.find((q: any) => q.tileId === tileId);
+            if (queued) (queued as any).sectorIndex = sectorIdx;
+            console.log(`[Order] ${factionId} building ${def.id} on ${planet.id} sector ${sectorIdx}`);
             break;
         }
 
@@ -1548,6 +1780,379 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     console.log(`[Tick Worker] Influenced Narrative ${payload.storyId} by ${factionId}`);
                 }
             }
+            break;
+        }
+
+        case 'PRESS_RESOLVE_CRISIS': {
+            // payload: { crisisId, choice }
+            const press = ensurePressState(world);
+            const crisis = press.crises.get(payload.crisisId);
+            if (!crisis) {
+                recordOrderFailure(world, factionId, actionId, 'Media crisis not found — it may have already expired.');
+                return;
+            }
+            if (crisis.targetEmpireId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'This crisis targets another empire.');
+                return;
+            }
+            if (crisis.resolved) {
+                recordOrderFailure(world, factionId, actionId, 'Crisis already resolved.');
+                return;
+            }
+            if (!Object.values(CrisisChoice).includes(payload.choice)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown crisis response '${payload.choice}'.`);
+                return;
+            }
+            const empire = press.empires.get(factionId);
+            if (!empire) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            const story = press.activeStories.get(crisis.storyId);
+            const result = resolveCrisis(crisis, payload.choice, empire, story);
+            Object.assign(empire, result.empireDelta);
+            crisis.resolved = true;
+            crisis.choiceMade = payload.choice;
+            crisis.outcome = result.outcome;
+            // Phase 3 of the crisis mini-game: rivals who called this exact
+            // response release their pre-positioned evidence for extra damage.
+            const winners = applyPredictionPayouts(crisis, payload.choice, press.empires);
+            if (winners.length > 0) {
+                crisis.outcome += ` Rival networks anticipated the response (${winners.join(', ')}).`;
+            }
+            console.log(`[Tick Worker] Crisis ${crisis.id} resolved by ${factionId} via ${payload.choice}: ${crisis.outcome}`);
+            break;
+        }
+
+        case 'PRESS_TOGGLE_QUARANTINE': {
+            // payload: { systemId } — propagation keys press planets as planet_${systemId}
+            const press = ensurePressState(world);
+            const systemId = String(payload.systemId ?? '');
+            const planetId = `planet_${systemId}`;
+            const pressPlanet = press.planets.get(planetId);
+            if (!pressPlanet || pressPlanet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You can only quarantine systems you control.');
+                return;
+            }
+            if (press.quarantinedPlanets.has(planetId)) press.quarantinedPlanets.delete(planetId);
+            else press.quarantinedPlanets.add(planetId);
+            break;
+        }
+
+        case 'PRESS_TOGGLE_JAM': {
+            // payload: { systemId }
+            // Coerce to string: Sets key by identity, so a numeric systemId would
+            // add an entry that the string-keyed propagation check never matches
+            // and a later toggle never removes.
+            const press = ensurePressState(world);
+            const systemId = String(payload.systemId ?? '');
+            const pressPlanet = press.planets.get(`planet_${systemId}`);
+            if (!pressPlanet || pressPlanet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You can only jam signals in systems you control.');
+                return;
+            }
+            if (press.jammedSystems.has(systemId)) press.jammedSystems.delete(systemId);
+            else press.jammedSystems.add(systemId);
+            break;
+        }
+
+        case 'PRESS_DEPLOY_COUNTER_NARRATIVE': {
+            // payload: { systemId }
+            const press = ensurePressState(world);
+            const systemId = String(payload.systemId ?? '');
+            const pressPlanet = press.planets.get(`planet_${systemId}`);
+            if (!pressPlanet || pressPlanet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You can only run counter-narratives in systems you control.');
+                return;
+            }
+            press.counterNarratives.set(systemId, 100);
+            break;
+        }
+
+        case 'PRESS_SEED_STORY': {
+            // payload: { storyId, systemId } — plant an active story's epicenter anywhere.
+            const press = ensurePressState(world);
+            const story = press.activeStories.get(payload.storyId);
+            if (!story) {
+                recordOrderFailure(world, factionId, actionId, 'Story not found in the active pool.');
+                return;
+            }
+            const planetId = `planet_${String(payload.systemId ?? '')}`;
+            if (!press.planets.has(planetId)) {
+                recordOrderFailure(world, factionId, actionId, 'Target system has no press audience.');
+                return;
+            }
+            press.publishedStories.push({
+                id: `pub_${world.nowSeconds}_${story.id}`,
+                storyId: story.id,
+                publisherId: `${factionId}_SEED`,
+                tickPublished: press.tick,
+                viralFactor: story.baseMagnitude / 100,
+                originPlanetId: planetId,
+                transmissionMap: new Map([[planetId, 100]]),
+                jammedSystems: new Set(),
+            });
+            break;
+        }
+
+        case 'PRESS_INV_COOPERATE':
+        case 'PRESS_INV_OBSTRUCT':
+        case 'PRESS_INV_SACRIFICE_OFFICIAL':
+        case 'PRESS_INV_PUBLISH_FIRST': {
+            // payload: { investigationId }
+            const press = ensurePressState(world);
+            const inv = press.investigations.get(payload.investigationId);
+            if (!inv) {
+                recordOrderFailure(world, factionId, actionId, 'Investigation not found — it may have concluded.');
+                return;
+            }
+            if (inv.targetEmpireId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'This investigation targets another empire.');
+                return;
+            }
+            if (inv.resolved) {
+                recordOrderFailure(world, factionId, actionId, 'Investigation already concluded.');
+                return;
+            }
+            const empire = press.empires.get(factionId);
+            if (!empire) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            let result;
+            switch (actionId) {
+                case 'PRESS_INV_COOPERATE': result = respondCooperate(inv, empire); break;
+                case 'PRESS_INV_OBSTRUCT': result = respondObstruct(inv, empire, pressRngFor(world, actionId, factionId, inv.id, String(inv.obstructions ?? 0))); break;
+                case 'PRESS_INV_SACRIFICE_OFFICIAL': result = respondSacrificeOfficial(inv, empire); break;
+                default: result = respondPublishFirst(inv, empire, press, press.tick); break;
+            }
+            console.log(`[Tick Worker] Investigation ${inv.id} response ${actionId} by ${factionId}: ${result.outcome}`);
+            break;
+        }
+
+        case 'PRESS_LEAK_INTEL': {
+            // payload: { reportId } — leak a held intel report as a press story
+            // about its subject. The leaker doesn't know if the report was
+            // accurate; an inaccurate one runs as a FALSE story and can collapse.
+            const press = ensurePressState(world);
+            const report = world.espionage.reports.get(payload.reportId);
+            if (!report) {
+                recordOrderFailure(world, factionId, actionId, 'Intel report not found — it may have gone stale.');
+                return;
+            }
+            if (report.ownerFactionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You do not hold that report.');
+                return;
+            }
+            if (report.targetFactionId === factionId) {
+                recordOrderFailure(world, factionId, actionId, 'Leaking intelligence about yourself is not a strategy.');
+                return;
+            }
+            pushWorldStory(world, {
+                targetEmpireId: report.targetFactionId,
+                subject: `Leaked: ${report.title}`,
+                magnitude: Math.round(40 + report.confidence * 40),
+                source: StorySource.ESPIONAGE_LEAK,
+                truth: report.accurate ? StoryTruth.TRUE : StoryTruth.FALSE,
+                evidence: Math.round(report.confidence * 100),
+            });
+            // Spent: a leaked report is burned as an asset.
+            world.espionage.reports.delete(report.id);
+            console.log(`[Tick Worker] ${factionId} leaked report ${report.id} against ${report.targetFactionId}`);
+            break;
+        }
+
+        case 'PRESS_FABRICATE_STORY': {
+            // payload: { targetFactionId, subject } — plant a fabricated story.
+            // Costs narrative influence; runs as FALSE with shaky evidence.
+            const press = ensurePressState(world);
+            const empire = press.empires.get(factionId);
+            if (!empire) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            if (!payload.targetFactionId || payload.targetFactionId === factionId
+                || !press.empires.has(payload.targetFactionId)) {
+                recordOrderFailure(world, factionId, actionId, 'Pick a rival empire to target.');
+                return;
+            }
+            const COST = 10;
+            if ((empire.narrativeInfluence ?? 0) < COST) {
+                recordOrderFailure(world, factionId, actionId, `Requires ${COST} narrative influence.`);
+                return;
+            }
+            empire.narrativeInfluence = Math.max(0, (empire.narrativeInfluence ?? 0) - COST);
+            pushWorldStory(world, {
+                targetEmpireId: payload.targetFactionId,
+                // Bound the attacker-controlled headline — it rides the world blob to every client.
+                subject: String(payload.subject || 'Unconfirmed Reports of Misconduct').slice(0, 120),
+                magnitude: 45,
+                source: StorySource.RUMOR_MILL,
+                truth: StoryTruth.FALSE,
+                evidence: 25 + Math.floor(Math.random() * 20),
+            });
+            console.log(`[Tick Worker] ${factionId} fabricated a story against ${payload.targetFactionId}`);
+            break;
+        }
+
+        case 'PRESS_LAUNCH_CAMPAIGN': {
+            // payload: { targetFactionId, objective }
+            const press = ensurePressState(world);
+            const attacker = press.empires.get(factionId);
+            if (!attacker) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            if (!payload.targetFactionId || payload.targetFactionId === factionId
+                || !press.empires.has(payload.targetFactionId)) {
+                recordOrderFailure(world, factionId, actionId, 'Pick a rival empire to target.');
+                return;
+            }
+            if (!Object.values(CampaignObjective).includes(payload.objective)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown campaign objective '${payload.objective}'.`);
+                return;
+            }
+            const duplicate = Array.from(press.campaigns.values()).find(c =>
+                c.active && c.attackerId === factionId && c.targetEmpireId === payload.targetFactionId);
+            if (duplicate) {
+                recordOrderFailure(world, factionId, actionId, 'You already run a campaign against that empire.');
+                return;
+            }
+            if ((attacker.narrativeInfluence ?? 0) < CampaignConfig.launchCost) {
+                recordOrderFailure(world, factionId, actionId, `Requires ${CampaignConfig.launchCost} narrative influence.`);
+                return;
+            }
+            attacker.narrativeInfluence = Math.max(0, attacker.narrativeInfluence - CampaignConfig.launchCost);
+            const id = `CAMP_${press.tick}_${factionId}_${payload.targetFactionId}`;
+            press.campaigns.set(id, {
+                id,
+                attackerId: factionId,
+                targetEmpireId: payload.targetFactionId,
+                objective: payload.objective,
+                strength: 10,
+                exposure: 0,
+                signaled: false,
+                tickStarted: press.tick,
+                active: true,
+            });
+            console.log(`[Tick Worker] ${factionId} launched ${payload.objective} campaign vs ${payload.targetFactionId}`);
+            break;
+        }
+
+        case 'PRESS_CANCEL_CAMPAIGN': {
+            // payload: { campaignId }
+            const press = ensurePressState(world);
+            const camp = press.campaigns.get(payload.campaignId);
+            if (!camp || camp.attackerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'Campaign not found under your control.');
+                return;
+            }
+            camp.active = false;
+            camp.outcome = 'Quietly wound down by its sponsor.';
+            break;
+        }
+
+        case 'PRESS_COUNTER_CAMPAIGN':
+        case 'PRESS_TRACE_CAMPAIGN': {
+            // payload: { campaignId }
+            const press = ensurePressState(world);
+            const camp = press.campaigns.get(payload.campaignId);
+            if (!camp || !camp.active || camp.targetEmpireId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such active campaign against your empire.');
+                return;
+            }
+            if (!camp.signaled) {
+                recordOrderFailure(world, factionId, actionId, 'No confirmed foreign campaign to act against yet.');
+                return;
+            }
+            const me = press.empires.get(factionId);
+            if (!me) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            const result = actionId === 'PRESS_COUNTER_CAMPAIGN'
+                ? counterCampaign(camp, me)
+                : traceCampaign(camp, factionId, pressRngFor(world, actionId, factionId, camp.id, String(camp.exposure)), me);
+            if (!result.ok && result.outcome.startsWith('Requires')) {
+                recordOrderFailure(world, factionId, actionId, result.outcome);
+                return;
+            }
+            console.log(`[Tick Worker] ${actionId} by ${factionId} on ${camp.id}: ${result.outcome}`);
+            break;
+        }
+
+        case 'PRESS_ACCUSE_CAMPAIGN': {
+            // payload: { campaignId, suspectFactionId }
+            const press = ensurePressState(world);
+            const camp = press.campaigns.get(payload.campaignId);
+            if (!camp || camp.targetEmpireId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such campaign against your empire.');
+                return;
+            }
+            const accuser = press.empires.get(factionId);
+            if (!accuser) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
+                return;
+            }
+            const result = accuseCampaign(camp, accuser, payload.suspectFactionId, press.empires.get(payload.suspectFactionId));
+            console.log(`[Tick Worker] Accusation by ${factionId} vs ${payload.suspectFactionId}: ${result.outcome}`);
+            break;
+        }
+
+        case 'PRESS_CRISIS_REACT': {
+            // payload: { crisisId, reaction: AMPLIFY|DEFEND|NEUTRAL }
+            const press = ensurePressState(world);
+            const crisis = press.crises.get(payload.crisisId);
+            if (!crisis || crisis.resolved) {
+                recordOrderFailure(world, factionId, actionId, 'Crisis not found or already resolved.');
+                return;
+            }
+            if (crisis.targetEmpireId === factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You cannot take a foreign stance on your own crisis.');
+                return;
+            }
+            if (!['AMPLIFY', 'DEFEND', 'NEUTRAL'].includes(payload.reaction)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown reaction '${payload.reaction}'.`);
+                return;
+            }
+            const actor = press.empires.get(factionId);
+            const target = press.empires.get(crisis.targetEmpireId);
+            if (!actor || !target) {
+                recordOrderFailure(world, factionId, actionId, 'Press state missing for a participant.');
+                return;
+            }
+            const result = reactToCrisis(crisis, factionId, actor, target, payload.reaction);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.outcome);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} reacted ${payload.reaction} to crisis ${crisis.id}`);
+            break;
+        }
+
+        case 'PRESS_CRISIS_PREDICT': {
+            // payload: { crisisId, choice } — hidden until the government commits.
+            const press = ensurePressState(world);
+            const crisis = press.crises.get(payload.crisisId);
+            if (!crisis || crisis.resolved) {
+                recordOrderFailure(world, factionId, actionId, 'Crisis not found or already resolved.');
+                return;
+            }
+            if (crisis.targetEmpireId === factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You cannot bet on your own response.');
+                return;
+            }
+            if (!Object.values(CrisisChoice).includes(payload.choice)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown crisis response '${payload.choice}'.`);
+                return;
+            }
+            if (!crisis.predictions) crisis.predictions = {};
+            if (crisis.predictions[factionId]) {
+                recordOrderFailure(world, factionId, actionId, 'Prediction already locked for this crisis.');
+                return;
+            }
+            crisis.predictions[factionId] = payload.choice;
+            console.log(`[Tick Worker] ${factionId} locked a prediction on crisis ${crisis.id}`);
             break;
         }
 
@@ -2482,22 +3087,150 @@ function processSieges(world: GameWorldState) {
         const siege = planet.siege;
         if (!siege) continue;
 
+        const cycleBefore = siege.cycleCount;
+
         // Resolve common per-tick logic (attrition, cycle checks)
         const updatedSiege = GroundSiegeEngine.resolveTick(siege);
         planet.siege = updatedSiege;
+
+        // ── The ground war on the district board ──────────────────────────
+        // A tactical cycle just resolved: turn its outcome into movement on
+        // the surface. Terrain does the arguing — a defender holding mountain
+        // passes and dug-in cities gives ground far more slowly than one
+        // caught on open plains.
+        if (updatedSiege.districts && updatedSiege.cycleCount > cycleBefore) {
+            const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+            const war = updatedSiege.districts;
+            const last = updatedSiege.battleLog[updatedSiege.battleLog.length - 1];
+            const attackerLosses = last?.attackerLosses ?? 0;
+            const defenderLosses = last?.defenderLosses ?? 0;
+
+            // Swing: who bled less this cycle, damped by the terrain the
+            // defender is standing on.
+            const terrainMult = frontDefenseMultiplier(surface, war);
+            const total = attackerLosses + defenderLosses;
+            const rawSwing = total > 0 ? (defenderLosses - attackerLosses) / total : 0;
+            const swing = rawSwing / Math.max(0.5, terrainMult);
+
+            // Deterministic per-cycle jitter so replays match.
+            let seed = (updatedSiege.cycleCount * 2654435761) >>> 0;
+            const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+
+            const res = advanceFront(surface, war, swing, rng);
+
+            // ── Prisoners ────────────────────────────────────────────────
+            // Soldiers who break instead of dying end up in the winner's
+            // hands. What happens to them is the player's call (POW_DISPOSE).
+            const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
+            const takePrisoners = (
+                lossesByType: Record<string, number> | undefined,
+                moraleAtImpact: number,
+                ownerEmpireId: string,
+                captorEmpireId: string,
+            ) => {
+                if (!lossesByType) return 0;
+                const taken = capturedFromLosses(lossesByType as any, moraleAtImpact ?? 100);
+                let total = 0;
+                for (const [unitType, count] of Object.entries(taken)) {
+                    if (!count) continue;
+                    total += count;
+                    ledger.groups.push({
+                        id: `pow-${planet.id}-${updatedSiege.cycleCount}-${unitType}-${captorEmpireId}`,
+                        ownerEmpireId,
+                        captorEmpireId,
+                        planetId: planet.id,
+                        planetName: planet.name,
+                        unitType: unitType as any,
+                        count,
+                        capturedAtSeconds: world.nowSeconds,
+                    });
+                }
+                return total;
+            };
+
+            const defTaken = takePrisoners(
+                (last as any)?.defenderLossesByType, (last as any)?.defenderMoraleAtImpact,
+                updatedSiege.defenderEmpireId, updatedSiege.attackerEmpireId,
+            );
+            const attTaken = takePrisoners(
+                (last as any)?.attackerLossesByType, (last as any)?.attackerMoraleAtImpact,
+                updatedSiege.attackerEmpireId, updatedSiege.defenderEmpireId,
+            );
+            if (defTaken || attTaken) {
+                const parts: string[] = [];
+                if (defTaken) parts.push(`${defTaken} defenders taken prisoner`);
+                if (attTaken) parts.push(`${attTaken} attackers captured`);
+                updatedSiege.battleLog.push({
+                    cycle: updatedSiege.cycleCount,
+                    message: `${parts.join('; ')}.`,
+                    event: 'PRISONERS',
+                });
+            }
+
+            // Overrun development is wrecked: the world the defender built is
+            // the world the attacker breaks taking it.
+            for (const idx of res.captured) {
+                const tile = (planet.tiles ?? []).find((t: any) => t.sectorIndex === idx && t.buildingId);
+                if (tile && tile.constructionState === 'active' && rng() < 0.45) {
+                    tile.constructionState = 'ruined';
+                    updatedSiege.attackerState.devastationCaused += 5;
+                }
+            }
+
+            const share = occupationShare(surface, war);
+            updatedSiege.defenderState.occupationProgress = share;
+            if (res.log.length) {
+                updatedSiege.battleLog.push({
+                    cycle: updatedSiege.cycleCount,
+                    message: `${res.log.join(' ')} Attacker holds ${share}% of the surface.`,
+                    event: res.captured.length ? 'ADVANCE' : res.liberated.length ? 'COUNTERATTACK' : undefined,
+                });
+            }
+            if (updatedSiege.phase === 'LANDING' && share > 12) updatedSiege.phase = 'ACTIVE_SIEGE';
+
+            // Capital falls → the government collapses and the planet changes hands.
+            if (capitalTaken(war)) {
+                planet.ownerId = updatedSiege.attackerEmpireId;
+                planet.isOccupied = false;
+                planet.siege = null;
+                planet.stability = Math.max(10, (planet.stability || 60) - 40);
+                console.log(`[Tick Worker] CAPITAL DISTRICT FALLS: ${planet.name} taken by ${updatedSiege.attackerEmpireId} (${share}% of surface held)`);
+                continue;
+            }
+        }
 
         // Resolve Phase transitions
         if (updatedSiege.defenderState.garrisonTroops <= 0) {
             // Occupation phase start
             updatedSiege.phase = 'OCCUPATION';
-            
-            // Advance occupation progress based on surviving infantry
+
+            if (updatedSiege.districts) {
+                // The field army is gone: the remaining districts fall to a
+                // mop-up sweep rather than a contested advance. Territory is
+                // still the authority on who owns the planet — the capital
+                // district has to actually be entered.
+                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+                const war = updatedSiege.districts;
+                let seed = ((updatedSiege.tickCount + 7919) * 2654435761) >>> 0;
+                const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+                advanceFront(surface, war, 1.2, rng);
+                updatedSiege.defenderState.occupationProgress = occupationShare(surface, war);
+                if (capitalTaken(war)) {
+                    planet.ownerId = updatedSiege.attackerEmpireId;
+                    planet.isOccupied = false;
+                    planet.siege = null;
+                    planet.stability = Math.max(10, (planet.stability || 60) - 40);
+                    console.log(`[Tick Worker] PLANETARY CAPTURE: ${planet.name} occupied by ${updatedSiege.attackerEmpireId}`);
+                }
+                continue;
+            }
+
+            // Legacy (no district board): abstract occupation timer.
             const infantryCount = updatedSiege.attackerState.unitComposition.INFANTRY || 0;
             const progress = (infantryCount / 1000) * 1.5; // 0.15% per 100 infantry
             updatedSiege.defenderState.occupationProgress += progress;
 
             if (updatedSiege.defenderState.occupationProgress >= 100) {
-                const oldOwner = planet.ownerId;
                 planet.ownerId = updatedSiege.attackerEmpireId;
                 planet.isOccupied = false;
                 planet.siege = null;

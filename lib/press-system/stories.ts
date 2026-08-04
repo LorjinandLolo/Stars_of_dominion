@@ -45,6 +45,7 @@ export function generateStories(
                 targetEmpireId: trigger.factionId,
                 subject: 'Classified Intelligence Leak',
                 baseMagnitude: rng.nextInt(50, 90),
+                evidenceStrength: rng.nextInt(60, 90), // Stolen documents: hard to deny
                 tickCreated: tick
             });
         }
@@ -67,6 +68,7 @@ export function generateStories(
                 targetEmpireId: id,
                 subject: 'Unverified Rumors of Unrest',
                 baseMagnitude: rng.nextInt(10, 40),
+                evidenceStrength: rng.nextInt(5, 30), // Hearsay: deniable
                 tickCreated: tick
             });
         }
@@ -80,6 +82,7 @@ export function generateStories(
                 targetEmpireId: id,
                 subject: 'Market Volatility Report',
                 baseMagnitude: rng.nextInt(30, 60),
+                evidenceStrength: rng.nextInt(50, 80), // Public market data
                 tickCreated: tick
             });
         }

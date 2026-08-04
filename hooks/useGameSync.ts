@@ -101,11 +101,19 @@ export function useGameSync() {
     const throttledUpdate = () => {
         if (updatePendingRef.current) return;
         updatePendingRef.current = true;
-        
-        requestAnimationFrame(() => {
+
+        // rAF aligns store rebuilds with paint, but background/hidden tabs
+        // never fire rAF — without a timer fallback the store froze at its
+        // defaults until the tab was next composited.
+        let ran = false;
+        const run = () => {
+            if (ran) return;
+            ran = true;
             updateStoreFromWorld();
             updatePendingRef.current = false;
-        });
+        };
+        requestAnimationFrame(run);
+        setTimeout(run, 250);
     };
 
     const updateStoreFromWorld = () => {
@@ -258,6 +266,26 @@ export function useGameSync() {
             }
         };
 
+        // Press — the worker owns world.press; mirror it into the store so
+        // PressPanel's crises/stories/tools render live data (previously the
+        // store default was never updated and the panel showed nothing).
+        const pressWorld = (world as any).press;
+        const pressState = pressWorld ? {
+            ...useUIStore.getState().pressState,
+            tick: pressWorld.tick ?? 0,
+            empires: pressWorld.empires instanceof Map ? pressWorld.empires : new Map(),
+            planets: pressWorld.planets instanceof Map ? pressWorld.planets : new Map(),
+            pressFactions: pressWorld.pressFactions instanceof Map ? pressWorld.pressFactions : new Map(),
+            activeStories: pressWorld.activeStories instanceof Map ? pressWorld.activeStories : new Map(),
+            publishedStories: Array.isArray(pressWorld.publishedStories) ? pressWorld.publishedStories : [],
+            crises: pressWorld.crises instanceof Map ? pressWorld.crises : new Map(),
+            investigations: pressWorld.investigations instanceof Map ? pressWorld.investigations : new Map(),
+            campaigns: pressWorld.campaigns instanceof Map ? pressWorld.campaigns : new Map(),
+            quarantinedPlanets: pressWorld.quarantinedPlanets instanceof Set ? pressWorld.quarantinedPlanets : new Set(),
+            jammedSystems: pressWorld.jammedSystems instanceof Set ? pressWorld.jammedSystems : new Set(),
+            counterNarratives: pressWorld.counterNarratives instanceof Map ? pressWorld.counterNarratives : new Map(),
+        } : useUIStore.getState().pressState;
+
         // Tech
         const pTech = playerFactionId ? world.tech.get(playerFactionId) : undefined;
         const techState = pTech ? {
@@ -407,7 +435,11 @@ export function useGameSync() {
             contestedSystemIds,
             espionageState,
             corporateState,
-            regions: regionList
+            pressState,
+            regions: regionList,
+            // Prisoners of war held across the empire (and by others) — the
+            // ledger lives in the session snapshot, not a faction shard.
+            prisoners: ((world as any).combat?.prisoners?.groups ?? []) as any,
         });
 
         setIsLoading(false);

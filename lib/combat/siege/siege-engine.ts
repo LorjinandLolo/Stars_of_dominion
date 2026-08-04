@@ -138,18 +138,28 @@ export class GroundSiegeEngine {
         const aDamage = aStr * aMod * (tacticsConfig[aStance]?.modifiers?.damageDealt || 1.0);
         const dDamage = dStr * dMod * (tacticsConfig[dStance]?.modifiers?.damageDealt || 1.0);
 
-        this.applyDamage(attacker, dDamage);
-        this.applyDamage(defender, aDamage);
+        // Morale BEFORE the losses land: how close to breaking each side was
+        // when it took the hit is what decides how many surrender.
+        const attackerMoraleAtImpact = attacker.morale;
+        const defenderMoraleAtImpact = defender.morale;
 
-        // 5. Final Log Entry
+        const attackerLossesByType = this.applyDamage(attacker, dDamage);
+        const defenderLossesByType = this.applyDamage(defender, aDamage);
+
+        // 5. Final Log Entry — per-type losses ride along so the caller can
+        // work out who was taken alive (see lib/combat/siege/prisoners).
         siege.battleLog.push({
             cycle: siege.cycleCount,
             message: `Cycle ${siege.cycleCount} Resolved. Stances: A(${aStance}) vs D(${dStance})`,
             attackerStance: aStance,
             defenderStance: dStance,
             attackerLosses: Math.round(dDamage),
-            defenderLosses: Math.round(aDamage)
-        });
+            defenderLosses: Math.round(aDamage),
+            attackerLossesByType,
+            defenderLossesByType,
+            attackerMoraleAtImpact,
+            defenderMoraleAtImpact,
+        } as any);
 
         // 6. Reset selections for next cycle
         attacker.activeAttackerTactic = undefined;
@@ -186,25 +196,29 @@ export class GroundSiegeEngine {
         return strength * moraleMod * cohesionMod;
     }
 
-    private static applyDamage(state: any, damage: number) {
+    /** Applies damage and reports what was lost, per unit type. */
+    private static applyDamage(state: any, damage: number): Partial<Record<GroundUnitType, number>> {
         let remainingDamage = damage;
+        const losses: Partial<Record<GroundUnitType, number>> = {};
         const types: GroundUnitType[] = ['MILITIA', 'INFANTRY', 'AIRBORNE', 'ANTI_ARMOR', 'ARMOR', 'ARTILLERY', 'SPECIAL_OPS'];
-        
+
         for (const type of types) {
             const count = state.unitComposition[type] || 0;
-            if (count > 0) {
+            if (count > 0 && remainingDamage > 0) {
                 const unitBaseStr = unitsConfig[type]?.baseStrength || 1.0;
                 const lost = Math.min(count, Math.ceil(remainingDamage / unitBaseStr));
                 state.unitComposition[type] -= lost;
                 remainingDamage -= lost * unitBaseStr;
-                
+                if (lost > 0) losses[type] = lost;
+
                 if (state.totalLandedTroops !== undefined) state.totalLandedTroops = Math.max(0, state.totalLandedTroops - lost);
                 if (state.garrisonTroops !== undefined) state.garrisonTroops = Math.max(0, state.garrisonTroops - lost);
             }
         }
-        
+
         state.morale = Math.max(0, state.morale - (damage * 0.1));
         state.cohesion = Math.max(0, state.cohesion - 0.05);
+        return losses;
     }
 
     private static resolveBombardment(siege: GroundSiegeState) {

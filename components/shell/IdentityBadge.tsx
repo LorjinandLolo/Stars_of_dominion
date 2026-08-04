@@ -44,20 +44,29 @@ export default function IdentityBadge() {
             onMouseEnter={() => setOpen(true)}
             onMouseLeave={() => setOpen(false)}
         >
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-900/60 hover:border-slate-600 transition-all">
+            <button
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border bg-slate-900/80 hover:bg-slate-900 transition-all"
+                style={{
+                    borderColor: `${color}80`,
+                    boxShadow: `0 0 10px ${color}30, inset 0 0 12px ${color}10`,
+                }}
+            >
                 <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
+                    className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30"
+                    style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
                 />
                 <span className="flex flex-col items-start leading-tight">
-                    <span className="text-[10px] font-display font-bold tracking-wider text-slate-200 uppercase max-w-[140px] truncate">
+                    <span
+                        className="text-[11px] font-display font-bold tracking-wider uppercase max-w-[150px] truncate"
+                        style={{ color, textShadow: `0 0 8px ${color}60` }}
+                    >
                         {factionName}
                     </span>
-                    <span className="text-[8px] text-slate-500 max-w-[140px] truncate">
+                    <span className="text-[8px] text-slate-400 max-w-[150px] truncate">
                         {user?.name || user?.email || 'checking identity…'}
                     </span>
                 </span>
-                <ChevronDown size={11} className={`text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown size={11} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
 
             {open && (

@@ -12,11 +12,16 @@ interface ModalProps {
 
 export default function Modal({ isOpen, onClose, title, children, wide }: ModalProps) {
     useEffect(() => {
+        // Capture phase + preventDefault: the topmost modal consumes Esc so
+        // layers underneath (CommandWorkspace, planet board) don't also close
+        // on the same keystroke.
         const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            e.preventDefault();
+            onClose();
         };
-        if (isOpen) window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
+        if (isOpen) window.addEventListener('keydown', handleEsc, true);
+        return () => window.removeEventListener('keydown', handleEsc, true);
     }, [isOpen, onClose]);
 
     if (!isOpen) return null;

@@ -236,6 +236,8 @@ function makePressWorld(): PressSimulationState {
         activeStories: new Map(),
         publishedStories: [],
         crises: new Map(),
+        investigations: new Map(),
+        campaigns: new Map(),
         quarantinedPlanets: new Set(),
         jammedSystems: new Set(),
         counterNarratives: new Map(),

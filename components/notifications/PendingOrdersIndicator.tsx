@@ -17,7 +17,8 @@ export default function PendingOrdersIndicator() {
     if (pendingOrders.length === 0) return null;
 
     return (
-        <div className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1.5 pointer-events-none">
+        // Sits above the Command Dock, clear of the centred ground-war HUD.
+        <div className="fixed bottom-20 left-4 z-[70] flex flex-col gap-1.5 pointer-events-none max-w-[280px]">
             {pendingOrders.slice(-5).map(order => {
                 const failed = order.status === 'failed';
                 return (

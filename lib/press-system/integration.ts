@@ -34,6 +34,8 @@ function ensureShape(world: GameWorldState): SimulationState {
     if (!(p.activeStories instanceof Map)) p.activeStories = new Map();
     if (!Array.isArray(p.publishedStories)) p.publishedStories = [];
     if (!(p.crises instanceof Map)) p.crises = new Map();
+    if (!(p.investigations instanceof Map)) p.investigations = new Map();
+    if (!(p.campaigns instanceof Map)) p.campaigns = new Map();
     if (!(p.quarantinedPlanets instanceof Set)) p.quarantinedPlanets = new Set();
     if (!(p.jammedSystems instanceof Set)) p.jammedSystems = new Set();
     if (!(p.counterNarratives instanceof Map)) p.counterNarratives = new Map();
@@ -54,7 +56,16 @@ export function ensurePressState(world: GameWorldState): SimulationState {
                 publicTrust: 60,
                 informationPressure: 0,
                 activeCrises: new Set(),
+                credibility: 60,
+                mediaFreedom: 50,
+                narrativeInfluence: 30,
             });
+        } else {
+            // Backfill snapshots written before the media-value expansion.
+            const emp = press.empires.get(factionId)!;
+            if (typeof emp.credibility !== 'number') emp.credibility = 60;
+            if (typeof emp.mediaFreedom !== 'number') emp.mediaFreedom = 50;
+            if (typeof emp.narrativeInfluence !== 'number') emp.narrativeInfluence = 30;
         }
         const stateMediaId = `${factionId}_STATE`;
         if (!press.pressFactions.has(stateMediaId)) {
@@ -108,6 +119,18 @@ export function ensurePressState(world: GameWorldState): SimulationState {
         }
     }
 
+    // Snapshots written before publishing picked a real epicenter carry
+    // publications anchored to a 'GENERIC_CAPITAL' placeholder. They match no
+    // planet, so they can never propagate or decay — they would sit in the feed
+    // forever now that outlets no longer re-publish the same story each tick.
+    if (press.publishedStories.length > 0) {
+        const live = press.publishedStories.filter(p => press.planets.has(p.originPlanetId));
+        if (live.length !== press.publishedStories.length) {
+            console.log(`[Press] Dropped ${press.publishedStories.length - live.length} publications with a dead epicenter.`);
+            press.publishedStories = live;
+        }
+    }
+
     return press;
 }
 
@@ -126,7 +149,16 @@ export interface WorldStoryInput {
     magnitude: number; // 0-100
     source?: StorySource;
     truth?: StoryTruth;
+    /** 0-100. How well-documented; gates DENY. Defaults per source. */
+    evidence?: number;
 }
+
+const DEFAULT_EVIDENCE: Record<StorySource, number> = {
+    [StorySource.ESPIONAGE_LEAK]: 75,
+    [StorySource.ECONOMIC_DATA]: 65,
+    [StorySource.WAR_REPORT]: 55,
+    [StorySource.RUMOR_MILL]: 20,
+};
 
 /**
  * Inject a story into the active pool. Press factions decide next tick
@@ -135,13 +167,15 @@ export interface WorldStoryInput {
 export function pushWorldStory(world: GameWorldState, input: WorldStoryInput): void {
     const press = ensureShape(world);
     const id = `story-${input.targetEmpireId}-${world.nowSeconds}-${press.activeStories.size}`;
+    const source = input.source ?? StorySource.WAR_REPORT;
     const story: Story = {
         id,
-        source: input.source ?? StorySource.WAR_REPORT,
+        source,
         truth: input.truth ?? StoryTruth.TRUE,
         targetEmpireId: input.targetEmpireId,
         subject: input.subject,
         baseMagnitude: Math.max(0, Math.min(100, Math.round(input.magnitude))),
+        evidenceStrength: Math.max(0, Math.min(100, Math.round(input.evidence ?? DEFAULT_EVIDENCE[source]))),
         tickCreated: press.tick,
     };
     press.activeStories.set(id, story);

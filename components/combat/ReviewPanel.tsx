@@ -225,7 +225,7 @@ export function ReviewPanel() {
 
     return (
         <div 
-            className={`fixed bottom-0 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ${isMinimized ? 'translate-y-[calc(100%-2rem)]' : 'translate-y-0'}`}
+            className={`fixed bottom-16 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ${isMinimized ? 'translate-y-[calc(100%-2rem)]' : 'translate-y-0'}`}
             onWheel={(e) => e.stopPropagation()}
         >
             <div className={`${isSpaceTheme ? 'bg-indigo-950/95 border-indigo-700/60' : 'bg-slate-950/95 border-slate-700/60'} backdrop-blur-md border-t border-l border-r rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col items-center transition-colors duration-500`}>
@@ -245,7 +245,27 @@ export function ReviewPanel() {
 
                     {/* Mode Toggles */}
                     <div className="absolute right-12 flex gap-3 items-center" onClick={(e) => e.stopPropagation()}>
-                        
+
+                        {/* Station troops — garrison reinforcement lives HERE now
+                            (the separate GARRISON button on the planet card is gone;
+                            units and garrison are one concept). */}
+                        {isOwner && activeData.type === 'garrison' && selectedPlanet && (
+                            <button
+                                onClick={() => {
+                                    dispatchOrder({
+                                        actionId: 'MIL_ESTABLISH_GARRISON',
+                                        factionId: playerFactionId || 'PLAYER_FACTION',
+                                        payload: { targetId: selectedPlanet.id, unitCount: 100 },
+                                        label: `Garrisoning ${selectedPlanet.name}`,
+                                    });
+                                }}
+                                title="Station 100 troops: +15 stability, −10 unrest (200 credits, 100 manpower)"
+                                className="px-2.5 py-1 text-[9px] font-bold uppercase rounded bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-300 transition-colors flex items-center gap-1.5"
+                            >
+                                <Shield size={10} /> Station +100
+                            </button>
+                        )}
+
                         {/* Manage / Recruit Toggle */}
                         {isOwner && (isSpaceTheme ? (!!selectedFleetId || !!selectedPlanet) : viewLayer === 'ground') && (
                             <div className="flex gap-1 bg-slate-900 rounded p-0.5 border border-slate-700/50">

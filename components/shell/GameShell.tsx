@@ -76,6 +76,14 @@ const TacticalBattleView = dynamic(() => import('@/components/tactical/TacticalB
 });
 
 const SeasonEndScreen = dynamic(() => import('@/components/season/SeasonEndScreen'), { ssr: false });
+const PlanetSurfaceView = dynamic(() => import('@/components/planet/PlanetSurfaceView'), {
+    ssr: false,
+    loading: () => <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80 text-xs font-mono text-emerald-400/80 animate-pulse">ENTERING ORBIT...</div>
+});
+const SystemOrbitalView = dynamic(() => import('@/components/planet/SystemOrbitalView'), {
+    ssr: false,
+    loading: () => <div className="absolute inset-0 z-[38] flex items-center justify-center bg-slate-950/80 text-xs font-mono text-sky-400/80 animate-pulse">APPROACHING SYSTEM...</div>
+});
 const PendingOrdersIndicator = dynamic(() => import('@/components/notifications/PendingOrdersIndicator'), { ssr: false });
 const EconomicTerminal = dynamic(() => import('@/components/economy/EconomicTerminal'), {
     ssr: false,
@@ -102,7 +110,8 @@ const PANEL_MAP = {
     designer: <ShipDesignerPanel />,
 } as const;
 
-import ResourceBar from '@/components/shell/ResourceBar';
+import CommandDock from '@/components/shell/CommandDock';
+import CommandWorkspace from '@/components/shell/CommandWorkspace';
 
 export default function GameShell() {
     // Narrow selectors instead of subscribing to the whole store — otherwise this heavy
@@ -197,27 +206,24 @@ export default function GameShell() {
 
     return (
         <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950 text-slate-200">
-            {/* ── Top Navigation ─────────────────────────────────────────────────── */}
+            {/* ── Top information strip (resources · date · alerts) ─────────────── */}
             <TopNav />
-            
-            {/* ── Resource Bar ───────────────────────────────────────────────────── */}
-            <ResourceBar />
 
             {/* ── Main area ──────────────────────────────────────────────────────── */}
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Galaxy is ALWAYS rendered underneath — even when panel is active */}
+                {/* Galaxy is ALWAYS rendered underneath — even when a workspace is open */}
                 <div className="absolute inset-0">
                     <GalaxyShell />
                 </div>
 
-                {/* Side panel slides in when tab ≠ galaxy */}
+                {/* Layer 1.5 / 2: system orbital view, then the planet surface
+                    board on top of it — each dive stacks over the galaxy */}
+                <SystemViewGate />
+                <PlanetSurfaceGate />
+
+                {/* Contextual workspace expands UP from the Command Dock */}
                 {activePanel && (
-                    <div
-                        className={`relative z-40 ml-auto h-full ${activeTab === 'dossier' || activeTab === 'diplomacy' ? 'w-[520px]' : (activeTab === 'tech' || activeTab === 'designer') ? 'w-[800px]' : 'w-[420px]'} bg-slate-950/96 backdrop-blur-sm border-l border-slate-700/50 overflow-hidden flex-shrink-0`}
-                        style={{ animation: 'slideInRight 0.2s ease-out' }}
-                    >
-                        {activePanel}
-                    </div>
+                    <CommandWorkspace>{activePanel}</CommandWorkspace>
                 )}
 
                 {/* ── Floated Panels ──────────────────────────────────────────────── */}
@@ -240,6 +246,9 @@ export default function GameShell() {
                 })}
             </div>
 
+            {/* ── Command Dock: the one persistent navigation surface ───────────── */}
+            <CommandDock />
+
             {/* ── Pending orders HUD (optimistic feedback) ───────────────────────── */}
             <PendingOrdersIndicator />
 
@@ -258,13 +267,6 @@ export default function GameShell() {
             {/* ── Developer Toolbox (Ctrl+D) ───────────────────────────────────── */}
             <DevToolbox />
 
-            {/* Slide animation keyframe */}
-            <style jsx global>{`
-        @keyframes slideInRight {
-          from { transform: translateX(30px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-      `}</style>
         </div>
     );
 }
@@ -396,6 +398,23 @@ function TacticalBattleOverlay() {
             onAbort={handleAbort}
         />
     );
+}
+
+/**
+ * Narrow-subscription gate so the planet-view chunk only loads (and GameShell
+ * only re-renders) when a surface board is actually open.
+ */
+function PlanetSurfaceGate() {
+    const surfacePlanetId = useUIStore(s => s.surfacePlanetId);
+    if (!surfacePlanetId) return null;
+    return <PlanetSurfaceView />;
+}
+
+/** Same narrow-subscription trick for the system orbital view. */
+function SystemViewGate() {
+    const systemViewId = useUIStore(s => s.systemViewId);
+    if (!systemViewId) return null;
+    return <SystemOrbitalView />;
 }
 
 function EconomicTerminalModal() {

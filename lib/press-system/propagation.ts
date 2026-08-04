@@ -21,17 +21,27 @@ export function calculateViralSpread(
 ): Map<string, number> {
     const nextMap = new Map(published.transmissionMap);
     
+    // Natural decay applies everywhere, including planets that can't spread the
+    // story onward — otherwise a quarantine froze local intensity at its peak
+    // forever and the damage never wore off.
+    const decay = (planetId: string, intensity: number) => {
+        // Higher viralFactor must decay SLOWER. The original formula subtracted
+        // it from the rate, so the most viral stories died the fastest.
+        const decayRate = clamp(0.96 + (published.viralFactor * 0.02), 0, 0.995);
+        nextMap.set(planetId, clamp(intensity * decayRate, 0, 100));
+    };
+
     // Spread from each currently "infected" planet
     for (const [planetId, intensity] of published.transmissionMap.entries()) {
         if (intensity < 2) continue; // Lowered threshold for "dying" news
-        if (quarantinedPlanets.has(planetId)) continue; // Can't spread OUT of quarantine
+        if (quarantinedPlanets.has(planetId)) { decay(planetId, intensity); continue; } // Can't spread OUT of quarantine
 
         const planet = planets.get(planetId);
         if (!planet) continue;
 
         const sysId = planet.id.replace('planet_', '');
         const neighbors = adj.get(sysId) || [];
-        
+
         for (const neighborSysId of neighbors) {
             const neighborPlanetId = `planet_${neighborSysId}`;
             if (published.jammedSystems.has(neighborSysId)) continue;
@@ -52,9 +62,7 @@ export function calculateViralSpread(
             nextMap.set(neighborPlanetId, clamp(currentIntensity + inflow, 0, 100));
         }
 
-        // Natural decay: Slower decay if viralFactor is high
-        const decayRate = 0.96 - (published.viralFactor * 0.02); 
-        nextMap.set(planetId, clamp(intensity * decayRate, 0, 100));
+        decay(planetId, intensity);
     }
 
     // Ensure epicenter stays active initially
@@ -67,18 +75,25 @@ export function calculateViralSpread(
 
 /**
  * Propagates effects of published stories to planets based on local viral intensity.
+ *
+ * Also rolls the same intensity up into per-empire information pressure. Without
+ * that rollup nothing in the simulation ever RAISED pressure — it was only ever
+ * decayed — so the organic story → pressure → crisis chain could never fire and
+ * crises only appeared via investigations and foreign campaigns.
  */
 export function propagateEffects(
     tick: number,
     publishedStories: PublishedStory[],
     planets: Map<string, PlanetState>,
     empires: Map<string, EmpireState>
-): Map<string, Partial<PlanetState>> {
-    const updates = new Map<string, Partial<PlanetState>>();
+): { planetUpdates: Map<string, Partial<PlanetState>>; empirePressure: Map<string, number> } {
+    const planetUpdates = new Map<string, Partial<PlanetState>>();
+    const empirePressure = new Map<string, number>();
 
     for (const [id, planet] of planets.entries()) {
         let deltaStability = 0;
         let deltaRadicalization = 0;
+        let localHeat = 0;
 
         for (const pub of publishedStories) {
             const intensity = pub.transmissionMap.get(id) || 0;
@@ -87,18 +102,28 @@ export function propagateEffects(
             // Effect scales with intensity (0-100) and viralFactor
             // Max impact: -5 stability and +3 radicalization per high-intensity story
             const baseImpact = (intensity / 100) * pub.viralFactor;
-            
+
             deltaStability -= baseImpact * 5;
             deltaRadicalization += baseImpact * 3;
+            localHeat += baseImpact;
         }
 
         if (deltaStability !== 0 || deltaRadicalization !== 0) {
-            updates.set(id, {
+            planetUpdates.set(id, {
                 stability: clamp(planet.stability + deltaStability, 0, 100),
                 radicalization: clamp(planet.radicalization + deltaRadicalization, 0, 100)
             });
         }
+
+        if (localHeat > 0 && planet.ownerId) {
+            empirePressure.set(planet.ownerId, (empirePressure.get(planet.ownerId) ?? 0) + localHeat);
+        }
     }
 
-    return updates;
+    // Scale so a single loud story across a few worlds is a nudge, not an instant crisis.
+    for (const [empireId, raw] of empirePressure.entries()) {
+        empirePressure.set(empireId, Math.min(8, raw * 1.5));
+    }
+
+    return { planetUpdates, empirePressure };
 }

@@ -24,6 +24,7 @@
     "autoprefixer": "^10.4.27",
     "better-auth": "^1.6.23",
     "clsx": "^2.1.1",
+    "d3-delaunay": "^6.0.4",
     "lucide-react": "^0.378.0",
     "next": "^16.2.1",
     "pg": "^8.22.0",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/d3-delaunay": "^6.0.4",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
