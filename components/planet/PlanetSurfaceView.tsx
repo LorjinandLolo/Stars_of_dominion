@@ -12,7 +12,7 @@ import { generateSurface } from '@/lib/planet-surface/generator';
 import { computeSectorOccupancy, type SectorOccupant } from '@/lib/planet-surface/occupancy';
 import { SURFACE_WEDGES } from '@/lib/planet-surface/types';
 import { BUILDINGS } from '@/data/buildings';
-import { computeSurfaceGeometry, computeCoastlines, BOARD_SIZE, CX, CY, PLANET_RADIUS } from './surfaceGeometry';
+import { computeSurfaceGeometry, computeCoastlines, glyphSizeForArea, BOARD_SIZE, CX, CY, PLANET_RADIUS } from './surfaceGeometry';
 import { TERRAIN_META, ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
 import SectorInspector from './SectorInspector';
 import DistrictScenery from './DistrictScenery';
@@ -105,6 +105,23 @@ export default function PlanetSurfaceView() {
         [surface, geo]
     );
     const bridges = React.useMemo(() => computeBridges(roads), [roads]);
+    /**
+     * Route segments touching each district, so nothing is ever built on top
+     * of a road, rail or supply line. Power lines are aerial — pylons don't
+     * clear ground, so they are excluded.
+     */
+    const routesBySector = React.useMemo(() => {
+        const m = new Map<number, Array<[[number, number], [number, number]]>>();
+        for (const e of roads) {
+            if (e.kind === 'power') continue;
+            for (const idx of [e.a, e.b]) {
+                const list = m.get(idx) ?? [];
+                list.push([e.from as [number, number], e.to as [number, number]]);
+                m.set(idx, list);
+            }
+        }
+        return m;
+    }, [roads]);
     // Bearing of the first ground route touching each district — urban main
     // streets align to it so local streets continue the highway.
     const bearingBySector = React.useMemo(() => {
@@ -287,6 +304,13 @@ export default function PlanetSurfaceView() {
                                         ring={sec.ring}
                                         capital={sec.regionId === 'region-capital'}
                                         roadBearing={bearingBySector.get(sec.index) ?? null}
+                                        routes={routesBySector.get(sec.index)}
+                                        keepOut={occupancy.has(sec.index) ? {
+                                            x: geo.centroids[sec.index][0],
+                                            y: geo.centroids[sec.index][1],
+                                            // Clear the whole installation footprint, not just its icon.
+                                            r: glyphSizeForArea(geo.areas[sec.index]) * 2.6,
+                                        } : null}
                                     />
                                 </g>
                             );
@@ -306,7 +330,21 @@ export default function PlanetSurfaceView() {
                         {/* Infrastructure: roads / rails / animated supply routes */}
                         <g pointerEvents="none">
                             {roads.map(edge => {
-                                const d = `M ${edge.from[0].toFixed(1)} ${edge.from[1].toFixed(1)} Q ${edge.mid[0].toFixed(1)} ${edge.mid[1].toFixed(1)} ${edge.to[0].toFixed(1)} ${edge.to[1].toFixed(1)}`;
+                                // A route ends AT an installation, never through
+                                // it: trim each end back to the building's
+                                // footprint so the depot is the terminus.
+                                const pad = (idx: number) =>
+                                    occupancy.has(idx) ? glyphSizeForArea(geo.areas[idx]) * 1.15 : 0;
+                                const trim = (p: [number, number], toward: [number, number], by: number): [number, number] => {
+                                    if (by <= 0) return p;
+                                    const dx = toward[0] - p[0], dy = toward[1] - p[1];
+                                    const len = Math.hypot(dx, dy) || 1;
+                                    const k = Math.min(by, len * 0.42) / len;
+                                    return [p[0] + dx * k, p[1] + dy * k];
+                                };
+                                const from = trim(edge.from as [number, number], edge.mid as [number, number], pad(edge.a));
+                                const to = trim(edge.to as [number, number], edge.mid as [number, number], pad(edge.b));
+                                const d = `M ${from[0].toFixed(1)} ${from[1].toFixed(1)} Q ${edge.mid[0].toFixed(1)} ${edge.mid[1].toFixed(1)} ${to[0].toFixed(1)} ${to[1].toFixed(1)}`;
                                 return (
                                     <g key={edge.key}>
                                         {edge.kind !== 'power' && (

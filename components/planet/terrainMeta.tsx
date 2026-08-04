@@ -24,7 +24,7 @@ export const TERRAIN_META: Record<TerrainType, TerrainMeta> = {
     frozen:    { label: 'Frozen',    color: '#cbd5e1', icon: <Snowflake size={16} />, blurb: 'Ice fields and permafrost. Costly habitation, natural preservation, terrible campaigning weather.' },
     toxic:     { label: 'Toxic',     color: '#a855f7', icon: <Skull size={16} />,     blurb: 'Corrosive atmosphere pockets. Requires specialised infrastructure; lethal to unprotected forces.' },
     volcanic:  { label: 'Volcanic',  color: '#f87171', icon: <Flame size={16} />,     blurb: 'Active geology. Geothermal riches and rare ores beside constant hazard.' },
-    urban:     { label: 'Urban',     color: '#b3a48c', icon: <Building2 size={16} />, blurb: 'Dense settlement. The political and economic heart — and the costliest battlefield of all.' },
+    urban:     { label: 'Urban',     color: '#4c5f8a', icon: <Building2 size={16} />, blurb: 'Dense settlement. The political and economic heart — and the costliest battlefield of all.' },
     ruins:     { label: 'Ancient Ruins', color: '#facc15', icon: <Landmark size={16} />, blurb: 'Remnants of a precursor civilization. Research treasure; superstition for the locals.' },
 };
 

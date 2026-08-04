@@ -9,6 +9,7 @@
 import React from 'react';
 import type { SectorOccupant } from '@/lib/planet-surface/occupancy';
 import { Pickaxe, Factory, Shield, FlaskConical, Home, Rocket, Package, ShieldCheck } from 'lucide-react';
+import { isoBox, isoShades } from './iso';
 
 const CATEGORY_GLYPH: Record<string, React.ComponentType<any>> = {
     resource: Pickaxe,
@@ -154,27 +155,40 @@ export default function BuildingMotif({ category, buildingId, occupant, cx, cy, 
                     </g>
                 );
             case 'society': {
-                // City skyline: varied towers around a central spire; capital reads instantly
-                const heights = [0.7, 1.3, 0.9, 1.7, 1.05, 0.8];
+                // An arcology cluster in isometric: staggered towers on a raised
+                // platform, crowned by a central spire. Unmistakably built.
+                const towers = [
+                    { x: -1.5, y: 0.5, h: 1.0 }, { x: -0.6, y: -0.4, h: 1.9 },
+                    { x: 0.4, y: 0.4, h: 1.35 }, { x: 1.3, y: -0.3, h: 0.85 },
+                    { x: -0.2, y: 1.2, h: 0.7 },
+                ];
+                const colors = ['#5b6b8c', '#2a7f8f', '#3c4d70', '#6d7ea3', '#8892a8'];
                 return (
                     <g>
-                        {heights.map((h, i) => {
-                            const w = s * 0.5;
-                            const x = cx - s * 1.65 + i * s * 0.56;
-                            const y = cy + s * 0.6 - s * h;
-                            return (
-                                <g key={i}>
-                                    <rect x={x} y={y} width={w} height={s * h} fill={i % 2 ? '#475569' : '#334155'} />
-                                    {[0.25, 0.55].map((fy, j) => (
-                                        <rect key={j} x={x + w * 0.22} y={y + s * h * fy} width={w * 0.18} height={w * 0.18}
-                                            fill="#fbbf24" className="bm-twinkle" style={{ animationDelay: `${(i + j) * 0.7}s` }} />
-                                    ))}
-                                </g>
-                            );
-                        })}
+                        {/* plaza the towers stand on */}
+                        <ellipse cx={cx} cy={cy + s * 0.7} rx={s * 2.4} ry={s * 1.05} fill="#1e293b" opacity={0.55} />
+                        {towers
+                            .map((t, i) => ({ ...t, i, sy: cy + t.y * s * 0.75 }))
+                            .sort((a, b) => a.sy - b.sy)
+                            .map(t => {
+                                const ox = cx + t.x * s * 0.8;
+                                const oy = t.sy;
+                                const w = s * 0.5;
+                                const faces = isoBox(ox, oy, w, w * 0.85, s * t.h);
+                                const [top, left, right] = isoShades(colors[t.i % colors.length]);
+                                return (
+                                    <g key={t.i}>
+                                        <polygon points={faces.left} fill={left} />
+                                        <polygon points={faces.right} fill={right} />
+                                        <polygon points={faces.top} fill={top} stroke="#0f172a" strokeWidth={0.3} />
+                                        <circle cx={ox} cy={oy - s * t.h - s * 0.05} r={s * 0.08}
+                                            fill="#fbbf24" className="bm-twinkle" style={{ animationDelay: `${t.i * 0.6}s` }} />
+                                    </g>
+                                );
+                            })}
                         {/* central spire */}
-                        <line x1={cx + s * 0.12} y1={cy + s * 0.6 - s * 1.7} x2={cx + s * 0.12} y2={cy - s * 1.75} stroke="#94a3b8" strokeWidth={s * 0.07} />
-                        <circle cx={cx + s * 0.12} cy={cy - s * 1.8} r={s * 0.08} fill="#f87171" className="bm-twinkle" />
+                        <line x1={cx - s * 0.3} y1={cy - s * 1.85} x2={cx - s * 0.3} y2={cy - s * 2.6} stroke="#cbd5e1" strokeWidth={s * 0.07} />
+                        <circle cx={cx - s * 0.3} cy={cy - s * 2.66} r={s * 0.09} fill="#f87171" className="bm-twinkle" />
                     </g>
                 );
             }

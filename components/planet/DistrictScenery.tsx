@@ -9,6 +9,7 @@
 import React from 'react';
 import type { TerrainType } from '@/lib/planet-surface/types';
 import { pointInPolygon, type Pt } from './surfaceGeometry';
+import { isoBox, isoShades } from './iso';
 
 // ─── Seeded scatter ──────────────────────────────────────────────────────────
 
@@ -28,6 +29,21 @@ function hash(s: string): number {
     return h >>> 0;
 }
 
+/** Distance from a point to a line segment — used to keep clear of routes. */
+function distToSegment(p: Pt, a: Pt, b: Pt): number {
+    const vx = b[0] - a[0], vy = b[1] - a[1];
+    const wx = p[0] - a[0], wy = p[1] - a[1];
+    const len2 = vx * vx + vy * vy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+    return Math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy));
+}
+
+/** True when the point sits inside the cleared corridor of any route. */
+function onRoute(p: Pt, routes: Array<[Pt, Pt]> | undefined, clearance: number): boolean {
+    if (!routes?.length) return false;
+    return routes.some(([a, b]) => distToSegment(p, a, b) < clearance);
+}
+
 function bounds(poly: Pt[]) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const [x, y] of poly) {
@@ -39,8 +55,22 @@ function bounds(poly: Pt[]) {
     return { minX, minY, maxX, maxY };
 }
 
-/** Rejection-samples `count` points strictly inside the district polygon. */
-function scatter(poly: Pt[], count: number, rand: () => number, inset = 0.82): Pt[] {
+/**
+ * Rejection-samples `count` points strictly inside the district polygon.
+ * `keepOut` is a circle (a built installation) that scenery must not sit on
+ * top of, and `spacing` is the minimum gap between scattered motifs — without
+ * it, trees and buildings pile onto each other.
+ */
+function scatter(
+    poly: Pt[],
+    count: number,
+    rand: () => number,
+    inset = 0.82,
+    keepOut?: { x: number; y: number; r: number } | null,
+    spacing = 0,
+    routes?: Array<[Pt, Pt]>,
+    routeClearance = 0,
+): Pt[] {
     if (poly.length < 3) return [];
     const { minX, minY, maxX, maxY } = bounds(poly);
     // Shrink toward the centroid so scenery never touches the district border.
@@ -49,9 +79,17 @@ function scatter(poly: Pt[], count: number, rand: () => number, inset = 0.82): P
     const inner: Pt[] = poly.map(([x, y]) => [cx + (x - cx) * inset, cy + (y - cy) * inset]);
     const out: Pt[] = [];
     let guard = 0;
-    while (out.length < count && guard++ < count * 30) {
+    const sp2 = spacing * spacing;
+    while (out.length < count && guard++ < count * 60) {
         const p: Pt = [minX + rand() * (maxX - minX), minY + rand() * (maxY - minY)];
-        if (pointInPolygon(p, inner)) out.push(p);
+        if (!pointInPolygon(p, inner)) continue;
+        if (keepOut) {
+            const dx = p[0] - keepOut.x, dy = p[1] - keepOut.y;
+            if (dx * dx + dy * dy < keepOut.r * keepOut.r) continue;
+        }
+        if (onRoute(p, routes, routeClearance)) continue;
+        if (sp2 > 0 && out.some(q => (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 < sp2)) continue;
+        out.push(p);
     }
     return out;
 }
@@ -70,6 +108,16 @@ interface SceneryProps {
     /** True inside the capital region — grants the grand civic landmark. */
     capital?: boolean;
     /**
+     * Footprint of a built installation in this district. Scenery keeps clear
+     * of it so nothing is ever drawn on top of a building.
+     */
+    keepOut?: { x: number; y: number; r: number } | null;
+    /**
+     * Road / rail / supply segments crossing this district. Nothing is built
+     * on top of a route — the corridor is cleared for it.
+     */
+    routes?: Array<[Pt, Pt]>;
+    /**
      * Bearing (radians) of the network road entering this district, if any.
      * The urban main street adopts it so the local street reads as the
      * continuation of the highway instead of crossing it at a random angle.
@@ -87,22 +135,24 @@ function Tree({ x, y, s, dark }: { x: number; y: number; s: number; dark: boolea
     );
 }
 
-export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null }: SceneryProps) {
+export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes }: SceneryProps) {
     const rand = React.useMemo(() => mulberry32(hash(seedKey)), [seedKey]);
     const s = Math.max(4, scale * 0.16); // motif unit size
+    /** Cleared corridor width either side of a route's centreline. */
+    const clearance = Math.max(6, s * 0.85);
 
     const content = React.useMemo(() => {
         const r = mulberry32(hash(seedKey)); // fresh stream per render pass
         switch (terrain) {
             case 'forest': {
                 // Dense clusters with size variance — old growth beside saplings.
-                const pts = scatter(polygon, 10, r);
+                const pts = scatter(polygon, 10, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => (
                     <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} />
                 ));
             }
             case 'jungle': {
-                const pts = scatter(polygon, 9, r);
+                const pts = scatter(polygon, 9, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return (
                     <>
                         {pts.map((p, i) => (
@@ -113,7 +163,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                         ))}
                         {/* river thread */}
                         {(() => {
-                            const line = scatter(polygon, 3, r, 0.7);
+                            const line = scatter(polygon, 3, r, 0.7, keepOut, s * 0.9, routes, clearance);
                             if (line.length < 3) return null;
                             return <path d={`M ${line.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' Q ')}`} fill="none" stroke="#0ea5e9" strokeWidth={s * 0.2} opacity={0.55} />;
                         })()}
@@ -123,7 +173,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             case 'mountains': {
                 // Varied peaks with snow caps — no connector lines, they read
                 // as smears at map scale.
-                const pts = scatter(polygon, 5, r).sort((a, b) => a[0] - b[0]);
+                const pts = scatter(polygon, 5, r, 0.82, keepOut, s * 0.9, routes, clearance).sort((a, b) => a[0] - b[0]);
                 if (!pts.length) return null;
                 return (
                     <>
@@ -140,7 +190,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 );
             }
             case 'volcanic': {
-                const pts = scatter(polygon, 4, r);
+                const pts = scatter(polygon, 4, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => (
                     <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
                         <path d={`M ${-s * 0.9} ${s * 0.45} L 0 ${-s * 0.85} L ${s * 0.9} ${s * 0.45} Z`} fill="#44403c" />
@@ -150,7 +200,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 ));
             }
             case 'plains': {
-                const pts = scatter(polygon, 9, r);
+                const pts = scatter(polygon, 9, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return (
                     <>
                         {pts.map((p, i) => {
@@ -182,7 +232,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 );
             }
             case 'desert': {
-                const pts = scatter(polygon, 7, r);
+                const pts = scatter(polygon, 7, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return (
                     <>
                         {pts.map((p, i) => {
@@ -216,7 +266,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             }
             case 'frozen': {
                 // Ice sheets: angular floe plates with pressure-ridge cracks.
-                const pts = scatter(polygon, 5, r);
+                const pts = scatter(polygon, 5, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => {
                     const w = s * (0.8 + r() * 0.7);
                     if (i % 3 === 2) {
@@ -233,7 +283,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             }
             case 'ocean': {
                 // Mixed sea states: long swells, short chop, occasional whitecap.
-                const pts = scatter(polygon, 8, r);
+                const pts = scatter(polygon, 8, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => {
                     const w = s * (0.7 + r() * 0.8);
                     if (i % 4 === 3) {
@@ -247,7 +297,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 });
             }
             case 'toxic': {
-                const pts = scatter(polygon, 6, r);
+                const pts = scatter(polygon, 6, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => (
                     <g key={i}>
                         <ellipse cx={p[0]} cy={p[1]} rx={s * 0.55} ry={s * 0.32} fill="#7e22ce" opacity={0.55} />
@@ -256,7 +306,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 ));
             }
             case 'ruins': {
-                const pts = scatter(polygon, 5, r);
+                const pts = scatter(polygon, 5, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => (
                     <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
                         <rect x={-s * 0.5} y={-s * 0.7} width={s * 0.22} height={s * 1.1} fill="#a8a29e" opacity={0.85} />
@@ -293,27 +343,56 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                         cx0 + dirX * t * reach + perpX * side * off,
                         cy0 + dirY * t * reach + perpY * side * off,
                     ];
-                    if (inside(p)) slots.push({ p, side, t });
+                    // Never build on a route: the corridor belongs to the road.
+                    if (inside(p) && !onRoute(p, routes, clearance)) slots.push({ p, side, t });
                 }
 
-                const palette = ['#475569', '#0e7490', '#78716c', '#334155', '#7c5c3e'];
+                // Arcology palette — cool steel, glass and ceramic. Deliberately
+                // nothing like the stone browns of mountain terrain.
+                const palette = ['#5b6b8c', '#2a7f8f', '#8892a8', '#3c4d70', '#6d7ea3'];
                 const roadA: Pt = [cx0 - dirX * reach, cy0 - dirY * reach];
                 const roadB: Pt = [cx0 + dirX * reach, cy0 + dirY * reach];
 
-                const building = (p: Pt, h: number, w: number, c: string, key: React.Key, lit: boolean) => (
-                    <g key={key}>
-                        <rect x={p[0] - w / 2} y={p[1] - h} width={w} height={h} fill={c} />
-                        <rect x={p[0] + w / 2 - w * 0.28} y={p[1] - h} width={w * 0.28} height={h} fill="#1e293b" opacity={0.35} />
-                        {h > s * 0.5 && [0.25, 0.55].map((fy, j) => (
-                            <rect key={j} x={p[0] - w * 0.36} y={p[1] - h + h * fy} width={w * 0.72} height={Math.min(h * 0.08, s * 0.08)}
-                                fill="#e0f2fe" opacity={0.5} />
-                        ))}
-                        {lit && (
-                            <rect x={p[0] - w * 0.15} y={p[1] - h * 0.4} width={w * 0.3} height={w * 0.3}
-                                fill="#fbbf24" className="bm-twinkle" style={{ animationDelay: `${(Number(key) || 0) * 0.7}s` }} />
-                        )}
-                    </g>
-                );
+                /**
+                 * An isometric tower: three shaded faces, glazing bands up the
+                 * sunlit side, a lit crown. Reads as built volume, not a smudge.
+                 */
+                const building = (p: Pt, h: number, w: number, c: string, key: React.Key, lit: boolean) => {
+                    const d = w * 0.85;
+                    const faces = isoBox(p[0], p[1], w, d, h);
+                    const [top, left, right] = isoShades(c);
+                    const bands = Math.max(0, Math.min(4, Math.floor(h / (s * 0.42))));
+                    return (
+                        <g key={key}>
+                            {/* ground shadow anchors the block to the district */}
+                            <ellipse cx={p[0]} cy={p[1] + d * 0.35} rx={w * 1.15} ry={w * 0.5} fill="#020617" opacity={0.28} />
+                            <polygon points={faces.left} fill={left} />
+                            <polygon points={faces.right} fill={right} />
+                            <polygon points={faces.top} fill={top} stroke="#0f172a" strokeWidth={0.35} />
+                            {/* glazing: horizontal bands climbing the right face */}
+                            {Array.from({ length: bands }, (_, b) => {
+                                const z = h * ((b + 0.7) / (bands + 0.5));
+                                const f = isoBox(p[0], p[1], w, d, z);
+                                const pts = f.right.split(' ');
+                                return (
+                                    <line
+                                        key={b}
+                                        x1={pts[0].split(',')[0]} y1={pts[3].split(',')[1]}
+                                        x2={pts[1].split(',')[0]} y2={pts[2].split(',')[1]}
+                                        stroke="#a5f3fc" strokeWidth={Math.max(0.4, s * 0.05)} opacity={0.45}
+                                    />
+                                );
+                            })}
+                            {lit && (
+                                <circle
+                                    cx={p[0]} cy={p[1] + (w - d) * 0.5 - h - s * 0.08} r={Math.max(0.7, s * 0.09)}
+                                    fill="#fbbf24" className="bm-twinkle"
+                                    style={{ animationDelay: `${(Number(key) || 0) * 0.7}s` }}
+                                />
+                            )}
+                        </g>
+                    );
+                };
 
                 return (
                     <>
@@ -327,25 +406,37 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                                 stroke="#1f2937" strokeWidth={s * 0.2} strokeLinecap="round" opacity={0.85} />
                         )}
 
-                        {/* building stock: tower-heavy — this is a CITY. Talls dominate
-                            the core, mid-rises fill the rest, low-rise only at the fringe. */}
-                        {slots.map((slot, i) => {
-                            const central = Math.abs(slot.t) < 0.6;
-                            const isTall = tier >= 1 && central && i % 3 !== 2;
-                            const h = isTall
-                                ? s * (1.4 + r() * 1.1 + tier * 0.15)
-                                : s * (0.6 + r() * 0.6 + tier * 0.15);
-                            const w = s * (0.38 + r() * 0.3);
-                            return building(slot.p, h, w, palette[i % palette.length], i, i % 2 === 0);
-                        })}
-
-                        {/* second row behind downtown: depth without clutter */}
-                        {tier >= 2 && slots.filter((_, i) => i % 3 === 0).map((slot, i) => {
-                            const p: Pt = [slot.p[0] + perpX * slot.side * s * 0.75, slot.p[1] + perpY * slot.side * s * 0.75];
-                            if (!inside(p)) return null;
-                            const h = s * (0.9 + r() * 0.9);
-                            return building(p, h, s * 0.42, palette[(i + 2) % palette.length], `b2-${i}`, false);
-                        })}
+                        {/* Building stock: tower-heavy — this is a CITY. Talls
+                            dominate the core, mid-rises fill the rest. Blocks are
+                            depth-sorted so nearer towers overlap farther ones. */}
+                        {(() => {
+                            type Block = { p: Pt; h: number; w: number; c: string; key: string; lit: boolean };
+                            const blocks: Block[] = [];
+                            slots.forEach((slot, i) => {
+                                const central = Math.abs(slot.t) < 0.6;
+                                const isTall = tier >= 1 && central && i % 3 !== 2;
+                                const h = isTall
+                                    ? s * (1.4 + r() * 1.1 + tier * 0.15)
+                                    : s * (0.6 + r() * 0.6 + tier * 0.15);
+                                blocks.push({
+                                    p: slot.p, h, w: s * (0.34 + r() * 0.24),
+                                    c: palette[i % palette.length], key: `b-${i}`, lit: i % 2 === 0,
+                                });
+                                // Second row behind downtown: depth without clutter.
+                                if (tier >= 2 && i % 3 === 0) {
+                                    const q: Pt = [slot.p[0] + perpX * slot.side * s * 0.8, slot.p[1] + perpY * slot.side * s * 0.8];
+                                    if (inside(q) && !onRoute(q, routes, clearance)) {
+                                        blocks.push({
+                                            p: q, h: s * (0.9 + r() * 0.9), w: s * 0.34,
+                                            c: palette[(i + 2) % palette.length], key: `b2-${i}`, lit: false,
+                                        });
+                                    }
+                                }
+                            });
+                            return blocks
+                                .sort((a, b) => a.p[1] - b.p[1])
+                                .map(bl => building(bl.p, bl.h, bl.w, bl.c, bl.key, bl.lit));
+                        })()}
 
                         {/* industrial edge: warehouse + chimney at the end of the street (city and up) */}
                         {tier >= 2 && (() => {
@@ -413,7 +504,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             default:
                 return null;
         }
-    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing]);
+    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance]);
 
     if (!content) return null;
     return <g pointerEvents="none" opacity={dimmed ? 0.12 : 0.9}>{content}</g>;
