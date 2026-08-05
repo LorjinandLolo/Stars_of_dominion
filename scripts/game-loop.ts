@@ -24,6 +24,26 @@ import {
     ensureLedger,
     type PrisonerDisposition,
 } from '../lib/combat/siege/prisoners';
+import {
+    seedFormations,
+    resolveMoves,
+    updateSupply,
+    contestedDistricts,
+    pruneFormations,
+    legalMoves,
+    claimUndefended,
+    recoverOrganization,
+    redeployRoute,
+    type Formation,
+} from '../lib/combat/siege/formations';
+import { resolveDistrictBattle } from '../lib/combat/siege/district-battle';
+import {
+    createPlan,
+    tickPlan,
+    planningBonus,
+    assignedTo,
+    type BattlePlan,
+} from '../lib/combat/siege/battle-plans';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
 import { tickConstructionGlobal, startConstruction } from '../lib/construction/construction-service';
 import { BUILDINGS } from '../data/buildings';
@@ -917,6 +937,16 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                         Number.isInteger(payload.landingSector) ? payload.landingSector : null,
                     ),
                 };
+                // Break both armies into pieces on the board — the invasion is
+                // fought district by district from here on.
+                {
+                    const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+                    const war = planet.siege.districts!;
+                    war.formations = [
+                        ...seedFormations(surf, war, 'attacker', planet.siege.attackerState.unitComposition, `f-a-${world.nowSeconds}`),
+                        ...seedFormations(surf, war, 'defender', defenseState.unitComposition, `f-d-${world.nowSeconds}`),
+                    ];
+                }
                 (planet as any).garrison = defenseState;
                 const lz = planet.siege.districts?.landingZones ?? [];
                 console.log(`[Tick Worker] LANDING on ${planet.name} by ${factionId} — beachhead at district${lz.length > 1 ? 's' : ''} ${lz.join(', ')}`);
@@ -925,6 +955,129 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 planet.siege.attackerState.unitComposition.INFANTRY += fleet.basePower * 5;
                 planet.siege.attackerState.totalLandedTroops += fleet.basePower * 5;
                 console.log(`[Tick Worker] SIEGE REINFORCED on ${planet.name} by ${factionId}`);
+            }
+            break;
+        }
+
+        case 'MIL_MOVE_FORMATION': {
+            // payload: { planetId, formationId, sectorIndex, queue?, redeploy? }
+            // Orders a piece to march. Nothing moves until the cycle resolves,
+            // so both sides commit blind — this is the simultaneous-orders core.
+            //   queue    → append a waypoint instead of replacing the order
+            //   redeploy → strategic rail move: fast, far, costs organisation
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet?.siege?.districts?.formations) {
+                recordOrderFailure(world, factionId, actionId, 'No ground campaign on that world.');
+                break;
+            }
+            const siege = planet.siege;
+            const side = siege.attackerEmpireId === factionId ? 'attacker'
+                : siege.defenderEmpireId === factionId ? 'defender' : null;
+            if (!side) {
+                recordOrderFailure(world, factionId, actionId, 'You are not a belligerent here.');
+                break;
+            }
+            const formation = siege.districts.formations.find((f: Formation) => f.id === payload.formationId);
+            if (!formation || formation.side !== side) {
+                recordOrderFailure(world, factionId, actionId, 'That formation is not yours to command.');
+                break;
+            }
+            const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+
+            if (payload.redeploy) {
+                const route = redeployRoute(surf, siege.districts, formation, payload.sectorIndex);
+                if (!route) {
+                    recordOrderFailure(world, factionId, actionId, 'No friendly rail route to that district.');
+                    break;
+                }
+                formation.path = route;
+                formation.redeploying = true;
+                formation.moveTo = null;
+                formation.planId = null;
+                console.log(`[Order] ${factionId} redeploys ${formation.unitType} ${formation.id} to district ${payload.sectorIndex} (${route.length} stages)`);
+                break;
+            }
+
+            // A queued waypoint extends the march; the legality of later steps
+            // is checked when the formation actually gets there.
+            if (payload.queue) {
+                formation.path = [...(formation.path ?? []), payload.sectorIndex];
+                formation.redeploying = false;
+                console.log(`[Order] ${factionId} queues ${formation.unitType} ${formation.id} via district ${payload.sectorIndex} (${formation.path.length} waypoints)`);
+                break;
+            }
+
+            const legal = legalMoves(surf, siege.districts, formation);
+            if (!legal.some(o => o.sectorIndex === payload.sectorIndex)) {
+                recordOrderFailure(world, factionId, actionId, 'That district is out of reach this cycle.');
+                break;
+            }
+            formation.moveTo = payload.sectorIndex;
+            formation.path = [];
+            formation.redeploying = false;
+            formation.planId = null; // a manual order overrides the plan
+            console.log(`[Order] ${factionId} orders ${formation.unitType} ${formation.id} to district ${payload.sectorIndex}`);
+            break;
+        }
+
+        case 'MIL_BATTLE_PLAN': {
+            // payload: { planetId, mode, planId?, objectives?, formationIds? }
+            //   mode 'front'    → create a front-line plan to hold
+            //   mode 'offensive'→ create an offensive at the given objectives
+            //   mode 'assign'   → attach formations to an existing plan
+            //   mode 'execute'  → launch it; formations stop preparing and advance
+            //   mode 'cancel'   → tear the plan up
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet?.siege?.districts?.formations) {
+                recordOrderFailure(world, factionId, actionId, 'No ground campaign on that world.');
+                break;
+            }
+            const siege = planet.siege;
+            const side = siege.attackerEmpireId === factionId ? 'attacker'
+                : siege.defenderEmpireId === factionId ? 'defender' : null;
+            if (!side) {
+                recordOrderFailure(world, factionId, actionId, 'You are not a belligerent here.');
+                break;
+            }
+            const war = siege.districts;
+            war.plans = war.plans ?? [];
+            const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+            const ownFormations = (ids?: string[]) => war.formations!.filter((f: Formation) =>
+                f.side === side && (!ids?.length || ids.includes(f.id)));
+
+            switch (payload.mode) {
+                case 'front':
+                case 'offensive': {
+                    const plan = createPlan(surf, war, side, payload.mode, payload.objectives ?? [], world.nowSeconds);
+                    war.plans.push(plan);
+                    for (const f of ownFormations(payload.formationIds)) {
+                        f.planId = plan.id;
+                        f.moveTo = null;
+                        f.path = [];
+                    }
+                    console.log(`[Order] ${factionId} drafts a ${payload.mode} plan on ${planet.name}`);
+                    break;
+                }
+                case 'assign': {
+                    const plan = war.plans.find((p: BattlePlan) => p.id === payload.planId && p.side === side);
+                    if (!plan) { recordOrderFailure(world, factionId, actionId, 'No such battle plan.'); break; }
+                    for (const f of ownFormations(payload.formationIds)) f.planId = plan.id;
+                    break;
+                }
+                case 'execute': {
+                    const plan = war.plans.find((p: BattlePlan) => p.id === payload.planId && p.side === side);
+                    if (!plan) { recordOrderFailure(world, factionId, actionId, 'No such battle plan.'); break; }
+                    plan.executing = true;
+                    console.log(`[Order] ${factionId} executes plan ${plan.id} at ${Math.round(plan.preparation)}% preparation`);
+                    break;
+                }
+                case 'cancel': {
+                    war.plans = war.plans.filter((p: BattlePlan) => !(p.id === payload.planId && p.side === side));
+                    for (const f of war.formations!) if (f.planId === payload.planId) f.planId = null;
+                    break;
+                }
+                default:
+                    recordOrderFailure(world, factionId, actionId, 'Unknown battle-plan mode.');
             }
             break;
         }
@@ -3116,7 +3269,94 @@ function processSieges(world: GameWorldState) {
             let seed = (updatedSiege.cycleCount * 2654435761) >>> 0;
             const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
 
-            const res = advanceFront(surface, war, swing, rng);
+            // ── Positional warfare ────────────────────────────────────────
+            // Where the board has pieces on it, the war is fought by them:
+            // orders resolve simultaneously, battles happen where formations
+            // meet, and districts change hands because someone was pushed off
+            // them. The abstract front swing is the fallback for old sieges.
+            const res = { captured: [] as number[], liberated: [] as number[], log: [] as string[] };
+            const battleLosses = {
+                attacker: {} as Record<string, number>,
+                defender: {} as Record<string, number>,
+            };
+
+            if (Array.isArray(war.formations) && war.formations.length) {
+                const stances = {
+                    attacker: updatedSiege.attackerState.activeAttackerTactic ?? 'DEFENSIVE_HOLD',
+                    defender: updatedSiege.defenderState.activeDefenderTactic ?? 'DEFENSIVE_HOLD',
+                } as any;
+                const morale = {
+                    attacker: updatedSiege.attackerState.morale ?? 100,
+                    defender: updatedSiege.defenderState.morale ?? 100,
+                };
+
+                // Standing plans move their formations before manual orders,
+                // so a commander can set a plan and let it run.
+                for (const plan of (war.plans ?? [])) {
+                    res.log.push(...tickPlan(surface, war, plan, war.formations));
+                }
+
+                res.log.push(...resolveMoves(surface, war, war.formations));
+
+                // Undefended ground falls to whoever marched onto it.
+                const walked = claimUndefended(surface, war, war.formations);
+                res.captured.push(...walked.captured);
+                res.liberated.push(...walked.liberated);
+
+                // Best planning bonus each side brings to the field.
+                const planBonus = { attacker: 0, defender: 0 };
+                for (const plan of (war.plans ?? [])) {
+                    if (!plan.executing) continue;
+                    if (!assignedTo(war.formations, plan.id).length) continue;
+                    planBonus[plan.side as 'attacker' | 'defender'] = Math.max(
+                        planBonus[plan.side as 'attacker' | 'defender'], planningBonus(plan));
+                }
+
+                for (const idx of contestedDistricts(war.formations)) {
+                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus);
+                    if (!outcome) continue;
+                    if (outcome.captured) {
+                        (outcome.holder === 'attacker' ? res.captured : res.liberated).push(idx);
+                    }
+                    res.log.push(outcome.log);
+                    for (const side of ['attacker', 'defender'] as const) {
+                        for (const [t, n] of Object.entries(outcome.lossesBySide[side])) {
+                            battleLosses[side][t] = (battleLosses[side][t] ?? 0) + (n as number);
+                        }
+                    }
+                }
+
+                war.formations = pruneFormations(war.formations);
+                res.log.push(...updateSupply(surface, war, war.formations));
+                // Formations that stood still and are fed pull themselves back
+                // together; the redeployed and the encircled do not.
+                recoverOrganization(war.formations);
+
+                // Army pools follow the pieces, so the HUD and the old engine
+                // keep seeing a consistent picture.
+                const tally = (side: 'attacker' | 'defender') => {
+                    const comp: Record<string, number> = {};
+                    let total = 0;
+                    for (const f of war.formations!.filter(x => x.side === side)) {
+                        comp[f.unitType] = (comp[f.unitType] ?? 0) + f.strength;
+                        total += f.strength;
+                    }
+                    return { comp, total };
+                };
+                const a = tally('attacker');
+                const d = tally('defender');
+                updatedSiege.attackerState.unitComposition = a.comp as any;
+                updatedSiege.attackerState.totalLandedTroops = a.total;
+                updatedSiege.defenderState.unitComposition = d.comp as any;
+                updatedSiege.defenderState.garrisonTroops = d.total;
+
+                war.contested = computeFront(surface, war);
+            } else {
+                const abstract = advanceFront(surface, war, swing, rng);
+                res.captured.push(...abstract.captured);
+                res.liberated.push(...abstract.liberated);
+                res.log.push(...abstract.log);
+            }
 
             // ── Prisoners ────────────────────────────────────────────────
             // Soldiers who break instead of dying end up in the winner's
@@ -3148,12 +3388,20 @@ function processSieges(world: GameWorldState) {
                 return total;
             };
 
+            // With pieces on the board the casualties come from the district
+            // battles themselves — and ONLY from them. The abstract engine's
+            // cycle losses are discarded when the formation tally overwrites
+            // the pools, so counting them too would mint prisoners out of
+            // casualties that never happened.
+            const usedFormations = Array.isArray(war.formations) && war.formations.length > 0;
             const defTaken = takePrisoners(
-                (last as any)?.defenderLossesByType, (last as any)?.defenderMoraleAtImpact,
+                usedFormations ? battleLosses.defender : (last as any)?.defenderLossesByType,
+                (last as any)?.defenderMoraleAtImpact ?? updatedSiege.defenderState.morale,
                 updatedSiege.defenderEmpireId, updatedSiege.attackerEmpireId,
             );
             const attTaken = takePrisoners(
-                (last as any)?.attackerLossesByType, (last as any)?.attackerMoraleAtImpact,
+                usedFormations ? battleLosses.attacker : (last as any)?.attackerLossesByType,
+                (last as any)?.attackerMoraleAtImpact ?? updatedSiege.attackerState.morale,
                 updatedSiege.attackerEmpireId, updatedSiege.defenderEmpireId,
             );
             if (defTaken || attTaken) {

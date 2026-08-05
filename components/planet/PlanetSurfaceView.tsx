@@ -12,13 +12,15 @@ import { generateSurface } from '@/lib/planet-surface/generator';
 import { computeSectorOccupancy, type SectorOccupant } from '@/lib/planet-surface/occupancy';
 import { SURFACE_WEDGES } from '@/lib/planet-surface/types';
 import { BUILDINGS } from '@/data/buildings';
-import { computeSurfaceGeometry, computeCoastlines, glyphSizeForArea, BOARD_SIZE, CX, CY, PLANET_RADIUS } from './surfaceGeometry';
+import { computeSurfaceGeometry, computeCoastlines, glyphSizeForArea, pointInPolygon, BOARD_SIZE, CX, CY, PLANET_RADIUS } from './surfaceGeometry';
 import { TERRAIN_META, ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
 import SectorInspector from './SectorInspector';
 import DistrictScenery from './DistrictScenery';
 import BuildingMotif from './BuildingMotif';
 import WarLayer from './WarLayer';
 import WarHud from './WarHud';
+import UnitPieces from './UnitPieces';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { computeRoadNetwork, computeBridges } from './roadNetwork';
 import { factionColor } from '@/components/galaxy/starVisuals';
 import {
@@ -43,6 +45,64 @@ export default function PlanetSurfaceView() {
     const [hover, setHover] = React.useState<{ index: number; x: number; y: number } | null>(null);
     const [hoverRegion, setHoverRegion] = React.useState<string | null>(null);
     const [legendOpen, setLegendOpen] = React.useState(false);
+    const [selectedFormations, setSelectedFormations] = React.useState<string[]>([]);
+    const [redeployMode, setRedeployMode] = React.useState(false);
+    /** Marquee drag-select: box corners in board coordinates. */
+    const [marquee, setMarquee] = React.useState<{ from: [number, number]; to: [number, number]; add: boolean } | null>(null);
+    const boardRef = React.useRef<SVGSVGElement | null>(null);
+
+    /** Issues a march order to every selected formation. */
+    const orderSelection = React.useCallback((sectorIndex: number, opts?: { queue?: boolean; redeploy?: boolean }) => {
+        const forms = planet?.siege?.districts?.formations ?? [];
+        for (const id of selectedFormations) {
+            const f = forms.find((x: any) => x.id === id);
+            if (!f || f.strength <= 0) continue;
+            const verb = opts?.redeploy ? 'redeploys to' : opts?.queue ? 'routed via' : 'advances to';
+            dispatchOrder({
+                actionId: 'MIL_MOVE_FORMATION',
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload: {
+                    planetId: planet.id, formationId: f.id, sectorIndex,
+                    queue: !!opts?.queue, redeploy: !!opts?.redeploy,
+                },
+                label: `${String(f.unitType).replace(/_/g, ' ')} ${verb} district ${sectorIndex}`,
+            });
+        }
+        if (!opts?.queue) {
+            setRedeployMode(false);
+            setSelectedFormations([]);
+        }
+    }, [planet, selectedFormations, playerFactionId]);
+
+    /** Screen point → board coordinates. */
+    const toBoard = React.useCallback((clientX: number, clientY: number): [number, number] | null => {
+        const svg = boardRef.current;
+        const ctm = svg?.getScreenCTM();
+        if (!svg || !ctm) return null;
+        const p = svg.createSVGPoint();
+        p.x = clientX; p.y = clientY;
+        const q = p.matrixTransform(ctm.inverse());
+        return [q.x, q.y];
+    }, []);
+
+    // B toggles strategic redeployment (HOI4). Esc clears the selection first.
+    React.useEffect(() => {
+        if (!planet?.siege) return;
+        const onKey = (e: KeyboardEvent) => {
+            const typing = (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA';
+            if (typing) return;
+            if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault();
+                setRedeployMode(m => !m);
+            } else if (e.key === 'Escape' && (selectedFormations.length || redeployMode)) {
+                e.preventDefault();
+                setRedeployMode(false);
+                setSelectedFormations([]);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [planet?.siege, selectedFormations.length, redeployMode]);
 
     // Board disappears with the planet (e.g. stale id after a sync purge).
     React.useEffect(() => {
@@ -92,6 +152,45 @@ export default function PlanetSurfaceView() {
         [planet, surface]
     );
     const geo = React.useMemo(() => surface ? computeSurfaceGeometry(surface) : null, [surface]);
+
+    // Marquee drag-select: box the formations you want, then command them all.
+    React.useEffect(() => {
+        if (!marquee) return;
+        const move = (e: PointerEvent) => {
+            const pt = toBoard(e.clientX, e.clientY);
+            if (pt) setMarquee(m => (m ? { ...m, to: pt } : m));
+        };
+        const up = () => {
+            setMarquee(null);
+            const forms = planet?.siege?.districts?.formations;
+            if (!forms || !geo) return;
+            const side = planet.siege.attackerEmpireId === playerFactionId ? 'attacker'
+                : planet.siege.defenderEmpireId === playerFactionId ? 'defender' : null;
+            if (!side) return;
+            const x0 = Math.min(marquee.from[0], marquee.to[0]);
+            const x1 = Math.max(marquee.from[0], marquee.to[0]);
+            const y0 = Math.min(marquee.from[1], marquee.to[1]);
+            const y1 = Math.max(marquee.from[1], marquee.to[1]);
+            // Too small to be a deliberate box — treat it as a click.
+            if (Math.hypot(x1 - x0, y1 - y0) < 12) return;
+            const boxed = forms
+                .filter((f: any) => f.side === side && f.strength > 0)
+                .filter((f: any) => {
+                    const c = geo.centroids[f.sectorIndex];
+                    return c && c[0] >= x0 && c[0] <= x1 && c[1] >= y0 && c[1] <= y1;
+                })
+                .map((f: any) => f.id);
+            setSelectedFormations(prev => marquee.add
+                ? Array.from(new Set([...prev, ...boxed]))
+                : boxed);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+    }, [marquee, toBoard, planet, geo, playerFactionId]);
     const roads = React.useMemo(
         () => (surface && geo)
             ? computeRoadNetwork(surface, geo, occupancy, id => BUILDING_BY_ID.get(id)?.category)
@@ -244,12 +343,38 @@ export default function PlanetSurfaceView() {
                     ))}
                 </div>
 
-                {/* Board */}
-                <div className="flex-1 flex items-center justify-center overflow-hidden p-2">
+                {/* Board — while a ground war is on, leave room for the command
+                    bar so the southern hemisphere is never hidden behind it. */}
+                <div
+                    className="flex-1 flex items-center justify-center overflow-hidden p-2"
+                    style={planet.siege ? { paddingBottom: 172 } : undefined}
+                >
                     <svg
+                        ref={boardRef}
                         viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`}
                         className="w-full h-full max-w-[92vmin] max-h-[92vmin]"
                         onMouseLeave={() => setHover(null)}
+                        // Right-click is a game order, not a browser menu: it
+                        // marches the selection to whatever district is under
+                        // the cursor (shift queues it as a waypoint).
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            if (!selectedFormations.length) return;
+                            const pt = toBoard(e.clientX, e.clientY);
+                            if (!pt || !geo) return;
+                            const idx = geo.polygons.findIndex(poly => poly.length >= 3 && pointInPolygon(pt, poly));
+                            if (idx < 0) return;
+                            orderSelection(idx, redeployMode ? { redeploy: true } : { queue: e.shiftKey });
+                        }}
+                        onPointerDown={(e) => {
+                            // Left-drag across open ground boxes up formations.
+                            // Dragging a piece is a move order, so pieces opt out.
+                            if (e.button !== 0 || !planet.siege?.districts?.formations?.length) return;
+                            const onPiece = (e.target as Element).closest?.('.cursor-grab, .cursor-grabbing');
+                            if (onPiece) return;
+                            const pt = toBoard(e.clientX, e.clientY);
+                            if (pt) setMarquee({ from: pt, to: pt, add: e.shiftKey || e.ctrlKey || e.metaKey });
+                        }}
                     >
                         <defs>
                             {/* Base tint of the world beneath the districts */}
@@ -442,6 +567,61 @@ export default function PlanetSurfaceView() {
                             />
                         )}
 
+                        {/* The pieces: formations standing on the districts */}
+                        {planet.siege?.districts?.formations?.length > 0 && (
+                            <UnitPieces
+                                surface={surface}
+                                geo={geo}
+                                war={planet.siege.districts}
+                                formations={planet.siege.districts.formations}
+                                playerSide={
+                                    planet.siege.attackerEmpireId === playerFactionId ? 'attacker'
+                                    : planet.siege.defenderEmpireId === playerFactionId ? 'defender'
+                                    : null
+                                }
+                                attackerColor={factionColor(planet.siege.attackerEmpireId)}
+                                defenderColor={factionColor(planet.siege.defenderEmpireId)}
+                                selectedIds={selectedFormations}
+                                onSelectionChange={setSelectedFormations}
+                                redeployMode={redeployMode}
+                                onOrderMove={(formation, sectorIndex, opts) => {
+                                    const verb = opts?.redeploy ? 'redeploys to'
+                                        : opts?.queue ? 'routed via' : 'advances to';
+                                    dispatchOrder({
+                                        actionId: 'MIL_MOVE_FORMATION',
+                                        factionId: playerFactionId || 'PLAYER_FACTION',
+                                        payload: {
+                                            planetId: planet.id, formationId: formation.id, sectorIndex,
+                                            queue: !!opts?.queue, redeploy: !!opts?.redeploy,
+                                        },
+                                        label: `${formation.unitType.replace(/_/g, ' ')} ${verb} district ${sectorIndex}`,
+                                    });
+                                    // A queued waypoint keeps the selection so a
+                                    // whole path can be laid down in one go.
+                                    if (!opts?.queue) {
+                                        setRedeployMode(false);
+                                        setSelectedFormations([]);
+                                    }
+                                }}
+                            />
+                        )}
+
+                        {/* Marquee: the selection box being dragged */}
+                        {marquee && (() => {
+                            const x = Math.min(marquee.from[0], marquee.to[0]);
+                            const y = Math.min(marquee.from[1], marquee.to[1]);
+                            const w = Math.abs(marquee.to[0] - marquee.from[0]);
+                            const h = Math.abs(marquee.to[1] - marquee.from[1]);
+                            if (w < 2 && h < 2) return null;
+                            return (
+                                <g pointerEvents="none">
+                                    <rect x={x} y={y} width={w} height={h}
+                                        fill="#38bdf8" fillOpacity={0.12}
+                                        stroke="#7dd3fc" strokeWidth={1.6} strokeDasharray="7 4" className="ps-marquee" />
+                                </g>
+                            );
+                        })()}
+
                         {/* Military presence: garrison + landed armies at the capital core */}
                         {(() => {
                             const troops = planet.garrison?.troopCount ?? 0;
@@ -535,6 +715,8 @@ export default function PlanetSurfaceView() {
                             @keyframes bm-scaffold { to { stroke-dashoffset: -9; } }
                             .bm-radar { animation: bm-radar 4s linear infinite; }
                             @keyframes bm-radar { to { transform: rotate(360deg); } }
+                            .ps-marquee { animation: ps-marquee 0.9s linear infinite; }
+                            @keyframes ps-marquee { to { stroke-dashoffset: -11; } }
 
                             @media (prefers-reduced-motion: reduce) {
                                 .ps-supply, .ps-siege, .ps-cloud-a, .ps-cloud-b, .ps-cloud-c,
@@ -545,7 +727,14 @@ export default function PlanetSurfaceView() {
                 </div>
 
                 {/* Ground-war command bar */}
-                {planet.siege && <WarHud planet={planet} surface={surface} />}
+                {planet.siege && (
+                    <WarHud
+                        planet={planet}
+                        surface={surface}
+                        selectedFormations={selectedFormations}
+                        redeployMode={redeployMode}
+                    />
+                )}
 
                 {/* Inspector */}
                 {selected && (

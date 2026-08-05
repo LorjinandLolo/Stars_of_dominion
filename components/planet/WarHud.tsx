@@ -9,7 +9,8 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import type { PlanetSurface } from '@/lib/planet-surface/types';
 import { occupationShare } from '@/lib/combat/siege/district-front';
-import { Swords, Shield, Wind, ScrollText, LogOut, Crosshair, Users } from 'lucide-react';
+import { Swords, Shield, Wind, ScrollText, LogOut, Crosshair, Users, Map, Play, X } from 'lucide-react';
+import { controllerOf } from '@/lib/combat/siege/district-front';
 import PrisonerPanel from './PrisonerPanel';
 
 const STANCES = [
@@ -21,9 +22,13 @@ const STANCES = [
 interface WarHudProps {
     planet: any;
     surface: PlanetSurface;
+    /** Formations the player currently has selected on the board. */
+    selectedFormations?: string[];
+    /** True while strategic redeployment (B) is armed. */
+    redeployMode?: boolean;
 }
 
-export default function WarHud({ planet, surface }: WarHudProps) {
+export default function WarHud({ planet, surface, selectedFormations = [], redeployMode = false }: WarHudProps) {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const factions = useUIStore(s => s.factions);
     const prisoners = useUIStore(s => s.prisoners);
@@ -56,6 +61,17 @@ export default function WarHud({ planet, surface }: WarHudProps) {
     const order = (actionId: string, payload: Record<string, any>, label: string) => {
         dispatchOrder({ actionId, factionId: playerFactionId || 'PLAYER_FACTION', payload, label });
     };
+
+    // Objectives an offensive aims at: the enemy's core districts, capital first.
+    const enemyObjectives = React.useMemo(() => {
+        if (!war) return [];
+        const mySide = isAttacker ? 'attacker' : 'defender';
+        return surface.sectors
+            .filter(s => s.terrain !== 'ocean' && controllerOf(war, s.index) !== mySide)
+            .sort((a, b) => a.ring - b.ring)
+            .slice(0, 3)
+            .map(s => s.index);
+    }, [war, surface, isAttacker]);
 
     const log = (siege.battleLog ?? []).slice(-6).reverse();
     const cycleTicks = siege.cycleLengthTicks || 4;
@@ -180,6 +196,97 @@ export default function WarHud({ planet, surface }: WarHudProps) {
                     )}
                 </div>
             )}
+
+            {/* ── Battle plans ─────────────────────────────────────────────
+                Draw a front to hold or an offensive to launch, let the troops
+                prepare, then send them with the green button. */}
+            {(isAttacker || isDefender) && (() => {
+                const mySide = isAttacker ? 'attacker' : 'defender';
+                const plans = (war?.plans ?? []).filter((p: any) => p.side === mySide);
+                const plan = (actionId: string, payload: any, label: string) => order(actionId, payload, label);
+                const sel = selectedFormations;
+                return (
+                    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-slate-900/80">
+                        <span className="text-[8px] font-display tracking-[0.18em] text-slate-500 uppercase flex items-center gap-1">
+                            <Map size={10} /> Plans
+                        </span>
+
+                        <button
+                            onClick={() => plan('MIL_BATTLE_PLAN',
+                                { planetId: planet.id, mode: 'front', formationIds: sel },
+                                `Front-line plan on ${planet.name}`)}
+                            title="Assign the selected formations to hold the front line"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-sky-500/40 bg-sky-500/10 text-sky-300 text-[9px] font-display tracking-[0.12em] hover:bg-sky-500/20 transition-colors"
+                        >
+                            <Shield size={11} /> FRONT LINE
+                        </button>
+
+                        <button
+                            onClick={() => plan('MIL_BATTLE_PLAN',
+                                { planetId: planet.id, mode: 'offensive', formationIds: sel, objectives: enemyObjectives },
+                                `Offensive plan on ${planet.name}`)}
+                            title="Draft an offensive at the enemy's key districts"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[9px] font-display tracking-[0.12em] hover:bg-amber-500/20 transition-colors"
+                        >
+                            <Swords size={11} /> OFFENSIVE
+                        </button>
+
+                        {sel.length > 0 && (
+                            <span className="text-[8px] font-mono text-slate-500">{sel.length} selected</span>
+                        )}
+                        {redeployMode && (
+                            <span className="px-2 py-0.5 rounded bg-purple-500/20 border border-purple-400/50 text-[8px] font-display tracking-[0.15em] text-purple-200 animate-pulse">
+                                REDEPLOY — pick a rear district
+                            </span>
+                        )}
+
+                        {/* Standing plans: preparation and the go button */}
+                        {plans.map((p: any) => {
+                            const assigned = (war?.formations ?? []).filter((f: any) => f.planId === p.id).length;
+                            const prep = Math.round(p.preparation ?? 0);
+                            return (
+                                <span key={p.id} className="flex items-center gap-1.5 px-2 py-1 rounded border border-slate-700/60 bg-slate-900/60">
+                                    <span className="text-[8px] font-display tracking-[0.12em] text-slate-300 uppercase">
+                                        {p.kind}
+                                    </span>
+                                    <span className="text-[8px] font-mono text-slate-500">{assigned} units</span>
+                                    <span className="h-1.5 w-12 rounded-full bg-slate-800 overflow-hidden">
+                                        <span className="block h-full bg-emerald-500 transition-[width] duration-500" style={{ width: `${prep}%` }} />
+                                    </span>
+                                    <span className="text-[8px] font-mono text-emerald-400">{prep}%</span>
+                                    {sel.length > 0 && (
+                                        <button
+                                            onClick={() => plan('MIL_BATTLE_PLAN', { planetId: planet.id, mode: 'assign', planId: p.id, formationIds: sel }, 'Assigning to plan')}
+                                            title="Assign the selected formations to this plan"
+                                            className="text-[8px] font-display tracking-widest text-slate-400 hover:text-sky-300"
+                                        >
+                                            +ADD
+                                        </button>
+                                    )}
+                                    {p.executing ? (
+                                        <span className="text-[8px] font-display tracking-widest text-emerald-400">RUNNING</span>
+                                    ) : (
+                                        <button
+                                            onClick={() => plan('MIL_BATTLE_PLAN', { planetId: planet.id, mode: 'execute', planId: p.id }, `Executing ${p.kind} plan`)}
+                                            title={`Launch the plan — +${Math.round(prep * 0.25)}% combat from preparation`}
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[8px] font-display tracking-widest hover:bg-emerald-400 transition-colors"
+                                        >
+                                            <Play size={9} /> GO
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => plan('MIL_BATTLE_PLAN', { planetId: planet.id, mode: 'cancel', planId: p.id }, 'Cancelling plan')}
+                                        className="text-slate-600 hover:text-rose-300"
+                                        title="Cancel this plan"
+                                    >
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
 
             {/* Battle log */}
             {logOpen && (

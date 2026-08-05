@@ -117,6 +117,18 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", tacticId: "string" },
     cost: {}
   },
+  MIL_MOVE_FORMATION: {
+    id: "MIL_MOVE_FORMATION",
+    category: "military",
+    params: { planetId: "id", formationId: "id", sectorIndex: "number" },
+    cost: {}
+  },
+  MIL_BATTLE_PLAN: {
+    id: "MIL_BATTLE_PLAN",
+    category: "military",
+    params: { planetId: "id", mode: "string" },
+    cost: {}
+  },
   POW_DISPOSE: {
     id: "POW_DISPOSE",
     category: "military",

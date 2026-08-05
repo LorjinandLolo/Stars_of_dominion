@@ -104,6 +104,13 @@ export interface DistrictWarState {
     contested: number[];
     /** Per-district dug-in value 0-100, raised by fortifications/terrain. */
     entrenchment: Record<number, number>;
+    /**
+     * The pieces on the board. Present once a siege uses positional warfare;
+     * absent on legacy sieges, which fall back to the abstract front swing.
+     */
+    formations?: import('./formations').Formation[];
+    /** Standing battle plans — front lines to hold, offensives to launch. */
+    plans?: import('./battle-plans').BattlePlan[];
 }
 
 export interface GroundSiegeState {
