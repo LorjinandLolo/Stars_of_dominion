@@ -1,0 +1,12 @@
+{
+    "id": "age_of_discovery",
+    "name": "An Age of Discovery",
+    "description": "Eight new technologies mastered while I hold office.",
+    "metric": "techs_researched",
+    "mode": "delta",
+    "target": 8,
+    "prestige": 150,
+    "political_capital": 25,
+    "legitimacy": 6,
+    "bonus": { "production": 0.03, "legitimacy_drift": 0.2 }
+}

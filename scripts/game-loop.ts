@@ -4,7 +4,6 @@ import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShar
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
-import { applyPolicyEffect } from '../lib/politics/politics-service';
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
@@ -58,6 +57,14 @@ import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfW
 import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
 import { evaluateSupportAndApply } from '../lib/diplomacy/mandate-service';
 import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
+import { ensureGovernments, spendPoliticalCapital, getGovernment } from '../lib/government/government-service';
+import { enactPolicy, repealPolicy } from '../lib/government/policy-service';
+import { ensureHeadsOfState } from '../lib/government/succession-service';
+import { ensureCabinets, appointMinister, dismissMinister, APPOINT_MINISTER_COST, DISMISS_MINISTER_COST } from '../lib/government/cabinet-service';
+import { ensureGovernors, appointGovernor, APPOINT_GOVERNOR_COST } from '../lib/government/governor-service';
+import { lobbyParty, decreePolicy } from '../lib/government/parliament-service';
+import { purgeOfficers } from '../lib/government/coup-service';
+import { recordPoliticalEvent } from '../lib/government/ideology-drift';
 import { imposeSanctions, liftSanctions } from '../lib/diplomacy/sanctions-service';
 import { makePromise, fulfillPromise } from '../lib/diplomacy/promise-service';
 import { intervene, plantRumor } from '../lib/diplomacy/intervention-service';
@@ -221,6 +228,16 @@ async function loadWorld(): Promise<GameWorldState> {
     // them — pre-Phase-3 worlds never created any.
     try { ensureEmpirePostures(world); } catch (e) { console.error('[Tick Worker] Posture bootstrap failed:', e); }
     try { ensurePressState(world); } catch (e) { console.error('[Tick Worker] Press bootstrap failed:', e); }
+    // Per-faction government state. Runs AFTER postures — it reads the posture's
+    // governmentId to pick the profile in data/governments.
+    try { ensureGovernments(world); } catch (e) { console.error('[Tick Worker] Government bootstrap failed:', e); }
+    // Seat a head of state per government and stock the recruitment pools —
+    // nothing had ever created a Leader, so the pool was permanently empty.
+    try { ensureHeadsOfState(world); } catch (e) { console.error('[Tick Worker] Head-of-state bootstrap failed:', e); }
+    // Cabinet seats and planetary governors (the planet record's governorId has
+    // existed since the construction pillar and nothing ever set it).
+    try { ensureCabinets(world); } catch (e) { console.error('[Tick Worker] Cabinet bootstrap failed:', e); }
+    try { ensureGovernors(world); } catch (e) { console.error('[Tick Worker] Governor bootstrap failed:', e); }
     if (!world.movement.sorties) world.movement.sorties = new Map();
 
     // Normalize snapshot data: systems saved by older snapshots can be missing
@@ -790,6 +807,18 @@ function recordOrderFailure(world: any, factionId: string, actionId: string, rea
 }
 
 /**
+ * Acts of state that spend the government's political capital on top of any
+ * resource cost. Policies are NOT here — the policy service charges their own
+ * per-policy cost so the price can vary by reform.
+ */
+const POLITICAL_CAPITAL_COSTS: Record<string, number> = {
+    DIP_DECLARE_WAR: 30,
+    DIP_BREAK_TREATY: 20,
+    DIP_IMPOSE_SANCTIONS: 15,
+    INTERNAL_PURGE_FACTION: 25,
+};
+
+/**
  * Maps database orders to in-memory world state mutations.
  * includes server-side validation to ensure players only control their own assets.
  */
@@ -800,6 +829,22 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
     if (!chargeOrderCost(world, factionId, actionId)) {
         recordOrderFailure(world, factionId, actionId, 'Insufficient resources in the treasury.');
         return;
+    }
+
+    // Authority gate — acts of state cost political capital, not credits.
+    // Factions without a government (AI shells, pirates) are never gated.
+    const politicalCost = POLITICAL_CAPITAL_COSTS[actionId];
+    if (politicalCost) {
+        if (!spendPoliticalCapital(world, factionId, politicalCost, `order ${actionId}`)) {
+            const held = Math.floor(getGovernment(world, factionId)?.politicalCapital ?? 0);
+            recordOrderFailure(
+                world,
+                factionId,
+                actionId,
+                `Needs ${politicalCost} political capital; the government holds ${held}.`
+            );
+            return;
+        }
     }
 
     switch (actionId) {
@@ -871,6 +916,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 );
                 if (!result.orbitControlLost) break;
             }
+
+            // Phase 5: landing troops on someone else's world marks the empire.
+            recordPoliticalEvent(world, factionId, 'invade_planet');
 
             // Phase 16: Initialize or Reinforce Ground Siege
             if (!planet.siege) {
@@ -1621,11 +1669,115 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
-        case 'IDEO_ENACT_POLICY': {
+        // Legacy id kept so older clients keep working; both routes now go
+        // through the political-capital gate in the policy service.
+        case 'IDEO_ENACT_POLICY':
+        case 'GOV_ENACT_POLICY': {
             try {
-                applyPolicyEffect(factionId, payload.policyId, world);
+                const result = enactPolicy(world, factionId, payload.policyId);
+                if (!result.ok) {
+                    recordOrderFailure(world, factionId, actionId, result.message ?? 'Policy rejected.');
+                    break;
+                }
+                console.log(result.tabled
+                    ? `[Order] ${factionId} tabled policy ${payload.policyId} before the chamber (${result.cost} political capital)`
+                    : `[Order] ${factionId} enacted policy ${payload.policyId} for ${result.cost} political capital`);
             } catch (e: any) {
                 console.error(`[Tick Worker] Policy enact failed:`, e.message);
+                recordOrderFailure(world, factionId, actionId, 'Policy could not be enacted.');
+            }
+            break;
+        }
+
+        case 'GOV_LOBBY_PARTY': {
+            // payload: { billId, partyId }
+            const result = lobbyParty(world, factionId, payload.billId, payload.partyId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Lobbying rejected.');
+                break;
+            }
+            console.log(`[Order] ${factionId} whipped ${payload.partyId} — projected support ${Math.round(result.projectedSupport ?? 0)}%`);
+            break;
+        }
+
+        case 'GOV_DECREE_POLICY': {
+            // payload: { policyId } — rule past the chamber.
+            const result = decreePolicy(world, factionId, payload.policyId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Decree rejected.');
+                break;
+            }
+            console.log(`[Order] ${factionId} decreed ${payload.policyId} for ${result.cost} political capital`);
+            break;
+        }
+
+        case 'GOV_PURGE_OFFICERS': {
+            const result = purgeOfficers(world, factionId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Purge rejected.');
+                break;
+            }
+            recordPoliticalEvent(world, factionId, 'purge_officers');
+            console.log(`[Order] ${factionId} purged the officer corps — coup pressure now ${Math.round(result.pressure ?? 0)}`);
+            break;
+        }
+
+        case 'GOV_APPOINT_MINISTER': {
+            // payload: { portfolio, leaderId }
+            if (!spendPoliticalCapital(world, factionId, APPOINT_MINISTER_COST, 'cabinet appointment')) {
+                recordOrderFailure(world, factionId, actionId, `Appointment needs ${APPOINT_MINISTER_COST} political capital.`);
+                break;
+            }
+            const result = appointMinister(world, factionId, payload.portfolio, payload.leaderId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Appointment rejected.');
+                break;
+            }
+            console.log(`[Order] ${factionId} appointed ${payload.leaderId} to ${payload.portfolio}`);
+            break;
+        }
+
+        case 'GOV_DISMISS_MINISTER': {
+            // payload: { portfolio }
+            if (!spendPoliticalCapital(world, factionId, DISMISS_MINISTER_COST, 'cabinet dismissal')) {
+                recordOrderFailure(world, factionId, actionId, `Dismissal needs ${DISMISS_MINISTER_COST} political capital.`);
+                break;
+            }
+            const result = dismissMinister(world, factionId, payload.portfolio);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Dismissal rejected.');
+                break;
+            }
+            console.log(`[Order] ${factionId} dismissed the ${payload.portfolio} minister`);
+            break;
+        }
+
+        case 'GOV_APPOINT_GOVERNOR': {
+            // payload: { planetId, leaderId }
+            if (!spendPoliticalCapital(world, factionId, APPOINT_GOVERNOR_COST, 'governor appointment')) {
+                recordOrderFailure(world, factionId, actionId, `Appointment needs ${APPOINT_GOVERNOR_COST} political capital.`);
+                break;
+            }
+            const result = appointGovernor(world, factionId, payload.planetId, payload.leaderId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message ?? 'Appointment rejected.');
+                break;
+            }
+            console.log(`[Order] ${factionId} appointed ${payload.leaderId} governor of ${payload.planetId}`);
+            break;
+        }
+
+        case 'GOV_REPEAL_POLICY': {
+            try {
+                const result = repealPolicy(world, factionId, payload.policyId);
+                if (!result.ok) {
+                    recordOrderFailure(world, factionId, actionId, result.message ?? 'Repeal rejected.');
+                    break;
+                }
+                console.log(`[Order] ${factionId} repealed policy ${payload.policyId} for ${result.cost} political capital`);
+            } catch (e: any) {
+                console.error(`[Tick Worker] Policy repeal failed:`, e.message);
+                recordOrderFailure(world, factionId, actionId, 'Policy could not be repealed.');
             }
             break;
         }
@@ -1637,6 +1789,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              // Central war path: NAP auto-break (oathbreaker penalty), collapse
              // of treaties/pacts between the pair, mutual-defense allies join.
              registerActOfWar(world, factionId, payload.targetFactionId);
+             // Phase 5: what an empire does reshapes what it becomes.
+             recordPoliticalEvent(world, factionId, 'declare_war');
              console.log(`[Order] Faction ${factionId} declared War on ${payload.targetFactionId}`);
              break;
         }
@@ -1653,6 +1807,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              else {
                  evaluateSupportAndApply(world, factionId, 'offer_peace', payload.targetFactionId);
+                 recordPoliticalEvent(world, factionId, 'offer_peace');
                  console.log(`[Order] ${factionId} sued for peace with ${payload.targetFactionId}`);
              }
              break;
@@ -1677,6 +1832,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
              else {
                  evaluateSupportAndApply(world, factionId, 'break_treaty');
+                 recordPoliticalEvent(world, factionId, 'break_treaty');
                  console.log(`[Order] ${factionId} broke treaty ${payload.treatyId}`);
              }
              break;
@@ -1919,6 +2075,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 const pub = world.press.publishedStories.find((p: any) => p.storyId === payload.storyId);
                 if (pub) {
                     pub.viralFactor = Math.max(0, pub.viralFactor - 0.5); // Suppress propagation speed
+                    recordPoliticalEvent(world, factionId, 'suppress_press');
                     console.log(`[Tick Worker] Suppressed Story ${payload.storyId} by ${factionId}`);
                 }
             }

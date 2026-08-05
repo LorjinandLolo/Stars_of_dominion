@@ -1,0 +1,16 @@
+{
+    "id": "religious",
+    "name": "Temple Orders",
+    "tags": ["religious", "traditional", "order"],
+    "base_influence": 15,
+    "favored_policies": ["state_religion", "moral_code"],
+    "society_hints": ["covenant", "crusade", "faith", "temple", "spiritual"],
+    "ideology_affinity": {
+        "tradition_progress": 0.5,
+        "order_chaos": 0.3,
+        "collectivism_individualism": 0.2
+    },
+    "signals": {
+        "stability": 0.4
+    }
+}

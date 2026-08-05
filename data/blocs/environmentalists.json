@@ -1,0 +1,16 @@
+{
+    "id": "environmentalists",
+    "name": "Preservation Circles",
+    "tags": ["environmentalist", "pacifist", "preservationist"],
+    "base_influence": 10,
+    "favored_policies": ["world_preservation", "green_industry"],
+    "society_hints": ["harmon", "gaia", "natural", "fungal", "verdant"],
+    "ideology_affinity": {
+        "expansionism_isolationism": -0.4,
+        "militarism_pacifism": -0.3,
+        "tradition_progress": 0.2
+    },
+    "signals": {
+        "stability": 0.2
+    }
+}

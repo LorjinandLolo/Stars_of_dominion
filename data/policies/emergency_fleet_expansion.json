@@ -1,20 +1,29 @@
 {
     "id": "emergency_fleet_expansion",
+    "name": "Emergency Fleet Expansion",
+    "description": "Yards run day and night on emergency appropriations. Hulls now, budget later.",
+    "category": "military",
     "tags": [
         "military_policy",
         "war_preparation",
         "emergency"
     ],
+    "political_capital_cost": 30,
     "effects": {
-        "fleet_production": 0.25,
-        "happiness": -0.10,
-        "military_faction_power": 0.10
+        "production": 0.15,
+        "upkeep": 0.2,
+        "approval": -4
+    },
+    "ideology_shift": {
+        "militarism_pacifism": 6
     },
     "support_tags": [
         "militarist",
         "expansionist"
     ],
     "oppose_tags": [
-        "pacifist"
+        "pacifist",
+        "labour",
+        "environmentalist"
     ]
 }

@@ -1,0 +1,19 @@
+{
+    "id": "welfare_expansion",
+    "name": "Universal Provision",
+    "description": "Rations, housing and medicine guaranteed by the state. Popular, and expensive.",
+    "category": "social",
+    "tags": ["social_policy", "welfare"],
+    "political_capital_cost": 30,
+    "effects": {
+        "tax_income": -0.12,
+        "pop_growth": 0.12,
+        "approval": 6,
+        "legitimacy_drift": 0.5
+    },
+    "ideology_shift": {
+        "collectivism_individualism": 8
+    },
+    "support_tags": ["labour", "collectivist", "welfare", "minority"],
+    "oppose_tags": ["corporate", "merchant_culture"]
+}

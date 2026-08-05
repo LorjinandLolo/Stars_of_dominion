@@ -59,18 +59,20 @@ export interface ActionSupportResult {
 }
 
 // Base stances: how each bloc's interests read each action, before context.
+// Blocs absent from a row read the action as neutral (0).
 const BLOC_STANCES: Record<DiplomaticActionKind, Record<string, number>> = {
-    declare_war:    { military: 0.8,  trade: -0.7, frontier: -0.3, science: -0.5 },
-    offer_peace:    { military: -0.4, trade: 0.8,  frontier: 0.4,  science: 0.6  },
-    tribute_demand: { military: 0.5,  trade: 0.4,  frontier: 0.0,  science: -0.3 },
-    trade_pact:     { military: -0.1, trade: 0.9,  frontier: 0.3,  science: 0.3  },
-    treaty:         { military: -0.2, trade: 0.5,  frontier: 0.2,  science: 0.6  },
-    break_treaty:   { military: 0.2,  trade: -0.6, frontier: -0.2, science: -0.5 },
-    ultimatum:      { military: 0.6,  trade: -0.2, frontier: 0.0,  science: -0.4 },
-    accusation:     { military: 0.3,  trade: -0.3, frontier: 0.0,  science: 0.2  },
-    show_of_force:  { military: 0.7,  trade: -0.4, frontier: 0.2,  science: -0.3 },
+    declare_war:    { military: 0.8,  trade: -0.7, frontier: -0.3, science: -0.5, workers: -0.6, religious: 0.1,  environmentalists: -0.8, colonists: -0.2, alien_minorities: -0.5 },
+    offer_peace:    { military: -0.4, trade: 0.8,  frontier: 0.4,  science: 0.6,  workers: 0.7,  religious: 0.2,  environmentalists: 0.9,  colonists: 0.4,  alien_minorities: 0.7  },
+    tribute_demand: { military: 0.5,  trade: 0.4,  frontier: 0.0,  science: -0.3, workers: 0.1,  religious: 0.2,  environmentalists: -0.3, colonists: 0.2,  alien_minorities: -0.4 },
+    trade_pact:     { military: -0.1, trade: 0.9,  frontier: 0.3,  science: 0.3,  workers: 0.4,  religious: 0.0,  environmentalists: -0.1, colonists: 0.5,  alien_minorities: 0.4  },
+    treaty:         { military: -0.2, trade: 0.5,  frontier: 0.2,  science: 0.6,  workers: 0.4,  religious: 0.1,  environmentalists: 0.5,  colonists: 0.3,  alien_minorities: 0.6  },
+    // Oathbreaking reads as sacrilege to the temples, betrayal to the minorities.
+    break_treaty:   { military: 0.2,  trade: -0.6, frontier: -0.2, science: -0.5, workers: -0.3, religious: -0.4, environmentalists: -0.5, colonists: -0.2, alien_minorities: -0.4 },
+    ultimatum:      { military: 0.6,  trade: -0.2, frontier: 0.0,  science: -0.4, workers: -0.4, religious: 0.2,  environmentalists: -0.5, colonists: 0.0,  alien_minorities: -0.4 },
+    accusation:     { military: 0.3,  trade: -0.3, frontier: 0.0,  science: 0.2,  workers: 0.0,  religious: 0.3,  environmentalists: 0.1,  colonists: 0.0,  alien_minorities: -0.2 },
+    show_of_force:  { military: 0.7,  trade: -0.4, frontier: 0.2,  science: -0.3, workers: -0.3, religious: 0.2,  environmentalists: -0.5, colonists: 0.2,  alien_minorities: -0.4 },
     // Merchants hate embargoes cutting into business; hawks like the pressure.
-    sanctions:      { military: 0.4,  trade: -0.6, frontier: -0.1, science: 0.1  },
+    sanctions:      { military: 0.4,  trade: -0.6, frontier: -0.1, science: 0.1,  workers: -0.3, religious: 0.1,  environmentalists: 0.2,  colonists: -0.2, alien_minorities: -0.3 },
 };
 
 /** Actions the population reads as belligerent (war fatigue sours them). */

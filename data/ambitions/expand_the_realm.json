@@ -1,0 +1,12 @@
+{
+    "id": "expand_the_realm",
+    "name": "Expand the Realm",
+    "description": "Bring three more star systems under our flag before I am done.",
+    "metric": "systems_owned",
+    "mode": "delta",
+    "target": 3,
+    "prestige": 120,
+    "political_capital": 25,
+    "legitimacy": 6,
+    "bonus": { "production": 0.04 }
+}

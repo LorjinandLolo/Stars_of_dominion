@@ -1,0 +1,12 @@
+{
+    "id": "full_treasury",
+    "name": "A Treasury Without Bottom",
+    "description": "Leave the state richer than any administration before it.",
+    "metric": "credits_reserve",
+    "mode": "absolute",
+    "target": 150000,
+    "prestige": 130,
+    "political_capital": 35,
+    "legitimacy": 4,
+    "bonus": { "tax_income": 0.05 }
+}

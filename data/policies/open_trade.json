@@ -1,0 +1,19 @@
+{
+    "id": "open_trade",
+    "name": "Open Trade Corridors",
+    "description": "Tariffs fall and lanes open. Merchants and colonies prosper; the admiralty grumbles about unguarded traffic.",
+    "category": "economy",
+    "tags": ["economic_policy", "trade"],
+    "political_capital_cost": 20,
+    "effects": {
+        "tax_income": 0.15,
+        "production": 0.05,
+        "approval": 2
+    },
+    "ideology_shift": {
+        "collectivism_individualism": -6,
+        "expansionism_isolationism": 4
+    },
+    "support_tags": ["merchant_culture", "corporate", "colonist", "xenophile"],
+    "oppose_tags": ["isolationist", "militarist"]
+}

@@ -6,9 +6,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache';
-import { getGameWorldState } from '@/lib/game-world-state-singleton';
-import { applyPolicyEffect } from '@/lib/politics/politics-service';
+import { listPolicies, policyEnactCost, policyRepealCost } from '@/lib/government/policy-service';
 import type { ActionResult } from '@/lib/actions/types';
+import type { PolicyOption } from '@/types/ui-state';
 import { TreatyType } from '@/lib/politics/cold-war-types';
 import { executePlayerAction } from './registry-handler';
 
@@ -64,12 +64,13 @@ export async function sendEnvoyAction(issuerId: string, targetFactionId: string)
 }
 
 /**
- * Enacts a government policy, affecting bloc satisfaction.
+ * Enacts a government policy. The worker charges political capital and applies
+ * the ideology shift + bloc reaction (lib/government/policy-service).
  */
 export async function enactPolicyAction(factionId: string, policyId: string): Promise<ActionResult> {
   const result = await executePlayerAction({
     id: `policy-${Date.now()}`,
-    actionId: 'IDEO_ENACT_POLICY',
+    actionId: 'GOV_ENACT_POLICY',
     issuerId: factionId,
     targetId: policyId,
     payload: { policyId },
@@ -78,6 +79,140 @@ export async function enactPolicyAction(factionId: string, policyId: string): Pr
 
   if (result.success) revalidatePath('/');
   return result;
+}
+
+/**
+ * Repeals an active policy. Costs political capital too — reversals are
+ * political acts, not free undos.
+ */
+export async function repealPolicyAction(factionId: string, policyId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `policy-repeal-${Date.now()}`,
+    actionId: 'GOV_REPEAL_POLICY',
+    issuerId: factionId,
+    targetId: policyId,
+    payload: { policyId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Spends political capital whipping one party on one bill. */
+export async function lobbyPartyAction(factionId: string, billId: string, partyId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `lobby-${Date.now()}`,
+    actionId: 'GOV_LOBBY_PARTY',
+    issuerId: factionId,
+    targetId: partyId,
+    payload: { billId, partyId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Enacts a policy by executive decree, bypassing the chamber. */
+export async function decreePolicyAction(factionId: string, policyId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `decree-${Date.now()}`,
+    actionId: 'GOV_DECREE_POLICY',
+    issuerId: factionId,
+    targetId: policyId,
+    payload: { policyId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Purges the officer corps to buy down coup pressure. */
+export async function purgeOfficersAction(factionId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `purge-${Date.now()}`,
+    actionId: 'GOV_PURGE_OFFICERS',
+    issuerId: factionId,
+    targetId: factionId,
+    payload: {},
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/**
+ * Appoints a leader to a cabinet portfolio. Costs political capital, charged
+ * by the worker (lib/government/cabinet-service).
+ */
+export async function appointMinisterAction(factionId: string, portfolio: string, leaderId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `minister-${Date.now()}`,
+    actionId: 'GOV_APPOINT_MINISTER',
+    issuerId: factionId,
+    targetId: leaderId,
+    payload: { portfolio, leaderId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Dismisses the sitting minister for a portfolio; the seat refills at once. */
+export async function dismissMinisterAction(factionId: string, portfolio: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `dismiss-${Date.now()}`,
+    actionId: 'GOV_DISMISS_MINISTER',
+    issuerId: factionId,
+    targetId: portfolio,
+    payload: { portfolio },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Appoints a planetary governor. */
+export async function appointGovernorAction(factionId: string, planetId: string, leaderId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `governor-${Date.now()}`,
+    actionId: 'GOV_APPOINT_GOVERNOR',
+    issuerId: factionId,
+    targetId: planetId,
+    payload: { planetId, leaderId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/**
+ * The policy catalog (data/policies/*.json). Read server-side because the
+ * registry is fs-backed; the client caches it in the UI store.
+ */
+export async function getPolicyCatalogAction(): Promise<ActionResult<PolicyOption[]>> {
+  try {
+    const catalog: PolicyOption[] = listPolicies().map(def => ({
+      id: def.id,
+      name: def.name ?? def.id,
+      description: def.description ?? '',
+      category: def.category ?? 'state',
+      cost: policyEnactCost(def),
+      repealCost: policyRepealCost(def),
+      effects: def.effects ?? {},
+      supportTags: def.support_tags ?? [],
+      opposeTags: def.oppose_tags ?? [],
+    }));
+    return { success: true, data: catalog };
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? 'Policy catalog unavailable.' };
+  }
 }
 
 /**

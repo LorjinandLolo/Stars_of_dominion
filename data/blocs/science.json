@@ -1,0 +1,14 @@
+{
+    "id": "science",
+    "name": "Academies",
+    "tags": ["technocratic", "scientific_culture", "progressive"],
+    "base_influence": 20,
+    "favored_policies": ["research_push", "science_investment"],
+    "society_hints": ["scien", "logic", "synthetic", "progress"],
+    "ideology_affinity": {
+        "tradition_progress": -0.5,
+        "order_chaos": 0.2,
+        "militarism_pacifism": -0.2
+    },
+    "signals": {}
+}

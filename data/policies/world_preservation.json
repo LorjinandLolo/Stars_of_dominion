@@ -1,0 +1,19 @@
+{
+    "id": "world_preservation",
+    "name": "World Preservation Act",
+    "description": "Extraction capped, biospheres protected. Industry pays the bill and says so loudly.",
+    "category": "economy",
+    "tags": ["environment_policy", "regulation"],
+    "political_capital_cost": 25,
+    "effects": {
+        "production": -0.08,
+        "pop_growth": 0.08,
+        "approval": 3
+    },
+    "ideology_shift": {
+        "expansionism_isolationism": -6,
+        "tradition_progress": 3
+    },
+    "support_tags": ["environmentalist", "preservationist", "pacifist"],
+    "oppose_tags": ["corporate", "militarist", "expansionist"]
+}

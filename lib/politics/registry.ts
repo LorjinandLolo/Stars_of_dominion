@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { SocietyProfile, GovernmentProfile, PolicyDefinition, FactionDefinition } from './registry-types';
+import type { SocietyProfile, GovernmentProfile, PolicyDefinition, FactionDefinition, BlocDefinition, AmbitionDefinition } from './registry-types';
 
 export class Registry<T extends { id: string }> {
     private items: Map<string, T> = new Map();
@@ -26,6 +26,10 @@ export const societyRegistry = new Registry<SocietyProfile>();
 export const governmentRegistry = new Registry<GovernmentProfile>();
 export const policyRegistry = new Registry<PolicyDefinition>();
 export const factionRegistry = new Registry<FactionDefinition>();
+/** Internal interest groups (data/blocs). Drives bloc seeding and drift. */
+export const blocRegistry = new Registry<BlocDefinition>();
+/** Leader ambition templates (data/ambitions). Drives the Legacy System. */
+export const ambitionRegistry = new Registry<AmbitionDefinition>();
 
 /**
  * Loads all JSON files from the specified directory and registers them.
@@ -77,7 +81,9 @@ export function initRegistries(basePath = process.cwd()) {
     loadDirectory<GovernmentProfile>(path.join(dataPath, 'governments'), governmentRegistry);
     loadDirectory<PolicyDefinition>(path.join(dataPath, 'policies'), policyRegistry);
     loadDirectory<FactionDefinition>(path.join(dataPath, 'factions'), factionRegistry);
+    loadDirectory<BlocDefinition>(path.join(dataPath, 'blocs'), blocRegistry);
+    loadDirectory<AmbitionDefinition>(path.join(dataPath, 'ambitions'), ambitionRegistry);
 
     registriesInitialized = true;
-    console.log(`[Registry] Loaded ${societyRegistry.getAll().length} societies, ${governmentRegistry.getAll().length} governments.`);
+    console.log(`[Registry] Loaded ${societyRegistry.getAll().length} societies, ${governmentRegistry.getAll().length} governments, ${blocRegistry.getAll().length} blocs, ${ambitionRegistry.getAll().length} ambitions.`);
 }

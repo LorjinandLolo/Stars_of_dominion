@@ -1,0 +1,22 @@
+{
+    "id": "permanent_martial_law",
+    "name": "Permanent Martial Law",
+    "description": "The garrison governs. Order is absolute, consent is not asked for, and the generals learn they can rule.",
+    "category": "military",
+    "tags": ["emergency", "repression"],
+    "political_capital_cost": 45,
+    "repeal_cost": 30,
+    "effects": {
+        "production": 0.08,
+        "approval": -10,
+        "legitimacy_drift": -2
+    },
+    "ideology_shift": {
+        "authoritarianism_liberty": 15,
+        "order_chaos": 10,
+        "militarism_pacifism": 6
+    },
+    "forbidden_government_tags": ["elected_leadership", "senate_system"],
+    "support_tags": ["militarist", "authoritarian", "order"],
+    "oppose_tags": ["democracy", "liberty", "labour", "minority", "colonist"]
+}

@@ -1,0 +1,14 @@
+{
+    "id": "frontier",
+    "name": "Border Worlds",
+    "tags": ["frontier", "autonomist", "expansionist"],
+    "base_influence": 20,
+    "favored_policies": ["expand_frontier", "frontier_subsidies"],
+    "society_hints": ["expansion", "stampede", "swarm", "frontier"],
+    "ideology_affinity": {
+        "centralization_autonomy": -0.4,
+        "expansionism_isolationism": 0.3,
+        "authoritarianism_liberty": -0.2
+    },
+    "signals": {}
+}

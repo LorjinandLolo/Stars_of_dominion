@@ -14,6 +14,7 @@ import type { ConstructionWorldState } from './construction/construction-types';
 import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
 import type { LeadershipWorldState } from './leadership/types';
+import type { GovernmentState } from './government/types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
@@ -162,6 +163,13 @@ export interface GameWorldState {
 
     // ── Phase 3 — Empire Identity & Leadership ──────────────────────────────
     leadership: LeadershipWorldState;
+
+    /**
+     * Government & Leadership — per-faction political state (approval,
+     * legitimacy, political capital). Keyed by factionId. Seeded by
+     * ensureGovernments at world load; absent on pre-Phase-0 snapshots.
+     */
+    government: Map<string, GovernmentState>;
     doctrines: Map<string, EmpireDoctrines>;
     reputation: Map<string, FactionReputation>;
 

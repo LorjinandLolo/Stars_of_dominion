@@ -1,0 +1,18 @@
+{
+    "id": "expand_frontier",
+    "name": "Frontier Subsidies",
+    "description": "Credits flow outward to the border worlds. Settlers cheer; the core pays for it.",
+    "category": "economy",
+    "tags": ["expansion_policy", "frontier"],
+    "political_capital_cost": 15,
+    "effects": {
+        "pop_growth": 0.1,
+        "tax_income": -0.08
+    },
+    "ideology_shift": {
+        "expansionism_isolationism": 8,
+        "centralization_autonomy": -4
+    },
+    "support_tags": ["frontier", "colonist", "expansionist", "autonomist"],
+    "oppose_tags": ["isolationist", "environmentalist"]
+}

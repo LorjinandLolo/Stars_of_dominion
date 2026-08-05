@@ -1,0 +1,20 @@
+{
+    "id": "civil_reforms",
+    "name": "Civil Reforms",
+    "description": "Courts, franchise and civil liberties widened. Legitimacy grows; the security organs lose their grip.",
+    "category": "state",
+    "tags": ["constitutional", "liberalization"],
+    "political_capital_cost": 35,
+    "effects": {
+        "approval": 5,
+        "legitimacy_drift": 1.5,
+        "production": -0.03
+    },
+    "ideology_shift": {
+        "authoritarianism_liberty": -10,
+        "order_chaos": -4
+    },
+    "forbidden_government_tags": ["hive_mind"],
+    "support_tags": ["democracy", "labour", "minority", "liberty", "xenophile"],
+    "oppose_tags": ["authoritarian", "militarist", "order"]
+}

@@ -1,0 +1,17 @@
+{
+    "id": "alien_minorities",
+    "name": "Xeno Communities",
+    "tags": ["xenophile", "minority", "liberty"],
+    "base_influence": 10,
+    "favored_policies": ["equal_citizenship", "open_borders"],
+    "society_hints": ["harmon", "convergence", "council", "federation"],
+    "ideology_affinity": {
+        "authoritarianism_liberty": -0.5,
+        "order_chaos": -0.2,
+        "expansionism_isolationism": -0.2
+    },
+    "signals": {
+        "stability": 0.4,
+        "espionagePressure": -0.4
+    }
+}

@@ -398,7 +398,13 @@ export interface AutomationDoctrine {
 // ─── Doctrine & Empire Posture ────────────────────────────────────────────────
 
 export interface InfluenceBloc {
-    id: 'military' | 'trade' | 'frontier' | 'science';
+    /**
+     * Bloc definition id from data/blocs/*.json. Was a closed union of the
+     * original four; widened so the interest-group roster is data-driven.
+     * The original four ('military' | 'trade' | 'frontier' | 'science') keep
+     * their hand-tuned drift cases in politics-service.
+     */
+    id: string;
     name: string;
     /** 0–100: share of total influence. */
     influence: number;
@@ -406,6 +412,14 @@ export interface InfluenceBloc {
     satisfaction: number;
     /** Per-tick drift direction: positive = growing, negative = declining. */
     trend: number;
+    /**
+     * Copied from the bloc definition at bootstrap so the drift tick stays a
+     * pure module (no fs-backed registry import on the client path).
+     * Ideology axis → weight -1..1; positive = happier as the axis runs positive.
+     */
+    ideologyAffinity?: Record<string, number>;
+    /** SharedState scalar → weight -1..1; positive = happier when it is high. */
+    signals?: Record<string, number>;
 }
 
 export interface EmpirePosture {

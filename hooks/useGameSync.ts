@@ -5,6 +5,8 @@ import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker } from '@/types/ui-state';
+// Pure module (types only) — safe on the client, unlike the fs-backed services.
+import { getDominantIdeologyType } from '@/lib/politics/ideology-service';
 
 // A pending order dispatched more than this long before a snapshot arrived is
 // assumed to be reflected in that snapshot (worker polls every 5s + margin).
@@ -14,6 +16,17 @@ const PENDING_CONFIRM_LAG_MS = 8000;
 // writes when something changed, so 4s keeps latency invisible while idle
 // polls return a few bytes (since-filtered on the server).
 const POLL_INTERVAL_MS = 4000;
+
+// Cabinet seat labels. Mirrors PORTFOLIO_LABEL in lib/government/cabinet-service,
+// which is worker-side (fs registries) and cannot be imported on the client.
+const PORTFOLIO_LABELS: Record<string, string> = {
+    defence: 'Defence',
+    economy: 'Economy',
+    science: 'Science',
+    intelligence: 'Intelligence',
+    interior: 'Interior',
+    foreign: 'Foreign Affairs',
+};
 
 export function useGameSync() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
@@ -249,6 +262,30 @@ export function useGameSync() {
         }
 
         const playerPosture = playerFactionId ? world.movement.empirePostures.get(playerFactionId) : undefined;
+        // Government Phase 1: the worker owns world.government; mirror the
+        // player's slice so the panel shows live approval/capital.
+        const playerGov = playerFactionId
+            ? (world as any).government?.get?.(playerFactionId)
+            : undefined;
+        const headOfState = playerGov?.headOfStateId
+            ? (world as any).leadership?.leaders?.get?.(playerGov.headOfStateId)
+            : undefined;
+        const headOfStateSnapshot = headOfState
+            ? {
+                  id: headOfState.id,
+                  name: headOfState.name,
+                  title: headOfState.title ?? 'Head of State',
+                  age: Math.round(headOfState.age ?? 0),
+                  health: Math.round(headOfState.health ?? 100),
+                  popularity: Math.round(headOfState.popularity ?? 50),
+                  politicalSkill: Math.round(headOfState.politicalSkill ?? 50),
+                  traits: headOfState.traits ?? [],
+                  // Sim clock: leaders age half a year per sim day (Phase 2).
+                  yearsInOffice: headOfState.tookOfficeAtSeconds
+                      ? Math.max(0, Math.round(((world.nowSeconds ?? 0) - headOfState.tookOfficeAtSeconds) / 86400 * 0.5))
+                      : 0,
+              }
+            : undefined;
         const politicsState = {
             ...useUIStore.getState().politicsState,
             allFactions: Object.values(factionMap),
@@ -256,6 +293,68 @@ export function useGameSync() {
                 id: b.id, name: b.name, influence: b.influence,
                 satisfaction: b.satisfaction, trend: b.trend ?? 0,
             })) ?? useUIStore.getState().politicsState.blocs,
+            government: playerGov
+                ? {
+                      headOfState: headOfStateSnapshot,
+                      cabinet: Object.entries(playerGov.cabinet ?? {})
+                          .map(([portfolio, leaderId]) => {
+                              const minister = leaderId
+                                  ? (world as any).leadership?.leaders?.get?.(leaderId)
+                                  : undefined;
+                              if (!minister) return null;
+                              return {
+                                  portfolio,
+                                  portfolioLabel: PORTFOLIO_LABELS[portfolio] ?? portfolio,
+                                  id: minister.id,
+                                  name: minister.name,
+                                  competence: Math.round(minister.competence ?? 50),
+                                  loyalty: Math.round(minister.loyalty ?? 50),
+                                  corruption: Math.round(minister.corruption ?? 0),
+                                  ambitionDrive: Math.round(minister.ambitionDrive ?? 50),
+                                  traits: minister.traits ?? [],
+                              };
+                          })
+                          .filter((m): m is NonNullable<typeof m> => m !== null),
+                      cabinetAdvice: playerGov.cabinetAdvice ?? [],
+                      parties: playerGov.parties ?? [],
+                      bills: playerGov.bills ?? [],
+                      ideology: (playerPosture as any)?.ideology
+                          ? {
+                                label: getDominantIdeologyType((playerPosture as any).ideology),
+                                axes: { ...(playerPosture as any).ideology },
+                            }
+                          : undefined,
+                      coupPressure: playerGov.coupPressure ?? 0,
+                      ambitions: (playerGov.ambitions ?? []).map((a: any) => ({
+                          id: a.id,
+                          name: a.name,
+                          description: a.description,
+                          progress: a.progress ?? 0,
+                          completed: Boolean(a.completed),
+                          prestige: a.prestige ?? 0,
+                      })),
+                      legacy: {
+                          prestige: playerGov.legacy?.prestige ?? 0,
+                          completed: playerGov.legacy?.completed ?? [],
+                          bonuses: playerGov.legacy?.bonuses ?? {},
+                          chronicle: playerGov.legacy?.chronicle ?? [],
+                      },
+                      governmentId: playerGov.governmentId,
+                      institutionName: playerGov.institutionName ?? 'Executive Council',
+                      tags: playerGov.tags ?? [],
+                      approval: playerGov.approval ?? 50,
+                      legitimacy: playerGov.legitimacy ?? 50,
+                      politicalCapital: playerGov.politicalCapital ?? 0,
+                      politicalCapitalCap: playerGov.politicalCapitalCap ?? 100,
+                      corruption: playerGov.corruption ?? 0,
+                      senatePower: playerGov.senatePower ?? 0,
+                      executivePower: playerGov.executivePower ?? 0,
+                      activePolicies: playerGov.activePolicies ?? [],
+                      history: playerGov.history ?? [],
+                  }
+                : useUIStore.getState().politicsState.government,
+            activePolicies: playerGov?.activePolicies
+                ?? useUIStore.getState().politicsState.activePolicies,
             shared: {
                 warFatigue: world.shared?.warFatigue ?? 0,
                 stability: world.shared?.stability ?? 1,

@@ -510,6 +510,58 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { policyId: "id" },
     cost: { influence: 50 }
   },
+  // Government Phase 1: policies are paid for in political capital, charged by
+  // the worker inside the policy service — no resource cost here.
+  GOV_ENACT_POLICY: {
+    id: "GOV_ENACT_POLICY",
+    category: "internal",
+    params: { policyId: "id" },
+    cost: {}
+  },
+  GOV_REPEAL_POLICY: {
+    id: "GOV_REPEAL_POLICY",
+    category: "internal",
+    params: { policyId: "id" },
+    cost: {}
+  },
+  // Phase 3: cabinet and governors. Political capital is charged worker-side.
+  GOV_APPOINT_MINISTER: {
+    id: "GOV_APPOINT_MINISTER",
+    category: "internal",
+    params: { portfolio: "id", leaderId: "id" },
+    cost: {}
+  },
+  GOV_DISMISS_MINISTER: {
+    id: "GOV_DISMISS_MINISTER",
+    category: "internal",
+    params: { portfolio: "id" },
+    cost: {}
+  },
+  GOV_APPOINT_GOVERNOR: {
+    id: "GOV_APPOINT_GOVERNOR",
+    category: "internal",
+    params: { planetId: "id", leaderId: "id" },
+    cost: {}
+  },
+  // Phase 4: parliament and the officer corps. Political capital charged worker-side.
+  GOV_LOBBY_PARTY: {
+    id: "GOV_LOBBY_PARTY",
+    category: "internal",
+    params: { billId: "id", partyId: "id" },
+    cost: {}
+  },
+  GOV_DECREE_POLICY: {
+    id: "GOV_DECREE_POLICY",
+    category: "internal",
+    params: { policyId: "id" },
+    cost: {}
+  },
+  GOV_PURGE_OFFICERS: {
+    id: "GOV_PURGE_OFFICERS",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
   INTERNAL_PURGE_FACTION: {
     id: "INTERNAL_PURGE_FACTION",
     category: "internal",

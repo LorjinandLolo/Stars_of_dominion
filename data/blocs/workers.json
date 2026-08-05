@@ -1,0 +1,18 @@
+{
+    "id": "workers",
+    "name": "Labour Unions",
+    "tags": ["collectivist", "labour", "welfare"],
+    "base_influence": 20,
+    "favored_policies": ["welfare_expansion", "civil_reforms"],
+    "society_hints": ["collectiv", "worker", "commune", "syndical"],
+    "ideology_affinity": {
+        "collectivism_individualism": 0.4,
+        "authoritarianism_liberty": -0.3,
+        "militarism_pacifism": -0.2
+    },
+    "signals": {
+        "commodityAccess": 0.6,
+        "tradeEfficiency": 0.3,
+        "warFatigue": -0.5
+    }
+}

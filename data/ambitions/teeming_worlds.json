@@ -1,0 +1,12 @@
+{
+    "id": "teeming_worlds",
+    "name": "Teeming Worlds",
+    "description": "Grow the population of the realm by a third.",
+    "metric": "population",
+    "mode": "delta",
+    "target": 40,
+    "prestige": 110,
+    "political_capital": 20,
+    "legitimacy": 5,
+    "bonus": { "approval": 2 }
+}

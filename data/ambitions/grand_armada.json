@@ -1,0 +1,12 @@
+{
+    "id": "grand_armada",
+    "name": "The Grand Armada",
+    "description": "A fleet no rival dares meet in open space.",
+    "metric": "fleet_power",
+    "mode": "absolute",
+    "target": 2000,
+    "prestige": 160,
+    "political_capital": 30,
+    "legitimacy": 8,
+    "bonus": { "upkeep": -0.05 }
+}

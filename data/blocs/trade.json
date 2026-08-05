@@ -1,0 +1,14 @@
+{
+    "id": "trade",
+    "name": "Merchant Guilds",
+    "tags": ["merchant_culture", "corporate", "individualist"],
+    "base_influence": 25,
+    "favored_policies": ["open_trade", "trade_expansion", "free_trade"],
+    "society_hints": ["trade", "merchant", "banking", "corporate", "market"],
+    "ideology_affinity": {
+        "collectivism_individualism": -0.4,
+        "tradition_progress": -0.2,
+        "militarism_pacifism": -0.2
+    },
+    "signals": {}
+}

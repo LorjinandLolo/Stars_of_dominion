@@ -1,0 +1,21 @@
+{
+    "id": "war_mobilization",
+    "name": "General Mobilization",
+    "description": "Reserves called up, industry conscripted. Everything the war needs, taken from everything else.",
+    "category": "military",
+    "tags": ["military_policy", "emergency", "war_preparation"],
+    "political_capital_cost": 40,
+    "repeal_cost": 10,
+    "effects": {
+        "production": 0.18,
+        "upkeep": 0.15,
+        "pop_growth": -0.1,
+        "approval": -6
+    },
+    "ideology_shift": {
+        "militarism_pacifism": 12,
+        "centralization_autonomy": 6
+    },
+    "support_tags": ["militarist", "authoritarian", "order"],
+    "oppose_tags": ["pacifist", "labour", "environmentalist", "merchant_culture"]
+}

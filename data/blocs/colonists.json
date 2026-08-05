@@ -1,0 +1,16 @@
+{
+    "id": "colonists",
+    "name": "Colonial Assemblies",
+    "tags": ["colonist", "autonomist", "expansionist"],
+    "base_influence": 15,
+    "favored_policies": ["colonial_charter", "expand_frontier"],
+    "society_hints": ["expansion", "settler", "pioneer", "stampede"],
+    "ideology_affinity": {
+        "expansionism_isolationism": 0.4,
+        "centralization_autonomy": -0.3
+    },
+    "signals": {
+        "commodityAccess": 0.4,
+        "stability": 0.3
+    }
+}

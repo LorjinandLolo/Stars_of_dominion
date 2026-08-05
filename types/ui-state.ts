@@ -301,12 +301,135 @@ export interface InternalBloc {
     isCrisisContributor: boolean;
 }
 
+/** The sitting head of state, mirrored from world.leadership. */
+export interface HeadOfStateSnapshot {
+    id: string;
+    name: string;
+    title: string;
+    age: number;
+    health: number;         // 0-100
+    popularity: number;     // 0-100
+    politicalSkill: number; // 0-100
+    traits: string[];
+    yearsInOffice: number;
+}
+
+/** A sitting cabinet minister. */
+export interface MinisterSnapshot {
+    portfolio: string;
+    portfolioLabel: string;
+    id: string;
+    name: string;
+    competence: number;
+    loyalty: number;
+    corruption: number;
+    ambitionDrive: number;
+    traits: string[];
+}
+
+/** One minister's position in the current cabinet debate. */
+export interface CabinetAdviceSnapshot {
+    portfolio: string;
+    portfolioLabel: string;
+    ministerName: string;
+    advice: string;
+    suggestedPolicyId?: string;
+    reliability: number;
+}
+
+/** The empire's evolving political identity (7 axes, -100..100). */
+export interface IdeologySnapshot {
+    /** Human-readable summary, e.g. "Militarist Expansionist Autocracy". */
+    label: string;
+    axes: Record<string, number>;
+}
+
+/** A party in the legislature, derived from an interest-group bloc. */
+export interface PartySnapshot {
+    id: string;
+    name: string;
+    seats: number;   // 0-100
+    stance: number;  // -1..1 toward the government
+}
+
+/** Legislation before the chamber. */
+export interface BillSnapshot {
+    id: string;
+    policyId: string;
+    policyName: string;
+    projectedSupport: number; // 0-100 seats
+    resolvesAtSeconds: number;
+    lobbied: string[];
+    status: 'pending' | 'passed' | 'failed';
+}
+
+/** One ambition of the sitting head of state (Legacy System). */
+export interface AmbitionSnapshot {
+    id: string;
+    name: string;
+    description: string;
+    progress: number; // 0-1
+    completed: boolean;
+    prestige: number;
+}
+
+/** What past administrations left behind. */
+export interface LegacySnapshot {
+    prestige: number;
+    completed: string[];
+    bonuses: Record<string, number>;
+    chronicle: Array<{ timestamp: number; leaderName: string; ambition: string }>;
+}
+
+/** The player government's political state, mirrored from world.government. */
+export interface GovernmentSnapshot {
+    headOfState?: HeadOfStateSnapshot;
+    cabinet: MinisterSnapshot[];
+    cabinetAdvice: CabinetAdviceSnapshot[];
+    parties: PartySnapshot[];
+    bills: BillSnapshot[];
+    ideology?: IdeologySnapshot;
+    /** 0-100. How close the officer corps is to moving against the government. */
+    coupPressure: number;
+    ambitions: AmbitionSnapshot[];
+    legacy: LegacySnapshot;
+    governmentId?: string;
+    institutionName: string;
+    tags: string[];
+    approval: number;            // 0-100
+    legitimacy: number;          // 0-100
+    politicalCapital: number;
+    politicalCapitalCap: number;
+    corruption: number;          // 0-100
+    senatePower: number;
+    executivePower: number;
+    activePolicies: string[];
+    history: Array<{ timestamp: number; event: string }>;
+}
+
+/** A policy the player can enact, from the server-side data/policies catalog. */
+export interface PolicyOption {
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+    cost: number;
+    repealCost: number;
+    effects: Record<string, number>;
+    supportTags: string[];
+    opposeTags: string[];
+}
+
 export interface PoliticsState {
     blocs: InternalBloc[];
     activePolicies: string[];
     crisisConditionMet: boolean;
     activeIndicators: string[];
     allFactions: any[]; // Phase 3: Live faction data for diplomacy
+    /** Live government state (approval, legitimacy, political capital). */
+    government?: GovernmentSnapshot;
+    /** Policy catalog, fetched once from the server (fs-backed registry). */
+    policyCatalog?: PolicyOption[];
     /** Snapshot of the shared integration bus scalars the UI needs. */
     shared?: {
         warFatigue: number;   // 0-100

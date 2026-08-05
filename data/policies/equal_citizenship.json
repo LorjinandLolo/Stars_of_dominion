@@ -1,0 +1,19 @@
+{
+    "id": "equal_citizenship",
+    "name": "Equal Citizenship",
+    "description": "Every species under the flag counts as a citizen. Xeno communities integrate; nativists riot.",
+    "category": "social",
+    "tags": ["social_policy", "integration"],
+    "political_capital_cost": 30,
+    "effects": {
+        "pop_growth": 0.1,
+        "approval": 2,
+        "legitimacy_drift": 1
+    },
+    "ideology_shift": {
+        "authoritarianism_liberty": -6,
+        "collectivism_individualism": 4
+    },
+    "support_tags": ["minority", "xenophile", "liberty", "labour"],
+    "oppose_tags": ["traditional", "authoritarian", "religious"]
+}

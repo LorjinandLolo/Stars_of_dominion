@@ -1,0 +1,19 @@
+{
+    "id": "state_censorship",
+    "name": "State Censorship",
+    "description": "The information cycle is managed. Dissent quiets, and the government stops hearing bad news.",
+    "category": "state",
+    "tags": ["information_policy", "repression"],
+    "political_capital_cost": 20,
+    "effects": {
+        "approval": 3,
+        "legitimacy_drift": -1
+    },
+    "ideology_shift": {
+        "authoritarianism_liberty": 10,
+        "order_chaos": 6
+    },
+    "forbidden_government_tags": ["elected_leadership"],
+    "support_tags": ["authoritarian", "order", "militarist"],
+    "oppose_tags": ["democracy", "liberty", "scientific_culture", "minority"]
+}

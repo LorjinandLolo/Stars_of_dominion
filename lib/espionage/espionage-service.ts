@@ -21,9 +21,14 @@ import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { canLaunchCategory, stageInfo } from './network-stages';
 import { generateReportForOperation, pruneExpiredReports } from './intel-reports';
 import { triggerCrisis } from '../crisis-manager';
-import { pushWorldStory } from '../press-system/integration';
+import { pushWorldStory, adjustPublicTrust } from '../press-system/integration';
 import { StorySource, StoryTruth } from '../press-system/types';
 import { shiftRivalry } from '../diplomacy/offer-service';
+// Government Phase 5: political warfare reaches the rival's institutions.
+import { CABINET_PORTFOLIOS } from '../government/types';
+import { getMinister } from '../government/cabinet-service';
+import { resolveSuccession } from '../government/succession-service';
+import { recordPoliticalEvent } from '../government/ideology-drift';
 
 const espCfg = config.espionage;
 const visCfg = config.visibility;
@@ -389,7 +394,49 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
         return !!agr && (agr.aFactionId === op.targetFactionId || agr.bFactionId === op.targetFactionId);
     });
 
+    // Political warfare lands on the rival's government, not its infrastructure
+    // (Government Phase 5). Absent for factions with no government state.
+    const targetGov = (world as any).government?.get?.(op.targetFactionId);
+    const targetPosture = world.movement.empirePostures.get(op.targetFactionId);
+
+    // Running covert operations at all hardens the actor's own politics.
+    try {
+        recordPoliticalEvent(world, op.actorFactionId, 'covert_operation', mult);
+    } catch { /* posture absent on minimal worlds */ }
+
     for (const effect of def.effects) {
+        if (targetGov) {
+            if (effect.type === 'election_swing') {
+                targetGov.electionInterference = Math.min(60, (targetGov.electionInterference ?? 0) + effect.value * mult);
+            }
+            if (effect.type === 'approval_damage') {
+                for (const bloc of targetPosture?.blocs ?? []) {
+                    bloc.satisfaction = Math.max(0, bloc.satisfaction - effect.value * mult * 0.4);
+                }
+                adjustPublicTrust(world, op.targetFactionId, -effect.value * mult * 0.3);
+            }
+            if (effect.type === 'coup_pressure') {
+                targetGov.coupPressure = Math.min(100, (targetGov.coupPressure ?? 0) + effect.value * mult);
+            }
+            if (effect.type === 'minister_compromise') {
+                // The most ambitious minister is the cheapest to turn.
+                const ministers = CABINET_PORTFOLIOS
+                    .map(p => getMinister(world, op.targetFactionId, p))
+                    .filter((m): m is NonNullable<typeof m> => Boolean(m));
+                const mark = ministers.sort((a, b) => (b.ambitionDrive ?? 50) - (a.ambitionDrive ?? 50))[0];
+                if (mark) {
+                    mark.loyalty = Math.max(0, mark.loyalty - effect.value * mult);
+                    mark.corruption = Math.min(100, (mark.corruption ?? 0) + effect.value * mult * 0.5);
+                }
+            }
+            if (effect.type === 'head_of_state_assassination') {
+                try {
+                    resolveSuccession(world, op.targetFactionId, 'death');
+                    targetGov.legitimacy = Math.max(0, targetGov.legitimacy - 10);
+                } catch { /* no head of state seated */ }
+            }
+        }
+
         if (effect.type === 'instability_increase') {
             const sys = world.movement.systems.get(op.targetRegionId);
             if (sys) sys.instability = Math.min(100, sys.instability + effect.value * mult);

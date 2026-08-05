@@ -1,0 +1,30 @@
+{
+    "id": "military_junta",
+    "tags": [
+        "military_junta",
+        "autocracy",
+        "authoritarian",
+        "militarist"
+    ],
+    "base_values": {
+        "senate_power": 0,
+        "executive_power": 95,
+        "legitimacy": 35
+    },
+    "modifiers": {
+        "fleet_production": 0.2,
+        "diplomatic_reputation": -0.3,
+        "crisis_response_speed": 0.25
+    },
+    "allowed_policies": [
+        "permanent_martial_law",
+        "war_mobilization",
+        "state_censorship",
+        "militarize"
+    ],
+    "restricted_policies": [
+        "civil_reforms",
+        "equal_citizenship"
+    ],
+    "institution_name": "Supreme Command Council"
+}

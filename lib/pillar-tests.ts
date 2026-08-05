@@ -318,6 +318,7 @@ function makeWorld(): GameWorldState {
         press: makePressWorld(),
         construction: makeConstructionWorld(factionId),
         leadership: { leaders: new Map(), recruitmentPool: [], nowSeconds: 1000000 },
+        government: new Map(),
         doctrines: new Map(),
         reputation: new Map(),
         nowSeconds: 1000000,

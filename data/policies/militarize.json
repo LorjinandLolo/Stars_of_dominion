@@ -1,0 +1,19 @@
+{
+    "id": "militarize",
+    "name": "Militarized Production",
+    "description": "Factories retool for war output. The armed forces are pleased; workers and academies are not.",
+    "category": "military",
+    "tags": ["military_policy", "industry"],
+    "political_capital_cost": 25,
+    "effects": {
+        "production": 0.12,
+        "upkeep": 0.08,
+        "approval": -3
+    },
+    "ideology_shift": {
+        "militarism_pacifism": 8,
+        "order_chaos": 3
+    },
+    "support_tags": ["militarist", "authoritarian", "order"],
+    "oppose_tags": ["pacifist", "labour", "environmentalist"]
+}

@@ -1,0 +1,12 @@
+{
+    "id": "settle_the_frontier",
+    "name": "Settle the Frontier",
+    "description": "Five new worlds settled under my administration.",
+    "metric": "planets_owned",
+    "mode": "delta",
+    "target": 5,
+    "prestige": 140,
+    "political_capital": 25,
+    "legitimacy": 5,
+    "bonus": { "pop_growth": 0.05 }
+}

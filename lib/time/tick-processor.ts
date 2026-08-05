@@ -25,6 +25,14 @@ import { tickInterventions } from '../diplomacy/intervention-service';
 import { runDiplomaticAI } from '../ai/diplomatic-ai-service';
 import { tickPress } from '../press-system/integration';
 import { tickBlocDrift } from '../politics/politics-service';
+import { tickGovernments } from '../government/government-service';
+import { tickLeadership } from '../government/succession-service';
+import { tickCabinets } from '../government/cabinet-service';
+import { tickGovernors } from '../government/governor-service';
+import { tickParliament } from '../government/parliament-service';
+import { tickCoups } from '../government/coup-service';
+import { tickIdeologyDrift } from '../government/ideology-drift';
+import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { PopulationService } from '../construction/population-service';
@@ -109,6 +117,24 @@ export async function runStrategicTick(
         }
     } catch (e) { console.error('[TickProcessor] tickBlocDrift failed:', e); }
     try { tickMandates(world); } catch (e) { console.error('[TickProcessor] tickMandates failed:', e); }
+    // 9f-2: Government — approval derived from blocs + press trust, legitimacy
+    // drift, political capital accrual. Runs after bloc drift so approval reads
+    // this tick's satisfaction, not last tick's.
+    try { tickGovernments(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickGovernments failed:', e); }
+    // 9f-3: The head of state ages, wears down, and eventually is succeeded.
+    // After tickGovernments so stress reads this tick's approval.
+    try { tickLeadership(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickLeadership failed:', e); }
+    // 9f-4: Cabinet loyalty/corruption drift and resignations; governors work
+    // their worlds (stability, unrest, skimming).
+    try { tickCabinets(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCabinets failed:', e); }
+    try { tickGovernors(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickGovernors failed:', e); }
+    // 9f-5: The chamber divides on tabled bills, terms expire into elections,
+    // and the officer corps decides how it feels about all of it.
+    try { tickParliament(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickParliament failed:', e); }
+    try { tickCoups(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCoups failed:', e); }
+    // 9f-6: The empire's ideology drifts toward whoever actually holds power at
+    // home. Runs last so it reads this tick's bloc satisfaction.
+    try { tickIdeologyDrift(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickIdeologyDrift failed:', e); }
     // 9g: Sanctions bite (coalition-scaled) and the press cycle runs
     try { tickSanctions(world); } catch (e) { console.error('[TickProcessor] tickSanctions failed:', e); }
     // 9h: Promises judged at deadline, intervention windows close
@@ -185,9 +211,16 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
     try {
         for (const [factionId, techState] of world.tech) {
             if (!techState.activeSlots) continue;
+
+            // A capable Science Ministry buys real tempo (Government Phase 3).
+            let researchSpeed = 1;
+            try {
+                researchSpeed = Math.max(0.25, 1 + getGovernmentModifiers(world, factionId).research_speed);
+            } catch { /* no government on minimal worlds */ }
+
             for (const slot of techState.activeSlots) {
                 if (slot.status !== 'researching') continue;
-                slot.ticksCompleted = (slot.ticksCompleted ?? 0) + 1;
+                slot.ticksCompleted = (slot.ticksCompleted ?? 0) + researchSpeed;
                 if (slot.ticksRequired && slot.ticksCompleted >= slot.ticksRequired) {
                     slot.status = 'complete';
                     // Mark tech as unlocked

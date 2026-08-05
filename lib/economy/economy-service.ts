@@ -25,6 +25,7 @@ import { tickConstructionGlobal } from '../construction/construction-service';
 import { initializePlanetServices, updatePlanetServices } from './services/service-engine';
 import { tickAllCompanies } from './corporate/company-registry';
 import { getEmpireDoctrineModifiers } from '../doctrine/doctrine-service';
+import { getGovernmentModifiers } from '../government/modifiers';
 import { tickStorage, snapshotStorables, buildStorageProfiles } from '../logistics/storage-service';
 import type { StockpileSnapshot } from '../logistics/storage-service';
 import { tickDistribution, chainThroughputMultiplier, poolingEfficiency } from '../logistics/distribution-service';
@@ -119,12 +120,20 @@ export function getFactionEconomyMods(world: GameWorldState, factionId: string):
         doctrine = getEmpireDoctrineModifiers(world, factionId);
     } catch { /* doctrine state absent on minimal worlds */ }
 
+    // Government output: enacted policies, the sitting cabinet, and permanent
+    // legacy bonuses. Stacks multiplicatively with tech and doctrine; all zeroes
+    // when the faction has no government.
+    let policy = { production: 0, tax_income: 0, upkeep: 0, pop_growth: 0 } as Record<string, number>;
+    try {
+        policy = getGovernmentModifiers(world, factionId) as unknown as Record<string, number>;
+    } catch { /* government state absent on minimal worlds */ }
+
     return {
-        production: (tech['eco_production_mult'] ?? 1) * (1 + (doctrine['productionCoordination'] ?? 0)),
+        production: (tech['eco_production_mult'] ?? 1) * (1 + (doctrine['productionCoordination'] ?? 0)) * (1 + (policy['production'] ?? 0)),
         manufacturing: tech['eco_manufacturing_mult'] ?? 1,
-        tax: (tech['eco_tax_mult'] ?? 1) * (1 + (doctrine['taxationRate'] ?? 0)),
-        upkeep: tech['eco_upkeep_mult'] ?? 1,
-        popGrowth: 1 + (doctrine['popGrowth'] ?? 0),
+        tax: (tech['eco_tax_mult'] ?? 1) * (1 + (doctrine['taxationRate'] ?? 0)) * (1 + (policy['tax_income'] ?? 0)),
+        upkeep: (tech['eco_upkeep_mult'] ?? 1) * (1 + (policy['upkeep'] ?? 0)),
+        popGrowth: (1 + (doctrine['popGrowth'] ?? 0)) * (1 + (policy['pop_growth'] ?? 0)),
     };
 }
 

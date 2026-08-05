@@ -274,6 +274,82 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     ],
     counterplayTags: ["bodyguard_network", "decoy_doubles"]
   },
+  // ── Government-facing political warfare (Government Phase 5) ──────────────
+  {
+    id: "election_interference",
+    name: "Election Interference",
+    category: "political",
+    description: "Fund opposition media, forge rolls and buy precincts ahead of a rival's vote.",
+    targetTypes: ["empire", "faction"],
+    intelCost: 60,
+    creditsCost: 3000,
+    durationHoursMin: 36,
+    durationHoursMax: 72,
+    baseSuccessChance: 0.5,
+    baseExposureChance: 0.35,
+    risk: "high",
+    effects: [
+      { type: "election_swing", value: 30 },
+      { type: "approval_damage", value: 6 }
+    ],
+    counterplayTags: ["electoral_oversight", "counter_disinformation"]
+  },
+  {
+    id: "blackmail_minister",
+    name: "Blackmail a Minister",
+    category: "political",
+    description: "Acquire compromising material on a cabinet member and put them on a leash.",
+    targetTypes: ["empire", "leader"],
+    intelCost: 50,
+    creditsCost: 2000,
+    durationHoursMin: 24,
+    durationHoursMax: 48,
+    baseSuccessChance: 0.55,
+    baseExposureChance: 0.3,
+    risk: "high",
+    effects: [
+      { type: "minister_compromise", value: 30 }
+    ],
+    counterplayTags: ["loyalty_audit", "bodyguard_network"]
+  },
+  {
+    id: "fund_coup",
+    name: "Fund a Coup",
+    category: "political",
+    description: "Move money and guarantees to disaffected officers in a rival's general staff.",
+    targetTypes: ["empire", "faction"],
+    intelCost: 120,
+    creditsCost: 8000,
+    durationHoursMin: 48,
+    durationHoursMax: 96,
+    baseSuccessChance: 0.35,
+    baseExposureChance: 0.55,
+    risk: "extreme",
+    effects: [
+      { type: "coup_pressure", value: 25 },
+      { type: "minister_compromise", value: 15 }
+    ],
+    counterplayTags: ["loyalty_audit", "officer_purge"]
+  },
+  {
+    id: "assassinate_head_of_state",
+    name: "Assassinate the Head of State",
+    category: "political",
+    description: "Remove a rival's leader outright. Nothing about this stays deniable for long.",
+    targetTypes: ["empire", "leader"],
+    intelCost: 200,
+    creditsCost: 15000,
+    durationHoursMin: 72,
+    durationHoursMax: 120,
+    baseSuccessChance: 0.2,
+    baseExposureChance: 0.75,
+    risk: "extreme",
+    effects: [
+      { type: "head_of_state_assassination", value: 1 },
+      { type: "approval_damage", value: 10 }
+    ],
+    counterplayTags: ["bodyguard_network", "decoy_doubles", "counter_intelligence_sweep"]
+  },
   {
     id: "raid_trade_route",
     name: "Covert Piracy",

@@ -180,6 +180,7 @@ export function getGameWorldState(): GameWorldState {
             council: defaultCouncilState,
             press: { tick: 0, empires: new Map(), planets: new Map(), pressFactions: new Map(), activeStories: new Map(), publishedStories: [], crises: new Map(), investigations: new Map(), campaigns: new Map(), quarantinedPlanets: new Set(), jammedSystems: new Set(), counterNarratives: new Map() },
             leadership: buildEmptyLeadershipState(),
+            government: new Map(),
             doctrines: new Map(),
             reputation: new Map(),
             nowSeconds: Math.floor(Date.now() / 1000),

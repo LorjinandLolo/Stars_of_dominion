@@ -125,6 +125,10 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!Array.isArray(corp.tollLog)) corp.tollLog = [];
     if (!Array.isArray(corp.eventLog)) corp.eventLog = [];
     if (typeof corp.tick !== 'number') corp.tick = 0;
+
+    // Government & Leadership Phase 0: per-faction political state. Snapshots
+    // written before it existed get an empty map; ensureGovernments fills it.
+    if (!(w.government instanceof Map)) w.government = new Map();
 }
 
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────

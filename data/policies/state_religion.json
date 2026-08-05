@@ -1,0 +1,19 @@
+{
+    "id": "state_religion",
+    "name": "Established Faith",
+    "description": "One creed, recognised in law. The temples deliver the crowds; everyone else notices the door closing.",
+    "category": "social",
+    "tags": ["social_policy", "religion"],
+    "political_capital_cost": 25,
+    "effects": {
+        "approval": 4,
+        "legitimacy_drift": 1,
+        "pop_growth": -0.03
+    },
+    "ideology_shift": {
+        "tradition_progress": 10,
+        "order_chaos": 5
+    },
+    "support_tags": ["religious", "traditional", "order"],
+    "oppose_tags": ["technocratic", "scientific_culture", "minority", "xenophile"]
+}

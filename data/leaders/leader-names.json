@@ -1,0 +1,27 @@
+{
+    "given": [
+        "Corvan", "Ilesa", "Tarrik", "Vesna", "Odric", "Sarai", "Kelvane", "Mirah",
+        "Doran", "Yisel", "Faron", "Ateza", "Renn", "Lucia", "Hadrek", "Nima",
+        "Solvei", "Ardan", "Ketrin", "Vasho", "Emeri", "Torvald", "Sanja", "Ozren",
+        "Lirael", "Casmir", "Delphine", "Rurik", "Anselm", "Yara", "Bastien", "Noor"
+    ],
+    "family": [
+        "Valeris", "Okonkwo", "Sarn", "Delacroix", "Voss", "Anand", "Reyes", "Halvard",
+        "Otieno", "Castellan", "Nakamura", "Brandt", "Ferreira", "Kaine", "Solari", "Vandermeer",
+        "Achterberg", "Rostova", "Marchetti", "Oyelaran", "Thorne", "Bergland", "Quintero", "Ashworth",
+        "Nkemdirim", "Halloran", "Petrov", "Sandoval", "Ekwueme", "Lindqvist", "Balthazar", "Ferris"
+    ],
+    "titles": {
+        "autocracy": ["Imperator", "Sovereign", "High Regent"],
+        "centralized_rule": ["Lord Executor", "Prefect", "High Steward"],
+        "democracy": ["Chancellor", "President", "First Minister"],
+        "senate_system": ["Consul", "Speaker", "Praetor"],
+        "elected_leadership": ["Chancellor", "Premier", "First Citizen"],
+        "theocracy": ["Hierarch", "Patriarch", "Voice of the Covenant"],
+        "religious": ["Hierarch", "High Celebrant", "Keeper of the Word"],
+        "corporate": ["Chairman", "Executive Director", "Chief Steward"],
+        "technocracy": ["Director", "Prime Analyst", "Chief Architect"],
+        "hive_mind": ["Nexus Voice", "Prime Node"],
+        "default": ["Head of State", "Chief Executive", "Governing Chair"]
+    }
+}

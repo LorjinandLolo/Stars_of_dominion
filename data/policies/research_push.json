@@ -1,0 +1,17 @@
+{
+    "id": "research_push",
+    "name": "Technological Push",
+    "description": "State funding floods the academies. Progress accelerates; the temples call it hubris.",
+    "category": "economy",
+    "tags": ["science_policy", "investment"],
+    "political_capital_cost": 20,
+    "effects": {
+        "upkeep": 0.12,
+        "approval": 1
+    },
+    "ideology_shift": {
+        "tradition_progress": -8
+    },
+    "support_tags": ["technocratic", "scientific_culture", "progressive"],
+    "oppose_tags": ["religious", "traditional"]
+}

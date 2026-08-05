@@ -1,0 +1,14 @@
+{
+    "id": "military",
+    "name": "Military Command",
+    "tags": ["militarist", "authoritarian", "order"],
+    "base_influence": 25,
+    "favored_policies": ["militarize", "emergency_fleet_expansion", "war_mobilization"],
+    "society_hints": ["militar", "honor", "crusade", "legion", "hunt"],
+    "ideology_affinity": {
+        "militarism_pacifism": 0.5,
+        "order_chaos": 0.3,
+        "authoritarianism_liberty": 0.2
+    },
+    "signals": {}
+}

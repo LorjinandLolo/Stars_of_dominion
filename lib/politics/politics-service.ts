@@ -12,6 +12,16 @@ import { policyRegistry, factionRegistry } from './registry';
 const polCfg = config.politics;
 const docCfg = config.doctrine;
 
+/** Blocs with hand-tuned drift cases below. Everything else drifts generically. */
+const LEGACY_BLOC_IDS = new Set(['military', 'trade', 'frontier', 'science']);
+
+/** Generic drift rates, per hour, before the ×10 satisfaction scaling. */
+const GENERIC_AFFINITY_RATE = 0.1;
+const GENERIC_SIGNAL_RATE = 0.1;
+const GENERIC_MEAN_REVERSION = 0.03;
+/** Shared 0–1 scalars read as "good" above this and "bad" below it. */
+const SIGNAL_BASELINE = 0.7;
+
 // ─── Bloc drift sources ────────────────────────────────────────────────────────
 
 /**
@@ -93,6 +103,13 @@ export function tickBlocDrift(
                 break;
         }
 
+        // Interest groups added after the original four carry no hand-tuned
+        // case; they drift from their definition's ideology affinities and
+        // shared-state signals instead (data/blocs/*.json).
+        if (!LEGACY_BLOC_IDS.has(bloc.id)) {
+            delta += genericBlocDrift(bloc, posture, shared) * hours;
+        }
+
         // Espionage pressure general drift (political subversion bleeds into all blocs)
         delta -= shared.espionagePressure * 0.5 * hours;
 
@@ -108,6 +125,50 @@ export function tickBlocDrift(
 
     // Crisis check
     checkAndEmitCrisis(factionId, posture, world);
+}
+
+/**
+ * Drift for a data-defined bloc, per hour. Pure: everything it needs was copied
+ * onto the bloc at bootstrap, so this module never imports the fs registry.
+ */
+function genericBlocDrift(bloc: InfluenceBloc, posture: EmpirePosture, shared: SharedState): number {
+    let delta = 0;
+
+    for (const [axis, weight] of Object.entries(bloc.ideologyAffinity ?? {})) {
+        const value = (posture.ideology as unknown as Record<string, number> | undefined)?.[axis];
+        if (typeof value !== 'number') continue;
+        delta += weight * (value / 100) * GENERIC_AFFINITY_RATE;
+    }
+
+    for (const [key, weight] of Object.entries(bloc.signals ?? {})) {
+        const magnitude = signalMagnitude(key, shared);
+        if (magnitude === null) continue;
+        delta += weight * magnitude * GENERIC_SIGNAL_RATE;
+    }
+
+    // Without pressure a bloc eases back toward neutral rather than staying
+    // pinned at whatever the last crisis left it on.
+    delta += ((50 - bloc.satisfaction) / 100) * GENERIC_MEAN_REVERSION;
+
+    return delta;
+}
+
+/** Normalize a SharedState scalar into a signed "how good is this" magnitude. */
+function signalMagnitude(key: string, shared: SharedState): number | null {
+    switch (key) {
+        case 'stability':
+        case 'tradeEfficiency':
+        case 'commodityAccess':
+        case 'blocSatisfaction':
+        case 'infraIntegrity':
+            return shared[key] - SIGNAL_BASELINE;
+        case 'espionagePressure':
+            return shared.espionagePressure;
+        case 'warFatigue':
+            return shared.warFatigue / 100;
+        default:
+            return null;
+    }
 }
 
 function computeAverageFrontierInstability(factionId: string, world: GameWorldState): number {
