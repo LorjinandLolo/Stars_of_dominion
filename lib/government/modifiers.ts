@@ -9,6 +9,7 @@ import type { GameWorldState } from '@/lib/game-world-state';
 import { getPolicyModifiers } from './policy-service';
 import { getCabinetModifiers } from './cabinet-service';
 import { getLegacyModifiers } from './legacy-service';
+import { getCohesionModifiers } from './defiance-service';
 
 /**
  * Keys every consumer understands. `research_speed` is cabinet-only today, the
@@ -43,6 +44,8 @@ export function getGovernmentModifiers(world: GameWorldState, factionId: string)
     try { sources.push(getPolicyModifiers(world, factionId) as unknown as Record<string, number>); } catch { /* registry unavailable */ }
     try { sources.push(getCabinetModifiers(world, factionId)); } catch { /* no cabinet yet */ }
     try { sources.push(getLegacyModifiers(world, factionId)); } catch { /* no legacy yet */ }
+    // Phase 6.2: a state losing cohesion simply collects and produces less.
+    try { sources.push(getCohesionModifiers(world, factionId)); } catch { /* no cohesion yet */ }
 
     for (const source of sources) {
         for (const key of Object.keys(total) as Array<keyof GovernmentModifiers>) {

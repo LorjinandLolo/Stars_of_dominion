@@ -145,8 +145,11 @@ export function adjustSharePrice(
     infraValuePerAsset = 5_000     // estimated credit value per owned infra node
 ): void {
     const infraValue = company.infrastructureOwned.length * infraValuePerAsset;
+    // Charter-layer holdings carry their real book value; they are deliberately
+    // kept out of infrastructureOwned so nothing is valued twice.
+    const assetValue = (company.assets ?? []).reduce((s, a) => s + a.value, 0);
     const routeValue = routeVolumeTotal * 0.5; // 50 credits per unit of flow volume
-    const nav = company.treasury + infraValue + routeValue;
+    const nav = company.treasury + infraValue + assetValue + routeValue - (company.debt ?? 0);
 
     // NAV per share, with a small volatility range ±5%
     const navPerShare = nav / Math.max(1, company.sharesOutstanding);

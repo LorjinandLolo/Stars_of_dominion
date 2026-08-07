@@ -125,10 +125,26 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!Array.isArray(corp.tollLog)) corp.tollLog = [];
     if (!Array.isArray(corp.eventLog)) corp.eventLog = [];
     if (typeof corp.tick !== 'number') corp.tick = 0;
+    // Charter Corporation layer: the political ledgers a company generates.
+    // Per-company fields are backfilled by ensureCorporateState at world load.
+    if (!(corp.demands instanceof Map)) corp.demands = new Map();
+    if (!(corp.crises instanceof Map)) corp.crises = new Map();
+    if (!(corp.megaprojects instanceof Map)) corp.megaprojects = new Map();
+    if (!(corp.hostPolicies instanceof Map)) corp.hostPolicies = new Map();
+    if (!(corp.rivalries instanceof Map)) corp.rivalries = new Map();
 
     // Government & Leadership Phase 0: per-faction political state. Snapshots
     // written before it existed get an empty map; ensureGovernments fills it.
     if (!(w.government instanceof Map)) w.government = new Map();
+
+    // Phase 6.1: per-planet cohesion. ensureCohesion reseeds it from live state.
+    if (!(w.planetCohesion instanceof Map)) w.planetCohesion = new Map();
+
+    // Phase 6.2: open defiance crises.
+    if (!(w.defianceEvents instanceof Map)) w.defianceEvents = new Map();
+
+    // Phase 6.3: regional independence crises.
+    if (!(w.secessionCrises instanceof Map)) w.secessionCrises = new Map();
 }
 
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────

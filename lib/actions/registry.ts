@@ -465,6 +465,104 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     cost: { credits: 500 }
   },
 
+  // --- Charter Corporations ---
+  // Founding capital, political capital and every credit cost below are priced
+  // per-charter inside the handler; the charter as written decides what it costs.
+  CORP_FOUND_CHARTER: {
+    id: "CORP_FOUND_CHARTER",
+    category: "economic",
+    params: {
+      baseName: "string", headquartersSystemId: "id", mission: "string",
+      territory: "string", rights: "object", ownership: "object",
+      profitShareToState: "number", foundingCapital: "number",
+    },
+    cost: {}
+  },
+  CORP_RESPOND_DEMAND: {
+    id: "CORP_RESPOND_DEMAND",
+    category: "internal",
+    params: { demandId: "id", response: "string" },
+    cost: {}
+  },
+  CORP_RESPOND_PROPOSAL: {
+    id: "CORP_RESPOND_PROPOSAL",
+    category: "economic",
+    params: { proposalId: "id", response: "string" },
+    cost: {}
+  },
+  CORP_RESOLVE_CRISIS: {
+    id: "CORP_RESOLVE_CRISIS",
+    category: "crisis",
+    params: { crisisId: "id", optionId: "string" },
+    cost: {}
+  },
+  CORP_BUY_SHARES: {
+    id: "CORP_BUY_SHARES",
+    category: "economic",
+    params: { companyId: "id", shareCount: "number" },
+    cost: {}
+  },
+  CORP_SELL_SHARES: {
+    id: "CORP_SELL_SHARES",
+    category: "economic",
+    params: { companyId: "id", shareCount: "number" },
+    cost: {}
+  },
+  CORP_HOSTILE_TAKEOVER: {
+    id: "CORP_HOSTILE_TAKEOVER",
+    category: "economic",
+    params: { companyId: "id" },
+    cost: { influence: 50 }
+  },
+  CORP_MERGE: {
+    id: "CORP_MERGE",
+    category: "economic",
+    params: { survivorId: "id", absorbedId: "id" },
+    cost: { influence: 75 }
+  },
+  CORP_SET_HOST_POLICY: {
+    id: "CORP_SET_HOST_POLICY",
+    category: "diplomatic",
+    params: { companyId: "id", stance: "string", tariffRate: "number" },
+    cost: { influence: 25 }
+  },
+  CORP_NATIONALIZE: {
+    id: "CORP_NATIONALIZE",
+    category: "internal",
+    params: { companyId: "id" },
+    cost: {}
+  },
+  CORP_REVOKE_CHARTER: {
+    id: "CORP_REVOKE_CHARTER",
+    category: "internal",
+    params: { companyId: "id" },
+    cost: {}
+  },
+  CORP_GRANT_RIGHT: {
+    id: "CORP_GRANT_RIGHT",
+    category: "internal",
+    params: { companyId: "id", right: "string" },
+    cost: {}
+  },
+  CORP_REVOKE_RIGHT: {
+    id: "CORP_REVOKE_RIGHT",
+    category: "internal",
+    params: { companyId: "id", right: "string" },
+    cost: {}
+  },
+  CORP_SET_PROFIT_SHARE: {
+    id: "CORP_SET_PROFIT_SHARE",
+    category: "economic",
+    params: { companyId: "id", profitShareToState: "number" },
+    cost: {}
+  },
+  CORP_SUBSIDIZE: {
+    id: "CORP_SUBSIDIZE",
+    category: "economic",
+    params: { companyId: "id", amount: "number" },
+    cost: {} // dynamic: the subsidy is charged in the handler
+  },
+
   // --- Economic / Development Actions ---
   PLANET_CONSTRUCT_BUILDING: {
     id: "PLANET_CONSTRUCT_BUILDING",
@@ -560,6 +658,40 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "GOV_PURGE_OFFICERS",
     category: "internal",
     params: {},
+    cost: {}
+  },
+  // Phase 6.2: answering a defiant world. Cost varies by response, so it is
+  // charged worker-side in the defiance service rather than declared here.
+  GOV_ANSWER_DEFIANCE: {
+    id: "GOV_ANSWER_DEFIANCE",
+    category: "internal",
+    params: { eventId: "id", response: "id" },
+    cost: {}
+  },
+  // Phase 6.3: negotiating (or crushing) a region that wants out.
+  GOV_GRANT_CONCESSION: {
+    id: "GOV_GRANT_CONCESSION",
+    category: "internal",
+    params: { crisisId: "id", demandId: "id" },
+    cost: {}
+  },
+  GOV_SUPPRESS_SECESSION: {
+    id: "GOV_SUPPRESS_SECESSION",
+    category: "internal",
+    params: { crisisId: "id" },
+    cost: {}
+  },
+  // Phase 6.5: taking a public side in someone else's collapse.
+  DIP_RECOGNIZE_BREAKAWAY: {
+    id: "DIP_RECOGNIZE_BREAKAWAY",
+    category: "diplomatic",
+    params: { rebelFactionId: "id" },
+    cost: {}
+  },
+  DIP_GUARANTEE_BREAKAWAY: {
+    id: "DIP_GUARANTEE_BREAKAWAY",
+    category: "diplomatic",
+    params: { rebelFactionId: "id" },
     cost: {}
   },
   INTERNAL_PURGE_FACTION: {

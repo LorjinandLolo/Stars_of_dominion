@@ -15,6 +15,9 @@ import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
 import type { LeadershipWorldState } from './leadership/types';
 import type { GovernmentState } from './government/types';
+import type { PlanetCohesion } from './government/cohesion-types';
+import type { DefianceEvent } from './government/defiance-types';
+import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
@@ -170,6 +173,27 @@ export interface GameWorldState {
      * ensureGovernments at world load; absent on pre-Phase-0 snapshots.
      */
     government: Map<string, GovernmentState>;
+
+    /**
+     * Phase 6.1 — per-planet Empire Cohesion, keyed by planetId. The empire
+     * aggregate lives on GovernmentState.cohesion; this is where "which worlds
+     * are leaving" is actually answered. Absent on pre-6.1 snapshots.
+     */
+    planetCohesion: Map<string, PlanetCohesion>;
+
+    /**
+     * Phase 6.2 — open and recently decided defiance crises, keyed by event id.
+     * Stage 3 of the collapse ladder: worlds that have stopped complying and are
+     * waiting for the capital's answer.
+     */
+    defianceEvents: Map<string, DefianceEvent>;
+
+    /**
+     * Phase 6.3 — regional independence crises, keyed by crisis id. Stage 4 of
+     * the collapse ladder: a group of worlds negotiating its way out of the
+     * empire, or out of the empire's control.
+     */
+    secessionCrises: Map<string, SecessionCrisis>;
     doctrines: Map<string, EmpireDoctrines>;
     reputation: Map<string, FactionReputation>;
 

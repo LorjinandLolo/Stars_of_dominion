@@ -29,6 +29,27 @@ import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
 import { resolveSuccession } from '../government/succession-service';
 import { recordPoliticalEvent } from '../government/ideology-drift';
+import {
+    applySeparatistFunding,
+    applyRebelArmament,
+    applyGovernorCorruption,
+    rallyAroundTheFlag,
+} from '../government/foreign-interference-service';
+
+/**
+ * Operations that meddle in a rival's internal collapse. Being exposed running
+ * one of these triggers a rally-around-the-flag in the target (Phase 6.5).
+ */
+const POLITICAL_WARFARE_OPS = new Set([
+    'fund_separatists',
+    'smuggle_weapons',
+    'bribe_governor',
+    'fund_coup',
+    'election_interference',
+    'blackmail_minister',
+    'assassinate_head_of_state',
+    'incite_rebellion',
+]);
 
 const espCfg = config.espionage;
 const visCfg = config.visibility;
@@ -360,6 +381,14 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     if (exposed || outcome === 'backfire') {
         world.shared.stability = clampShared(world.shared.stability - 0.05);
         updateInfiltration(world, op.actorFactionId, op.targetFactionId, -15);
+
+        // Phase 6.5: getting caught meddling in someone's collapse hands them a
+        // rally-around-the-flag. Meddling you cannot finish is worse than none.
+        if (POLITICAL_WARFARE_OPS.has(op.definitionId ?? '')) {
+            try {
+                rallyAroundTheFlag(world, op.targetFactionId, op.actorFactionId);
+            } catch { /* government state absent on minimal worlds */ }
+        }
     }
 
     // Release operation capacity
@@ -428,6 +457,16 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
                     mark.loyalty = Math.max(0, mark.loyalty - effect.value * mult);
                     mark.corruption = Math.min(100, (mark.corruption ?? 0) + effect.value * mult * 0.5);
                 }
+            }
+            // Phase 6.5: exploiting the target's collapse ladder directly.
+            if (effect.type === 'separatist_funding') {
+                applySeparatistFunding(world, op.actorFactionId, op.targetFactionId, op.targetRegionId, effect.value * mult);
+            }
+            if (effect.type === 'rebel_armament') {
+                applyRebelArmament(world, op.actorFactionId, op.targetFactionId, op.targetRegionId, effect.value * mult);
+            }
+            if (effect.type === 'governor_corruption') {
+                applyGovernorCorruption(world, op.actorFactionId, op.targetFactionId, op.targetRegionId, effect.value * mult);
             }
             if (effect.type === 'head_of_state_assassination') {
                 try {

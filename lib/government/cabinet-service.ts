@@ -14,6 +14,7 @@ import { RNG } from '@/lib/trade-system/rng';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
 import { refillRecruitmentPool } from './succession-service';
+import { isFactionAtWar } from './cohesion-service';
 
 /** Loyalty below this and a minister walks (or is walked out). */
 const RESIGNATION_LOYALTY = 15;
@@ -296,8 +297,10 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
     if (!gov) return [];
 
     const shared = world.shared;
-    const atWar = [...world.rivalries.values()].some(r =>
-        (r as any).atWar && ((r as any).factionA === factionId || (r as any).factionB === factionId));
+    // RivalryState has no `atWar` flag — war is escalation 7, and the field
+    // names are empireAId/empireBId. The original guess here read undefined and
+    // silently made every cabinet talk as if the empire were always at peace.
+    const atWar = isFactionAtWar(world, factionId);
     const out: CabinetAdvice[] = [];
 
     for (const portfolio of CABINET_PORTFOLIOS) {

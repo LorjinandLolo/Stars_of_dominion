@@ -24,6 +24,30 @@ export type NavTab =
 
 import { Resource, CharterPower } from '@/lib/economy/corporate/company-types';
 export { Resource, CharterPower };
+import type {
+    CorporateActionRecord,
+    CorporateCrisis,
+    CorporateDemand,
+    CorporateHostPolicy,
+    CorporateMission,
+    CorporatePersonality,
+    CorporateRight,
+    CorporateStanding,
+    MegaprojectProposal,
+    OperatingTerritory,
+} from '@/lib/economy/corporate/charter-types';
+export type {
+    CorporateActionRecord,
+    CorporateCrisis,
+    CorporateDemand,
+    CorporateHostPolicy,
+    CorporateMission,
+    CorporatePersonality,
+    CorporateRight,
+    CorporateStanding,
+    MegaprojectProposal,
+    OperatingTerritory,
+};
 import { ProxyConflict, Treaty, TradePact, Tribute } from '@/lib/politics/cold-war-types';
 import { SimulationState as PressSimulationState, PressFactionType, PressFactionState } from '@/lib/press-system/types';
 import { ResearchSlot } from '@/lib/tech/types';
@@ -337,6 +361,76 @@ export interface CabinetAdviceSnapshot {
     reliability: number;
 }
 
+/** One named cause pulling the empire together or apart. */
+export interface CohesionDriverSnapshot {
+    id: string;
+    label: string;
+    delta: number;
+}
+
+/** A world's standing in the political order. */
+export interface WorldCohesionSnapshot {
+    planetId: string;
+    planetName: string;
+    systemId: string;
+    cohesion: number;
+    target: number;
+    trend: number;
+    stage: string;
+    stageLabel: string;
+    distanceFromCapital: number;
+    drivers: CohesionDriverSnapshot[];
+}
+
+/** A world openly refusing the centre, awaiting the government's answer. */
+export interface DefianceSnapshot {
+    id: string;
+    planetId: string;
+    planetName: string;
+    kind: string;
+    kindLabel: string;
+    title: string;
+    demand: string;
+    causes: string[];
+    expiresAtSeconds: number;
+    status: 'open' | 'resolved' | 'ignored';
+    resolution?: string;
+    outcome?: string;
+}
+
+/** A region negotiating its way out of the empire. */
+export interface SecessionSnapshot {
+    id: string;
+    name: string;
+    planetNames: string[];
+    leaderName?: string;
+    independenceSupport: number;
+    governorLoyalty: number;
+    militaryLoyalty: number;
+    demands: string[];
+    granted: string[];
+    causes: string[];
+    /** Foreign empires caught financing this movement. */
+    exposedSponsors: string[];
+    deadlineSeconds: number;
+    status: string;
+    outcome?: string;
+}
+
+/** A state born from an empire's collapse — ours or someone else's. */
+export interface BreakawaySnapshot {
+    factionId: string;
+    name: string;
+    parentFactionId: string;
+    /** True when this broke away from US. */
+    isOurRebel: boolean;
+    worlds: number;
+    legitimacy: number;
+    recognisedByUs: boolean;
+    guaranteedByUs: boolean;
+    recognisedByCount: number;
+}
+
 /** The empire's evolving political identity (7 axes, -100..100). */
 export interface IdeologySnapshot {
     /** Human-readable summary, e.g. "Militarist Expansionist Autocracy". */
@@ -391,6 +485,24 @@ export interface GovernmentSnapshot {
     ideology?: IdeologySnapshot;
     /** 0-100. How close the officer corps is to moving against the government. */
     coupPressure: number;
+    /** 0-100. Whether the civilization still accepts being one political order. */
+    cohesion: number;
+    cohesionTrend: number;
+    cohesionDrivers: CohesionDriverSnapshot[];
+    /** The worlds closest to leaving, worst first. */
+    weakestWorlds: WorldCohesionSnapshot[];
+    /** Open defiance crises awaiting an answer, soonest deadline first. */
+    defiance: DefianceSnapshot[];
+    /** Recently decided crises, for the record. */
+    recentDefiance: DefianceSnapshot[];
+    /** Regions demanding independence, soonest deadline first. */
+    secession: SecessionSnapshot[];
+    /** Regional crises already decided. */
+    recentSecession: SecessionSnapshot[];
+    /** Breakaway states in the galaxy, ours and other empires'. */
+    breakaways: BreakawaySnapshot[];
+    /** systemId → cohesion, for the Institutional map overlay. */
+    systemCohesion: Record<string, number>;
     ambitions: AmbitionSnapshot[];
     legacy: LegacySnapshot;
     governmentId?: string;
@@ -474,6 +586,14 @@ export interface DiscourseState {
 
 // ─── Corporate ──────────────────────────────────────────────────────────────
 
+/** One row of a company's cap table, as synced to the client. */
+export interface OwnershipRowSnapshot {
+    holderId: string;
+    kind: 'government' | 'foreign' | 'class';
+    shares: number;
+    percent: number;
+}
+
 export interface CompanySnapshot {
     id: string;
     fullName: string;
@@ -490,6 +610,52 @@ export interface CompanySnapshot {
     monopolySystemsCount: number;
     corporateColoniesCount: number;
     powers: CharterPower[];
+
+    // ── Charter Corporation layer ──
+    mission: CorporateMission;
+    territory: OperatingTerritory;
+    rights: CorporateRight[];
+    personality: CorporatePersonality;
+    standing: CorporateStanding;
+    influence: number;
+    loyalty: number;
+    profitShareToState: number;
+    stateRemittanceTotal: number;
+    /** Private-military rung, 0–5, already clamped by granted rights. */
+    militaryTier: number;
+    militaryLabel: string;
+    assetCount: number;
+    /** Combined credits-per-tick from company holdings and megaprojects. */
+    assetIncomePerTick: number;
+    presenceSystemIds: string[];
+    operatingFactionIds: string[];
+    debt: number;
+    netAssetValue: number;
+    marketCap: number;
+    ownership: OwnershipRowSnapshot[];
+    /** Largest holder and whether they hold an outright majority. */
+    boardHolderId: string;
+    boardPercent: number;
+    boardMajority: boolean;
+    /** Shares currently purchasable on the open market. */
+    availableFloat: number;
+    /** The viewing player's stake, in shares and percent. */
+    playerShares: number;
+    playerPercent: number;
+    nationalized: boolean;
+    charterRevocationPending: boolean;
+    hasGoneRogue: boolean;
+    /** Newest-first log of what the company decided on its own. */
+    recentActions: CorporateActionRecord[];
+}
+
+/** A live commercial rivalry, as synced to the client. */
+export interface CorporateRivalrySnapshot {
+    id: string;
+    companyAId: string;
+    companyBId: string;
+    intensity: number;
+    priceWar: boolean;
 }
 
 export interface MarketTicker {
@@ -505,6 +671,22 @@ export interface CorporateState {
     markets: MarketTicker[];
     playerPortfolioValue: number;
     totalDividendsReceived: number;
+
+    // ── Charter Corporation layer — the player's boardroom inbox ──
+    /** Lobbying awaiting an answer from this government. */
+    demands: CorporateDemand[];
+    /** Corporate crises on this government's desk. */
+    crises: CorporateCrisis[];
+    /** Megaproject proposals put to this government (and those under way). */
+    megaprojects: MegaprojectProposal[];
+    /** Foreign companies operating inside this empire's borders. */
+    foreignCompanyIds: string[];
+    /** This empire's standing policy toward each foreign company. */
+    hostPolicies: CorporateHostPolicy[];
+    /** Live commercial rivalries anywhere in the galaxy. */
+    rivalries: CorporateRivalrySnapshot[];
+    /** Credits remitted to this government by its charters, all time. */
+    stateRemittanceTotal: number;
 }
 
 // ─── Press & Viral News ──────────────────────────────────────────────────────

@@ -97,6 +97,13 @@ export const defaultCorporateState: CorporateState = {
     markets: [],
     playerPortfolioValue: 0,
     totalDividendsReceived: 0,
+    demands: [],
+    crises: [],
+    megaprojects: [],
+    foreignCompanyIds: [],
+    hostPolicies: [],
+    rivalries: [],
+    stateRemittanceTotal: 0,
 };
 
 export const defaultEmpireIdentityState: EmpireIdentityState = {

@@ -350,6 +350,61 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     ],
     counterplayTags: ["bodyguard_network", "decoy_doubles", "counter_intelligence_sweep"]
   },
+  // ── Exploiting a rival's collapse (Government Phase 6.5) ──────────────────
+  {
+    id: "fund_separatists",
+    name: "Fund Separatists",
+    category: "political",
+    description: "Money and organisers for a rival's independence movement. Their frontier problem becomes their war.",
+    targetTypes: ["empire", "system"],
+    intelCost: 70,
+    creditsCost: 5000,
+    durationHoursMin: 36,
+    durationHoursMax: 72,
+    baseSuccessChance: 0.5,
+    baseExposureChance: 0.4,
+    risk: "high",
+    effects: [
+      { type: "separatist_funding", value: 12 }
+    ],
+    counterplayTags: ["loyalty_audit", "counter_disinformation", "border_security"]
+  },
+  {
+    id: "smuggle_weapons",
+    name: "Smuggle Weapons",
+    category: "military_blackops",
+    description: "Arm a region already in revolt. Turns a political crisis into one the garrison cannot simply walk into.",
+    targetTypes: ["empire", "system"],
+    intelCost: 90,
+    creditsCost: 9000,
+    durationHoursMin: 48,
+    durationHoursMax: 96,
+    baseSuccessChance: 0.45,
+    baseExposureChance: 0.5,
+    risk: "extreme",
+    effects: [
+      { type: "rebel_armament", value: 20 }
+    ],
+    counterplayTags: ["border_security", "anti_piracy_patrol", "counterintel_sweep"]
+  },
+  {
+    id: "bribe_governor",
+    name: "Bribe a Governor",
+    category: "political",
+    description: "Put a rival's planetary governor on a retainer. Cheaper than a fleet, and it works while you sleep.",
+    targetTypes: ["empire", "planet", "leader"],
+    intelCost: 45,
+    creditsCost: 3500,
+    durationHoursMin: 24,
+    durationHoursMax: 48,
+    baseSuccessChance: 0.55,
+    baseExposureChance: 0.3,
+    risk: "high",
+    effects: [
+      { type: "governor_corruption", value: 25 }
+    ],
+    counterplayTags: ["loyalty_audit", "forensic_intel"]
+  },
   {
     id: "raid_trade_route",
     name: "Covert Piracy",

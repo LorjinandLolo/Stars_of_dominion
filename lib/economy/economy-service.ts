@@ -853,9 +853,11 @@ export function tickEconomy(
     //    real planetary output vs. consumption and active trade route volumes.
     tickGalacticTrade(world, deltaSeconds, tradeRng);
 
-    // 7. Chartered companies: tolls, dividends, piracy suppression, corruption.
+    // 7. Charter Corporations: tolls, dividends, their own holdings, the profit
+    //    share owed to the state, autonomous growth, lobbying, crises and
+    //    megaprojects.
     if (world.corporate) {
-        tickAllCompanies(world.corporate, world);
+        tickAllCompanies(world.corporate, world, deltaSeconds);
     }
 }
 

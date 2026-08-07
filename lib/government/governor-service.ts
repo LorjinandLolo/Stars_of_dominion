@@ -13,6 +13,7 @@ import { RNG } from '@/lib/trade-system/rng';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
 import { refillRecruitmentPool } from './succession-service';
+import { raiseDefiance } from './defiance-service';
 
 /**
  * Ceiling on appointed governors per faction. A sprawling empire cannot staff
@@ -97,6 +98,28 @@ function takeGovernorCandidate(world: GameWorldState, factionId: string, planetI
     refillRecruitmentPool(world, factionId);
 
     return governor;
+}
+
+/**
+ * Remove a world's governor and install the best available replacement.
+ * Returns the new governor, or undefined if the planet is not administered.
+ * Used by the defiance response "Replace Governor" (Phase 6.2).
+ */
+export function replaceGovernor(world: GameWorldState, planetId: string): Leader | undefined {
+    const planet = world.construction?.planets?.get(planetId);
+    if (!planet?.ownerId) return undefined;
+
+    const outgoing = getGovernor(world, planetId);
+    if (outgoing) {
+        outgoing.assignmentId = undefined;
+        // Being recalled in a crisis is not a friendly parting.
+        outgoing.loyalty = clamp100(outgoing.loyalty - 30);
+        outgoing.history.push({ timestamp: world.nowSeconds, description: `Recalled from ${planetId} during a political crisis.` });
+    }
+
+    const replacement = takeGovernorCandidate(world, planet.ownerId, planetId);
+    planet.governorId = replacement.id;
+    return replacement;
 }
 
 export interface GovernorActionResult {
@@ -185,7 +208,12 @@ export function tickGovernors(world: GameWorldState, deltaSeconds: number): void
 
             const rng = new RNG(seedFromString(`${governor.id}|defiance|${Math.floor(world.nowSeconds / 86400)}`));
             if (governor.loyalty < 15 && rng.check(0.1 * days)) {
+                // Phase 6.2: a governor breaking with the capital is no longer
+                // just a notification — it opens a crisis the player must answer.
                 announceDefiance(world, planet.id, planet.ownerId, governor);
+                try {
+                    raiseDefiance(world, planet.id, 'policy_refusal');
+                } catch { /* defiance state absent on minimal worlds */ }
                 if (gov) gov.legitimacy = clamp100(gov.legitimacy - 1);
             }
         }

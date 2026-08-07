@@ -32,6 +32,10 @@ import { tickGovernors } from '../government/governor-service';
 import { tickParliament } from '../government/parliament-service';
 import { tickCoups } from '../government/coup-service';
 import { tickIdeologyDrift } from '../government/ideology-drift';
+import { tickCohesion } from '../government/cohesion-service';
+import { tickDefiance } from '../government/defiance-service';
+import { tickSecession } from '../government/secession-service';
+import { tickCivilWar } from '../government/civil-war-service';
 import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
@@ -135,6 +139,19 @@ export async function runStrategicTick(
     // 9f-6: The empire's ideology drifts toward whoever actually holds power at
     // home. Runs last so it reads this tick's bloc satisfaction.
     try { tickIdeologyDrift(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickIdeologyDrift failed:', e); }
+    // 9f-7: Empire Cohesion. Runs LAST in the political block — it reads this
+    // tick's approval, corruption, governor loyalty and planetary conditions,
+    // and owns the per-faction stability/warFatigue those drivers depend on.
+    try { tickCohesion(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCohesion failed:', e); }
+    // 9f-8: Stage 3 of the collapse ladder — collapsed worlds refuse the centre,
+    // and crises the government never answered close against it.
+    try { tickDefiance(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickDefiance failed:', e); }
+    // 9f-9: Stage 4 — worlds past defiance combine into regions asking to leave,
+    // and regions that ran out of patience stop asking.
+    try { tickSecession(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickSecession failed:', e); }
+    // 9f-10: Stage 5 — regions that have held their revolt become states of
+    // their own, at war with the empire they left.
+    try { tickCivilWar(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCivilWar failed:', e); }
     // 9g: Sanctions bite (coalition-scaled) and the press cycle runs
     try { tickSanctions(world); } catch (e) { console.error('[TickProcessor] tickSanctions failed:', e); }
     // 9h: Promises judged at deadline, intervention windows close

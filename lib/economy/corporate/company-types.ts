@@ -9,6 +9,15 @@
  */
 
 import { Resource } from '../../trade-system/types';
+import type {
+    CorporateMission,
+    OperatingTerritory,
+    CorporateRight,
+    CorporatePersonality,
+    CorporateAsset,
+    CorporateActionRecord,
+    CorporateStanding,
+} from './charter-types';
 
 // ─── Re-export expanded Resource enum for consumers ──────────────────────────
 export { Resource };
@@ -111,6 +120,66 @@ export interface CharteredCompany {
     hasGoneRogue?: boolean;
     /** Share price before the last adjustment (for UI tickers). */
     sharePricePrev?: number;
+
+    // ── Charter Corporation layer ───────────────────────────────────────────
+    // Every field below is optional: companies chartered before this layer
+    // existed are backfilled by `ensureCharterFields` at world load, so the
+    // simulation may assume they are present after bootstrap.
+
+    /** What the charter authorises it to do for a living. */
+    mission?: CorporateMission;
+    /** How far from home the charter lets it operate. */
+    territory?: OperatingTerritory;
+    /** Individual privileges written into the charter. */
+    rights?: CorporateRight[];
+    /** Drives every decision the company makes without being asked. */
+    personality?: CorporatePersonality;
+    /** Share of profit returned to the founding government, 0–1. */
+    profitShareToState?: number;
+    /** Cumulative credits remitted to the founding government. */
+    stateRemittanceTotal?: number;
+
+    /** 0–100. Political weight: employment, revenue, infrastructure, trade, arms. */
+    influence?: number;
+    /**
+     * 0–100. How willingly it does what the founding government asks. Distinct
+     * from autonomy: a loyal company may be highly autonomous (trusted), and a
+     * tightly-held one may be deeply disloyal (resentful).
+     */
+    loyalty?: number;
+    /** Consecutive demands the founding government has refused. */
+    refusedDemands?: number;
+    /** Demands the founding government has granted. */
+    grantedDemands?: number;
+    /** Derived arc position: instrument → partner → power → rival → rogue. */
+    standing?: CorporateStanding;
+
+    /** Physical holdings the company bought with its own money. */
+    assets?: CorporateAsset[];
+    /** Systems the company operates in — assets, colonies or monopolies. */
+    presenceSystemIds?: string[];
+    /** Foreign empires whose space this company operates inside. */
+    operatingFactionIds?: string[];
+
+    /** Sim-seconds of the last autonomous growth cycle. */
+    lastGrowthAt?: number;
+    /** Sim-seconds of the last demand issued to the founding government. */
+    lastDemandAt?: number;
+    /** Sim-seconds of the last crisis this company generated. */
+    lastCrisisAt?: number;
+    /** Sim-seconds of the last megaproject proposal. */
+    lastProposalAt?: number;
+    /** Bounded ring of autonomous decisions, newest last. */
+    growthLog?: CorporateActionRecord[];
+
+    /** Outstanding debt in credits. Serviced from treasury each dividend period. */
+    debt?: number;
+    /** Permanent income added by completed megaprojects, credits per tick. */
+    megaprojectIncome?: number;
+    /** Credits per tick owed to the founding state by completed megaprojects. */
+    stateMegaprojectIncome?: number;
+    /** Set when the state has nationalised the company; it no longer acts freely. */
+    nationalized?: boolean;
 }
 
 // ─── Faction-side Corporate State ────────────────────────────────────────────
@@ -150,7 +219,24 @@ export type CompanyEventType =
     | 'colony_acquired'
     | 'went_rogue'
     | 'share_issued'
-    | 'governance_expanded';
+    | 'governance_expanded'
+    // ── Charter Corporation layer ──
+    | 'chartered'
+    | 'grew'
+    | 'demand_issued'
+    | 'demand_resolved'
+    | 'crisis_opened'
+    | 'crisis_resolved'
+    | 'megaproject_proposed'
+    | 'megaproject_started'
+    | 'megaproject_completed'
+    | 'shares_traded'
+    | 'takeover'
+    | 'merged'
+    | 'nationalized'
+    | 'host_policy_changed'
+    | 'rivalry_escalated'
+    | 'standing_changed';
 
 export interface CompanyEvent {
     type: CompanyEventType;

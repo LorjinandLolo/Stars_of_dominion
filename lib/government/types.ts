@@ -30,6 +30,8 @@ export interface GovernmentEvent {
     event: string;
 }
 
+import type { CohesionDriver } from './cohesion-types';
+
 /**
  * What a minister is pressing the head of state to do. Derived every tick and
  * stored on the government so the client can render the cabinet debate without
@@ -157,6 +159,18 @@ export interface GovernmentState {
     /** 0–100. Fed by ministers/governors in Phase 3. */
     corruption: number;
 
+    /**
+     * 0–100. Population-weighted aggregate of per-planet cohesion — whether the
+     * civilization still accepts being one political order. NOT approval: a
+     * disliked government can rule a cohesive empire, and a popular one can be
+     * losing its frontier. Per-planet detail lives in world.planetCohesion.
+     */
+    cohesion: number;
+    /** Cohesion points per sim day, signed. */
+    cohesionTrend: number;
+    /** What is holding the empire together or pulling it apart, largest first. */
+    cohesionDrivers: CohesionDriver[];
+
     /** Policy ids currently in force (data/policies/*.json). */
     activePolicies: string[];
 
@@ -165,9 +179,11 @@ export interface GovernmentState {
     executivePower: number;
 
     /**
-     * 0–100 per-faction mirrors of world.shared. NOT authoritative yet — they
-     * are overwritten from world.shared on every tick so that the day a pillar
-     * needs true per-empire values, only the writer changes, not the readers.
+     * 0–100, per-faction and AUTHORITATIVE since Phase 6.1. `stability` is the
+     * population-weighted mean of this empire's own worlds; `warFatigue` accrues
+     * from this empire's own wars. Both are written by tickCohesion. The
+     * galaxy-wide scalars in world.shared are a separate, older concept that
+     * other pillars still read — do not re-mirror them here.
      */
     stability: number;
     warFatigue: number;
@@ -195,6 +211,14 @@ export interface GovernmentState {
     coupPressure: number;
     /** Sim-clock seconds of the last coup warning fired (dedupes notifications). */
     lastCoupWarningSeconds?: number;
+
+    /**
+     * Phase 6.5 — foreign empires that have recognised this state, and those
+     * that have guaranteed its independence. Only breakaways normally care:
+     * legitimacy is the one thing a new state cannot manufacture alone.
+     */
+    recognisedBy?: string[];
+    guaranteedBy?: string[];
     /**
      * 0–60. Foreign money and forged rolls working against the incumbent at the
      * next election (espionage `election_interference`). Consumed by the vote.

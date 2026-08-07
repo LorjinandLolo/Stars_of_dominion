@@ -77,6 +77,8 @@ function systemColor(
     tradeValue: number,
     escalationLevel: number,
     security: number,
+    /** Phase 6.1: lowest cohesion among the player's worlds here, if any. */
+    cohesion?: number,
 ): { fill: string; stroke: string } {
     switch (activeOverlay) {
         case 'tradeHeat': {
@@ -94,8 +96,15 @@ function systemColor(
                 stroke: '#9a3412',
             };
         }
-        case 'institutionalAlignment':
-            return { fill: '#312e81', stroke: '#6366f1' };
+        case 'institutionalAlignment': {
+            // Empire Cohesion: cyan worlds accept the political order, red ones
+            // are on their way out. Systems we hold nothing in stay neutral.
+            if (cohesion === undefined) return { fill: '#1e293b', stroke: '#334155' };
+            if (cohesion >= 60) return { fill: '#164e63', stroke: '#22d3ee' };
+            if (cohesion >= 40) return { fill: '#452a0a', stroke: '#f59e0b' };
+            if (cohesion >= 20) return { fill: '#4a1d05', stroke: '#f97316' };
+            return { fill: '#450a0a', stroke: '#ef4444' };
+        }
         case 'regionalStability': {
             const stable = security > 60;
             return stable
@@ -125,10 +134,16 @@ function getVisibilityStyles(
     }
 }
 
+/** Stable identity so the selector above never churns the render loop. */
+const EMPTY_COHESION: Record<string, number> = {};
+
 export default function GalaxyShell() {
     const systems = useUIStore(s => s.systems);
     const regions = useUIStore(s => s.regions);
     const activeOverlay = useUIStore(s => s.activeOverlay);
+    // Phase 6.1: systemId → lowest cohesion among our worlds there, for the
+    // Institutional overlay. Empty until the worker has ticked cohesion once.
+    const systemCohesion = useUIStore(s => s.politicsState.government?.systemCohesion) ?? EMPTY_COHESION;
     const selectedSystemId = useUIStore(s => s.selectedSystemId);
     const setSelectedSystem = useUIStore(s => s.setSelectedSystem);
     const fleets = useUIStore(s => s.fleets);
@@ -509,7 +524,7 @@ export default function GalaxyShell() {
                     const px = hexToPixel(sys.q, sys.r);
                     const isSelected = selectedSystemId === sys.id;
                     const revealStage = factionVisibility?.[sys.id]?.revealStage || 'unknown';
-                    const styles = getVisibilityStyles(revealStage, systemColor(activeOverlay, sys.instability, sys.tradeValue, sys.escalationLevel, sys.security));
+                    const styles = getVisibilityStyles(revealStage, systemColor(activeOverlay, sys.instability, sys.tradeValue, sys.escalationLevel, sys.security, systemCohesion[sys.id]));
 
                     return (
                         <SystemNode

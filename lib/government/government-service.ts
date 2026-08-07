@@ -107,6 +107,9 @@ export function ensureGovernments(world: GameWorldState): void {
             if (!Array.isArray(existing.parties)) existing.parties = [];
             if (!Array.isArray(existing.bills)) existing.bills = [];
             if (typeof existing.coupPressure !== 'number') existing.coupPressure = 0;
+            if (typeof existing.cohesion !== 'number') existing.cohesion = 70;
+            if (typeof existing.cohesionTrend !== 'number') existing.cohesionTrend = 0;
+            if (!Array.isArray(existing.cohesionDrivers)) existing.cohesionDrivers = [];
             if (!existing.legacy) existing.legacy = emptyLegacyState();
             if (!Array.isArray(existing.legacy.chronicle)) existing.legacy.chronicle = [];
             if (typeof existing.politicalCapitalCap !== 'number') {
@@ -137,6 +140,11 @@ export function ensureGovernments(world: GameWorldState): void {
             parties: [],
             bills: [],
             coupPressure: 0,
+            // Seeded optimistic; tickCohesion replaces it with the real
+            // population-weighted aggregate on the first tick.
+            cohesion: 70,
+            cohesionTrend: 0,
+            cohesionDrivers: [],
             ambitions: [],
             legacy: emptyLegacyState(),
             lastTickSeconds: world.nowSeconds,
@@ -192,9 +200,10 @@ export function tickGovernments(world: GameWorldState, deltaSeconds: number): vo
         gov.politicalCapitalCap = capacityFor(gov.executivePower);
         gov.politicalCapital = Math.max(0, Math.min(gov.politicalCapitalCap, gov.politicalCapital + perDay * days));
 
-        // Mirrors — see the note on GovernmentState.stability.
-        gov.stability = clamp100((world.shared?.stability ?? 1) * 100);
-        gov.warFatigue = clamp100(world.shared?.warFatigue ?? 0);
+        // stability and warFatigue are NOT touched here. Since Phase 6.1 they
+        // are per-faction and authoritative, written by tickCohesion from this
+        // empire's own worlds and its own wars — not mirrored from the
+        // galaxy-wide scalars in world.shared.
 
         // The press cycle feeds approval (recomputeApproval reads publicTrust);
         // this is the return leg — a government the public backs earns the

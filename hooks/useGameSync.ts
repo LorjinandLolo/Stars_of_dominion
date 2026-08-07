@@ -4,9 +4,44 @@ import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionage
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
-import type { Region, RegionStatus, MarketTicker } from '@/types/ui-state';
+import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
 import { getDominantIdeologyType } from '@/lib/politics/ideology-service';
+import { COHESION_STAGE_LABELS } from '@/lib/government/cohesion-types';
+import { DEFIANCE_KIND_LABELS } from '@/lib/government/defiance-types';
+
+/** Shape a worker-side DefianceEvent for the store. */
+function toDefianceSnapshot(event: any) {
+    return {
+        id: event.id,
+        planetId: event.planetId,
+        planetName: event.planetName,
+        kind: event.kind,
+        kindLabel: (DEFIANCE_KIND_LABELS as Record<string, string>)[event.kind] ?? event.kind,
+        title: event.title,
+        demand: event.demand,
+        causes: event.causes ?? [],
+        expiresAtSeconds: event.expiresAtSeconds,
+        status: event.status,
+        resolution: event.resolution,
+        outcome: event.outcome,
+    };
+}
+// Charter Corporation read-model. Pure arithmetic over the company record, so
+// the client derives the same standing/tier/cap-table the worker does.
+import {
+    boardControl,
+    marketCap,
+    militaryTier,
+    netAssetValue,
+    ownershipBreakdown,
+} from '@/lib/economy/corporate/charter-service';
+import { SHARE_CLASSES } from '@/lib/economy/corporate/charter-types';
+
+/** Shares sitting in the tradable float (the non-empire holder classes). */
+function availableFloat(company: any): number {
+    return SHARE_CLASSES.reduce((sum, key) => sum + (company.shareholders?.[key] ?? 0), 0);
+}
 
 // A pending order dispatched more than this long before a snapshot arrived is
 // assumed to be reflected in that snapshot (worker polls every 5s + margin).
@@ -267,6 +302,54 @@ export function useGameSync() {
         const playerGov = playerFactionId
             ? (world as any).government?.get?.(playerFactionId)
             : undefined;
+        // Phase 6.1: per-planet cohesion for the player's worlds.
+        const playerCohesion: any[] = playerFactionId
+            ? [...((world as any).planetCohesion?.values?.() ?? [])].filter((r: any) => r.factionId === playerFactionId)
+            : [];
+        // Phase 6.2: defiance crises on the player's worlds.
+        const playerDefiance: any[] = playerFactionId
+            ? [...((world as any).defianceEvents?.values?.() ?? [])].filter((e: any) => e.factionId === playerFactionId)
+            : [];
+        // Phase 6.3: regions demanding independence.
+        const planetName = (id: string) => (world as any).construction?.planets?.get?.(id)?.name ?? id;
+        const toSecession = (c: any) => ({
+            id: c.id,
+            name: c.name,
+            planetNames: (c.planetIds ?? []).map(planetName),
+            leaderName: c.leaderName,
+            independenceSupport: c.independenceSupport ?? 0,
+            governorLoyalty: c.governorLoyalty ?? 0,
+            militaryLoyalty: c.militaryLoyalty ?? 0,
+            demands: c.demands ?? [],
+            granted: c.granted ?? [],
+            causes: c.causes ?? [],
+            exposedSponsors: c.exposedSponsors ?? [],
+            deadlineSeconds: c.deadlineSeconds ?? 0,
+            status: c.status,
+            outcome: c.outcome,
+        });
+        const allCrises: any[] = [...((world as any).secessionCrises?.values?.() ?? [])];
+        const playerSecession: any[] = playerFactionId
+            ? allCrises.filter((c: any) => c.factionId === playerFactionId)
+            : [];
+        // Phase 6.5: breakaway states are public facts — a new flag on the map.
+        const breakaways = allCrises
+            .filter((c: any) => c.rebelFactionId && (world as any).economy?.factions?.has?.(c.rebelFactionId))
+            .map((c: any) => {
+                const rebelGov = (world as any).government?.get?.(c.rebelFactionId);
+                return {
+                    factionId: c.rebelFactionId,
+                    name: (world as any).economy.factions.get(c.rebelFactionId)?.name ?? c.rebelFactionId,
+                    parentFactionId: c.factionId,
+                    isOurRebel: c.factionId === playerFactionId,
+                    worlds: [...((world as any).construction?.planets?.values?.() ?? [])]
+                        .filter((p: any) => p.ownerId === c.rebelFactionId).length,
+                    legitimacy: rebelGov?.legitimacy ?? 0,
+                    recognisedByUs: Boolean(playerFactionId && rebelGov?.recognisedBy?.includes(playerFactionId)),
+                    guaranteedByUs: Boolean(playerFactionId && rebelGov?.guaranteedBy?.includes(playerFactionId)),
+                    recognisedByCount: rebelGov?.recognisedBy?.length ?? 0,
+                };
+            });
         const headOfState = playerGov?.headOfStateId
             ? (world as any).leadership?.leaders?.get?.(playerGov.headOfStateId)
             : undefined;
@@ -325,6 +408,51 @@ export function useGameSync() {
                             }
                           : undefined,
                       coupPressure: playerGov.coupPressure ?? 0,
+                      cohesion: playerGov.cohesion ?? 70,
+                      cohesionTrend: playerGov.cohesionTrend ?? 0,
+                      cohesionDrivers: playerGov.cohesionDrivers ?? [],
+                      weakestWorlds: playerCohesion
+                          .slice()
+                          .sort((a: any, b: any) => a.cohesion - b.cohesion)
+                          .slice(0, 5)
+                          .map((r: any) => ({
+                              planetId: r.planetId,
+                              planetName: (world as any).construction?.planets?.get?.(r.planetId)?.name ?? r.planetId,
+                              systemId: r.systemId,
+                              cohesion: r.cohesion,
+                              target: r.target,
+                              trend: r.trend,
+                              stage: r.stage,
+                              stageLabel: (COHESION_STAGE_LABELS as Record<string, string>)[r.stage] ?? r.stage,
+                              distanceFromCapital: r.distanceFromCapital,
+                              drivers: (r.drivers ?? []).slice(0, 4),
+                          })),
+                      defiance: playerDefiance
+                          .filter((e: any) => e.status === 'open')
+                          .sort((a: any, b: any) => a.expiresAtSeconds - b.expiresAtSeconds)
+                          .map(toDefianceSnapshot),
+                      recentDefiance: playerDefiance
+                          .filter((e: any) => e.status !== 'open')
+                          .sort((a: any, b: any) => (b.resolvedAtSeconds ?? 0) - (a.resolvedAtSeconds ?? 0))
+                          .slice(0, 5)
+                          .map(toDefianceSnapshot),
+                      secession: playerSecession
+                          .filter((c: any) => c.status === 'open')
+                          .sort((a: any, b: any) => a.deadlineSeconds - b.deadlineSeconds)
+                          .map(toSecession),
+                      recentSecession: playerSecession
+                          .filter((c: any) => c.status !== 'open')
+                          .sort((a: any, b: any) => (b.resolvedAtSeconds ?? 0) - (a.resolvedAtSeconds ?? 0))
+                          .slice(0, 4)
+                          .map(toSecession),
+                      breakaways,
+                      // Worst world in each system drives the overlay colour —
+                      // one seceding planet is the story, not the average.
+                      systemCohesion: playerCohesion.reduce((acc: Record<string, number>, r: any) => {
+                          const current = acc[r.systemId];
+                          acc[r.systemId] = current === undefined ? r.cohesion : Math.min(current, r.cohesion);
+                          return acc;
+                      }, {} as Record<string, number>),
                       ambitions: (playerGov.ambitions ?? []).map((a: any) => ({
                           id: a.id,
                           name: a.name,
@@ -428,25 +556,68 @@ export function useGameSync() {
             supply: Math.round(m.supply),
             demand: Math.round(m.demand),
         }));
+        // Charter Corporations. Every company is public information — a company
+        // IS a geopolitical actor, so rivals need to see it — but the cap table
+        // is enriched with the viewing player's own stake and the boardroom
+        // inbox is scoped to what this government must answer.
         const corpWorld = (world as any).corporate;
-        const companySnapshots = corpWorld?.companies
-            ? Array.from(corpWorld.companies.values() as Iterable<any>).map((c: any) => ({
-                id: c.id,
-                fullName: c.charter?.fullName ?? c.id,
-                foundingFactionId: c.foundingFactionId,
-                sharePrice: c.sharePrice,
-                sharePricePrev: c.sharePricePrev ?? c.sharePrice,
-                sharesOutstanding: c.sharesOutstanding,
-                treasury: c.treasury,
-                dividendsPaidTotal: c.dividendsPaidTotal,
-                privateFleetSize: c.privateFleetSize,
-                autonomyLevel: c.autonomyLevel,
-                corruptionIndex: c.corruptionIndex,
-                activeTradeRouteIds: c.activeTradeRouteIds ?? [],
-                monopolySystemsCount: new Set(Object.values(c.monopolyRights ?? {}).flat()).size,
-                corporateColoniesCount: (c.corporateColonies ?? []).length,
-                powers: c.charter?.powers ?? [],
-            }))
+        const companySnapshots: CompanySnapshot[] = corpWorld?.companies
+            ? Array.from(corpWorld.companies.values() as Iterable<any>).map((c: any) => {
+                const assets = c.assets ?? [];
+                const tier = militaryTier(c);
+                const cap = ownershipBreakdown(c);
+                const board = boardControl(c);
+                const playerShares = playerFactionId ? (c.shareholders?.[playerFactionId] ?? 0) : 0;
+                return {
+                    id: c.id,
+                    fullName: c.charter?.fullName ?? c.id,
+                    foundingFactionId: c.foundingFactionId,
+                    sharePrice: c.sharePrice,
+                    sharePricePrev: c.sharePricePrev ?? c.sharePrice,
+                    sharesOutstanding: c.sharesOutstanding,
+                    treasury: c.treasury,
+                    dividendsPaidTotal: c.dividendsPaidTotal,
+                    privateFleetSize: c.privateFleetSize,
+                    autonomyLevel: Math.round(c.autonomyLevel ?? 0),
+                    corruptionIndex: Math.round(c.corruptionIndex ?? 0),
+                    activeTradeRouteIds: c.activeTradeRouteIds ?? [],
+                    monopolySystemsCount: new Set(Object.values(c.monopolyRights ?? {}).flat()).size,
+                    corporateColoniesCount: (c.corporateColonies ?? []).length,
+                    powers: c.charter?.powers ?? [],
+
+                    mission: c.mission ?? 'trade',
+                    territory: c.territory ?? 'domestic',
+                    rights: c.rights ?? [],
+                    personality: c.personality ?? 'profit_driven',
+                    standing: c.standing ?? 'instrument',
+                    influence: Math.round(c.influence ?? 0),
+                    loyalty: Math.round(c.loyalty ?? 0),
+                    profitShareToState: c.profitShareToState ?? 0,
+                    stateRemittanceTotal: Math.round(c.stateRemittanceTotal ?? 0),
+                    militaryTier: tier.tier,
+                    militaryLabel: tier.label,
+                    assetCount: assets.length,
+                    assetIncomePerTick: Math.round(
+                        assets.reduce((s: number, a: any) => s + (a.incomePerTick ?? 0), 0) + (c.megaprojectIncome ?? 0)
+                    ),
+                    presenceSystemIds: c.presenceSystemIds ?? [],
+                    operatingFactionIds: c.operatingFactionIds ?? [],
+                    debt: Math.round(c.debt ?? 0),
+                    netAssetValue: Math.round(netAssetValue(c)),
+                    marketCap: Math.round(marketCap(c)),
+                    ownership: cap,
+                    boardHolderId: board.holderId,
+                    boardPercent: board.percent,
+                    boardMajority: board.majority,
+                    availableFloat: availableFloat(c),
+                    playerShares,
+                    playerPercent: (playerShares / Math.max(1, c.sharesOutstanding)) * 100,
+                    nationalized: !!c.nationalized,
+                    charterRevocationPending: !!c.charterRevocationPending,
+                    hasGoneRogue: !!c.hasGoneRogue,
+                    recentActions: [...(c.growthLog ?? [])].reverse().slice(0, 8),
+                } as CompanySnapshot;
+            })
             : [];
         const playerCorpState = playerFactionId ? corpWorld?.factionStates?.get?.(playerFactionId) : null;
         const playerPortfolioValue = playerCorpState
@@ -455,11 +626,41 @@ export function useGameSync() {
                 return sum + (c ? (shares as number) * c.sharePrice : 0);
             }, 0)
             : 0;
+        const asArray = <T,>(m: any): T[] => (m?.values ? Array.from(m.values() as Iterable<T>) : []);
         const corporateState = {
             companies: companySnapshots,
             markets: marketTickers,
             playerPortfolioValue,
             totalDividendsReceived: playerCorpState?.totalDividendsReceived ?? 0,
+            demands: asArray<any>(corpWorld?.demands)
+                .filter(d => d.status === 'pending' && (!playerFactionId || d.factionId === playerFactionId))
+                .sort((a, b) => a.expiresAt - b.expiresAt),
+            crises: asArray<any>(corpWorld?.crises)
+                .filter(c => c.status === 'pending' && (!playerFactionId || c.factionId === playerFactionId))
+                .sort((a, b) => a.expiresAt - b.expiresAt),
+            megaprojects: asArray<any>(corpWorld?.megaprojects)
+                .filter(p => (!playerFactionId || p.factionId === playerFactionId)
+                    && p.status !== 'rejected')
+                .sort((a, b) => b.proposedAt - a.proposedAt),
+            foreignCompanyIds: companySnapshots
+                .filter(c => c.foundingFactionId !== playerFactionId
+                    && playerFactionId != null
+                    && c.operatingFactionIds.includes(playerFactionId))
+                .map(c => c.id),
+            hostPolicies: asArray<any>(corpWorld?.hostPolicies)
+                .filter(p => !playerFactionId || p.factionId === playerFactionId),
+            rivalries: asArray<any>(corpWorld?.rivalries).map(r => ({
+                id: r.id,
+                companyAId: r.companyAId,
+                companyBId: r.companyBId,
+                intensity: Math.round(r.intensity ?? 0),
+                priceWar: !!r.priceWar,
+            })),
+            stateRemittanceTotal: Math.round(
+                companySnapshots
+                    .filter(c => c.foundingFactionId === playerFactionId)
+                    .reduce((s, c) => s + c.stateRemittanceTotal, 0)
+            ),
         };
 
         const stageColors: Record<string, string> = {

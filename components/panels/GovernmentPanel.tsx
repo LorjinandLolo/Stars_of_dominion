@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { Scale, Users, CheckCircle, Zap, AlertCircle, FileText, MessageSquare, Landmark, Coins, ShieldCheck, Leaf, Briefcase, Trophy, Compass } from 'lucide-react';
+import { Scale, Users, CheckCircle, Zap, AlertCircle, FileText, MessageSquare, Landmark, Coins, ShieldCheck, Leaf, Briefcase, Trophy, Compass, Link2, Flag, Globe } from 'lucide-react';
 import {
     enactPolicyAction,
     repealPolicyAction,
@@ -8,6 +8,11 @@ import {
     dismissMinisterAction,
     lobbyPartyAction,
     purgeOfficersAction,
+    answerDefianceAction,
+    grantConcessionAction,
+    suppressSecessionAction,
+    recognizeBreakawayAction,
+    guaranteeBreakawayAction,
 } from '@/app/actions/politics';
 import type { PolicyOption } from '@/types/ui-state';
 
@@ -28,6 +33,36 @@ const EFFECT_LABELS: Record<string, string> = {
     approval: 'Approval',
     legitimacy_drift: 'Legitimacy/day',
 };
+
+/** Mirrors SECESSION_DEMANDS in lib/government/secession-types (worker-side). */
+const SECESSION_TERMS = [
+    { id: 'tax_relief', label: 'Lower Tax', pc: 10, hint: 'They keep more of what they earn', price: 'permanent revenue loss' },
+    { id: 'resource_rights', label: 'Resource Rights', pc: 15, hint: 'Local ownership of local ground', price: 'permanent production loss' },
+    { id: 'military_exemption', label: 'No Conscription', pc: 15, hint: 'No more levies from these worlds', price: 'the officer corps takes it personally' },
+    { id: 'local_parliament', label: 'Local Parliament', pc: 25, hint: 'A chamber answerable to them', price: 'the centre governs less of its empire' },
+    { id: 'autonomy', label: 'Autonomy', pc: 30, hint: 'Self-rule in all but name', price: 'permanent revenue loss and a looser grip' },
+];
+const SUPPRESS_COST = 40;
+/** Mirrors RECOGNIZE_COST / GUARANTEE_COST in foreign-interference-service. */
+const RECOGNISE_COST = 15;
+const GUARANTEE_COST = 35;
+
+/** Mirrors DEFIANCE_OPTIONS in lib/government/defiance-types (worker-side). */
+const DEFIANCE_CHOICES = [
+    { response: 'negotiate', label: 'Negotiate', pc: 15, credits: 0, hint: 'Grant autonomy — permanent revenue cost' },
+    { response: 'bribe', label: 'Bribe', pc: 5, credits: 4000, hint: 'Fund local projects — teaches the frontier that defiance pays' },
+    { response: 'threaten', label: 'Threaten', pc: 8, credits: 0, hint: 'Demand compliance — may be called' },
+    { response: 'replace_governor', label: 'Replace', pc: 12, credits: 0, hint: 'Install someone loyal — a popular governor has supporters' },
+    { response: 'send_military', label: 'Send Military', pc: 25, credits: 0, hint: 'Force — every other world is watching' },
+];
+
+/** Cohesion stage colours: integrated → strained → defiant → separatist. */
+function cohesionColor(cohesion: number): string {
+    if (cohesion >= 60) return '#22d3ee';
+    if (cohesion >= 40) return '#f59e0b';
+    if (cohesion >= 20) return '#f97316';
+    return '#ef4444';
+}
 
 /** [axis, label at -100, label at +100] — sign convention from IdeologyProfile. */
 const IDEOLOGY_AXES: Array<[string, string, string]> = [
@@ -89,6 +124,49 @@ export default function GovernmentPanel() {
 
     const activePolicies = gov?.activePolicies ?? politicsState?.activePolicies ?? [];
     const capital = gov?.politicalCapital ?? 0;
+    // Defiance deadlines are sim-clock seconds; the authoritative clock is the
+    // tick timestamp the worker last wrote.
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    const runRecognise = async (rebelFactionId: string) => {
+        setPending(`${rebelFactionId}:recognise`);
+        setError(null);
+        const res = await recognizeBreakawayAction(playerState.factionId, rebelFactionId);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'Recognition rejected.');
+    };
+
+    const runGuarantee = async (rebelFactionId: string) => {
+        setPending(`${rebelFactionId}:guarantee`);
+        setError(null);
+        const res = await guaranteeBreakawayAction(playerState.factionId, rebelFactionId);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'Guarantee rejected.');
+    };
+
+    const runConcession = async (crisisId: string, demandId: string) => {
+        setPending(`${crisisId}:${demandId}`);
+        setError(null);
+        const res = await grantConcessionAction(playerState.factionId, crisisId, demandId);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'Concession rejected.');
+    };
+
+    const runSuppress = async (crisisId: string) => {
+        setPending(`${crisisId}:suppress`);
+        setError(null);
+        const res = await suppressSecessionAction(playerState.factionId, crisisId);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'Suppression rejected.');
+    };
+
+    const runDefiance = async (eventId: string, response: string) => {
+        setPending(`${eventId}:${response}`);
+        setError(null);
+        const res = await answerDefianceAction(playerState.factionId, eventId, response);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'Response rejected.');
+    };
 
     const runLobby = async (billId: string, partyId: string) => {
         setPending(`${billId}:${partyId}`);
@@ -234,6 +312,354 @@ export default function GovernmentPanel() {
                         </div>
                     )}
                 </div>
+
+                {/* Breakaway states — ours to reconquer, theirs to recognise */}
+                {(gov?.breakaways?.length ?? 0) > 0 && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                            <Globe size={12} className="text-orange-400" /> BREAKAWAY STATES
+                        </div>
+                        <div className="space-y-2">
+                            {gov!.breakaways.map(state => (
+                                <div
+                                    key={state.factionId}
+                                    className={`rounded-lg border p-3 ${state.isOurRebel ? 'bg-rose-950/20 border-rose-500/30' : 'bg-slate-900/40 border-slate-800/60'}`}
+                                >
+                                    <div className="flex justify-between items-start gap-2">
+                                        <div className="min-w-0">
+                                            <div className="text-xs text-slate-200 truncate">{state.name}</div>
+                                            <div className="text-[9px] font-mono text-slate-600 mt-0.5">
+                                                {state.worlds} worlds · legitimacy {Math.round(state.legitimacy)} · recognised by {state.recognisedByCount}
+                                            </div>
+                                        </div>
+                                        {state.isOurRebel && (
+                                            <span className="text-[9px] font-display text-rose-400 uppercase tracking-wider shrink-0">
+                                                Broke from us
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {!state.isOurRebel && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            <button
+                                                onClick={() => runRecognise(state.factionId)}
+                                                disabled={state.recognisedByUs || capital < RECOGNISE_COST || pending === `${state.factionId}:recognise`}
+                                                title="Recognise their independence — the empire they left will not forget it"
+                                                className={`text-[9px] font-display px-2 py-1 rounded border uppercase tracking-wider transition-all ${
+                                                    state.recognisedByUs
+                                                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 cursor-default'
+                                                        : capital < RECOGNISE_COST
+                                                            ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                                                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                                }`}
+                                            >
+                                                {state.recognisedByUs ? '✓ Recognised' : `Recognise · ${RECOGNISE_COST} PC`}
+                                            </button>
+                                            <button
+                                                onClick={() => runGuarantee(state.factionId)}
+                                                disabled={state.guaranteedByUs || capital < GUARANTEE_COST || pending === `${state.factionId}:guarantee`}
+                                                title="Guarantee their independence — a promise the parent reads as a threat"
+                                                className={`text-[9px] font-display px-2 py-1 rounded border uppercase tracking-wider transition-all ${
+                                                    state.guaranteedByUs
+                                                        ? 'bg-amber-500/15 text-amber-400 border-amber-500/40 cursor-default'
+                                                        : capital < GUARANTEE_COST
+                                                            ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                                                            : 'bg-amber-600/10 hover:bg-amber-600/25 text-amber-400 border border-amber-500/30'
+                                                }`}
+                                            >
+                                                {state.guaranteedByUs ? '✓ Guaranteed' : `Guarantee · ${GUARANTEE_COST} PC`}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Secession crises — a region, not a planet */}
+                {(gov?.secession?.length ?? 0) > 0 && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                            <Flag size={12} className="text-red-500 animate-pulse" /> SECESSION CRISES
+                        </div>
+                        <div className="space-y-3">
+                            {gov!.secession.map(crisis => {
+                                const daysLeft = Math.max(0, (crisis.deadlineSeconds - nowSeconds) / 86400);
+                                return (
+                                    <div key={crisis.id} className="bg-red-950/30 border border-red-500/40 rounded-lg p-3">
+                                        <div className="flex justify-between items-start gap-2">
+                                            <div className="font-display text-xs text-red-300 uppercase tracking-wider">{crisis.name}</div>
+                                            <span className="text-[9px] font-mono text-amber-400 shrink-0">
+                                                {daysLeft < 0.05 ? 'PATIENCE SPENT' : `${daysLeft.toFixed(1)}d`}
+                                            </span>
+                                        </div>
+
+                                        <div className="text-[10px] text-slate-400 mt-1">
+                                            {crisis.planetNames.length} worlds demand greater autonomy
+                                            {crisis.leaderName ? ` · led by Governor ${crisis.leaderName}` : ''}
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2 mt-3 text-[9px] font-mono">
+                                            <div>
+                                                <div className="text-slate-600">INDEPENDENCE</div>
+                                                <div className={crisis.independenceSupport > 60 ? 'text-red-400' : 'text-amber-400'}>
+                                                    {Math.round(crisis.independenceSupport)}%
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-slate-600">GOV. LOYALTY</div>
+                                                <div className={crisis.governorLoyalty < 30 ? 'text-red-400' : 'text-slate-300'}>
+                                                    {Math.round(crisis.governorLoyalty)}%
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-slate-600">MILITARY</div>
+                                                <div className={crisis.militaryLoyalty < 50 ? 'text-amber-400' : 'text-slate-300'}>
+                                                    {crisis.militaryLoyalty < 50 ? 'UNCERTAIN' : `${Math.round(crisis.militaryLoyalty)}%`}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {crisis.causes.length > 0 && (
+                                            <div className="text-[9px] font-mono text-slate-600 mt-2">
+                                                BECAUSE: {crisis.causes.join(' · ')}
+                                            </div>
+                                        )}
+
+                                        {crisis.exposedSponsors.length > 0 && (
+                                            <div className="text-[9px] font-mono text-orange-400 mt-1">
+                                                FOREIGN HANDS: {crisis.exposedSponsors.join(' · ')}
+                                            </div>
+                                        )}
+
+                                        <div className="text-[9px] font-display tracking-widest text-slate-600 uppercase mt-3 mb-1.5">
+                                            Terms they will accept
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {SECESSION_TERMS.map(term => {
+                                                const already = crisis.granted.includes(term.id);
+                                                const asked = crisis.demands.includes(term.id);
+                                                const affordable = capital >= term.pc;
+                                                const busy = pending === `${crisis.id}:${term.id}`;
+                                                return (
+                                                    <button
+                                                        key={term.id}
+                                                        onClick={() => runConcession(crisis.id, term.id)}
+                                                        disabled={already || !affordable || busy}
+                                                        title={`${term.hint} — ${term.price}${asked ? '' : ' (not one of their demands: less effective)'}`}
+                                                        className={`text-[9px] font-display px-2 py-1 rounded border uppercase tracking-wider transition-all ${
+                                                            already
+                                                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 cursor-default'
+                                                                : !affordable
+                                                                    ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                                                                    : asked
+                                                                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
+                                                                        : 'bg-slate-900 hover:bg-slate-800 text-slate-500 border-slate-800'
+                                                        }`}
+                                                    >
+                                                        {already ? `✓ ${term.label}` : busy ? '…' : `${term.label} · ${term.pc} PC`}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <button
+                                            onClick={() => runSuppress(crisis.id)}
+                                            disabled={capital < SUPPRESS_COST || pending === `${crisis.id}:suppress`}
+                                            title={`Answer with force — the garrison may refuse${capital >= SUPPRESS_COST ? '' : `; needs ${SUPPRESS_COST} political capital`}`}
+                                            className={`mt-3 w-full py-1.5 rounded text-[9px] font-display uppercase tracking-widest transition-all ${
+                                                capital < SUPPRESS_COST
+                                                    ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
+                                                    : 'bg-red-600/10 hover:bg-red-600/25 text-red-400 border border-red-500/30'
+                                            }`}
+                                        >
+                                            {pending === `${crisis.id}:suppress` ? '…' : `Send in the fleet · ${SUPPRESS_COST} PC`}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {(gov?.recentSecession?.length ?? 0) > 0 && (
+                    <div className="space-y-1">
+                        {gov!.recentSecession.map(crisis => (
+                            <div key={crisis.id} className="text-[10px] flex gap-2">
+                                <span className={crisis.status === 'settled' ? 'text-emerald-500' : 'text-rose-500'}>
+                                    {crisis.name}
+                                </span>
+                                <span className="text-slate-600 truncate">{crisis.outcome}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Open defiance — the escalation ladder's active stage */}
+                {(gov?.defiance?.length ?? 0) > 0 && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                            <AlertCircle size={12} className="text-red-400 animate-pulse" /> WORLDS IN OPEN DEFIANCE
+                        </div>
+                        <div className="space-y-3">
+                            {gov!.defiance.map(crisis => {
+                                const daysLeft = Math.max(0, (crisis.expiresAtSeconds - nowSeconds) / 86400);
+                                return (
+                                    <div key={crisis.id} className="bg-red-950/20 border border-red-500/30 rounded-lg p-3">
+                                        <div className="flex justify-between items-start gap-2">
+                                            <div className="min-w-0">
+                                                <div className="text-[9px] font-display tracking-widest text-red-400/80 uppercase">
+                                                    {crisis.kindLabel} · {crisis.planetName}
+                                                </div>
+                                                <div className="text-xs text-slate-200 mt-0.5">{crisis.title}</div>
+                                            </div>
+                                            <span className="text-[9px] font-mono text-amber-400 shrink-0">
+                                                {daysLeft < 0.05 ? 'CLOSING' : `${daysLeft.toFixed(1)}d LEFT`}
+                                            </span>
+                                        </div>
+
+                                        <p className="text-[11px] text-slate-400 italic mt-2">“{crisis.demand}”</p>
+
+                                        {crisis.causes.length > 0 && (
+                                            <div className="text-[9px] font-mono text-slate-600 mt-2">
+                                                BECAUSE: {crisis.causes.join(' · ')}
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-wrap gap-1.5 mt-3">
+                                            {DEFIANCE_CHOICES.map(choice => {
+                                                const affordable = capital >= choice.pc;
+                                                const busy = pending === `${crisis.id}:${choice.response}`;
+                                                return (
+                                                    <button
+                                                        key={choice.response}
+                                                        onClick={() => runDefiance(crisis.id, choice.response)}
+                                                        disabled={!affordable || busy}
+                                                        title={`${choice.hint}${affordable ? '' : ` — needs ${choice.pc} political capital`}`}
+                                                        className={`text-[9px] font-display px-2 py-1 rounded border uppercase tracking-wider transition-all ${
+                                                            !affordable
+                                                                ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                                                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                                        }`}
+                                                    >
+                                                        {busy ? '…' : `${choice.label} · ${choice.pc} PC${choice.credits ? ` + ${choice.credits / 1000}k` : ''}`}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="text-[9px] text-slate-600 mt-2">
+                                            Saying nothing is also an answer — and the worst one.
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {(gov?.recentDefiance?.length ?? 0) > 0 && (
+                    <div>
+                        <div className="text-[9px] font-display tracking-widest text-slate-600 uppercase mb-2">
+                            Recently decided
+                        </div>
+                        <div className="space-y-1">
+                            {gov!.recentDefiance.map(crisis => (
+                                <div key={crisis.id} className="text-[10px] text-slate-500 flex gap-2">
+                                    <span className={crisis.status === 'ignored' ? 'text-rose-500' : 'text-slate-400'}>
+                                        {crisis.planetName}
+                                    </span>
+                                    <span className="text-slate-600 truncate">{crisis.outcome}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Empire cohesion */}
+                {gov && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-400 mb-3 flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                                <Link2 size={12} className="text-cyan-400" /> EMPIRE COHESION
+                            </span>
+                            <span
+                                className="font-mono"
+                                style={{ color: cohesionColor(gov.cohesion) }}
+                                title="Do people still believe this empire should exist? Not the same as approval."
+                            >
+                                {Math.round(gov.cohesion)}
+                                <span className="text-slate-600 ml-2">
+                                    {gov.cohesionTrend >= 0 ? '+' : ''}{gov.cohesionTrend.toFixed(1)}/day
+                                </span>
+                            </span>
+                        </div>
+
+                        <div className="h-2 bg-slate-950 rounded-full overflow-hidden mb-3">
+                            <div
+                                className="h-full transition-all duration-700"
+                                style={{ width: `${gov.cohesion}%`, backgroundColor: cohesionColor(gov.cohesion) }}
+                            />
+                        </div>
+
+                        {gov.cohesionDrivers.length > 0 && (
+                            <div className="space-y-1 mb-3">
+                                {gov.cohesionDrivers.map(driver => (
+                                    <div key={driver.id} className="flex items-center justify-between text-[10px]">
+                                        <span className="text-slate-500">{driver.label}</span>
+                                        <span className={`font-mono ${driver.delta >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            {driver.delta >= 0 ? '+' : ''}{driver.delta.toFixed(1)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {gov.weakestWorlds.length > 0 && (
+                            <>
+                                <div className="text-[9px] font-display tracking-widest text-slate-600 uppercase mb-2">
+                                    Worlds furthest from the centre
+                                </div>
+                                <div className="space-y-1.5">
+                                    {gov.weakestWorlds.map(planet => (
+                                        <div key={planet.planetId} className="bg-slate-900/40 border border-slate-800/50 rounded p-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[11px] text-slate-300 truncate">{planet.planetName}</span>
+                                                <span className="flex items-center gap-2 shrink-0">
+                                                    <span
+                                                        className="text-[9px] font-display uppercase tracking-wider px-1.5 py-0.5 rounded border"
+                                                        style={{
+                                                            color: cohesionColor(planet.cohesion),
+                                                            borderColor: `${cohesionColor(planet.cohesion)}55`,
+                                                        }}
+                                                    >
+                                                        {planet.stageLabel}
+                                                    </span>
+                                                    <span className="text-[10px] font-mono" style={{ color: cohesionColor(planet.cohesion) }}>
+                                                        {Math.round(planet.cohesion)}
+                                                    </span>
+                                                </span>
+                                            </div>
+                                            <div className="text-[9px] font-mono text-slate-600 mt-1">
+                                                {planet.distanceFromCapital >= 0 ? `${planet.distanceFromCapital} jumps` : 'unreachable'}
+                                                {' · heading for '}
+                                                <span className={planet.target < planet.cohesion ? 'text-rose-500' : 'text-emerald-600'}>
+                                                    {Math.round(planet.target)}
+                                                </span>
+                                            </div>
+                                            {planet.drivers.length > 0 && (
+                                                <div className="text-[9px] text-slate-600 mt-1 truncate">
+                                                    {planet.drivers[0].label}
+                                                    {planet.drivers.length > 1 ? ` · ${planet.drivers[1].label}` : ''}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* Political identity */}
                 {gov?.ideology && (

@@ -129,6 +129,84 @@ export async function decreePolicyAction(factionId: string, policyId: string): P
   return result;
 }
 
+/**
+ * Answers a world in open defiance (Phase 6.2). Costs are charged worker-side
+ * because they vary by response.
+ */
+export async function answerDefianceAction(factionId: string, eventId: string, response: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `defiance-${Date.now()}`,
+    actionId: 'GOV_ANSWER_DEFIANCE',
+    issuerId: factionId,
+    targetId: eventId,
+    payload: { eventId, response },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Concedes one of a breakaway region's demands (Phase 6.3). */
+export async function grantConcessionAction(factionId: string, crisisId: string, demandId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `concession-${Date.now()}`,
+    actionId: 'GOV_GRANT_CONCESSION',
+    issuerId: factionId,
+    targetId: crisisId,
+    payload: { crisisId, demandId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Answers a secession crisis with force. */
+export async function suppressSecessionAction(factionId: string, crisisId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `suppress-${Date.now()}`,
+    actionId: 'GOV_SUPPRESS_SECESSION',
+    issuerId: factionId,
+    targetId: crisisId,
+    payload: { crisisId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Recognises another empire's breakaway state as independent (Phase 6.5). */
+export async function recognizeBreakawayAction(factionId: string, rebelFactionId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `recognise-${Date.now()}`,
+    actionId: 'DIP_RECOGNIZE_BREAKAWAY',
+    issuerId: factionId,
+    targetId: rebelFactionId,
+    payload: { rebelFactionId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
+/** Guarantees a breakaway state's independence — recognition with teeth. */
+export async function guaranteeBreakawayAction(factionId: string, rebelFactionId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `guarantee-${Date.now()}`,
+    actionId: 'DIP_GUARANTEE_BREAKAWAY',
+    issuerId: factionId,
+    targetId: rebelFactionId,
+    payload: { rebelFactionId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
 /** Purges the officer corps to buy down coup pressure. */
 export async function purgeOfficersAction(factionId: string): Promise<ActionResult> {
   const result = await executePlayerAction({
