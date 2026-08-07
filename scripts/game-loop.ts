@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
+import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
 import { LeadershipService } from '../lib/leadership/leadership-service';
@@ -247,6 +248,12 @@ async function loadWorld(): Promise<GameWorldState> {
         if (!Array.isArray((sys as any).hyperlaneNeighbors)) (sys as any).hyperlaneNeighbors = [];
         if (!Array.isArray((sys as any).tags)) (sys as any).tags = [];
     }
+
+    // Every snapshot written so far saved an EMPTY lane graph (the loader never
+    // read the link list), which left fleets on deep-space crossings and every
+    // BFS consumer — sensors, cohesion, press, border detection — looking at a
+    // galaxy of isolated systems. Rebuild it once; later saves carry the lanes.
+    try { ensureLaneGraph(world.movement.systems); } catch (e) { console.error('[Tick Worker] Lane graph bootstrap failed:', e); }
 
     return world;
 }

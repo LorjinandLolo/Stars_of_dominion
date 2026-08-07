@@ -182,38 +182,31 @@ export default function GalaxyShell() {
         return set;
     }, [factions]);
 
-    // Constellation lanes: connect each system to its few nearest neighbours. Computed
-    // once per systems change (capped for very large galaxies), then culled by viewport.
+    // Hyperlanes: the real movement graph (`hyperlaneNeighbors`), not a decorative
+    // constellation — a line here is a route a fleet can actually fly. Each
+    // undirected pair is emitted once, then culled by viewport at render time.
     const lanes = useMemo(() => {
         const arr = systems as any[];
-        if (!arr.length || arr.length > 700) return [] as any[];
+        if (!arr.length) return [] as any[];
         const out: { ax: number; ay: number; bx: number; by: number; key: string; strong: boolean }[] = [];
         const seen = new Set<string>();
-        const THRESH = HEX_WIDTH * 3.2;
-        for (let i = 0; i < arr.length; i++) {
-            const a = arr[i];
+        for (const a of arr) {
+            const neighbors: string[] = a.hyperlaneNeighbors ?? [];
+            if (!neighbors.length) continue;
             const pa = hexToPixel(a.q, a.r);
-            const cand: { j: number; d: number }[] = [];
-            for (let j = 0; j < arr.length; j++) {
-                if (i === j) continue;
-                const pb = hexToPixel(arr[j].q, arr[j].r);
-                const d = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-                if (d < THRESH) cand.push({ j, d });
-            }
-            cand.sort((x, y) => x.d - y.d);
-            for (let k = 0; k < Math.min(3, cand.length); k++) {
-                const j = cand[k].j;
-                const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+            for (const nid of neighbors) {
+                const b = systemMap.get(nid);
+                if (!b) continue;
+                const key = a.id < nid ? `${a.id}~${nid}` : `${nid}~${a.id}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
-                const b = arr[j];
                 const pb = hexToPixel(b.q, b.r);
                 const strong = (!!a.ownerId && a.ownerId === b.ownerId) || (a.tradeValue || 0) > 50 || (b.tradeValue || 0) > 50;
                 out.push({ ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, key, strong });
             }
         }
         return out;
-    }, [systems]);
+    }, [systems, systemMap]);
 
     const [isMobile, setIsMobile] = useState(false);
     useEffect(() => {

@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { GameWorldState, defaultSharedState } from './game-world-state';
 import type { MovementWorldState } from './movement/types';
+import { ensureLaneGraph, loadLaneLinks } from './movement/lane-graph';
 import type { EconomyWorldState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
 import { CorporateWorldState, createEmptyCorporateWorldState } from './economy/corporate/company-registry';
@@ -44,6 +45,10 @@ function buildEmptyMovementState(): MovementWorldState {
                     });
                 });
             }
+            // The snapshot's lanes live in `data.links`, not on the nodes — without
+            // this every system boots with an empty neighbour list and the whole
+            // hyperlane layer (pathing, sensors, cohesion, press) is dead.
+            ensureLaneGraph(systems, { links: loadLaneLinks(systemsPath) });
         }
     } catch (err) {
         console.error('[MovementState] Failed to load generated-systems.json:', err);
