@@ -43,16 +43,22 @@ function expectFalse(condition: boolean, msg?: string) {
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
-function makeCombatant(role: 'attacker' | 'defender', baseForceCount: number): CombatantState {
+// `hp` is the engine's power currency: calculateEffectivePower, the skirmish
+// threshold and generateVisibilityProfile all scale off it. `baseForceCount` is a
+// display-only headcount that no engine function reads. combat-manager builds a
+// combatant with hp = power*10 and baseForceCount = power*100, so baseForceCount is
+// 10x hp — this factory used to have that relationship inverted, which made three
+// tests assert power/visibility/skirmish numbers 10x off the engine's scale.
+function makeCombatant(role: 'attacker' | 'defender', hp: number): CombatantState {
     return {
         factionId: role === 'attacker' ? 'factionA' : 'factionB',
         role,
-        hp: baseForceCount * 10,
-        maxHp: baseForceCount * 10,
+        hp,
+        maxHp: hp,
         organization: 100,
         maxOrganization: 100,
         screeningEfficiency: 1.0,
-        baseForceCount,
+        baseForceCount: hp * 10,
         composition: role === 'attacker' ? { cruiser: 10, bomber: 5 } : { interceptor: 10, destroyer: 5 },
         intelLevel: 'blind',
         supply: 1.0,
@@ -92,10 +98,23 @@ test('calculateEffectivePower respects ±40% max variance cap', () => {
 
     // Simulating terrain and RPS
     const p1 = calculateEffectivePower(attacker, defender, 'ground', 2.0); // Terrain 2x
-    expect(p1, 1000 * (1.0 + config.constants.maxVarianceCap), 'Power should cap at maxVarianceCap');
+    expect(p1, attacker.hp * (1.0 + config.constants.maxVarianceCap), 'Power should cap at maxVarianceCap');
 
     const p2 = calculateEffectivePower(attacker, defender, 'ground', 0.1); // Terrain 0.1x
-    expect(p2, 1000 * (1.0 - config.constants.maxVarianceCap), 'Power should floor at minVarianceCap');
+    expect(p2, attacker.hp * (1.0 - config.constants.maxVarianceCap), 'Power should floor at minVarianceCap');
+
+    // Tech modifiers are applied *inside* the cap (combat-engine.ts), so no amount of
+    // researched tech can push a combatant past ±40%. combat-manager populates these,
+    // so this guards the cap against tech inflation.
+    attacker.techModifiers = { combat_power_multiplier: 5.0, ground_power_multiplier: 5.0 };
+    const p3 = calculateEffectivePower(attacker, defender, 'ground', 1.0);
+    expect(p3, attacker.hp * (1.0 + config.constants.maxVarianceCap), 'Tech must not exceed maxVarianceCap');
+
+    attacker.techModifiers = { combat_power_multiplier: -5.0 };
+    const p4 = calculateEffectivePower(attacker, defender, 'ground', 1.0);
+    expect(p4, attacker.hp * (1.0 - config.constants.maxVarianceCap), 'Tech penalty must not exceed minVarianceCap');
+
+    delete attacker.techModifiers;
 });
 
 // ─── 2. Phase & Structure Tests ───────────────────────────────────────────────
