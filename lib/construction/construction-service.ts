@@ -13,6 +13,7 @@ import { BUILDINGS } from '../../data/buildings';
 import { recalculatePlanetStats } from './recalculation';
 import { constructionLogisticsMultiplier } from '../logistics/distribution-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
+import { getTechModifier } from '../tech/modifiers';
 
 /**
  * Validates if a building can be built on a specific tile.
@@ -79,7 +80,10 @@ export function startConstruction(
   planet: Planet,
   tileId: string,
   buildingId: string,
-  now: number
+  now: number,
+  /** Optional — supplies the owner's researched construction_speed modifier.
+   *  Omitted by unit fixtures, which then build at the untouched base rate. */
+  world?: any
 ): { success: boolean; error?: string } {
   const tile = planet.tiles.find(t => t.tileId === tileId);
   if (!tile) return { success: false, error: 'Tile not found' };
@@ -99,7 +103,8 @@ export function startConstruction(
   // Site haulage scales it: materials still have to reach the site.
   const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
     * constructionLogisticsMultiplier(planet)
-    * computeInfrastructureEffects(planet).constructionSpeed);
+    * computeInfrastructureEffects(planet).constructionSpeed
+    * getTechModifier(world, planet.ownerId, 'construction_speed'));
   const buildTime = buildingDef.buildTimeSeconds / buildSpeed;
   const completionTime = now + buildTime;
   tile.constructionCompleteAt = completionTime;

@@ -44,7 +44,10 @@ export const espionageTree: Tech[] = [
         id: 'esp_t1_4', name: 'Listening Posts',
         tree: TechTreeType.ESPIONAGE, tier: TechTier.EXPANSION, branch: 'information_access',
         description: 'Construct stealth relays on uninhabited moons to permanently monitor sector traffic.',
-        effects: [{ type: TechEffectType.UNLOCK_BUILDING, targetSystem: 'buildings', modifierKey: 'listening_post', value: 1 }],
+        // 'listening_post' names no building in data/buildings.ts; the real
+        // surveillance structure is sensor_relay_factory, which now declares the
+        // matching techRequired.
+        effects: [{ type: TechEffectType.UNLOCK_BUILDING, targetSystem: 'buildings', modifierKey: 'sensor_relay_factory', value: 1 }],
         prerequisites: [], researchCost: 60,
         seasonScoreTags: [SeasonScoreCategory.INFLUENCE],
         position: { x: 6, y: 0 },
@@ -158,7 +161,7 @@ export const espionageTree: Tech[] = [
         id: 'esp_t2_int_3', name: 'Deep Cover Agents',
         tree: TechTreeType.ESPIONAGE, tier: TechTier.SPECIALIZATION, branch: 'intelligence_focus',
         description: 'Embed operatives so deeply they can remain dormant for years.',
-        effects: [],
+        effects: [{ type: TechEffectType.MODIFIER_PERCENT, modifierKey: 'esp_exposure_mult', value: -0.20, description: '-20% chance an operation is exposed' }],
         prerequisites: ['esp_t2_int_1'], researchCost: 200,
         seasonScoreTags: [SeasonScoreCategory.INTEL],
         position: { x: 2, y: 5 },

@@ -180,7 +180,11 @@ export const BUILDINGS: BuildingDefinition[] = [
     effects: [{ type: 'defense_power', value: 500 }],
     tags: ['defense', 'orbital'],
     uniquePerPlanet: true,
-    techRequired: 'mil_plt_1',
+    // 'mil_plt_1' was a legacy id present in no tech tree, so construction's tech
+    // check (construction-service.ts:34) could never pass and both defence
+    // buildings were permanently unbuildable. mil_t1_8 "Defensive Grid Networks"
+    // is the real tech for planetary defence.
+    techRequired: 'mil_t1_8',
   },
   {
     id: 'shield_generator',
@@ -196,7 +200,11 @@ export const BUILDINGS: BuildingDefinition[] = [
     effects: [{ type: 'defense_power', value: 300 }],
     tags: ['defense', 'shield'],
     uniquePerPlanet: true,
-    techRequired: 'mil_plt_1',
+    // 'mil_plt_1' was a legacy id present in no tech tree, so construction's tech
+    // check (construction-service.ts:34) could never pass and both defence
+    // buildings were permanently unbuildable. mil_t1_8 "Defensive Grid Networks"
+    // is the real tech for planetary defence.
+    techRequired: 'mil_t1_8',
   },
   {
     id: 'administrative_center',
@@ -289,6 +297,9 @@ export const BUILDINGS: BuildingDefinition[] = [
     effects: [{ type: 'exploration_node_unlocked', value: 1 }],
     tags: ['space', 'exploration'],
     uniquePerPlanet: true,
+    // The building side is authoritative for UNLOCK_BUILDING; esp_t1_4
+    // "Listening Posts" carries the matching effect.
+    techRequired: 'esp_t1_4',
   },
   {
     id: 'max_security_block',

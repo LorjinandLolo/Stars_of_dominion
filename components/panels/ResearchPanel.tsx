@@ -20,7 +20,7 @@ import TechNode from '../tech/TechNode';
 import TechConnectors from '../tech/TechConnectors';
 
 export default function ResearchPanel() {
-    const { techState, playerState, updateTech, nowSeconds } = useUIStore();
+    const { techState, playerState, updateTech } = useUIStore();
     const [scale, setScale] = React.useState(1);
     const [activeBranch, setActiveBranch] = React.useState<TechTreeType>(TechTreeType.ESPIONAGE);
     
@@ -155,11 +155,13 @@ export default function ResearchPanel() {
                         const prereqsMet = (tech.prerequisites || []).every(pid => unlockedSet.has(pid));
                         const isAvailable = !isUnlocked && !isLocked && !isResearching && prereqsMet;
 
+                        // Progress comes from the tick counters the worker
+                        // actually advances. The old formula divided elapsed
+                        // seconds by researchCost (authored in hours), so every
+                        // bar pinned to 100% within a minute of starting.
                         let progress = 0;
-                        if (isResearching && slot) {
-                            const elapsed = nowSeconds - (slot.startTime || 0);
-                            const total = tech.researchCost;
-                            progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
+                        if (isResearching && slot && slot.ticksRequired) {
+                            progress = Math.min(100, Math.max(0, ((slot.ticksCompleted ?? 0) / slot.ticksRequired) * 100));
                         }
 
                         return (

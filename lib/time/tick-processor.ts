@@ -46,8 +46,9 @@ import { StrategicAIService } from '../ai/strategic-ai-service';
 import { MilestoneService } from '../victory/milestone-service';
 import { DefeatManager } from '../defeat/manager';
 import { fromISO } from '../seasons/season-service';
-import { registry as techRegistry } from '../tech/engine';
-import { TechEffectType } from '../tech/types';
+import { registry as techRegistry, applyUnlock, ticksForTech } from '../tech/engine';
+import { getTechModifier } from '../tech/modifiers';
+import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-service';
 import '../tech/techData'; // side effect: registers all tech trees
 
 
@@ -89,6 +90,11 @@ export async function runStrategicTick(
 
     // 4: Research progress
     step4_research(world);
+
+    // 4b: Emergent technology. Must run AFTER research so a tech completed this
+    // tick can satisfy a trigger's prerequisites, and before the economy
+    // consumers pick up modifiers next tick.
+    step4b_emergentTech(world);
 
     // 5: Recruitment / unit production
     step5_recruitment(world);
@@ -237,51 +243,87 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
 
             for (const slot of techState.activeSlots) {
                 if (slot.status !== 'researching') continue;
+
+                // Repair pass: slots assigned before ticksRequired was being set
+                // are stuck permanently (the completion check below never fires
+                // on a falsy requirement). Derive it from the catalog so every
+                // in-flight research heals on the first tick after deploy.
+                if (slot.techId && !slot.ticksRequired) {
+                    const stuckDef = techRegistry.get(slot.techId);
+                    if (stuckDef) slot.ticksRequired = ticksForTech(stuckDef);
+                }
+
                 slot.ticksCompleted = (slot.ticksCompleted ?? 0) + researchSpeed;
                 if (slot.ticksRequired && slot.ticksCompleted >= slot.ticksRequired) {
-                    slot.status = 'complete';
-                    // Mark tech as unlocked
-                    if (slot.techId && !techState.unlockedTechIds.includes(slot.techId)) {
-                        techState.unlockedTechIds.push(slot.techId);
+                    const finishedId = slot.techId;
 
-                        // Apply the tech's modifier effects (same semantics as
-                        // TechEngine.applyEffect). Without this, research only
-                        // ever recorded ids — globalModifiers stayed empty and
-                        // no tech had any mechanical impact.
-                        const techDef = techRegistry.get(slot.techId);
-                        if (techDef) {
-                            if (!techState.globalModifiers) techState.globalModifiers = {};
-                            if (!techState.activeEffects) techState.activeEffects = [];
-                            for (const effect of techDef.effects ?? []) {
-                                if (effect.modifierKey && effect.type === TechEffectType.MODIFIER_PERCENT) {
-                                    techState.globalModifiers[effect.modifierKey] =
-                                        (techState.globalModifiers[effect.modifierKey] ?? 1.0) + (effect.value ?? 0);
-                                } else if (effect.modifierKey && effect.type === TechEffectType.MODIFIER_FLAT) {
-                                    techState.globalModifiers[effect.modifierKey] =
-                                        (techState.globalModifiers[effect.modifierKey] ?? 0) + (effect.value ?? 0);
-                                }
-                                techState.activeEffects.push(effect);
-                            }
-                        }
+                    // Mark tech as unlocked. applyUnlock is the engine's single
+                    // unlock path — it applies modifier effects AND locks out
+                    // mutually exclusive siblings. This step used to re-implement
+                    // the effect half inline and skipped the locking half, so
+                    // identity forks were not enforced for worker completions.
+                    if (finishedId) {
+                        applyUnlock(techState, finishedId);
                     }
-                    // Notification fired below
+
+                    // Free the slot. TECH_START_RESEARCH looks for a slot with
+                    // status 'empty' or a null techId; leaving the finished tech
+                    // parked here would permanently consume the slot, and with
+                    // maxSlots defaulting to 1 a faction could research exactly
+                    // one technology per game.
+                    slot.techId = null;
+                    slot.status = 'empty';
+                    slot.progressHours = 0;
+                    slot.ticksCompleted = 0;
+                    slot.ticksRequired = 0;
+
+                    const finishedName = finishedId
+                        ? (techRegistry.get(finishedId)?.name ?? finishedId)
+                        : 'Unknown';
                     fireNotification({
-                        id: `research-complete-${factionId}-${slot.techId}-${Date.now()}`,
+                        id: `research-complete-${factionId}-${finishedId}-${Date.now()}`,
                         factionId,
                         category: 'research',
                         priority: 'normal',
                         title: 'Research Complete',
-                        body: `Technology "${slot.techId}" has been unlocked.`,
+                        body: `Technology "${finishedName}" has been unlocked.`,
                         createdAt: new Date().toISOString(),
                         read: false,
                         linkToTab: 'tech',
-                        payload: { techId: slot.techId },
+                        payload: { techId: finishedId },
                     });
                 }
             }
         }
     } catch (e) {
         console.error('[TickProcessor] step4_research failed:', e);
+    }
+}
+
+function step4b_emergentTech(world: ReturnType<typeof getGameWorldState>) {
+    // Conduct as a research programme: refresh what the ledger derives, then let
+    // the catalog decide what a faction's history has earned it.
+    try {
+        refreshLedgerGauges(world);
+
+        for (const reveal of evaluateEmergentTriggers(world)) {
+            fireNotification({
+                id: `emergent-${reveal.factionId}-${reveal.triggerId}-${Date.now()}`,
+                factionId: reveal.factionId,
+                category: 'research',
+                priority: 'normal',
+                title: reveal.granted ? 'Doctrine Established' : 'Doctrine Crystallizing',
+                body: reveal.granted
+                    ? `${reveal.narrative} "${reveal.techName}" is now ours in practice as well as in principle.`
+                    : `${reveal.narrative} "${reveal.techName}" can be researched at ${Math.round((1 - reveal.discount) * 100)}% reduced cost.`,
+                createdAt: new Date().toISOString(),
+                read: false,
+                linkToTab: 'tech',
+                payload: { techId: reveal.techId, triggerId: reveal.triggerId, granted: reveal.granted },
+            });
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step4b_emergentTech failed:', e);
     }
 }
 
@@ -606,6 +648,9 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
         if (hasSpaceyard) {
             repairRate = 0.15;
         }
+
+        // Repair doctrine research scales dock throughput.
+        repairRate *= getTechModifier(world, fleet.factionId, 'mil_repair_rate_mult');
 
         fleet.strength = Math.min(1.0, fleet.strength + repairRate);
         

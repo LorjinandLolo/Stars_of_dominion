@@ -5,6 +5,9 @@ import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } f
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import { TechEngine } from '../lib/tech/engine';
+import { hasTechFlag } from '../lib/tech/flags';
+import { checkOrderTechGate } from '../lib/tech/order-gates';
+import { bumpMetric } from '../lib/tech/history-ledger';
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
@@ -885,6 +888,15 @@ const POLITICAL_CAPITAL_COSTS: Record<string, number> = {
 function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
 
+    // Technology gate runs FIRST — ahead of the treasury and political-capital
+    // charges below, so an order the faction cannot legally issue is never
+    // billed for. Table and semantics live in lib/tech/order-gates.ts.
+    const gate = checkOrderTechGate(world, factionId, actionId);
+    if (!gate.allowed) {
+        recordOrderFailure(world, factionId, actionId, gate.reason!);
+        return;
+    }
+
     // Affordability gate — deducts from the live economy on success.
     if (!chargeOrderCost(world, factionId, actionId)) {
         recordOrderFailure(world, factionId, actionId, 'Insufficient resources in the treasury.');
@@ -1294,6 +1306,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
                 return;
             }
+            // History: a gunnery doctrine is written by the crews who fly it.
+            bumpMetric(world, factionId, 'mil.bombardmentsConducted');
             // Orbital structures are shot at before the surface is. While the
             // layer holds, shields and hulls soak the volley and the ground gets
             // off comparatively lightly.
@@ -1506,7 +1520,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 constructionCompleteAt: null,
                 sectorIndex: sectorIdx,
             });
-            const started = startConstruction(planet, tileId, def.id, world.nowSeconds);
+            const started = startConstruction(planet, tileId, def.id, world.nowSeconds, world);
             if (!started.success) {
                 // Roll back: refund the charge, drop the placeholder tile.
                 for (const [amt, key] of costPairs) {
@@ -1906,6 +1920,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              registerActOfWar(world, factionId, payload.targetFactionId);
              // Phase 5: what an empire does reshapes what it becomes.
              recordPoliticalEvent(world, factionId, 'declare_war');
+             // History: counted on the TARGET's ledger — being attacked
+             // repeatedly is what teaches a defensive doctrine.
+             bumpMetric(world, payload.targetFactionId, 'war.declaredAgainstUs');
              console.log(`[Order] Faction ${factionId} declared War on ${payload.targetFactionId}`);
              break;
         }
@@ -2056,15 +2073,23 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'ESP_LAUNCH_OP': {
             // Client sends `investment`/`risk` (see launchCovertOpAction); older
             // callers sent `investmentLevel`/`riskLevel` — accept both.
-            launchOperation(
+            // The unlocked-tech set has to be passed explicitly; omitting it left
+            // launchOperation defaulting to an empty set, so its shadow-economy
+            // tech gate rejected every player op in that domain.
+            const espResult = launchOperation(
                 factionId,
                 payload.targetFactionId,
                 payload.targetRegionId,
                 payload.domain,
                 payload.investment ?? payload.investmentLevel ?? 0.5,
                 payload.risk ?? payload.riskLevel ?? 0.5,
-                world
+                world,
+                new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? [])
             );
+            if (!espResult.success) {
+                recordOrderFailure(world, factionId, actionId, espResult.message);
+                break;
+            }
             console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
             break;
         }
@@ -3403,7 +3428,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              }
 
              const unlocked = new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? []);
-             if (!unlocked.has(CHARTER_TECH_ID)) {
+             if (!hasTechFlag(world, factionId, 'ENABLE_CORPORATE_CHARTERS')) {
                  recordOrderFailure(world, factionId, actionId,
                      'Chartering requires the "Trade Route Initialization" technology.');
                  break;

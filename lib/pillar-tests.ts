@@ -60,7 +60,9 @@ function expectFalse(v: boolean, msg?: string): void {
  * call returns `{ success: false }` and every test that dereferenced
  * `result.operation!` threw instead of asserting.
  */
-const SHADOW_ECONOMY_TECH = new Set(['dip_sha_1']);
+// eco_t3_6 "Black Market Operations" grants ENABLE_SHADOW_ECONOMY. The previous
+// fixture used 'dip_sha_1', an id defined in no tech tree.
+const SHADOW_ECONOMY_TECH = new Set(['eco_t3_6']);
 
 function makeSystem(id: string, ownerFactionId?: string): SystemNode {
     return {
