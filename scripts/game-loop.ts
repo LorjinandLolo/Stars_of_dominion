@@ -8,6 +8,19 @@ import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
 import { bumpMetric } from '../lib/tech/history-ledger';
+import { registry as techRegistryForOrders } from '../lib/tech/engine';
+import {
+    addBlueprint,
+    getBlueprint,
+    findBlueprintById,
+    canAssimilate,
+    assimilationTicks,
+    absorbConqueredTechnology,
+} from '../lib/tech/diffusion-service';
+import { stageForInfiltration } from '../lib/espionage/network-stages';
+
+/** Infiltration needed before documents can be lifted at all (embedded network). */
+const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
@@ -2197,7 +2210,108 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ESP_STEAL_TECHNOLOGY': {
-             console.log(`[Order] Faction ${factionId} attempting to steal tech from ${payload.targetFactionId}`);
+             // Was a console.log stub. Theft now yields a blueprint fragment
+             // whose quality scales with how deeply the target is infiltrated —
+             // a matured network is the prerequisite, not a nice-to-have.
+             const targetId = payload.targetFactionId;
+             const targetTech = world.tech?.get?.(targetId);
+             if (!targetId || !targetTech) {
+                 recordOrderFailure(world, factionId, actionId, 'No such faction to steal from.');
+                 break;
+             }
+
+             const actorIntel = world.espionage?.factionIntel?.get?.(factionId);
+             const infiltration = actorIntel?.infiltrationLevels?.[targetId] ?? 0;
+             const stage = stageForInfiltration(infiltration);
+             if (infiltration < STEAL_MIN_INFILTRATION) {
+                 recordOrderFailure(world, factionId, actionId,
+                     `Our network inside ${targetId} is too shallow for document theft (${Math.round(infiltration)}% — needs ${STEAL_MIN_INFILTRATION}%).`);
+                 break;
+             }
+
+             // What they know that we do not. A named techId is a targeted
+             // theft; otherwise take their most recent unlock, which is what an
+             // active network would actually be positioned to see.
+             const ourTech = world.tech.get(factionId);
+             const known = new Set<string>(ourTech?.unlockedTechIds ?? []);
+             const candidates = (targetTech.unlockedTechIds ?? []).filter((id: string) => !known.has(id));
+             if (candidates.length === 0) {
+                 recordOrderFailure(world, factionId, actionId, 'They hold no technology we lack.');
+                 break;
+             }
+             const wanted = payload.techId && candidates.includes(payload.techId)
+                 ? payload.techId
+                 : candidates[candidates.length - 1];
+
+             const stageIndex = ['none', 'recon_cell', 'embedded_network', 'deep_assets', 'shadow_government'].indexOf(stage);
+             const fidelity = 0.25 + 0.15 * Math.max(0, stageIndex - 1);
+             const merged = addBlueprint(ourTech!, {
+                 techId: wanted,
+                 sourceFactionId: targetId,
+                 channel: 'espionage',
+                 fidelity,
+                 tick: world.nowSeconds,
+             });
+
+             // Theft is noticed by the people it is done to. Their
+             // counter-intelligence doctrine feeds on our activity.
+             bumpMetric(world, targetId, 'esp.opsDetectedAgainstUs');
+             console.log(`[Order] ${factionId} stole ${wanted} from ${targetId} at ${Math.round(fidelity * 100)}% fidelity (now ${Math.round((merged?.fidelity ?? 0) * 100)}%)`);
+             break;
+        }
+
+        case 'TECH_ASSIMILATE_BLUEPRINT': {
+             // Mirrors TECH_START_RESEARCH, but copies rather than derives:
+             // prerequisites are waived and the cost is a fraction of the
+             // original, scaled by fidelity and by how common the tech already is.
+             const techState = world.tech.get(factionId);
+             if (!techState) {
+                 recordOrderFailure(world, factionId, actionId, 'This faction has no research programme.');
+                 break;
+             }
+
+             const blueprint = findBlueprintById(techState, payload.blueprintId)
+                 ?? (payload.techId ? getBlueprint(techState, payload.techId) : undefined);
+             const viable = canAssimilate(blueprint);
+             if (!viable.ok) {
+                 recordOrderFailure(world, factionId, actionId, viable.reason!);
+                 break;
+             }
+
+             const def = techRegistryForOrders.get(blueprint!.techId);
+             if (!def) {
+                 recordOrderFailure(world, factionId, actionId, 'That blueprint describes no known technology.');
+                 break;
+             }
+             if (techState.unlockedTechIds?.includes(def.id)) {
+                 recordOrderFailure(world, factionId, actionId, 'We already hold this technology.');
+                 break;
+             }
+             if (techState.lockedTechIds?.includes(def.id)) {
+                 recordOrderFailure(world, factionId, actionId, 'A doctrine we have already committed to excludes this technology.');
+                 break;
+             }
+
+             const slot = techState.activeSlots?.find((s: any) =>
+                 (payload.slotId ? s.slotId === payload.slotId : true) &&
+                 (s.status === 'empty' || s.techId === null));
+             if (!slot) {
+                 recordOrderFailure(world, factionId, actionId, 'No research slot is free.');
+                 break;
+             }
+
+             slot.techId = def.id;
+             slot.status = 'researching';
+             slot.startTime = world.nowSeconds;
+             slot.progressHours = 0;
+             slot.ticksCompleted = 0;
+             slot.ticksRequired = assimilationTicks(world, blueprint!, def);
+             // Completion runs through the normal research path, so mark the
+             // tech so step4_research knows to unlock it with adaptation debt.
+             if (!techState.assimilating) techState.assimilating = [];
+             if (!techState.assimilating.includes(def.id)) techState.assimilating.push(def.id);
+
+             console.log(`[Order] ${factionId} began assimilating ${def.id} (${slot.ticksRequired} ticks, ${Math.round(blueprint!.fidelity * 100)}% fidelity)`);
              break;
         }
 
@@ -4089,6 +4203,10 @@ function processSieges(world: GameWorldState) {
 
             // Capital falls → the government collapses and the planet changes hands.
             if (capitalTaken(war)) {
+                // Taking a world takes its archives (diffusion: conquest).
+                // Must run before ownerId is overwritten — the previous owner is
+                // what makes the spoils meaningful.
+                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                 planet.ownerId = updatedSiege.attackerEmpireId;
                 planet.isOccupied = false;
                 planet.siege = null;
@@ -4115,6 +4233,7 @@ function processSieges(world: GameWorldState) {
                 advanceFront(surface, war, 1.2, rng);
                 updatedSiege.defenderState.occupationProgress = occupationShare(surface, war);
                 if (capitalTaken(war)) {
+                    absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                     planet.ownerId = updatedSiege.attackerEmpireId;
                     planet.isOccupied = false;
                     planet.siege = null;
@@ -4130,6 +4249,7 @@ function processSieges(world: GameWorldState) {
             updatedSiege.defenderState.occupationProgress += progress;
 
             if (updatedSiege.defenderState.occupationProgress >= 100) {
+                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                 planet.ownerId = updatedSiege.attackerEmpireId;
                 planet.isOccupied = false;
                 planet.siege = null;

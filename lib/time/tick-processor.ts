@@ -49,6 +49,7 @@ import { fromISO } from '../seasons/season-service';
 import { registry as techRegistry, applyUnlock, ticksForTech } from '../tech/engine';
 import { getTechModifier } from '../tech/modifiers';
 import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-service';
+import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
 
 
@@ -263,7 +264,16 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
                     // the effect half inline and skipped the locking half, so
                     // identity forks were not enforced for worker completions.
                     if (finishedId) {
-                        applyUnlock(techState, finishedId);
+                        // A slot running an assimilation job unlocks the tech as
+                        // a copy: same unlock, but carrying adaptation debt until
+                        // the workforce catches up with the documents.
+                        const wasCopied = techState.assimilating?.includes(finishedId) ?? false;
+                        if (wasCopied) {
+                            assimilateBlueprint(techState, finishedId);
+                            techState.assimilating = techState.assimilating!.filter(id => id !== finishedId);
+                        } else {
+                            applyUnlock(techState, finishedId);
+                        }
                     }
 
                     // Free the slot. TECH_START_RESEARCH looks for a slot with
@@ -305,6 +315,15 @@ function step4b_emergentTech(world: ReturnType<typeof getGameWorldState>) {
     // the catalog decide what a faction's history has earned it.
     try {
         refreshLedgerGauges(world);
+
+        // Passive diffusion. Watching a rival's technology work teaches a little
+        // about it, and copied technology slowly stops being second-rate.
+        accrueObservationFragments(world as any, world.nowSeconds);
+        for (const techState of world.tech?.values() ?? []) {
+            for (const domesticated of tickAdaptationDebt(techState)) {
+                console.log(`[Tick Worker] ${techState.factionId} has fully domesticated ${domesticated}`);
+            }
+        }
 
         for (const reveal of evaluateEmergentTriggers(world)) {
             fireNotification({

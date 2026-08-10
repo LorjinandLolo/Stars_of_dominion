@@ -1,4 +1,5 @@
 import { Faction } from '../../types/index';
+import type { TechBlueprint } from './diffusion-types';
 
 // --- ENUMS (HoI4 Strategy Grammar) ---
 
@@ -211,6 +212,18 @@ export interface PlayerTechState {
      * the missing theory, so the chain no longer has to be walked.
      */
     emergentWaivedPrereqs?: Record<string, string[]>;
+
+    // ── Diffusion (technology acquired without researching it) ───────────────
+
+    /** Fragments and complete copies awaiting assimilation. */
+    blueprints?: TechBlueprint[];
+    /** Effect strength still withheld from copied techs, per tech id. */
+    adaptationDebt?: Record<string, number>;
+    /**
+     * Techs currently occupying a slot as an assimilation job rather than
+     * original research. On completion these unlock with adaptation debt.
+     */
+    assimilating?: string[];
 }
 
 export interface GameStateContext {
