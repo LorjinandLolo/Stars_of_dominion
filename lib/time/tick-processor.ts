@@ -13,6 +13,18 @@ import { computeVisibility } from '../movement/visibility-service';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
+import { RNG, seedFromString } from '../trade-system/rng';
+import { reconcileRaiderRosters, tickPirateMetrics, tickPirateOrganizations } from '../piracy/organization-service';
+import { tickPiracyEmergence, tickPiracyOpportunity } from '../piracy/emergence-service';
+import { tickPirateBases } from '../piracy/base-service';
+import { tickHostages } from '../piracy/raid-service';
+import { tickProtection } from '../piracy/protection-service';
+// Named to avoid the collision with the espionage service's own tickShadowEconomy,
+// which maintains the ShadowEconomyNode records this one turns into real bases.
+import { tickShadowEconomy as tickPirateShadowEconomy } from '../piracy/black-market-service';
+import { tickSponsorship } from '../piracy/sponsorship-service';
+import { tickPirateSuccession } from '../piracy/succession-service';
+import { tickBounties, tickInformants } from '../piracy/counter-piracy-service';
 import { BUILDINGS } from '../../data/buildings';
 import { tickOperations, tickShadowEconomy, tickFactionIntel } from '../espionage/espionage-service';
 import { tickDiplomacy } from '../diplomacy/offer-service';
@@ -43,9 +55,9 @@ import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
 import { StrategicAIService } from '../ai/strategic-ai-service';
-import { MilestoneService } from '../victory/milestone-service';
 import { DefeatManager } from '../defeat/manager';
-import { fromISO } from '../seasons/season-service';
+import { tickTitles, latchDefeatStatus } from '../titles/title-service';
+import { tickSeasonModifiers } from '../seasons/season-service';
 import { registry as techRegistry, applyUnlock, ticksForTech } from '../tech/engine';
 import { getTechModifier } from '../tech/modifiers';
 import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-service';
@@ -175,9 +187,57 @@ export async function runStrategicTick(
     // throw here (e.g. a system missing hyperlaneNeighbors) propagated all the way out
     // of the scheduler, which then never advanced its marker — permanently freezing the
     // game clock. Isolate each so one bad record can't stall the whole simulation.
-    try { step11_pirateSpawning(world); } catch (e) { console.error('[TickProcessor] step11_pirateSpawning failed:', e); }
+    // 11-pre: reconcile every band's roster against the hulls that actually
+    // still exist. Raiders die before this block runs — suppression inside the
+    // trade tick, combat before the strategic tick — so every pass below would
+    // otherwise price ships that are already wreckage.
+    try { reconcileRaiderRosters(world); } catch (e) { console.error('[TickProcessor] reconcileRaiderRosters failed:', e); }
+    // 11a: pirate organization metrics — infamy and heat decay, crew loyalty
+    // drift. Runs before the org pass so this tick's stage check reads the
+    // metrics as they now stand.
+    try { tickPirateMetrics(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickPirateMetrics failed:', e); }
+    // 11b/11c: score the galaxy, ratchet lawlessness, then roll for new raiding
+    // parties in the systems the score says are worth raiding. The index is
+    // handed straight to emergence rather than recomputed.
+    try {
+        const opportunity = tickPiracyOpportunity(world, TICK_DELTA_SECONDS);
+        tickPiracyEmergence(world, opportunity);
+    } catch (e) { console.error('[TickProcessor] piracy emergence failed:', e); }
+    // 11d: base upkeep, concealment, discovery, repair and acquisition. After
+    // emergence so a band founded this tick can already buy a hideout, and
+    // before the organization pass so this tick's stage check sees the network
+    // as it now stands.
+    try { tickPirateBases(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickPirateBases failed:', e); }
+    // 11e: ransom windows close. Raiding itself is resolved inside the trade
+    // tick, where the live flows are.
+    try { tickHostages(world); } catch (e) { console.error('[TickProcessor] tickHostages failed:', e); }
+    // 11f: protection fees, tribute, tolls, and the recomputation of who
+    // actually controls which commerce. After the base tick so a network bought
+    // this tick counts toward control, and before the organization pass so the
+    // Stage IV gate reads the control it just earned.
+    try { tickProtection(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickProtection failed:', e); }
+    // 11g: grey markets restock from banked loot, smuggling premiums are
+    // collected, and empires advance along the shadow ladder their own
+    // black-market habits earned them.
+    try { tickPirateShadowEconomy(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickPirateShadowEconomy failed:', e); }
+    // 11h: sponsors pay, evidence accumulates against the ones who wanted this
+    // kept quiet, and the ladder from suspicion to public exposure advances.
+    // After the shadow tick so a traced payment is already on the record.
+    try { tickSponsorship(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickSponsorship failed:', e); }
+    // 11i: adoption of unaffiliated raiders, internal pressure drift, stage
+    // promotion/demotion, dissolution. Runs after emergence so raiders created
+    // this tick get an owner immediately — and BEFORE succession, because
+    // succession nominates candidates from the wings this pass maintains (and
+    // repairs). With the order reversed, a band whose wings were missing opened
+    // a contest with no contenders in it before anyone could reseed them.
+    try { tickPirateOrganizations(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickPirateOrganizations failed:', e); }
+    // 11i-b: leaders die, contests settle or boil over into a split, compatible
+    // neighbours combine, and bands that have won everything become states.
+    // After the sponsorship tick so an exposure's damage is already priced in.
+    try { tickPirateSuccession(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickPirateSuccession failed:', e); }
+    try { tickInformants(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickInformants failed:', e); }
+    try { tickBounties(world); } catch (e) { console.error('[TickProcessor] tickBounties failed:', e); }
     try { step12_pirateTacticalAI(world); } catch (e) { console.error('[TickProcessor] step12_pirateTacticalAI failed:', e); }
-    try { step13_pirateSafeHavens(world); } catch (e) { console.error('[TickProcessor] step13_pirateSafeHavens failed:', e); }
     try { step14_empireFleetRepair(world); } catch (e) { console.error('[TickProcessor] step14_empireFleetRepair failed:', e); }
     // step15 (legacy intelligence system) merged into step8_intelligence.
     try { tickForwardBases(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickForwardBases failed:', e); }
@@ -185,7 +245,7 @@ export async function runStrategicTick(
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
     step18_leadershipXP(world);
     step19_strategicAI(world);
-    step20_milestonesAndSeasons(world);
+    step20_titlesAndSeasons(world);
 
 
 
@@ -512,59 +572,13 @@ function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
 }
 
 /**
- * Step 11: Pirate Spawning
- * Spawns raider fleets in systems with low security or uncontrolled frontier zones.
+ * Step 11 (pirate spawning) now lives in lib/piracy/emergence-service.ts.
+ *
+ * The version that used to sit here rolled a flat chance in every system in the
+ * galaxy against local security alone: it produced raiders in empty voids, never
+ * noticed a fat undefended trade lane, and gave a victim nothing to investigate.
+ * See docs/pirate-system/emergence.md.
  */
-function step11_pirateSpawning(world: ReturnType<typeof getGameWorldState>) {
-    const pirateFleetCount = Array.from(world.movement.fleets.values()).filter(f => f.factionId === 'faction-pirates').length;
-    if (pirateFleetCount > 15) return; // Cap total raiders
-
-    for (const [sysId, sys] of world.movement.systems) {
-        // Chance to spawn increases as security drops
-        const baseChance = 0.02; // 2% per tick
-        const securityFactor = Math.max(0, (40 - (sys.security || 50)) / 100);
-        const finalChance = baseChance + securityFactor;
-
-        if (Math.random() < finalChance) {
-            const fleetId = `pirate-raider-${sysId}-${Date.now()}`;
-            const newFleet: Fleet = {
-                id: fleetId,
-                name: "Pirate Raider",
-                factionId: 'faction-pirates',
-                currentSystemId: sysId,
-                destinationSystemId: null,
-                plannedPath: [],
-                transitProgress: 0,
-                strength: 0.2 + Math.random() * 0.4, // 0-1 scale
-                hyperdriveProfile: {
-                    hyperlane: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
-                    trade: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-                    corridor: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-                    gate: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-                    deepSpace: { speedMultiplier: 0.8, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 }
-                },
-                orders: [],
-                etaSeconds: 0,
-                activeLayer: null,
-                isDetectable: true,
-                postureId: 'Expansionist',
-                doctrine: {
-                    type: 'Raider',
-                    deviationFromPosture: 0.5,
-                    preferredLayers: ['hyperlane', 'deepSpace'],
-                    retreatThreshold: 0.3,
-                    logisticsStrain: 0,
-                    moraleDrift: 0,
-                    supplyLevel: 1.0
-                },
-                basePower: 100,
-                composition: { interceptor: 2 }
-            };
-            world.movement.fleets.set(fleetId, newFleet);
-            console.log(`[PIRATES] Spawned raider at ${sysId} (Security: ${sys.security || 'N/A'})`);
-        }
-    }
-}
 
 
 /**
@@ -590,53 +604,16 @@ function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
 }
 
 /**
- * Step 13: Pirate Safe-Havens
- * Manages lawlessness progression and creates fixed pirate bases in weak empire margins.
+ * Step 13 (pirate safe-havens) is gone.
+ *
+ * Its lawlessness progression moved to the opportunity pass in
+ * lib/piracy/emergence-service.ts, which drives it from the Piracy Opportunity
+ * Index rather than a border-and-security heuristic. Its repair moved to
+ * lib/piracy/base-service.ts, where a raider recovers at a base its own
+ * organization owns and paid for — not on any system that happens to carry a
+ * `corsair_den` tag. Taking the shipyard now makes an enemy's losses permanent.
+ * See docs/pirate-system/bases.md.
  */
-function step13_pirateSafeHavens(world: ReturnType<typeof getGameWorldState>) {
-    // Count system ownership to identify "Large Empires"
-    const empireSizes = new Map<string, number>();
-    for (const sys of world.movement.systems.values()) {
-        if (sys.ownerFactionId) {
-            empireSizes.set(sys.ownerFactionId, (empireSizes.get(sys.ownerFactionId) || 0) + 1);
-        }
-    }
-
-    for (const [sysId, sys] of world.movement.systems) {
-        // Condition: Low security and border system of a large empire
-        const ownerId = sys.ownerFactionId;
-        const isLargeEmpire = ownerId && (empireSizes.get(ownerId) || 0) >= 8;
-        
-        if (isLargeEmpire && (sys.security || 50) < 25) {
-            // Is it a border system? (Neighbor with different/no owner)
-            const isBorder = sys.hyperlaneNeighbors.some(nId => {
-                const neighbor = world.movement.systems.get(nId);
-                return !neighbor || neighbor.ownerFactionId !== ownerId;
-            });
-
-            if (isBorder) {
-                sys.lawlessness = (sys.lawlessness || 0) + 5;
-                if (sys.lawlessness >= 100 && !sys.tags.includes('corsair_den')) {
-                    sys.tags.push('corsair_den');
-                    // A fully lawless haven fortifies into a pirate space station that
-                    // preys on nearby trade lanes.
-                    if (!sys.tags.includes('pirate_station')) sys.tags.push('pirate_station');
-                    console.log(`[PIRATES] Pirate station established at ${sys.name} (${sysId})`);
-                }
-            }
-        }
-    }
-
-    // Passive Repair: Pirate fleets in havens recover strength
-    for (const fleet of world.movement.fleets.values()) {
-        if (fleet.factionId === 'faction-pirates' && fleet.currentSystemId) {
-            const currentSys = world.movement.systems.get(fleet.currentSystemId);
-            if (currentSys?.tags.includes('corsair_den')) {
-                fleet.strength = Math.min(1.0, fleet.strength + 0.1);
-            }
-        }
-    }
-}
 
 /**
  * Step 14: Empire Fleet Repair
@@ -679,43 +656,44 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
     }
 }
 
-function step20_milestonesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
+function step20_titlesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
     try {
-        // 1. Check Personal Defeat (Strategic Collapse)
+        // 1. Diagnose collapse. This is a *status*, never a game-over: a faction
+        //    at ELIMINATED is a faction with zero planets, and the same systems
+        //    that reduced it offer the road back. Latched, so a sustained
+        //    condition announces once instead of every tick.
         for (const factionId of world.economy.factions.keys()) {
             if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
 
             const defeat = DefeatManager.checkDefeatConditions(factionId, world);
-            if (defeat.status !== 'ALIVE') {
-                fireNotification({
-                    id: `defeat-${factionId}-${Date.now()}`,
-                    factionId,
-                    category: 'politics',
-                    priority: 'urgent',
-                    title: defeat.status === 'ELIMINATED' ? 'FACTION ELIMINATED' : 'STRATEGIC COLLAPSE',
-                    body: defeat.active_defeats[0]?.message || 'Your faction has collapsed.',
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    linkToTab: 'dashboard',
-                    payload: { defeatStatus: defeat.status }
-                });
-            }
+            if (!latchDefeatStatus(world, factionId, defeat.status)) continue;
+            if (defeat.status === 'ALIVE') continue;
+
+            fireNotification({
+                id: `defeat-${factionId}-${defeat.status}-${world.nowSeconds}`,
+                factionId,
+                category: 'politics',
+                priority: 'urgent',
+                title: defeat.status === 'ELIMINATED' ? 'FACTION ELIMINATED' : 'STRATEGIC COLLAPSE',
+                body: defeat.active_defeats[0]?.message || 'Your faction has collapsed.',
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                read: false,
+                linkToTab: 'dashboard',
+                payload: { defeatStatus: defeat.status }
+            });
         }
 
-        // 2. Check Milestones (Trophies)
-        MilestoneService.checkMilestones(world);
+        // 2. Titles: drain triggers, evaluate galactic firsts, migrate any
+        //    legacy world.milestones entries into the ledger.
+        tickTitles(world);
 
-        // 3. Seasonal Cycle
-        const season = world.activeSeason;
-        if (season && season.phase !== 'complete') {
-            const endsAt = fromISO(season.endsAt);
-            if (world.nowSeconds >= endsAt) {
-                 MilestoneService.resolveSeasonTransition(world);
-            }
-        }
+        // 3. Seasonal cycle. One call does the lot: starts a season if none is
+        //    in flight, advances phases, applies modifier pressure, and closes
+        //    on the clock through the single unified closer.
+        tickSeasonModifiers(world, TICK_DELTA_SECONDS);
 
     } catch (e) {
-        console.error('[TickProcessor] step20_milestonesAndSeasons failed:', e);
+        console.error('[TickProcessor] step20_titlesAndSeasons failed:', e);
     }
 }
 

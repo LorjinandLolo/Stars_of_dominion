@@ -9,7 +9,8 @@ import {
     DiscourseState, 
     CorporateState,
     PressState,
-    EmpireIdentityState
+    EmpireIdentityState,
+    PiracyState
 } from '@/types/ui-state';
 
 export const defaultCouncilState: CouncilState = {
@@ -32,6 +33,11 @@ export const defaultPlayerState: PlayerState = {
     networkControl: 0,
     blackMarketLiquidity: 0,
     crewLoyalty: 0,
+};
+
+export const defaultPiracyState: PiracyState = {
+    view: null,
+    dashboard: null,
 };
 
 export const defaultSeasonState: SeasonState = {

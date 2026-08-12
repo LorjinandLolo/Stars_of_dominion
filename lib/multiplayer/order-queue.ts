@@ -45,6 +45,32 @@ const WORKER_ONLY_ACTIONS = new Set([
     'PRESS_CRISIS_PREDICT',
     'TRADE_ESTABLISH_ROUTE',
     'INFRA_UPGRADE',
+    // Pirate system. Every one of these has a handler in scripts/game-loop.ts,
+    // but queueOrder rejects anything that is in neither ACTION_DEFINITIONS nor
+    // this set — so the entire PIR_* surface was unreachable from the client.
+    'PIR_SPONSOR_ORG',
+    'PIR_SET_OPERATION',
+    'PIR_CUT_SPONSORSHIP',
+    'PIR_ISSUE_MARQUE',
+    'PIR_REVOKE_MARQUE',
+    'PIR_NEGOTIATE',
+    'PIR_BACK_SUCCESSOR',
+    'PIR_PAY_PROTECTION',
+    'PIR_BLACKMARKET_BUY',
+    'PIR_BLACKMARKET_SELL',
+    'PIR_BUY_INTEL',
+    'PIR_CUSTOMS_ENFORCE',
+    'PIR_POST_BOUNTY',
+    'PIR_OFFER_AMNESTY',
+    'PIR_DISPOSE_CREW',
+    'PIR_ASSIGN_RAID',
+    'PIR_SET_POSTURE',
+    'PIR_ESTABLISH_BASE',
+    'PIR_SET_RACKET',
+    'PIR_SPLIT_LOOT',
+    'PIR_ACCEPT_MARQUE',
+    'PIR_REFUSE_MARQUE',
+    'PIR_LEGITIMIZE',
 ]);
 
 export interface QueueOrderInput {

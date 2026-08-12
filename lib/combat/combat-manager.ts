@@ -1,6 +1,7 @@
 // lib/combat/combat-manager.ts
 import { GameWorldState } from '../game-world-state';
 import { Fleet } from '../movement/types';
+import { notifyTitleMetric, COUNTER_FLEET_POWER_DESTROYED } from '../titles/metrics';
 import { 
     CombatantState, 
     CombatState, 
@@ -138,6 +139,10 @@ function handleEngagement(
             // re-initiated against it every tick ("zombie" engagements).
             for (const fleet of [...fleetsA, ...fleetsB]) {
                 if (fleet.strength <= 0) {
+                    // Credit the other side before the fleet is gone — the
+                    // Reaper's Toll crown measures destroyed power per season.
+                    const killer = fleet.factionId === factionA ? factionB : factionA;
+                    notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
                     world.movement.fleets.delete(fleet.id);
                 }
             }

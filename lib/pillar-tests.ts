@@ -15,6 +15,7 @@ import { tickEconomy, tickCommodityDistribution, tickCollapseState } from './eco
 import { tickBlocDrift, getBlocReport, isCrisisCondition, applyPolicyEffect } from './politics/politics-service';
 import { launchOperation, tickOperations, resolveAttribution, computeAttributionProbability, getEspionagePressure } from './espionage/espionage-service';
 import { scheduleNextSeason, activateSeason, tickSeasonModifiers, endSeason, getActiveModifiers } from './seasons/season-service';
+import { emptyTitleState } from './titles/title-service';
 import { MovementWorldState, EmpirePosture, InfluenceBloc, Fleet, SystemNode, TradeSegment } from './movement/types';
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -298,10 +299,12 @@ function makeWorld(): GameWorldState {
         economy: makeEcoWorld(),
         corporate: createEmptyCorporateWorldState(),
         espionage: makeEspionageWorld(),
+        piracy: { organizations: new Map(), bases: new Map(), hostages: new Map(), protectionContracts: new Map(), tributes: new Map(), blackMarkets: new Map(), smugglingRuns: new Map(), sponsorships: new Map(), successions: new Map(), captures: new Map(), bounties: new Map(), opportunityIndex: new Map(), emergenceLog: [] },
         activeSeason: null,
         seasonHistory: [],
         hallOfFame: [],
         milestones: new Map(),
+        titles: emptyTitleState(),
         legacyPrestigeBonuses: new Map(),
         victoryState: null,
         postVictoryTransition: null,
@@ -575,7 +578,7 @@ test('seasonal pressure reduces affected variable', () => {
     expectTrue(changed, 'seasonal modifiers should reduce at least one shared variable');
 });
 
-test('endSeason archives record and clears modifiers', () => {
+test('endSeason archives record, clears modifiers and opens the next season', () => {
     const world = makeWorld();
     const season = scheduleNextSeason(1, world);
     activateSeason(season, world);
@@ -583,8 +586,11 @@ test('endSeason archives record and clears modifiers', () => {
     season.phase = 'ending';
     season.endsAt = new Date((world.nowSeconds - 1) * 1000).toISOString();
     endSeason(world);
-    expectTrue(world.activeSeason === null, 'activeSeason should be cleared');
+    // The closer schedules its successor: the galaxy never sits between seasons.
+    expectTrue(world.activeSeason?.seasonNumber === 2, 'season 2 should be announced');
+    expectTrue(world.activeSeason?.phase === 'announced', 'the successor starts announced');
     expectTrue(world.seasonHistory.length === 1, 'season record should be archived');
+    expectTrue(world.hallOfFame.length === 1, 'season record should reach the hall of fame');
     expect(Object.keys(world.shared.seasonalModifiers).length, 0, 'modifiers should be cleared');
 });
 

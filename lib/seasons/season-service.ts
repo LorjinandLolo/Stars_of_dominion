@@ -5,15 +5,23 @@ import type {
     ActiveSeason,
     SeasonModifier,
     SeasonModifierType,
-    SeasonPhase,
     SeasonRecord,
     SeasonFactionRecord,
-    SeasonReward,
 } from './season-types';
 import type { GameWorldState, SharedState } from '../game-world-state';
 import { applySeasonalPressure, clampShared } from '../game-world-state';
 import config from '../movement/movement-config.json';
 import { registry } from '../tech/engine';
+import { RNG, seedFromString } from '../trade-system/rng';
+import { rankFactions, isRankedFaction } from './prestige';
+import { awardTitle, ensureTitleState, notifyTitleTrigger } from '../titles/title-service';
+import { resetSeasonCounters } from '../titles/metrics';
+import { SEASON_ENDURANCE_TITLES, SEASON_RANK_TITLES, TITLE_CATALOG, TRIGGER } from '../titles/catalog';
+
+/** Consecutive ratified seasons that make a hold a Dynasty. */
+const DYNASTY_SEASONS = 3;
+import { snapshotTerritoryAtSeasonEnd } from '../victory/victory-service';
+import { fireNotification } from '../time/notification-hooks';
 
 const seasonCfg = config.seasons;
 
@@ -22,6 +30,9 @@ const seasonCfg = config.seasons;
 /**
  * Schedule the next season: pick 2–3 modifiers from the pool and announce.
  * Returns the new ActiveSeason (not yet effective — in 'announced' phase).
+ *
+ * Selection is seeded on the season number alone, so a worker restart mid-season
+ * reschedules the identical season and galaxy history stays replayable.
  */
 export function scheduleNextSeason(
     seasonNumber: number,
@@ -29,10 +40,11 @@ export function scheduleNextSeason(
 ): ActiveSeason {
     const now = world.nowSeconds;
     const pool = seasonCfg.modifierPool as Array<{ id: string; label: string; pressureRate: number; affectedVariable: string }>;
+    const rng = new RNG(seedFromString(`season|modifiers|${seasonNumber}`));
 
     // Pick 2–3 non-duplicate modifiers
-    const count = 2 + Math.floor(Math.random() * (seasonCfg.maxActiveModifiers - 1));
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const count = rng.nextInt(2, seasonCfg.maxActiveModifiers);
+    const shuffled = rng.shuffle([...pool]);
     const selected: SeasonModifier[] = shuffled.slice(0, count).map(m => ({
         id: m.id as SeasonModifierType,
         label: m.label,
@@ -96,6 +108,17 @@ export function tickSeasonModifiers(
     world: GameWorldState,
     deltaSeconds: number
 ): void {
+    // A world with no season in flight starts one. Without this the whole
+    // pillar stays dormant in production — which is exactly what it did before
+    // phase 1: schedule and tick were only ever reached from debug endpoints.
+    if (!world.activeSeason) {
+        const lastNumber = world.seasonHistory.length > 0
+            ? world.seasonHistory[world.seasonHistory.length - 1].seasonNumber
+            : 0;
+        world.activeSeason = scheduleNextSeason(lastNumber + 1, world);
+        console.log(`[Seasons] Season ${lastNumber + 1} announced.`);
+    }
+
     const season = world.activeSeason;
     if (!season || season.phase === 'complete') return;
 
@@ -121,7 +144,9 @@ export function tickSeasonModifiers(
         if (progress >= 0.8) season.phase = 'ending';
     }
 
-    if (season.phase === 'ending' && now >= endsAt) {
+    // Close on the clock. A season that was already past its end when the world
+    // loaded closes from any phase, not just 'ending'.
+    if (now >= endsAt) {
         endSeason(world);
     }
 }
@@ -129,32 +154,119 @@ export function tickSeasonModifiers(
 // ─── End-of-season ────────────────────────────────────────────────────────────
 
 /**
- * End the current season: compute recognition, award titles/prestige,
- * clear seasonal modifiers, and archive the season.
+ * The one and only season closer. Everything that ends a season goes through
+ * here — the tick, the debug endpoint, an admin action. Two competing closers
+ * used to exist (this one scored modifier endurance, MilestoneService scored
+ * prestige rank); they are merged, and both scores now have a job:
+ *
+ *   1. ratify every held crown into the permanent record
+ *   2. rank by prestige — top three take the season rank titles
+ *   3. award endurance titles for weathering the season's own modifiers
+ *   4. write legacy bonuses (capped, replaced, never compounded)
+ *   5. archive to seasonHistory + hallOfFame, snapshot territory
+ *   6. clear modifiers and schedule the next season — no dead air
  */
 export function endSeason(world: GameWorldState): SeasonRecord | null {
     const season = world.activeSeason;
     if (!season) return null;
 
     season.phase = 'complete';
+    const seasonNumber = season.seasonNumber;
 
-    // Compute recognition for each faction
     const outcomes: Record<string, SeasonFactionRecord> = {};
-    for (const [factionId, record] of season.factionRecognition) {
-        const reward = computeReward(factionId, season, world);
-        record.earnedTitles = reward.title ? [reward.title] : [];
-        record.prestige += reward.prestige;
-        record.bonusesApplied = reward.bonus ? [reward.bonus] : [];
-        outcomes[factionId] = record;
+    const outcomeFor = (factionId: string): SeasonFactionRecord => {
+        let rec = outcomes[factionId];
+        if (!rec) {
+            rec = season.factionRecognition.get(factionId)
+                ?? { factionId, earnedTitles: [], prestige: 0, bonusesApplied: [] };
+            rec.earnedTitles = [];
+            rec.bonusesApplied = [];
+            outcomes[factionId] = rec;
+        }
+        return rec;
+    };
+
+    // 1. Ratify crowns. A crown held at the bell becomes a permanent line in the
+    //    ledger; the crown itself carries over and its holder starts the next
+    //    season defending. (Phase 2 fills currentHolders; the loop is inert
+    //    until then, which is the point — the closer never needs revisiting.)
+    const titles = ensureTitleState(world);
+    const ratifiedCrowns: string[] = [];
+    for (const award of titles.currentHolders.values()) {
+        const def = TITLE_CATALOG[award.titleId];
+        if (!def) continue;
+        award.ratified = true;
+        titles.ledger.push({
+            titleId: award.titleId,
+            subjectId: award.subjectId,
+            awardedAtSeconds: world.nowSeconds,
+            seasonNumber,
+            lostAtSeconds: null,
+            ratified: true,
+        });
+        ratifiedCrowns.push(`${def.name} — ${award.subjectId}`);
+
+        // Tenure: consecutive closes with the crown still in hand. Three running
+        // is a Dynasty; taking a crown off a two-season holder is a Regicide.
+        const tenureKey = `${def.id}|${award.subjectId}`;
+        const tenure = (titles.crownTenure.get(tenureKey) ?? 0) + 1;
+        titles.crownTenure.set(tenureKey, tenure);
+        if (tenure >= DYNASTY_SEASONS) {
+            notifyTitleTrigger(TRIGGER.CROWN_HELD_THREE_SEASONS, award.subjectId);
+        }
+
+        if (isRankedFaction(award.subjectId)) {
+            const rec = outcomeFor(award.subjectId);
+            rec.earnedTitles.push(`${def.name}, Season ${seasonNumber}`);
+            rec.prestige += def.prestige;
+        }
+    }
+    // Challenge progress does not survive the boundary; crowns do.
+    titles.challenges.clear();
+    // The villain crown's window is the season, so its tally resets here.
+    resetSeasonCounters(world);
+
+    // 2. Rank. The crown count is the headline; prestige fills the table below.
+    const rankings = rankFactions(world);
+    rankings.forEach(({ factionId, prestige }, index) => {
+        const rec = outcomeFor(factionId);
+        rec.prestige += prestige;
+        const rankTitleId = SEASON_RANK_TITLES[index];
+        if (!rankTitleId) return;
+        const award = awardTitle(world, rankTitleId, factionId, { seasonNumber });
+        if (award) rec.earnedTitles.push(TITLE_CATALOG[rankTitleId].name);
+    });
+
+    // 3. Endurance — held the line under this season's specific pressures.
+    for (const { factionId } of rankings) {
+        const weathered = countModifiersWeathered(factionId, season, world);
+        if (weathered < 1) continue;
+        const titleId = SEASON_ENDURANCE_TITLES[Math.min(weathered, SEASON_ENDURANCE_TITLES.length) - 1];
+        const award = awardTitle(world, titleId, factionId, { seasonNumber });
+        if (award) outcomeFor(factionId).earnedTitles.push(TITLE_CATALOG[titleId].name);
     }
 
-    // Build narrative
+    // 4. Legacy bonuses. Replaced wholesale each season, never accumulated, and
+    //    capped — a title must never be the reason its holder keeps winning.
+    world.legacyPrestigeBonuses.clear();
+    rankings.slice(0, SEASON_RANK_TITLES.length).forEach(({ factionId }, index) => {
+        const bonuses = legacyBonusForRank(index);
+        if (!bonuses) return;
+        world.legacyPrestigeBonuses.set(factionId, bonuses);
+        outcomeFor(factionId).bonusesApplied = Object.entries(bonuses)
+            .map(([k, v]) => `${k} ×${v.toFixed(2)}`);
+    });
+
+    // 5. Archive.
     const modifierNames = season.modifiers.map(m => m.label).join(', ');
-    const narrative = `Season ${season.seasonNumber} was defined by: ${modifierNames}. The galaxy endures.`;
+    const leader = rankings[0]?.factionId;
+    const narrative = ratifiedCrowns.length > 0
+        ? `Season ${seasonNumber} was defined by ${modifierNames}. Crowns ratified: ${ratifiedCrowns.join('; ')}.`
+        : `Season ${seasonNumber} was defined by ${modifierNames}. ${leader ?? 'No one'} ended it on top.`;
 
     const record: SeasonRecord = {
         id: season.id,
-        seasonNumber: season.seasonNumber,
+        seasonNumber,
         modifiers: season.modifiers,
         completedAt: toISO(world.nowSeconds),
         factionOutcomes: outcomes,
@@ -162,59 +274,78 @@ export function endSeason(world: GameWorldState): SeasonRecord | null {
     };
 
     world.seasonHistory.push(record);
-    world.activeSeason = null;
+    world.hallOfFame.push(record);
+    try {
+        snapshotTerritoryAtSeasonEnd(seasonNumber, world);
+    } catch (e) {
+        console.error('[Seasons] territory snapshot failed:', e);
+    }
 
-    // Clear seasonal modifiers from shared state
+    // 6. Clear pressure and open the next season immediately.
     world.shared.seasonalModifiers = {};
     world.shared.seasonDayElapsed = 0;
+    world.activeSeason = scheduleNextSeason(seasonNumber + 1, world);
 
+    fireNotification({
+        id: `season-end-${season.id}`,
+        factionId: 'all',
+        category: 'system',
+        priority: 'urgent',
+        title: `SEASON ${seasonNumber} CONCLUDED`,
+        body: narrative,
+        createdAt: toISO(world.nowSeconds),
+        read: false,
+        linkToTab: 'dashboard',
+        payload: { seasonNumber, nextSeason: seasonNumber + 1 },
+    });
+
+    console.log(`[Seasons] Season ${seasonNumber} closed; season ${seasonNumber + 1} announced.`);
     return record;
 }
 
-function computeReward(
+/** Legacy bonus by finishing position. Magnitudes stay inside the config cap. */
+function legacyBonusForRank(index: number): Record<string, number> | null {
+    const cap = seasonCfg.rewards.permanentBonusCap / 100;
+    const table: Array<Record<string, number>> = [
+        { credit_mult: 1 + Math.min(0.10, cap), tech_mult: 1 + Math.min(0.15, cap) },
+        { credit_mult: 1 + Math.min(0.05, cap), tech_mult: 1 + Math.min(0.10, cap) },
+        { tech_mult: 1 + Math.min(0.05, cap) },
+    ];
+    return table[index] ?? null;
+}
+
+/**
+ * How many of the season's own pressures a faction held the line against.
+ * Shared-state scalars are galactic, so this reads the same for everyone; the
+ * per-faction half is technology identity — a specialized empire weathered the
+ * season by being built for it.
+ */
+function countModifiersWeathered(
     factionId: string,
     season: ActiveSeason,
     world: GameWorldState
-): SeasonReward {
-    const rewardCfg = seasonCfg.rewards;
-    const shared = world.shared;
-    const techState = world.tech.get(factionId);
-
-    // 1. Score based on performance under the season's modifiers
+): number {
     let score = 0;
     for (const mod of season.modifiers) {
-        // If the faction maintained their variable above 0.6 despite pressure, award points
-        const current = (shared as unknown as Record<string, unknown>)[mod.affectedVariable];
+        const current = (world.shared as unknown as Record<string, unknown>)[mod.affectedVariable];
         if (typeof current === 'number' && current >= 0.6) score++;
     }
 
-    // 2. Score based on Technology Identity (Standardized Schema)
-    // Every tech has SeasonScoreCategory tags. We reward specialized empires.
+    const techState = world.tech.get(factionId);
     if (techState) {
-        const unlockedTechs = techState.unlockedTechIds.map(id => registry.get(id)).filter(t => !!t);
-        
-        // Count tags across all researched techs
         const tagCounts: Record<string, number> = {};
-        unlockedTechs.forEach(t => {
-            t?.seasonScoreTags?.forEach(tag => {
+        for (const id of techState.unlockedTechIds) {
+            const tech = registry.get(id);
+            tech?.seasonScoreTags?.forEach(tag => {
                 tagCounts[tag] = (tagCounts[tag] || 0) + 1;
             });
-        });
-
-        // Add to total score if player has reached critical mass in any category
-        // Thresholds: 10 techs in a category = +1 point (identity-driven prestige)
+        }
         for (const count of Object.values(tagCounts)) {
             if (count >= 10) score++;
         }
     }
 
-    // Choose title based on score threshold
-    const titleIndex = Math.min(score, rewardCfg.titles.length - 1);
-    const title = score >= 1 ? rewardCfg.titles[titleIndex] : '';
-    const prestige = score * rewardCfg.prestigePerTitle;
-    const bonus = score >= 2 ? `+${score}% efficiency boost next season` : '';
-
-    return { title, prestige, bonus };
+    return score;
 }
 
 // ─── Query ────────────────────────────────────────────────────────────────────

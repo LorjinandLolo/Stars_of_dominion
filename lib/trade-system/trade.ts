@@ -138,7 +138,14 @@ export function simulateTradeFlows(
     markets: Map<string, Market>, // For pricing piracy loss
     warStates: Map<string, WarState>,
     systemOwners: Map<string, string>,
-    rng: RNG
+    rng: RNG,
+    /**
+     * Routes a modelled pirate raid already hit this tick. Their losses are
+     * settled from the raid itself, so the abstract piracyRisk roll below —
+     * which stands in for raiding the simulation does NOT model — must not
+     * charge them a second time.
+     */
+    raidedRouteIds: Set<string> = new Set()
 ): TradeFlowResult {
     const netFlows = new Map<string, Map<Resource, number>>(); // Flow into Theatre
     const tariffRevenue = new Map<string, number>();
@@ -178,9 +185,13 @@ export function simulateTradeFlows(
 
         let flowAmount = agreement.volumePerHour;
 
+        // 1b. Terror. Pirates who burn shipping instead of robbing it suppress
+        // the traffic that would otherwise use the lane at all.
+        if (route.terror) flowAmount *= Math.max(0, 1 - route.terror);
+
         // 2. Piracy (Percentage loss) — escorts mitigate the intercept chance.
         const escortMitigation = Math.min(0.8, route.escortLevel * 0.1);
-        if (rng.check(route.piracyRisk * (1 - escortMitigation))) {
+        if (!raidedRouteIds.has(route.id) && rng.check(route.piracyRisk * (1 - escortMitigation))) {
             const lossPct = rng.next() * 0.5; // Up to 50% loss
             const lostAmount = flowAmount * lossPct;
             flowAmount -= lostAmount;

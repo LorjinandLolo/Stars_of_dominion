@@ -8,6 +8,7 @@ import { getEmpireStorageReport } from '@/lib/logistics/storage-service';
 import { getBlockadeReport } from '@/lib/logistics/blockade-service';
 import { computeOrbitalRatings } from '@/lib/orbital/orbital-service';
 import { isRetooling } from '@/lib/specialization/specialization-effects';
+import { buildPirateDashboard, buildPirateView } from '@/lib/piracy/pirate-view';
 
 export interface GameSaveMetadata {
     id: string;
@@ -104,6 +105,24 @@ export function normalizeEspionageState(world: GameWorldState): void {
     delete esp.counterIntel;
     delete w.intelligence;
 
+    // Pirate system: organizations. Snapshots written before the entity existed
+    // have no aggregate at all; their raiders are adopted into fresh bands by
+    // adoptOrphanRaiders on the first tick after deploy.
+    if (!w.piracy) w.piracy = {};
+    if (!(w.piracy.organizations instanceof Map)) w.piracy.organizations = new Map();
+    if (!(w.piracy.bases instanceof Map)) w.piracy.bases = new Map();
+    if (!(w.piracy.hostages instanceof Map)) w.piracy.hostages = new Map();
+    if (!(w.piracy.protectionContracts instanceof Map)) w.piracy.protectionContracts = new Map();
+    if (!(w.piracy.tributes instanceof Map)) w.piracy.tributes = new Map();
+    if (!(w.piracy.blackMarkets instanceof Map)) w.piracy.blackMarkets = new Map();
+    if (!(w.piracy.smugglingRuns instanceof Map)) w.piracy.smugglingRuns = new Map();
+    if (!(w.piracy.sponsorships instanceof Map)) w.piracy.sponsorships = new Map();
+    if (!(w.piracy.successions instanceof Map)) w.piracy.successions = new Map();
+    if (!(w.piracy.captures instanceof Map)) w.piracy.captures = new Map();
+    if (!(w.piracy.bounties instanceof Map)) w.piracy.bounties = new Map();
+    if (!(w.piracy.opportunityIndex instanceof Map)) w.piracy.opportunityIndex = new Map();
+    if (!Array.isArray(w.piracy.emergenceLog)) w.piracy.emergenceLog = [];
+
     // Diplomacy Phase 1/2: offers, cooldowns, gambits, leverage — defaults for
     // snapshots written before world.diplomacy (or its later fields) existed.
     if (!w.diplomacy) w.diplomacy = {};
@@ -145,6 +164,17 @@ export function normalizeEspionageState(world: GameWorldState): void {
 
     // Phase 6.3: regional independence crises.
     if (!(w.secessionCrises instanceof Map)) w.secessionCrises = new Map();
+
+    // Seasons & Titles phase 0: the title registry. Snapshots written before it
+    // existed have no aggregate; their world.milestones entries are drained into
+    // the ledger by migrateLegacyMilestones on the first tick after deploy.
+    if (!w.titles) w.titles = {};
+    const titles = w.titles;
+    if (!(titles.currentHolders instanceof Map)) titles.currentHolders = new Map();
+    if (!Array.isArray(titles.ledger)) titles.ledger = [];
+    if (!(titles.challenges instanceof Map)) titles.challenges = new Map();
+    if (!(titles.defeatStatuses instanceof Map)) titles.defeatStatuses = new Map();
+    if (!(w.milestones instanceof Map)) w.milestones = new Map();
 }
 
 // ─── Phase 4: State Sharding Utilities ────────────────────────────────────────
@@ -226,13 +256,27 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId),
         espionageFactionIntel: world.espionage.factionIntel.get(factionId) ?? null,
         espionageOperations: Array.from(world.espionage.operations.values()).filter(op => op.actorFactionId === factionId),
-        espionageReports: Array.from(world.espionage.reports.values()).filter(r => r.ownerFactionId === factionId),
+        // `accurate` is the HIDDEN truth flag: false means the body's figures are
+        // wrong, either through bad tradecraft or because someone planted it.
+        // espionage-types.ts is explicit that the report's own owner must never
+        // see it — and shards are readable by everyone, so shipping it handed
+        // every player a free lie-detector on their own and each other's intel.
+        espionageReports: Array.from(world.espionage.reports.values())
+            .filter(r => r.ownerFactionId === factionId)
+            .map(({ accurate, ...report }) => report),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Planet-layer rollups. The per-planet detail already rides along in the
         // snapshot; these are the empire-wide aggregates the UI would otherwise
         // have to recompute on every poll.
-        planetaryLogistics: buildPlanetaryLogisticsSummary(world, factionId)
+        planetaryLogistics: buildPlanetaryLogisticsSummary(world, factionId),
+        // NOTE: pirate state deliberately does NOT ride here. A faction shard is
+        // not a private channel — /api/game/sync returns every shard to every
+        // caller with no auth and no owner predicate, because clients need each
+        // other's fleets to render the galaxy. Anything genuinely secret has to
+        // be fetched from an authenticated per-faction endpoint instead; the
+        // pirate view is served by app/api/game/piracy.
+        // See docs/pirate-system/systems.md §8.
     };
     return JSON.stringify(mapsToRecords(shard));
 }
@@ -280,6 +324,32 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
  * Returns a deep clone of the world state with all sharded data removed.
  * This prevents the main 'default-session' document from breaking size limits.
  */
+/**
+ * Serialize the pirate aggregate on its own, for a row the sync API never
+ * serves.
+ *
+ * The shared session snapshot is BOTH what clients poll and what the worker
+ * reloads on restart, so the privacy scrub in cleanWorldForSave cannot be the
+ * only copy — scrubbing it there and nowhere else silently destroyed every
+ * band's wings, leader, treasury and bases on each save. Authoritative pirate
+ * state lives here; the session snapshot keeps only the public projection.
+ */
+export function serializePiracyState(world: GameWorldState): string {
+    return JSON.stringify(mapsToRecords(world.piracy));
+}
+
+/** Restore the authoritative pirate aggregate saved by serializePiracyState. */
+export function applyPiracySnapshot(world: GameWorldState, snapshot: string | null | undefined): void {
+    if (!snapshot) return;
+    try {
+        world.piracy = recordsToMaps(JSON.parse(snapshot)) as GameWorldState['piracy'];
+    } catch {
+        // A corrupt pirate blob must not take the whole world down with it;
+        // normalizeEspionageState rebuilds empty collections below.
+    }
+    normalizeEspionageState(world);
+}
+
 export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     const cloned = recordsToMaps(mapsToRecords(world)) as GameWorldState;
     cloned.movement.fleets.clear();
@@ -291,6 +361,66 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.operations.clear();
     cloned.espionage.reports.clear();
     cloned.espionage.boardOpportunities.clear();
+
+    // Pirate state never rides in the shared snapshot. Every mechanic that
+    // matters here is a mechanic about asymmetric information — hidden bases,
+    // covert sponsorships, secret contracts, falsified intel — and shipping the
+    // raw aggregate to every client collapses all of them at once. Each faction
+    // gets its own filtered view in its shard (see extractFactionShard).
+    //
+    // This is a CLIENT-FACING projection only. The authoritative copy is written
+    // separately by serializePiracyState and restored by applyPiracySnapshot —
+    // without that, this scrub would be erasing live state on every save, since
+    // the worker reloads this same document on restart.
+    if (cloned.piracy) {
+        cloned.piracy.bases.clear();
+        cloned.piracy.hostages.clear();
+        cloned.piracy.protectionContracts.clear();
+        cloned.piracy.tributes.clear();
+        cloned.piracy.blackMarkets.clear();
+        cloned.piracy.smugglingRuns.clear();
+        cloned.piracy.sponsorships.clear();
+        cloned.piracy.captures.clear();
+        cloned.piracy.successions.clear();
+        cloned.piracy.opportunityIndex.clear();
+        cloned.piracy.emergenceLog = [];
+        // Names and fame are public; who a band talks to is not.
+        for (const org of cloned.piracy.organizations.values()) {
+            org.relations = {};
+            org.heatByFaction = {};
+            org.factions = [];
+            org.leader = null;
+            org.treasury = 0;
+            org.baseIds = [];
+        }
+    }
+
+    // The pirate system also stamps secrets onto objects OUTSIDE world.piracy,
+    // and those containers ride this same public snapshot. Scrubbing only the
+    // aggregate left four markers on the wire: who secretly protects which lane,
+    // which bands grip which systems and corridors, and the very existence of
+    // hidden lanes that are supposed to be knowable only by their owner.
+    for (const sys of cloned.movement.systems.values()) {
+        delete sys.pirateInfluence;
+    }
+    for (const [id, corridor] of [...cloned.movement.corridors]) {
+        // A hidden lane is not a public corridor with a private flag — it is a
+        // route nobody else knows exists. Drop it from the shared map entirely.
+        if (corridor.restrictedToOrgId) {
+            cloned.movement.corridors.delete(id);
+            continue;
+        }
+        delete corridor.pirateControlByOrg;
+    }
+    for (const route of cloned.economy.tradeRoutes?.values() ?? []) {
+        delete route.protectedByOrgId;
+    }
+    // The interdiction registry hangs off the ECONOMY aggregate, not the pirate
+    // one, so it slipped past both scrubs: it names the band camped on each
+    // system, its posture, and the loot pool sitting in it. It is rebuilt from
+    // the live raiders every trade tick, so dropping it costs nothing.
+    cloned.economy.piracyFleets?.clear();
+
     if (cloned.combat) cloned.combat.recruitmentJobs = [];
     return cloned;
 }

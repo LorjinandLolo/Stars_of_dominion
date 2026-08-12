@@ -26,7 +26,8 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
     const councilState = useUIStore(s => s.councilState);
 
     const category = categoryForTab(activeTab);
-    const showShadow = isShadowTabVisible(playerState);
+    const piracyState = useUIStore(s => s.piracyState);
+    const showShadow = isShadowTabVisible(playerState, piracyState);
     const showCouncil = isCouncilTabVisible(councilState);
 
     // Esc returns command to the galaxy. `defaultPrevented` is the layering

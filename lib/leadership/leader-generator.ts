@@ -9,7 +9,7 @@
 // sim clock), never Math.random, so a replayed tick produces the same people.
 
 import type { Leader, LeaderRole } from './types';
-import { RNG } from '../trade-system/rng';
+import { RNG, seedFromString } from '../trade-system/rng';
 import traitsData from './data/leader-traits.json';
 import namesData from '../../data/leaders/leader-names.json';
 
@@ -18,15 +18,12 @@ const GIVEN: string[] = namesData.given;
 const FAMILY: string[] = namesData.family;
 const TITLES: Record<string, string[]> = namesData.titles;
 
-/** FNV-1a — stable across processes, unlike a hash built on object identity. */
-export function seedFromString(seed: string): number {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < seed.length; i++) {
-        hash ^= seed.charCodeAt(i);
-        hash = Math.imul(hash, 0x01000193);
-    }
-    return hash >>> 0;
-}
+/**
+ * FNV-1a. Moved to lib/trade-system/rng.ts so simulation modules that must not
+ * depend on the leadership data files can seed deterministically too; re-exported
+ * here because this is where every existing call site imports it from.
+ */
+export { seedFromString };
 
 /** Pick the honorific that fits the government's tags. */
 export function titleForGovernment(governmentTags: string[], rng: RNG): string {

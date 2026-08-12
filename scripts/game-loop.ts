@@ -1,6 +1,6 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
+import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard, serializePiracyState, applyPiracySnapshot } from '../lib/persistence/save-service';
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
@@ -194,8 +194,34 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 // Imported dynamically-after-dotenv would be cleaner, but lib/db reads
 // DATABASE_URL lazily on first query, so a static import is safe here.
 import { prisma } from '../lib/db';
+import { ensurePiracyState, playedOrganization } from '../lib/piracy/organization-service';
+import { establishBase } from '../lib/piracy/base-service';
+import { canLegitimize, legitimize } from '../lib/piracy/succession-service';
+import {
+    backSuccessor,
+    cutSponsorship,
+    issueMarque,
+    negotiate,
+    openSponsorship,
+    revokeMarque,
+    setOperation,
+} from '../lib/piracy/sponsorship-service';
+import { signProtectionContract } from '../lib/piracy/protection-service';
+import {
+    buyFromBlackMarket,
+    enforceCustoms,
+    sellIntel,
+    sellToBlackMarket,
+} from '../lib/piracy/black-market-service';
+import {
+    disposeCapture,
+    offerAmnesty,
+    postBounty,
+} from '../lib/piracy/counter-piracy-service';
 
 const SESSION_DOC_ID = 'default-session';
+// Authoritative pirate state, kept out of the snapshot the sync API serves.
+const PIRACY_DOC_ID = 'default-session-piracy';
 
 const POLL_INTERVAL_MS = 5000; // Run every 5 seconds
 // Game clock: 75 game-seconds per 5s tick (15x real time). This used to be a
@@ -260,9 +286,23 @@ async function loadWorld(): Promise<GameWorldState> {
     const doc = await prisma.multiplayerSession.findUniqueOrThrow({ where: { id: SESSION_DOC_ID } });
     const world = deserializeWorld(doc.snapshot);
 
+    // Pirate state lives in its own row, deliberately absent from the snapshot
+    // clients poll. Restore it before anything reads world.piracy.
+    try {
+        const piracyDoc = await prisma.multiplayerSession.findUnique({ where: { id: PIRACY_DOC_ID } });
+        applyPiracySnapshot(world, piracyDoc?.snapshot);
+    } catch (err) {
+        console.log('[Tick Worker] No stored pirate state; starting from what the snapshot carries.');
+    }
+
     // Phase 4: Reconstruct World from Shards
     try {
-        const factionDocs = await prisma.gameFactionShard.findMany({ take: 50 });
+        // No take limit and a stable order: shards are the ONLY copy of each
+        // faction's fleets, economy and tech (cleanWorldForSave clears them from
+        // the snapshot), and Postgres gives no ordering without ORDER BY — so a
+        // cap silently dropped whichever factions fell outside it, differently
+        // on each restart. Rows are never deleted, so the count only grows.
+        const factionDocs = await prisma.gameFactionShard.findMany({ orderBy: { id: 'asc' } });
         for (const fDoc of factionDocs) {
             injectFactionShard(world, fDoc.data);
             knownShardFactionIds.add(fDoc.factionId || fDoc.id);
@@ -670,6 +710,20 @@ async function saveWorldState(world: any, force: boolean): Promise<boolean> {
     // Off-cadence ticks return before serializing: the clone + stringify of the
     // full world costs more than everything else in an idle tick combined.
     if (!force) return false;
+    // Authoritative pirate state goes to its own row. cleanWorldForSave reduces
+    // world.piracy to a public projection for the shared snapshot every client
+    // polls, so this is the only place the real thing survives a restart.
+    try {
+        const piracySnapshot = serializePiracyState(world);
+        await prisma.multiplayerSession.upsert({
+            where: { id: PIRACY_DOC_ID },
+            create: { id: PIRACY_DOC_ID, snapshot: piracySnapshot, lastTickAt: new Date().toISOString() },
+            update: { snapshot: piracySnapshot, lastTickAt: new Date().toISOString() },
+        });
+    } catch (err) {
+        console.error('[Tick Worker] Failed to persist pirate state:', err);
+    }
+
     const cleanWorld = cleanWorldForSave(world);
     const newSnapshot = serializeWorld(cleanWorld);
     // The clock advances every tick, so it must not count as a "real" change.
@@ -2199,6 +2253,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  networkStrength: 1.0,
                  isDetected: false
              });
+             // Retargeting this at a BAND is what the counter-piracy design
+             // means by "plant spies inside pirate networks": it turns a base
+             // you have merely located into one you are inside. Nothing wrote
+             // compromisedByFactionId before, so the whole capability — the
+             // sponsor-evidence leak, the +familiarity in the intel view, and
+             // half of rollupStatus's coverage — was unreachable.
+             const infiltrated = ensurePiracyState(world).organizations.get(payload.targetId);
+             if (infiltrated) {
+                 const reachable = infiltrated.baseIds
+                     .map(id => ensurePiracyState(world).bases.get(id))
+                     .filter((b): b is NonNullable<typeof b> =>
+                         !!b && b.knownToFactionIds.includes(factionId) && !b.compromisedByFactionId);
+                 const target = reachable.sort((a, b) => a.concealment - b.concealment)[0];
+                 if (target) {
+                     target.compromisedByFactionId = factionId;
+                     console.log(`[Order] ${factionId} turned somebody inside ${infiltrated.name}'s ${target.kind}`);
+                 }
+             }
              console.log(`[Order] Faction ${factionId} infiltrated network of ${payload.targetId}`);
              break;
         }
@@ -2322,6 +2394,220 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  console.log(`[Order] Faction ${factionId} incited unrest on ${planet.name}`);
              }
              break;
+        }
+
+        // ── Pirate system ────────────────────────────────────────────────────
+        // Empire-side instruments: buy a band's silence, buy its violence, or
+        // buy from its markets. See docs/pirate-system/index.md §1.
+
+        case 'PIR_SPONSOR_ORG': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const sponsorship = openSponsorship(world, org, factionId, {
+                targetFactionId: payload.targetFactionId ?? null,
+                intensity: payload.intensity,
+                fundingPerHour: payload.fundingPerHour,
+                supplies: payload.supplies,
+                covert: payload.covert ?? true,
+            });
+            console.log(`[Order] ${factionId} ${sponsorship ? 'funds' : 'failed to fund'} ${payload.organizationId}`);
+            break;
+        }
+
+        case 'PIR_SET_OPERATION': {
+            const ok = setOperation(world, payload.sponsorshipId, payload.intensity, payload.targetFactionId ?? null);
+            console.log(`[Order] ${factionId} set operation ${payload.intensity}: ${ok}`);
+            break;
+        }
+
+        case 'PIR_CUT_SPONSORSHIP': {
+            cutSponsorship(world, payload.sponsorshipId);
+            console.log(`[Order] ${factionId} cut sponsorship ${payload.sponsorshipId}`);
+            break;
+        }
+
+        case 'PIR_ISSUE_MARQUE': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const marque = issueMarque(world, org, factionId, payload.targetFactionId);
+            console.log(`[Order] ${factionId} marque for ${org.name}: ${marque ? 'issued' : 'refused (no war)'}`);
+            break;
+        }
+
+        case 'PIR_REVOKE_MARQUE': {
+            revokeMarque(world, payload.sponsorshipId);
+            break;
+        }
+
+        case 'PIR_NEGOTIATE': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const result = negotiate(world, org, factionId, {
+                kind: payload.agreementKind,
+                paymentPerHour: payload.paymentPerHour,
+                secret: payload.secret,
+            });
+            console.log(
+                `[Order] ${factionId} ${payload.agreementKind} with ${org.name}: `
+                + (result.accepted ? 'agreed' : `refused (${result.reason})`)
+            );
+            break;
+        }
+
+        case 'PIR_BACK_SUCCESSOR': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            backSuccessor(world, org, factionId, payload.candidateDoctrine);
+            break;
+        }
+
+        case 'PIR_PAY_PROTECTION': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            signProtectionContract(world, org, factionId, 'faction', payload.routeIds ?? [], {
+                exclusiveDefence: payload.exclusiveDefence,
+                secret: payload.secret,
+                feePerHour: payload.feePerHour,
+            });
+            break;
+        }
+
+        case 'PIR_BLACKMARKET_BUY': {
+            const result = buyFromBlackMarket(world, payload.marketId, factionId, payload.resource, payload.units);
+            console.log(
+                `[Order] ${factionId} black-market buy: ${result.ok ? `${result.unitsBought} units` : result.reason}`
+                + (result.traced ? ' (traced)' : '')
+            );
+            break;
+        }
+
+        case 'PIR_BLACKMARKET_SELL': {
+            sellToBlackMarket(world, payload.marketId, factionId, payload.resource, payload.units);
+            break;
+        }
+
+        case 'PIR_BUY_INTEL': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const sale = sellIntel(world, org, factionId, payload.aboutFactionId, payload.domain ?? 'military');
+            console.log(`[Order] ${factionId} bought intel from ${org.name}: ${sale.ok ? sale.reportId : sale.reason}`);
+            break;
+        }
+
+        // ── Pirate-player orders ─────────────────────────────────────────────
+        // Only authoritative over a band the ordering faction actually IS.
+
+        case 'PIR_SET_POSTURE': {
+            const org = playedOrganization(world, factionId);
+            const route = world.economy.tradeRoutes?.get(payload.routeId);
+            if (!org || !route) break;
+            // Postures are chosen per camp each tick; the player's choice is a
+            // standing instruction the raid pass honours.
+            org.posturePreference = { ...(org.posturePreference ?? {}), [route.id]: payload.posture };
+            break;
+        }
+
+        case 'PIR_ASSIGN_RAID': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            // Assigning a raid is sending the ships: the raid pass resolves
+            // whatever is camped on a lane when the trade tick comes round.
+            for (const fleetId of payload.fleetIds ?? []) {
+                const fleet = world.movement.fleets.get(fleetId);
+                if (!fleet || fleet.organizationId !== org.id) continue;
+                const updated = issueMoveOrder(fleet, payload.targetSystemId, 'hyperlane', world.movement);
+                world.movement.fleets.set(fleetId, updated);
+            }
+            if (payload.raidType) org.preferredRaidType = payload.raidType;
+            break;
+        }
+
+        case 'PIR_ESTABLISH_BASE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            const base = establishBase(world, org, payload.kind, payload.systemId);
+            console.log(`[Order] ${org.name} base at ${payload.systemId}: ${base ? base.kind : 'refused'}`);
+            break;
+        }
+
+        case 'PIR_SET_RACKET': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            signProtectionContract(world, org, payload.payerId, payload.payerKind ?? 'faction',
+                payload.routeIds ?? [], {
+                    exclusiveDefence: payload.exclusiveDefence,
+                    secret: payload.secret,
+                    feePerHour: payload.feePerHour,
+                });
+            break;
+        }
+
+        case 'PIR_SPLIT_LOOT': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            // Loyalty is bought with the same loot that buys expansion.
+            const share = Math.max(0, Math.min(1, payload.crewShare ?? 0));
+            const paid = org.treasury * share;
+            org.treasury -= paid;
+            org.crewLoyalty = Math.min(100, org.crewLoyalty + share * 20);
+            console.log(`[Order] ${org.name} splits ${Math.round(paid)}cr among the crews`);
+            break;
+        }
+
+        case 'PIR_ACCEPT_MARQUE':
+        case 'PIR_REFUSE_MARQUE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            if (actionId === 'PIR_REFUSE_MARQUE') {
+                cutSponsorship(world, payload.sponsorshipId);
+            }
+            break;
+        }
+
+        case 'PIR_LEGITIMIZE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            const gate = canLegitimize(world, org);
+            if (!gate.ok) {
+                console.log(`[Order] ${org.name} cannot go straight: ${gate.reason}`);
+                break;
+            }
+            const result = legitimize(world, org);
+            console.log(`[Order] ${org.name} is now ${result?.factionId}`);
+            break;
+        }
+
+        case 'PIR_POST_BOUNTY': {
+            const bounty = postBounty(world, factionId, {
+                organizationId: payload.targetOrgId,
+                leaderId: payload.targetLeaderId,
+                baseId: payload.targetBaseId,
+            }, payload.credits ?? 0);
+            console.log(`[Order] ${factionId} bounty: ${bounty ? bounty.id : 'refused'}`);
+            break;
+        }
+
+        case 'PIR_OFFER_AMNESTY': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const result = offerAmnesty(world, org, factionId);
+            console.log(
+                `[Order] ${factionId} amnesty to ${org.name}: `
+                + (result.accepted ? `${result.wings.join(', ')} came in` : 'refused')
+            );
+            break;
+        }
+
+        case 'PIR_DISPOSE_CREW': {
+            disposeCapture(world, payload.captureId, payload.disposition);
+            console.log(`[Order] ${factionId} disposed capture ${payload.captureId}: ${payload.disposition}`);
+            break;
+        }
+
+        case 'PIR_CUSTOMS_ENFORCE': {
+            const caught = enforceCustoms(world, factionId, payload.systemId, payload.level ?? 1);
+            console.log(`[Order] ${factionId} customs at ${payload.systemId}: ${caught.length} seizure(s)`);
+            break;
         }
 
         case 'PRESS_SUPPRESS_STORY': {

@@ -5,6 +5,7 @@
 
 import { GameWorldState } from '../game-world-state';
 import { Fleet, FleetOrder } from '../movement/types';
+import { RNG, seedFromString } from '../trade-system/rng';
 
 /**
  * Process a single tactical 'turn' for a pirate fleet.
@@ -73,7 +74,9 @@ export function processPirateTurn(fleet: Fleet, world: GameWorldState): FleetOrd
                 currentSystem.hyperlaneNeighbors.includes(s.id)
             );
             if (neighbors.length > 0) {
-                const escapeTarget = neighbors[Math.floor(Math.random() * neighbors.length)];
+                // Seeded on (fleet, sim clock) so a replayed tick routs the same way.
+                const rng = new RNG(seedFromString(`piracy|escape|${fleet.id}|${world.movement.nowSeconds}`));
+                const escapeTarget = neighbors[rng.nextInt(0, neighbors.length - 1)];
                 return {
                     type: 'withdraw',
                     targetSystemId: escapeTarget.id,

@@ -62,7 +62,13 @@ type LayerEdge = {
  */
 function buildLayerGraph(
     world: MovementWorldState,
-    availableLayers: MovementLayer[]
+    availableLayers: MovementLayer[],
+    /**
+     * The pirate organization the traveller belongs to, if any. Hidden lanes are
+     * corridors restricted to one organization; everyone else cannot see the
+     * edge at all. See docs/pirate-system/bases.md §5.
+     */
+    travellerOrgId?: string | null
 ): Map<string, LayerEdge[]> {
     const adj = new Map<string, LayerEdge[]>();
 
@@ -98,6 +104,9 @@ function buildLayerGraph(
     // 3. Strategic corridors — all nodes in a corridor can traverse to each other.
     if (availableLayers.includes('corridor')) {
         for (const [, corridor] of world.corridors) {
+            // A restricted corridor is a pirate hidden lane: invisible to anyone
+            // who is not the organization that mapped it.
+            if (corridor.restrictedToOrgId && corridor.restrictedToOrgId !== travellerOrgId) continue;
             const nodeIds = corridor.nodeIds;
             const cost = (1 / (baseSpeed * config.movement.layerSpeedMultipliers.corridor)) * 3600;
             for (let i = 0; i < nodeIds.length - 1; i++) {
@@ -266,7 +275,7 @@ export function findPath(
     availableLayers: MovementLayer[],
     world: MovementWorldState
 ): FindPathResult {
-    const adj = buildLayerGraph(world, availableLayers);
+    const adj = buildLayerGraph(world, availableLayers, fleet.organizationId);
     const fromId = fleet.currentSystemId ?? fleet.destinationSystemId;
     if (!fromId) return { path: [], layerPerHop: [], totalSeconds: 0, eta: world.nowSeconds, canReach: false };
 
@@ -421,7 +430,7 @@ function hopEdgeCost(
     fleet: Fleet,
     world: MovementWorldState
 ): number | null {
-    const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate']);
+    const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate'], fleet.organizationId);
     const laneCosts = (adj.get(fromId) ?? [])
         .filter(e => e.to === toId)
         .map(e => effectiveEdgeCost(e, fleet, world))
@@ -554,7 +563,7 @@ export function advanceFleet(
 
     const hopFrom = fleet.plannedPath[0];
     const hopTo = fleet.plannedPath[1];
-    const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate', 'deepSpace']);
+    const adj = buildLayerGraph(world, ['hyperlane', 'trade', 'corridor', 'gate', 'deepSpace'], fleet.organizationId);
     const candidateEdges = (adj.get(hopFrom) ?? []).filter(e => e.to === hopTo);
 
     let edge: LayerEdge;
@@ -761,7 +770,16 @@ export function weaponizeInfra(
 
         case 'openShadowHub':
         case 'establishSmugglersLane': {
-            // Deep-space weaponization — increases hidden activity, tracked as an instability source
+            // Deep-space weaponization — increases hidden activity, tracked as an instability source.
+            //
+            // These two emit an event and change nothing else, and weaponizeInfra
+            // itself has no production caller (only lib/movement/tests.ts), so
+            // there is nothing here to hang a real asset off yet. The equivalent
+            // live path is the espionage `shadowEconomy` operation, whose
+            // ShadowEconomyNode records ARE turned into pirate infrastructure in
+            // lib/piracy/black-market-service.ts. If this function is ever given
+            // a production caller and a full world, route it there too.
+            // See docs/pirate-system/systems.md §7.
             eventBus.emit({
                 type: 'infrastructureAttack',
                 actionType: action.type,
