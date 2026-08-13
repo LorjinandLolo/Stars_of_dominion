@@ -31,6 +31,9 @@ export type ChronicleEventType =
     | 'operation_resolved'
     | 'operation_exposed'
     | 'agent_captured'
+    // Press — a journalist getting the story is itself an event
+    | 'investigation_published'
+    | 'scandal_confirmed'
     // Politics & government
     | 'leader_rose'
     | 'leader_died'

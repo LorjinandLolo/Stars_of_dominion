@@ -265,7 +265,22 @@ npx tsx scripts/test-narrative-phase2.ts
 
 covers feud formation, unordered pairs, stable naming, the deniability rule in both directions, the threshold, dormancy, precedent citation, reversals, notable-versus-routine firsts, the boosted score reaching the article's `stance`, and era segmentation.
 
-**Phase 3 — Voices and truth.** Publisher voice selection from press-system state; attribution filtering; `stance` recording; investigations produce exposés that cite prior coverage; a real LLM wired in behind the budget caps.
+**Phase 3 — Voices and truth. ✅ Done.** The same facts now read differently depending on who is printing them, and a model can sit behind the prose without becoming a single point of failure.
+
+- `lib/narrative/press-voices.ts` reads the publisher roster (state media per empire, the independent wire, the pirate outlet) out of the committed snapshot. Reading is safe under Invariant 1 — the narrator may read anything the simulation writes, it may only never *write* anything the simulation reads — and the snapshot is parsed rather than deserialized, so there is no live object to mutate by accident.
+- **Selection follows incentive, not randomness.** An act nobody can attribute goes to the pirate press, the outlet willing to speculate. A victory goes to the winner's own state media. A bombardment goes to the victim's. An exposure or a coup goes to the independents, because nobody breaks their own scandal. A state medium whose credibility has collapsed loses the story to the wire — so the press system's existing credibility mechanics now have visible narrative consequences.
+- `lib/narrative/prose/llm-writer.ts` wraps the existing Gemini and Ollama providers, deliberately **not** via `safeGenerateFactionReply` (that path is built for dialogue and demands a `FactionContextSummary`). Configured with `NARRATOR_LLM`, an importance floor (`NARRATOR_LLM_MIN_IMPORTANCE`, default 40 — the model's budget belongs to history, not skirmishes) and hard hourly/daily call ceilings.
+- **Every failure ends in prose.** No key, no daemon, a timeout, unparseable output, a rejected article — all fall through to the template writer, and the article records which writer produced it, so a silently degraded galaxy is visible rather than mysterious.
+- **Two guardrails on model output.** An unattributed story that names one of the *real* actors is discarded rather than published (Invariant 6, checked rather than assumed). And fabricated sourcing — "sources confirm", "officials say" — is rejected outright: it is the failure mode small models fall into most readily, and the one that would make the paper untrustworthy in a way players notice.
+- Investigations reaching PUBLICATION or SCANDAL now emit `investigation_published` / `scandal_confirmed` chronicle events from `tickPress`, so a journalist landing a story is itself history. The resulting article is filed as `kind: 'investigation'` and cites the prior coverage phase 2 already tracks.
+
+Verified against a real local Ollama daemon (`dolphin-llama3:8b`): three outlets produced genuinely different copy from identical facts, an unattributed operation was written without naming its actor, and the sourcing guardrail rejected roughly half of that model's output — which is the guardrail working, and an argument for a stronger instruction-following model in production. First call cost ~60s while the model loaded, then ~3s per article; irrelevant to an asynchronous narrator, but worth knowing when sizing the server.
+
+```bash
+npx tsx scripts/test-narrative-phase3.ts
+```
+
+covers selection for each outlet type, credibility-driven fallback, three distinct voices from one event, state media framing its own setback, degradation on an unreachable model, the importance floor, the budget ceiling, and the exposé citing earlier coverage.
 
 **Phase 4 — History features.** Retrospectives, obituaries for major leaders, era naming, and a History UI panel reading `NarrativeArticle` — the archive players browse to relive the war their grandparents started.
 

@@ -41,6 +41,15 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       GAZETTE_WINDOW_DAYS: ${GAZETTE_WINDOW_DAYS:-2}
+      # Narrator prose. 'template' needs nothing; ollama/gemini degrade to it.
+      NARRATOR_LLM: ${NARRATOR_LLM:-template}
+      NARRATOR_LLM_MIN_IMPORTANCE: ${NARRATOR_LLM_MIN_IMPORTANCE:-40}
+      NARRATOR_LLM_MAX_PER_HOUR: ${NARRATOR_LLM_MAX_PER_HOUR:-40}
+      NARRATOR_LLM_MAX_PER_DAY: ${NARRATOR_LLM_MAX_PER_DAY:-300}
+      # host.docker.internal reaches an Ollama daemon on the host itself.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-120000}
     ports:
       - "3000:3000"
 
@@ -69,6 +78,10 @@ services:
       postgres:
         condition: service_healthy
     environment: *app-env
+    # Lets OLLAMA_BASE_URL=http://host.docker.internal:11434 reach a daemon
+    # running on the server itself. Harmless when NARRATOR_LLM=template.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["npx", "tsx", "scripts/narrator.ts"]
 
 volumes:

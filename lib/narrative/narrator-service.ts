@@ -15,13 +15,11 @@ import { prisma } from '../db';
 import { NARRATION_THRESHOLD } from './chronicle-types';
 import { prettifyFactionId } from './naming';
 import { memoryFor, EMPTY_MEMORY } from './memory-service';
+import { loadPublishers, selectPublisher, stanceFor } from './press-voices';
 import type { ChronicleAttribution, ChronicleEventType } from './chronicle-types';
 import type { NarratableEvent, NarrationRequest, ProseWriter } from './prose/prose-types';
 import { TemplateWriter } from './prose/template-writer';
 
-/** Phase 1 publishes under one galactic wire service. Per-publisher voices
- *  (state media, pirate press, independents) arrive in phase 3. */
-export const DEFAULT_PUBLISHER_ID = 'galactic-wire';
 
 export interface NarrateOptions {
     /** Events scoring below this are memory only, never prose. */
@@ -190,10 +188,15 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
     }
     enriched.sort((a, b) => b.effectiveImportance - a.effectiveImportance || a.lead.tick - b.lead.tick);
 
+    // Who is on the wire this pass. One read, cached, shared by every story.
+    const publishers = await loadPublishers();
+
     // Pass two: write.
     for (const { group, lead, memory, effectiveImportance } of enriched) {
         const { visibleActors, speculative } = applyAttribution(lead);
-        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day, memory };
+        const publisher = selectPublisher(lead, publishers);
+        const stance = stanceFor(lead, publisher);
+        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day, memory, stance };
 
         let result;
         try {
@@ -215,8 +218,8 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
             await tx.narrativeArticle.create({
                 data: {
                     eventIds: JSON.stringify(ids),
-                    publisherId: DEFAULT_PUBLISHER_ID,
-                    kind: 'news',
+                    publisherId: publisher.id,
+                    kind: lead.type === 'investigation_published' ? 'investigation' : 'news',
                     headline: result!.headline,
                     body: result!.body,
                     stance: JSON.stringify({
@@ -227,6 +230,11 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
                         effectiveImportance,
                         feud: memory.feud?.epithet ?? null,
                         citedPrecedents: memory.precedents.map(p => p.headline),
+                        // Who said it and from what angle — the record a later
+                        // contradiction or credibility collapse is judged against.
+                        masthead: publisher.masthead,
+                        publisherType: publisher.type,
+                        slant: stance.slant,
                     }),
                     day: lead.day,
                 },

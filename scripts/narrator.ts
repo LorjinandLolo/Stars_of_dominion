@@ -21,11 +21,19 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 import { prisma } from '../lib/db';
 import { narrateOnce, retireUnnarratableEvents } from '../lib/narrative/narrator-service';
 import { deriveFeuds } from '../lib/narrative/memory-service';
+import { LlmWriter } from '../lib/narrative/prose/llm-writer';
 import { NARRATION_THRESHOLD } from '../lib/narrative/chronicle-types';
 
 const INTERVAL_MS = Number(process.env.NARRATOR_INTERVAL_MS ?? 60_000);
 const BATCH = Number(process.env.NARRATOR_BATCH ?? 25);
 const THRESHOLD = Number(process.env.NARRATOR_THRESHOLD ?? NARRATION_THRESHOLD);
+
+/**
+ * Which writer produces the prose. `template` needs nothing; `ollama` and
+ * `gemini` fall back to the template on any failure, so setting this can
+ * degrade the writing but can never stop the paper.
+ */
+const writer = new LlmWriter();
 
 let running = true;
 
@@ -36,7 +44,7 @@ async function pass(): Promise<void> {
     // can already describe it as part of the quarrel it belongs to.
     const feuds = await deriveFeuds();
 
-    const summary = await narrateOnce({ threshold: THRESHOLD, limit: BATCH });
+    const summary = await narrateOnce({ threshold: THRESHOLD, limit: BATCH, writer });
 
     if (summary.articles > 0) {
         console.log(
@@ -51,8 +59,10 @@ async function pass(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+    const provider = process.env.NARRATOR_LLM ?? process.env.LLM_PROVIDER ?? 'template';
     console.log(
-        `[Narrator] Watching the chronicle — interval ${INTERVAL_MS}ms, batch ${BATCH}, threshold ${THRESHOLD}.`,
+        `[Narrator] Watching the chronicle — interval ${INTERVAL_MS}ms, batch ${BATCH}, ` +
+        `threshold ${THRESHOLD}, writer ${provider}.`,
     );
 
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {

@@ -9,6 +9,7 @@
 
 import type { ChronicleAttribution, ChronicleEventType } from '../chronicle-types';
 import type { EventMemory } from '../memory-service';
+import type { Stance } from '../press-voices';
 
 /** One chronicle row, decoded, as the prose layer sees it. */
 export interface NarratableEvent {
@@ -58,6 +59,12 @@ export interface NarrationRequest {
      * anyone holding the last two hundred hours in memory.
      */
     memory: EventMemory;
+    /**
+     * Which outlet is running this and what line it takes. State media flatters
+     * its own empire, the pirate press assumes the worst of everyone, and a
+     * low-credibility outlet asserts more than it can prove.
+     */
+    stance: Stance;
 }
 
 export interface NarrationResult {

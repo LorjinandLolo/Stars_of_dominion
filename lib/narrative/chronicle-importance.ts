@@ -38,6 +38,10 @@ const BASE_IMPORTANCE: Record<ChronicleEventType, number> = {
     operation_resolved: 20,
     operation_exposed: 66,
     agent_captured: 42,
+    // Press. Publication is the moment a secret becomes a public fact; the
+    // scandal that follows is what it costs.
+    investigation_published: 64,
+    scandal_confirmed: 76,
     // Politics & government
     leader_rose: 40,
     leader_died: 55,

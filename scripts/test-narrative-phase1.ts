@@ -16,7 +16,7 @@ config({ path: '.env.local' });
 config({ path: '.env' });
 
 import { prisma } from '../lib/db';
-import { narrateOnce, retireUnnarratableEvents, DEFAULT_PUBLISHER_ID } from '../lib/narrative/narrator-service';
+import { narrateOnce, retireUnnarratableEvents } from '../lib/narrative/narrator-service';
 import { TemplateWriter } from '../lib/narrative/prose/template-writer';
 import { EMPTY_MEMORY } from '../lib/narrative/memory-service';
 
@@ -92,7 +92,9 @@ async function main() {
 
     // The loudest story must have been written first.
     assert.ok(/CAPITAL FALLS/i.test(articles[0].headline), 'the capital falling must outrank the declaration');
-    assert.ok(articles.every(a => a.publisherId === DEFAULT_PUBLISHER_ID), 'phase 1 publishes under one wire service');
+    // Phase 3 replaced the single wire service with real outlets chosen per
+    // story, so this only asserts that something owns every article.
+    assert.ok(articles.every(a => a.publisherId && a.publisherId.length > 0), 'every article has a publisher');
     assert.ok(articles.every(a => a.body.length > 80), 'articles must have a real body, not a stub');
 
     const front = await prisma.gazette.findMany({ where: { day: TEST_DAY } });
@@ -224,6 +226,12 @@ async function main() {
         },
         visibleActors: ['Alpha'], speculative: false, day: TEST_DAY,
         memory: EMPTY_MEMORY,
+        stance: {
+            publisher: { id: 'galactic_wire', type: 'INDEPENDENT_MEDIA' as const, credibility: 75, bias: 0, masthead: 'The Galactic Wire' },
+            slant: 'detached' as const,
+            coveringOwnEmpire: false,
+            sensational: false,
+        },
     };
     sample.events = [sample.lead];
     const runA = await writer.write(sample);

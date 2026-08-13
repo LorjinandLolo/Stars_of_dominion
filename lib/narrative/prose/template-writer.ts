@@ -178,6 +178,29 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
                 tone: 'wry',
             };
 
+        case 'investigation_published': {
+            const evidence = num(e, 'evidence') ?? 0;
+            const obstructions = num(e, 'obstructions') ?? 0;
+            return {
+                headline: `INVESTIGATION: ${str(e, 'subject', 'irregularities')} inside ${target}`,
+                body: `A published investigation sets out ${
+                    evidence >= 70 ? 'a documented case' : evidence >= 40 ? 'a substantial body of evidence' : 'a circumstantial case'
+                } concerning ${str(e, 'subject', 'irregularities')} within ${target}.${
+                    obstructions > 0
+                        ? ` The government declined to answer questions on ${obstructions} occasion${obstructions === 1 ? '' : 's'}, which readers may weigh for themselves.`
+                        : ' The government was given the opportunity to respond.'
+                }`,
+                tone: 'grave',
+            };
+        }
+
+        case 'scandal_confirmed':
+            return {
+                headline: `SCANDAL: ${str(e, 'subject', 'the allegations')} confirmed in ${target}`,
+                body: `The allegations concerning ${str(e, 'subject', 'the affair')} in ${target} are now established fact. What remains is the question every such confirmation raises: who knew, and how long did they expect it to hold.`,
+                tone: 'grave',
+            };
+
         case 'coup_attempted':
             return {
                 headline: `Coup attempt fails in ${actor}`,
@@ -297,6 +320,40 @@ function ordinal(n: number): string {
     return `${n}${suffix}`;
 }
 
+/**
+ * The outlet's fingerprint on the copy.
+ *
+ * The template writer cannot restructure a story the way a model can, so voice
+ * is expressed where it is cheapest and most legible: a closing line in the
+ * outlet's register. State media contextualises, the pirate press insinuates,
+ * the wire notes what it could not confirm.
+ */
+function voiceLine(request: NarrationRequest): string {
+    const { stance, speculative, visibleActors } = request;
+
+    if (stance.publisher.type === 'PIRATE_PRESS') {
+        if (visibleActors.length === 0) {
+            return 'Free Signal notes that events of this kind rarely lack an author, whatever the official channels are saying.';
+        }
+        return 'Free Signal reminds subscribers that every government tells this story to its own advantage.';
+    }
+
+    if (stance.publisher.type === 'STATE_MEDIA') {
+        if (stance.slant === 'friendly') {
+            return `${stance.publisher.masthead} describes the outcome as consistent with long-standing policy.`;
+        }
+        if (stance.coveringOwnEmpire) {
+            return `${stance.publisher.masthead} states that the administration is responding and that there is no cause for alarm.`;
+        }
+        return `${stance.publisher.masthead} has called for an international response.`;
+    }
+
+    if (speculative) {
+        return 'The Galactic Wire has been unable to independently verify the accusation.';
+    }
+    return '';
+}
+
 export class TemplateWriter implements ProseWriter {
     async write(request: NarrationRequest): Promise<NarrationResult> {
         // The subject of the sentence is whoever the galaxy is allowed to name.
@@ -311,7 +368,8 @@ export class TemplateWriter implements ProseWriter {
         // before continuity is appended, so the front page stays about the news.
         const firstSentence = body.split(/(?<=[.!?])\s/)[0] ?? body;
 
-        const tail = continuity(request);
+        // Continuity first (what history says), then the outlet's own line.
+        const tail = [continuity(request), voiceLine(request)].filter(Boolean).join(' ');
         const fullBody = tail ? `${body}\n\n${tail}` : body;
 
         return {
