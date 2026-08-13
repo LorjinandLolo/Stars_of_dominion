@@ -282,7 +282,23 @@ npx tsx scripts/test-narrative-phase3.ts
 
 covers selection for each outlet type, credibility-driven fallback, three distinct voices from one event, state media framing its own setback, degradation on an unreachable model, the importance floor, the budget ceiling, and the exposé citing earlier coverage.
 
-**Phase 4 — History features.** Retrospectives, obituaries for major leaders, era naming, and a History UI panel reading `NarrativeArticle` — the archive players browse to relive the war their grandparents started.
+**Phase 4 — History features. ✅ Done.** The galaxy stops producing only news and starts producing a past.
+
+- **Eras name themselves, once.** `writeRetrospectives` waits until a chapter has been quiet long enough to be closed — the present is not history — then names it from what defined it: a civil war makes "the Years of Division", an extinction "the Age of Extinction", a dominant power "the X Ascendancy". The retrospective article *is* the era record; its `stance` carries the tick range, so a later pass recognises an era it has already named. No table, nothing to keep in sync, and the name is as durable as the article players read.
+- **Obituaries are careers, not bulletins.** A leader's death files as `kind: 'obituary'` with what the empire did on their watch, drawn from the chronicle. An uneventful tenure is admitted rather than invented — "the record of their tenure is thinner than their supporters would like".
+- **`/api/narrative/history` + `components/panels/HistoryPanel.tsx`** — the archive, filterable by kind, mounted as the ARCHIVE tab under COMMS. Each entry shows the masthead that ran it and expands to the full text.
+
+Three bugs the tests caught, all the same family — plausible output that was quietly wrong:
+
+- A leader's own death counted among their achievements, because `careerOf` searched a window that included the event being written about.
+- Headlines read "Chancellor Chancellor Vex Ordane" when an emission site put the title inside `leaderName`.
+- The career lookback assumed one year = one day. `AGE_YEARS_PER_DAY = 0.5` in `lib/government/succession-service.ts`, so a year in office is *two* days — the window covered half a leader's tenure, which made eventful reigns read as empty.
+
+```bash
+npx tsx scripts/test-narrative-phase4.ts
+```
+
+covers era naming and its stability, the refusal to write up an ongoing era, the minimum for a chapter, obituaries with and without a record, and the kinds the archive groups by. Assertions are scoped by tick rather than global count, so the suite passes against a galaxy that already has history of its own.
 
 ---
 

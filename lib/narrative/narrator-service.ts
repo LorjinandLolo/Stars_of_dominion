@@ -16,10 +16,22 @@ import { NARRATION_THRESHOLD } from './chronicle-types';
 import { prettifyFactionId } from './naming';
 import { memoryFor, EMPTY_MEMORY } from './memory-service';
 import { loadPublishers, selectPublisher, stanceFor } from './press-voices';
+import { careerOf } from './retrospective-service';
 import type { ChronicleAttribution, ChronicleEventType } from './chronicle-types';
 import type { NarratableEvent, NarrationRequest, ProseWriter } from './prose/prose-types';
 import { TemplateWriter } from './prose/template-writer';
 
+
+/**
+ * Event types that are filed as something other than plain news. The kind is
+ * what the history panel groups by, so it is the difference between an archive
+ * players can browse and an undifferentiated wall of headlines.
+ */
+const ARTICLE_KIND: Record<string, string> = {
+    investigation_published: 'investigation',
+    scandal_confirmed: 'investigation',
+    leader_died: 'obituary',
+};
 
 export interface NarrateOptions {
     /** Events scoring below this are memory only, never prose. */
@@ -196,7 +208,31 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
         const { visibleActors, speculative } = applyAttribution(lead);
         const publisher = selectPublisher(lead, publishers);
         const stance = stanceFor(lead, publisher);
-        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day, memory, stance };
+
+        // A leader's death is written as a life. The chronicle keys events by
+        // faction rather than by person, so "their career" is what the empire
+        // did while they held office — which is how leaders are judged anyway.
+        let career: string[] | undefined;
+        if (lead.type === 'leader_died' && lead.actorIds[0]) {
+            const years = Number(lead.facts.yearsInOffice ?? 0);
+            // Four ticks to the day, and AGE_YEARS_PER_DAY = 0.5 in
+            // lib/government/succession-service.ts — so one year in office is
+            // two days of play, eight ticks. Getting this wrong silently
+            // truncates the career and makes eventful reigns read as empty.
+            const tenureTicks = Number.isFinite(years) && years > 0 ? years * 8 : 4 * 30;
+            try {
+                career = await careerOf({
+                    factionId: lead.actorIds[0],
+                    fromTick: lead.tick - tenureTicks,
+                    toTick: lead.tick,
+                    excludeEventIds: group.map(e => e.id),
+                });
+            } catch (e: any) {
+                console.warn(`[Narrator] Career lookup failed for ${lead.id}:`, e.message);
+            }
+        }
+
+        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day, memory, stance, career };
 
         let result;
         try {
@@ -219,7 +255,7 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
                 data: {
                     eventIds: JSON.stringify(ids),
                     publisherId: publisher.id,
-                    kind: lead.type === 'investigation_published' ? 'investigation' : 'news',
+                    kind: ARTICLE_KIND[lead.type] ?? 'news',
                     headline: result!.headline,
                     body: result!.body,
                     stance: JSON.stringify({

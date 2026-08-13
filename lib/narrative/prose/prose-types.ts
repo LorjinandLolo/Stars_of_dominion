@@ -65,6 +65,11 @@ export interface NarrationRequest {
      * low-credibility outlet asserts more than it can prove.
      */
     stance: Stance;
+    /**
+     * For an obituary: what the empire did while this leader held office,
+     * already phrased. Empty for every other kind of story.
+     */
+    career?: string[];
 }
 
 export interface NarrationResult {

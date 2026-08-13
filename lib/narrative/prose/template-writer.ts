@@ -236,15 +236,32 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
         case 'leader_died': {
             const years = num(e, 'yearsInOffice');
             const cause = str(e, 'cause', 'departure');
+            const died = cause === 'death' || cause === 'illness';
+
+            // An obituary is a career, not a bulletin. When the chronicle can
+            // supply what the empire did on their watch, the record speaks;
+            // otherwise it falls back to the honest admission that it cannot.
+            const career = req.career ?? [];
+            const record = career.length
+                ? ` Their tenure covered ${career.slice(0, 3).join('; ')}.`
+                : ' The record of their tenure is thinner than their supporters would like.';
+
+            // Emission sites vary: some carry a bare surname, some a name that
+            // already includes the title. Printing "Chancellor Chancellor Vex"
+            // is the kind of detail that makes a paper look automated.
+            const title = str(e, 'title', 'The head of state');
+            const leaderName = str(e, 'leaderName', '');
+            const fullName = leaderName.toLowerCase().startsWith(title.toLowerCase())
+                ? leaderName
+                : `${title} ${leaderName}`.trim();
+
             return {
-                headline: `${str(e, 'title', 'The head of state')} ${str(e, 'leaderName', '')} ${
-                    cause === 'death' || cause === 'illness' ? 'is dead' : 'steps down'
-                }`.replace(/\s+/g, ' '),
+                headline: `${fullName} ${died ? 'is dead' : 'steps down'}`.replace(/\s+/g, ' '),
                 body: `${str(e, 'leaderName', 'The head of state')} of ${actor} has ${
                     cause === 'death' ? 'died in office'
                         : cause === 'illness' ? 'been lost to illness'
                             : 'retired from office'
-                }${years !== null ? ` after ${years} years` : ''}. ${pick([
+                }${years !== null ? ` after ${years} years` : ''}.${record} ${pick([
                     'The assessments being written now will be rewritten within the decade, as they always are.',
                     'What the administration built and what it cost are already being argued over.',
                     'State broadcasts have suspended regular programming.',

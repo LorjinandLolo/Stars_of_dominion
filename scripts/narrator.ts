@@ -22,6 +22,7 @@ import { prisma } from '../lib/db';
 import { narrateOnce, retireUnnarratableEvents } from '../lib/narrative/narrator-service';
 import { deriveFeuds } from '../lib/narrative/memory-service';
 import { LlmWriter } from '../lib/narrative/prose/llm-writer';
+import { writeRetrospectives } from '../lib/narrative/retrospective-service';
 import { NARRATION_THRESHOLD } from '../lib/narrative/chronicle-types';
 
 const INTERVAL_MS = Number(process.env.NARRATOR_INTERVAL_MS ?? 60_000);
@@ -45,6 +46,13 @@ async function pass(): Promise<void> {
     const feuds = await deriveFeuds();
 
     const summary = await narrateOnce({ threshold: THRESHOLD, limit: BATCH, writer });
+
+    // Close the book on any era that has been quiet long enough to be history.
+    // Almost always a no-op; ages do not end often.
+    const retrospectives = await writeRetrospectives();
+    if (retrospectives > 0) {
+        console.log(`[Narrator] Named ${retrospectives} closed era(s).`);
+    }
 
     if (summary.articles > 0) {
         console.log(

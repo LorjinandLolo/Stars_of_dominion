@@ -14,6 +14,7 @@ export type NavTab =
     | 'dossier'
     | 'tech'
     | 'discourse'
+    | 'history'
     | 'corporate'
     | 'war'
     | 'diplomacy'

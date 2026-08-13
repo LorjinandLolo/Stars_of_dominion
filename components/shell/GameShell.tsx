@@ -53,6 +53,10 @@ const DiscoursePanel = dynamic(() => import('@/components/panels/DiscoursePanel'
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-indigo-400/80 animate-pulse border border-indigo-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO CHANNELS CONSOLE...</div>
 });
+const HistoryPanel = dynamic(() => import('@/components/panels/HistoryPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-cyan-400/80 animate-pulse border border-cyan-900/20 bg-slate-950 rounded shadow-2xl">OPENING THE GALACTIC ARCHIVE...</div>
+});
 const CorporateLedgerPanel = dynamic(() => import('@/components/panels/CorporateLedgerPanel'), {
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-emerald-400/80 animate-pulse border border-emerald-900/20 bg-slate-950 rounded shadow-2xl">RETRIEVING LEDGER ARCHIVES...</div>
@@ -104,6 +108,7 @@ const PANEL_MAP = {
     dossier: <DossierPanel />,
     tech: <ResearchPanel />,
     discourse: <DiscoursePanel />,
+    history: <HistoryPanel />,
     corporate: <CorporateLedgerPanel />,
     war: <BattleCommandPanel />,
     diplomacy: <DiplomacyPanel />,
