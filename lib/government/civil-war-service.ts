@@ -24,6 +24,7 @@ import { recordPoliticalEvent } from './ideology-drift';
 import { CABINET_PORTFOLIOS } from './types';
 import { emptyLegacyState } from './legacy-service';
 import { generateLeader } from '@/lib/leadership/leader-generator';
+import * as chronicle from '@/lib/narrative/chronicle';
 
 /**
  * Grace period between a region going into open revolt (6.3) and declaring
@@ -311,6 +312,17 @@ export function fissionEmpire(world: GameWorldState, crisisId: string): FissionR
     } catch { /* press state absent on minimal worlds */ }
 
     console.log(`[Government] CIVIL WAR: ${summary}`);
+
+    chronicle.record(world, {
+        type: 'civil_war_started',
+        actorIds: [rebelId],
+        targetIds: [parentId],
+        facts: {
+            rebelName: name,
+            planetsTaken: takenPlanets.length,
+            fleetsDefected,
+        },
+    });
 
     return {
         ok: true,

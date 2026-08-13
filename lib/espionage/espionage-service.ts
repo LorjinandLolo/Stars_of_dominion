@@ -23,6 +23,8 @@ import { generateReportForOperation, pruneExpiredReports } from './intel-reports
 import { triggerCrisis } from '../crisis-manager';
 import { pushWorldStory, adjustPublicTrust } from '../press-system/integration';
 import { StorySource, StoryTruth } from '../press-system/types';
+import * as chronicle from '../narrative/chronicle';
+import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
@@ -285,6 +287,7 @@ function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
     // Attribution resolution
     const attribution = resolveAttribution(op, world);
     op.attributionState = attribution;
+    recordOperationToChronicle(op, world);
 
     // Record
     const record: AttributionRecord = {
@@ -361,6 +364,7 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     op.attributionState = exposed
         ? 'exposed'
         : (resolveAttribution(op, world) === 'invisible' ? 'invisible' : 'suspected');
+    recordOperationToChronicle(op, world);
 
     world.espionage.attributionRecords.push({
         operationId: op.id,
@@ -587,6 +591,36 @@ export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): v
             intel.infiltrationLevels[targetId] = Math.max(0, level - INFILTRATION_DECAY_PER_HOUR * hours);
         }
     }
+}
+
+/**
+ * File a resolved operation with the chronicle.
+ *
+ * The event always names the real actor in `actorIds` — that is the factual
+ * record. What the galaxy may print is carried separately in `attribution`:
+ * an invisible operation leaves the press with an effect and no author, and a
+ * merely suspected one lets it name a name it cannot prove. This split is what
+ * makes deception a playable move rather than a hidden die roll.
+ */
+function recordOperationToChronicle(op: EspionageOperation, world: GameWorldState): void {
+    const attribution: ChronicleAttribution =
+        op.attributionState === 'exposed' ? 'exposed'
+            : op.attributionState === 'suspected' ? `suspected:${op.actorFactionId}`
+                : 'invisible';
+
+    chronicle.record(world, {
+        // An exposed operation is a scandal in its own right; an unexposed one
+        // is only as newsworthy as its effect.
+        type: op.attributionState === 'exposed' ? 'operation_exposed' : 'operation_resolved',
+        actorIds: [op.actorFactionId],
+        targetIds: [op.targetFactionId],
+        location: op.targetRegionId,
+        facts: {
+            domain: op.domain,
+            succeeded: op.succeeded === true,
+        },
+        attribution,
+    });
 }
 
 function buildNarrative(domain: OperationDomain, success: boolean, attribution: AttributionState): string {
