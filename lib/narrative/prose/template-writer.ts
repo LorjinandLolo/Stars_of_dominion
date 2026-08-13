@@ -128,8 +128,11 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
 
         case 'battle_resolved': {
             const devastation = num(e, 'devastation');
+            const cycles = num(e, 'siegeCycles');
             return {
-                headline: `${where} falls to ${actor} after ${num(e, 'siegeCycles') ?? 'a'} cycles of siege`,
+                headline: cycles && cycles > 0
+                    ? `${where} falls to ${actor} after ${cycles} ${cycles === 1 ? 'cycle' : 'cycles'} of siege`
+                    : `${where} falls to ${actor}`,
                 body: `${hedge}Ground forces under ${actor} have taken ${where} from ${target}.${
                     devastation && devastation > 20
                         ? ` The surface was heavily damaged in the taking; what the defenders built, the attackers broke getting to it.`
@@ -249,6 +252,51 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
     }
 }
 
+/**
+ * The continuity paragraph — what turns a report into history.
+ *
+ * Written from derived memory (lib/narrative/memory-service.ts): an active feud
+ * gives the story a name and a count, prior coverage gives it a callback, and a
+ * galactic first says so outright. Absent history, this returns nothing and the
+ * article simply reads as news, which is correct for a young galaxy.
+ */
+function continuity(request: NarrationRequest): string {
+    const { memory } = request;
+    const parts: string[] = [];
+
+    if (memory.feud && memory.feud.status === 'active' && memory.feud.eventCount >= 3) {
+        parts.push(
+            `This is the ${ordinal(memory.feud.eventCount)} such incident between the two powers, ` +
+            `in what observers now call ${memory.feud.epithet}.`,
+        );
+    } else if (memory.feud && memory.feud.status === 'dormant') {
+        parts.push(`It revives ${memory.feud.epithet}, quiet since tick ${memory.feud.startedTick}.`);
+    }
+
+    if (memory.isReversal) {
+        parts.push('The same ground has changed hands before, and the record suggests it will again.');
+    }
+
+    if (memory.isGalacticFirst) {
+        parts.push('Nothing of the kind has been recorded in this galaxy until now.');
+    }
+
+    if (memory.precedents.length) {
+        const cited = memory.precedents.slice(0, 2).map(p => `"${p.headline}"`).join(' and ');
+        parts.push(`Readers may recall ${cited}.`);
+    }
+
+    return parts.join(' ');
+}
+
+function ordinal(n: number): string {
+    const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th'
+        : n % 10 === 1 ? 'st'
+            : n % 10 === 2 ? 'nd'
+                : n % 10 === 3 ? 'rd' : 'th';
+    return `${n}${suffix}`;
+}
+
 export class TemplateWriter implements ProseWriter {
     async write(request: NarrationRequest): Promise<NarrationResult> {
         // The subject of the sentence is whoever the galaxy is allowed to name.
@@ -259,12 +307,16 @@ export class TemplateWriter implements ProseWriter {
         const { headline, body, tone } = draftFor(request, actor);
 
         // The lede is the front page's one line: the first sentence of the body,
-        // which the drafts above are written to make self-contained.
+        // which the drafts above are written to make self-contained. Taken
+        // before continuity is appended, so the front page stays about the news.
         const firstSentence = body.split(/(?<=[.!?])\s/)[0] ?? body;
+
+        const tail = continuity(request);
+        const fullBody = tail ? `${body}\n\n${tail}` : body;
 
         return {
             headline: headline.trim(),
-            body: body.trim(),
+            body: fullBody.trim(),
             lede: firstSentence.trim(),
             tone,
             provider: 'template',

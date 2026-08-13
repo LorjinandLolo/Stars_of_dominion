@@ -18,6 +18,7 @@ config({ path: '.env' });
 import { prisma } from '../lib/db';
 import { narrateOnce, retireUnnarratableEvents, DEFAULT_PUBLISHER_ID } from '../lib/narrative/narrator-service';
 import { TemplateWriter } from '../lib/narrative/prose/template-writer';
+import { EMPTY_MEMORY } from '../lib/narrative/memory-service';
 
 // A day far from any real game day, so the test never collides with, or
 // pollutes, a live gazette.
@@ -222,6 +223,7 @@ async function main() {
             location: null, facts: {}, attribution: 'exposed' as const,
         },
         visibleActors: ['Alpha'], speculative: false, day: TEST_DAY,
+        memory: EMPTY_MEMORY,
     };
     sample.events = [sample.lead];
     const runA = await writer.write(sample);

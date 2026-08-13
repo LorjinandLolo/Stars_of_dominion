@@ -20,6 +20,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import { prisma } from '../lib/db';
 import { narrateOnce, retireUnnarratableEvents } from '../lib/narrative/narrator-service';
+import { deriveFeuds } from '../lib/narrative/memory-service';
 import { NARRATION_THRESHOLD } from '../lib/narrative/chronicle-types';
 
 const INTERVAL_MS = Number(process.env.NARRATOR_INTERVAL_MS ?? 60_000);
@@ -30,12 +31,18 @@ let running = true;
 
 async function pass(): Promise<void> {
     const retired = await retireUnnarratableEvents(THRESHOLD);
+
+    // Recompute grudges before writing, so an article about the latest clash
+    // can already describe it as part of the quarrel it belongs to.
+    const feuds = await deriveFeuds();
+
     const summary = await narrateOnce({ threshold: THRESHOLD, limit: BATCH });
 
     if (summary.articles > 0) {
         console.log(
             `[Narrator] Published ${summary.articles} article(s) covering ${summary.eventsCovered} event(s); ` +
-            `${summary.frontPage} reached the front page.`,
+            `${summary.frontPage} reached the front page.` +
+            (feuds > 0 ? ` ${feuds} feud(s) running.` : ''),
         );
     }
     if (retired > 0) {

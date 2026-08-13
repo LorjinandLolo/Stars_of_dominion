@@ -8,6 +8,7 @@
 // underneath once phase 3 wires an LLM in.
 
 import type { ChronicleAttribution, ChronicleEventType } from '../chronicle-types';
+import type { EventMemory } from '../memory-service';
 
 /** One chronicle row, decoded, as the prose layer sees it. */
 export interface NarratableEvent {
@@ -48,6 +49,15 @@ export interface NarrationRequest {
     /** True when the galaxy is guessing rather than knowing. */
     speculative: boolean;
     day: number;
+    /**
+     * What the chronicle remembers that bears on this story: an existing feud,
+     * prior coverage of the same actors or place, whether this is the first of
+     * its kind. Supplied by the narrator; empty when there is no history yet.
+     *
+     * This is how a war becomes "the latest round of an old quarrel" without
+     * anyone holding the last two hundred hours in memory.
+     */
+    memory: EventMemory;
 }
 
 export interface NarrationResult {

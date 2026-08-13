@@ -14,6 +14,7 @@
 import { prisma } from '../db';
 import { NARRATION_THRESHOLD } from './chronicle-types';
 import { prettifyFactionId } from './naming';
+import { memoryFor, EMPTY_MEMORY } from './memory-service';
 import type { ChronicleAttribution, ChronicleEventType } from './chronicle-types';
 import type { NarratableEvent, NarrationRequest, ProseWriter } from './prose/prose-types';
 import { TemplateWriter } from './prose/template-writer';
@@ -157,12 +158,42 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
     let eventsCovered = 0;
     let frontPage = 0;
 
+    // Pass one: look up what the chronicle remembers about each story. Done
+    // before anything is written because context changes the running order —
+    // a border clash between two powers with a feud is a bigger story than a
+    // louder event nobody has any history with, and the front page is capped.
+    const enriched = [];
     for (const group of coalesce(events)) {
-        // The loudest event in the group is the one the article is about.
         const lead = group.reduce((a, b) => (b.importance > a.importance ? b : a));
-        const { visibleActors, speculative } = applyAttribution(lead);
+        let memory = EMPTY_MEMORY;
+        try {
+            memory = await memoryFor({
+                eventIds: group.map(e => e.id),
+                type: lead.type,
+                actorIds: lead.actorIds,
+                targetIds: lead.targetIds,
+                location: lead.location,
+                tick: lead.tick,
+                attribution: lead.attribution,
+                importance: lead.importance,
+            });
+        } catch (e: any) {
+            // Memory is enrichment, not correctness: publish the news without it.
+            console.warn(`[Narrator] Memory lookup failed for ${lead.id}:`, e.message);
+        }
+        enriched.push({
+            group,
+            lead,
+            memory,
+            effectiveImportance: Math.min(100, lead.importance + memory.importanceBonus),
+        });
+    }
+    enriched.sort((a, b) => b.effectiveImportance - a.effectiveImportance || a.lead.tick - b.lead.tick);
 
-        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day };
+    // Pass two: write.
+    for (const { group, lead, memory, effectiveImportance } of enriched) {
+        const { visibleActors, speculative } = applyAttribution(lead);
+        const request: NarrationRequest = { events: group, lead, visibleActors, speculative, day: lead.day, memory };
 
         let result;
         try {
@@ -193,6 +224,9 @@ export async function narrateOnce(options: NarrateOptions = {}): Promise<Narrate
                         speculative,
                         namedActors: visibleActors,
                         attribution: lead.attribution,
+                        effectiveImportance,
+                        feud: memory.feud?.epithet ?? null,
+                        citedPrecedents: memory.precedents.map(p => p.headline),
                     }),
                     day: lead.day,
                 },

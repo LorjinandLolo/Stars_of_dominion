@@ -243,7 +243,27 @@ npx tsx scripts/test-narrative-phase1.ts
 
 covers publication, front-page promotion, idempotency across passes, coalescing three bombardments into one article, all three attribution states including a frame-up, sub-threshold retirement, and writer determinism.
 
-**Phase 2 — Memory.** Feud derivation and injection; precedent queries; importance modifiers that read the chronicle; era segmentation. Test: manufacture a feud, assert the next war's prompt contains it.
+**Phase 2 — Memory. ✅ Done.** `lib/narrative/memory-service.ts` derives everything by query; there is no authored state to keep in sync.
+
+- **Feuds.** Hostile events between an ordered faction pair inside a sliding window; three or more makes a feud, and silence for long enough makes it dormant. Recomputed every narrator pass, so a wiped `feuds` table simply rebuilds itself.
+- **Memory obeys attribution.** An operation the press could not pin on anyone builds *no* feud — deniability protects you from history, not merely from today's headline. Exposing those same acts later makes the grudge appear. The test asserts both directions.
+- **Epithets** are coined once from the record (a world that keeps being fought over gives the feud its name — "the Kessel Question") and cached on the row, so the name never churns. Phase 3 can replace the coining with a model without changing anything else.
+- **Precedent** returns prior *headlines* rather than raw events, so continuity echoes what the paper actually printed.
+- **Context modifiers** (`memoryFor`) live here rather than in `chronicle-importance.ts`, which must stay pure and I/O-free so emission never queries mid-tick. An active feud, a reversal, a galactic first and repeat coverage raise effective importance by up to 25, and the narrator now enriches every group *before* writing so that boosted score decides the front-page running order.
+- **Galactic firsts** require the event to be notable in its own right: every galaxy has a first skirmish and nobody records it that way.
+- **Eras** are a derived query (`segmentEras`) that splits history at quiet stretches between its loudest events — no table, because nothing writes to them and phase 4 only reads.
+
+The template writer gained a continuity paragraph, which is the whole point of the phase — an article now reads:
+
+> Kessel has been struck from orbit by Red Compact. Local stability is reported at 20, with the orbital layer suppressed.
+>
+> This is the 4th such incident between the two powers, in what observers now call the Kessel Question. The same ground has changed hands before, and the record suggests it will again. Readers may recall "THE CAPITAL FALLS: Kessel taken by Red Compact".
+
+```bash
+npx tsx scripts/test-narrative-phase2.ts
+```
+
+covers feud formation, unordered pairs, stable naming, the deniability rule in both directions, the threshold, dormancy, precedent citation, reversals, notable-versus-routine firsts, the boosted score reaching the article's `stance`, and era segmentation.
 
 **Phase 3 — Voices and truth.** Publisher voice selection from press-system state; attribution filtering; `stance` recording; investigations produce exposés that cite prior coverage; a real LLM wired in behind the budget caps.
 
