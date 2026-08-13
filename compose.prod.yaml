@@ -57,5 +57,19 @@ services:
     environment: *app-env
     command: ["npx", "tsx", "scripts/game-loop.ts"]
 
+  # Narrator — turns chronicle events into gazette articles. Optional: the game
+  # runs without it, the galaxy just has no newspaper. Writes prose only, never
+  # anything the simulation reads.
+  narrator:
+    image: stardom-app
+    pull_policy: never
+    container_name: stardom-narrator
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-env
+    command: ["npx", "tsx", "scripts/narrator.ts"]
+
 volumes:
   pgdata:

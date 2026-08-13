@@ -288,6 +288,11 @@ model ChronicleEvent {
   importance  Int
   actorIds    String // JSON array — who REALLY acted; never exposed to the press layer
   targetIds   String // JSON array
+  // Display names as they stood WHEN the event happened. Resolved at emission
+  // because faction names live in per-faction shards, not the world snapshot —
+  // and because a later rename must not rewrite history.
+  actorNames  String @default("[]") // JSON array, parallel to actorIds
+  targetNames String @default("[]") // JSON array, parallel to targetIds
   location    String?
   facts       String // JSON — type-specific mechanical outcome
   attribution String // 'exposed' | 'suspected:<factionId>' | 'invisible'

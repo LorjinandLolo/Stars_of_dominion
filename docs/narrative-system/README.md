@@ -228,7 +228,20 @@ npx tsx scripts/test-narrative-phase0-live.ts
 
 flips a system's owner in the dev world, runs the real worker, asserts the row appears, and restores the world. It mutates and then repairs the dev database — never point it at the server.
 
-**Phase 1 — Narrator walks.** `scripts/narrator.ts` loop with the `template` provider only; coalescing; Gazette rows written. The empty newspaper UI comes alive. Test: seed chronicle events, run the narrator once, assert articles plus idempotency.
+**Phase 1 — Narrator walks. ✅ Done.** `scripts/narrator.ts` (run with `npm run narrator`, or the `narrator` service in `compose.prod.yaml`) polls the chronicle, publishes, and sleeps.
+
+- `lib/narrative/narrator-service.ts` — the queue (`narratedAt IS NULL`, importance-ordered), coalescing by `coalesceKey`, the attribution filter, and a transaction that inserts the article and marks its events together so a crash never double-publishes.
+- `lib/narrative/prose/` — `prose-types.ts` defines a narrow `ProseWriter` interface (deliberately *not* `lib/ai`'s `generateFactionReply`, which is shaped for dialogue), and `template-writer.ts` implements it with no model at all: deterministic prose per event type, variety from hashing the event id into a phrasing bank.
+- `ChronicleEvent` gained `actorNames` / `targetNames` (migration `narrative_event_names`). Faction names live in per-faction shards rather than the world snapshot, so they are stamped on at emission — which also means a later rename cannot rewrite articles already written.
+- The gazette API now resolves "latest published day" when called without `?day=`; sim-clock days are ~20 000, so the old `day=1` default could never have matched. `components/Newspaper.tsx` was an orphan with no mount point; it is now the GALACTIC GAZETTE section of the press panel.
+
+Attribution is enforced at the service boundary, not in the prose: an `invisible` operation never passes a name to the writer, and a `suspected:<id>` one passes the *suspected* party, who need not be the real actor. A frame-up therefore prints the wrong name by construction.
+
+```bash
+npx tsx scripts/test-narrative-phase1.ts
+```
+
+covers publication, front-page promotion, idempotency across passes, coalescing three bombardments into one article, all three attribution states including a frame-up, sub-threshold retirement, and writer determinism.
 
 **Phase 2 — Memory.** Feud derivation and injection; precedent queries; importance modifiers that read the chronicle; era segmentation. Test: manufacture a feud, assert the next war's prompt contains it.
 

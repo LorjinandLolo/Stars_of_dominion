@@ -11,6 +11,7 @@
     "lint": "next lint",
     "import:data": "npx tsx scripts/importData.ts",
     "worker": "npx tsx scripts/game-loop.ts",
+    "narrator": "npx tsx scripts/narrator.ts",
     "setup:duel": "npx tsx scripts/setup-dev-duel.ts",
     "db:up": "docker compose up -d",
     "db:migrate": "prisma migrate dev",

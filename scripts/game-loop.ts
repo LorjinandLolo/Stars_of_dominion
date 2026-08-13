@@ -5,6 +5,7 @@ import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } f
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import * as chronicle from '../lib/narrative/chronicle';
+import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { TechEngine } from '../lib/tech/engine';
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
@@ -632,7 +633,7 @@ async function runGameTick() {
         // show. A failed flush keeps its rows buffered and retries next cycle;
         // the chronicle is allowed to lag, never to lie. See
         // docs/narrative-system/README.md, Invariant 2.
-        const eventsWritten = await chronicle.flushChronicle();
+        const eventsWritten = await flushChronicle();
 
         // Idle ticks stay silent; log only when something actually happened.
         if (eventsWritten > 0) {

@@ -102,8 +102,10 @@ export interface ChronicleRow {
     day: number;
     type: ChronicleEventType;
     importance: number;
-    actorIds: string;   // JSON
-    targetIds: string;  // JSON
+    actorIds: string;    // JSON
+    targetIds: string;   // JSON
+    actorNames: string;  // JSON — display names as of the event
+    targetNames: string; // JSON
     location: string | null;
     facts: string;      // JSON
     attribution: string;

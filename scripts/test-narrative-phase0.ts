@@ -16,12 +16,12 @@ config({ path: '.env' });
 import { prisma } from '../lib/db';
 import {
     record,
-    flushChronicle,
     pendingCount,
     resetChronicleBuffer,
     tickFromSeconds,
     dayFromSeconds,
 } from '../lib/narrative/chronicle';
+import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { scoreImportance, baseImportanceOf } from '../lib/narrative/chronicle-importance';
 import { NARRATION_THRESHOLD } from '../lib/narrative/chronicle-types';
 import { getGameWorldState } from '../lib/game-world-state-singleton';
