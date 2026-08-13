@@ -20,6 +20,9 @@ import type { OperationDefinition, OperationRisk } from './operation-catalog';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { canLaunchCategory, stageInfo } from './network-stages';
 import { generateReportForOperation, pruneExpiredReports } from './intel-reports';
+import { techIdsHaveFlag } from '../tech/flags';
+import { getTechModifier } from '../tech/modifiers';
+import { bumpMetric } from '../tech/history-ledger';
 import { triggerCrisis } from '../crisis-manager';
 import { pushWorldStory, adjustPublicTrust } from '../press-system/integration';
 import { StorySource, StoryTruth } from '../press-system/types';
@@ -78,10 +81,16 @@ export function launchOperation(
     world: GameWorldState,
     unlockedTechIds: Set<string> = new Set()
 ): LaunchResult {
-    // 0. Tech check
-    if (domain === 'shadowEconomy' && !unlockedTechIds.has('dip_sha_1')) {
-        return { success: false, message: 'Technology "Shadow Governance" required for this operation.' };
+    // 0. Tech check. This used to test for the literal id 'dip_sha_1', which is
+    // defined in no tech tree — the gate could never open, so shadow-economy ops
+    // were unreachable for every faction. It now reads the ENABLE_SHADOW_ECONOMY
+    // flag, granted by Black Market Operations (eco_t3_6).
+    if (domain === 'shadowEconomy' && !techIdsHaveFlag(unlockedTechIds, 'ENABLE_SHADOW_ECONOMY')) {
+        return { success: false, message: 'Technology "Black Market Operations" required for this operation.' };
     }
+
+    // History: launching covert work is itself the doctrine research.
+    bumpMetric(world, actorFactionId, 'esp.opsLaunched');
 
     const now = world.nowSeconds;
     const domCfg = espCfg.domains[domain];
@@ -327,11 +336,14 @@ function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, 
     const counterIntelPenalty = (targetIntel?.counterIntelStrength ?? 0) / 200;
     const securityPenalty = (targetIntel?.internalSecurity ?? 0) / 200;
 
-    const chance = def.baseSuccessChance + infiltrationBonus - counterIntelPenalty - securityPenalty;
+    // Tradecraft researched by the actor.
+    const techBonus = getTechModifier(world, actorId, 'esp_op_success_add');
+
+    const chance = def.baseSuccessChance + infiltrationBonus + techBonus - counterIntelPenalty - securityPenalty;
     return Math.max(0.05, Math.min(0.95, chance));
 }
 
-function computeCatalogExposureChance(def: OperationDefinition, targetId: string, world: GameWorldState): number {
+function computeCatalogExposureChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
     const targetIntel = world.espionage.factionIntel.get(targetId);
     let chance = def.baseExposureChance + (targetIntel?.surveillanceStrength ?? 0) / 100;
 
@@ -339,12 +351,17 @@ function computeCatalogExposureChance(def: OperationDefinition, targetId: string
     if (def.risk === 'high') chance += 0.15;
     if (def.risk === 'low') chance -= 0.05;
 
+    // The target's detection research raises exposure; the actor's concealment
+    // research scales the whole thing down.
+    chance += getTechModifier(world, targetId, 'esp_counter_exposure_add');
+    chance *= getTechModifier(world, actorId, 'esp_exposure_mult');
+
     return Math.max(0.02, Math.min(0.90, chance));
 }
 
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
     const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.targetFactionId, world);
-    const exposureChance = computeCatalogExposureChance(def, op.targetFactionId, world);
+    const exposureChance = computeCatalogExposureChance(def, op.actorFactionId, op.targetFactionId, world);
 
     const roll = Math.random();
     let outcome: CatalogOutcome = 'failure';
@@ -353,6 +370,9 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     else if (roll < successChance * 1.3) outcome = 'partial_success';
 
     const exposed = Math.random() < exposureChance;
+    // History: catching foreign operations is how a counter-intelligence
+    // doctrine gets written.
+    if (exposed) bumpMetric(world, op.targetFactionId, 'esp.opsDetectedAgainstUs');
     if (!catalogSucceeded(outcome) && exposed) outcome = 'exposed_failure';
     else if (roll > 0.95 && exposed) outcome = 'backfire';
 

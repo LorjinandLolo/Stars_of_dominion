@@ -20,6 +20,7 @@ import { Faction, Resource, Market, TradeAgreement } from './trade-system/types'
 import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
 import { initializeFactionHomeWorld } from './economy/services/initialization-service';
 import { assignFlavorTags } from './galaxy/system-tags';
+import { emptyTitleState } from './titles/title-service';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
 
@@ -163,15 +164,18 @@ export function getGameWorldState(): GameWorldState {
             economy: buildEmptyEconomyState(),
             corporate: createEmptyCorporateWorldState(),
             espionage: { operations: new Map(), factionIntel: new Map(), reports: new Map(), boardOpportunities: new Map(), attributionRecords: [], shadowEconomyNodes: new Map(), regionEscalation: new Map(), agents: new Map(), intelNetworks: new Map() },
+            piracy: { organizations: new Map(), bases: new Map(), hostages: new Map(), protectionContracts: new Map(), tributes: new Map(), blackMarkets: new Map(), smugglingRuns: new Map(), sponsorships: new Map(), successions: new Map(), captures: new Map(), bounties: new Map(), opportunityIndex: new Map(), emergenceLog: [] },
             activeSeason: null,
             seasonHistory: [],
             hallOfFame: [],
             milestones: new Map(),
+            titles: emptyTitleState(),
             legacyPrestigeBonuses: new Map(),
             victoryState: null,
             postVictoryTransition: null,
             territoryHistory: [],
             tech: new Map(),
+            techHistory: new Map(),
             diplomacy: { offers: new Map(), cooldowns: new Map(), gambits: new Map(), leverage: new Map(), mandates: new Map(), sanctions: new Map(), promises: new Map(), interventions: new Map() },
             rivalries: new Map(),
             blocs: new Map(),

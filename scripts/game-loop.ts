@@ -1,12 +1,28 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard } from '../lib/persistence/save-service';
+import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard, serializePiracyState, applyPiracySnapshot } from '../lib/persistence/save-service';
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import * as chronicle from '../lib/narrative/chronicle';
 import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { TechEngine } from '../lib/tech/engine';
+import { hasTechFlag } from '../lib/tech/flags';
+import { checkOrderTechGate } from '../lib/tech/order-gates';
+import { bumpMetric } from '../lib/tech/history-ledger';
+import { registry as techRegistryForOrders } from '../lib/tech/engine';
+import {
+    addBlueprint,
+    getBlueprint,
+    findBlueprintById,
+    canAssimilate,
+    assimilationTicks,
+    absorbConqueredTechnology,
+} from '../lib/tech/diffusion-service';
+import { stageForInfiltration } from '../lib/espionage/network-stages';
+
+/** Infiltration needed before documents can be lifted at all (embedded network). */
+const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
@@ -180,8 +196,34 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 // Imported dynamically-after-dotenv would be cleaner, but lib/db reads
 // DATABASE_URL lazily on first query, so a static import is safe here.
 import { prisma } from '../lib/db';
+import { ensurePiracyState, playedOrganization } from '../lib/piracy/organization-service';
+import { establishBase } from '../lib/piracy/base-service';
+import { canLegitimize, legitimize } from '../lib/piracy/succession-service';
+import {
+    backSuccessor,
+    cutSponsorship,
+    issueMarque,
+    negotiate,
+    openSponsorship,
+    revokeMarque,
+    setOperation,
+} from '../lib/piracy/sponsorship-service';
+import { signProtectionContract } from '../lib/piracy/protection-service';
+import {
+    buyFromBlackMarket,
+    enforceCustoms,
+    sellIntel,
+    sellToBlackMarket,
+} from '../lib/piracy/black-market-service';
+import {
+    disposeCapture,
+    offerAmnesty,
+    postBounty,
+} from '../lib/piracy/counter-piracy-service';
 
 const SESSION_DOC_ID = 'default-session';
+// Authoritative pirate state, kept out of the snapshot the sync API serves.
+const PIRACY_DOC_ID = 'default-session-piracy';
 
 const POLL_INTERVAL_MS = 5000; // Run every 5 seconds
 // Game clock: 75 game-seconds per 5s tick (15x real time). This used to be a
@@ -246,9 +288,23 @@ async function loadWorld(): Promise<GameWorldState> {
     const doc = await prisma.multiplayerSession.findUniqueOrThrow({ where: { id: SESSION_DOC_ID } });
     const world = deserializeWorld(doc.snapshot);
 
+    // Pirate state lives in its own row, deliberately absent from the snapshot
+    // clients poll. Restore it before anything reads world.piracy.
+    try {
+        const piracyDoc = await prisma.multiplayerSession.findUnique({ where: { id: PIRACY_DOC_ID } });
+        applyPiracySnapshot(world, piracyDoc?.snapshot);
+    } catch (err) {
+        console.log('[Tick Worker] No stored pirate state; starting from what the snapshot carries.');
+    }
+
     // Phase 4: Reconstruct World from Shards
     try {
-        const factionDocs = await prisma.gameFactionShard.findMany({ take: 50 });
+        // No take limit and a stable order: shards are the ONLY copy of each
+        // faction's fleets, economy and tech (cleanWorldForSave clears them from
+        // the snapshot), and Postgres gives no ordering without ORDER BY — so a
+        // cap silently dropped whichever factions fell outside it, differently
+        // on each restart. Rows are never deleted, so the count only grows.
+        const factionDocs = await prisma.gameFactionShard.findMany({ orderBy: { id: 'asc' } });
         for (const fDoc of factionDocs) {
             injectFactionShard(world, fDoc.data);
             knownShardFactionIds.add(fDoc.factionId || fDoc.id);
@@ -666,6 +722,20 @@ async function saveWorldState(world: any, force: boolean): Promise<boolean> {
     // Off-cadence ticks return before serializing: the clone + stringify of the
     // full world costs more than everything else in an idle tick combined.
     if (!force) return false;
+    // Authoritative pirate state goes to its own row. cleanWorldForSave reduces
+    // world.piracy to a public projection for the shared snapshot every client
+    // polls, so this is the only place the real thing survives a restart.
+    try {
+        const piracySnapshot = serializePiracyState(world);
+        await prisma.multiplayerSession.upsert({
+            where: { id: PIRACY_DOC_ID },
+            create: { id: PIRACY_DOC_ID, snapshot: piracySnapshot, lastTickAt: new Date().toISOString() },
+            update: { snapshot: piracySnapshot, lastTickAt: new Date().toISOString() },
+        });
+    } catch (err) {
+        console.error('[Tick Worker] Failed to persist pirate state:', err);
+    }
+
     const cleanWorld = cleanWorldForSave(world);
     const newSnapshot = serializeWorld(cleanWorld);
     // The clock advances every tick, so it must not count as a "real" change.
@@ -948,6 +1018,15 @@ const POLITICAL_CAPITAL_COSTS: Record<string, number> = {
  */
 function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
+
+    // Technology gate runs FIRST — ahead of the treasury and political-capital
+    // charges below, so an order the faction cannot legally issue is never
+    // billed for. Table and semantics live in lib/tech/order-gates.ts.
+    const gate = checkOrderTechGate(world, factionId, actionId);
+    if (!gate.allowed) {
+        recordOrderFailure(world, factionId, actionId, gate.reason!);
+        return;
+    }
 
     // Affordability gate — deducts from the live economy on success.
     if (!chargeOrderCost(world, factionId, actionId)) {
@@ -1358,6 +1437,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
                 return;
             }
+            // History: a gunnery doctrine is written by the crews who fly it.
+            bumpMetric(world, factionId, 'mil.bombardmentsConducted');
             // Orbital structures are shot at before the surface is. While the
             // layer holds, shields and hulls soak the volley and the ground gets
             // off comparatively lightly.
@@ -1585,7 +1666,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 constructionCompleteAt: null,
                 sectorIndex: sectorIdx,
             });
-            const started = startConstruction(planet, tileId, def.id, world.nowSeconds);
+            const started = startConstruction(planet, tileId, def.id, world.nowSeconds, world);
             if (!started.success) {
                 // Roll back: refund the charge, drop the placeholder tile.
                 for (const [amt, key] of costPairs) {
@@ -1985,6 +2066,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              registerActOfWar(world, factionId, payload.targetFactionId);
              // Phase 5: what an empire does reshapes what it becomes.
              recordPoliticalEvent(world, factionId, 'declare_war');
+             // History: counted on the TARGET's ledger — being attacked
+             // repeatedly is what teaches a defensive doctrine.
+             bumpMetric(world, payload.targetFactionId, 'war.declaredAgainstUs');
              console.log(`[Order] Faction ${factionId} declared War on ${payload.targetFactionId}`);
              break;
         }
@@ -2135,15 +2219,23 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'ESP_LAUNCH_OP': {
             // Client sends `investment`/`risk` (see launchCovertOpAction); older
             // callers sent `investmentLevel`/`riskLevel` — accept both.
-            launchOperation(
+            // The unlocked-tech set has to be passed explicitly; omitting it left
+            // launchOperation defaulting to an empty set, so its shadow-economy
+            // tech gate rejected every player op in that domain.
+            const espResult = launchOperation(
                 factionId,
                 payload.targetFactionId,
                 payload.targetRegionId,
                 payload.domain,
                 payload.investment ?? payload.investmentLevel ?? 0.5,
                 payload.risk ?? payload.riskLevel ?? 0.5,
-                world
+                world,
+                new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? [])
             );
+            if (!espResult.success) {
+                recordOrderFailure(world, factionId, actionId, espResult.message);
+                break;
+            }
             console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
             break;
         }
@@ -2240,6 +2332,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  networkStrength: 1.0,
                  isDetected: false
              });
+             // Retargeting this at a BAND is what the counter-piracy design
+             // means by "plant spies inside pirate networks": it turns a base
+             // you have merely located into one you are inside. Nothing wrote
+             // compromisedByFactionId before, so the whole capability — the
+             // sponsor-evidence leak, the +familiarity in the intel view, and
+             // half of rollupStatus's coverage — was unreachable.
+             const infiltrated = ensurePiracyState(world).organizations.get(payload.targetId);
+             if (infiltrated) {
+                 const reachable = infiltrated.baseIds
+                     .map(id => ensurePiracyState(world).bases.get(id))
+                     .filter((b): b is NonNullable<typeof b> =>
+                         !!b && b.knownToFactionIds.includes(factionId) && !b.compromisedByFactionId);
+                 const target = reachable.sort((a, b) => a.concealment - b.concealment)[0];
+                 if (target) {
+                     target.compromisedByFactionId = factionId;
+                     console.log(`[Order] ${factionId} turned somebody inside ${infiltrated.name}'s ${target.kind}`);
+                 }
+             }
              console.log(`[Order] Faction ${factionId} infiltrated network of ${payload.targetId}`);
              break;
         }
@@ -2251,7 +2361,108 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'ESP_STEAL_TECHNOLOGY': {
-             console.log(`[Order] Faction ${factionId} attempting to steal tech from ${payload.targetFactionId}`);
+             // Was a console.log stub. Theft now yields a blueprint fragment
+             // whose quality scales with how deeply the target is infiltrated —
+             // a matured network is the prerequisite, not a nice-to-have.
+             const targetId = payload.targetFactionId;
+             const targetTech = world.tech?.get?.(targetId);
+             if (!targetId || !targetTech) {
+                 recordOrderFailure(world, factionId, actionId, 'No such faction to steal from.');
+                 break;
+             }
+
+             const actorIntel = world.espionage?.factionIntel?.get?.(factionId);
+             const infiltration = actorIntel?.infiltrationLevels?.[targetId] ?? 0;
+             const stage = stageForInfiltration(infiltration);
+             if (infiltration < STEAL_MIN_INFILTRATION) {
+                 recordOrderFailure(world, factionId, actionId,
+                     `Our network inside ${targetId} is too shallow for document theft (${Math.round(infiltration)}% — needs ${STEAL_MIN_INFILTRATION}%).`);
+                 break;
+             }
+
+             // What they know that we do not. A named techId is a targeted
+             // theft; otherwise take their most recent unlock, which is what an
+             // active network would actually be positioned to see.
+             const ourTech = world.tech.get(factionId);
+             const known = new Set<string>(ourTech?.unlockedTechIds ?? []);
+             const candidates = (targetTech.unlockedTechIds ?? []).filter((id: string) => !known.has(id));
+             if (candidates.length === 0) {
+                 recordOrderFailure(world, factionId, actionId, 'They hold no technology we lack.');
+                 break;
+             }
+             const wanted = payload.techId && candidates.includes(payload.techId)
+                 ? payload.techId
+                 : candidates[candidates.length - 1];
+
+             const stageIndex = ['none', 'recon_cell', 'embedded_network', 'deep_assets', 'shadow_government'].indexOf(stage);
+             const fidelity = 0.25 + 0.15 * Math.max(0, stageIndex - 1);
+             const merged = addBlueprint(ourTech!, {
+                 techId: wanted,
+                 sourceFactionId: targetId,
+                 channel: 'espionage',
+                 fidelity,
+                 tick: world.nowSeconds,
+             });
+
+             // Theft is noticed by the people it is done to. Their
+             // counter-intelligence doctrine feeds on our activity.
+             bumpMetric(world, targetId, 'esp.opsDetectedAgainstUs');
+             console.log(`[Order] ${factionId} stole ${wanted} from ${targetId} at ${Math.round(fidelity * 100)}% fidelity (now ${Math.round((merged?.fidelity ?? 0) * 100)}%)`);
+             break;
+        }
+
+        case 'TECH_ASSIMILATE_BLUEPRINT': {
+             // Mirrors TECH_START_RESEARCH, but copies rather than derives:
+             // prerequisites are waived and the cost is a fraction of the
+             // original, scaled by fidelity and by how common the tech already is.
+             const techState = world.tech.get(factionId);
+             if (!techState) {
+                 recordOrderFailure(world, factionId, actionId, 'This faction has no research programme.');
+                 break;
+             }
+
+             const blueprint = findBlueprintById(techState, payload.blueprintId)
+                 ?? (payload.techId ? getBlueprint(techState, payload.techId) : undefined);
+             const viable = canAssimilate(blueprint);
+             if (!viable.ok) {
+                 recordOrderFailure(world, factionId, actionId, viable.reason!);
+                 break;
+             }
+
+             const def = techRegistryForOrders.get(blueprint!.techId);
+             if (!def) {
+                 recordOrderFailure(world, factionId, actionId, 'That blueprint describes no known technology.');
+                 break;
+             }
+             if (techState.unlockedTechIds?.includes(def.id)) {
+                 recordOrderFailure(world, factionId, actionId, 'We already hold this technology.');
+                 break;
+             }
+             if (techState.lockedTechIds?.includes(def.id)) {
+                 recordOrderFailure(world, factionId, actionId, 'A doctrine we have already committed to excludes this technology.');
+                 break;
+             }
+
+             const slot = techState.activeSlots?.find((s: any) =>
+                 (payload.slotId ? s.slotId === payload.slotId : true) &&
+                 (s.status === 'empty' || s.techId === null));
+             if (!slot) {
+                 recordOrderFailure(world, factionId, actionId, 'No research slot is free.');
+                 break;
+             }
+
+             slot.techId = def.id;
+             slot.status = 'researching';
+             slot.startTime = world.nowSeconds;
+             slot.progressHours = 0;
+             slot.ticksCompleted = 0;
+             slot.ticksRequired = assimilationTicks(world, blueprint!, def);
+             // Completion runs through the normal research path, so mark the
+             // tech so step4_research knows to unlock it with adaptation debt.
+             if (!techState.assimilating) techState.assimilating = [];
+             if (!techState.assimilating.includes(def.id)) techState.assimilating.push(def.id);
+
+             console.log(`[Order] ${factionId} began assimilating ${def.id} (${slot.ticksRequired} ticks, ${Math.round(blueprint!.fidelity * 100)}% fidelity)`);
              break;
         }
 
@@ -2262,6 +2473,220 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  console.log(`[Order] Faction ${factionId} incited unrest on ${planet.name}`);
              }
              break;
+        }
+
+        // ── Pirate system ────────────────────────────────────────────────────
+        // Empire-side instruments: buy a band's silence, buy its violence, or
+        // buy from its markets. See docs/pirate-system/index.md §1.
+
+        case 'PIR_SPONSOR_ORG': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const sponsorship = openSponsorship(world, org, factionId, {
+                targetFactionId: payload.targetFactionId ?? null,
+                intensity: payload.intensity,
+                fundingPerHour: payload.fundingPerHour,
+                supplies: payload.supplies,
+                covert: payload.covert ?? true,
+            });
+            console.log(`[Order] ${factionId} ${sponsorship ? 'funds' : 'failed to fund'} ${payload.organizationId}`);
+            break;
+        }
+
+        case 'PIR_SET_OPERATION': {
+            const ok = setOperation(world, payload.sponsorshipId, payload.intensity, payload.targetFactionId ?? null);
+            console.log(`[Order] ${factionId} set operation ${payload.intensity}: ${ok}`);
+            break;
+        }
+
+        case 'PIR_CUT_SPONSORSHIP': {
+            cutSponsorship(world, payload.sponsorshipId);
+            console.log(`[Order] ${factionId} cut sponsorship ${payload.sponsorshipId}`);
+            break;
+        }
+
+        case 'PIR_ISSUE_MARQUE': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const marque = issueMarque(world, org, factionId, payload.targetFactionId);
+            console.log(`[Order] ${factionId} marque for ${org.name}: ${marque ? 'issued' : 'refused (no war)'}`);
+            break;
+        }
+
+        case 'PIR_REVOKE_MARQUE': {
+            revokeMarque(world, payload.sponsorshipId);
+            break;
+        }
+
+        case 'PIR_NEGOTIATE': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const result = negotiate(world, org, factionId, {
+                kind: payload.agreementKind,
+                paymentPerHour: payload.paymentPerHour,
+                secret: payload.secret,
+            });
+            console.log(
+                `[Order] ${factionId} ${payload.agreementKind} with ${org.name}: `
+                + (result.accepted ? 'agreed' : `refused (${result.reason})`)
+            );
+            break;
+        }
+
+        case 'PIR_BACK_SUCCESSOR': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            backSuccessor(world, org, factionId, payload.candidateDoctrine);
+            break;
+        }
+
+        case 'PIR_PAY_PROTECTION': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            signProtectionContract(world, org, factionId, 'faction', payload.routeIds ?? [], {
+                exclusiveDefence: payload.exclusiveDefence,
+                secret: payload.secret,
+                feePerHour: payload.feePerHour,
+            });
+            break;
+        }
+
+        case 'PIR_BLACKMARKET_BUY': {
+            const result = buyFromBlackMarket(world, payload.marketId, factionId, payload.resource, payload.units);
+            console.log(
+                `[Order] ${factionId} black-market buy: ${result.ok ? `${result.unitsBought} units` : result.reason}`
+                + (result.traced ? ' (traced)' : '')
+            );
+            break;
+        }
+
+        case 'PIR_BLACKMARKET_SELL': {
+            sellToBlackMarket(world, payload.marketId, factionId, payload.resource, payload.units);
+            break;
+        }
+
+        case 'PIR_BUY_INTEL': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const sale = sellIntel(world, org, factionId, payload.aboutFactionId, payload.domain ?? 'military');
+            console.log(`[Order] ${factionId} bought intel from ${org.name}: ${sale.ok ? sale.reportId : sale.reason}`);
+            break;
+        }
+
+        // ── Pirate-player orders ─────────────────────────────────────────────
+        // Only authoritative over a band the ordering faction actually IS.
+
+        case 'PIR_SET_POSTURE': {
+            const org = playedOrganization(world, factionId);
+            const route = world.economy.tradeRoutes?.get(payload.routeId);
+            if (!org || !route) break;
+            // Postures are chosen per camp each tick; the player's choice is a
+            // standing instruction the raid pass honours.
+            org.posturePreference = { ...(org.posturePreference ?? {}), [route.id]: payload.posture };
+            break;
+        }
+
+        case 'PIR_ASSIGN_RAID': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            // Assigning a raid is sending the ships: the raid pass resolves
+            // whatever is camped on a lane when the trade tick comes round.
+            for (const fleetId of payload.fleetIds ?? []) {
+                const fleet = world.movement.fleets.get(fleetId);
+                if (!fleet || fleet.organizationId !== org.id) continue;
+                const updated = issueMoveOrder(fleet, payload.targetSystemId, 'hyperlane', world.movement);
+                world.movement.fleets.set(fleetId, updated);
+            }
+            if (payload.raidType) org.preferredRaidType = payload.raidType;
+            break;
+        }
+
+        case 'PIR_ESTABLISH_BASE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            const base = establishBase(world, org, payload.kind, payload.systemId);
+            console.log(`[Order] ${org.name} base at ${payload.systemId}: ${base ? base.kind : 'refused'}`);
+            break;
+        }
+
+        case 'PIR_SET_RACKET': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            signProtectionContract(world, org, payload.payerId, payload.payerKind ?? 'faction',
+                payload.routeIds ?? [], {
+                    exclusiveDefence: payload.exclusiveDefence,
+                    secret: payload.secret,
+                    feePerHour: payload.feePerHour,
+                });
+            break;
+        }
+
+        case 'PIR_SPLIT_LOOT': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            // Loyalty is bought with the same loot that buys expansion.
+            const share = Math.max(0, Math.min(1, payload.crewShare ?? 0));
+            const paid = org.treasury * share;
+            org.treasury -= paid;
+            org.crewLoyalty = Math.min(100, org.crewLoyalty + share * 20);
+            console.log(`[Order] ${org.name} splits ${Math.round(paid)}cr among the crews`);
+            break;
+        }
+
+        case 'PIR_ACCEPT_MARQUE':
+        case 'PIR_REFUSE_MARQUE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            if (actionId === 'PIR_REFUSE_MARQUE') {
+                cutSponsorship(world, payload.sponsorshipId);
+            }
+            break;
+        }
+
+        case 'PIR_LEGITIMIZE': {
+            const org = playedOrganization(world, factionId);
+            if (!org) break;
+            const gate = canLegitimize(world, org);
+            if (!gate.ok) {
+                console.log(`[Order] ${org.name} cannot go straight: ${gate.reason}`);
+                break;
+            }
+            const result = legitimize(world, org);
+            console.log(`[Order] ${org.name} is now ${result?.factionId}`);
+            break;
+        }
+
+        case 'PIR_POST_BOUNTY': {
+            const bounty = postBounty(world, factionId, {
+                organizationId: payload.targetOrgId,
+                leaderId: payload.targetLeaderId,
+                baseId: payload.targetBaseId,
+            }, payload.credits ?? 0);
+            console.log(`[Order] ${factionId} bounty: ${bounty ? bounty.id : 'refused'}`);
+            break;
+        }
+
+        case 'PIR_OFFER_AMNESTY': {
+            const org = ensurePiracyState(world).organizations.get(payload.organizationId);
+            if (!org) break;
+            const result = offerAmnesty(world, org, factionId);
+            console.log(
+                `[Order] ${factionId} amnesty to ${org.name}: `
+                + (result.accepted ? `${result.wings.join(', ')} came in` : 'refused')
+            );
+            break;
+        }
+
+        case 'PIR_DISPOSE_CREW': {
+            disposeCapture(world, payload.captureId, payload.disposition);
+            console.log(`[Order] ${factionId} disposed capture ${payload.captureId}: ${payload.disposition}`);
+            break;
+        }
+
+        case 'PIR_CUSTOMS_ENFORCE': {
+            const caught = enforceCustoms(world, factionId, payload.systemId, payload.level ?? 1);
+            console.log(`[Order] ${factionId} customs at ${payload.systemId}: ${caught.length} seizure(s)`);
+            break;
         }
 
         case 'PRESS_SUPPRESS_STORY': {
@@ -3482,7 +3907,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              }
 
              const unlocked = new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? []);
-             if (!unlocked.has(CHARTER_TECH_ID)) {
+             if (!hasTechFlag(world, factionId, 'ENABLE_CORPORATE_CHARTERS')) {
                  recordOrderFailure(world, factionId, actionId,
                      'Chartering requires the "Trade Route Initialization" technology.');
                  break;
@@ -4143,6 +4568,10 @@ function processSieges(world: GameWorldState) {
 
             // Capital falls → the government collapses and the planet changes hands.
             if (capitalTaken(war)) {
+                // Taking a world takes its archives (diffusion: conquest).
+                // Must run before ownerId is overwritten — the previous owner is
+                // what makes the spoils meaningful.
+                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                 planet.ownerId = updatedSiege.attackerEmpireId;
                 planet.isOccupied = false;
                 planet.siege = null;
@@ -4170,6 +4599,7 @@ function processSieges(world: GameWorldState) {
                 advanceFront(surface, war, 1.2, rng);
                 updatedSiege.defenderState.occupationProgress = occupationShare(surface, war);
                 if (capitalTaken(war)) {
+                    absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                     planet.ownerId = updatedSiege.attackerEmpireId;
                     planet.isOccupied = false;
                     planet.siege = null;
@@ -4186,6 +4616,7 @@ function processSieges(world: GameWorldState) {
             updatedSiege.defenderState.occupationProgress += progress;
 
             if (updatedSiege.defenderState.occupationProgress >= 100) {
+                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
                 planet.ownerId = updatedSiege.attackerEmpireId;
                 planet.isOccupied = false;
                 planet.siege = null;

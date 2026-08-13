@@ -2,7 +2,7 @@
 
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { TechEngine } from '@/lib/tech/engine';
-import { tickSeasonModifiers, endSeason, scheduleNextSeason } from '@/lib/seasons/season-service';
+import { tickSeasonModifiers, endSeason } from '@/lib/seasons/season-service';
 
 /**
  * Manually advances the simulation clock and triggers pillar ticks.
@@ -39,12 +39,12 @@ export async function forceEndSeasonAction(): Promise<any> {
     console.log(`[DebugAction] Force ending season...`);
     try {
         const world = getGameWorldState();
+        // endSeason is the single closer: it ratifies, ranks, archives AND
+        // schedules the next season. Scheduling again here would skip a season.
         const record = endSeason(world);
-        const nextSeasonNumber = (record?.seasonNumber ?? 0) + 1;
-        world.activeSeason = scheduleNextSeason(nextSeasonNumber, world);
-        
-        console.log(`[DebugAction] Season ended.`);
-        return { success: true };
+
+        console.log(`[DebugAction] Season ${record?.seasonNumber ?? '?'} ended.`);
+        return { success: true, seasonNumber: record?.seasonNumber ?? null };
     } catch (err: any) {
         console.error(`[DebugAction] Season end failed:`, err);
         return { success: false, error: err.message };

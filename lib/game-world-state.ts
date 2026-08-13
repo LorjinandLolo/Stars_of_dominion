@@ -5,8 +5,11 @@
 import type { MovementWorldState, InfluenceBloc } from './movement/types';
 import type { EconomyWorldState } from './economy/economy-types';
 import type { EspionageWorldState } from './espionage/espionage-types';
+import type { PiracyWorldState } from './piracy/piracy-types';
 import type { ActiveSeason, SeasonRecord, VictoryState, PostVictoryTransition, TerritoryPersistenceRecord } from './seasons/season-types';
+import type { TitleWorldState } from './titles/types';
 import type { PlayerTechState } from './tech/types';
+import type { FactionHistoryLedger } from './tech/history-ledger';
 import type { RivalryState, Bloc, PropagandaCampaign, ProxyConflict, Treaty, TradePact, Tribute } from './politics/cold-war-types';
 import type { DiplomacyWorldState } from './diplomacy/diplomacy-types';
 import type { CombatState } from './combat/combat-types';
@@ -110,6 +113,9 @@ export interface GameWorldState {
     // ── Pillar 6 — Espionage ─────────────────────────────────────────────────
     espionage: EspionageWorldState;
 
+    // ── Pirate system — organizations, and later their networks ──────────────
+    piracy: PiracyWorldState;
+
 
     // ── Milestone & Seasonal Cycle ──────────────────────────────────────────────
     /** Active season metadata and progression. */
@@ -118,8 +124,20 @@ export interface GameWorldState {
     seasonHistory: SeasonRecord[];
     /** Archive of top seasonal performers and historical milestone winners. */
     hallOfFame: SeasonRecord[];
-    /** Permanent tracking of milestone achievements (e.g. First to 10 Planets). */
+    /**
+     * Retired by the title registry (Seasons & Titles phase 0). Kept on the type
+     * so old snapshots deserialize; migrateLegacyMilestones drains it into
+     * world.titles.ledger on the first tick after deploy and clears it.
+     * @deprecated read world.titles instead.
+     */
     milestones: Map<string, { factionId: string; unlockedAt: string }>;
+
+    /**
+     * Earned/held titles: catalog awards, append-only ledger, held-title
+     * challenge progress, and the defeat-status latch. Absent on pre-phase-0
+     * snapshots; ensureTitleState creates it.
+     */
+    titles?: TitleWorldState;
     /** Carry-over bonuses from previous season prestige. Key = factionID. */
     legacyPrestigeBonuses: Map<string, Record<string, number>>;
 
@@ -133,6 +151,14 @@ export interface GameWorldState {
     
     /** Tech state per faction. */
     tech: Map<string, PlayerTechState>;
+
+    /**
+     * What each faction has actually done — the counters emergent technology
+     * triggers read. Optional so snapshots predating it deserialize unchanged;
+     * getLedger creates the map on first write. Plain records inside, so the
+     * generic Map⇄object pass in save-service carries it with no special case.
+     */
+    techHistory?: Map<string, FactionHistoryLedger>;
 
     /** Diplomacy state. */
     /** Bilateral offers + initiative cooldowns (worker-mutated via DIP_* orders). */

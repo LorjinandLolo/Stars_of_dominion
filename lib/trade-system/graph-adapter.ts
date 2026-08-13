@@ -23,7 +23,26 @@ export function buildTradeGraph(world: GameWorldState): Graph {
         adj.get(from)!.push(edge);
     };
 
-    // 1. Process Trade Segments (Hyperlanes with specialized trade throughput)
+    // 1. The hyperlane network itself.
+    //
+    // This was missing entirely: the graph was built only from trade segments,
+    // gates and corridors, none of which anything creates in a live world — so
+    // buildTradeGraph returned 567 nodes and ZERO edges, no agreement could ever
+    // be pathfound into a route, and the whole trade-route layer was inert.
+    // The lanes live on SystemNode.hyperlaneNeighbors (seeded by ensureLaneGraph
+    // from generated-systems.json), which is what the movement layer routes on.
+    const HYPERLANE_COST = 12;
+    for (const sys of world.movement.systems.values()) {
+        for (const neighborId of sys.hyperlaneNeighbors ?? []) {
+            if (!world.movement.systems.has(neighborId)) continue;
+            // One direction per (system, neighbour) pair; the reverse lane is
+            // added when the walk reaches the neighbour's own adjacency list.
+            addEdge(sys.id, neighborId, EdgeType.HYPERLANE, HYPERLANE_COST, false);
+        }
+    }
+
+    // 2. Trade segments — dedicated freight infrastructure, cheaper than a raw
+    //    lane where it has been built.
     for (const seg of world.movement.tradeSegments.values()) {
         if (seg.status === 'active' || seg.status === 'rerouted') {
             const cost = 10; // Base cost for hyperlane trade
@@ -32,7 +51,7 @@ export function buildTradeGraph(world: GameWorldState): Graph {
         }
     }
 
-    // 2. Process Online Gates (Mesh Network)
+    // 3. Process Online Gates (Mesh Network)
     // All online gates can reach all other online gates directly.
     const onlineGates = Array.from(world.movement.gates.values()).filter(g => g.state === 'online');
     for (let i = 0; i < onlineGates.length; i++) {
@@ -45,7 +64,7 @@ export function buildTradeGraph(world: GameWorldState): Graph {
         }
     }
 
-    // 3. Process Strategic Corridors (Internal connections)
+    // 4. Process Strategic Corridors (Internal connections)
     for (const corridor of world.movement.corridors.values()) {
         if (corridor.denialFieldActive) continue;
         const nodeIds = corridor.nodeIds;

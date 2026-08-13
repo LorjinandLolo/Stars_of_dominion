@@ -46,3 +46,18 @@ export class RNG {
         return array;
     }
 }
+
+/**
+ * FNV-1a — stable across processes, unlike a hash built on object identity.
+ * Lives next to the RNG so any simulation module can seed deterministically
+ * without pulling in a heavier service. Re-exported from
+ * lib/leadership/leader-generator.ts, which defined it first.
+ */
+export function seedFromString(seed: string): number {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+}

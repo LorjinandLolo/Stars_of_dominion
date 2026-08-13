@@ -52,6 +52,16 @@ export interface Faction {
     centralization: number; // 0 (Decentralized) to 100 (Centralized)
     economicModel: number; // -100 (Planned) to 100 (Free Market)
     capitalSystemId: string;
+    /**
+     * 0–100. How compromised this empire is — raised by black-market purchases,
+     * smuggling, sponsorships and tolerated havens. Mostly private until an
+     * exposure event. Gates the `shadow` pathway in lib/mechanics/pathway-logic.ts.
+     * See docs/pirate-system/metrics.md §1.1.
+     */
+    infamy?: number;
+    /** Current societal pathway and rank (lib/mechanics/pathway-logic.ts). */
+    pathwayId?: string;
+    pathwayRank?: number;
     metrics: {
         tradeDependencyIndex: number;
         chokepointDependencyScore: number;
@@ -121,6 +131,19 @@ export interface TradeRoute {
     deepSpaceRisk: number;
     escortLevel: number;
     routePriority: number;
+    /**
+     * 0–1 suppression of voluntary traffic after pirates destroyed shipping on
+     * this lane rather than robbing it. Decays on its own. Destruction raids are
+     * unprofitable by design; this is what they buy instead.
+     * See docs/pirate-system/operations.md §2.
+     */
+    terror?: number;
+    /**
+     * Pirate organization currently paid to leave this lane alone. Raiding a
+     * covered route is a contract breach, not an impossibility — see
+     * docs/pirate-system/operations.md §5.
+     */
+    protectedByOrgId?: string;
 }
 
 export enum PolicyRule {

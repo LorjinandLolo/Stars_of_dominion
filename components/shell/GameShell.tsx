@@ -93,6 +93,9 @@ const EconomicTerminal = dynamic(() => import('@/components/economy/EconomicTerm
     ssr: false,
     loading: () => <div className="p-12 text-center text-xs font-mono text-cyan-400/80 animate-pulse">CONNECTING TO FINANCIAL SECTOR DATABASE...</div>
 });
+const ShadowPanel = dynamic(() => import('@/components/panels/ShadowPanel'), {
+    loading: () => <div className="p-6 text-xs font-mono text-purple-400/80 animate-pulse border border-purple-900/20 bg-slate-950 rounded shadow-2xl">RAISING THE UNDERWORLD...</div>
+});
 const ManualGuidebook = dynamic(() => import('@/components/manual/ManualGuidebook'), { ssr: false });
 const DevToolbox = dynamic(() => import('@/components/debug/DevToolbox'), { ssr: false });
 
@@ -103,7 +106,12 @@ const PANEL_MAP = {
     leadership: <LeadershipPanel />,
     intelligence: <IntelligencePanel />,
     press: <PressPanel />,
-    shadow: <EspionageAgencyPanel />,
+    // SHADOW is the underworld: bands, their bases, what we pay them and how
+    // close our own arrangements are to being exposed. It used to point at the
+    // espionage agency, which left ShadowPanel unreachable — the agency now has
+    // its own sub-tab beside OPERATIONS.
+    shadow: <ShadowPanel />,
+    agency: <EspionageAgencyPanel />,
     council: <CouncilPanel />,
     dossier: <DossierPanel />,
     tech: <ResearchPanel />,

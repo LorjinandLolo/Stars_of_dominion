@@ -22,7 +22,8 @@ export default function CommandDock() {
     const factions = useUIStore(s => s.factions);
     const systems = useUIStore(s => s.systems);
 
-    const showShadow = isShadowTabVisible(playerState);
+    const piracyState = useUIStore(s => s.piracyState);
+    const showShadow = isShadowTabVisible(playerState, piracyState);
     const showCouncil = isCouncilTabVisible(councilState);
     const activeCategory = categoryForTab(activeTab);
     const activeCrises = crisisWindows.filter(w => w.phase !== 'warning');

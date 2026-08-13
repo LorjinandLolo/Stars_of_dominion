@@ -1,4 +1,5 @@
 import { Faction } from '../../types/index';
+import type { TechBlueprint } from './diffusion-types';
 
 // --- ENUMS (HoI4 Strategy Grammar) ---
 
@@ -197,6 +198,32 @@ export interface PlayerTechState {
     // HoI4 Doctrine Hard-Locks
 
     lockedTechIds: string[];
+
+    // ── Emergent technology (conduct-driven reveals) ─────────────────────────
+    // Both optional so snapshots written before this existed deserialize
+    // unchanged; every read site defaults.
+
+    /** Techs a faction's own history has revealed, newest last. */
+    revealedEmergentTechIds?: string[];
+    /** Research-cost multiplier per revealed tech (0.5 on reveal, 0.25 deepened). */
+    emergentDiscounts?: Record<string, number>;
+    /**
+     * Prerequisites a reveal has waived, per tech id. Conduct substituted for
+     * the missing theory, so the chain no longer has to be walked.
+     */
+    emergentWaivedPrereqs?: Record<string, string[]>;
+
+    // ── Diffusion (technology acquired without researching it) ───────────────
+
+    /** Fragments and complete copies awaiting assimilation. */
+    blueprints?: TechBlueprint[];
+    /** Effect strength still withheld from copied techs, per tech id. */
+    adaptationDebt?: Record<string, number>;
+    /**
+     * Techs currently occupying a slot as an assimilation job rather than
+     * original research. On completion these unlock with adaptation debt.
+     */
+    assimilating?: string[];
 }
 
 export interface GameStateContext {

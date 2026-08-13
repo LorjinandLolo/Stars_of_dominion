@@ -18,6 +18,8 @@ import { getHeadOfState, resolveSuccession } from './succession-service';
 import { getMinister } from './cabinet-service';
 import { recordPoliticalEvent } from './ideology-drift';
 import * as chronicle from '@/lib/narrative/chronicle';
+import { notifyTitleTrigger } from '@/lib/titles/title-service';
+import { TRIGGER } from '@/lib/titles/catalog';
 
 /** Pressure at which the player is warned. */
 export const COUP_WARNING_THRESHOLD = 50;
@@ -198,6 +200,9 @@ function coupSucceeds(world: GameWorldState, gov: GovernmentState, leaderName?: 
 
     const message = `${leaderName ?? 'The head of state'} was removed by the general staff. ${successor?.title ?? ''} ${successor?.name ?? ''} now rules.`.trim();
     gov.history.push({ timestamp: world.nowSeconds, event: `Military coup: ${message}` });
+
+    // History gives the man who took the chair a second name.
+    if (successor) notifyTitleTrigger(TRIGGER.LEADER_TOOK_OFFICE_BY_COUP, successor.id);
 
     notify(world, gov.factionId, {
         id: `coup-success-${gov.factionId}-${world.nowSeconds}`,

@@ -75,6 +75,18 @@ export interface SystemNode {
     tradeValue?: number;
     /** Current pirate lawlessness 0-100. At 100, system flips to a Pirate Haven. */
     lawlessness?: number;
+    /**
+     * Piracy Opportunity Index 0–100, recomputed each tick from trade value,
+     * security cover and instability. A cache for the UI and the AI — the
+     * source of truth is the computation in lib/piracy/opportunity-index.ts.
+     */
+    piracyOpportunity?: number;
+    /**
+     * organizationId → 0–100. The second truth about this system: `ownerFactionId`
+     * says who owns it, this says who decides what moves through it. The gap
+     * between them is the point of the whole pirate system.
+     */
+    pirateInfluence?: Record<string, number>;
     /** Tracked localized ideology profile for rebellions/dissent. */
     ideology?: IdeologyProfile;
 }
@@ -167,6 +179,17 @@ export interface Corridor {
     controllingFactionId?: string;
     /** Whether a denial field is active. */
     denialFieldActive: boolean;
+    /**
+     * Set for a pirate hidden lane: only fleets belonging to this organization
+     * may traverse it. A route only they know, which is why hunting them with
+     * conventional patrol geometry fails. See docs/pirate-system/bases.md §5.
+     */
+    restrictedToOrgId?: string;
+    /**
+     * organizationId → 0–100 grip on this corridor's commerce, competing with
+     * `controllingFactionId` without transferring ownership.
+     */
+    pirateControlByOrg?: Record<string, number>;
 }
 
 // ─── Infrastructure — Gates ───────────────────────────────────────────────────
@@ -303,6 +326,12 @@ export interface Fleet {
     transportedArmyIds?: string[];
     /** ID of the Admiral commanding this fleet, if any. */
     leaderId?: string;
+    /**
+     * For 'faction-pirates' fleets: the pirate organization that owns this
+     * raider. Null/undefined = an unaffiliated raider (all of them, until the
+     * organization entity lands). See docs/pirate-system/organizations.md.
+     */
+    organizationId?: string | null;
 }
 
 // ─── Army (Ground Forces) ─────────────────────────────────────────────────────

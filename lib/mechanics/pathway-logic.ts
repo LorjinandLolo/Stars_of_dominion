@@ -1,9 +1,16 @@
 /**
  * lib/mechanics/pathway-logic.ts
- * 
+ *
  * Defines the progression ladder for dynamic societal evolution.
  * Factions can shift between 4 core pathways (Sovereign, Mercantile, Shadow, Crisis)
  * depending on their economic and political milestones.
+ *
+ * NOT WIRED YET. evaluatePathwayProgression has no callers, and the `shadow`
+ * ladder's infamyMin gates read a Faction.infamy that nothing computes. That
+ * metric is defined in docs/pirate-system/metrics.md §1.1 and is emitted in
+ * pirate-system Phase 6; the four shadow ranks map onto the pirate stages in
+ * docs/pirate-system/organizations.md §2. Kept rather than deleted because the
+ * ladder is the intended consumer — wire it there, do not build a second one.
  */
 
 export type PathwayId = 'sovereign' | 'mercantile' | 'shadow' | 'crisis';

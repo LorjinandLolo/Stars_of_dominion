@@ -16,6 +16,7 @@ import type {
     SystemNode,
     Link,
     EspionageState,
+    PiracyState,
     PoliticsState,
     DiplomacyState,
     TechState,
@@ -35,6 +36,7 @@ import {
     defaultPlayerState, 
     defaultSeasonState, 
     defaultEspionageState, 
+    defaultPiracyState,
     defaultPoliticsState, 
     defaultDiplomacyState, 
     defaultTechState, 
@@ -186,6 +188,12 @@ export interface UIStore {
     espionageState: EspionageState;
     updateEspionage: (patch: Partial<EspionageState>) => void;
 
+    // ── Piracy ──
+    // Server-built per-faction projection; never derived from world state on the
+    // client, because the client is not sent what it may not see.
+    piracyState: PiracyState;
+    updatePiracy: (patch: Partial<PiracyState>) => void;
+
     // ── Politics ──
     politicsState: PoliticsState;
     updatePolitics: (patch: Partial<PoliticsState>) => void;
@@ -279,8 +287,21 @@ export interface UIStore {
 /** SHADOW tab visibility threshold */
 export const SHADOW_TAB_THRESHOLD = 30;
 
-export function isShadowTabVisible(player: PlayerState): boolean {
-    return player.pirateInvolvementScore >= SHADOW_TAB_THRESHOLD || player.role !== 'sovereign';
+/**
+ * The SHADOW tab opens when the underworld is your problem — which is not only
+ * when you have gone looking for it.
+ *
+ * Involvement (black-market purchases, smuggling, funding a band) unlocks it, as
+ * does playing a non-sovereign role. So does simply having MET a band: an empire
+ * being raided by three named organizations needs the panel that lists them, and
+ * gating that behind its own complicity hid the screen from exactly the player
+ * who needed it.
+ */
+export function isShadowTabVisible(player: PlayerState, piracy?: PiracyState): boolean {
+    if (player.pirateInvolvementScore >= SHADOW_TAB_THRESHOLD) return true;
+    if (player.role !== 'sovereign') return true;
+    if (piracy?.dashboard) return true;                       // the player IS a band
+    return (piracy?.view?.organizations.length ?? 0) > 0;      // we have met one
 }
 
 export function isCouncilTabVisible(council: CouncilState): boolean {
@@ -448,6 +469,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
     espionageState: defaultEspionageState,
     updateEspionage: (patch) =>
         set((state) => ({ espionageState: { ...state.espionageState, ...patch } })),
+
+    // ── Piracy ──
+    piracyState: defaultPiracyState,
+    updatePiracy: (patch) =>
+        set((state) => ({ piracyState: { ...state.piracyState, ...patch } })),
 
     // ── Politics ──
     politicsState: defaultPoliticsState,

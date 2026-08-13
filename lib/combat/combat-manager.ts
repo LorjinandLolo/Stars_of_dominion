@@ -1,6 +1,7 @@
 // lib/combat/combat-manager.ts
 import { GameWorldState } from '../game-world-state';
 import { Fleet } from '../movement/types';
+import { notifyTitleMetric, COUNTER_FLEET_POWER_DESTROYED } from '../titles/metrics';
 import { 
     CombatantState, 
     CombatState, 
@@ -9,11 +10,15 @@ import {
     EngagementArchetype,
     CombatStance
 } from './combat-types';
-import { 
-    initiateCombat, 
-    resolveEngagementRound, 
-    advanceRound 
+import {
+    initiateCombat,
+    resolveEngagementRound,
+    advanceRound
 } from './combat-engine';
+import { getTechModifiers } from '../tech/modifiers';
+
+/** Engine default for a correct stance prediction (combat-engine.ts:259). */
+const BASE_PREDICTION_BONUS = 0.15;
 
 /**
  * Handles real-time detection and resolution of fleet engagements.
@@ -95,8 +100,8 @@ function handleEngagement(
 
     if (!state) {
         // Initiate new combat
-        const attacker = createCombatant(factionA, fleetsA, 'attacker');
-        const defender = createCombatant(factionB, fleetsB, 'defender');
+        const attacker = createCombatant(factionA, fleetsA, 'attacker', world);
+        const defender = createCombatant(factionB, fleetsB, 'defender', world);
 
         state = initiateCombat(
             combatId, 
@@ -134,6 +139,10 @@ function handleEngagement(
             // re-initiated against it every tick ("zombie" engagements).
             for (const fleet of [...fleetsA, ...fleetsB]) {
                 if (fleet.strength <= 0) {
+                    // Credit the other side before the fleet is gone — the
+                    // Reaper's Toll crown measures destroyed power per season.
+                    const killer = fleet.factionId === factionA ? factionB : factionA;
+                    notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
                     world.movement.fleets.delete(fleet.id);
                 }
             }
@@ -149,7 +158,7 @@ function handleEngagement(
     }
 }
 
-function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender'): CombatantState {
+function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender', world?: any): CombatantState {
     const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
     
     // Combine compositions
@@ -198,7 +207,21 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         morale: Math.max(0, Math.min(1, ((fleets[0]?.doctrine.moraleDrift ?? 0) + 100) / 200)),
         doctrine: 'aggressive',
         predictionPoints: 0,
-        selectedStance: 'shock'
+        selectedStance: 'shock',
+        // combat-engine has read techModifiers since it was written, but nothing
+        // ever populated the field — every tech combat bonus in the trees was
+        // inert. The faction's accumulated modifiers are passed straight through
+        // so authors use the engine's own key names. prediction_bonus_multiplier
+        // is the exception: the engine treats it as an absolute with a 0.15
+        // default, so techs contribute to it via prediction_bonus_add instead of
+        // overwriting it with a smaller number.
+        techModifiers: (() => {
+            const mods = getTechModifiers(world, factionId);
+            return {
+                ...mods,
+                prediction_bonus_multiplier: BASE_PREDICTION_BONUS + (mods['prediction_bonus_add'] ?? 0),
+            };
+        })(),
     };
 }
 

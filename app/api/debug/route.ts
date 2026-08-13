@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { TechEngine } from '@/lib/tech/engine';
-import { tickSeasonModifiers, endSeason, scheduleNextSeason } from '@/lib/seasons/season-service';
+import { tickSeasonModifiers, endSeason } from '@/lib/seasons/season-service';
 import { processSectorCombats } from '@/lib/combat/combat-manager';
 import { establishForwardBase, dismantleForwardBase } from '@/lib/movement/forward-base-service';
 
@@ -49,10 +49,9 @@ export async function POST(req: NextRequest) {
             }
 
             case 'endSeason': {
+                // The closer schedules the next season itself — see endSeason.
                 const record = endSeason(world);
-                const nextSeasonNumber = (record?.seasonNumber ?? 0) + 1;
-                world.activeSeason = scheduleNextSeason(nextSeasonNumber, world);
-                return NextResponse.json({ success: true });
+                return NextResponse.json({ success: true, seasonNumber: record?.seasonNumber ?? null });
             }
 
             case 'inject': {

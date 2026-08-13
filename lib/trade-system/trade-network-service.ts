@@ -3,8 +3,11 @@ import { Resource, Market, TradeRoute, WarState, PolicyState } from './types';
 import { updateMarketsAggregated } from './markets';
 import { simulateTradeFlows, updateTradeRoutes, TradeFlowResult } from './trade';
 import { buildTradeGraph } from './graph-adapter';
-import { tickPiracyInterdiction, spawnPiracyFleet, suppressPiracyFleet, PiracyFleet } from './piracy-service';
+import { suppressRaider, PiracyFleet } from './piracy-service';
 import { RNG } from './rng';
+import { tickPirateRaids } from '../piracy/raid-service';
+import { ensurePiracyState } from '../piracy/organization-service';
+import { captureCrew } from '../piracy/counter-piracy-service';
 import { ResourceBundle, ResourceId } from '../economy/economy-types';
 
 /**
@@ -109,55 +112,86 @@ export function refreshWarStates(world: GameWorldState, systemOwners: Map<string
     eco.warStates = next;
 }
 
+/** The umbrella faction every raider fleet flies under. */
+const PIRATE_FACTION_ID = 'faction-pirates';
+/** A parked fleet weaker than this cannot meaningfully engage raiders. */
+const MIN_SUPPRESSOR_STRENGTH = 0.4;
+/** Fraction of a suppressor's strength applied to each raider it engages. */
+const SUPPRESSION_RATE = 0.5;
+/** Share of a band's treasury a destroyed raider was carrying, recovered by the killer. */
+const SUPPRESSION_RECOVERY = 0.5;
+
 /**
- * Light piracy loop: pirates spawn in low-security systems, prey on routes
- * passing through, and are suppressed by any military fleet parked on top of
- * them (suppressor's faction pockets half the recovered loot).
+ * Piracy loop: the raider fleets on the movement map prey on routes passing
+ * through the systems they occupy, and are suppressed by any military fleet
+ * parked on top of them (suppressor's faction pockets half the recovered loot).
  * Returns per-route volume lost this tick.
+ *
+ * Pirate system Phase 0: this no longer spawns anything. Raiders are created by
+ * the emergence pass in the tick processor and live in world.movement.fleets;
+ * world.economy.piracyFleets is now a derived per-system interdiction cache
+ * rebuilt from them. Before this change there were two unrelated pirate
+ * populations — an abstract one that taxed trade and a physical one on the map
+ * that did not — and neither could be suppressed by fighting the other.
  */
-function tickPiracy(world: GameWorldState, routes: TradeRoute[], rng: RNG): Map<string, number> {
+function tickPiracy(
+    world: GameWorldState,
+    routes: TradeRoute[],
+    rng: RNG,
+    deltaSeconds: number
+): Map<string, number> {
     const eco = world.economy;
-    if (!(eco.piracyFleets instanceof Map)) eco.piracyFleets = new Map<string, PiracyFleet>();
-    const fleets = eco.piracyFleets;
+    const previous = eco.piracyFleets instanceof Map ? eco.piracyFleets : new Map<string, PiracyFleet>();
 
-    // 1. Spawn: each low-security system without a pirate camp has a small chance.
-    const MAX_PIRATE_FLEETS = 4;
-    if (fleets.size < MAX_PIRATE_FLEETS) {
-        for (const sys of world.movement.systems.values()) {
-            if (fleets.size >= MAX_PIRATE_FLEETS) break;
-            const security = (sys as any).security ?? 50;
-            if (security >= 30) continue;
-            if ([...fleets.values()].some(f => f.systemId === sys.id)) continue;
-            if (rng.next() < 0.02) {
-                const fleet = spawnPiracyFleet('pirate', sys.id, null, 0.3 + rng.next() * 0.4);
-                fleets.set(fleet.id, fleet);
-                console.log(`[Piracy] Corsair den established in ${sys.id}`);
-            }
-        }
-    }
-
-    // 2. Suppression: any military fleet parked in the pirate's system fights it.
-    for (const [id, pirate] of [...fleets.entries()]) {
+    // 1. Suppression: any military fleet parked in a raider's system fights it.
+    //    Damage lands on the physical fleet — the interdiction record is derived
+    //    and would lose the damage on the next rebuild.
+    for (const raider of [...world.movement.fleets.values()]) {
+        if (raider.factionId !== PIRATE_FACTION_ID || !raider.currentSystemId) continue;
         for (const fleet of world.movement.fleets.values()) {
-            if (fleet.currentSystemId !== pirate.systemId || (fleet.strength ?? 0) < 0.4) continue;
-            const destroyed = suppressPiracyFleet(pirate, fleet.strength * 0.5);
-            if (destroyed) {
-                const bounty = pirate.lootAccumulated * 0.5;
-                const reserves = eco.factions.get(fleet.factionId)?.reserves as Record<string, number> | undefined;
-                if (reserves && bounty > 0) reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + bounty;
-                fleets.delete(id);
-                console.log(`[Piracy] Pirates in ${pirate.systemId} destroyed by ${fleet.factionId} (bounty ${Math.round(bounty)})`);
-                break;
+            if (fleet.factionId === PIRATE_FACTION_ID) continue;
+            if (fleet.currentSystemId !== raider.currentSystemId) continue;
+            if ((fleet.strength ?? 0) < MIN_SUPPRESSOR_STRENGTH) continue;
+
+            const destroyed = suppressRaider(raider, fleet.strength * SUPPRESSION_RATE);
+            if (!destroyed) continue;
+
+            // Recovered plunder comes out of the BAND'S TREASURY, which is where
+            // raid proceeds actually live (recordRaid credits it). The camp's
+            // lootAccumulated is a per-system display tally that the interdiction
+            // pass also writes, so paying a bounty from it minted credits: real
+            // money reached the suppressor while the pirates lost nothing.
+            const org = raider.organizationId
+                ? ensurePiracyState(world).organizations.get(raider.organizationId)
+                : undefined;
+            const crewShare = org && org.fleetIds.length > 0 ? 1 / org.fleetIds.length : 1;
+            const bounty = Math.max(0, (org?.treasury ?? 0) * SUPPRESSION_RECOVERY * crewShare);
+            if (org && bounty > 0) org.treasury = Math.max(0, org.treasury - bounty);
+
+            const reserves = eco.factions.get(fleet.factionId)?.reserves as Record<string, number> | undefined;
+            if (reserves && bounty > 0) reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + bounty;
+
+            // Survivors are taken, not vaporised. This is the only production
+            // path that produces a PirateCapture, so without it the whole
+            // disposition system — execute, recruit, turn informant, amnesty —
+            // and every posted bounty had no way to ever resolve.
+            if (org) {
+                captureCrew(world, org, fleet.factionId, Math.max(0.1, raider.strength + 1));
             }
+
+            world.movement.fleets.delete(raider.id);
+            console.log(`[Piracy] Raider ${raider.id} destroyed by ${fleet.factionId} (bounty ${Math.round(bounty)})`);
+            break;
         }
     }
 
-    // 3. Interdiction against live routes (ratchets route.piracyRisk).
-    const lossByRoute = new Map<string, number>();
-    const results = tickPiracyInterdiction([...fleets.values()], routes, rng);
-    for (const r of results) {
-        lossByRoute.set(r.routeId, (lossByRoute.get(r.routeId) ?? 0) + r.volumeLost);
-    }
+    // 2 & 3. Raiding: the raid service rebuilds the interdiction registry from
+    // the surviving raiders, lets each band pick a posture and a raid type, runs
+    // the interdiction, and applies everything a raid leaves behind — captured
+    // hulls, sabotaged segments, terror, hostages — booking it all against the
+    // organization that did it. See docs/pirate-system/operations.md.
+    void previous;
+    const { lossByRoute } = tickPirateRaids(world, routes, rng, deltaSeconds);
     return lossByRoute;
 }
 
@@ -291,10 +325,12 @@ export function tickGalacticTrade(
     }
     const liveRoutes = Array.from(tradeNetwork.tradeRoutes?.values() || []);
 
-    // 2c. Piracy: spawn/suppress corsair fleets, interdict routes.
-    const pirateLossByRoute = tickPiracy(world, liveRoutes, rng);
+    // 2c. Piracy: suppress camped raiders, then resolve this tick's raiding.
+    const pirateLossByRoute = tickPiracy(world, liveRoutes, rng, deltaSeconds);
 
-    // 2d. Execute flows along routes using the live policy/war state.
+    // 2d. Execute flows along routes using the live policy/war state. Routes a
+    // modelled raid already hit are exempt from the abstract piracy roll, which
+    // stands in for the raiding the simulation does not model.
     const tradeFlowsResult = simulateTradeFlows(
         liveRoutes,
         tradeNetwork.tradeAgreements || new Map(),
@@ -302,7 +338,8 @@ export function tickGalacticTrade(
         tradeNetwork.markets || new Map(),
         tradeNetwork.warStates || new Map(),
         systemOwners,
-        rng
+        rng,
+        new Set(pirateLossByRoute.keys())
     );
 
     // 2e. Settle: move goods between planet stockpiles, credits between

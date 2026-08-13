@@ -26,6 +26,7 @@ import {
     RIGHT_DEFS,
     PERSONALITY_DEFS,
 } from './charter-catalog';
+import { techIdsHaveFlag } from '../../tech/flags';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -203,7 +204,10 @@ export function charterCorporation(
 ): CharteredCompany {
     const { baseName, foundingFactionId, headquartersSystemId, terms, foundingCapital, nowSeconds } = params;
 
-    if (!(params.unlockedTechIds ?? new Set()).has(CHARTER_TECH_ID)) {
+    // Flag rather than id, so a later tech (or a diffusion grant) can also open
+    // chartering without this call site learning its id. CHARTER_TECH_ID remains
+    // the tech that grants it today.
+    if (!techIdsHaveFlag(params.unlockedTechIds, 'ENABLE_CORPORATE_CHARTERS')) {
         throw new Error('Faction lacks "Trade Route Initialization" technology to grant a charter.');
     }
     const invalid = validateCharter(terms, baseName, foundingCapital);

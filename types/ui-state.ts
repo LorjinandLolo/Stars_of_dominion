@@ -10,6 +10,8 @@ export type NavTab =
     | 'intelligence'
     | 'press'
     | 'shadow'
+    /** The espionage agency: agent roster, intel networks, covert ops command. */
+    | 'agency'
     | 'council'
     | 'dossier'
     | 'tech'
@@ -710,6 +712,21 @@ export interface PlayerState {
     networkControl: number;         // 0–100
     blackMarketLiquidity: number;   // 0–100
     crewLoyalty: number;            // 0–100
+}
+
+// ─── Piracy ───────────────────────────────────────────────────────────────────
+
+/**
+ * The pirate slice of the UI, built server-side per faction and delivered in the
+ * faction shard. It is deliberately NOT derived client-side from world state:
+ * the whole system runs on asymmetric information, and the client is never sent
+ * the parts it is not entitled to. See lib/piracy/pirate-view.ts.
+ */
+export interface PiracyState {
+    /** What this faction knows about the underworld. Null before first sync. */
+    view: import('@/lib/piracy/pirate-view').PirateView | null;
+    /** Set only when this faction IS a band rather than dealing with one. */
+    dashboard: import('@/lib/piracy/pirate-view').PirateDashboard | null;
 }
 
 // ─── Crisis Events ────────────────────────────────────────────────────────────

@@ -274,12 +274,12 @@ export const infrastructureTree: Tech[] = [
         id: 'inf_t2_spc_2', name: 'Research Hub Integration',
         tree: TechTreeType.INFRASTRUCTURE, tier: TechTier.SPECIALIZATION, branch: 'industrial_hubs',
         description: 'Turn entire continents into interconnected academic campuses and server farms.',
-        effects: [],
+        effects: [{ type: TechEffectType.UNLOCK_RESEARCH_SLOT, targetSystem: 'research', value: 1, description: 'A second research programme can run in parallel' }],
         prerequisites: ['inf_t2_spc_1'], researchCost: 180,
         seasonScoreTags: [SeasonScoreCategory.INTEL, SeasonScoreCategory.PRODUCTION],
         position: { x: 14, y: 3 },
         unlockFlags: [],
-        mechanicalEffect: 'Massively boosts science output on planets designated as Tech Worlds.',
+        mechanicalEffect: 'Grants a second research slot, letting two technologies be researched at once.',
         tags: ['infrastructure', 'science'], aiTags: ['intel']
     },
     {

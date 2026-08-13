@@ -51,6 +51,8 @@ const PENDING_CONFIRM_LAG_MS = 8000;
 // writes when something changed, so 4s keeps latency invisible while idle
 // polls return a few bytes (since-filtered on the server).
 const POLL_INTERVAL_MS = 4000;
+// The underworld only moves on strategic ticks, so it does not need the fast lane.
+const PIRACY_POLL_INTERVAL_MS = 15000;
 
 // Cabinet seat labels. Mirrors PORTFOLIO_LABEL in lib/government/cabinet-service,
 // which is worker-side (fs registries) and cannot be imported on the client.
@@ -718,6 +720,32 @@ export function useGameSync() {
             ).sort((a, b) => a.expiresAt - b.expiresAt),
         };
 
+        // Piracy: the faction's own projection. It arrives from the
+        // authenticated /api/game/piracy endpoint rather than the world, because
+        // faction shards are readable by everyone — see that route's header.
+        //
+        // Read the faction id from the store rather than this closure: the sync
+        // effect captures updateStoreFromWorld once, while playerFactionId is
+        // only set later from the lobby, so the captured value can still be null
+        // long after the player has a faction.
+        const activeFactionId = useUIStore.getState().playerFactionId ?? playerFactionId;
+        const piracyState = useUIStore.getState().piracyState;
+
+        // The SHADOW tab unlocks on how compromised the empire actually is —
+        // black-market purchases, smuggling, sponsorships — or immediately if
+        // the player IS a band.
+        const playerFaction = activeFactionId ? world.economy.factions.get(activeFactionId) : undefined;
+        const dashboard = piracyState.dashboard;
+        const shadowMetrics = {
+            pirateInvolvementScore: Math.round(playerFaction?.infamy ?? 0),
+            infamy: Math.round(dashboard?.infamy ?? playerFaction?.infamy ?? 0),
+            heat: Math.round(dashboard?.heat ?? 0),
+            networkControl: Math.round(dashboard?.networkControl ?? 0),
+            blackMarketLiquidity: Math.round(dashboard?.blackMarketLiquidity ?? 0),
+            crewLoyalty: Math.round(dashboard?.crewLoyalty ?? 0),
+        };
+        useUIStore.getState().updatePlayer(shadowMetrics);
+
         // Atomic Batch Update
         useUIStore.setState({
             systems: systemList,
@@ -750,6 +778,7 @@ export function useGameSync() {
     useEffect(() => {
         let cancelled = false;
         let pollTimer: NodeJS.Timeout | null = null;
+        let piracyTimer: NodeJS.Timeout | null = null;
         let retryTimeout: NodeJS.Timeout | null = null;
         let pollInFlight = false;
         let pollFailures = 0;
@@ -823,6 +852,25 @@ export function useGameSync() {
             }
         };
 
+        /**
+         * Pull the caller's own pirate projection. Kept off the sync payload on
+         * purpose: /api/game/sync serves every faction's shard to everybody, so
+         * anything genuinely secret has to come through an authenticated route.
+         */
+        const fetchPiracy = async () => {
+            try {
+                const res = await fetch('/api/game/piracy');
+                if (!res.ok) return;   // 401/403 simply means nothing to show yet
+                const data = await res.json();
+                useUIStore.getState().updatePiracy({
+                    view: data.view ?? null,
+                    dashboard: data.dashboard ?? null,
+                });
+            } catch {
+                // A failed poll leaves the last known underworld on screen.
+            }
+        };
+
         const initSync = async (attempt = 0) => {
             try {
                 if (attempt === 0) setIsLoading(true);
@@ -850,6 +898,10 @@ export function useGameSync() {
 
                 // 4. Poll for changes (replaces the Appwrite realtime channels)
                 pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+                // The underworld comes down its own authenticated channel, at a
+                // slower cadence — it changes on strategic ticks, not per poll.
+                void fetchPiracy();
+                piracyTimer = setInterval(fetchPiracy, PIRACY_POLL_INTERVAL_MS);
 
             } catch (err: any) {
                 console.warn(`[GameSync] Sync attempt ${attempt + 1} failed:`, err.message);
@@ -916,6 +968,7 @@ export function useGameSync() {
         return () => {
             cancelled = true;
             if (pollTimer) clearInterval(pollTimer);
+            if (piracyTimer) clearInterval(piracyTimer);
             if (retryTimeout) clearTimeout(retryTimeout);
         };
     }, [playerFactionId, retryCount]);

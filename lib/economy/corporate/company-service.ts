@@ -17,6 +17,7 @@ import {
 } from './company-types';
 import { Resource } from '../../trade-system/types';
 import { TradeRoute } from '../../trade-system/types';
+import { techIdsHaveFlag } from '../../tech/flags';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -45,10 +46,10 @@ export function foundCompany(
     nowSeconds: number,
     unlockedTechIds: Set<string> = new Set()
 ): CharteredCompany {
-    // 0. Tech check — gated on tier-1 trade tech "Trade Route Initialization".
-    // (The old gate id 'eco_tra_1' existed in no tech tree, so chartering
-    // always threw.)
-    if (!unlockedTechIds.has('eco_t1_2')) {
+    // 0. Tech check — gated on the chartering flag, granted today by the tier-1
+    // trade tech "Trade Route Initialization". (The original gate id
+    // 'eco_tra_1' existed in no tech tree, so chartering always threw.)
+    if (!techIdsHaveFlag(unlockedTechIds, 'ENABLE_CORPORATE_CHARTERS')) {
         throw new Error('Faction lacks "Trade Route Initialization" technology to found a company.');
     }
 

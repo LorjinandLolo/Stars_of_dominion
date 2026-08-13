@@ -25,8 +25,8 @@ export const economyTree: Tech[] = [
         prerequisites: [], researchCost: 50,
         seasonScoreTags: [SeasonScoreCategory.TRADE],
         position: { x: 2, y: 0 },
-        unlockFlags: ['ENABLE_TRADE_ROUTES'],
-        mechanicalEffect: 'Unlocks interplanetary trade routes.',
+        unlockFlags: ['ENABLE_TRADE_ROUTES', 'ENABLE_CORPORATE_CHARTERS'],
+        mechanicalEffect: 'Unlocks interplanetary trade routes and the chartering of corporations.',
         tags: ['economy', 'trade'], aiTags: ['economy']
     },
     {
@@ -391,8 +391,8 @@ export const economyTree: Tech[] = [
         prerequisites: [], researchCost: 380,
         seasonScoreTags: [SeasonScoreCategory.WEALTH, SeasonScoreCategory.TRADE],
         position: { x: 10, y: 7 },
-        unlockFlags: [],
-        mechanicalEffect: 'Allows trading with hostile factions or embargoed systems securely in secret.',
+        unlockFlags: ['ENABLE_SHADOW_ECONOMY'],
+        mechanicalEffect: 'Allows trading with hostile factions or embargoed systems securely in secret, and unlocks shadow-economy covert operations.',
         tags: ['economy', 'covert'], aiTags: ['intel']
     },
     {

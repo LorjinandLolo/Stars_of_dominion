@@ -22,6 +22,14 @@ import type {
     CorporateRivalry,
 } from './charter-types';
 import { ASSET_DEFS, RIGHT_DEFS } from './charter-catalog';
+import type { PirateOrganization } from '../../piracy/piracy-types';
+import { activeOrganizations } from '../../piracy/organization-service';
+import {
+    contractCovering,
+    protectionIsWorthIt,
+    protectionQuote,
+    signProtectionContract,
+} from '../../piracy/protection-service';
 import {
     computeInfluence,
     computeStanding,
@@ -177,6 +185,40 @@ function registerForeignPresence(company: CharteredCompany, world: GameWorldStat
     }
 }
 
+/**
+ * The band best placed to sell this company safety on this lane, if buying is
+ * genuinely cheaper than escorting. Returns null when nobody is in a position
+ * to offer, or when the fee is worse than the honest alternative.
+ */
+function cheapestProtectionOffer(
+    company: CharteredCompany,
+    route: { id: string; path: string[] },
+    world: GameWorldState
+): { org: PirateOrganization; fee: number } | null {
+    if (contractCovering(world, route.id)) return null;
+
+    let best: { org: PirateOrganization; fee: number } | null = null;
+    for (const org of activeOrganizations(world)) {
+        // Only a corsair network has the reach to sell protection at all.
+        if (org.stage < 3) continue;
+        const operatesHere = org.fleetIds.some(fleetId => {
+            const systemId = world.movement.fleets.get(fleetId)?.currentSystemId;
+            return !!systemId && route.path.includes(systemId);
+        });
+        if (!operatesHere) continue;
+
+        const tradeRoute = world.economy.tradeRoutes?.get(route.id);
+        if (!tradeRoute || !protectionIsWorthIt(world, org, tradeRoute, true)) continue;
+
+        const fee = protectionQuote(world, org, tradeRoute, true);
+        // The fee is per hour and forever; a company will not sign away more
+        // than it can service out of the capital it was about to spend anyway.
+        if (fee * 24 > company.treasury * 0.05) continue;
+        if (!best || fee < best.fee) best = { org, fee };
+    }
+    return best;
+}
+
 function openRoute(company: CharteredCompany, world: GameWorldState, nowSeconds: number): boolean {
     const routes = company.activeTradeRouteIds
         .map(id => world.economy.tradeRoutes?.get(id))
@@ -188,6 +230,27 @@ function openRoute(company: CharteredCompany, world: GameWorldState, nowSeconds:
 
     // Money spent on hulls and handling: the lane carries more, and is safer.
     const route = routes.reduce((worst, r) => (r.piracyRisk > worst.piracyRisk ? r : worst), routes[0]);
+
+    // ...unless somebody is already selling safety on that lane for less than
+    // it costs to buy. A company does not care whether the cargo is technically
+    // legal; it cares whether it gets delivered. See docs/pirate-system/shadow-economy.md §4.
+    const racket = cheapestProtectionOffer(company, route, world);
+    if (racket) {
+        const contract = signProtectionContract(
+            world, racket.org, company.id, 'company', [route.id],
+            { exclusiveDefence: true, secret: true }
+        );
+        if (contract) {
+            logCorporateAction(company, {
+                type: 'opened_route',
+                summary: `Reached a quiet arrangement covering its ${route.id} lane `
+                    + `at ${Math.round(contract.feePerHour).toLocaleString()}cr/hr — cheaper than escorts.`,
+                timestamp: nowSeconds,
+            });
+            return true;
+        }
+    }
+
     company.treasury -= cost;
     route.routePriority = Math.min(100, (route.routePriority ?? 1) * 1.15 + 0.5);
     route.piracyRisk = Math.max(0, (route.piracyRisk ?? 0) - 0.05);
