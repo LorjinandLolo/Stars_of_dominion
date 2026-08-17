@@ -142,28 +142,78 @@ changed). Players see a brief interruption while the app container swaps.
 
 ## 3. Backups
 
-The entire universe lives in one Postgres database — one `pg_dump` cron line
-covers it:
+The entire universe lives in one Postgres database — accounts, the world, and
+now its written history, which cannot be regenerated. `scripts/backup-db.sh`
+dumps it.
+
+The script is deliberately suspicious of its own output, because the failure
+that makes backups worthless is the one that looks like success: it writes to a
+temporary file, checks gzip integrity, checks the size, checks the dump
+actually contains the game's tables, and only then replaces today's file. A bad
+run leaves yesterday's good copy untouched and records why in
+`~/backups/backup.log`.
+
+Test it once by hand first:
 
 ```bash
-mkdir -p ~/backups
+./scripts/backup-db.sh && ls -lh ~/backups
+```
+
+Then schedule it:
+
+```bash
 crontab -e
 ```
 
-Add:
+Add (one line, absolute path — cron has no notion of your shell or `~`):
 
 ```
-0 4 * * * docker exec stardom-postgres pg_dump -U stars stars_dominion | gzip > ~/backups/stardom-$(date +\%F).sql.gz
+0 4 * * * /home/logo/servers/stardom/Stars_of_dominion/scripts/backup-db.sh
 ```
 
-Nightly 04:00 dump, one file per day. Restore with:
+Nightly at 04:00, one file per day, pruning anything older than 14 days.
+Adjust with `KEEP_DAYS=30` in front of the path if you want longer.
+
+Check it ran:
 
 ```bash
-gunzip -c ~/backups/stardom-2026-08-01.sql.gz | docker exec -i stardom-postgres psql -U stars -d stars_dominion
+tail -5 ~/backups/backup.log
 ```
 
-Prune old dumps occasionally, or add a second cron line:
-`0 5 * * * find ~/backups -name 'stardom-*.sql.gz' -mtime +14 -delete`
+### Restoring
+
+```bash
+gzip -dc ~/backups/stardom-2026-08-14.sql.gz | docker exec -i stardom-postgres psql -U stars -d stars_dominion
+```
+
+Restore into a scratch database first if you only want to inspect a backup
+rather than replace the live galaxy:
+
+```bash
+docker exec -i stardom-postgres psql -U stars -d postgres -c 'create database restore_test;'
+gzip -dc ~/backups/stardom-2026-08-14.sql.gz | docker exec -i stardom-postgres psql -U stars -d restore_test
+docker exec -i stardom-postgres psql -U stars -d restore_test -c 'select id, length(snapshot) from multiplayer_sessions;'
+```
+
+A healthy restore shows `default-session` with a snapshot of several megabytes.
+Drop the scratch database afterwards with
+`docker exec -i stardom-postgres psql -U stars -d postgres -c 'drop database restore_test;'`.
+
+**A backup you have never restored is a rumour.** The round trip above was run
+against a real dump of this game before this was written; do it yourself once
+on the server, so the first time you restore is not the night you need it.
+
+### Off the laptop
+
+Everything above still lives on one disk. When you care enough, copy the
+dumps somewhere else — from your Windows PC:
+
+```bash
+scp logo@<server-ip>:~/backups/stardom-*.sql.gz .
+```
+
+or schedule the same in reverse. A second copy on a machine that can fail
+independently is what makes it a backup rather than a convenience.
 
 ## 4. Troubleshooting
 
