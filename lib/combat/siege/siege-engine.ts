@@ -175,7 +175,7 @@ export class GroundSiegeEngine {
         let deployed = 0;
         
         // Priority: Armor/Infantry on frontline
-        const types: GroundUnitType[] = ['ARMOR', 'INFANTRY', 'ANTI_ARMOR', 'AIRBORNE', 'ARTILLERY', 'SPECIAL_OPS', 'MILITIA'];
+        const types: GroundUnitType[] = ['ELDER_INFERNOID', 'ARMOR', 'INFANTRY', 'ANTI_ARMOR', 'AIRBORNE', 'ARTILLERY', 'SPECIAL_OPS', 'MILITIA'];
         
         for (const type of types) {
             const count = state.unitComposition[type] || 0;
@@ -200,7 +200,9 @@ export class GroundSiegeEngine {
     private static applyDamage(state: any, damage: number): Partial<Record<GroundUnitType, number>> {
         let remainingDamage = damage;
         const losses: Partial<Record<GroundUnitType, number>> = {};
-        const types: GroundUnitType[] = ['MILITIA', 'INFANTRY', 'AIRBORNE', 'ANTI_ARMOR', 'ARMOR', 'ARTILLERY', 'SPECIAL_OPS'];
+        // Elders last, for the same reason as district-battle.ts: a type missing
+        // from this array takes literally zero casualties, silently.
+        const types: GroundUnitType[] = ['MILITIA', 'INFANTRY', 'AIRBORNE', 'ANTI_ARMOR', 'ARMOR', 'ARTILLERY', 'SPECIAL_OPS', 'ELDER_INFERNOID'];
 
         for (const type of types) {
             const count = state.unitComposition[type] || 0;

@@ -28,7 +28,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
 
-    const [takenFactions, setTakenFactions] = useState<Record<string, { userId: string, displayName: string }>>({});
+    const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
 
     useEffect(() => {
@@ -47,11 +47,12 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             .then(data => {
                 if (data.claimedFactions) {
                     setTakenFactions(data.claimedFactions);
-                     // If I already claimed something, pre-select it
-                     const myClaim = Object.entries(data.claimedFactions).find(([fid, data]: [string, any]) => data.userId === currentUser?.$id);
-                     if (myClaim) {
-                          setSelectedId(myClaim[0]);
-                          setPlayerFactionId(myClaim[0]);
+                     // If I already claimed something, pre-select it. The server
+                     // resolves "mine" from the session — the roster no longer
+                     // carries other players' account ids to compare against.
+                     if (data.myFactionId) {
+                          setSelectedId(data.myFactionId);
+                          setPlayerFactionId(data.myFactionId);
                      }
                 }
             })
@@ -60,10 +61,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
     const handleSelect = (factionId: string) => {
         // If we already have a lock in the DB, we can't change it here
-        const myClaim = Object.entries(takenFactions).find(([fid, data]: [string, any]) => data.userId === currentUser?.$id);
-        if (myClaim) return; 
+        const myClaim = Object.entries(takenFactions).find(([, data]: [string, any]) => data.isMine);
+        if (myClaim) return;
 
-        if (takenFactions[factionId] && takenFactions[factionId].userId !== currentUser?.$id) return; // Locked by someone else
+        if (takenFactions[factionId] && !takenFactions[factionId].isMine) return; // Locked by someone else
         setSelectedId(factionId);
     };
 
@@ -101,7 +102,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
     const selected = factions.find(f => f.id === selectedId);
     const hovered = factions.find(f => f.id === hoveredId);
-    const currentUserHasClaim = currentUser && Object.values(takenFactions).some((d: any) => d.userId === currentUser?.$id);
+    const currentUserHasClaim = currentUser && Object.values(takenFactions).some((d: any) => d.isMine);
 
     return (
         <div
@@ -179,8 +180,8 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         const isSelected = selectedId === faction.id;
                         const isHovered = hoveredId === faction.id;
                         const claimData = takenFactions[faction.id];
-                        const isOwnedByMe = claimData && claimData.userId === currentUser?.$id;
-                        const isOwnedByOthers = claimData && claimData.userId !== currentUser?.$id;
+                        const isOwnedByMe = claimData && claimData.isMine;
+                        const isOwnedByOthers = claimData && !claimData.isMine;
                         const isLocked = currentUserHasClaim && isOwnedByMe;
 
                         return (

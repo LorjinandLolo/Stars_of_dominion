@@ -120,9 +120,30 @@ function movementIntentVisible(sensorStrength: number, fleet: Fleet): boolean {
  * Compute a full per-system visibility snapshot for one faction.
  * Call this every major tick or when sensor sources change.
  */
+/**
+ * Temporary overrides applied on top of sensor coverage.
+ *
+ * This exists because visibility is rebuilt from scratch every tick and never
+ * downgrades a reveal stage (see pickHigherStage), so an ability that hides or
+ * exposes a system cannot express itself by writing into the map from outside —
+ * a hide is overruled by the never-downgrade rule and a reveal loses its
+ * observed fleets the moment sensors are recomputed.
+ *
+ * Passed in as plain Sets by the caller so this module stays free of any
+ * knowledge of who is doing the hiding: the tick resolves the faction-specific
+ * part and hands over ids.
+ */
+export interface VisibilityOverride {
+    /** Systems this faction cannot see at all, whatever its sensors say. */
+    hidden?: Set<string>;
+    /** Systems this faction sees completely, whatever its sensors say. */
+    revealed?: Set<string>;
+}
+
 export function computeVisibility(
     factionId: string,
-    world: MovementWorldState
+    world: MovementWorldState,
+    override?: VisibilityOverride
 ): FactionVisibility {
     const coverage = aggregateSensorCoverage(factionId, world.sensorSources, world.systems);
     const nowISO = new Date(world.nowSeconds * 1000).toISOString();
@@ -141,6 +162,25 @@ export function computeVisibility(
 
     for (const [sysId, sys] of world.systems) {
         const strength = coverage.get(sysId) ?? 0;
+
+        // A veiled system is simply not there for this faction — dropped before
+        // the never-downgrade rule can reassert a stage it saw last week.
+        if (override?.hidden?.has(sysId)) continue;
+
+        // A system held open to this faction is seen completely, sensors or not,
+        // including every fleet in it. Written here rather than merged in
+        // afterwards because observedFleetIds is derived from sensor strength
+        // below and would otherwise be recomputed away on the next tick.
+        if (override?.revealed?.has(sysId)) {
+            visibility[sysId] = {
+                revealStage: 'surveyed',
+                lastSeenAt: nowISO,
+                visibleTags: visibleTagsForStage('surveyed', sys),
+                observedFleetIds: (foreignFleetsBySystem.get(sysId) ?? []).map(f => f.id),
+                movementIntentVisible: true,
+            };
+            continue;
+        }
 
         // Preserve previous reveal stage (never downgrade past pinged even when out of range)
         const existing = prevVisibility?.[sysId];

@@ -148,11 +148,24 @@ export function upgradeCost(trackId: InfrastructureTrackId, currentLevel: number
     return scaled;
 }
 
-/** Seconds to raise a track by one level, compounded the same way. */
-export function upgradeDuration(trackId: InfrastructureTrackId, currentLevel: number): number {
+/**
+ * Seconds to raise a track by one level, compounded the same way.
+ *
+ * `speedMultiplier` is the ONLY modifier anywhere on this path — nothing else
+ * in the engine scales infrastructure build time, which is what makes it a
+ * clean hook: the result cannot be saturated by a clamp or overwritten by a
+ * later recompute. (Contrast planet.infrastructureLevel, which is derived and
+ * rewritten wholesale by recomputeInfrastructureLevel every economy tick.)
+ */
+export function upgradeDuration(
+    trackId: InfrastructureTrackId,
+    currentLevel: number,
+    speedMultiplier = 1,
+): number {
     const def = INFRASTRUCTURE_TRACK_BY_ID[trackId];
     if (!def) return 0;
-    return def.buildTimeSeconds * Math.pow(1.35, currentLevel);
+    const speed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
+    return (def.buildTimeSeconds * Math.pow(1.35, currentLevel)) / speed;
 }
 
 export interface UpgradeCheck {
@@ -164,7 +177,8 @@ export interface UpgradeCheck {
 
 export function canUpgradeTrack(
     planet: ConstructionPlanet,
-    trackId: InfrastructureTrackId
+    trackId: InfrastructureTrackId,
+    speedMultiplier = 1,
 ): UpgradeCheck {
     const def = INFRASTRUCTURE_TRACK_BY_ID[trackId];
     if (!def) return { allowed: false, reason: 'Unknown infrastructure track' };
@@ -180,7 +194,7 @@ export function canUpgradeTrack(
     return {
         allowed: true,
         cost: upgradeCost(trackId, track.level),
-        durationSeconds: upgradeDuration(trackId, track.level),
+        durationSeconds: upgradeDuration(trackId, track.level, speedMultiplier),
     };
 }
 
@@ -191,9 +205,10 @@ export function canUpgradeTrack(
 export function startTrackUpgrade(
     planet: ConstructionPlanet,
     trackId: InfrastructureTrackId,
-    now: number
+    now: number,
+    speedMultiplier = 1,
 ): { success: boolean; error?: string; completesAtSeconds?: number; cost?: BuildingCost } {
-    const check = canUpgradeTrack(planet, trackId);
+    const check = canUpgradeTrack(planet, trackId, speedMultiplier);
     if (!check.allowed) return { success: false, error: check.reason };
 
     const network = ensureInfrastructureNetwork(planet);

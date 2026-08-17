@@ -38,6 +38,9 @@ export const ARCHETYPE_CORE: Record<PlanetArchetype, [string, string]> = {
     toxic:       ['#7e22ce', '#2e1065'],
     gaia:        ['#16a34a', '#14532d'],
     montane:     ['#78716c', '#292524'],
+    swamp:       ['#3f6212', '#1a2e05'],
+    jungle:      ['#15803d', '#052e16'],
+    arcology:    ['#475569', '#1e1b4b'],
 };
 
 export const ARCHETYPE_LABEL: Record<PlanetArchetype, string> = {
@@ -49,4 +52,7 @@ export const ARCHETYPE_LABEL: Record<PlanetArchetype, string> = {
     toxic: 'Toxic',
     gaia: 'Gaia',
     montane: 'Montane',
+    swamp: 'Swamp',
+    jungle: 'Jungle',
+    arcology: 'Arcology',
 };

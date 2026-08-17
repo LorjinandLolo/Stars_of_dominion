@@ -123,6 +123,27 @@ import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-s
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
+import { checkCeasefireGate, recordTrophyKill } from '../lib/factions/kaerruun';
+import { administerSerum, checkSerumGate, infrastructureSpeedFor, recordConquest } from '../lib/factions/sarrak';
+import { checkAggressionGate, recordGrievance } from '../lib/factions/buthari';
+import { deployChampion, isPlanetScorched, ZUGHRA_ATTRITION } from '../lib/factions/buthari-council';
+import {
+    captureResistance,
+    painMultiplier,
+    recordDetonation,
+    canRaiseElder,
+    chargeElder,
+    ELDER_UNIT_TYPE,
+} from '../lib/factions/infernoid';
+import { terrainCostFor } from '../lib/factions/terrain-affinity';
+import { orderBudget, recordDeferred, isUnderFafo } from '../lib/factions/movanite';
+import { chargeUnjustifiedWar, chargeHonorLock, isWarDeclaration } from '../lib/factions/leopantheri';
+import { shouldDeliberate, recordDeliberation } from '../lib/factions/rhimetals';
+import { capacolaSurge, declareVendetta } from '../lib/factions/gabagoon';
+import { issueSovereignLoan, forecloseOn } from '../lib/factions/banking-clan';
+import { ensurePlanetDemographics, refreshPlanetDemographics } from '../lib/galaxy/population-composition';
+import { districtTraitsFor } from '../lib/factions/traits-service';
+import { ensureFactionTraits } from '../lib/factions/traits-service';
 import {
     charterNewCompany,
     getOrCreateFactionState,
@@ -223,6 +244,63 @@ const SESSION_DOC_ID = 'default-session';
 // Authoritative pirate state, kept out of the snapshot the sync API serves.
 const PIRACY_DOC_ID = 'default-session-piracy';
 
+/**
+ * What actually comes ashore when a fleet lands troops.
+ *
+ * This used to be fabricated on the spot — `{ INFANTRY: basePower * 4, ARMOR:
+ * basePower * 1 }` — which meant `fleet.transportedArmyIds` was maintained by
+ * the embark handler, rendered by the UI, and then thrown away at the beachhead.
+ * No unit type outside those two could ever reach an invasion, no matter what
+ * was loaded, which is what blocked Elder Infernoids and would have blocked any
+ * other bespoke ground unit.
+ *
+ * The fallback is NOT vestigial and must stay: armies are created at exactly one
+ * site (the MIL_RAISE_ARMY handler), so the AI never has any embarked. Removing
+ * it would silently reduce every AI invasion to zero troops.
+ *
+ * Landed armies are CONSUMED — their composition moves to the beachhead and the
+ * army record is removed from the fleet and the world. Leaving them aboard would
+ * let the same titans land twice, and would double-count them in the Elder cap.
+ */
+function landingComposition(
+    world: GameWorldState,
+    fleet: any,
+): { composition: Partial<Record<GroundUnitType, number>>; troops: number; consumedArmyIds: string[]; derived: boolean } {
+    const composition: Partial<Record<GroundUnitType, number>> = {};
+    const consumedArmyIds: string[] = [];
+    let troops = 0;
+
+    for (const armyId of (fleet.transportedArmyIds ?? [])) {
+        const army = (world as any).movement?.armies?.get?.(armyId);
+        if (!army || army.factionId !== fleet.factionId) continue;
+        for (const [type, n] of Object.entries(army.composition ?? {})) {
+            const count = Math.max(0, Math.floor(Number(n) || 0));
+            if (count <= 0) continue;
+            composition[type as GroundUnitType] = (composition[type as GroundUnitType] ?? 0) + count;
+            troops += count;
+        }
+        consumedArmyIds.push(armyId);
+    }
+
+    if (troops > 0) return { composition, troops, consumedArmyIds, derived: true };
+
+    // Nothing aboard — the pre-existing fabrication, unchanged.
+    const fabricated: Partial<Record<GroundUnitType, number>> = {
+        INFANTRY: fleet.basePower * 4,
+        ARMOR: fleet.basePower * 1,
+    };
+    return { composition: fabricated, troops: fleet.basePower * 5, consumedArmyIds: [], derived: false };
+}
+
+/** Removes armies that have gone ashore, so nothing lands twice. */
+function consumeLandedArmies(world: GameWorldState, fleet: any, armyIds: string[]): void {
+    if (!armyIds.length) return;
+    for (const armyId of armyIds) {
+        (world as any).movement?.armies?.delete?.(armyId);
+    }
+    fleet.transportedArmyIds = (fleet.transportedArmyIds ?? []).filter((id: string) => !armyIds.includes(id));
+}
+
 const POLL_INTERVAL_MS = 5000; // Run every 5 seconds
 // Game clock: 75 game-seconds per 5s tick (15x real time). This used to be a
 // 15s advance at the top of the tick plus a hidden extra 60s right before the
@@ -277,6 +355,18 @@ const IDLE_ORDER_POLL_EVERY = 4;
 const IDLE_ORDER_POLL_AFTER_EMPTY = 24;
 let emptyOrderPolls = 0;
 let orderPollSkip = 0;
+
+/**
+ * Order ids the Rhimetal hive has already deliberated over.
+ *
+ * Deliberation delays an unprovoked strike by exactly one poll, so an id is
+ * recorded on the tick it is held and executed on the next — without this latch
+ * the same order would be deferred forever and the doctrine would read as a
+ * silent refusal rather than a delay. In-memory on purpose: a worker restart
+ * simply lets the order through, which fails toward acting rather than toward
+ * an order the player can never issue.
+ */
+const deliberatedOrders = new Set<string>();
 
 /**
  * Loads the authoritative world from the session snapshot + faction shards
@@ -335,6 +425,12 @@ async function loadWorld(): Promise<GameWorldState> {
     // Charter Corporations: the political ledgers plus per-company backfill for
     // snapshots written before companies had charters, personalities or a board.
     try { ensureCorporateState(world); } catch (e) { console.error('[Tick Worker] Corporate bootstrap failed:', e); }
+    // Per-faction bespoke mechanics. After the shard restore above, because it
+    // reads economy.factions — those records come from shards, not the snapshot.
+    try { ensureFactionTraits(world); } catch (e) { console.error('[Tick Worker] Faction-traits bootstrap failed:', e); }
+    // Who lives on each world. After faction traits, because a Sarrak slave
+    // world renders its conquered population as unfree rather than resident.
+    try { ensurePlanetDemographics(world); } catch (e) { console.error('[Tick Worker] Demographics bootstrap failed:', e); }
     if (!world.movement.sorties) world.movement.sorties = new Map();
 
     // Normalize snapshot data: systems saved by older snapshots can be missing
@@ -441,7 +537,42 @@ async function runGameTick() {
 
         if (pendingOrders.length > 0) {
             console.log(`[Tick Worker] Executing ${pendingOrders.length} player orders...`);
+            // Movanite command bottleneck: a per-faction ceiling on how many
+            // orders clear the subcommittees this tick. Infinity for everyone
+            // else, so this loop is unchanged for them by construction.
+            //
+            // Over-budget orders are DEFERRED, never dropped: we skip execution
+            // and leave the row `processed: false`, so the very next poll picks
+            // it up, still in createdAt order. A dropped order would be a silent
+            // failure — the exact shape this codebase keeps producing.
+            const orderBudgets = new Map<string, number>();
+            const deferredByFaction = new Map<string, number>();
             for (const orderDoc of pendingOrders) {
+                const fid = orderDoc.factionId;
+                if (!orderBudgets.has(fid)) orderBudgets.set(fid, orderBudget(world, fid));
+                const left = orderBudgets.get(fid)!;
+                if (left <= 0) {
+                    deferredByFaction.set(fid, (deferredByFaction.get(fid) ?? 0) + 1);
+                    continue;
+                }
+                // Rhimetal doctrine of delay. Reuses the same defer-not-drop
+                // machinery: the hive discusses an unprovoked strike for a tick,
+                // and the order lands one tick late rather than being refused.
+                // Distinct from the Buthari (gated) and Leo-pantheri (priced) —
+                // the source says the doctrine may DELAY aggressive action.
+                if (!deliberatedOrders.has(orderDoc.id)) {
+                    try {
+                        const payloadPeek = JSON.parse(orderDoc.payload);
+                        const target = resolveOrderTargetFaction(world, orderDoc.actionId, payloadPeek);
+                        if (shouldDeliberate(world, fid, orderDoc.actionId, target)) {
+                            deliberatedOrders.add(orderDoc.id);
+                            recordDeliberation(world, fid);
+                            console.log(`[Tick Worker] ${fid}: the collective deliberates ${orderDoc.actionId}.`);
+                            continue;
+                        }
+                    } catch { /* malformed payload falls through to the normal path */ }
+                }
+                orderBudgets.set(fid, left - 1);
                 try {
                     const payload = JSON.parse(orderDoc.payload);
                     executeOrder(world, orderDoc.actionId, payload, orderDoc.factionId);
@@ -459,6 +590,10 @@ async function runGameTick() {
                         try { await prisma.gameOrder.delete({ where: { id: orderDoc.id } }); } catch { /* best effort */ }
                     }
                 }
+            }
+            for (const [fid, count] of deferredByFaction) {
+                recordDeferred(world, fid, count);
+                console.log(`[Tick Worker] ${fid}: ${count} order(s) held over by bureaucratic gridlock.`);
             }
         }
 
@@ -529,26 +664,74 @@ async function runGameTick() {
         // 5.6. Multi-Planet Seeding — ensures every faction capital has ≥2 planets.
         // Idempotent: skips systems that already have orbit-2 planets.
         // Once seeded, the planets are part of the snapshot and synced to all clients.
+        // Keyed by FACTION, not by system id. It used to be keyed by the four
+        // hardcoded capital system ids, so the ten factions with placeholder
+        // capitals silently got no secondary planets at all — and any future
+        // capital move would have quietly orphaned the table again.
         const SECONDARY_PLANET_SPECS: Record<string, Array<{ name: string; planetType: string; ownerId: string; tags: string[] }>> = {
-            'alpha-5b34961e18bb6fd14903': [ // Aurelian Combine capital
+            'faction-aurelian': [
                 { name: 'Aurel Minor',  planetType: 'industrial',   ownerId: 'faction-aurelian',   tags: ['mining_world'] },
                 { name: 'Aurel Prime II', planetType: 'agricultural', ownerId: 'faction-aurelian', tags: ['fertile_soil'] },
             ],
-            'alpha-fe148b9a69a680fa14a3': [ // Vektori capital
+            'faction-vektori': [
                 { name: 'Vek Station',  planetType: 'fortress',     ownerId: 'faction-vektori',    tags: ['fortified'] },
                 { name: 'Vek Fringe',   planetType: 'moon',         ownerId: '',                   tags: ['barren'] },
             ],
-            'alpha-1acb646b529592834b59': [ // Null Syndicate capital
+            'faction-null-syndicate': [
                 { name: 'Node-7',       planetType: 'research',     ownerId: 'faction-null-syndicate', tags: ['research_hub'] },
                 { name: 'Null Drift',   planetType: 'standard',     ownerId: '',                   tags: ['arid'] },
             ],
-            'alpha-10fae8cf89590243337b': [ // Covenant capital
+            'faction-covenant': [
                 { name: 'Sanctum II',   planetType: 'standard',     ownerId: 'faction-covenant',   tags: ['holy_world'] },
                 { name: 'The Void Eye', planetType: 'moon',         ownerId: 'faction-covenant',   tags: ['anomaly'] },
             ],
+            'nexulan_convergence': [
+                { name: 'Compute Node Theta', planetType: 'research', ownerId: 'nexulan_convergence', tags: ['research_hub'] },
+                { name: 'Refinery Moon',   planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+            ],
+            'banking_clan': [
+                { name: 'The Depository',  planetType: 'industrial', ownerId: 'banking_clan',        tags: ['trade_hub'] },
+                { name: 'Free Port',       planetType: 'standard',   ownerId: '',                     tags: ['trade_hub'] },
+            ],
+            'faction-rhimetals': [
+                { name: 'Updraft Spire',   planetType: 'research',   ownerId: 'faction-rhimetals',   tags: ['research_hub'] },
+                { name: 'Storm Shelf',     planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+            ],
+            'faction-gabagoonians': [
+                { name: 'Capacola Terrace', planetType: 'agricultural', ownerId: 'faction-gabagoonians', tags: ['fertile_soil'] },
+                { name: 'Canteen Moon',    planetType: 'moon',       ownerId: 'faction-gabagoonians', tags: ['barren'] },
+            ],
+            'faction-infernoids': [
+                { name: 'The Cinder Yards', planetType: 'industrial', ownerId: 'faction-infernoids',  tags: ['mining_world'] },
+                { name: 'Ashfall',         planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+            ],
+            'faction-movanites': [
+                { name: 'Deep Canyon Works', planetType: 'industrial', ownerId: 'faction-movanites',  tags: ['mining_world'] },
+                { name: 'The Overflow',    planetType: 'standard',   ownerId: 'faction-movanites',   tags: ['arid'] },
+            ],
+            'faction-leopantheri': [
+                { name: 'Starlit Mesa',    planetType: 'research',   ownerId: 'faction-leopantheri', tags: ['research_hub'] },
+                { name: 'The Duelling Ground', planetType: 'standard', ownerId: 'faction-leopantheri', tags: ['holy_world'] },
+            ],
+            'faction-buthari': [
+                { name: 'Terrace Farms',   planetType: 'agricultural', ownerId: 'faction-buthari',   tags: ['fertile_soil'] },
+                { name: 'The High Altar',  planetType: 'fortress',   ownerId: 'faction-buthari',     tags: ['fortified'] },
+            ],
+            'faction-sarrak': [
+                { name: 'The Mud Arenas',  planetType: 'fortress',   ownerId: 'faction-sarrak',      tags: ['fortified'] },
+                { name: 'Rootworks',       planetType: 'agricultural', ownerId: 'faction-sarrak',    tags: ['fertile_soil'] },
+            ],
+            'faction-kaerruun': [
+                { name: 'The Hunting Range', planetType: 'fortress', ownerId: 'faction-kaerruun',    tags: ['fortified'] },
+                { name: 'Trophy Moon',     planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+            ],
         };
 
-        for (const [systemId, specs] of Object.entries(SECONDARY_PLANET_SPECS)) {
+        for (const [specFactionId, specs] of Object.entries(SECONDARY_PLANET_SPECS)) {
+            const systemId = (world.economy.factions.get(specFactionId) as any)?.capitalSystemId;
+            // A faction whose capital does not resolve gets nothing — seeding it
+            // is what produced the orphan-planet pile in the first place.
+            if (!systemId || !world.movement.systems.has(systemId)) continue;
             for (let i = 0; i < specs.length; i++) {
                 const planetId = `planet-${systemId}-orbit-${i + 2}`;
                 if (!world.construction.planets.has(planetId)) {
@@ -952,6 +1135,31 @@ const POLITICAL_CAPITAL_COSTS: Record<string, number> = {
  * Maps database orders to in-memory world state mutations.
  * includes server-side validation to ensure players only control their own assets.
  */
+/**
+ * Best-effort "who is this order aimed at", for gates that must be per-target.
+ *
+ * Most payloads name a planet or a fleet rather than a faction, so this returns
+ * undefined more often than not — callers must treat that as "unknown", not as
+ * "nobody". Cheap lookups only; no pathfinding, no scans.
+ */
+function resolveOrderTargetFaction(world: any, actionId: string, payload: any): string | undefined {
+    if (!payload) return undefined;
+    if (payload.targetFactionId) return payload.targetFactionId;
+    if (payload.enemyFactionId) return payload.enemyFactionId;
+
+    const planetId = payload.planetId ?? payload.targetPlanetId;
+    if (planetId) {
+        const owner = world.construction?.planets?.get(planetId)?.ownerId;
+        if (owner) return owner;
+    }
+    const fleetId = payload.targetFleetId ?? payload.enemyFleetId;
+    if (fleetId) {
+        const owner = world.movement?.fleets?.get(fleetId)?.factionId;
+        if (owner) return owner;
+    }
+    return undefined;
+}
+
 function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
 
@@ -964,11 +1172,51 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         return;
     }
 
+    // Faction rite gate — the Kaer'Ruun Bloodmoon forbids acts of war outright
+    // for the duration. Runs alongside the tech gate, ahead of any charge, for
+    // the same reason: a refused order must never be billed.
+    const rite = checkCeasefireGate(world, factionId, actionId);
+    if (!rite.allowed) {
+        recordOrderFailure(world, factionId, actionId, rite.reason!);
+        return;
+    }
+
+    // Sarrak Divine Serum: refuses non-Sarrak, and refuses a host still coming
+    // down from the last dose. Ahead of the charge for the same reason.
+    const serum = checkSerumGate(world, factionId, actionId);
+    if (!serum.allowed) {
+        recordOrderFailure(world, factionId, actionId, serum.reason!);
+        return;
+    }
+
+    // The Buthari never strike first. Kinetic verbs only — their espionage,
+    // sanctions and pirate proxies stay open, which is the whole point: this is
+    // a redirect, not a mute button. Resolve the target where the payload makes
+    // it cheap, so a grievance against one faction does not license a war on a
+    // bystander.
+    const orderTarget = resolveOrderTargetFaction(world, actionId, payload);
+    const aggression = checkAggressionGate(world, factionId, actionId, orderTarget);
+    if (!aggression.allowed) {
+        recordOrderFailure(world, factionId, actionId, aggression.reason!);
+        return;
+    }
+
     // Affordability gate — deducts from the live economy on success.
     if (!chargeOrderCost(world, factionId, actionId)) {
         recordOrderFailure(world, factionId, actionId, 'Insufficient resources in the treasury.');
         return;
     }
+
+    // The Leo-pantheri pay in honour, not permission. Charged HERE — after the
+    // affordability gate, so an order that never happened costs them nothing,
+    // and at the one chokepoint every act of war and every underhanded order
+    // passes through, rather than at three separate handlers.
+    //
+    // Deliberately a price and not a gate: unlike the Buthari they CAN strike
+    // first. War is their last resort, not an impossibility, so a player who
+    // decides the price is worth paying is playing them correctly.
+    if (isWarDeclaration(actionId)) chargeUnjustifiedWar(world, factionId, orderTarget);
+    chargeHonorLock(world, factionId, actionId);
 
     // Authority gate — acts of state cost political capital, not credits.
     // Factions without a government (AI shells, pirates) are never gated.
@@ -1040,6 +1288,12 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (!planet || !fleet || fleet.factionId !== factionId) return;
             if (planet.ownerId === factionId) return; // Already owner
 
+            // Invasion never calls registerActOfWar, so this is the only place
+            // the victim learns who landed on them. Without it a Buthari player
+            // who is invaded but never formally declared upon would stay
+            // permanently unable to answer.
+            recordGrievance(world, planet.ownerId, factionId, 'attacked');
+
             // Orbital Phase 3: a defended orbit has to fall before anything lands.
             // The order still does something useful when it cannot land — the
             // fleet works the orbital layer over — so repeating it grinds the
@@ -1082,6 +1336,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     isUnderSiege: true
                 };
 
+                // What is aboard is what comes ashore. See landingComposition.
+                const landing = landingComposition(world, fleet);
+
                 planet.siege = {
                     siegeId: `siege-${payload.planetId}-${Date.now()}`,
                     planetId: payload.planetId,
@@ -1097,9 +1354,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                         siegeId: `siege-${payload.planetId}-${Date.now()}`,
                         attackerEmpireId: factionId,
                         sourceFleetIds: [payload.fleetId],
-                        totalLandedTroops: fleet.basePower * 5,
+                        totalLandedTroops: landing.troops,
                         reserveTroops: 0,
-                        unitComposition: { INFANTRY: fleet.basePower * 4, ARMOR: fleet.basePower * 1 } as any,
+                        unitComposition: landing.composition as any,
                         supply: 1000,
                         maxSupply: 1000,
                         morale: 100,
@@ -1135,12 +1392,49 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     ];
                 }
                 (planet as any).garrison = defenseState;
+                // Ashore now, so no longer aboard. Skipping this would let the
+                // same army land on a second world and would double-count its
+                // Elders against the cap.
+                consumeLandedArmies(world, fleet, landing.consumedArmyIds);
                 const lz = planet.siege.districts?.landingZones ?? [];
-                console.log(`[Tick Worker] LANDING on ${planet.name} by ${factionId} — beachhead at district${lz.length > 1 ? 's' : ''} ${lz.join(', ')}`);
+                const manifest = Object.entries(landing.composition)
+                    .map(([t, n]) => `${n}x ${t}`).join(', ');
+                console.log(
+                    `[Tick Worker] LANDING on ${planet.name} by ${factionId} — beachhead at district${lz.length > 1 ? 's' : ''} ${lz.join(', ')}` +
+                    ` — ${landing.derived ? 'landed from transports' : 'improvised force'}: ${manifest}`
+                );
             } else if (planet.siege.attackerEmpireId === factionId) {
-                // Reinforce
-                planet.siege.attackerState.unitComposition.INFANTRY += fleet.basePower * 5;
-                planet.siege.attackerState.totalLandedTroops += fleet.basePower * 5;
+                // Reinforce. Same rule as the landing: reinforce with what is
+                // actually aboard, and only fall back to raw fleet power when
+                // nothing is.
+                const reinforcement = landingComposition(world, fleet);
+                const comp = planet.siege.attackerState.unitComposition as any;
+                if (reinforcement.derived) {
+                    for (const [type, n] of Object.entries(reinforcement.composition)) {
+                        comp[type] = (comp[type] ?? 0) + (n as number);
+                    }
+                    consumeLandedArmies(world, fleet, reinforcement.consumedArmyIds);
+                } else {
+                    comp.INFANTRY = (comp.INFANTRY ?? 0) + fleet.basePower * 5;
+                }
+                planet.siege.attackerState.totalLandedTroops += reinforcement.troops;
+
+                // Reinforcements have to reach the board, not just the ledger.
+                // Without this the composition grows and no new pieces ever
+                // appear in the district war — the exact wired-but-dead shape
+                // this codebase keeps producing.
+                const war = planet.siege.districts;
+                if (war) {
+                    const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+                    const added = seedFormations(
+                        surf, war, 'attacker',
+                        reinforcement.derived
+                            ? reinforcement.composition
+                            : { INFANTRY: fleet.basePower * 5 },
+                        `f-a-r-${world.nowSeconds}`,
+                    );
+                    war.formations = [...(war.formations ?? []), ...added];
+                }
                 console.log(`[Tick Worker] SIEGE REINFORCED on ${planet.name} by ${factionId}`);
             }
             break;
@@ -1194,7 +1488,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 break;
             }
 
-            const legal = legalMoves(surf, siege.districts, formation);
+            // Heat immunity: hot ground costs the Infernoids what open ground
+            // costs anyone else. This is the authoritative check — the client's
+            // reach preview passes the same override, so the two agree.
+            const legal = legalMoves(surf, siege.districts, formation, undefined, terrainCostFor(world, factionId));
             if (!legal.some(o => o.sectorIndex === payload.sectorIndex)) {
                 recordOrderFailure(world, factionId, actionId, 'That district is out of reach this cycle.');
                 break;
@@ -1373,6 +1670,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
                 return;
             }
+            // Bombardment also bypasses registerActOfWar — same reason as the
+            // invasion handler: the victim must learn who is shelling them.
+            recordGrievance(world, planet.ownerId, factionId, 'attacked');
             // History: a gunnery doctrine is written by the crews who fly it.
             bumpMetric(world, factionId, 'mil.bombardmentsConducted');
             // Orbital structures are shot at before the surface is. While the
@@ -1663,7 +1963,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 break;
             }
 
-            const check = canUpgradeTrack(planet, payload.trackId);
+            // Slave Economy: worlds worked by conquered populations build faster.
+            const infraSpeed = infrastructureSpeedFor(world, factionId, planet.id);
+            const check = canUpgradeTrack(planet, payload.trackId, infraSpeed);
             if (!check.allowed) {
                 recordOrderFailure(world, factionId, actionId, check.reason ?? 'Upgrade not allowed.');
                 break;
@@ -1686,7 +1988,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 break;
             }
 
-            const started = startTrackUpgrade(planet, payload.trackId, world.nowSeconds);
+            const started = startTrackUpgrade(planet, payload.trackId, world.nowSeconds, infraSpeed);
             if (!started.success) {
                 recordOrderFailure(world, factionId, actionId, started.error ?? 'Upgrade failed.');
                 break;
@@ -2228,11 +2530,38 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 return;
             }
 
+            // Elders are not queued like armour. One at a time, capped by a live
+            // census of every titan the empire is fielding, and hand-charged —
+            // chargeOrderCost reads the action's static cost and cannot see the
+            // payload, so it has no way to price this differently from militia.
+            //
+            // The ownership check is Elder-only on purpose: this handler has
+            // never had one, and quietly tightening it for all unit types is a
+            // separate change from adding a unit.
+            let recruitCount = payload.count;
+            if (payload.unitType === ELDER_UNIT_TYPE) {
+                if (planet.ownerId !== factionId) {
+                    recordOrderFailure(world, factionId, actionId, 'An Elder can only be raised on your own world.');
+                    return;
+                }
+                const verdict = canRaiseElder(world, factionId, payload.count);
+                if (!verdict.ok) {
+                    recordOrderFailure(world, factionId, actionId, verdict.reason ?? 'The flame refuses.');
+                    return;
+                }
+                chargeElder(world, factionId, verdict.granted);
+                recruitCount = verdict.granted;
+                console.log(
+                    `[Order] ${factionId} raising ${verdict.granted} Elder on ${payload.planetId} ` +
+                    `(${verdict.living} already walking, cap ${verdict.living + verdict.granted} in use)`
+                );
+            }
+
             const job = RecruitmentService.createJob(
                 payload.planetId,
                 factionId,
                 payload.unitType as GroundUnitType,
-                payload.count,
+                recruitCount,
                 world.nowSeconds
             );
             if (!world.combat) world.combat = {};
@@ -2719,6 +3048,46 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'BNK_ISSUE_LOAN': {
+            // payload: { targetFactionId, principal, termTicks }
+            // The principal moves immediately — that is what makes it a loan and
+            // what makes it a decision: the Clan is poorer today for a claim on
+            // somebody else's tomorrow.
+            const result = issueSovereignLoan(
+                world, factionId, payload.targetFactionId,
+                Number(payload.principal ?? 0), Number(payload.termTicks ?? 0),
+            );
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason!);
+                return;
+            }
+            console.log(`[Order] ${factionId} issued sovereign loan ${result.loan!.id}`);
+            break;
+        }
+
+        case 'BNK_FORECLOSE': {
+            // payload: { loanId }
+            const result = forecloseOn(world, factionId, payload.loanId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason!);
+                return;
+            }
+            console.log(`[Order] ${factionId} foreclosed on ${payload.loanId}`);
+            break;
+        }
+
+        case 'GAB_CAPACOLA_SURGE': {
+            // payload: { amount } — the serving scales the effect, so the player
+            // chooses it and the handler debits CAPACOLA directly.
+            const result = capacolaSurge(world, factionId, Number(payload.amount ?? 0));
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason!);
+                return;
+            }
+            console.log(`[Order] ${factionId} ate ${result.consumed} capacola (intensity ${((result.intensity ?? 0) * 100).toFixed(0)}%)`);
+            break;
+        }
+
         case 'PRESS_SEED_STORY': {
             // payload: { storyId, systemId } — plant an active story's epicenter anywhere.
             const press = ensurePressState(world);
@@ -2742,6 +3111,18 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 transmissionMap: new Map([[planetId, 100]]),
                 jammedSystems: new Set(),
             });
+            // Galactic Vendetta. Planting a narrative inside somebody else's
+            // audience is the one live order that constitutes "insulting the
+            // broadcast" — PRESS_TOGGLE_JAM cannot serve, because it is
+            // restricted to systems the caller already controls, so nobody could
+            // ever jam a Gabagoonian channel.
+            {
+                const seededSystem = world.movement.systems.get(String(payload.systemId ?? ''));
+                const victimId = seededSystem?.ownerFactionId;
+                if (victimId && victimId !== factionId && declareVendetta(world, victimId, factionId)) {
+                    recordGrievance(world, victimId, factionId, 'rite_violated');
+                }
+            }
             break;
         }
 
@@ -3556,6 +3937,45 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'BUT_DEPLOY_CHAMPION': {
+            const result = deployChampion(world, factionId, payload.championId, payload.targetId);
+            if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+            else console.log(`[Order] ${factionId} called ${payload.championId} upon ${payload.targetId}`);
+            break;
+        }
+
+        case 'SAR_ADMINISTER_SERUM': {
+            // The gate above already refused non-Sarrak and mid-withdrawal doses.
+            if (administerSerum(world, factionId)) {
+                console.log(`[Order] ${factionId} administered the Divine Serum to its legions`);
+            } else {
+                recordOrderFailure(world, factionId, actionId, 'The rite could not be performed.');
+            }
+            break;
+        }
+
+        case 'DIP_OFFER_CONTRACT': {
+            const result = createOffer(world, factionId, {
+                kind: 'mercenary_contract',
+                toFactionId: payload.targetFactionId,
+                contractTerms: {
+                    resourceKey: String(payload.resourceKey || 'CREDITS').toUpperCase(),
+                    retainerPerTick: Number(payload.retainerPerTick),
+                    termSeconds: Number(payload.termSeconds),
+                    againstFactionId: payload.againstFactionId,
+                },
+            });
+            if (!result.success) recordOrderFailure(world, factionId, actionId, result.message);
+            else {
+                // Evaluated domestically as a commercial accord: DiplomaticActionKind
+                // is exhaustive over MANDATE_KIND_BY_ACTION, and a retainer is the
+                // same sort of act to a parliament as any other paid agreement.
+                evaluateSupportAndApply(world, factionId, 'trade_pact', payload.targetFactionId);
+                console.log(`[Order] ${factionId} offered a mercenary contract to ${payload.targetFactionId}`);
+            }
+            break;
+        }
+
         case 'ECON_ASSIGN_ESCORTS': {
             const route = world.economy.tradeRoutes?.get(payload.routeId);
             if (!route) {
@@ -4286,6 +4706,47 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
  * Authoritative Tick: Evaluates all active planetary sieges using Ground Combat logic.
  * Phase 16: Uses GroundSiegeEngine for complex logistics and tactical stances.
  */
+/**
+ * A planet changes hands.
+ *
+ * This was three verbatim copies of the same five lines (capital district falls,
+ * mop-up after the garrison is wiped, and the legacy abstract occupation timer),
+ * which is how the bug below survived: the construction planet's ownerId moved
+ * and the ECONOMY planet's factionId did not.
+ *
+ * PlanetProduction.factionId is what economy-service reads to credit taxes and
+ * to attribute production, so every world ever conquered in this game kept
+ * paying its former owner. That is not a Sarrak problem — it affects all
+ * fourteen factions and every conquest since the siege system was written.
+ */
+function capturePlanet(world: GameWorldState, planet: any, attackerId: string, label: string) {
+    const previousOwnerId = planet.ownerId;
+
+    // Taking a world takes its archives (diffusion: conquest). Must run before
+    // ownerId is overwritten — the previous owner is what makes spoils meaningful.
+    absorbConqueredTechnology(world, attackerId, previousOwnerId, planet, world.nowSeconds);
+
+    planet.ownerId = attackerId;
+    planet.isOccupied = false;
+    planet.siege = null;
+    planet.stability = Math.max(10, (planet.stability || 60) - 40);
+
+    // The half that was missing. Without it the conqueror gets the territory and
+    // the loser keeps the revenue.
+    const economyPlanet = world.economy?.planets?.get(planet.id);
+    if (economyPlanet) economyPlanet.factionId = attackerId;
+
+    // The population does not leave when the flag changes — recompute who lives
+    // here now, with the former owner's people still on the ground.
+    refreshPlanetDemographics(world, planet, previousOwnerId);
+
+    bumpMetric(world, attackerId, 'mil.planetsConquered');
+    // Faction-specific bookkeeping; a no-op for everyone but the Sarrak.
+    recordConquest(world, attackerId, planet.id, previousOwnerId);
+
+    console.log(`[Tick Worker] ${label}: ${planet.name} taken by ${attackerId} (was ${previousOwnerId})`);
+}
+
 function processSieges(world: GameWorldState) {
     for (const planet of world.construction.planets.values()) {
         const siege = planet.siege;
@@ -4332,6 +4793,18 @@ function processSieges(world: GameWorldState) {
             };
 
             if (Array.isArray(war.formations) && war.formations.length) {
+                // Woundedness is measured against maxStrength, and every
+                // formation in a siege that predates the field has none. Without
+                // this back-fill the Infernoid Pain-is-Honor bonus would be
+                // wired, run every cycle, and read zero forever.
+                //
+                // Owned compromise: a siege already in progress rebaselines at
+                // its CURRENT reduced strength, so damage taken before deploy
+                // never counts. New sieges track from full.
+                for (const f of war.formations) {
+                    if ((f as any).maxStrength === undefined) (f as any).maxStrength = f.strength;
+                }
+
                 const stances = {
                     attacker: updatedSiege.attackerState.activeAttackerTactic ?? 'DEFENSIVE_HOLD',
                     defender: updatedSiege.defenderState.activeDefenderTactic ?? 'DEFENSIVE_HOLD',
@@ -4364,7 +4837,31 @@ function processSieges(world: GameWorldState) {
                 }
 
                 for (const idx of contestedDistricts(war.formations)) {
-                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus);
+                    // Civilization traits, resolved here because resolveDistrictBattle
+                    // is faction-blind — Formation carries a side, not a faction id.
+                    // The empire ids and the district's terrain are both in scope.
+                    const terrain = surface.sectors[idx]?.terrain ?? 'plains';
+                    const districtTraits = {
+                        attacker: districtTraitsFor(world, updatedSiege.attackerEmpireId, terrain, planet),
+                        defender: districtTraitsFor(world, planet.ownerId, terrain, planet),
+                    };
+                    // Pain is Honor: the more of an Infernoid stack is dead, the
+                    // harder the survivors hit. Folded in HERE rather than inside
+                    // districtTraitsFor because woundedness is per-district and
+                    // the traits parameter is per-side — this loop is where the
+                    // district index exists. Bounded by painMultiplier itself;
+                    // the district layer has no clamp of its own.
+                    districtTraits.attacker = {
+                        ...districtTraits.attacker,
+                        dealt: districtTraits.attacker.dealt
+                            * painMultiplier(world, updatedSiege.attackerEmpireId, war.formations as any, 'attacker', idx),
+                    };
+                    districtTraits.defender = {
+                        ...districtTraits.defender,
+                        dealt: districtTraits.defender.dealt
+                            * painMultiplier(world, planet.ownerId, war.formations as any, 'defender', idx),
+                    };
+                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits);
                     if (!outcome) continue;
                     if (outcome.captured) {
                         (outcome.holder === 'attacker' ? res.captured : res.liberated).push(idx);
@@ -4374,6 +4871,22 @@ function processSieges(world: GameWorldState) {
                         for (const [t, n] of Object.entries(outcome.lossesBySide[side])) {
                             battleLosses[side][t] = (battleLosses[side][t] ?? 0) + (n as number);
                         }
+                    }
+                }
+
+                // Zughra's Radiant Flame: while the Fire Bear walks this world,
+                // whoever is besieging it burns. Applied to the ATTACKER's
+                // formations only — the Council defends, it does not campaign.
+                if (isPlanetScorched(world, planet.id)) {
+                    let burned = 0;
+                    for (const formation of war.formations) {
+                        if (formation.side !== 'attacker') continue;
+                        const before = formation.strength;
+                        formation.strength = Math.max(0, formation.strength * (1 - ZUGHRA_ATTRITION));
+                        burned += before - formation.strength;
+                    }
+                    if (burned > 0) {
+                        res.log.push(`Zughra's flame scours the invaders — ${burned.toFixed(0)} strength burned away.`);
                     }
                 }
 
@@ -4420,7 +4933,14 @@ function processSieges(world: GameWorldState) {
                 captorEmpireId: string,
             ) => {
                 if (!lossesByType) return 0;
-                const taken = capturedFromLosses(lossesByType as any, moraleAtImpact ?? 100);
+                // The Infernoids are not taken alive — the one surviving
+                // consequence of ground morale, and the only place their
+                // "no fear of death" can express itself honestly.
+                const taken = capturedFromLosses(
+                    lossesByType as any,
+                    moraleAtImpact ?? 100,
+                    captureResistance(world, ownerEmpireId),
+                );
                 let total = 0;
                 for (const [unitType, count] of Object.entries(taken)) {
                     if (!count) continue;
@@ -4489,15 +5009,8 @@ function processSieges(world: GameWorldState) {
 
             // Capital falls → the government collapses and the planet changes hands.
             if (capitalTaken(war)) {
-                // Taking a world takes its archives (diffusion: conquest).
-                // Must run before ownerId is overwritten — the previous owner is
-                // what makes the spoils meaningful.
-                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
-                planet.ownerId = updatedSiege.attackerEmpireId;
-                planet.isOccupied = false;
-                planet.siege = null;
-                planet.stability = Math.max(10, (planet.stability || 60) - 40);
-                console.log(`[Tick Worker] CAPITAL DISTRICT FALLS: ${planet.name} taken by ${updatedSiege.attackerEmpireId} (${share}% of surface held)`);
+                capturePlanet(world, planet, updatedSiege.attackerEmpireId,
+                    `CAPITAL DISTRICT FALLS (${share}% of surface held)`);
                 continue;
             }
         }
@@ -4519,12 +5032,7 @@ function processSieges(world: GameWorldState) {
                 advanceFront(surface, war, 1.2, rng);
                 updatedSiege.defenderState.occupationProgress = occupationShare(surface, war);
                 if (capitalTaken(war)) {
-                    absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
-                    planet.ownerId = updatedSiege.attackerEmpireId;
-                    planet.isOccupied = false;
-                    planet.siege = null;
-                    planet.stability = Math.max(10, (planet.stability || 60) - 40);
-                    console.log(`[Tick Worker] PLANETARY CAPTURE: ${planet.name} occupied by ${updatedSiege.attackerEmpireId}`);
+                    capturePlanet(world, planet, updatedSiege.attackerEmpireId, 'PLANETARY CAPTURE');
                 }
                 continue;
             }
@@ -4535,13 +5043,7 @@ function processSieges(world: GameWorldState) {
             updatedSiege.defenderState.occupationProgress += progress;
 
             if (updatedSiege.defenderState.occupationProgress >= 100) {
-                absorbConqueredTechnology(world, updatedSiege.attackerEmpireId, planet.ownerId, planet, world.nowSeconds);
-                planet.ownerId = updatedSiege.attackerEmpireId;
-                planet.isOccupied = false;
-                planet.siege = null;
-                // Severe stability hit on capture
-                planet.stability = Math.max(10, (planet.stability || 60) - 40);
-                console.log(`[Tick Worker] PLANETARY CAPTURE: ${planet.name} taken by ${planet.ownerId}`);
+                capturePlanet(world, planet, updatedSiege.attackerEmpireId, 'PLANETARY CAPTURE (occupation timer)');
             }
         } else if (updatedSiege.attackerState.totalLandedTroops <= 0) {
             console.log(`[Tick Worker] INVASION COLLAPSED: Attackers on ${planet.name} eliminated.`);

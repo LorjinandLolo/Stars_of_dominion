@@ -14,6 +14,7 @@
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { RivalryState } from '@/lib/politics/cold-war-types';
 import { updateRivalryScore, calculateEscalationLevel } from '@/lib/politics/cold-war-service';
+import { pariahBiasFor } from '../factions/infernoid';
 import { getOrCreateRivalry } from './offer-service';
 
 /** Max score movement per strategic tick (6 sim-hours). */
@@ -86,11 +87,20 @@ export function tickPressureDrift(world: GameWorldState): void {
                 activePropagandaCamps: propaganda,
                 activeProxyConflicts: proxies,
                 recentCrisisTension: recentTension(existing as any, world.nowSeconds),
+                // Some peoples are feared for what they are. cold-war-service
+                // never learns what a civilization is, so the term is resolved
+                // here and passed in as a number.
+                pariahBias: pariahBiasFor(world, aId, bId),
             }).rivalryScore;
 
             if (!existing && baseline < TRACK_THRESHOLD) continue; // quiet pairs stay untracked
 
-            const rivalry = existing ?? getOrCreateRivalry(world, aId, bId);
+            // Seed a NEW rivalry at its computed baseline rather than at the
+            // default 20 and letting it crawl there one point per tick — at a
+            // 6-sim-hour tick that is roughly twenty real hours to reach a
+            // pariah's true standing, which no player would ever witness.
+            // Existing rivalries keep drifting normally.
+            const rivalry = existing ?? getOrCreateRivalry(world, aId, bId, baseline);
             const current = rivalry.rivalryScore;
             if (current === baseline) continue;
 

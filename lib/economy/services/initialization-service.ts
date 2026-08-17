@@ -2,6 +2,9 @@ import { GameWorldState } from '../../game-world-state';
 import { PlanetProduction, PlanetType as EconomyPlanetType } from '../economy-types';
 import { initializePlanetServices } from './service-engine';
 import { Planet as ConstructionPlanet, PlanetType as ConstructionPlanetType } from '../../construction/construction-types';
+import { CivilizationRegistry } from '../../civilization/registry';
+import { homeworldNameFor, homeworldArchetypeTagFor } from '../../galaxy/faction-capitals';
+import { BUILDINGS } from '@/data/buildings';
 
 /**
  * Maps Economy planet types to Construction system types for UI/visual consistency.
@@ -35,6 +38,63 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
         return;
     }
 
+    // A capital that names no real system is not a place, and everything seeded
+    // into it is an orphan: planet ids are built from this string, so a phantom
+    // capital produced four economy planets, four construction planets and a
+    // region pointing at a system that does not exist — re-asserted on every
+    // strategic tick. Refuse loudly instead of manufacturing 80 dead records.
+    if (!world.movement.systems.has(capitalSystemId)) {
+        console.error(
+            `[InitService] Faction ${factionId} has capital "${capitalSystemId}", which is not a system ` +
+            `in this galaxy. Skipping homeworld seeding — fix the capital in lib/galaxy/faction-capitals.ts.`
+        );
+        return;
+    }
+
+    // Who this faction IS, if the civilization is authored. Missing or unknown
+    // ids fall through to the generic starting kit below, so an unauthored
+    // faction still boots.
+    const civ = faction.civilizationId
+        ? CivilizationRegistry.getCivilization(faction.civilizationId)
+        : undefined;
+    const starting = civ?.startingStateEffects;
+
+    /** Authored bonus for one resource, case-insensitive on the authored key. */
+    const startingResource = (key: string): number => {
+        const table = starting?.startingResources;
+        if (!table) return 0;
+        const value = table[key] ?? table[key.toLowerCase()] ?? table[key.toUpperCase()];
+        return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    };
+
+    /**
+     * The capital's opening buildings. A civilization may name its own, but only
+     * ids that exist in the real registry are honoured — the authored lists
+     * predate data/buildings.ts and several entries (Auraxian's 'trading_hub')
+     * name nothing. A dangling id is reported and skipped rather than silently
+     * producing an empty tile.
+     */
+    const resolveStarterBuildings = (): string[] => {
+        const COMMON = ['metal_mine', 'chemical_plant', 'hydroponic_farm', 'habitat_block', 'orbital_shipyard'];
+        const authored = starting?.startingBuildings;
+        if (!authored?.length) return COMMON;
+
+        const known = new Set(BUILDINGS.map(b => b.id));
+        const valid = authored.filter(id => known.has(id));
+        const dangling = authored.filter(id => !known.has(id));
+        if (dangling.length) {
+            console.warn(
+                `[InitService] ${civ!.id} lists starting buildings that are not in data/buildings.ts: ` +
+                `${dangling.join(', ')} — skipped.`
+            );
+        }
+        // The shipyard is not flavour: without it a faction cannot build ships
+        // and can never expand, so it is appended regardless of what was authored.
+        const merged = [...valid];
+        if (!merged.includes('orbital_shipyard')) merged.push('orbital_shipyard');
+        return merged.length > 1 ? merged : COMMON;
+    };
+
     // 2. We want to ensure 4 planets exist in this system
     const PLANET_DEFINITIONS: { idSuffix: string, type: EconomyPlanetType }[] = [
         { idSuffix: '', type: 'industrial' },    // The Capital
@@ -58,7 +118,16 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
             systemId: capitalSystemId,
             factionId: factionId,
             planetType: def.type,
-            tags: index === 0 ? ['homeworld', 'settled_core'] : ['established_colony', 'sector_capital'],
+            // The capital carries its authored terrain identity as a tag, which
+            // is what generateSurface reads. Without it every homeworld in the
+            // game generated `continental` — 'capital' and 'homeworld' are the
+            // only hints present, and they match the continental test at the
+            // bottom of inferArchetype's chain. Pyrothar had zero volcanic
+            // districts. The construction planet shares this array by reference
+            // below, so one write covers both records.
+            tags: index === 0
+                ? ['homeworld', 'settled_core', ...(homeworldArchetypeTagFor(factionId) ? [homeworldArchetypeTagFor(factionId)!] : [])]
+                : ['established_colony', 'sector_capital'],
             services: {}, 
             demographics: {
                 population: index === 0 ? 150 : 50, // Higher starting pop to allow immediate expansion
@@ -69,11 +138,14 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
                 manpowerEfficiency: 1.0
             },
             currentRates: {},
+            // The capital carries the civilization's authored startingResources
+            // on TOP of the common kit, so an authored bonus is a head start
+            // rather than a replacement and an unauthored faction is unaffected.
             stockpile: {
-                metals: index === 0 ? 2000 : 500, // Boosted starting metals
-                energy: index === 0 ? 5000 : 1000,
-                food: index === 0 ? 2000 : 500,
-                credits: index === 0 ? 50000 : 1000 // Boosted starting credits
+                metals: (index === 0 ? 2000 : 500) + (index === 0 ? startingResource('METALS') : 0),
+                energy: (index === 0 ? 5000 : 1000) + (index === 0 ? startingResource('ENERGY') : 0),
+                food: (index === 0 ? 2000 : 500) + (index === 0 ? startingResource('FOOD') : 0),
+                credits: (index === 0 ? 50000 : 1000) + (index === 0 ? startingResource('CREDITS') : 0),
             },
             derived: {
                 construction: index === 0 ? 1.5 : 0.8,
@@ -97,7 +169,13 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
         // 6. Create matching CONSTRUCTION Planet
         const constrPlanet: ConstructionPlanet = {
             id: planetId,
-            name: index === 0 ? `${faction.name} Prime` : `${faction.name} Sector Col ${index}`,
+            // The capital planet carries the homeworld name the players wrote
+            // (Pyrothar, Meatballia Prima, The Solara Shell); colonies stay
+            // generic. Falls back to the old "<Faction> Prime" for anyone with
+            // no authored homeworld.
+            name: index === 0
+                ? (homeworldNameFor(factionId) ?? `${faction.name} Prime`)
+                : `${faction.name} Sector Col ${index}`,
             ownerId: factionId,
             systemId: capitalSystemId,
             planetType: index === 0 ? 'capital' : mapToConstructionType(def.type),
@@ -128,13 +206,7 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
 
         // 7. Seed Capital Infrastructure (Index 0 Only)
         if (index === 0) {
-            const starterBuildings = [
-                'metal_mine',
-                'chemical_plant',
-                'hydroponic_farm',
-                'habitat_block',
-                'orbital_shipyard' // Crucial for expansion
-            ];
+            const starterBuildings = resolveStarterBuildings();
 
             starterBuildings.forEach((bId, offset) => {
                 if (constrPlanet.tiles[offset]) {

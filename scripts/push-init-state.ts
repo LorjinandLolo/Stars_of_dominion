@@ -16,7 +16,18 @@ async function pushInitialState() {
 
     console.log(`[Init] Serialized world state size: ${(snapshot.length / 1024).toFixed(2)} KB`);
 
-    // 2. Create or overwrite the session document
+    // 2. Clear per-faction shards and the order queue BEFORE writing the
+    // snapshot. The worker injects gameFactionShard rows over the session
+    // snapshot on load, and extractFactionShard serializes the whole Faction
+    // record — so shards from the previous world carry its capitalSystemIds,
+    // reserves and espionage state forward, silently undoing the reseed. The
+    // first reseed after the capital fix hit exactly this: fourteen correct
+    // capitals in the snapshot, ten phantoms re-injected from stale shards.
+    const shards = await prisma.gameFactionShard.deleteMany();
+    const orders = await prisma.gameOrder.deleteMany();
+    console.log(`[Init] Cleared ${shards.count} stale faction shard(s) and ${orders.count} queued order(s).`);
+
+    // 3. Create or overwrite the session document
     await prisma.multiplayerSession.upsert({
         where: { id: 'default-session' },
         update: { snapshot, lastTickAt: new Date().toISOString() },

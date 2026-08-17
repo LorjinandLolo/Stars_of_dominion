@@ -21,6 +21,13 @@ export interface Formation {
     unitType: GroundUnitType;
     /** Fighting men in the formation. At 0 it is destroyed. */
     strength: number;
+    /**
+     * Strength at creation or last reinforcement — the baseline woundedness is
+     * measured against. Optional because formations in sieges that predate the
+     * field have none; processSieges back-fills them on first sight, without
+     * which every woundedness read would be a permanent zero.
+     */
+    maxStrength?: number;
     /** District it currently occupies (0-63). */
     sectorIndex: number;
     /** Ordered destination for the coming cycle, resolved simultaneously. */
@@ -70,6 +77,7 @@ const BASE_MOVE: Record<GroundUnitType, number> = {
     ANTI_ARMOR: 2,
     ARTILLERY: 1.8,     // the guns move last
     MILITIA: 1.6,       // militia defend their homes; they rarely march far
+    ELDER_INFERNOID: 1.4, // ponderous — you see it coming a long way off
 };
 
 /** How costly a district is to enter. Ocean is impassable. */
@@ -83,6 +91,8 @@ const TERRAIN_COST: Record<TerrainType, number> = {
 const TERRAIN_SENSITIVITY: Record<GroundUnitType, number> = {
     ARMOR: 1.4, ARTILLERY: 1.4, ANTI_ARMOR: 1.1,
     INFANTRY: 1, MILITIA: 1, AIRBORNE: 0.5, SPECIAL_OPS: 0.5,
+    // Heavy, but it steps over what stops a tank rather than driving through it.
+    ELDER_INFERNOID: 1.2,
 };
 
 export const isHeavy = (t: GroundUnitType) => t === 'ARMOR' || t === 'ARTILLERY';
@@ -123,6 +133,7 @@ export function seedFormations(
                 side,
                 unitType,
                 strength,
+                maxStrength: strength,
                 sectorIndex: anchor[(out.length) % anchor.length],
                 supply: 100,
             });
@@ -150,6 +161,21 @@ export function legalMoves(
     war: DistrictWarState,
     formation: Formation,
     roadLinks?: Set<string>,
+    /**
+     * Optional per-civilization override of what a district costs to enter,
+     * given the terrain and the table's base cost.
+     *
+     * This function stays faction-blind — Formation carries a `side`, not a
+     * faction id — exactly like resolveDistrictBattle: the CALLER resolves the
+     * civilization and passes a number. Omitting it takes the original code
+     * path unchanged, which is what the other thirteen empires do.
+     *
+     * Both callers must pass the same thing. legalMoves is server-authoritative
+     * (the worker rejects an over-budget order) AND drives the client's reach
+     * preview, so an override applied in only one place would show a player
+     * moves the worker then refuses.
+     */
+    terrainCostOverride?: (terrain: TerrainType, base: number) => number,
 ): MoveOption[] {
     const adjacency = buildAdjacency(surface);
     const budget = BASE_MOVE[formation.unitType];
@@ -167,7 +193,9 @@ export function legalMoves(
             if (!isPassable(sec)) continue;
             const linked = roadLinks?.has(cur < n ? `${cur}-${n}` : `${n}-${cur}`);
             // A road halves the going; rough ground punishes heavy formations.
-            const raw = TERRAIN_COST[sec.terrain] * (linked ? 0.5 : sensitivity);
+            const base = TERRAIN_COST[sec.terrain];
+            const effective = terrainCostOverride ? terrainCostOverride(sec.terrain, base) : base;
+            const raw = effective * (linked ? 0.5 : sensitivity);
             const cost = spent + raw;
             if (cost > budget + 1e-6) continue;
             if ((best.get(n) ?? Infinity) <= cost) continue;

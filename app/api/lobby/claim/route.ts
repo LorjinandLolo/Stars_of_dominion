@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { auth } from '@/lib/auth';
+import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 
 export async function POST(req: NextRequest) {
     try {
@@ -63,18 +64,32 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
     try {
+        // The lobby needs to know which factions are taken and by whom. It does
+        // NOT need better-auth user ids — this handler used to return them to
+        // anonymous callers, which published the whole player roster keyed to
+        // internal account ids.
+        //
+        // `isMine` replaces the client-side `c.userId === user.id` comparison
+        // GameShell used to do: the server already knows who is asking, so the
+        // answer comes back resolved instead of the caller being handed everyone
+        // else's identity to match against.
+        const { userId } = await resolveCallerFaction(req);
         const profiles = await prisma.playerProfile.findMany();
 
-        // Return a map of { factionId: { userId, displayName } } so the Lobby knows what's taken by whom
-        const claimedFactions: Record<string, { userId: string, displayName: string }> = {};
+        const claimedFactions: Record<string, { displayName: string; isMine: boolean }> = {};
         profiles.forEach(doc => {
              claimedFactions[doc.factionId] = {
-                 userId: doc.userId,
-                 displayName: doc.displayName ?? 'Commander'
+                 displayName: doc.displayName ?? 'Commander',
+                 isMine: !!userId && doc.userId === userId,
              };
         });
 
-        return NextResponse.json({ claimedFactions });
+        return NextResponse.json({
+            claimedFactions,
+            // The caller's own claim, authoritative. Clients should read this
+            // instead of trusting localStorage.
+            myFactionId: profiles.find((p: { userId: string }) => userId && p.userId === userId)?.factionId ?? null,
+        });
     } catch (err: any) {
          return NextResponse.json({ error: err.message }, { status: 500 });
     }

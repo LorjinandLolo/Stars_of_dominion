@@ -3,10 +3,16 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "autoPort": true
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--max-old-space-size=8192",
+        "C:/Users/lorij/OneDrive/Desktop/CSS,Y2,S4/Stars_of_dominion/node_modules/next/dist/bin/next",
+        "dev",
+        "--webpack",
+        "--port",
+        "3005"
+      ],
+      "port": 3005
     }
   ]
 }

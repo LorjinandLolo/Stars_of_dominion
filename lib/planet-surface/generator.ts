@@ -18,6 +18,7 @@ import {
     SurfaceRegion,
     TerrainType,
     PlanetArchetype,
+    PLANET_ARCHETYPES,
     RegionKind,
     SocialGroupSeed,
     SURFACE_SECTOR_COUNT,
@@ -51,9 +52,42 @@ const pick = <T,>(rand: () => number, arr: readonly T[]): T => arr[Math.floor(ra
 
 // ─── Archetype inference ─────────────────────────────────────────────────────
 
+/**
+ * Tag prefix carrying an AUTHORED archetype, e.g. `archetype:volcanic`.
+ *
+ * Namespaced on purpose. The bare terrain words collide with the 108 political
+ * system tags, and reusing an existing gameplay tag would have side effects —
+ * tagging Jabal `fortified` to make it montane would also make it Buthari
+ * "sacred territory", which is a different mechanic entirely.
+ */
+export const ARCHETYPE_TAG_PREFIX = 'archetype:';
+
+/** Build the authored tag for an archetype. */
+export function archetypeTag(archetype: PlanetArchetype): string {
+    return `${ARCHETYPE_TAG_PREFIX}${archetype}`;
+}
+
 /** Map the game's loose planet type strings/tags onto a terrain archetype. */
 export function inferArchetype(planetId: string, typeHint?: string, tags?: string[]): PlanetArchetype {
+    // An AUTHORED archetype always wins. Everything below this line is inference
+    // from loose strings, and inference is what produced the original defect:
+    // every capital carries planetType 'capital' and a 'homeworld' tag and NO
+    // thematic hint at all, so all fourteen fell through to `continental` — the
+    // volcanic hellscape, the swamp and the mountain world included.
+    for (const raw of tags ?? []) {
+        const t = raw.toLowerCase();
+        if (!t.startsWith(ARCHETYPE_TAG_PREFIX)) continue;
+        const named = t.slice(ARCHETYPE_TAG_PREFIX.length) as PlanetArchetype;
+        // Validated, not cast: a typo'd tag must fall through to inference
+        // rather than reach ARCHETYPE_TERRAIN as undefined.
+        if (PLANET_ARCHETYPES.includes(named)) return named;
+    }
+
     const hint = `${typeHint ?? ''} ${(tags ?? []).join(' ')}`.toLowerCase();
+    // Swamp before jungle: a wetland is usually described with both.
+    if (/swamp|marsh|bayou|wetland|mire/.test(hint)) return 'swamp';
+    if (/arcology|ringworld|dyson|megastructure|shellworld/.test(hint)) return 'arcology';
+    if (/jungle|rainforest|canopy/.test(hint)) return 'jungle';
     if (/ocean|water|aquatic/.test(hint)) return 'oceanic';
     if (/ice|frozen|arctic|tundra/.test(hint)) return 'frozen';
     if (/desert|arid|dune/.test(hint)) return 'arid';
@@ -81,6 +115,14 @@ export function inferArchetype(planetId: string, typeHint?: string, tags?: strin
 // features, not the default); ocean worlds invert that; frozen worlds carry
 // ice sheets instead of open water; deserts get scattered lakes at most.
 const ARCHETYPE_TERRAIN: Record<PlanetArchetype, Array<[TerrainType, number]>> = {
+    // Standing water threaded through dense growth — the water is everywhere and
+    // shallow rather than gathered into seas. Jungle-dominant, which is what
+    // makes Sarrak biome affinity bite on their own homeworld instead of by luck.
+    swamp:       [['jungle', 32], ['ocean', 24], ['forest', 14], ['plains', 12], ['toxic', 10], ['ruins', 4], ['mountains', 4]],
+    // Canopy deathworld: almost no open ground and almost no open water.
+    jungle:      [['jungle', 40], ['forest', 20], ['plains', 14], ['mountains', 10], ['ocean', 10], ['ruins', 3], ['toxic', 3]],
+    // A built world. There is no natural surface left to speak of.
+    arcology:    [['urban', 46], ['ruins', 18], ['plains', 12], ['mountains', 10], ['toxic', 8], ['desert', 6]],
     continental: [['plains', 28], ['forest', 21], ['mountains', 14], ['ocean', 23], ['jungle', 8], ['desert', 7], ['frozen', 5]],
     arid:        [['desert', 40], ['plains', 20], ['mountains', 22], ['ocean', 6], ['volcanic', 6], ['ruins', 6]],
     oceanic:     [['ocean', 52], ['plains', 15], ['forest', 10], ['jungle', 11], ['mountains', 7], ['frozen', 5]],
@@ -95,8 +137,20 @@ const ARCHETYPE_TERRAIN: Record<PlanetArchetype, Array<[TerrainType, number]>> =
 // forms lakes and inland seas (small pull); water on ocean worlds forms real
 // oceans (large pull).
 function terrainPullModifier(terrain: TerrainType, archetype: PlanetArchetype): number {
-    if (terrain === 'ocean') return archetype === 'oceanic' ? 1.45 : archetype === 'montane' ? 0.5 : 0.95;
+    // Swamp water is broad and shallow: many spreading pools, not one sea.
+    if (terrain === 'ocean') {
+        if (archetype === 'oceanic') return 1.45;
+        if (archetype === 'montane') return 0.5;
+        if (archetype === 'swamp') return 1.15;
+        if (archetype === 'jungle' || archetype === 'arcology') return 0.6;
+        return 0.95;
+    }
     if (terrain === 'frozen' && archetype === 'frozen') return 1.3; // ice sheets
+    // Growth runs together into unbroken cover; a built world runs together
+    // into unbroken sprawl. Both leave few clear districts, which is the point.
+    if (archetype === 'swamp') return terrain === 'jungle' ? 1.3 : 0.85;
+    if (archetype === 'jungle') return terrain === 'jungle' ? 1.4 : 0.8;
+    if (archetype === 'arcology') return terrain === 'urban' ? 1.5 : 0.7;
     // Highland ranges run in long chains; the valleys between them stay small,
     // which is what turns them into passes.
     if (archetype === 'montane') return terrain === 'mountains' ? 1.35 : 0.75;
@@ -162,7 +216,15 @@ function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: 
         const terrain = weightedPick(rand, pool);
         // Capitals/homeworlds are showcase worlds: their seas shrink to
         // coastal waters so the settled continent dominates the view.
-        const bias = landBias && terrain === 'ocean' ? 0.32 : 1;
+        //
+        // But NEVER against an archetype that is defined by its water. Every
+        // capital passes `capital` as its type hint, so without this guard an
+        // authored ocean or swamp homeworld is silently drained — Aeiralux, a
+        // world of floating spires above a storm-torn sea, generated ocean 7 of
+        // 64. That is the same class of defect as the all-continental capitals
+        // this guard sits next to: a generic rule quietly beating authored intent.
+        const waterDefined = archetype === 'oceanic' || archetype === 'swamp';
+        const bias = landBias && !waterDefined && terrain === 'ocean' ? 0.32 : 1;
         blobs.push({
             x: at.x, y: at.y,
             terrain,

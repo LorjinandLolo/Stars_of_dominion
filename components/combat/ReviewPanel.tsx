@@ -15,6 +15,7 @@ const BATTALION_SIZES: Record<GroundUnitType, number> = {
     AIRBORNE: 800,
     SPECIAL_OPS: 100,
     MILITIA: 800,
+    ELDER_INFERNOID: 1,   // they are counted one at a time
 };
 
 const UNIT_ICONS: Record<string, string> = {
@@ -25,6 +26,7 @@ const UNIT_ICONS: Record<string, string> = {
     AIRBORNE: '🪂',
     SPECIAL_OPS: '🥷',
     MILITIA: '👨‍🌾',
+    ELDER_INFERNOID: '🗼',
     CORVETTE: '🛸',
     DESTROYER: '🚀',
     CRUISER: '🛰️',
@@ -85,8 +87,17 @@ export function ReviewPanel() {
         planets,
         fleets,
         armies,
-        playerFactionId 
+        playerFactionId,
+        factions
     } = useUIStore();
+
+    /**
+     * Only the Infernoids may raise a titan. Keyed on the civilization rather
+     * than the faction id, same as the Kaer'Ruun contract control — and the
+     * server re-checks it in canRaiseElder, so this is presentation, not
+     * authorization.
+     */
+    const isInfernoidCiv = (factions as any)?.[playerFactionId ?? '']?.civilizationId === 'civ-infernoid';
 
     const [isMinimized, setIsMinimized] = React.useState(false);
     const [selectedCardId, setSelectedCardId] = React.useState<string | null>(null);
@@ -213,11 +224,16 @@ export function ReviewPanel() {
             if (!res.success) console.error('Fleet recruitment failed:', res.error);
         } else {
             if (!selectedPlanet || !playerFactionId) return;
+            // Elders are raised one at a time. The server clamps this anyway,
+            // so sending 10 would only make the pending label lie.
+            const count = unitType === 'ELDER_INFERNOID' ? 1 : 10;
             const res = await dispatchOrder({
                 actionId: 'PLANET_RECRUIT_UNITS',
                 factionId: playerFactionId,
-                payload: { planetId: selectedPlanet.id, unitType, count: 10 },
-                label: `Recruiting 10× ${unitType.toLowerCase()}`,
+                payload: { planetId: selectedPlanet.id, unitType, count },
+                label: unitType === 'ELDER_INFERNOID'
+                    ? 'Raising an Elder'
+                    : `Recruiting ${count}× ${unitType.toLowerCase()}`,
             });
             if (!res.success) console.error('Recruitment failed:', res.error);
         }
@@ -461,9 +477,10 @@ export function ReviewPanel() {
                             {isSpaceTheme ? 'Commission Space Forces' : 'Commission Ground Forces'}
                         </h4>
                         <div className="flex gap-4">
-                            {(isSpaceTheme 
-                                ? ['CORVETTE', 'DESTROYER', 'CRUISER', 'BATTLESHIP'] 
-                                : ['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS']
+                            {(isSpaceTheme
+                                ? ['CORVETTE', 'DESTROYER', 'CRUISER', 'BATTLESHIP']
+                                : ['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS',
+                                   ...(isInfernoidCiv ? ['ELDER_INFERNOID'] : [])]
                             ).map(type => (
                                 <button
                                     key={type}
@@ -473,10 +490,18 @@ export function ReviewPanel() {
                                     <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{UNIT_ICONS[type] || '❓'}</span>
                                     <div className="text-[10px] font-bold text-slate-300 group-hover:text-amber-300">{type.replace('_', ' ')}</div>
                                     <div className="text-[9px] text-slate-500 mt-1 flex items-center gap-1">
-                                        {isSpaceTheme ? '⚓ 1 Ship' : <><Users size={10} /> +10 Bat.</>}
+                                        {isSpaceTheme
+                                            ? '⚓ 1 Ship'
+                                            : type === 'ELDER_INFERNOID'
+                                                ? <><Users size={10} /> 1 Titan</>
+                                                : <><Users size={10} /> +10 Bat.</>}
                                     </div>
                                     <div className="text-[8px] text-slate-600 mt-1">
-                                        {isSpaceTheme ? 'Production Queue' : '30s Construction'}
+                                        {isSpaceTheme
+                                            ? 'Production Queue'
+                                            : type === 'ELDER_INFERNOID'
+                                                ? '40k credits · 1.5k metals · max 3'
+                                                : '30s Construction'}
                                     </div>
                                 </button>
                             ))}

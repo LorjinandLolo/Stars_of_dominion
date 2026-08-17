@@ -1,15 +1,15 @@
-import * as dotenv from 'dotenv';
+// scripts/clear-lease.ts
+// Delete the worker lease row so a replacement worker can start immediately.
+// Needed after a worker is KILLED rather than shut down — releaseLease never
+// runs, and the stale row blocks any new worker for up to 15 minutes.
+import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-import { prisma } from '../lib/db';
+
 async function main() {
-    const doc = await prisma.multiplayerSession.findUnique({ where: { id: 'worker-lease' } });
-    if (!doc) { console.log('no lease held'); return; }
-    console.log('current lease:', doc.snapshot);
-    await prisma.multiplayerSession.update({
-        where: { id: 'worker-lease' },
-        data: { snapshot: JSON.stringify({ holderId: 'expired', expiresAt: 0 }) },
-    });
-    console.log('lease released');
+    const { prisma } = await import('../lib/db');
+    const r = await prisma.multiplayerSession.deleteMany({ where: { id: 'worker-lease' } });
+    console.log(`lease rows deleted: ${r.count}`);
+    await prisma.$disconnect();
 }
-main().catch(console.error).finally(() => prisma.$disconnect());
+main();

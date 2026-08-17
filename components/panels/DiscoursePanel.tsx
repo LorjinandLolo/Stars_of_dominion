@@ -14,7 +14,7 @@ import {
     UserCircle2,
     Loader2
 } from 'lucide-react';
-import { FACTION_SPEAKERS } from '@/lib/ai/faction-personalities';
+import { getFactionSpeaker } from '@/lib/ai/faction-personalities';
 
 export default function DiscoursePanel() {
     const { discourseState, politicsState, updateDiscourse, addDiscourseMessage } = useUIStore();
@@ -24,7 +24,11 @@ export default function DiscoursePanel() {
 
     const activeFactionId = discourseState.activeFactionId || 'military';
     const activeMessages = discourseState.messages[activeFactionId] || [];
-    const activeSpeaker = FACTION_SPEAKERS[activeFactionId] || FACTION_SPEAKERS['senate'];
+    // Resolve through the helper, not the raw map: it carries the pirate rule
+    // and the Senate fallback, so the panel and the server agree on who is
+    // speaking. Reading the map directly is how this panel showed every faction
+    // as the Senate chancellor even for factions that had their own speaker.
+    const activeSpeaker = getFactionSpeaker(activeFactionId);
 
     // Auto-scroll to bottom of chat
     React.useEffect(() => {

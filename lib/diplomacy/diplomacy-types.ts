@@ -17,7 +17,8 @@ export type DiplomaticOfferKind =
     | 'treaty'          // requires treatyType
     | 'trade_pact'
     | 'tribute_demand'  // ultimatum-flavored: rejection raises pressure sharply
-    | 'peace_offer';
+    | 'peace_offer'
+    | 'mercenary_contract';  // Kaer'Ruun only: hire their army for a retainer
 
 export interface DiplomaticOffer {
     id: string;
@@ -32,6 +33,21 @@ export interface DiplomaticOffer {
     /** Tribute terms (kind === 'tribute_demand') */
     tributeResourceType?: string;
     tributeAmountPerTick?: number;
+    /**
+     * Mercenary retainer terms (kind === 'mercenary_contract').
+     *
+     * Nested rather than four more flat fields: this interface already carries
+     * five per-kind flat optionals and a fifth kind widening it to nine stops
+     * being readable. `resourceKey` is UPPERCASE by contract — the flat
+     * `tributeResourceType` above defaults to lowercase 'credits' and that is
+     * exactly why world.tributes transfers nothing.
+     */
+    contractTerms?: {
+        resourceKey: string;
+        retainerPerTick: number;
+        termSeconds: number;
+        againstFactionId?: string;
+    };
     createdAtSeconds: number;
     /** Sim-clock deadline; pending offers past this flip to 'expired'. */
     expiresAtSeconds: number;

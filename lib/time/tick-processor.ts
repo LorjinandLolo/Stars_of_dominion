@@ -60,6 +60,9 @@ import { tickTitles, latchDefeatStatus } from '../titles/title-service';
 import { tickSeasonModifiers } from '../seasons/season-service';
 import { registry as techRegistry, applyUnlock, ticksForTech } from '../tech/engine';
 import { getTechModifier } from '../tech/modifiers';
+import { tickFactionTraits } from '../factions/traits-service';
+import { cloakedSystems, revealedSystems } from '../factions/buthari-council';
+import { isButhari } from '../factions/civ-ids';
 import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-service';
 import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
@@ -132,6 +135,13 @@ export async function runStrategicTick(
     try { tickPressureDrift(world); } catch (e) { console.error('[TickProcessor] tickPressureDrift failed:', e); }
     // 9e: War exhaustion accrues while wars burn, ebbs in peace
     try { tickWarFatigue(world); } catch (e) { console.error('[TickProcessor] tickWarFatigue failed:', e); }
+    // 9e2: Per-faction bespoke mechanics (Bloodmoon ceasefire, and the rest as
+    // they land). Placed HERE on purpose: diplomacy above has already expired
+    // lapsed treaties and war fatigue has settled, so "is this faction at war"
+    // is accurate — and it is still upstream of tickGovernments/tickCohesion/
+    // tickDefiance/tickSecession below, so a stability penalty written now is
+    // aggregated and acted on in the same tick instead of 24 real minutes later.
+    try { tickFactionTraits(world); } catch (e) { console.error('[TickProcessor] tickFactionTraits failed:', e); }
     // 9f: Internal politics — bloc satisfaction finally drifts live (was
     // previously only exercised by tests) + mandate expiry
     try {
@@ -562,8 +572,17 @@ function step9_ongoingEffects(world: ReturnType<typeof getGameWorldState>) {
 function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
     // Recompute visibility for all active factions
     try {
+        // Barra's veil hides a system from everyone but its owner; Rahla's
+        // sight opens one to the Buthari alone. Resolved here so the visibility
+        // service never has to know which faction is doing it.
+        const veiled = cloakedSystems(world);
         for (const factionId of world.economy.factions.keys()) {
-            const visibility = computeVisibility(factionId, world.movement);
+            const hidden = veiled.size && !isButhari(world, factionId) ? veiled : undefined;
+            const revealed = isButhari(world, factionId) ? revealedSystems(world, factionId) : undefined;
+            const override = (hidden || revealed?.size)
+                ? { hidden, revealed: revealed?.size ? revealed : undefined }
+                : undefined;
+            const visibility = computeVisibility(factionId, world.movement, override);
             world.movement.factionVisibility.set(factionId, visibility);
         }
     } catch (e) {

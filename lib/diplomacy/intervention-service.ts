@@ -22,6 +22,7 @@ import {
     RUMOR_EXPOSURE_CHANCE,
 } from './diplomacy-types';
 import { ensureDiplomacyState, shiftRivalry } from './offer-service';
+import { correctionReliefFor, recordCorrection } from '../factions/rhimetals';
 import type { DiplomacyResult } from './offer-service';
 import { pushWorldStory, adjustPublicTrust } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
@@ -76,6 +77,15 @@ export function intervene(world: GameWorldState, factionId: string, windowId: st
             // belligerents skip their initiative cooldown while talks are fresh.
             for (const [a, b] of [[window.aggressorId, window.defenderId], [window.defenderId, window.aggressorId]]) {
                 dip.cooldowns.delete(`${a}|${b}|peace_offer`);
+            }
+            // "We do not conquer. We correct." For the Rhimetals alone, stepping
+            // between two empires actually cools the war rather than merely
+            // opening a door — and a hive without its node corrects nothing,
+            // because the voice that carries authority is the node's.
+            const relief = correctionReliefFor(world, factionId);
+            if (relief > 0) {
+                shiftRivalry(world, window.aggressorId, window.defenderId, -relief, 'rhimetal_correction');
+                recordCorrection(world, factionId);
             }
             break;
         }

@@ -72,6 +72,39 @@ export interface CombatantState {
     orbitalAllocation?: OrbitalAllocation;
     bombardmentMode?: BombardmentMode;
     techModifiers?: Record<string, number>;
+    /**
+     * Civilization-specific combat traits, applied POST-clamp by the engine.
+     *
+     * Separate from techModifiers on purpose: everything inside
+     * calculateEffectivePower is clamped to ±40%, and a faction whose authored
+     * baseModifiers already push it near that ceiling would see further bonuses
+     * silently vanish. Traits that are supposed to accumulate over a campaign
+     * have to land in the uncapped band alongside stance and momentum.
+     */
+    traitBonuses?: {
+        /** Kaer'Ruun Ritual Brutality — saturating, from lifetime kills. */
+        brutality?: number;
+        /**
+         * Sarrak Divine Serum — SIGNED: positive while dosed, negative during
+         * the withdrawal that follows. The first trait here that can be
+         * negative, which is why traitMultiplier carries a floor.
+         */
+        serum?: number;
+        /**
+         * Gabagoonian Capacola Surge — SIGNED like the serum, and additionally
+         * SCALED by the size of the serving eaten. Shares the serum's cycle shape
+         * (lib/factions/stimulant.ts) but not its magnitude: a dose is binary,
+         * a meal is not.
+         */
+        capacola?: number;
+        /**
+         * Nexulan Adaptive Phase-Shields — grows with elapsedRounds, DEFENDER
+         * only. Rides the same clock as the Kaer'Ruun engagement ramp and is its
+         * deliberate opposite: they grow more lethal over a long fight, these
+         * grow more durable. Both may apply in one battle, which is correct.
+         */
+        phaseShield?: number;
+    };
 }
 
 // ─── Recruitment & Logistics ──────────────────────────────────────────────────
@@ -103,6 +136,15 @@ export interface CombatState {
     target: TargetDetails;
     phase: CombatPhase;
     round: number; // 1 to 3
+    /**
+     * Rounds fought since the engagement began, never reset.
+     *
+     * `round` cannot serve as a duration: it is set back to 1 when the battle
+     * flips from the orbital phase to the ground phase, so it tops out at 3 and
+     * starts over. Anything that scales with how long a fight has lasted must
+     * read this instead. Optional — older snapshots lack it.
+     */
+    elapsedRounds?: number;
     momentum: number; // -1 to 1 (negative = defender advantage, positive = attacker)
     territoryControl: number; // 0–1, ground phase only
     orbitalWinnerId?: string;

@@ -23,6 +23,7 @@ import UnitPieces from './UnitPieces';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { computeRoadNetwork, computeBridges } from './roadNetwork';
 import { factionColor } from '@/components/galaxy/starVisuals';
+import { terrainCostForCiv } from '@/lib/factions/terrain-affinity';
 import {
     X, Users, Landmark, Wrench, Heart, AlertTriangle, PanelsTopLeft,
 } from 'lucide-react';
@@ -35,6 +36,18 @@ export default function PlanetSurfaceView() {
     const planets = useUIStore(s => s.planets);
     const factions = useUIStore(s => s.factions);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+
+    /**
+     * Per-civilization ground cost for the reach overlay — Infernoid heat
+     * immunity, Movanite swarm speed. The worker passes the same override to
+     * legalMoves when it validates the order, so the preview and the
+     * authoritative check agree; undefined for the other twelve empires leaves
+     * legalMoves on its original path.
+     */
+    const terrainCostOverride = React.useMemo(
+        () => terrainCostForCiv((factions as any)?.[playerFactionId ?? '']?.civilizationId),
+        [factions, playerFactionId],
+    );
     const setConstructionPlanet = useUIStore(s => s.setConstructionPlanet);
     const systemViewId = useUIStore(s => s.systemViewId);
     const armies = useUIStore(s => s.armies);
@@ -584,6 +597,7 @@ export default function PlanetSurfaceView() {
                                 selectedIds={selectedFormations}
                                 onSelectionChange={setSelectedFormations}
                                 redeployMode={redeployMode}
+                                terrainCostOverride={terrainCostOverride}
                                 onOrderMove={(formation, sectorIndex, opts) => {
                                     const verb = opts?.redeploy ? 'redeploys to'
                                         : opts?.queue ? 'routed via' : 'advances to';

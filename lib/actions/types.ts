@@ -16,7 +16,12 @@ export type ResourceType =
   | "manpower"
   | "credits"
   | "influence"
-  | "intel";
+  | "intel"
+  // Civilization luxuries. chargeOrderCost uppercases these against the Resource
+  // enum and skips any key a faction has no reserve for, so an ability priced in
+  // someone else's luxury is simply free to them — which is the intent.
+  | "sacred_flora"
+  | "capacola";
 
 export type TechCategory =
   | "military"
@@ -74,6 +79,12 @@ export type PlayerActionId =
   | "DIP_DEMAND_TRIBUTE"
   | "DIP_SEND_ENVOY"
   | "DIP_TRADE_PACT"
+  | "DIP_OFFER_CONTRACT"
+  | "SAR_ADMINISTER_SERUM"
+  | "GAB_CAPACOLA_SURGE"
+  | "BNK_ISSUE_LOAN"
+  | "BNK_FORECLOSE"
+  | "BUT_DEPLOY_CHAMPION"
   | "DIP_RESPOND_OFFER"
   | "DIP_WITHDRAW_OFFER"
   | "DIP_BREAK_TREATY"

@@ -201,6 +201,59 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { targetFactionId: "id", resource: "string", volume: "number" },
     cost: { influence: 15 }
   },
+  // Kaer'Ruun only — the proposer check lives in createOffer, not here, so the
+  // refusal reaches the player as an order failure with a reason.
+  DIP_OFFER_CONTRACT: {
+    id: "DIP_OFFER_CONTRACT",
+    category: "diplomatic",
+    params: { targetFactionId: "id", retainerPerTick: "number", termSeconds: "number" },
+    cost: { influence: 5 }
+  },
+  // Sarrak only — the civilization check lives in checkSerumGate so a refusal
+  // reaches the player with a reason. The COST is not optional: chargeOrderCost
+  // returns true for any action it cannot find in this registry, so an
+  // unregistered ability is a free one.
+  SAR_ADMINISTER_SERUM: {
+    id: "SAR_ADMINISTER_SERUM",
+    category: "military",
+    params: {},
+    cost: { chemicals: 400, food: 200 }
+  },
+  // Gabagoonian only. NO cost here on purpose: the serving is paid in CAPACOLA
+  // inside capacolaSurge, because the amount is chosen by the player and scales
+  // the effect, which a fixed registry cost cannot express. The handler debits
+  // the reserve itself and refuses when the pantry is bare.
+  GAB_CAPACOLA_SURGE: {
+    id: "GAB_CAPACOLA_SURGE",
+    category: "military",
+    params: { amount: "number" },
+    cost: {}
+  },
+  // Banking Clan only. No registry cost on either: the principal is chosen by
+  // the player and moved inside issueSovereignLoan, and a foreclosure collects
+  // rather than spends. The civilization checks live in those functions so a
+  // refusal reaches the player with a reason.
+  BNK_ISSUE_LOAN: {
+    id: "BNK_ISSUE_LOAN",
+    category: "economic",
+    params: { targetFactionId: "id", principal: "number", termTicks: "number" },
+    cost: {}
+  },
+  BNK_FORECLOSE: {
+    id: "BNK_FORECLOSE",
+    category: "economic",
+    params: { loanId: "id" },
+    cost: {}
+  },
+  // Buthari only — the civilization and cooldown checks live in checkCouncilGate
+  // so a refusal reaches the player with a reason. Paid in their own sacred
+  // harvest, which is why the Buthari are seeded with SACRED_FLORA.
+  BUT_DEPLOY_CHAMPION: {
+    id: "BUT_DEPLOY_CHAMPION",
+    category: "military",
+    params: { championId: "string", targetId: "id" },
+    cost: { sacred_flora: 500 }
+  },
   DIP_RESPOND_OFFER: {
     id: "DIP_RESPOND_OFFER",
     category: "diplomatic",

@@ -206,6 +206,11 @@ export interface UIStore {
     techState: TechState;
     updateTech: (patch: Partial<TechState>) => void;
 
+    // ── Faction saga ──
+    // View model built by lib/factions/saga.ts each sync push. Null until the
+    // first sync; hasBespokeMechanics false for the founding four.
+    factionSaga: import('@/lib/factions/saga').FactionSaga | null;
+
     // ── Discourse ──
     discourseState: DiscourseState;
     updateDiscourse: (patch: Partial<DiscourseState>) => void;
@@ -489,6 +494,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     techState: defaultTechState,
     updateTech: (patch) =>
         set((state) => ({ techState: { ...state.techState, ...patch } })),
+
+    // ── Faction saga ──
+    factionSaga: null,
 
     // ── Discourse ──
     discourseState: defaultDiscourseState,

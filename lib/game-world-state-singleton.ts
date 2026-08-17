@@ -20,6 +20,7 @@ import { Faction, Resource, Market, TradeAgreement } from './trade-system/types'
 import { LeadershipWorldState, Leader, LeaderRole } from './leadership/types';
 import { initializeFactionHomeWorld } from './economy/services/initialization-service';
 import { assignFlavorTags } from './galaxy/system-tags';
+import { applyHomeworldNames, capitalSystemIdFor } from './galaxy/faction-capitals';
 import { emptyTitleState } from './titles/title-service';
 
 // ─── Module-Level Singletons ───────────────────────────────────────────────
@@ -50,6 +51,12 @@ function buildEmptyMovementState(): MovementWorldState {
             // this every system boots with an empty neighbour list and the whole
             // hyperlane layer (pathing, sensors, cohesion, press) is dead.
             ensureLaneGraph(systems, { links: loadLaneLinks(systemsPath) });
+            // The generator hands out procedural labels ("Rim Node 68"), which
+            // is fine for the 553 systems nobody lives on and wrong for the
+            // fourteen a player calls home. Renaming here, before visibility is
+            // seeded, means the name is already right on first reveal.
+            const renamed = applyHomeworldNames(systems);
+            if (renamed) console.log(`[Galaxy] Named ${renamed} faction homeworld system(s).`);
         }
     } catch (err) {
         console.error('[MovementState] Failed to load generated-systems.json:', err);
@@ -77,23 +84,40 @@ function buildEmptyMovementState(): MovementWorldState {
     };
 }
 
+/**
+ * A civilization's signature luxury, stocked at world birth.
+ *
+ * Keyed by civilizationId and spread into the faction's opening reserves. An
+ * empty entry for everyone else, so the spread is a no-op.
+ */
+const LUXURY_RESERVES: Record<string, Partial<Record<Resource, number>>> = {
+    'civ-buthari': { [Resource.SACRED_FLORA]: 2500 },
+    'civ-gabagoon': { [Resource.CAPACOLA]: 2500 },
+};
+
 function buildEmptyEconomyState(): EconomyWorldState {
     const factions = new Map<string, Faction>();
+    // Capitals are NOT literals here any more — they live in
+    // lib/galaxy/faction-capitals.ts alongside each faction's homeworld name,
+    // because ten of them used to be placeholder strings that matched no system
+    // and silently disabled trade routes, cohesion distance and pirate reach for
+    // those factions. `faction-rhimetals` also stops borrowing civ-grakkar: it
+    // has its own civilization now.
     const FACTION_DATA = [
-        { id: 'faction-aurelian', name: 'Aurelian Hegemony', civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist', capitalId: 'alpha-5b34961e18bb6fd14903' },
-        { id: 'faction-vektori', name: 'Vektori Technocracy', civilizationId: 'civ-velkori', ideologyId: 'ideo-individualist', capitalId: 'alpha-fe148b9a69a680fa14a3' },
-        { id: 'faction-null-syndicate', name: 'Nullward Syndicate', civilizationId: 'civ-auraxian', ideologyId: 'ideo-mercantile', capitalId: 'alpha-1acb646b529592834b59' },
-        { id: 'faction-covenant', name: 'Altaris Covenant', civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic', capitalId: 'alpha-10fae8cf89590243337b' },
-        { id: 'nexulan_convergence', name: 'Nexulan Convergence', civilizationId: 'civ-nexulan', ideologyId: 'ideo-technocratic', capitalId: 'alpha-nexulan-cap' },
-        { id: 'banking_clan', name: 'Intergalactic Banking Clan', civilizationId: 'civ-intergalactic', ideologyId: 'ideo-mercantile', capitalId: 'alpha-banking-cap' },
-        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', civilizationId: 'civ-grakkar', ideologyId: 'ideo-collectivist', capitalId: 'alpha-rhimetals-cap' },
-        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', civilizationId: 'civ-gabagoon', ideologyId: 'ideo-individualist', capitalId: 'alpha-gabagoon-cap' },
-        { id: 'faction-infernoids', name: 'Infernoids / Martijn', civilizationId: 'civ-infernoid', ideologyId: 'ideo-militaristic', capitalId: 'alpha-infernoid-cap' },
-        { id: 'faction-movanites', name: 'Movanites / David', civilizationId: 'civ-movanite', ideologyId: 'ideo-industrialist', capitalId: 'alpha-movanite-cap' },
-        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', civilizationId: 'civ-leopantheri', ideologyId: 'ideo-diplomatic', capitalId: 'alpha-leopantheri-cap' },
-        { id: 'faction-buthari', name: 'The Buthari / Hisham', civilizationId: 'civ-buthari', ideologyId: 'ideo-traditionalist', capitalId: 'alpha-buthari-cap' },
-        { id: 'faction-sarrak', name: 'Sarrak / Sil', civilizationId: 'civ-sarrak', ideologyId: 'ideo-militaristic', capitalId: 'alpha-sarrak-cap' },
-        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', civilizationId: 'civ-kaerruun', ideologyId: 'ideo-militaristic', capitalId: 'alpha-kaerruun-cap' },
+        { id: 'faction-aurelian', name: 'Aurelian Hegemony', civilizationId: 'civ-elyndra', ideologyId: 'ideo-capitalist' },
+        { id: 'faction-vektori', name: 'Vektori Technocracy', civilizationId: 'civ-velkori', ideologyId: 'ideo-individualist' },
+        { id: 'faction-null-syndicate', name: 'Nullward Syndicate', civilizationId: 'civ-auraxian', ideologyId: 'ideo-mercantile' },
+        { id: 'faction-covenant', name: 'Altaris Covenant', civilizationId: 'civ-solari', ideologyId: 'ideo-theocratic' },
+        { id: 'nexulan_convergence', name: 'Nexulan Convergence', civilizationId: 'civ-nexulan', ideologyId: 'ideo-technocratic' },
+        { id: 'banking_clan', name: 'Intergalactic Banking Clan', civilizationId: 'civ-intergalactic', ideologyId: 'ideo-mercantile' },
+        { id: 'faction-rhimetals', name: 'Rhimetals / Rufus', civilizationId: 'civ-rhimetals', ideologyId: 'ideo-collectivist' },
+        { id: 'faction-gabagoonians', name: 'Gabagoonians / Cohen', civilizationId: 'civ-gabagoon', ideologyId: 'ideo-individualist' },
+        { id: 'faction-infernoids', name: 'Infernoids / Martijn', civilizationId: 'civ-infernoid', ideologyId: 'ideo-militaristic' },
+        { id: 'faction-movanites', name: 'Movanites / David', civilizationId: 'civ-movanite', ideologyId: 'ideo-industrialist' },
+        { id: 'faction-leopantheri', name: 'Leo-pantheri / Lolo', civilizationId: 'civ-leopantheri', ideologyId: 'ideo-diplomatic' },
+        { id: 'faction-buthari', name: 'The Buthari / Hisham', civilizationId: 'civ-buthari', ideologyId: 'ideo-traditionalist' },
+        { id: 'faction-sarrak', name: 'Sarrak / Sil', civilizationId: 'civ-sarrak', ideologyId: 'ideo-militaristic' },
+        { id: 'faction-kaerruun', name: 'Kaer’Ruun / Otto', civilizationId: 'civ-kaerruun', ideologyId: 'ideo-militaristic' },
     ];
 
     FACTION_DATA.forEach((data) => {
@@ -101,15 +125,20 @@ function buildEmptyEconomyState(): EconomyWorldState {
         factions.set(data.id, {
             id: data.id,
             name: data.name,
-            capitalSystemId: data.capitalId || 'unknown-capital',
+            capitalSystemId: capitalSystemIdFor(data.id) ?? 'unknown-capital',
             theatreId: theatreId,
             backingRatioPolicy: 0.5,
-            reserves: { 
+            reserves: {
                 [Resource.CREDITS]: 50000,
-                [Resource.METALS]: 3000, 
+                [Resource.METALS]: 3000,
                 [Resource.CHEMICALS]: 1500,
                 [Resource.FOOD]: 2500,
-                [Resource.ENERGY]: 5000 
+                [Resource.ENERGY]: 5000,
+                // Signature luxuries. Both were already Resource enum members —
+                // "Buthari sacred flora" and "Gabagoonian luxury resource; also a
+                // combat stimulant" — and neither was ever placed in anyone's
+                // reserves, so the abilities that spend them had nothing to spend.
+                ...LUXURY_RESERVES[data.civilizationId ?? ''],
             },
             creditSupply: 1000000,
             liquidity: 500000,
@@ -195,6 +224,7 @@ export function getGameWorldState(): GameWorldState {
             secessionCrises: new Map(),
             doctrines: new Map(),
             reputation: new Map(),
+            factionTraits: new Map(),
             nowSeconds: Math.floor(Date.now() / 1000),
             combat: { recruitmentJobs: [] }
         };

@@ -16,6 +16,13 @@ import {
     advanceRound
 } from './combat-engine';
 import { getTechModifiers } from '../tech/modifiers';
+import { getBrutalityBonus, recordTrophyKill, shouldRoutFromFear, FEAR_ROUT_GRACE_SECONDS } from '../factions/kaerruun';
+import { getSerumBonus } from '../factions/sarrak';
+import { getSurgeBonus } from '../factions/gabagoon';
+import { phaseShieldBonus, precognitionBonus } from '../factions/nexulan';
+import { FIREBLOOD_FLEET_COEFF, isInfernoid, recordDetonation } from '../factions/infernoid';
+import { issueMoveOrder } from '../movement/movement-service';
+import { RNG, seedFromString } from '../trade-system/rng';
 
 /** Engine default for a correct stance prediction (combat-engine.ts:259). */
 const BASE_PREDICTION_BONUS = 0.15;
@@ -103,6 +110,13 @@ function handleEngagement(
         const attacker = createCombatant(factionA, fleetsA, 'attacker', world);
         const defender = createCombatant(factionB, fleetsB, 'defender', world);
 
+        // Fear Aura — the only genuine pre-contact moment on the server path.
+        // Both combatants are fully built, the raw fleet arrays are still in
+        // scope, and the first round has not been resolved.
+        if (applyFearAura(world, combatId, factionA, attacker.hp, fleetsA, factionB, defender.hp, fleetsB)) {
+            return; // somebody broke and ran — no engagement this cycle
+        }
+
         state = initiateCombat(
             combatId, 
             { 
@@ -119,6 +133,30 @@ function handleEngagement(
 
     // Advance round if not resolved
     if (!state.resolved) {
+        // createCombatant runs only once, when the engagement is created, so a
+        // snapshot taken then would keep paying out a serum that has since worn
+        // off — and would never let a withdrawal bite mid-battle. Brutality only
+        // ever rises, so it can stay snapshotted; the serum cannot.
+        // The capacola surge is refreshed here for exactly the same reason as the
+        // serum: it expires, and a snapshot taken at engagement creation would
+        // keep paying out a surge that has worn off and would never let the crash
+        // bite mid-battle.
+        // Phase-shields are recomputed per round for the same reason: they GROW
+        // with elapsedRounds, so a value snapshotted at engagement creation would
+        // freeze at zero and the mechanic would never fire at all.
+        const elapsed = state.elapsedRounds ?? 0;
+        state.attacker.traitBonuses = {
+            ...state.attacker.traitBonuses,
+            serum: getSerumBonus(world, state.attacker.factionId),
+            capacola: getSurgeBonus(world, state.attacker.factionId),
+            phaseShield: phaseShieldBonus(world, state.attacker.factionId, elapsed, false),
+        };
+        state.defender.traitBonuses = {
+            ...state.defender.traitBonuses,
+            serum: getSerumBonus(world, state.defender.factionId),
+            capacola: getSurgeBonus(world, state.defender.factionId),
+            phaseShield: phaseShieldBonus(world, state.defender.factionId, elapsed, true),
+        };
         try {
             const report = resolveEngagementRound(state, {
                 roundNumber: state.round,
@@ -143,6 +181,28 @@ function handleEngagement(
                     // Reaper's Toll crown measures destroyed power per season.
                     const killer = fleet.factionId === factionA ? factionB : factionA;
                     notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
+                    // Ritual Brutality: the Kaer'Ruun keep a trophy for every
+                    // kill, and it makes them permanently deadlier. This is the
+                    // only site where a kill is unambiguously attributed — note
+                    // it is coarse (a whole fleet reaching zero), and air
+                    // sorties bypass this path entirely.
+                    recordTrophyKill(world, killer);
+
+                    // Fireblood: an Infernoid hull that dies takes its killer
+                    // with it. This is the only site where a kill is
+                    // unambiguously attributed, so it is the only place the
+                    // detonation can be aimed. Note the coarseness inherited
+                    // from the trophy counter: only a WHOLE fleet reaching zero
+                    // counts, and air sorties bypass this path entirely.
+                    if (isInfernoid(world, fleet.factionId)) {
+                        const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF;
+                        if (blast > 0) {
+                            applyDamageToFleets(fleet.factionId === factionA ? fleetsB : fleetsA, blast);
+                            recordDetonation(world, fleet.factionId);
+                            console.log(`[Infernoid] ${fleet.id} detonates — ${blast.toFixed(0)} damage answered in fire.`);
+                        }
+                    }
+
                     world.movement.fleets.delete(fleet.id);
                 }
             }
@@ -156,6 +216,85 @@ function handleEngagement(
         // In 1.0, we just remove it to allow new ones to start if context shifts
         world.activeCombats.delete(combatId);
     }
+}
+
+/**
+ * Kaer'Ruun Fear Aura: give the weaker side one chance to break and run before
+ * a shot is fired. Returns true when somebody fled, meaning no engagement should
+ * be created this cycle.
+ *
+ * THE TRAP THIS AVOIDS: merely declining to create the CombatState is a no-op —
+ * the fleets are still co-located, so the next fast cycle re-rolls, ~288 times
+ * per strategic tick, until a roll finally fails. The rout has to physically
+ * move the fleet, and `routedUntilSeconds` keeps it from being re-rolled while
+ * it is actually leaving.
+ */
+function applyFearAura(
+    world: GameWorldState,
+    combatId: string,
+    factionA: string, powerA: number, fleetsA: Fleet[],
+    factionB: string, powerB: number, fleetsB: Fleet[],
+): boolean {
+    const rng = new RNG(seedFromString(`kaerruun|rout|${combatId}|${Math.floor(world.nowSeconds / 3600)}`));
+
+    const tryRout = (
+        predator: string, predatorPower: number,
+        prey: string, preyPower: number, preyFleets: Fleet[],
+    ): boolean => {
+        // Already running — leave it alone until it has had time to get clear.
+        if (preyFleets.some(f => ((f as any).routedUntilSeconds ?? 0) > world.nowSeconds)) return true;
+        if (!shouldRoutFromFear(world, predator, predatorPower, prey, preyPower, combatId, rng)) return false;
+
+        let moved = 0;
+        for (const fleet of preyFleets) {
+            const target = fleet.originSystemId || nearestOwnedSystem(world, prey, fleet.currentSystemId);
+            if (!target || target === fleet.currentSystemId) continue;
+            try {
+                const updated = issueMoveOrder(fleet, target, 'hyperlane', world.movement);
+                (updated as any).routedUntilSeconds = world.nowSeconds + FEAR_ROUT_GRACE_SECONDS;
+                world.movement.fleets.set(updated.id, updated);
+                moved += 1;
+            } catch (e) {
+                // Pathing needs a full fleet record (hyperdriveProfile and the
+                // rest). A malformed one must not take down combat resolution
+                // for everybody else in the system — it just fights instead.
+                console.error(`[CombatManager] Fear Aura could not withdraw ${fleet.id}:`, e);
+            }
+        }
+        if (!moved) return false;   // nowhere to run — it has to fight after all
+
+        console.log(`[CombatManager] Fear Aura: ${prey} broke before ${predator} and withdrew ${moved} fleet(s).`);
+        return true;
+    };
+
+    return tryRout(factionA, powerA, factionB, powerB, fleetsB)
+        || tryRout(factionB, powerB, factionA, powerA, fleetsA);
+}
+
+/** Closest system this faction holds a planet in, by lane hops. */
+function nearestOwnedSystem(world: GameWorldState, factionId: string, fromSystemId: string | null): string | null {
+    if (!fromSystemId) return null;
+    const owned = new Set<string>();
+    for (const planet of world.construction?.planets?.values() ?? []) {
+        if ((planet as any).ownerId === factionId && (planet as any).systemId) owned.add((planet as any).systemId);
+    }
+    if (!owned.size) return null;
+
+    const seen = new Set([fromSystemId]);
+    let frontier = [fromSystemId];
+    for (let depth = 0; depth < 24 && frontier.length; depth++) {
+        const next: string[] = [];
+        for (const id of frontier) {
+            for (const neighbor of world.movement.systems.get(id)?.hyperlaneNeighbors ?? []) {
+                if (seen.has(neighbor)) continue;
+                if (owned.has(neighbor)) return neighbor;
+                seen.add(neighbor);
+                next.push(neighbor);
+            }
+        }
+        frontier = next;
+    }
+    return null;
 }
 
 function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender', world?: any): CombatantState {
@@ -219,9 +358,27 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
             const mods = getTechModifiers(world, factionId);
             return {
                 ...mods,
-                prediction_bonus_multiplier: BASE_PREDICTION_BONUS + (mods['prediction_bonus_add'] ?? 0),
+                // Nexulan Pre-Cognitive Algorithms compose here rather than
+                // overwriting, for the reason above: the engine treats
+                // prediction_bonus_multiplier as an ABSOLUTE with a 0.15 default,
+                // so a civilization contributing its own multiplicative term
+                // would silently discard whatever tech had already earned.
+                prediction_bonus_multiplier: BASE_PREDICTION_BONUS
+                    + (mods['prediction_bonus_add'] ?? 0)
+                    + precognitionBonus(world, factionId),
             };
         })(),
+        // Civilization traits travel separately from techModifiers because the
+        // engine applies them after its ±40% clamp — see traitMultiplier.
+        traitBonuses: {
+            brutality: getBrutalityBonus(world, factionId),
+            serum: getSerumBonus(world, factionId),
+            capacola: getSurgeBonus(world, factionId),
+            // phaseShield is deliberately NOT seeded here: it depends on
+            // elapsedRounds and on which side this combatant ends up being,
+            // neither of which exists yet at creation. It is set per round in
+            // resolveCombatTick, where both are known.
+        },
     };
 }
 

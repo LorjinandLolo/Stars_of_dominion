@@ -20,6 +20,7 @@ import { respondToGambit, pickAutoResponse, factionFleetPower } from '@/lib/dipl
 import { intervene } from '@/lib/diplomacy/intervention-service';
 import { imposeSanctions, getSanction } from '@/lib/diplomacy/sanctions-service';
 import type { DiplomaticOffer } from '@/lib/diplomacy/diplomacy-types';
+import { condescensionPenalty } from '@/lib/factions/nexulan';
 
 /** AI acts on a pending item once it is this old (6 sim-hours = one tick). */
 const DELIBERATION_SECONDS = 6 * 3600;
@@ -52,7 +53,12 @@ export function isAIFaction(world: GameWorldState, factionId: string): boolean {
 export function wouldAccept(world: GameWorldState, offer: DiplomaticOffer): boolean {
     const me = offer.toFactionId;
     const them = offer.fromFactionId;
-    const tension = rivalryScore(world, me, them);
+    // Nexulan condescension: being addressed as an ant costs THEM the deal, not
+    // everyone else. Charged against the tension the recipient weighs, so a
+    // Convergence proposal has to be better to earn the same answer. A threshold
+    // shift rather than a refusal — they can still deal, they just pay for the
+    // tone. Zero for every other proposer.
+    const tension = rivalryScore(world, me, them) + condescensionPenalty(world, them);
 
     switch (offer.kind) {
         case 'treaty': {
@@ -74,6 +80,24 @@ export function wouldAccept(world: GameWorldState, offer: DiplomaticOffer): bool
             const cowed = factionFleetPower(world, them) > factionFleetPower(world, me) * 1.5;
             const affordable = (offer.tributeAmountPerTick ?? 0) <= treasury * 0.01;
             return cowed && affordable;
+        }
+        case 'mercenary_contract': {
+            // Hire muscle when you are outgunned and can carry the retainer.
+            // Without this case the switch falls to `default: return false` and
+            // every AI refuses every contract forever, which would look exactly
+            // like the feature being broken.
+            const terms = offer.contractTerms;
+            if (!terms) return false;
+            const key = terms.resourceKey || 'CREDITS';
+            const treasury = Number((world.economy.factions.get(me)?.reserves as any)?.[key] ?? 0);
+            // Affordable across the whole term, with room to spare.
+            const ticks = Math.max(1, Math.ceil(terms.termSeconds / (6 * 60 * 60)));
+            const affordable = terms.retainerPerTick * ticks <= treasury * 0.5;
+            if (!affordable) return false;
+
+            const outgunned = factionFleetPower(world, me) < factionFleetPower(world, them);
+            const underThreat = world.shared.warFatigue >= 25 || tension > 55;
+            return outgunned || underThreat;
         }
         default:
             return false;
@@ -140,9 +164,43 @@ function pickRandom<T>(items: T[]): T | undefined {
     return items[Math.floor(Math.random() * items.length)];
 }
 
+/** Civilizations that sell their army rather than only fielding it. */
+function isMercenaryCivilization(world: GameWorldState, factionId: string): boolean {
+    return (world.economy.factions.get(factionId) as { civilizationId?: string } | undefined)
+        ?.civilizationId === 'civ-kaerruun';
+}
+
+/** Already retained by this employer — do not double-sell. */
+function hasContractWith(world: GameWorldState, contractorId: string, employerId: string): boolean {
+    const contracts = world.factionTraits?.get(contractorId)?.kaerruun?.contracts ?? {};
+    return Object.values(contracts).some(c =>
+        c.status === 'active' && c.employerFactionId === employerId);
+}
+
 function attemptInitiative(world: GameWorldState, factionId: string): void {
     const partners = [...world.economy.factions.keys()]
         .filter(id => id !== factionId && !EXCLUDED.has(id));
+
+    // A mercenary civilization tours for work — this IS their economy, so they
+    // hawk contracts before considering anything else.
+    if (isMercenaryCivilization(world, factionId)) {
+        const client = pickRandom(partners.filter(id =>
+            rivalryScore(world, factionId, id) < 55
+            && !isAtWar(world, factionId, id)
+            && !hasContractWith(world, factionId, id)));
+        if (client && Math.random() < 0.5) {
+            createOffer(world, factionId, {
+                kind: 'mercenary_contract',
+                toFactionId: client,
+                contractTerms: {
+                    resourceKey: 'CREDITS',
+                    retainerPerTick: 250,
+                    termSeconds: 30 * 6 * 60 * 60,   // thirty strategic ticks
+                },
+            });
+            return;
+        }
+    }
 
     // Exhausted and at war → sue for peace with the first enemy found.
     if (world.shared.warFatigue >= 50) {

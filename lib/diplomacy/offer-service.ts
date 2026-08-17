@@ -8,6 +8,7 @@
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { RivalryState, Treaty, TreatyType } from '@/lib/politics/cold-war-types';
 import { calculateEscalationLevel } from '@/lib/politics/cold-war-service';
+import { isButhari, isInfernoid, isMovanite, grievanceStore, readsGrievances } from '../factions/civ-ids';
 import { ReputationService } from '@/lib/reputation/reputation-service';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
@@ -135,6 +136,68 @@ function factionExists(world: GameWorldState, factionId: string): boolean {
     return world.economy?.factions?.has?.(factionId) ?? false;
 }
 
+// ─── Mercenary contracts (Kaer'Ruun) ─────────────────────────────────────────
+// Kept local rather than imported from lib/factions/ to avoid a cycle: the
+// faction module already imports isAtWar from this file.
+
+/** Civilizations that may sell their army. */
+const MERCENARY_CIV_IDS = new Set(['civ-kaerruun']);
+
+/** How long a Buthari-signed accord stands before it lapses. 40 strategic ticks. */
+const BUTHARI_PACT_DURATION_SECONDS = 40 * 6 * 60 * 60;
+
+/**
+ * Record a grievance from the one place where aggressor and defender both exist.
+ *
+ * This used to hand-inline the write to dodge an import of lib/factions/buthari.ts,
+ * which imports THIS module. It now goes through the shared store in civ-ids.ts —
+ * a leaf with no imports of its own, so there is no cycle and, more importantly,
+ * no second copy of the record. When grievances moved up to FactionTraitState the
+ * duplicate here kept writing to the old location, and every Buthari retaliation
+ * silently stopped unlocking; the probe caught it.
+ *
+ * A no-op for any civilization that does not read grievances.
+ */
+function recordGrievanceLocal(
+    world: GameWorldState,
+    victimId: string,
+    aggressorId: string,
+    kind: 'attacked' | 'rite_violated',
+): void {
+    // Must match grievanceClaimant in lib/factions/buthari.ts — five
+    // civilizations read this store, and a victim missing from either guard has
+    // a fully-wired mechanic that never fires.
+    if (!readsGrievances(world, victimId)) return;
+    if (!aggressorId || aggressorId === victimId) return;
+    if (!(world.factionTraits instanceof Map)) return;
+    const store = grievanceStore(world, victimId);
+    if (!store) return;
+    store[aggressorId] = { sinceSeconds: world.nowSeconds, kind };
+}
+
+function isMercenaryCivilization(world: GameWorldState, factionId: string): boolean {
+    const civId = (world.economy?.factions?.get(factionId) as { civilizationId?: string } | undefined)?.civilizationId;
+    return !!civId && MERCENARY_CIV_IDS.has(civId);
+}
+
+/** The contractor's contract bag, created on demand. Null if traits are absent. */
+function ensureMercenaryContracts(world: GameWorldState, contractorId: string) {
+    if (!(world.factionTraits instanceof Map)) world.factionTraits = new Map();
+    let traits = world.factionTraits.get(contractorId);
+    if (!traits) {
+        traits = { factionId: contractorId };
+        world.factionTraits.set(contractorId, traits);
+    }
+    if (!traits.kaerruun) {
+        traits.kaerruun = {
+            lastResolvedCycle: -1, inViolation: false, lastEvaluatedSeconds: 0,
+            violations: 0, observed: 0, contracts: {},
+        };
+    }
+    if (!traits.kaerruun.contracts) traits.kaerruun.contracts = {};
+    return traits.kaerruun.contracts;
+}
+
 // ─── Offer lifecycle ─────────────────────────────────────────────────────────
 
 export interface CreateOfferParams {
@@ -145,6 +208,7 @@ export interface CreateOfferParams {
     volumePerHour?: number;
     tributeResourceType?: string;
     tributeAmountPerTick?: number;
+    contractTerms?: DiplomaticOffer['contractTerms'];
 }
 
 export function createOffer(world: GameWorldState, fromFactionId: string, params: CreateOfferParams): DiplomacyResult {
@@ -159,6 +223,27 @@ export function createOffer(world: GameWorldState, fromFactionId: string, params
         if (findActiveTreaty(world, fromFactionId, toFactionId, params.treatyType)) {
             return fail('That treaty is already in force between your empires.');
         }
+        // The Buthari take no true allies — "you can visit, maybe trade, but you
+        // will never belong". Tested in BOTH directions: refusing only outbound
+        // proposals would let a rival ally with them by proposing first.
+        //
+        // Only mutual_defense is refused, because it is the only treaty type
+        // with mechanical teeth: registerActOfWar walks active mutual-defence
+        // treaties and drags each co-signatory to war. research_share,
+        // intelligence_pact and open_borders have no mechanical consumer at all,
+        // so refusing those would cost nothing and read as arbitrary.
+        if (params.treatyType === 'mutual_defense'
+            && (isButhari(world, fromFactionId) || isButhari(world, toFactionId))) {
+            return fail('The Buthari share the fire. They are never part of the flame.');
+        }
+        // Nobody binds themselves to the Infernoids, and the Infernoids bind
+        // themselves to nobody. Same reasoning as above: mutual_defense is the
+        // only treaty type with mechanical teeth, so refusing the others would
+        // be theatre.
+        if (params.treatyType === 'mutual_defense'
+            && (isInfernoid(world, fromFactionId) || isInfernoid(world, toFactionId))) {
+            return fail('Purity is flame. The rest is ash — the Infernoids take no allies, and none will have them.');
+        }
     }
     if (kind === 'tribute_demand') {
         const amt = Number(params.tributeAmountPerTick);
@@ -169,6 +254,26 @@ export function createOffer(world: GameWorldState, fromFactionId: string, params
         if (!params.resource || !Number.isFinite(Number(params.volumePerHour)) || Number(params.volumePerHour) <= 0) {
             return fail('Trade pact needs a resource and a positive volume.');
         }
+    }
+    if (kind === 'mercenary_contract') {
+        // Only the Kaer'Ruun sell themselves. This is where the civilization's
+        // dead `uniqueActionIds: ['offer_contract']` should always have pointed.
+        if (!isMercenaryCivilization(world, fromFactionId)) {
+            return fail('Your people do not sell their wars.');
+        }
+        const terms = params.contractTerms;
+        const retainer = Number(terms?.retainerPerTick);
+        const term = Number(terms?.termSeconds);
+        if (!Number.isFinite(retainer) || retainer <= 0) return fail('A contract needs a positive retainer.');
+        if (!Number.isFinite(term) || term <= 0) return fail('A contract needs a positive term.');
+        // Normalise the reserve key to UPPERCASE at the boundary, so a lowercase
+        // key can never reach the payout and silently move nothing.
+        params.contractTerms = {
+            resourceKey: String(terms?.resourceKey || 'CREDITS').toUpperCase(),
+            retainerPerTick: Math.min(50_000, Math.floor(retainer)),
+            termSeconds: Math.floor(term),
+            againstFactionId: terms?.againstFactionId,
+        };
     }
 
     // At war, only surrender terms or peace talks make sense.
@@ -205,6 +310,7 @@ export function createOffer(world: GameWorldState, fromFactionId: string, params
         volumePerHour: params.volumePerHour,
         tributeResourceType: params.tributeResourceType ?? 'credits',
         tributeAmountPerTick: params.tributeAmountPerTick,
+        contractTerms: params.contractTerms,
         createdAtSeconds: world.nowSeconds,
         expiresAtSeconds: world.nowSeconds + OFFER_TTL_SECONDS,
         status: 'pending',
@@ -269,6 +375,15 @@ function applyAcceptedOffer(world: GameWorldState, offer: DiplomaticOffer): void
                 signedAtTick: world.nowSeconds,
                 status: 'active',
             };
+            // "Limited to trade or TEMPORARY pacts." A Buthari signature always
+            // carries an expiry, where everyone else's accords are open-ended.
+            // Treaty.expiresAtTick already had a live consumer and no producer:
+            // tickDiplomacy flips a lapsed active treaty to 'suspended', and both
+            // findActiveTreaty and the mutual-defence walk require 'active', so
+            // suspension correctly disarms it.
+            if (isButhari(world, from) || isButhari(world, to)) {
+                treaty.expiresAtTick = world.nowSeconds + BUTHARI_PACT_DURATION_SECONDS;
+            }
             world.treaties.set(treaty.id, treaty);
             shiftRivalry(world, from, to, -10, 'treaty_signed', offer.treatyType);
             ReputationService.updateScore(world, from, { honor: 2 }, `signed_${offer.treatyType}`);
@@ -315,6 +430,32 @@ function applyAcceptedOffer(world: GameWorldState, offer: DiplomaticOffer): void
             // Submitting defuses the standoff a little, but coercion is remembered.
             shiftRivalry(world, from, to, -5, 'tribute_accepted');
             ReputationService.updateScore(world, from, { oppression: 6 }, 'extracted_tribute');
+            break;
+        }
+        case 'mercenary_contract': {
+            // `from` is the Kaer'Ruun contractor, `to` is the employer.
+            const terms = offer.contractTerms;
+            if (terms) {
+                const contractId = `merc-${from}-${to}-${world.nowSeconds}`;
+                const contracts = ensureMercenaryContracts(world, from);
+                if (contracts) {
+                    contracts[contractId] = {
+                        id: contractId,
+                        contractorFactionId: from,
+                        employerFactionId: to,
+                        againstFactionId: terms.againstFactionId,
+                        resourceKey: terms.resourceKey,
+                        retainerPerTick: terms.retainerPerTick,
+                        signedAtSeconds: world.nowSeconds,
+                        expiresAtSeconds: world.nowSeconds + terms.termSeconds,
+                        status: 'active',
+                        paidToDate: 0,
+                    };
+                }
+            }
+            // Bought goodwill is still goodwill, and it is remembered as bought.
+            shiftRivalry(world, from, to, -6, 'mercenary_contract_signed');
+            ReputationService.updateScore(world, from, { reliability: 3 }, 'signed_mercenary_contract');
             break;
         }
         case 'peace_offer': {
@@ -378,6 +519,12 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
         console.log(`[Diplomacy] ${aggressorId} VIOLATED a non-aggression pact attacking ${defenderId}`);
     }
 
+    // Record who started it, BEFORE the roles are thrown away. setRivalryScore
+    // below writes symmetric rows in both directions and RelationEvent carries
+    // no actor field, so this is the only moment aggressor and defender are
+    // distinguishable. The Buthari need it to know whom they may answer.
+    recordGrievanceLocal(world, defenderId, aggressorId, 'attacked');
+
     setRivalryScore(world, aggressorId, defenderId, 100, false, 'war_declared');
 
     if (alreadyAtWar) return; // consequences below fire once per war
@@ -406,6 +553,16 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
         if (pair.includes(aggressorId) && pair.includes(defenderId)) {
             world.tradePacts.delete(id);
             world.economy.tradeAgreements?.delete?.(id);
+        }
+    }
+    // A retainer does not survive the pair going to war — otherwise the
+    // Kaer'Ruun would keep drawing pay from an empire they just attacked.
+    for (const traits of world.factionTraits?.values() ?? []) {
+        for (const contract of Object.values(traits.kaerruun?.contracts ?? {})) {
+            const pair = [contract.contractorFactionId, contract.employerFactionId];
+            if (contract.status === 'active' && pair.includes(aggressorId) && pair.includes(defenderId)) {
+                contract.status = 'voided';
+            }
         }
     }
     for (const tribute of world.tributes.values()) {

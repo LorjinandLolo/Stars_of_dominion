@@ -22,10 +22,17 @@
 import type { PlayerTechState } from './types';
 import { TechEffectType } from './types';
 import { registry } from './engine';
+import { getCivilizationModifiers } from '../civilization/modifiers';
 import './techData'; // ensure the trees are registered before any validation walk
 
 interface TechBearingWorld {
     tech?: Map<string, PlayerTechState> | { get?: (id: string) => PlayerTechState | undefined };
+    /**
+     * Where a faction's civilizationId / ideologyId live. Optional so the test
+     * harnesses that hand-build a `{ tech }` stub keep working — a world without
+     * it simply contributes no civilizational modifiers.
+     */
+    economy?: { factions?: { get?: (id: string) => unknown; values?: () => Iterable<unknown> } };
 }
 
 export type ModifierKind = 'mult' | 'add';
@@ -76,9 +83,41 @@ function baselineFor(key: string, fallback?: number): number {
     return spec.kind === 'mult' ? 1 : 0;
 }
 
-/** The whole modifier record for a faction (empty when it has no tech state). */
-export function getTechModifiers(world: TechBearingWorld | undefined | null, factionId: string): Record<string, number> {
+/** Just the researched half, with no civilizational identity folded in. */
+export function getResearchedModifiers(world: TechBearingWorld | undefined | null, factionId: string): Record<string, number> {
     return (world?.tech?.get?.(factionId)?.globalModifiers ?? {}) as Record<string, number>;
+}
+
+/**
+ * The whole modifier record for a faction: what it has researched, composed
+ * with who it is.
+ *
+ * Civilization and ideology bundles arrive as additive deltas in this same key
+ * vocabulary (lib/civilization/modifiers.ts) and are folded in by kind — a
+ * 'mult' key is scaled by (1 + delta) so it stacks with researched multipliers
+ * the way two multipliers should, an 'add' key simply gains the delta. This is
+ * the only place civilizational identity enters the numbers, which is why every
+ * existing consumer of getTechModifier picks it up without changing.
+ */
+export function getTechModifiers(world: TechBearingWorld | undefined | null, factionId: string): Record<string, number> {
+    const researched = getResearchedModifiers(world, factionId);
+    // Deliberately lazy: civ resolution walks the economy state and the
+    // registry, and this runs on hot paths (per-fleet repair, per-op espionage).
+    const identity = getCivilizationModifiers(world as any, factionId, 'tech');
+    const keys = Object.keys(identity);
+    if (!keys.length) return researched;
+
+    const merged: Record<string, number> = { ...researched };
+    for (const key of keys) {
+        const delta = identity[key];
+        if (!Number.isFinite(delta) || delta === 0) continue;
+        const kind = MODIFIER_REGISTRY[key]?.kind ?? 'mult';
+        const base = typeof merged[key] === 'number' && Number.isFinite(merged[key])
+            ? merged[key]
+            : baselineFor(key);
+        merged[key] = kind === 'mult' ? base * (1 + delta) : base + delta;
+    }
+    return merged;
 }
 
 /**

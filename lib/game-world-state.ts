@@ -23,6 +23,7 @@ import type { DefianceEvent } from './government/defiance-types';
 import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
+import type { FactionTraitState } from './factions/faction-traits-types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
 import type { CorporateWorldState } from './economy/corporate/company-registry';
 
@@ -222,6 +223,15 @@ export interface GameWorldState {
     secessionCrises: Map<string, SecessionCrisis>;
     doctrines: Map<string, EmpireDoctrines>;
     reputation: Map<string, FactionReputation>;
+
+    /**
+     * Per-faction bespoke mechanics — the Bloodmoon ceasefire, capacola surges,
+     * the Council of Five. One map so a new faction's mechanic needs no new
+     * world field and no new persistence wiring; see lib/factions/.
+     * Optional: absent on snapshots written before it existed, and
+     * ensureFactionTraits creates it on the next boot.
+     */
+    factionTraits?: Map<string, FactionTraitState>;
 
     /** Sim-clock unix seconds. Single source of truth for all services. */
     nowSeconds: number;

@@ -13,6 +13,8 @@ export type NavTab =
     /** The espionage agency: agent roster, intel networks, covert ops command. */
     | 'agency'
     | 'council'
+    /** The faction saga: your bespoke mechanics, live state and lifetime ledger. */
+    | 'saga'
     | 'dossier'
     | 'tech'
     | 'discourse'
@@ -237,7 +239,7 @@ export interface RivalryState {
 /** Client view of a bilateral diplomatic offer (world.diplomacy.offers). */
 export interface DiplomaticOfferView {
     id: string;
-    kind: 'treaty' | 'trade_pact' | 'tribute_demand' | 'peace_offer';
+    kind: 'treaty' | 'trade_pact' | 'tribute_demand' | 'peace_offer' | 'mercenary_contract';
     fromFactionId: string;
     toFactionId: string;
     treatyType?: string;
@@ -245,6 +247,13 @@ export interface DiplomaticOfferView {
     volumePerHour?: number;
     tributeResourceType?: string;
     tributeAmountPerTick?: number;
+    /** Mercenary retainer terms (kind === 'mercenary_contract'). */
+    contractTerms?: {
+        resourceKey: string;
+        retainerPerTick: number;
+        termSeconds: number;
+        againstFactionId?: string;
+    };
     createdAtSeconds: number;
     expiresAtSeconds: number;
     status: 'pending' | 'accepted' | 'rejected' | 'expired' | 'withdrawn';

@@ -7,7 +7,7 @@
 // next cycle, so both sides commit blind.
 
 import React from 'react';
-import type { PlanetSurface } from '@/lib/planet-surface/types';
+import type { PlanetSurface, TerrainType } from '@/lib/planet-surface/types';
 import type { DistrictWarState, GroundUnitType } from '@/lib/combat/siege/siege-types';
 import type { Formation, FormationSide } from '@/lib/combat/siege/formations';
 import { legalMoves } from '@/lib/combat/siege/formations';
@@ -30,6 +30,14 @@ interface UnitPiecesProps {
     onOrderMove: (formation: Formation, sectorIndex: number, opts?: { queue?: boolean; redeploy?: boolean }) => void;
     /** True while the player is in strategic-redeployment mode (B). */
     redeployMode: boolean;
+    /**
+     * Per-civilization terrain-cost override, e.g. Infernoid heat immunity.
+     *
+     * MUST match what the worker passes to legalMoves at the MIL_MOVE_FORMATION
+     * handler. That check is authoritative; this one only draws the reach
+     * overlay, so a mismatch shows the player moves the server will reject.
+     */
+    terrainCostOverride?: (terrain: TerrainType, base: number) => number;
 }
 
 /** NATO-ish silhouettes: readable at a glance, identifiable at small size. */
@@ -63,6 +71,14 @@ function UnitGlyph({ type, size, color }: { type: GroundUnitType; size: number; 
             );
         case 'MILITIA': // irregular chevron
             return <path d={`M ${-s * 0.9} ${s * 0.5} L 0 ${-s * 0.7} L ${s * 0.9} ${s * 0.5}`} stroke={color} strokeWidth={s * 0.28} fill="none" />;
+        case 'ELDER_INFERNOID': // tripod: a body on three legs
+            return (
+                <g>
+                    <circle cy={-s * 0.35} r={s * 0.45} fill={color} />
+                    <path d={`M 0 ${s * 0.05} L ${-s * 0.85} ${s} M 0 ${s * 0.05} L 0 ${s} M 0 ${s * 0.05} L ${s * 0.85} ${s}`}
+                        stroke={color} strokeWidth={s * 0.24} fill="none" />
+                </g>
+            );
         default:
             return <circle r={s * 0.5} fill={color} />;
     }
@@ -71,6 +87,7 @@ function UnitGlyph({ type, size, color }: { type: GroundUnitType; size: number; 
 export default function UnitPieces({
     surface, geo, war, formations, playerSide,
     attackerColor, defenderColor, selectedIds, onSelectionChange, onOrderMove, redeployMode,
+    terrainCostOverride,
 }: UnitPiecesProps) {
     const rootRef = React.useRef<SVGGElement | null>(null);
     // Drag-and-drop: the piece being dragged and where the cursor is, in board
@@ -97,17 +114,17 @@ export default function UnitPieces({
                     && s.terrain !== 'ocean')
                 .map(s => ({ sectorIndex: s.index, cost: 0, contested: false }));
         }
-        return legalMoves(surface, war, lead);
-    }, [lead, surface, war, redeployMode]);
+        return legalMoves(surface, war, lead, undefined, terrainCostOverride);
+    }, [lead, surface, war, redeployMode, terrainCostOverride]);
 
     /** Issues the order to every selected piece that can obey it. */
     const orderSelection = React.useCallback((sectorIndex: number, opts?: { queue?: boolean; redeploy?: boolean }) => {
         const targets = selectedFormations.length ? selectedFormations : (lead ? [lead] : []);
         for (const f of targets) {
             if (opts?.redeploy || opts?.queue) { onOrderMove(f, sectorIndex, opts); continue; }
-            if (legalMoves(surface, war, f).some(o => o.sectorIndex === sectorIndex)) onOrderMove(f, sectorIndex);
+            if (legalMoves(surface, war, f, undefined, terrainCostOverride).some(o => o.sectorIndex === sectorIndex)) onOrderMove(f, sectorIndex);
         }
-    }, [selectedFormations, lead, surface, war, onOrderMove]);
+    }, [selectedFormations, lead, surface, war, onOrderMove, terrainCostOverride]);
 
     /** Screen point → board coordinates. */
     const toBoard = React.useCallback((clientX: number, clientY: number): Pt | null => {
@@ -154,7 +171,7 @@ export default function UnitPieces({
             if (!wasDrag) return;
             if (idx == null) return;
             if (redeployMode) { onOrderMove(formation, idx, { redeploy: true }); return; }
-            const legal = legalMoves(surface, war, formation).some(o => o.sectorIndex === idx);
+            const legal = legalMoves(surface, war, formation, undefined, terrainCostOverride).some(o => o.sectorIndex === idx);
             if (legal) onOrderMove(formation, idx);
         };
         window.addEventListener('pointermove', move);

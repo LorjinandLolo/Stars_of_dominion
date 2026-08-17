@@ -711,11 +711,41 @@ export function PlanetConstructionPanel({
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Demographics Card */}
                                 <div className="p-6 bg-slate-900/50 border border-slate-800 rounded-xl">
-                                    <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-6 flex items-center gap-2">
+                                    <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-2">
                                         <Users className="w-4 h-4 text-blue-400" />
                                         Species Demographics
                                     </h3>
+                                    {(() => {
+                                        const bands: any[] = planet?.demographics ?? [];
+                                        const total = bands.reduce((s, b) => s + (b.percentage ?? 0), 0) || 1;
+                                        const diversity = 1 - bands.reduce((s, b) => s + Math.pow((b.percentage ?? 0) / total, 2), 0);
+                                        const unfree = bands
+                                            .filter(b => b.socialClass === 'Slave' || b.socialClass === 'Servant')
+                                            .reduce((s, b) => s + (b.percentage ?? 0), 0);
+                                        const label = diversity < 0.15 ? 'Homogeneous'
+                                            : diversity < 0.40 ? 'Mixed'
+                                            : diversity < 0.60 ? 'Plural' : 'Cosmopolitan';
+                                        return (
+                                            <div className="flex items-center gap-3 mb-6 text-[10px] uppercase tracking-widest">
+                                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">{label}</span>
+                                                <span className="text-slate-500">Diversity {(diversity * 100).toFixed(0)}%</span>
+                                                {unfree > 0 && (
+                                                    <span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400">
+                                                        {unfree.toFixed(0)}% unfree
+                                                    </span>
+                                                )}
+                                                {planet?.conqueredFrom && (
+                                                    <span className="text-slate-600 normal-case tracking-normal italic">
+                                                        taken from {planet.conqueredFrom}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                     <div className="space-y-4">
+                                        {(!planet?.demographics?.length) && (
+                                            <p className="text-[11px] text-slate-500 italic">No census on record for this world.</p>
+                                        )}
                                         {planet?.demographics?.map((demo: any, idx: number) => (
                                             <div key={idx} className="space-y-2">
                                                 <div className="flex justify-between text-sm">

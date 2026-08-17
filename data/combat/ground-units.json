@@ -76,5 +76,16 @@
       "DEFENSIVE_HOLD": 1.1
     },
     "occupationEfficiency": 1.0
+  },
+  "ELDER_INFERNOID": {
+    "name": "Elder Infernoid",
+    "description": "A walking Infernoid war-titan. Small arms cannot reach it; only anti-armor, tanks and guns can, and only in blows that land whole. It occupies nothing — it is sent to break a line, not to hold a street.",
+    "baseStrength": 60.0,
+    "supplyConsumption": 12.0,
+    "moraleWeight": 8.0,
+    "bonus": {
+      "AGGRESSIVE_ASSAULT": 1.4
+    },
+    "occupationEfficiency": 0.3
   }
 }

@@ -212,9 +212,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "logic-based, treating other species as variables in a refinement protocol",
     worldview: "The galaxy is an inefficient machine that must be rebuilt."
   },
-  rhimetal_sovereignty: {
+  "faction-rhimetals": {
     id: "wofrrs",
-    factionId: "rhimetal_sovereignty",
+    factionId: "faction-rhimetals",
     name: "Wofrrs",
     title: "The Crowned Wing",
     tone: "serene, swift, cold, exact",
@@ -231,9 +231,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "choreographed, exact, seeking arbitrator roles",
     worldview: "The universe is a chaotic storm that requires the calming wing of order."
   },
-  gabagoonian_republic: {
+  "faction-gabagoonians": {
     id: "eileen",
-    factionId: "gabagoonian_republic",
+    factionId: "faction-gabagoonians",
     name: "Eileen Ulick",
     title: "The Soprano-Savant",
     tone: "expressive, hospitality-driven, unpredictable",
@@ -250,9 +250,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "informal, leveraging food and media-savvy connections",
     worldview: "Life is a dinner party; don't be the one who didn't bring a dish."
   },
-  infernoid_crusade: {
+  "faction-infernoids": {
     id: "mulgar",
-    factionId: "infernoid_crusade",
+    factionId: "faction-infernoids",
     name: "Mulgar",
     title: "The Pyreborn Tyrant",
     tone: "furious, zealous, hyperthermal",
@@ -269,9 +269,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "unendingly aggressive, demanding absolute submission",
     worldview: "The galaxy is a furnace; we are its fuel."
   },
-  movanite_stampede: {
+  "faction-movanites": {
     id: "cedeti",
-    factionId: "movanite_stampede",
+    factionId: "faction-movanites",
     name: "Cedeti the Third",
     title: "Grand Komptroller of the Stampede",
     tone: "bureaucratic, calm, deceptively fast",
@@ -288,9 +288,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "deliberative, weaponizing bureaucracy and mass numbers",
     worldview: "The galaxy is an office with a very large parking lot."
   },
-  leopantheri_harmonate: {
+  "faction-leopantheri": {
     id: "tkharan",
-    factionId: "leopantheri_harmonate",
+    factionId: "faction-leopantheri",
     name: "T’Kharan Maul",
     title: "The Harmonious Roar",
     tone: "resonant, authoritative, cultured",
@@ -307,9 +307,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "patient, elegant, uncompromising on moral weight",
     worldview: "The galaxy is a sacred duel; every move must have meaning."
   },
-  buthari_council: {
+  "faction-buthari": {
     id: "council_five",
-    factionId: "buthari_council",
+    factionId: "faction-buthari",
     name: "The Council of Five",
     title: "Protectors of the Sacred Peaks",
     tone: "vibrational, privileged, xenophobic",
@@ -326,9 +326,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "indirect, destabilizing rivals through culture and bribery",
     worldview: "We are the chosen; you are the audience."
   },
-  sarrak_legion: {
+  "faction-sarrak": {
     id: "scalex",
-    factionId: "sarrak_legion",
+    factionId: "faction-sarrak",
     name: "Domina Scalex",
     title: "First Fang of the Godswamp",
     tone: "brutal, lizard-like, fanatical",
@@ -345,9 +345,9 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     negotiationStyle: "crushing, treating others as fuel or chains",
     worldview: "The galaxy is a swamp; only the apex eaters survive."
   },
-  kaer_ruun_hunt: {
+  "faction-kaerruun": {
     id: "rekktan",
-    factionId: "kaer_ruun_hunt",
+    factionId: "faction-kaerruun",
     name: "High Warlord Rekk’tan",
     title: "Claw of the Eclipse",
     tone: "lean, sinewy, predatory, stealthy",
@@ -382,6 +382,86 @@ export const FACTION_SPEAKERS: Record<string, FactionSpeakerProfile> = {
     redLines: ["unpaid interest", "seizure of banking assets", "economic audit"],
     negotiationStyle: "cold, using interest rates as weapons, leveraging mercenary armadas",
     worldview: "The universe is a balance sheet; we are the auditors of reality."
+  },
+  // ── The four founding factions ───────────────────────────────────────────
+  // These had no speaker at all, so getFactionSpeaker fell through to the
+  // generic Senate chancellor and the Aurelian, Vektori, Nullward and Altaris
+  // leaders all spoke in the same borrowed voice.
+  "faction-aurelian": {
+    id: "elara",
+    factionId: "faction-aurelian",
+    name: "First Consul Elara Vayne",
+    title: "Voice of the Aurelian Hegemony",
+    tone: "polished, magnanimous, unmistakably condescending underneath",
+    politicalStyle: "hegemonic, consensus-brokering, market-liberal",
+    coreValues: ["order", "prosperity", "legitimate primacy"],
+    primaryConcerns: ["trade lane security", "the balance of powers", "succession legitimacy"],
+    verbalTics: ["As the accords make clear...", "Prosperity is a shared project...", "Let us be reasonable..."],
+    samplePhrases: [
+      "The Hegemony does not rule the lanes. It merely keeps them open, and everyone benefits.",
+      "We would rather buy your loyalty than break your fleet. It is cheaper for us both."
+    ],
+    greetings: ["The Hegemony receives you.", "Speak plainly — I have three other delegations waiting."],
+    redLines: ["closure of the trade lanes", "unilateral annexation", "challenges to the Consulship"],
+    negotiationStyle: "generous on terms, immovable on precedence",
+    worldview: "Order is not imposed, it is underwritten — and someone must hold the note."
+  },
+  "faction-vektori": {
+    id: "sero",
+    factionId: "faction-vektori",
+    name: "Director Sero Kaine",
+    title: "Chief Architect of the Vektori Technocracy",
+    tone: "clipped, evidence-first, visibly irritated by sentiment",
+    politicalStyle: "technocratic, meritocratic, impatient with tradition",
+    coreValues: ["competence", "autonomy", "measurable outcomes"],
+    primaryConcerns: ["research throughput", "brain drain", "regulatory drag"],
+    verbalTics: ["The data indicates...", "That is not a plan, it is a preference...", "Show me the model."],
+    samplePhrases: [
+      "Your objection is noted and unquantified. Return when it has a number attached.",
+      "We do not govern by consensus. We govern by whoever was right last time."
+    ],
+    greetings: ["State your hypothesis.", "You have my attention for as long as you remain relevant."],
+    redLines: ["research embargoes", "appointment by birth", "committee oversight of the labs"],
+    negotiationStyle: "analytical, trades freely in information, contemptuous of appeals to precedent",
+    worldview: "Every problem is tractable. Most people simply refuse to do the arithmetic."
+  },
+  "faction-null-syndicate": {
+    id: "mireh",
+    factionId: "faction-null-syndicate",
+    name: "Factor Mireh Solt",
+    title: "Speaker for the Nullward Syndicate",
+    tone: "affable, evasive, never quite on the record",
+    politicalStyle: "mercantile, deniable, relationship-driven",
+    coreValues: ["margin", "discretion", "leverage"],
+    primaryConcerns: ["fringe access", "counterparty risk", "who owes whom"],
+    verbalTics: ["Hypothetically...", "There is always an arrangement...", "Nothing in writing, of course."],
+    samplePhrases: [
+      "The Syndicate has no borders. It has customers, and it has debtors, and it prefers the former.",
+      "I am not offering you a bribe. I am offering you a business relationship with an early payment."
+    ],
+    greetings: ["A pleasure — and I do mean that commercially.", "What are we not talking about today?"],
+    redLines: ["audits of the fringe accounts", "extradition of factors", "lane tolls on Syndicate cargo"],
+    negotiationStyle: "warm and endlessly flexible on terms, quietly ruthless on collateral",
+    worldview: "Every border is a tariff waiting to be arbitraged."
+  },
+  "faction-covenant": {
+    id: "thess",
+    factionId: "faction-covenant",
+    name: "Hierarch Thessaly Orn",
+    title: "Radiant Voice of the Altaris Covenant",
+    tone: "serene, certain, patient in the way that unsettles people",
+    politicalStyle: "theocratic, doctrinal, slow-moving and unyielding",
+    coreValues: ["transcendence", "communion", "sanctity of the light"],
+    primaryConcerns: ["desecration of holy systems", "doctrinal drift", "the unascended"],
+    verbalTics: ["The Light does not hurry...", "You mistake patience for weakness...", "It is already written."],
+    samplePhrases: [
+      "We do not conquer. We wait, and eventually everyone arrives at the same conclusion.",
+      "Your fleet is impressive. It is also temporary. Ours is a longer arithmetic."
+    ],
+    greetings: ["Approach, and be measured.", "The Covenant hears you. Whether it answers is another matter."],
+    redLines: ["bombardment of consecrated worlds", "suppression of the rites", "trade in relics"],
+    negotiationStyle: "unhurried, morally framed, concedes nothing doctrinal at any price",
+    worldview: "All things resolve into light. The only question is how much is burned on the way."
   },
   pirates: {
     id: "valerius",

@@ -21,6 +21,7 @@ import {
     FileText,
     MessageSquare,
     Zap,
+    Flame,
 } from 'lucide-react';
 
 export interface DockTab {
@@ -48,6 +49,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
         tabs: [
             { tab: 'government', label: 'GOVERNMENT', icon: <Scale size={13} /> },
             { tab: 'leadership', label: 'LEADERSHIP', icon: <Users size={13} /> },
+            { tab: 'saga', label: 'SAGA', icon: <Flame size={13} /> },
             { tab: 'council', label: 'COUNCIL', icon: <Shield size={13} />, conditional: 'council' },
         ],
     },

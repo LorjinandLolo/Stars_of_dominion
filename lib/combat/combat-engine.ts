@@ -122,6 +122,7 @@ export function initiateCombat(
         id,
         target,
         phase: 'orbital',
+        elapsedRounds: 0,
         round: 1,
         momentum: 0,
         territoryControl: 0.5,
@@ -200,6 +201,41 @@ function getStanceModifier(myStance: CombatStance, enemyStance: CombatStance): n
     return match || 0;
 }
 
+/**
+ * Post-clamp multiplier from a combatant's civilization traits.
+ *
+ * Three civilizations share this band:
+ *  - Ritual Brutality, a saturating Kaer'Ruun bonus from lifetime kills, plus
+ *    their engagement ramp: melee grows over a long fight, read off
+ *    `elapsedRounds` because `round` restarts at the ground phase.
+ *  - The Sarrak Divine Serum, signed: positive dosed, negative in withdrawal.
+ *  - The Gabagoonian Capacola Surge, signed AND scaled by the serving eaten.
+ *
+ * Returns 1.0 for everyone else, so this costs a property read per side.
+ */
+export function traitMultiplier(combatant: CombatantState, state: CombatState): number {
+    const brutality = combatant.traitBonuses?.brutality ?? 0;
+    const serum = combatant.traitBonuses?.serum ?? 0;
+    const capacola = combatant.traitBonuses?.capacola ?? 0;
+    const phaseShield = combatant.traitBonuses?.phaseShield ?? 0;
+    if (brutality <= 0 && serum === 0 && capacola === 0 && phaseShield === 0) return 1.0;
+
+    // The engagement ramp is Kaer'Ruun-specific — their melee grows over a long
+    // fight. It rides brutality, not the trait band generally.
+    const elapsed = state.elapsedRounds ?? 0;
+    const ramp = brutality > 0 ? Math.min(RITUAL_RAMP_MAX, elapsed * RITUAL_RAMP_PER_ROUND) : 0;
+
+    // `serum` and `capacola` can both be NEGATIVE, and unlike
+    // calculateEffectivePower there is no clamp here — so floor it. A combatant
+    // must never be scaled below half strength by a trait.
+    return Math.max(0.5, 1.0 + brutality + serum + capacola + phaseShield + ramp);
+}
+
+/** Per elapsed round, for a combatant carrying Ritual Brutality. */
+const RITUAL_RAMP_PER_ROUND = 0.04;
+/** Ceiling on the ramp. A battle runs at most 6 rounds (3 orbital + 3 ground). */
+const RITUAL_RAMP_MAX = 0.20;
+
 // ─── 5. Combat Round Resolution ───────────────────────────────────────────────
 
 export function resolveEngagementRound(
@@ -234,6 +270,19 @@ export function resolveEngagementRound(
     // Apply existing momentum (+ momentum favors attacker, - favors defender)
     if (state.momentum > 0) attackerPower *= (1.0 + (state.momentum * 0.10));
     if (state.momentum < 0) defenderPower *= (1.0 + (Math.abs(state.momentum) * 0.10));
+
+    // Civilization combat traits.
+    //
+    // Applied HERE, not inside calculateEffectivePower, because everything in
+    // there is clamped to ±40% and a civilization whose authored baseModifiers
+    // already sit near that ceiling would see these silently discarded. This
+    // band — stance, momentum, prediction — is the engine's only uncapped
+    // scaling surface, which is exactly why the trait values that reach it are
+    // required to be saturating rather than linear.
+    const attackerTraits = traitMultiplier(state.attacker, state);
+    const defenderTraits = traitMultiplier(state.defender, state);
+    attackerPower *= attackerTraits;
+    defenderPower *= defenderTraits;
 
     // Intelligence-based Prediction Simulation
     let attackerPredictionBonus = 0;
@@ -417,6 +466,9 @@ export function advanceRound(state: CombatState) {
         return;
     }
 
+    // Monotonic duration counter — state.round resets at the orbital-to-ground
+    // flip, so anything that scales with how long a fight has lasted reads this.
+    state.elapsedRounds = (state.elapsedRounds ?? 0) + 1;
     state.round++;
     if (state.round > 3) {
         if (state.phase === 'orbital') {

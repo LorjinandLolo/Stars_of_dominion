@@ -6,7 +6,7 @@ import {
     Users, Shield, Target, Globe, BookOpen, Fingerprint, 
     Send, Skull, Heart, Activity, Flame, Zap, 
     FileText, Gavel, TrendingUp, Handshake, Scroll,
-    AlertTriangle, ShieldCheck, DollarSign, Info, Eye
+    AlertTriangle, ShieldCheck, DollarSign, Info, Eye, Swords
 } from 'lucide-react';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { sponsorProxyAction } from '@/app/actions/proxy';
@@ -151,6 +151,13 @@ function describeOffer(offer: import('@/types/ui-state').DiplomaticOfferView): s
         case 'trade_pact': return `Trade pact — ${offer.volumePerHour}/hr ${offer.resource}`;
         case 'tribute_demand': return `Tribute demand — ${offer.tributeAmountPerTick} ${offer.tributeResourceType}/tick`;
         case 'peace_offer': return 'Peace offer';
+        case 'mercenary_contract': {
+            const t = offer.contractTerms;
+            if (!t) return 'Mercenary contract';
+            const ticks = Math.max(1, Math.round(t.termSeconds / (6 * 60 * 60)));
+            const against = t.againstFactionId ? ` against ${t.againstFactionId}` : '';
+            return `Mercenary contract — ${t.retainerPerTick} ${t.resourceKey}/tick for ${ticks} turns${against}`;
+        }
         default: return 'Proposal';
     }
 }
@@ -164,7 +171,7 @@ const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
 ];
 
 export default function DiplomacyPanel() {
-    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy, espionageState, planets } = useUIStore();
+    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy, espionageState, planets, factions } = useUIStore();
     const [activeTab, setActiveTab] = useState<'intel' | 'statecraft' | 'economy' | 'intrigue'>('statecraft');
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     const [showDiscourse, setShowDiscourse] = useState(false);
@@ -175,6 +182,11 @@ export default function DiplomacyPanel() {
     const [promiseKind, setPromiseKind] = useState<'deliver_credits' | 'non_aggression'>('non_aggression');
     const [promiseAmount, setPromiseAmount] = useState<number>(500);
     const [promiseDuration, setPromiseDuration] = useState<number>(48);
+    const [mercRetainer] = useState<number>(250);
+    const [mercTermTicks] = useState<number>(30);
+
+    /** Only a mercenary civilization may originate a contract. */
+    const isMercenaryCiv = (factions as any)?.[playerState.factionId]?.civilizationId === 'civ-kaerruun';
 
     const liveFactions = useMemo(() => {
         return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
@@ -873,6 +885,39 @@ export default function DiplomacyPanel() {
                                         </div>
                                         <p className="text-[10px] text-slate-400 italic">Increases trade efficiency by +10% in shared hexes.</p>
                                     </button>
+
+                                    {/* Kaer'Ruun only — they sell their wars. The server
+                                        re-checks the civilization in createOffer, so this
+                                        is presentation, not authorization. */}
+                                    {isMercenaryCiv && (
+                                        <button
+                                            onClick={() => handleAction('merc-contract', dispatchOrder({
+                                                actionId: 'DIP_OFFER_CONTRACT',
+                                                factionId: playerState.factionId,
+                                                payload: {
+                                                    targetFactionId: selectedFactionId,
+                                                    resourceKey: 'CREDITS',
+                                                    retainerPerTick: mercRetainer,
+                                                    termSeconds: mercTermTicks * 6 * 60 * 60,
+                                                },
+                                                label: 'Offering a contract',
+                                            }))}
+                                            className="w-full p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all text-left group"
+                                        >
+                                            <div className="flex items-center gap-4 mb-3">
+                                                <div className="p-3 bg-amber-500/20 rounded-xl">
+                                                    <Swords className="w-5 h-5 text-amber-400" />
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-bold text-white uppercase tracking-widest block">Offer Mercenary Contract</span>
+                                                    <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                                                        {mercRetainer} credits/tick · {mercTermTicks} turns
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 italic">Pay in skulls, spoils, or sacred prey. A retainer buys the Hunt.</p>
+                                        </button>
+                                    )}
                                 </div>
 
                                 <div className="space-y-6">

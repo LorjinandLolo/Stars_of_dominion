@@ -133,6 +133,13 @@ export interface Demographic {
   socialClass: 'Citizen' | 'Resident' | 'Servant' | 'Slave';
 }
 
+/**
+ * Who held this world before its current owner, when it changed hands by force.
+ * Set by capturePlanet; read by the population model so a conquered people stay
+ * on the ground under the new flag instead of vanishing with it.
+ */
+export type ConqueredFrom = string | undefined;
+
 export interface Planet {
   id: string;
   name: string;
@@ -157,6 +164,8 @@ export interface Planet {
   isOccupied: boolean;
   governorId?: string;
   demographics: Demographic[];
+  /** Former owner, when taken by force. Feeds the population composition. */
+  conqueredFrom?: ConqueredFrom;
 
   // Phase 16: Ground Combat Expansion
   garrison?: PlanetaryDefenseState;

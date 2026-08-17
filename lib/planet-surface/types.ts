@@ -35,7 +35,26 @@ export type PlanetArchetype =
     | 'toxic'
     | 'gaia'
     /** Highland/fortress world: ridges and canyon passes, little open water. */
-    | 'montane';
+    | 'montane'
+    /** Wetland: standing water threaded through dense growth. Gor'Zhul. */
+    | 'swamp'
+    /** Canopy deathworld — dense growth, little open water. Rrriiaa. */
+    | 'jungle'
+    /** Wholly built world or megastructure interior. The Solara Shell. */
+    | 'arcology';
+
+/**
+ * Runtime list of every archetype, for validating an authored value.
+ *
+ * The union alone is compile-time only, and archetypes arrive from a planet TAG
+ * — a string that survives a DB round trip. Without this check a typo'd tag
+ * returns a bogus archetype and ARCHETYPE_TERRAIN[bogus] is undefined, which
+ * fails deep inside terrain generation rather than at the boundary.
+ */
+export const PLANET_ARCHETYPES: readonly PlanetArchetype[] = [
+    'continental', 'arid', 'oceanic', 'frozen', 'volcanic', 'toxic', 'gaia',
+    'montane', 'swamp', 'jungle', 'arcology',
+];
 
 export type RegionKind =
     | 'capital'

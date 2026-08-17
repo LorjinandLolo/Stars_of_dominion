@@ -6,14 +6,27 @@
  * with unit composition, morale/supply dynamics, and stance-based cycles.
  */
 
-export type GroundUnitType = 
-  | 'INFANTRY' 
-  | 'ARMOR' 
-  | 'ANTI_ARMOR' 
-  | 'AIRBORNE' 
-  | 'ARTILLERY' 
-  | 'SPECIAL_OPS' 
-  | 'MILITIA';
+export type GroundUnitType =
+  | 'INFANTRY'
+  | 'ARMOR'
+  | 'ANTI_ARMOR'
+  | 'AIRBORNE'
+  | 'ARTILLERY'
+  | 'SPECIAL_OPS'
+  | 'MILITIA'
+  /**
+   * Infernoid war-titan. A `strength` of 3 means three machines, not three men —
+   * every other member of this union counts soldiers.
+   *
+   * Widening this union is load-bearing in a way the compiler only half covers.
+   * Five `Record<GroundUnitType, …>` tables break the build and get fixed. The
+   * dangerous ones are the plain arrays that iterate unit types: a type missing
+   * from the casualty order in district-battle.ts takes LITERALLY ZERO
+   * casualties, silently, forever. Same shape at siege-engine.ts:178 and :203.
+   * Every one of those has been updated with this member; check them again
+   * before adding a ninth.
+   */
+  | 'ELDER_INFERNOID';
 
 export type UnitComposition = Record<GroundUnitType, number>;
 

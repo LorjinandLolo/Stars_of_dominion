@@ -42,6 +42,7 @@ const CAPTURE_RATE: Record<GroundUnitType, number> = {
     AIRBORNE: 0.2,
     ARMOR: 0.15,        // crews burn with their vehicles
     SPECIAL_OPS: 0.08,  // they do not surrender
+    ELDER_INFERNOID: 0, // a titan is wreckage or it is walking; there is no third state
 };
 
 /**
@@ -51,9 +52,19 @@ const CAPTURE_RATE: Record<GroundUnitType, number> = {
 export function capturedFromLosses(
     losses: Partial<UnitComposition>,
     moralePercent: number,
+    /**
+     * 0..1 — the share of would-be prisoners this force simply does not yield.
+     *
+     * The Infernoids are the only thing in the game that moves this number.
+     * Note that ground morale saturates near zero on the first resolved cycle
+     * and never recovers, so every other faction sits permanently at the maximum
+     * ×1.6 capture rate; resistance is the only counterweight that exists.
+     */
+    captureResistance = 0,
 ): Partial<UnitComposition> {
     // 100 morale → ×0.6 of the base rate; 0 morale → ×1.6.
-    const moraleFactor = 1.6 - Math.max(0, Math.min(100, moralePercent)) / 100;
+    const resist = Math.max(0, Math.min(1, captureResistance));
+    const moraleFactor = (1.6 - Math.max(0, Math.min(100, moralePercent)) / 100) * (1 - resist);
     const out: Partial<UnitComposition> = {};
     for (const [type, lost] of Object.entries(losses) as Array<[GroundUnitType, number]>) {
         if (!lost || lost <= 0) continue;

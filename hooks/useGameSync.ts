@@ -7,6 +7,7 @@ import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
 import { getDominantIdeologyType } from '@/lib/politics/ideology-service';
+import { buildFactionSaga } from '@/lib/factions/saga';
 import { COHESION_STAGE_LABELS } from '@/lib/government/cohesion-types';
 import { DEFIANCE_KIND_LABELS } from '@/lib/government/defiance-types';
 
@@ -768,6 +769,10 @@ export function useGameSync() {
             // Prisoners of war held across the empire (and by others) — the
             // ledger lives in the session snapshot, not a faction shard.
             prisoners: ((world as any).combat?.prisoners?.groups ?? []) as any,
+            // The player's bespoke mechanics, made visible. Derived from the
+            // same readers the engine uses, so the panel can never disagree
+            // with the worker about whether a window is open.
+            factionSaga: activeFactionId ? buildFactionSaga(world, activeFactionId) : null,
         });
 
         setIsLoading(false);

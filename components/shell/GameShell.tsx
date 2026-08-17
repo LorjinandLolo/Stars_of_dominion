@@ -49,6 +49,10 @@ const ResearchPanel = dynamic(() => import('@/components/panels/ResearchPanel'),
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-blue-400/80 animate-pulse border border-blue-900/20 bg-slate-950 rounded shadow-2xl">SYNCHRONIZING RESEARCH CORES...</div>
 });
+const FactionPanel = dynamic(() => import('@/components/panels/FactionPanel'), {
+    ssr: false,
+    loading: () => <div className="p-6 text-xs font-mono text-orange-400/80 animate-pulse border border-orange-900/20 bg-slate-950 rounded shadow-2xl">READING THE LEDGERS...</div>
+});
 const DiscoursePanel = dynamic(() => import('@/components/panels/DiscoursePanel'), {
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-indigo-400/80 animate-pulse border border-indigo-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO CHANNELS CONSOLE...</div>
@@ -110,6 +114,7 @@ const PANEL_MAP = {
     agency: <EspionageAgencyPanel />,
     council: <CouncilPanel />,
     dossier: <DossierPanel />,
+    saga: <FactionPanel />,
     tech: <ResearchPanel />,
     discourse: <DiscoursePanel />,
     corporate: <CorporateLedgerPanel />,
@@ -155,17 +160,17 @@ export default function GameShell() {
             }
 
             // The authoritative source: whichever faction THIS account claimed.
-            let claims: Record<string, { userId: string }> = {};
+            // The server resolves that from the session now and answers with
+            // `myFactionId` / `isMine`; it no longer hands out other players'
+            // account ids for the client to compare against.
+            let claims: Record<string, { isMine: boolean }> = {};
             try {
                 const res = await fetch('/api/lobby/claim');
                 const data = await res.json();
                 claims = data.claimedFactions || {};
-                const myClaim = Object.entries(claims).find(
-                    ([, c]: [string, any]) => c.userId === user.$id
-                )?.[0];
-                if (myClaim) {
-                    localStorage.setItem('selectedFactionId', myClaim);
-                    setPlayerFactionId(myClaim);
+                if (data.myFactionId) {
+                    localStorage.setItem('selectedFactionId', data.myFactionId);
+                    setPlayerFactionId(data.myFactionId);
                     return;
                 }
             } catch { /* fall back to local selection below */ }
@@ -176,7 +181,7 @@ export default function GameShell() {
                 // claimed by a DIFFERENT account, playing it would just get every
                 // order rejected with 403 — send the player to the lobby instead.
                 const claimant = claims[saved];
-                if (claimant && claimant.userId !== user.$id) {
+                if (claimant && !claimant.isMine) {
                     localStorage.removeItem('selectedFactionId');
                     router.replace('/lobby');
                     return;

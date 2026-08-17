@@ -9,6 +9,7 @@ import { getBlockadeReport } from '@/lib/logistics/blockade-service';
 import { computeOrbitalRatings } from '@/lib/orbital/orbital-service';
 import { isRetooling } from '@/lib/specialization/specialization-effects';
 import { buildPirateDashboard, buildPirateView } from '@/lib/piracy/pirate-view';
+import { applyHomeworldArchetypes } from '@/lib/galaxy/faction-capitals';
 
 export interface GameSaveMetadata {
     id: string;
@@ -78,6 +79,12 @@ export function serializeWorld(world: GameWorldState): string {
 export function deserializeWorld(snapshot: string): GameWorldState {
     const world = recordsToMaps(JSON.parse(snapshot)) as GameWorldState;
     normalizeEspionageState(world);
+    // Planet tags persist, and the authored homeworld archetype rides on one.
+    // A code-only change would therefore leave every existing save generating
+    // the old all-continental boards — Pyrothar a temperate forest world — with
+    // nothing to indicate why. Idempotent and correcting, so re-authoring an
+    // archetype lands on the next load rather than needing a world wipe.
+    applyHomeworldArchetypes(world);
     return world;
 }
 
@@ -158,6 +165,12 @@ export function normalizeEspionageState(world: GameWorldState): void {
 
     // Phase 6.1: per-planet cohesion. ensureCohesion reseeds it from live state.
     if (!(w.planetCohesion instanceof Map)) w.planetCohesion = new Map();
+
+    // Per-faction bespoke mechanics. Plain records inside a Map, so the generic
+    // Map<->object pass carries the contents; ensureFactionTraits fills them in.
+    // Deliberately NOT cleared by cleanWorldForSave: a galaxy-wide sacred
+    // ceasefire that rivals cannot see is not a mechanic.
+    if (!(w.factionTraits instanceof Map)) w.factionTraits = new Map();
 
     // Phase 6.2: open defiance crises.
     if (!(w.defianceEvents instanceof Map)) w.defianceEvents = new Map();
@@ -256,26 +269,28 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         intelNetworks: Array.from(world.espionage.intelNetworks.values()).filter((n: any) => n.ownerFactionId === factionId),
         espionageFactionIntel: world.espionage.factionIntel.get(factionId) ?? null,
         espionageOperations: Array.from(world.espionage.operations.values()).filter(op => op.actorFactionId === factionId),
-        // `accurate` is the HIDDEN truth flag: false means the body's figures are
-        // wrong, either through bad tradecraft or because someone planted it.
-        // espionage-types.ts is explicit that the report's own owner must never
-        // see it — and shards are readable by everyone, so shipping it handed
-        // every player a free lie-detector on their own and each other's intel.
+        // Reports are stored WHOLE, `accurate` included. That flag is the hidden
+        // truth of the espionage system and must never reach the owner — but it
+        // is scrubbed at serve time (lib/persistence/shard-privacy.ts), not here.
+        // Stripping it during extraction also stripped it from the only place it
+        // is persisted: cleanWorldForSave clears espionage.reports from the
+        // shared snapshot, so the shard is the sole copy, and every worker
+        // restart reloaded a world where no report remembered whether it was
+        // true. Privacy belongs on the wire; the save must stay complete.
         espionageReports: Array.from(world.espionage.reports.values())
-            .filter(r => r.ownerFactionId === factionId)
-            .map(({ accurate, ...report }) => report),
+            .filter(r => r.ownerFactionId === factionId),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Planet-layer rollups. The per-planet detail already rides along in the
         // snapshot; these are the empire-wide aggregates the UI would otherwise
         // have to recompute on every poll.
         planetaryLogistics: buildPlanetaryLogisticsSummary(world, factionId),
-        // NOTE: pirate state deliberately does NOT ride here. A faction shard is
-        // not a private channel — /api/game/sync returns every shard to every
-        // caller with no auth and no owner predicate, because clients need each
-        // other's fleets to render the galaxy. Anything genuinely secret has to
-        // be fetched from an authenticated per-faction endpoint instead; the
-        // pirate view is served by app/api/game/piracy.
+        // NOTE: pirate state deliberately does NOT ride here, and should not be
+        // added back. A shard is now owner-scoped ON THE WIRE — /api/game/sync
+        // authenticates the caller and serves rivals only the public projection
+        // (lib/persistence/shard-privacy.ts) — but the DB row itself is still a
+        // shared table, and the pirate aggregate has its own authoritative row
+        // with its own authenticated read endpoint (app/api/game/piracy).
         // See docs/pirate-system/systems.md §8.
     };
     return JSON.stringify(mapsToRecords(shard));

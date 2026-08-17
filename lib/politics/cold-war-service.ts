@@ -10,6 +10,12 @@ export interface RivalryContext {
     activePropagandaCamps: PropagandaCampaign[];
     activeProxyConflicts: ProxyConflict[];
     recentCrisisTension: number; // Tapering value from 0-30 based on recent events
+    /**
+     * Flat friction added when one side is a pariah civilization — a people
+     * everyone fears on sight, independent of ideology. Zero for every ordinary
+     * pair, so the baseline for the rest of the galaxy is unchanged.
+     */
+    pariahBias?: number;
 }
 
 /**
@@ -25,19 +31,19 @@ export function updateRivalryScore(
     context: RivalryContext
 ): RivalryState {
 
-    // 0. Special Rule: The Infernoid Crusade is in a state of total war with everyone.
-    if (empireAId === 'infernoid_crusade' || empireBId === 'infernoid_crusade') {
-        return {
-            id: currentRivalry?.id || `rivalry-${empireAId}-${empireBId}`,
-            empireAId,
-            empireBId,
-            rivalryScore: 100,
-            escalationLevel: 7, // Direct War Trigger Risk
-            activeSanctionIds: ['xenocide_mandate', 'total_embargo'],
-            proxyConflictsInvolved: [],
-            detenteActive: false
-        };
-    }
+    // The "Infernoid Crusade is at total war with everyone" rule that used to
+    // live here has been REMOVED, not moved. It keyed on 'infernoid_crusade' —
+    // a society id that appears in no FACTION_DATA entry — so it never once
+    // fired, and its absence left the Infernoids with no rivalry record at all.
+    // Every reader then fell through to its `?? 20` default, which made the
+    // xenocidal fire-worshippers the friendliest empire in the galaxy: an AI
+    // would accept a mutual-defence treaty from them at threshold 30.
+    //
+    // Pariah status now arrives as context.pariahBias below, which drifts
+    // through the normal system instead of bypassing it. An absolute 100 /
+    // level-7 would have put them in shooting war with thirteen empires from
+    // world start, because isAtWar returns true at escalation >= 7 and
+    // combat-manager starts engagements off exactly that.
 
     // 1. Base friction derived entirely from mathematical ideological distance
     // Max theoretical distance is 1400. We scale it so 400 distance = ~40 tension.
@@ -66,6 +72,9 @@ export function updateRivalryScore(
 
     // 5. Recent Event Memory (Crises)
     baseFriction += context.recentCrisisTension;
+
+    // 5b. Pariah standing — fear of what they are, not of what they have done.
+    baseFriction += context.pariahBias ?? 0;
 
     // 6. Detente Suppression
     if (currentRivalry && currentRivalry.detenteActive) {
