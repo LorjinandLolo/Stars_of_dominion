@@ -262,7 +262,8 @@ console.log('\n[6] Persistence');
 // ── 7. Wiring ───────────────────────────────────────────────────────────────
 console.log('\n[7] Wiring');
 {
-    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8');
+    // \r stripped so source-wiring assertions hold in a CRLF checkout too.
+    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8').replace(/\r\n/g, '\n');
     check('the district engine detonates',
         src('lib/combat/siege/district-battle.ts').includes('const attackerBlast = detonate('));
     check('combat-manager detonates dying Infernoid fleets',
@@ -403,7 +404,8 @@ console.log('\n[8] Elder Infernoids (tripods)');
     // 7. The silent-fail tables. A unit type missing from a casualty-order array
     //    takes literally zero casualties — that is invincibility, not toughness,
     //    and nothing reports it. These assertions exist to catch exactly that.
-    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8');
+    // \r stripped so source-wiring assertions hold in a CRLF checkout too.
+    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8').replace(/\r\n/g, '\n');
     const db = src('lib/combat/siege/district-battle.ts');
     const orderLine = db.split('\n').find(l => l.includes('const order: GroundUnitType[]')) ?? '';
     check('district-battle casualty order includes Elders', orderLine.includes(ELDER_UNIT_TYPE), orderLine.trim());
@@ -517,7 +519,8 @@ console.log('\n[9] Heat Immunity');
     // legalMoves is authoritative in the worker AND draws the client's reach
     // overlay. An override applied in only one of them shows the player moves
     // the server then refuses.
-    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8');
+    // \r stripped so source-wiring assertions hold in a CRLF checkout too.
+    const src = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8').replace(/\r\n/g, '\n');
     // Resolved through lib/factions/terrain-affinity.ts since the Movanites
     // gained a terrain rule of their own — one dispatcher, so the worker and the
     // client cannot drift apart. The heat rule itself is asserted above.
