@@ -17,6 +17,7 @@ import { getGovernment, spendPoliticalCapital } from './government-service';
 import { getHeadOfState, resolveSuccession } from './succession-service';
 import { getMinister } from './cabinet-service';
 import { recordPoliticalEvent } from './ideology-drift';
+import * as chronicle from '@/lib/narrative/chronicle';
 import { notifyTitleTrigger } from '@/lib/titles/title-service';
 import { TRIGGER } from '@/lib/titles/catalog';
 
@@ -151,6 +152,18 @@ export function attemptCoup(world: GameWorldState, gov: GovernmentState): CoupOu
 
     const successChance = Math.max(0.05, Math.min(0.95, plotStrength - defenceStrength * 0.8 + 0.25));
     const succeeded = rng.next() < successChance;
+
+    chronicle.record(world, {
+        type: succeeded ? 'government_changed' : 'coup_attempted',
+        actorIds: [gov.factionId],
+        targetIds: [],
+        facts: {
+            succeeded,
+            deposedLeader: leader?.name ?? 'the head of state',
+            cause: 'military_coup',
+            coupPressure: Math.round(gov.coupPressure ?? 0),
+        },
+    });
 
     return succeeded ? coupSucceeds(world, gov, leader?.name) : coupFails(world, gov);
 }

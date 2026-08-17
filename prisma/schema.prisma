@@ -276,3 +276,68 @@ model GameFleet {
 
   @@map("game_fleets")
 }
+
+// ── Narrative system (docs/narrative-system) ────────────────────────────────
+// The galaxy's factual memory. Append-only: rows are never mutated after
+// creation except narratedAt (set once by the narrator when prose is written).
+model ChronicleEvent {
+  id          String    @id @default(cuid())
+  tick        Int
+  day         Int
+  type        String
+  importance  Int
+  actorIds    String // JSON array — who REALLY acted; never exposed to the press layer
+  targetIds   String // JSON array
+  // Display names as they stood WHEN the event happened. Resolved at emission
+  // because faction names live in per-faction shards, not the world snapshot —
+  // and because a later rename must not rewrite history.
+  actorNames  String @default("[]") // JSON array, parallel to actorIds
+  targetNames String @default("[]") // JSON array, parallel to targetIds
+  location    String?
+  facts       String // JSON — type-specific mechanical outcome
+  attribution String // 'exposed' | 'suspected:<factionId>' | 'invisible'
+  coalesceKey String?
+  narratedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([narratedAt, importance])
+  @@index([type, tick])
+  @@map("chronicle_events")
+}
+
+// What the galaxy THINKS happened — LLM/template prose, written by the
+// narrator service only. The Gazette table stays the front page; this is
+// the full archive.
+model NarrativeArticle {
+  id          String   @id @default(cuid())
+  eventIds    String // JSON array of ChronicleEvent ids this article covers
+  publisherId String
+  kind        String // 'news' | 'investigation' | 'propaganda' | 'retrospective' | 'obituary' | 'rumor'
+  headline    String
+  body        String
+  stance      String? // JSON — claims made vs facts, for later contradiction plays
+  day         Int
+  createdAt   DateTime @default(now())
+
+  @@index([day])
+  @@map("narrative_articles")
+}
+
+// Derived rivalry between an ordered faction pair. Existence is arithmetic
+// (hostile-event counts over the chronicle); only the epithet is narrative.
+model Feud {
+  id           String   @id @default(cuid())
+  factionAId   String
+  factionBId   String
+  status       String // 'active' | 'dormant' | 'ended'
+  startedTick  Int
+  lastEventAt  Int // tick of most recent qualifying hostile event
+  eventCount   Int
+  topEventIds  String // JSON array — the events that define the feud
+  epithet      String? // narrator-generated name, cached once
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([factionAId, factionBId])
+  @@map("feuds")
+}

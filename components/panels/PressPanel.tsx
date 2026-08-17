@@ -16,6 +16,7 @@ import {
     Shield
 } from 'lucide-react';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import GalacticGazette from '@/components/Newspaper';
 import { CampaignObjective, CrisisChoice, InvestigationStage } from '@/lib/press-system/types';
 
 const STAGE_SEQUENCE = [
@@ -572,10 +573,19 @@ export default function PressPanel() {
                     );
                 })()}
 
+                {/* The galactic gazette — written by the narrator worker from the
+                    chronicle. Empty until scripts/narrator.ts is running. */}
+                <section>
+                    <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 flex items-center gap-2">
+                        <Newspaper size={12} className="text-slate-500" /> GALACTIC GAZETTE
+                    </div>
+                    <GalacticGazette />
+                </section>
+
                 {/* Viral Log */}
                 <section>
                     <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 flex items-center gap-2">
-                        <Newspaper size={12} className="text-slate-500" /> INFORMATION STREAM
+                        <Radio size={12} className="text-slate-500" /> INFORMATION STREAM
                     </div>
                     <div className="space-y-2">
                         {pressState.publishedStories.slice().reverse().map(pub => {

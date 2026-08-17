@@ -20,8 +20,10 @@ import {
     StorySource,
     StoryTruth,
     PressFactionType,
+    InvestigationStage,
 } from './types';
 import { tickPressSystem } from './simulation';
+import * as chronicle from '@/lib/narrative/chronicle';
 
 function ensureShape(world: GameWorldState): SimulationState {
     const w = world as any;
@@ -198,12 +200,65 @@ const MAX_PUBLISHED = 50;
 const MAX_ACTIVE = 100;
 
 /**
+ * Record investigations that crossed into PUBLICATION or SCANDAL this tick.
+ *
+ * A journalist landing the story is a historical event in its own right, and
+ * one the galaxy can always attribute — the whole point of publication is that
+ * it is public. Recording it here lets the narrator write the exposé with the
+ * prior coverage already in hand (lib/narrative/memory-service.ts).
+ */
+function recordInvestigationBreaks(
+    world: GameWorldState,
+    state: SimulationState,
+    stagesBefore: Map<string, string>,
+): void {
+    for (const [id, inv] of state.investigations) {
+        const before = stagesBefore.get(id);
+        if (before === inv.stage) continue;
+
+        if (inv.stage === InvestigationStage.PUBLICATION) {
+            chronicle.record(world, {
+                type: 'investigation_published',
+                actorIds: [inv.investigatorId],
+                targetIds: [inv.targetEmpireId],
+                attribution: 'exposed',
+                facts: {
+                    subject: inv.subject,
+                    evidence: Math.round(inv.evidence),
+                    obstructions: inv.obstructions ?? 0,
+                },
+            });
+        } else if (inv.stage === InvestigationStage.SCANDAL) {
+            chronicle.record(world, {
+                type: 'scandal_confirmed',
+                actorIds: [inv.investigatorId],
+                targetIds: [inv.targetEmpireId],
+                attribution: 'exposed',
+                facts: {
+                    subject: inv.subject,
+                    evidence: Math.round(inv.evidence),
+                },
+            });
+        }
+    }
+}
+
+/**
  * Run one press tick over the live world. Strategic tick = 6 sim-hours.
  */
 export function tickPress(world: GameWorldState, tickIndex: number, dtHours = 6): void {
     const press = ensurePressState(world);
     const adj = buildSystemAdjacency(world);
+
+    // Snapshot investigation stages so the chronicle can record the moment one
+    // breaks. Diffing here keeps the emission in a function that already has
+    // `world`, instead of threading it down into the investigation internals.
+    const stagesBefore = new Map<string, string>();
+    for (const [id, inv] of press.investigations) stagesBefore.set(id, inv.stage);
+
     const { newState } = tickPressSystem(press, dtHours, tickIndex, adj, []);
+
+    recordInvestigationBreaks(world, newState, stagesBefore);
 
     // Cap unbounded pools before persisting into the world blob.
     if (newState.publishedStories.length > MAX_PUBLISHED) {

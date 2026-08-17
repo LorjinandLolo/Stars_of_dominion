@@ -22,6 +22,7 @@ import {
     MessageSquare,
     Zap,
     Flame,
+    BookOpen,
 } from 'lucide-react';
 
 export interface DockTab {
@@ -111,6 +112,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
         tabs: [
             { tab: 'press', label: 'PRESS', icon: <Newspaper size={13} /> },
             { tab: 'discourse', label: 'DISCOURSE', icon: <MessageSquare size={13} /> },
+            { tab: 'history', label: 'ARCHIVE', icon: <BookOpen size={13} /> },
         ],
     },
 ];

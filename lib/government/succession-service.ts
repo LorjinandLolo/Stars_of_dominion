@@ -14,6 +14,7 @@ import { pushWorldStory } from '@/lib/press-system/integration';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
 import { assignAmbitions, tickAmbitions } from './legacy-service';
+import * as chronicle from '@/lib/narrative/chronicle';
 
 /** Sim years an incumbent ages per sim day. A season is an era, not a week. */
 const AGE_YEARS_PER_DAY = 0.5;
@@ -239,6 +240,35 @@ export function resolveSuccession(
         event: outgoing
             ? `${outgoing.title ?? 'The head of state'} ${outgoing.name} ${DEPARTURE_LABEL[cause]}; ${successor.title} ${successor.name} succeeded.`
             : `${successor.title} ${successor.name} took office.`,
+    });
+
+    // Two events, because they are two stories: an era ended and another began.
+    // A leader overthrown is filed by the coup service, which knows why.
+    if (outgoing && cause !== 'overthrown') {
+        chronicle.record(world, {
+            type: 'leader_died',
+            actorIds: [factionId],
+            targetIds: [],
+            facts: {
+                leaderName: outgoing.name,
+                title: outgoing.title ?? 'Head of State',
+                cause,
+                yearsInOffice: yearsInOffice(outgoing, world.nowSeconds),
+            },
+            coalesceKey: `succession:${factionId}:${world.nowSeconds}`,
+        });
+    }
+    chronicle.record(world, {
+        type: 'leader_rose',
+        actorIds: [factionId],
+        targetIds: [],
+        facts: {
+            leaderName: successor.name,
+            title: successor.title ?? 'Head of State',
+            predecessor: outgoing?.name ?? 'an interregnum',
+            cause,
+        },
+        coalesceKey: `succession:${factionId}:${world.nowSeconds}`,
     });
 
     refillRecruitmentPool(world, factionId);

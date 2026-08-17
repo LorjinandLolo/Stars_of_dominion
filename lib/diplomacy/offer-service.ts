@@ -12,6 +12,7 @@ import { isButhari, isInfernoid, isMovanite, grievanceStore, readsGrievances } f
 import { ReputationService } from '@/lib/reputation/reputation-service';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
+import * as chronicle from '@/lib/narrative/chronicle';
 // Runtime-only circular imports (both modules import from this one); safe
 // because these are only invoked inside function bodies, never at module init.
 import { breakNonAggressionPromises } from './promise-service';
@@ -460,6 +461,12 @@ function applyAcceptedOffer(world: GameWorldState, offer: DiplomaticOffer): void
         }
         case 'peace_offer': {
             setRivalryScore(world, from, to, 30, true, 'peace_settled');
+            chronicle.record(world, {
+                type: 'war_ended',
+                actorIds: [from, to],
+                targetIds: [],
+                facts: { outcome: 'negotiated_peace' },
+            });
             // Ending the tribute of a defeated peace partner is a Phase 2 concern;
             // wars end, standing agreements persist.
             ReputationService.updateScore(world, from, { honor: 3, aggression: -5 }, 'peace_settled');
@@ -480,6 +487,12 @@ export function breakTreaty(world: GameWorldState, factionId: string, treatyId: 
     treaty.status = 'broken';
     const other = treaty.signatories.find(s => s !== factionId);
     if (other) shiftRivalry(world, factionId, other, 25, 'treaty_broken', treaty.type);
+    chronicle.record(world, {
+        type: 'treaty_broken',
+        actorIds: [factionId],
+        targetIds: other ? [other] : [],
+        facts: { treatyType: treaty.type },
+    });
     ReputationService.updateScore(world, factionId, { reliability: -20, honor: -10 }, `broke_${treaty.type}`);
     pushWorldStory(world, {
         targetEmpireId: factionId,
@@ -528,6 +541,17 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
     setRivalryScore(world, aggressorId, defenderId, 100, false, 'war_declared');
 
     if (alreadyAtWar) return; // consequences below fire once per war
+
+    chronicle.record(world, {
+        type: 'war_declared',
+        actorIds: [aggressorId],
+        targetIds: [defenderId],
+        facts: {
+            // A war that starts by breaking a pact is a different story from one
+            // that starts with a declaration, and the press should say so.
+            oathbroken: Boolean(nap),
+        },
+    });
 
     ReputationService.updateScore(world, aggressorId, { aggression: 15 }, 'declared_war');
     pushWorldStory(world, {

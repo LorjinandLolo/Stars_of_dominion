@@ -5,7 +5,7 @@ This is the design for the galaxy's memory: a system that watches the simulation
 The one-sentence architecture:
 
 ```
-Simulation → ChronicleEvent (facts) → importance gate → press interpretation → Narrator (LLM prose) → Gazette
+Simulation → ChronicleEvent (facts) → importance gate → press interpretation → Narrator (prose) → Gazette
                      │                                                              ▲
                      └────────── memory queries (feuds, eras, precedent) ───────────┘
 ```
@@ -18,13 +18,13 @@ Simulation → ChronicleEvent (facts) → importance gate → press interpretati
 
 **Two truths, two tables.** What happened and what the galaxy believes happened are different data. `ChronicleEvent` records the facts, including who *really* did it. The press layer only ever sees the *public attribution* — which the espionage system's existing `AttributionState` ladder (`invisible → suspected → exposed`) already computes. A successful covert op doesn't hide the event; it corrupts the byline. Players manipulate the story by manipulating attribution and evidence, not by editing prose.
 
-**Memory is a query, not a context window.** The galaxy "remembers" through indexed Postgres queries over the chronicle — not by stuffing 200 hours of history into an LLM prompt. A rivalry is a count of hostile events between a faction pair. A famous battle is a high-importance event. A war that references an old feud gets that flavor because a three-line SQL-derived summary was placed in the prompt, deterministically. The prose is generated; the memory is structured.
+**Memory is a query, not a context window.** The galaxy "remembers" through indexed Postgres queries over the chronicle — not by stuffing 200 hours of history into a prompt. A rivalry is a count of hostile events between a faction pair. A famous battle is a high-importance event. A war that references an old feud gets that flavor because a three-line SQL-derived summary was placed in the prompt, deterministically. The prose is generated; the memory is structured.
 
 **Most events deserve no prose.** A tick produces dozens of events; the gazette that reports all of them is spam nobody reads. A deterministic importance score gates what reaches the narrator, and coalescing merges related events (one battle = one report, not five district actions). The LLM is a scarce, budgeted resource; the filter in front of it is where editorial judgment lives — in code.
 
-**The press is a character, not a pipe.** The press system already models publishers with `credibility`, `bias`, and type (`STATE_MEDIA`, `INDEPENDENT_MEDIA`, `PIRATE_PRESS`). The narrator writes *in the voice of the publisher*: state media flatters its empire, pirate press assumes the worst of everyone, independents follow evidence. The same ChronicleEvent can produce two contradictory articles — that is a feature, and the espionage `evidenceStrength` mechanics decide which one the population believes.
+**The press is a character, not a pipe.** The press system already models publishers with `credibility`, `bias`, and type (`STATE_MEDIA`, `INDEPENDENT_MEDIA`, `PIRATE_PRESS`). The narrator writes *in the voice of the publisher*: state media flatters its empire, pirate press assumes the worst of everyone, independents follow evidence. The same ChronicleEvent can produce two contradictory articles — that is a feature, and the existing `evidenceStrength` mechanics decide which one the population believes.
 
-**The game must run with the narrator dead.** The narrator is a separate process that reads events and writes articles. If it crashes, rate-limits, or the LLM bill runs out, the simulation ticks on untouched and prose catches up later. Fallback chain already exists in `lib/ai/llm-provider.ts`: `gemini → template → mock`. Template output is worse prose, never a broken game.
+**The game must run with the narrator dead.** The narrator is a separate process that reads events and writes articles. If it crashes, rate-limits, or the LLM bill runs out, the simulation ticks on untouched and prose catches up later. The fallback chain already exists in `lib/ai/llm-provider.ts`: `gemini → template → mock`. Template output is worse prose, never a broken game.
 
 ---
 
@@ -40,37 +40,37 @@ This design absorbs, rather than replaces, three running systems and one orphan:
 - `MediaCampaign` — covert foreign information warfare with exposure and tracing.
 - Propagation — stories physically spread planet-to-planet; jamming and quarantine block them.
 
-**Espionage attribution** (`lib/espionage/`) — `AttributionState` and `AttributionRecord` already model who-can-know-what for covert acts, and `espionage-service.ts` already has a `buildNarrative(domain, success, attribution)` sketch.
+**Espionage attribution** (`lib/espionage/`) — `AttributionState` and `AttributionRecord` already model who-can-know-what for covert acts.
 
-**The LLM stack** (`lib/ai/`) — provider abstraction with fallback (`gemini | ollama | template | mock`), `faction-personalities.ts` for voice material, `discourse-memory.ts` (in-memory thread store, explicitly marked "in production this would be backed by a real store" — the chronicle is that store).
+**The LLM stack** (`lib/ai/`) — provider abstraction with fallback (`gemini | ollama | template | mock`), `faction-personalities.ts` for voice material, `discourse-memory.ts` (an in-memory thread store explicitly marked as needing a real backing store — the chronicle is that store).
 
-**The orphan:** a `Gazette` Prisma model (`day`, `headline`, `lede`, `tone`, `image`) and a read API at `app/api/gazette/route.ts` — with **no writer anywhere in the codebase**. The UI's newspaper is plumbed and empty. The narrator is the missing writer.
+**The orphan:** a `Gazette` Prisma model (`day`, `headline`, `lede`, `tone`, `image`), a read API at `app/api/gazette/route.ts`, and `components/Newspaper.tsx` — with **no writer anywhere in the codebase**. The newspaper is plumbed and empty. The narrator is the missing writer.
 
-**What does not exist:** any persistent event log (press `SimulationState` lives inside the world snapshot and remembers only active/published stories), any notion of rivalry/feud/era, any LLM involvement in the press output, and any writer for the gazette.
+**What did not exist before phase 0:** any persistent event log (press `SimulationState` lives inside the world snapshot and remembers only active/published stories), any notion of rivalry/feud/era, and any writer for the gazette.
 
-> **Warning from history** (project memory): the press system's tick-order and propagation invariants were silently broken once by a well-meaning integration. This design's answer is structural: the narrator *never* holds a reference to mutable world state. It reads committed rows, writes to its own tables, and nothing the simulation reads is ever written by the narrator.
+> **Warning from history:** the press system's tick-order and propagation invariants were silently broken once by a well-meaning integration. This design's answer is structural: the narrator *never* holds a reference to mutable world state. It reads committed rows, writes to its own tables, and nothing the simulation reads is ever written by the narrator.
 
 ---
 
 ## The chronicle — the galaxy's factual memory
 
-New Prisma model. Append-only; rows are never updated after creation except the `narratedAt` marker.
+Append-only; rows are never updated after creation except the `narratedAt` marker. Defined in `prisma/schema.prisma`, migration `narrative_phase0`:
 
 ```prisma
 model ChronicleEvent {
-  id            String   @id @default(cuid())
-  tick          Int
-  day           Int
-  type          String   // 'war_declared' | 'battle' | 'treaty_broken' | 'op_resolved' | 'leader_rose' | ...
-  importance    Int      // 0-100, computed at emission, deterministic
-  actorIds      String   // JSON array — who REALLY acted (never shown to press layer)
-  targetIds     String   // JSON array
-  location      String?  // system/planet id
-  facts         String   // JSON — type-specific mechanical outcome (casualties, sums, terms)
-  attribution   String   // 'invisible' | 'suspected:<factionId>' | 'exposed' — public knowledge ceiling
-  coalesceKey   String?  // events sharing a key within a window merge into one narration
-  narratedAt    DateTime? // null = not yet processed by narrator
-  createdAt     DateTime @default(now())
+  id          String    @id @default(cuid())
+  tick        Int
+  day         Int
+  type        String
+  importance  Int
+  actorIds    String // JSON array — who REALLY acted; never exposed to the press layer
+  targetIds   String // JSON array
+  location    String?
+  facts       String // JSON — type-specific mechanical outcome
+  attribution String // 'exposed' | 'suspected:<factionId>' | 'invisible'
+  coalesceKey String?
+  narratedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([narratedAt, importance])
   @@index([type, tick])
@@ -78,21 +78,21 @@ model ChronicleEvent {
 }
 ```
 
-Conventions (matching the repo): JSON-bearing columns are TEXT holding JSON strings; call sites parse.
+Conventions match the repo: JSON-bearing columns are TEXT holding JSON strings; call sites parse.
 
-**Emission.** The tick processor (`lib/time/tick-processor.ts`) and order handlers (`scripts/game-loop.ts`) call a tiny synchronous helper — `chronicle.record(type, {...})` — at the moments they already log to console today. The helper buffers in-memory during the tick and flushes to Postgres in one batch write after the world snapshot commits, so a mid-tick crash never leaves the chronicle claiming things the saved world doesn't show.
+**Emission.** Call sites invoke `chronicle.record(world, draft)` — synchronous, allocation-only, and unable to throw into a tick. Drafts buffer in memory; `flushChronicle()` writes them in one batch **after** the world snapshot and faction shards commit, so a mid-tick crash never leaves the chronicle claiming things the saved world doesn't show. A caller with no valid sim clock is dropped rather than filed on day 0, because the chronicle is append-only and a junk row at the front of history is permanent.
 
-**Importance scoring** is a pure function of `(type, facts)` — a static table with modifiers, in code, testable:
+**Importance scoring** is a pure function of `(type, facts)` in `lib/narrative/chronicle-importance.ts` — a static table with modifiers, testable, no I/O and no randomness:
 
 | Band | Examples |
 |---|---|
-| 90–100 | capital falls, empire eliminated, civil war starts, galactic first (first war, first coup) |
-| 70–89 | war declared/ended, coup, secession, leader assassinated, treaty betrayed mid-war |
-| 40–69 | major battle, exposed espionage op, sanctions, crisis resolved, famous leader dies |
-| 15–39 | skirmish, trade route opened/lost, cabinet reshuffle, suspected op |
+| 90–100 | capital falls, empire eliminated, civil war starts |
+| 70–89 | war declared/ended, coup, secession, treaty betrayed |
+| 40–69 | major battle, exposed espionage op, sanctions, famous leader dies |
+| 15–39 | skirmish, trade route lost, cabinet reshuffle, suspected op |
 | 0–14 | routine — recorded for memory queries, never narrated |
 
-Modifiers: `+10` if actors are in an active feud, `+10` if it reverses a prior event (retaking a lost system), `+15` for a "first" in this galaxy's history. All computed from chronicle queries at emission time — cheap, indexed.
+Fact modifiers: casualty scale, capital/homeworld involvement, decisiveness, and war outcome. Context modifiers that need the chronicle itself (feuds, reversals, galactic firsts) belong to the narrator's context pass in phase 2, not to this pure function.
 
 ---
 
@@ -100,11 +100,11 @@ Modifiers: `+10` if actors are in an active feud, `+10` if it reverses a prior e
 
 No new authored state; everything below is a query or a cached query.
 
-**Feuds.** Hostile-event count between an ordered faction pair over a sliding window. Above a threshold, a `Feud` row is created (pair, startedTick, topEventIds, epithet). The epithet — "the Varesh Question", "the Ten-Day Betrayal" — is generated once by the narrator and cached; the *existence* of the feud is pure arithmetic. Feuds cool: no qualifying events for a long window → status `dormant`, and a retrospective may mark its end. Later hostilities between the pair get the feud summary injected into their narration prompt — that is the entire mechanism behind "this war is a continuation of an old rivalry".
+**Feuds.** Hostile-event count between an ordered faction pair over a sliding window. Above a threshold, a `Feud` row is created (pair, startedTick, topEventIds, epithet). The epithet — "the Varesh Question", "the Ten-Day Betrayal" — is generated once by the narrator and cached; the *existence* of the feud is pure arithmetic. Feuds cool: no qualifying events for a long window → status `dormant`. Later hostilities between the pair get the feud summary injected into their narration prompt — that is the entire mechanism behind "this war is a continuation of an old rivalry".
 
-**Eras.** A background job (in the narrator, not the game loop) segments history at cluster boundaries of 90+ importance events: "the Founding Peace", "the First Corsair War". Purely presentational — eras exist so retrospectives and new-player catch-up have chapters.
+**Eras.** A background job in the narrator segments history at cluster boundaries of 90+ importance events: "the Founding Peace", "the First Corsair War". Purely presentational — eras exist so retrospectives and new-player catch-up have chapters.
 
-**Precedent.** When narrating an event, the narrator queries: top-3 prior events sharing actors or location with importance ≥ 70. Their headlines (already-generated prose, cached in `NarrativeArticle`) are offered to the prompt as "prior coverage". This is how the gazette gets continuity of tone about a place without any long-term LLM memory.
+**Precedent.** When narrating an event, the narrator queries the top-3 prior events sharing actors or location with importance ≥ 70. Their already-generated headlines are offered to the prompt as "prior coverage". This is how the gazette keeps continuity of tone about a place without any long-term LLM memory.
 
 ---
 
@@ -118,7 +118,7 @@ loop:
              ORDER BY importance DESC LIMIT batch        (coalesce by coalesceKey)
   for each event group:
     voice    = pick publisher (press-system state: type, credibility, bias, active crises)
-    memory   = feud summary + precedent headlines + faction personalities   (SQL, ~15 lines of text)
+    memory   = feud summary + precedent headlines + faction personalities   (SQL, ~15 lines)
     visible  = facts filtered through attribution      (the LLM never receives hidden actors)
     prose    = generateText(prompt(voice, memory, visible))   // existing llm-provider fallback chain
     write NarrativeArticle + Gazette row; mark narratedAt
@@ -128,12 +128,12 @@ loop:
 ```prisma
 model NarrativeArticle {
   id          String   @id @default(cuid())
-  eventIds    String   // JSON array — chronicle events this covers
-  publisherId String   // press faction id — whose voice
-  kind        String   // 'news' | 'investigation' | 'propaganda' | 'retrospective' | 'obituary' | 'rumor'
+  eventIds    String // JSON array of ChronicleEvent ids this article covers
+  publisherId String
+  kind        String // 'news' | 'investigation' | 'propaganda' | 'retrospective' | 'obituary' | 'rumor'
   headline    String
   body        String
-  stance      String?  // JSON: claims made vs. actual facts — kept for later contradiction plays
+  stance      String? // JSON — claims made vs facts, for later contradiction plays
   day         Int
   createdAt   DateTime @default(now())
 
@@ -142,24 +142,24 @@ model NarrativeArticle {
 }
 ```
 
-The existing `Gazette` table stays as the *front page* — the narrator writes the day's top articles into it (`headline`, `lede`, `tone`), which lights up the already-built read API and UI for free. `NarrativeArticle` is the full archive behind it.
+The existing `Gazette` table stays as the *front page* — the narrator writes the day's top articles into it, which lights up the already-built read API and UI for free. `NarrativeArticle` is the full archive behind it.
 
-**Perception in output.** Because the prompt receives attribution-filtered facts, a successful covert op yields state media reporting "spontaneous unrest on Varesh" while — if an `Investigation` later reaches `PUBLICATION` with enough evidence — an independent outlet publishes the exposé *referencing the original article's claim*. The `stance` column exists so the narrator can be told what each publisher previously claimed, making later contradictions and credibility collapses land. The press system's existing crisis choices (`DENY`, `COUNTER_LEAK`, `SUPPRESS`) then have visible narrative consequences, not just stat changes.
+**Perception in output.** Because the prompt receives attribution-filtered facts, a successful covert op yields state media reporting "spontaneous unrest on Varesh" while — if an `Investigation` later reaches `PUBLICATION` with enough evidence — an independent outlet publishes the exposé *referencing the original article's claim*. The `stance` column exists so the narrator can be told what each publisher previously claimed, making later contradictions and credibility collapses land.
 
-**Retrospectives.** On a slow cadence (game-weekly), the narrator runs one extra job: highest-importance events of the closing period + era/feud state → one "historical retrospective" article. This is the cheapest feature per unit of "I lived through a historical period" in the whole design.
+**Retrospectives.** On a slow cadence, the narrator runs one extra job: highest-importance events of the closing period plus era and feud state → one historical retrospective. This is the cheapest feature per unit of "I lived through a historical period" in the whole design.
 
-**Budget.** Hard caps in config: max LLM calls per hour, max per day. Beyond cap, events queue (they're durable rows). `template` provider output is used for low-band (40–69) events even when Gemini is available — spend the good prose on history, not on skirmishes.
+**Budget.** Hard caps in config: max LLM calls per hour and per day. Beyond cap, events queue (they're durable rows). Template output is used for low-band events even when a good model is available — spend the good prose on history, not on skirmishes.
 
 ---
 
 ## Invariants (the list that keeps this system safe)
 
-1. **The narrator never writes anything the simulation reads.** Its write set is exactly: `NarrativeArticle`, `Gazette`, `Feud` epithets, `narratedAt` markers. Enforced by code review and by never importing world-state mutators into `scripts/narrator.ts`.
-2. **The tick processor never awaits an LLM.** Chronicle emission is a synchronous in-memory buffer + one batch insert post-commit. Total tick overhead: one INSERT.
+1. **The narrator never writes anything the simulation reads.** Its write set is exactly: `NarrativeArticle`, `Gazette`, `Feud` epithets, `narratedAt` markers.
+2. **The tick processor never awaits an LLM.** Chronicle emission is a synchronous in-memory buffer plus one batch insert after the snapshot commits.
 3. **LLM output is never parsed for game effect.** Prose is display-only. Mechanical consequences of press activity stay in the deterministic press system.
-4. **The chronicle is append-only.** History is not edited — not even by admins. Cover-ups change *attribution and articles*, never facts.
-5. **Narration is idempotent and crash-safe.** `narratedAt IS NULL` is the queue; marking happens in the same transaction as the article insert. Narrator can die at any line and rerun.
-6. **The press layer receives only attribution-filtered facts.** Hidden actors never appear in any prompt — an LLM can't leak what it was never shown.
+4. **The chronicle is append-only.** History is not edited. Cover-ups change *attribution and articles*, never facts.
+5. **Narration is idempotent and crash-safe.** `narratedAt IS NULL` is the queue; marking happens in the same transaction as the article insert.
+6. **The press layer receives only attribution-filtered facts.** Hidden actors never appear in any prompt — an LLM cannot leak what it was never shown.
 
 ---
 
@@ -176,19 +176,19 @@ One service added to `compose.prod.yaml`:
     depends_on:
       postgres:
         condition: service_healthy
-    environment: *app-env      # includes LLM_PROVIDER / GOOGLE_API_KEY
+    environment: *app-env      # includes LLM_PROVIDER
     command: ["npx", "tsx", "scripts/narrator.ts"]
 ```
 
-Sizing for the IdeaPad: the narrator is idle-waiting 99% of the time; RAM cost is one Node process. The LLM behind it is a free choice — the narrator is asynchronous, so generation latency is irrelevant, and post-gating volume is a handful of calls per game-day. All options ride the existing `LLM_PROVIDER` switch:
+Sizing for the home server (Ryzen 5 4500U, 6 cores, 14 GiB RAM, 422 GB free): the narrator idles 99% of the time; its own cost is one Node process. The LLM behind it is a free choice — generation latency is irrelevant because nothing waits on it, and post-gating volume is a handful of calls per game-day. All options ride the existing `LLM_PROVIDER` switch:
 
 - **`template`** — zero cost, zero network, worst prose. Phase 1 runs entirely on this, and it is the permanent fallback: the game must always be playable here.
-- **`ollama`** (self-hosted) — everything stays on your hardware. Constraint is RAM, not speed: a quantized 4–8B model wants ~3–6 GB alongside Postgres and Next; check `free -h` before committing. Also viable on a *different* machine over LAN/Tailscale (a desktop with a GPU runs bigger models) — the durable queue tolerates that machine being offline; articles simply catch up.
-- **`gemini`** (or any API provider — each is one small file in `lib/ai/providers/`) — best prose per effort, cents/month at this volume; trade-off is an external dependency and event summaries leaving the server.
+- **`ollama`** (self-hosted) — everything stays on your hardware. A quantized 4–8B model wants ~3–6 GB alongside Postgres and Next, which this machine has. Expect roughly 5–8 tokens/sec on CPU: a gazette article in one to two minutes, invisible to an asynchronous narrator. Also viable on a different machine over LAN or Tailscale; the durable queue tolerates that machine being offline.
+- **`gemini`** or another API (each is one small file in `lib/ai/providers/`) — best prose per effort, cents per month at this volume; the trade-off is an external dependency and event summaries leaving the server.
 
-Recommended sequence: ship on `template`, trial `ollama` with a small model, read a week of gazette output, and only then decide whether the prose gap is worth an API. Provider can be flipped any day; nothing downstream changes.
+Recommended sequence: ship on `template`, trial `ollama` with an 8B model, read a week of gazette output, and only then decide whether the prose gap is worth an API. The provider can be flipped any day; nothing downstream changes.
 
-Backups: chronicle and articles live in the same Postgres — the existing nightly `pg_dump` already covers the galaxy's entire history. Fitting, since losing the backups would itself be a historical event.
+Backups: the chronicle and articles live in the same Postgres, so the existing nightly `pg_dump` already covers the galaxy's entire history.
 
 ---
 
@@ -196,20 +196,114 @@ Backups: chronicle and articles live in the same Postgres — the existing night
 
 Each phase ships alone, is testable alone (tsx scripts, per repo convention — jest is unconfigured), and the game is playable after every phase.
 
-**Phase 0 — Chronicle.** Prisma models (`ChronicleEvent`, `NarrativeArticle`, `Feud`) + migration; `chronicle.record()` helper with buffer/flush; emission calls at ~15 sites in tick-processor and order handlers; importance table. Test: run ticks, assert events land with sane scores. No narrator, no UI change.
+**Phase 0 — Chronicle. ✅ Done.** Prisma models (`ChronicleEvent`, `NarrativeArticle`, `Feud`) with migration `narrative_phase0`; `lib/narrative/chronicle.ts` (buffer plus post-commit batch flush) and `chronicle-importance.ts` (the scoring table). The flush runs in `scripts/game-loop.ts` after the snapshot and shards commit.
 
-**Phase 1 — Narrator walks.** `scripts/narrator.ts` loop with `template` provider only; coalescing; Gazette rows written. The empty newspaper UI comes alive. Test: seed chronicle events, run narrator once, assert articles + idempotency.
+Emission is live at these decision points — each is the line where the outcome becomes final:
 
-**Phase 2 — Memory.** Feud derivation + injection; precedent queries; importance modifiers that read the chronicle; era segmentation job. Test: manufacture a feud, assert the next war's prompt contains it.
+| Event | Where |
+|---|---|
+| `war_declared` | `lib/diplomacy/offer-service.ts` — `registerActOfWar`, after the already-at-war guard so a running war is not re-declared |
+| `war_ended` | same file — the `peace_offer` branch of the accepted-offer handler |
+| `treaty_broken` | same file — `breakTreaty` |
+| `operation_resolved` / `operation_exposed` | `lib/espionage/espionage-service.ts` — both resolution paths, via `recordOperationToChronicle`, carrying the real actor and the public attribution separately |
+| `coup_attempted` / `government_changed` | `lib/government/coup-service.ts` — at the success roll |
+| `secession_declared` | `lib/government/secession-service.ts` — when the crisis is registered |
+| `civil_war_started` | `lib/government/civil-war-service.ts` — after fission completes |
+| `leader_died` / `leader_rose` | `lib/government/succession-service.ts` — `resolveSuccession`, coalesced so one succession is one story |
+| `system_captured` / `capital_captured` / `colony_founded` | `scripts/game-loop.ts` — `recalculateSystemControl`, the only place system ownership is decided |
+| `battle_resolved` | `scripts/game-loop.ts` — both siege capture paths, via `recordSiegeCapture` |
+| `planet_bombarded` | `scripts/game-loop.ts` — the `MIL_BOMBARD` order handler |
 
-**Phase 3 — Voices and truth.** Publisher voice selection from press-system state; attribution filtering; `stance` recording; investigations produce exposé articles that cite prior coverage; Gemini wired in behind the budget caps.
+Tests:
 
-**Phase 4 — History features.** Retrospectives, obituaries for major leaders (leadership system already generates them), era naming, and a "History" UI panel reading `NarrativeArticle` — the archive players browse to relive the war their grandparents started.
+```bash
+npx tsx scripts/test-narrative-phase0.ts
+```
+
+covers scoring, buffering, persistence, and the diplomacy and succession call sites.
+
+```bash
+npx tsx scripts/test-narrative-phase0-live.ts
+```
+
+flips a system's owner in the dev world, runs the real worker, asserts the row appears, and restores the world. It mutates and then repairs the dev database — never point it at the server.
+
+**Phase 1 — Narrator walks. ✅ Done.** `scripts/narrator.ts` (run with `npm run narrator`, or the `narrator` service in `compose.prod.yaml`) polls the chronicle, publishes, and sleeps.
+
+- `lib/narrative/narrator-service.ts` — the queue (`narratedAt IS NULL`, importance-ordered), coalescing by `coalesceKey`, the attribution filter, and a transaction that inserts the article and marks its events together so a crash never double-publishes.
+- `lib/narrative/prose/` — `prose-types.ts` defines a narrow `ProseWriter` interface (deliberately *not* `lib/ai`'s `generateFactionReply`, which is shaped for dialogue), and `template-writer.ts` implements it with no model at all: deterministic prose per event type, variety from hashing the event id into a phrasing bank.
+- `ChronicleEvent` gained `actorNames` / `targetNames` (migration `narrative_event_names`). Faction names live in per-faction shards rather than the world snapshot, so they are stamped on at emission — which also means a later rename cannot rewrite articles already written.
+- The gazette API now resolves "latest published day" when called without `?day=`; sim-clock days are ~20 000, so the old `day=1` default could never have matched. `components/Newspaper.tsx` was an orphan with no mount point; it is now the GALACTIC GAZETTE section of the press panel.
+
+Attribution is enforced at the service boundary, not in the prose: an `invisible` operation never passes a name to the writer, and a `suspected:<id>` one passes the *suspected* party, who need not be the real actor. A frame-up therefore prints the wrong name by construction.
+
+```bash
+npx tsx scripts/test-narrative-phase1.ts
+```
+
+covers publication, front-page promotion, idempotency across passes, coalescing three bombardments into one article, all three attribution states including a frame-up, sub-threshold retirement, and writer determinism.
+
+**Phase 2 — Memory. ✅ Done.** `lib/narrative/memory-service.ts` derives everything by query; there is no authored state to keep in sync.
+
+- **Feuds.** Hostile events between an ordered faction pair inside a sliding window; three or more makes a feud, and silence for long enough makes it dormant. Recomputed every narrator pass, so a wiped `feuds` table simply rebuilds itself.
+- **Memory obeys attribution.** An operation the press could not pin on anyone builds *no* feud — deniability protects you from history, not merely from today's headline. Exposing those same acts later makes the grudge appear. The test asserts both directions.
+- **Epithets** are coined once from the record (a world that keeps being fought over gives the feud its name — "the Kessel Question") and cached on the row, so the name never churns. Phase 3 can replace the coining with a model without changing anything else.
+- **Precedent** returns prior *headlines* rather than raw events, so continuity echoes what the paper actually printed.
+- **Context modifiers** (`memoryFor`) live here rather than in `chronicle-importance.ts`, which must stay pure and I/O-free so emission never queries mid-tick. An active feud, a reversal, a galactic first and repeat coverage raise effective importance by up to 25, and the narrator now enriches every group *before* writing so that boosted score decides the front-page running order.
+- **Galactic firsts** require the event to be notable in its own right: every galaxy has a first skirmish and nobody records it that way.
+- **Eras** are a derived query (`segmentEras`) that splits history at quiet stretches between its loudest events — no table, because nothing writes to them and phase 4 only reads.
+
+The template writer gained a continuity paragraph, which is the whole point of the phase — an article now reads:
+
+> Kessel has been struck from orbit by Red Compact. Local stability is reported at 20, with the orbital layer suppressed.
+>
+> This is the 4th such incident between the two powers, in what observers now call the Kessel Question. The same ground has changed hands before, and the record suggests it will again. Readers may recall "THE CAPITAL FALLS: Kessel taken by Red Compact".
+
+```bash
+npx tsx scripts/test-narrative-phase2.ts
+```
+
+covers feud formation, unordered pairs, stable naming, the deniability rule in both directions, the threshold, dormancy, precedent citation, reversals, notable-versus-routine firsts, the boosted score reaching the article's `stance`, and era segmentation.
+
+**Phase 3 — Voices and truth. ✅ Done.** The same facts now read differently depending on who is printing them, and a model can sit behind the prose without becoming a single point of failure.
+
+- `lib/narrative/press-voices.ts` reads the publisher roster (state media per empire, the independent wire, the pirate outlet) out of the committed snapshot. Reading is safe under Invariant 1 — the narrator may read anything the simulation writes, it may only never *write* anything the simulation reads — and the snapshot is parsed rather than deserialized, so there is no live object to mutate by accident.
+- **Selection follows incentive, not randomness.** An act nobody can attribute goes to the pirate press, the outlet willing to speculate. A victory goes to the winner's own state media. A bombardment goes to the victim's. An exposure or a coup goes to the independents, because nobody breaks their own scandal. A state medium whose credibility has collapsed loses the story to the wire — so the press system's existing credibility mechanics now have visible narrative consequences.
+- `lib/narrative/prose/llm-writer.ts` wraps the existing Gemini and Ollama providers, deliberately **not** via `safeGenerateFactionReply` (that path is built for dialogue and demands a `FactionContextSummary`). Configured with `NARRATOR_LLM`, an importance floor (`NARRATOR_LLM_MIN_IMPORTANCE`, default 40 — the model's budget belongs to history, not skirmishes) and hard hourly/daily call ceilings.
+- **Every failure ends in prose.** No key, no daemon, a timeout, unparseable output, a rejected article — all fall through to the template writer, and the article records which writer produced it, so a silently degraded galaxy is visible rather than mysterious.
+- **Two guardrails on model output.** An unattributed story that names one of the *real* actors is discarded rather than published (Invariant 6, checked rather than assumed). And fabricated sourcing — "sources confirm", "officials say" — is rejected outright: it is the failure mode small models fall into most readily, and the one that would make the paper untrustworthy in a way players notice.
+- Investigations reaching PUBLICATION or SCANDAL now emit `investigation_published` / `scandal_confirmed` chronicle events from `tickPress`, so a journalist landing a story is itself history. The resulting article is filed as `kind: 'investigation'` and cites the prior coverage phase 2 already tracks.
+
+Verified against a real local Ollama daemon (`dolphin-llama3:8b`): three outlets produced genuinely different copy from identical facts, an unattributed operation was written without naming its actor, and the sourcing guardrail rejected roughly half of that model's output — which is the guardrail working, and an argument for a stronger instruction-following model in production. First call cost ~60s while the model loaded, then ~3s per article; irrelevant to an asynchronous narrator, but worth knowing when sizing the server.
+
+```bash
+npx tsx scripts/test-narrative-phase3.ts
+```
+
+covers selection for each outlet type, credibility-driven fallback, three distinct voices from one event, state media framing its own setback, degradation on an unreachable model, the importance floor, the budget ceiling, and the exposé citing earlier coverage.
+
+**Phase 4 — History features. ✅ Done.** The galaxy stops producing only news and starts producing a past.
+
+- **Eras name themselves, once.** `writeRetrospectives` waits until a chapter has been quiet long enough to be closed — the present is not history — then names it from what defined it: a civil war makes "the Years of Division", an extinction "the Age of Extinction", a dominant power "the X Ascendancy". The retrospective article *is* the era record; its `stance` carries the tick range, so a later pass recognises an era it has already named. No table, nothing to keep in sync, and the name is as durable as the article players read.
+- **Obituaries are careers, not bulletins.** A leader's death files as `kind: 'obituary'` with what the empire did on their watch, drawn from the chronicle. An uneventful tenure is admitted rather than invented — "the record of their tenure is thinner than their supporters would like".
+- **`/api/narrative/history` + `components/panels/HistoryPanel.tsx`** — the archive, filterable by kind, mounted as the ARCHIVE tab under COMMS. Each entry shows the masthead that ran it and expands to the full text.
+
+Three bugs the tests caught, all the same family — plausible output that was quietly wrong:
+
+- A leader's own death counted among their achievements, because `careerOf` searched a window that included the event being written about.
+- Headlines read "Chancellor Chancellor Vex Ordane" when an emission site put the title inside `leaderName`.
+- The career lookback assumed one year = one day. `AGE_YEARS_PER_DAY = 0.5` in `lib/government/succession-service.ts`, so a year in office is *two* days — the window covered half a leader's tenure, which made eventful reigns read as empty.
+
+```bash
+npx tsx scripts/test-narrative-phase4.ts
+```
+
+covers era naming and its stability, the refusal to write up an ongoing era, the minimum for a chapter, obituaries with and without a record, and the kinds the archive groups by. Assertions are scoped by tick rather than global count, so the suite passes against a galaxy that already has history of its own.
 
 ---
 
 ## Open questions (decide before phase 3)
 
 - **One gazette or one per empire?** Propagation already tracks per-planet story intensity; a player arguably should only read articles that reached their planets. Phase 1 ships a single galactic gazette; scoping by propagation is a filter on the read API later, not a schema change — but the decision affects how much the front page can "know".
-- **Player-written statements.** Letting players publish official statements (a press-release order) would feed the narrator first-party material and make `DENY`/`COUNTER_NARRATIVE` feel authored. Cheap once phase 3 exists; deliberately out of scope before it.
-- **Name generation for epithets/eras** — narrator-generated and cached, but needs a profanity/length guard even on the template path.
+- **Player-written statements.** Letting players publish official statements would feed the narrator first-party material and make `DENY` and `COUNTER_NARRATIVE` feel authored. Cheap once phase 3 exists; deliberately out of scope before it.
+- **Name generation for epithets and eras** — narrator-generated and cached, but needs a length and profanity guard even on the template path.

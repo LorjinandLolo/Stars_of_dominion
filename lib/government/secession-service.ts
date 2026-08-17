@@ -26,6 +26,7 @@ import { getGovernment, spendPoliticalCapital } from './government-service';
 import { getGovernor } from './governor-service';
 import { getPlanetCohesion } from './cohesion-service';
 import { recordPoliticalEvent } from './ideology-drift';
+import * as chronicle from '@/lib/narrative/chronicle';
 
 /** Cohesion at or below which a world will join a movement to leave. */
 const SECESSION_COHESION_THRESHOLD = 20;
@@ -254,6 +255,19 @@ export function openCrisis(
     };
 
     world.secessionCrises.set(crisis.id, crisis);
+    chronicle.record(world, {
+        type: 'secession_declared',
+        actorIds: [factionId],
+        targetIds: [],
+        location: systemIds[0],
+        facts: {
+            crisisName: crisis.name,
+            worlds: planetIds.length,
+            independenceSupport: Math.round(crisis.independenceSupport ?? 0),
+            leaderName: crisis.leaderName ?? 'an unnamed movement',
+            causes: crisis.causes.join(', '),
+        },
+    });
     gov.history.push({
         timestamp: world.nowSeconds,
         event: `${crisis.name}: ${planetIds.length} worlds demand independence.`,

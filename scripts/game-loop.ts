@@ -4,6 +4,8 @@ import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShar
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
+import * as chronicle from '../lib/narrative/chronicle';
+import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
@@ -865,7 +867,17 @@ async function runGameTick() {
             shardsWritten++;
         }
 
+        // Chronicle flush — AFTER the snapshot and shards are committed, so the
+        // galaxy's history can never claim something the saved world does not
+        // show. A failed flush keeps its rows buffered and retries next cycle;
+        // the chronicle is allowed to lag, never to lie. See
+        // docs/narrative-system/README.md, Invariant 2.
+        const eventsWritten = await flushChronicle();
+
         // Idle ticks stay silent; log only when something actually happened.
+        if (eventsWritten > 0) {
+            console.log(`[Chronicle] Recorded ${eventsWritten} event(s).`);
+        }
         if (snapshotSaved || shardsWritten > 0 || pendingOrders.length > 0 || strategicFired) {
             console.log(`[Tick Worker] Cycle ${tickCounter}: orders=${pendingOrders.length}, snapshot=${snapshotSaved ? 'saved' : 'clean'}, shards=${shardsWritten}/${factionsToSave.size}.`);
         }
@@ -1017,19 +1029,54 @@ function seedGenthouliRaiders(world: any) {
 /**
  * Recalculates star system ownership based on the ownership of its constituent planets.
  */
+/**
+ * File a planet falling to a ground siege. Distinct from the system-level
+ * capture recorded in recalculateSystemControl: a system with several worlds
+ * changes hands once, but each world it loses is its own battle and its own
+ * story. Both share the system as their location so the narrator can group them.
+ */
+function recordSiegeCapture(
+    world: any,
+    planet: any,
+    siege: any,
+    surfaceHeld: number,
+    manner: 'capital_district' | 'occupation',
+): void {
+    chronicle.record(world, {
+        type: 'battle_resolved',
+        actorIds: [siege.attackerEmpireId],
+        targetIds: [siege.defenderEmpireId].filter(Boolean),
+        location: planet.systemId ?? planet.id,
+        facts: {
+            planetName: planet.name,
+            manner,
+            surfaceHeld: Math.round(surfaceHeld),
+            siegeCycles: siege.cycleCount ?? 0,
+            devastation: Math.round(siege.attackerState?.devastationCaused ?? 0),
+            isCapital: planet.isCapital === true || planet.isHomeworld === true,
+            decisive: true,
+        },
+        coalesceKey: `siege:${planet.id}`,
+    });
+}
+
 function recalculateSystemControl(world: any) {
     const systemToPlanets = new Map<string, any[]>();
-    
+
     // Group all planets by their system
     for (const planet of world.construction.planets.values()) {
         const list = systemToPlanets.get(planet.systemId) || [];
         list.push(planet);
         systemToPlanets.set(planet.systemId, list);
     }
-    
+
     // Process each system
     for (const [sysId, system] of world.movement.systems) {
         const planets = systemToPlanets.get(sysId) || [];
+        // Remembered before the reassignments below so a change of hands can be
+        // written to the chronicle — this function is the only place system
+        // ownership is decided, so it is the only place that can see the flip.
+        const previousOwner: string | undefined = system.ownerFactionId;
         if (planets.length === 0) {
             system.ownerFactionId = undefined;
             system.isContested = false;
@@ -1052,6 +1099,23 @@ function recalculateSystemControl(world: any) {
         } else {
             system.ownerFactionId = undefined;
             system.isContested = true;
+        }
+
+        if (system.ownerFactionId && system.ownerFactionId !== previousOwner) {
+            const isCapital = planets.some((p: any) => p.isCapital === true || p.isHomeworld === true);
+            chronicle.record(world, {
+                // A system going from unowned to owned is settlement; from one
+                // empire to another it is conquest, and the galaxy cares far more.
+                type: previousOwner ? (isCapital ? 'capital_captured' : 'system_captured') : 'colony_founded',
+                actorIds: [system.ownerFactionId],
+                targetIds: previousOwner ? [previousOwner] : [],
+                location: sysId,
+                facts: {
+                    systemName: system.name ?? sysId,
+                    planetCount: planets.length,
+                    isCapital,
+                },
+            });
         }
     }
 }
@@ -1705,6 +1769,21 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.log(`[Tick Worker] Siege bombardment (${mode}) supporting assault on ${planet.name}`);
             }
             console.log(`[Order] Faction ${factionId} bombarded planet ${planet.name}`);
+            chronicle.record(world, {
+                type: 'planet_bombarded',
+                actorIds: [factionId],
+                targetIds: [planet.ownerId].filter(Boolean),
+                location: planet.id,
+                facts: {
+                    planetName: planet.name,
+                    mode: payload.mode ?? 'FORTIFICATION',
+                    orbitHeld,
+                    stabilityAfter: Math.round(planet.stability ?? 0),
+                    isCapital: planet.isCapital === true || planet.isHomeworld === true,
+                },
+                // One article per planet per day, however many volleys land.
+                coalesceKey: `bombardment:${planet.id}`,
+            });
             break;
         }
 
@@ -5009,8 +5088,16 @@ function processSieges(world: GameWorldState) {
 
             // Capital falls → the government collapses and the planet changes hands.
             if (capitalTaken(war)) {
+                // capturePlanet owns the whole transfer: tech absorption while
+                // the previous owner is still on the record (diffusion:
+                // conquest), the ownership flip, siege teardown, stability hit,
+                // census recompute and the Sarrak registry. Calling
+                // absorbConqueredTechnology here as well would award the
+                // archives twice.
                 capturePlanet(world, planet, updatedSiege.attackerEmpireId,
                     `CAPITAL DISTRICT FALLS (${share}% of surface held)`);
+                // The chronicle remembers the fall (narrative branch).
+                recordSiegeCapture(world, planet, updatedSiege, share, 'capital_district');
                 continue;
             }
         }
@@ -5032,7 +5119,10 @@ function processSieges(world: GameWorldState) {
                 advanceFront(surface, war, 1.2, rng);
                 updatedSiege.defenderState.occupationProgress = occupationShare(surface, war);
                 if (capitalTaken(war)) {
+                    // capturePlanet owns the whole transfer, tech absorption
+                    // included; the chronicle line is the narrative branch's.
                     capturePlanet(world, planet, updatedSiege.attackerEmpireId, 'PLANETARY CAPTURE');
+                    recordSiegeCapture(world, planet, updatedSiege, 100, 'occupation');
                 }
                 continue;
             }
