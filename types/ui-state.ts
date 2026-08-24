@@ -552,6 +552,26 @@ export interface PoliticsState {
     allFactions: any[]; // Phase 3: Live faction data for diplomacy
     /** Live government state (approval, legitimacy, political capital). */
     government?: GovernmentSnapshot;
+    /**
+     * Standing political debates on the player's table, with per-resolution
+     * support forecasts precomputed in useGameSync through the same pure engine
+     * the worker charges with — the panel renders and never recalculates.
+     */
+    openQuestions?: Array<{
+        id: string;
+        kind: string;
+        title: string;
+        ticksLeft: number;
+        facts: Record<string, string>;
+        spec: {
+            prompt: string;
+            resolutions: Array<{
+                id: string; label: string; description: string;
+                politicalCapitalCost: number; legitimacyDelta: number; coupPressureDelta?: number;
+            }>;
+        } | null;
+        forecasts: Array<{ resolutionId: string; total: number; band: string }>;
+    }>;
     /** Policy catalog, fetched once from the server (fs-backed registry). */
     policyCatalog?: PolicyOption[];
     /** Snapshot of the shared integration bus scalars the UI needs. */

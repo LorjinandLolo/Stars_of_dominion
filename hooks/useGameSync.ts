@@ -8,6 +8,7 @@ import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/type
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
 import { getDominantIdeologyType } from '@/lib/politics/ideology-service';
 import { buildFactionSaga } from '@/lib/factions/saga';
+import { DEBATE_CATALOG, debateTitle, forecastResolutions, ticksRemaining } from '@/lib/politics/debate-types';
 import { COHESION_STAGE_LABELS } from '@/lib/government/cohesion-types';
 import { DEFIANCE_KIND_LABELS } from '@/lib/government/defiance-types';
 
@@ -379,6 +380,26 @@ export function useGameSync() {
                 id: b.id, name: b.name, influence: b.influence,
                 satisfaction: b.satisfaction, trend: b.trend ?? 0,
             })) ?? useUIStore.getState().politicsState.blocs,
+            // Standing debates, with per-resolution forecasts computed HERE from
+            // the same world snapshot and the same pure engine the worker uses —
+            // the panel only renders, so the button can never promise a band the
+            // order then fails to deliver.
+            openQuestions: ((playerPosture as any)?.openQuestions ?? []).map((q: any) => ({
+                ...q,
+                title: debateTitle(q),
+                ticksLeft: ticksRemaining(q, world.nowSeconds),
+                spec: DEBATE_CATALOG[q.kind as keyof typeof DEBATE_CATALOG] ?? null,
+                forecasts: (playerPosture as any)?.blocs?.length
+                    ? forecastResolutions(q, (playerPosture as any).blocs, {
+                          warFatigue: (world as any).shared?.warFatigue ?? 0,
+                          rivalryScore: 20,
+                          // Same field getPublicTrust reads worker-side; inlined
+                          // because press-system/integration must not enter the
+                          // client bundle. resolveDebate uses the same number.
+                          publicTrust: (world as any).press?.empires?.get?.(activeFactionId)?.publicTrust ?? 60,
+                      })
+                    : [],
+            })),
             government: playerGov
                 ? {
                       headOfState: headOfStateSnapshot,

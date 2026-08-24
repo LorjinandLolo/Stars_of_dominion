@@ -37,6 +37,7 @@ import { tickInterventions } from '../diplomacy/intervention-service';
 import { runDiplomaticAI } from '../ai/diplomatic-ai-service';
 import { tickPress } from '../press-system/integration';
 import { tickBlocDrift } from '../politics/politics-service';
+import { tickDebates } from '../politics/debate-service';
 import { tickGovernments } from '../government/government-service';
 import { tickLeadership } from '../government/succession-service';
 import { tickCabinets } from '../government/cabinet-service';
@@ -150,6 +151,12 @@ export async function runStrategicTick(
         }
     } catch (e) { console.error('[TickProcessor] tickBlocDrift failed:', e); }
     try { tickMandates(world); } catch (e) { console.error('[TickProcessor] tickMandates failed:', e); }
+    // 9f-1.5: Standing political debates — open questions fester, deadlines
+    // resolve as IGNORED, AI governments answer theirs. After bloc drift and
+    // mandates (this tick's satisfaction is settled), before tickGovernments,
+    // so a resolution's satisfaction/legitimacy shifts land in the same tick's
+    // approval computation rather than a day late.
+    try { tickDebates(world); } catch (e) { console.error('[TickProcessor] tickDebates failed:', e); }
     // 9f-2: Government — approval derived from blocs + press trust, legitimacy
     // drift, political capital accrual. Runs after bloc drift so approval reads
     // this tick's satisfaction, not last tick's.

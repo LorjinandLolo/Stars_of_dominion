@@ -15,6 +15,7 @@ import { clampShared } from '../game-world-state';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { getDeepNetworkAttributionBonus, tickAgentNetworks } from './agent-service';
+import { openDebate } from '../politics/debate-service';
 import { OPERATION_CATALOG_BY_ID, domainForCategory } from './operation-catalog';
 import type { OperationDefinition, OperationRisk } from './operation-catalog';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
@@ -641,6 +642,16 @@ function recordOperationToChronicle(op: EspionageOperation, world: GameWorldStat
         },
         attribution,
     });
+
+    // An EXPOSED operation convenes the victim's chamber — hawks demand a
+    // reckoning, merchants want it hushed. Only exposed: the political arena
+    // can only argue about what the public knows, which is the same ceiling
+    // the press lives under.
+    if (op.attributionState === 'exposed') {
+        const aggressor: any = world.economy?.factions?.get?.(op.actorFactionId);
+        openDebate(world, op.targetFactionId, 'espionage_exposed_on_us',
+            { aggressor: aggressor?.name ?? op.actorFactionId }, op.actorFactionId);
+    }
 }
 
 function buildNarrative(domain: OperationDomain, success: boolean, attribution: AttributionState): string {

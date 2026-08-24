@@ -466,6 +466,15 @@ export interface EmpirePosture {
     society_tags?: string[];
     government_tags?: string[];
     ideology: IdeologyProfile;
+    /**
+     * Standing political debates on this government's table. Plain JSON so it
+     * rides the generic Map round-trip untouched; back-filled by
+     * ensureEmpirePostures for snapshots that predate the arena. The shape
+     * lives in lib/politics/debate-types.ts — declared loosely here because
+     * this module is imported by nearly everything and must not grow a
+     * dependency on the politics layer.
+     */
+    openQuestions?: Array<Record<string, unknown>>;
 }
 
 // ─── Air Sorties (Naval Air Support) ───────────────────────────────────────────

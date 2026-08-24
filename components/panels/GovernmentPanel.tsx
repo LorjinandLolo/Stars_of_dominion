@@ -6,6 +6,7 @@ import {
     repealPolicyAction,
     getPolicyCatalogAction,
     dismissMinisterAction,
+    resolveDebateAction,
     lobbyPartyAction,
     purgeOfficersAction,
     answerDefianceAction,
@@ -127,6 +128,14 @@ export default function GovernmentPanel() {
     // Defiance deadlines are sim-clock seconds; the authoritative clock is the
     // tick timestamp the worker last wrote.
     const nowSeconds = Math.floor(Date.now() / 1000);
+
+    const runResolveDebate = async (questionId: string, resolutionId: string) => {
+        setPending(`${questionId}:${resolutionId}`);
+        setError(null);
+        const res = await resolveDebateAction(playerState.factionId, questionId, resolutionId);
+        setPending(null);
+        if (!res.success) setError(res.error ?? 'The chamber rejected the motion.');
+    };
 
     const runRecognise = async (rebelFactionId: string) => {
         setPending(`${rebelFactionId}:recognise`);
@@ -828,6 +837,61 @@ export default function GovernmentPanel() {
                                     >
                                         {pending === minister.portfolio ? '…' : `Dismiss · ${DISMISS_COST} PC`}
                                     </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Standing political debates — the galaxy has put a question
+                    on the table, the blocs have taken sides, and stalling is
+                    also an answer. Bands come precomputed from useGameSync
+                    through the same engine the worker charges with. */}
+                {(politicsState?.openQuestions?.length ?? 0) > 0 && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                            <Scale size={12} className="text-amber-400" /> QUESTIONS BEFORE THE CHAMBER
+                        </div>
+                        <div className="space-y-3">
+                            {politicsState!.openQuestions!.map(q => (
+                                <div key={q.id} className="bg-slate-900/40 border border-amber-500/20 rounded p-3">
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <div className="text-[12px] font-semibold text-slate-100">{q.title}</div>
+                                        <div className={`text-[9px] font-mono shrink-0 ${q.ticksLeft <= 4 ? 'text-rose-400 animate-pulse' : 'text-slate-500'}`}>
+                                            {q.ticksLeft} turns before it festers into nothing
+                                        </div>
+                                    </div>
+                                    {q.spec && (
+                                        <>
+                                            <div className="text-[10px] text-slate-500 mt-1 leading-relaxed">{q.spec.prompt}</div>
+                                            <div className="grid gap-2 mt-3" style={{ gridTemplateColumns: `repeat(${q.spec.resolutions.length}, minmax(0, 1fr))` }}>
+                                                {q.spec.resolutions.map(r => {
+                                                    const forecast = q.forecasts.find(f => f.resolutionId === r.id);
+                                                    const affordable = (gov?.politicalCapital ?? 0) >= r.politicalCapitalCost;
+                                                    const busy = pending === `${q.id}:${r.id}`;
+                                                    const bandTone = forecast && forecast.total >= 60 ? 'text-emerald-400'
+                                                        : forecast && forecast.total >= 40 ? 'text-slate-300' : 'text-rose-400';
+                                                    return (
+                                                        <button
+                                                            key={r.id}
+                                                            disabled={!affordable || busy}
+                                                            onClick={() => runResolveDebate(q.id, r.id)}
+                                                            className={`text-left rounded border p-2 transition-all ${affordable
+                                                                ? 'border-slate-700 bg-slate-950/60 hover:border-amber-500/50'
+                                                                : 'border-slate-800 bg-slate-950/30 opacity-50 cursor-not-allowed'}`}
+                                                        >
+                                                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-200">{busy ? '…' : r.label}</div>
+                                                            <div className="text-[9px] text-slate-500 mt-1 leading-snug">{r.description}</div>
+                                                            <div className="flex items-center justify-between mt-2 text-[9px] font-mono">
+                                                                <span className="text-slate-400">{r.politicalCapitalCost} PC</span>
+                                                                {forecast && <span className={bandTone}>{forecast.total}% support</span>}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             ))}
                         </div>

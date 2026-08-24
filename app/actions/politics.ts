@@ -240,6 +240,21 @@ export async function appointMinisterAction(factionId: string, portfolio: string
   return result;
 }
 
+/** Answers a standing political debate with one of its resolutions. */
+export async function resolveDebateAction(factionId: string, questionId: string, resolutionId: string): Promise<ActionResult> {
+  const result = await executePlayerAction({
+    id: `debate-${Date.now()}`,
+    actionId: 'GOV_RESOLVE_DEBATE',
+    issuerId: factionId,
+    targetId: questionId,
+    payload: { questionId, resolutionId },
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+
+  if (result.success) revalidatePath('/');
+  return result;
+}
+
 /** Dismisses the sitting minister for a portfolio; the seat refills at once. */
 export async function dismissMinisterAction(factionId: string, portfolio: string): Promise<ActionResult> {
   const result = await executePlayerAction({

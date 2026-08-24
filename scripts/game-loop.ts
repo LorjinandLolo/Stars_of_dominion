@@ -143,6 +143,7 @@ import { chargeUnjustifiedWar, chargeHonorLock, isWarDeclaration } from '../lib/
 import { shouldDeliberate, recordDeliberation } from '../lib/factions/rhimetals';
 import { capacolaSurge, declareVendetta } from '../lib/factions/gabagoon';
 import { issueSovereignLoan, forecloseOn } from '../lib/factions/banking-clan';
+import { openDebate, resolveDebate } from '../lib/politics/debate-service';
 import { ensurePlanetDemographics, refreshPlanetDemographics } from '../lib/galaxy/population-composition';
 import { districtTraitsFor } from '../lib/factions/traits-service';
 import { ensureFactionTraits } from '../lib/factions/traits-service';
@@ -3155,6 +3156,17 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'GOV_RESOLVE_DEBATE': {
+            // payload: { questionId, resolutionId }
+            const result = resolveDebate(world, factionId, payload.questionId, payload.resolutionId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason!);
+                return;
+            }
+            console.log(`[Order] ${factionId} resolved ${payload.questionId} -> ${payload.resolutionId} (${result.band})`);
+            break;
+        }
+
         case 'GAB_CAPACOLA_SURGE': {
             // payload: { amount } — the serving scales the effect, so the player
             // chooses it and the handler debits CAPACOLA directly.
@@ -4822,6 +4834,16 @@ function capturePlanet(world: GameWorldState, planet: any, attackerId: string, l
     bumpMetric(world, attackerId, 'mil.planetsConquered');
     // Faction-specific bookkeeping; a no-op for everyone but the Sarrak.
     recordConquest(world, attackerId, planet.id, previousOwnerId);
+
+    // The LOSER'S chamber convenes: a fallen world demands an answer — rally,
+    // blame the generals, or purge them. A no-op for factions without politics.
+    {
+        const attacker: any = world.economy?.factions?.get?.(attackerId);
+        openDebate(world, previousOwnerId, 'territory_lost', {
+            aggressor: attacker?.name ?? attackerId,
+            place: planet.name ?? planet.id,
+        }, attackerId);
+    }
 
     console.log(`[Tick Worker] ${label}: ${planet.name} taken by ${attackerId} (was ${previousOwnerId})`);
 }

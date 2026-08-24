@@ -95,28 +95,23 @@ export const SUPPORT_BAND_LABELS: Record<SupportBand, string> = {
 };
 
 /**
- * Compute per-bloc and total public support for a diplomatic action.
+ * The support engine, shared by every consumer that asks "how would the blocs
+ * take this?" — diplomatic actions (below), the standing political debates
+ * (lib/politics/debate-types.ts), and any client-side preview. One formula, so
+ * the panel can never disagree with the worker about what a decision costs.
+ *
+ * `adjustStance` lets the caller apply its own context (rivalry justification,
+ * war fatigue) per bloc before the common satisfaction/trust weighting.
  */
-export function computeActionSupport(
+export function computeSupportFromStances(
     blocs: BlocSupportInput[],
-    kind: DiplomaticActionKind,
-    ctx: SupportContext
-): ActionSupportResult {
-    const stances = BLOC_STANCES[kind] ?? {};
-    const fatigue = Math.max(0, Math.min(100, ctx.warFatigue)) / 100;
-
+    stances: Record<string, number>,
+    ctx: SupportContext,
+    adjustStance?: (base: number, blocId: string) => number,
+): { total: number; band: SupportBand; blocs: BlocSupportResult[] } {
     const results: BlocSupportResult[] = blocs.map(bloc => {
         let stance = stances[bloc.id] ?? 0;
-
-        // A war against a hated rival feels justified; an unprovoked one doesn't.
-        if (kind === 'declare_war') {
-            if (ctx.rivalryScore >= 70) stance += 0.3;
-            else if (ctx.rivalryScore < 40) stance -= 0.3;
-        }
-        // Exhausted populations sour on belligerence and crave peace.
-        if (BELLIGERENT.has(kind)) stance -= fatigue * 0.8;
-        if (kind === 'offer_peace') stance += fatigue * 0.8;
-
+        if (adjustStance) stance = adjustStance(stance, bloc.id);
         stance = Math.max(-1, Math.min(1, stance));
 
         // Satisfied blocs extend the government goodwill; unhappy ones oppose
@@ -141,5 +136,37 @@ export function computeActionSupport(
         ? Math.round(results.reduce((s, b) => s + b.support * b.influence, 0) / totalInfluence)
         : 50;
 
-    return { kind, total, band: supportBand(total), blocs: results };
+    return { total, band: supportBand(total), blocs: results };
 }
+
+/**
+ * Compute per-bloc and total public support for a diplomatic action.
+ */
+export function computeActionSupport(
+    blocs: BlocSupportInput[],
+    kind: DiplomaticActionKind,
+    ctx: SupportContext
+): ActionSupportResult {
+    const fatigue = Math.max(0, Math.min(100, ctx.warFatigue)) / 100;
+
+    const { total, band, blocs: results } = computeSupportFromStances(
+        blocs,
+        BLOC_STANCES[kind] ?? {},
+        ctx,
+        (base) => {
+            let stance = base;
+            // A war against a hated rival feels justified; an unprovoked one doesn't.
+            if (kind === 'declare_war') {
+                if (ctx.rivalryScore >= 70) stance += 0.3;
+                else if (ctx.rivalryScore < 40) stance -= 0.3;
+            }
+            // Exhausted populations sour on belligerence and crave peace.
+            if (BELLIGERENT.has(kind)) stance -= fatigue * 0.8;
+            if (kind === 'offer_peace') stance += fatigue * 0.8;
+            return stance;
+        },
+    );
+
+    return { kind, total, band, blocs: results };
+}
+

@@ -245,6 +245,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { loanId: "id" },
     cost: {}
   },
+  // Answering a standing political question. No registry cost: each resolution
+  // carries its own political-capital price, charged inside resolveDebate where
+  // the refusal can reach the player with a reason.
+  GOV_RESOLVE_DEBATE: {
+    id: "GOV_RESOLVE_DEBATE",
+    category: "internal",
+    params: { questionId: "id", resolutionId: "id" },
+    cost: {}
+  },
   // Buthari only — the civilization and cooldown checks live in checkCouncilGate
   // so a refusal reaches the player with a reason. Paid in their own sacred
   // harvest, which is why the Buthari are seeded with SACRED_FLORA.

@@ -139,6 +139,9 @@ export function ensureEmpirePostures(world: GameWorldState): void {
             if (!existing.ideology) {
                 existing.ideology = calculateInitialIdeology(existing.society_tags ?? [], existing.government_tags ?? []);
             }
+            // Standing debates ride the posture; snapshots from before they
+            // existed need the shelf the questions sit on.
+            if (!Array.isArray((existing as any).openQuestions)) (existing as any).openQuestions = [];
             continue;
         }
 

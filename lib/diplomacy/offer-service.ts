@@ -13,6 +13,14 @@ import { ReputationService } from '@/lib/reputation/reputation-service';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
 import * as chronicle from '@/lib/narrative/chronicle';
+// Runtime-only in practice: debate-service never imports this module back.
+import { openDebate } from '@/lib/politics/debate-service';
+
+/** Display name for a debate headline; falls back to a readable id. */
+function prettyFactionName(world: GameWorldState, factionId: string): string {
+    const f: any = world.economy?.factions?.get?.(factionId);
+    return f?.name ?? factionId.replace(/^faction-/, '').replace(/[-_]/g, ' ');
+}
 // Runtime-only circular imports (both modules import from this one); safe
 // because these are only invoked inside function bodies, never at module init.
 import { breakNonAggressionPromises } from './promise-service';
@@ -494,6 +502,11 @@ export function breakTreaty(world: GameWorldState, factionId: string, treatyId: 
         facts: { treatyType: treaty.type },
     });
     ReputationService.updateScore(world, factionId, { reliability: -20, honor: -10 }, `broke_${treaty.type}`);
+    // The jilted signatory's chamber argues over what their signature is worth.
+    if (other) {
+        openDebate(world, other, 'treaty_broken_on_us',
+            { aggressor: prettyFactionName(world, factionId) }, factionId);
+    }
     pushWorldStory(world, {
         targetEmpireId: factionId,
         subject: `Government repudiates ${treaty.type.replace(/_/g, ' ')} treaty`,
@@ -552,6 +565,12 @@ export function registerActOfWar(world: GameWorldState, aggressorId: string, def
             oathbroken: Boolean(nap),
         },
     });
+
+    // The DEFENDER'S chamber convenes: being attacked opens a mobilization
+    // debate, so the war lands on their politics before they have issued a
+    // single order. Doing nothing about it is now a choice with a price.
+    openDebate(world, defenderId, 'war_declared_on_us',
+        { aggressor: prettyFactionName(world, aggressorId) }, aggressorId);
 
     ReputationService.updateScore(world, aggressorId, { aggression: 15 }, 'declared_war');
     pushWorldStory(world, {
