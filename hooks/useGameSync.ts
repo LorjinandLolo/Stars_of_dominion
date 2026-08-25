@@ -373,6 +373,13 @@ export function useGameSync() {
                       : 0,
               }
             : undefined;
+        // Read the faction id from the store rather than this closure: the sync
+        // effect captures updateStoreFromWorld once, while playerFactionId is
+        // only set later from the lobby, so the captured value can still be null
+        // long after the player has a faction. Declared BEFORE politicsState,
+        // whose forecast mapping reads it — a use-before-declare here threw a
+        // TDZ ReferenceError the moment a debate opened and froze the client.
+        const activeFactionId = useUIStore.getState().playerFactionId ?? playerFactionId;
         const politicsState = {
             ...useUIStore.getState().politicsState,
             allFactions: Object.values(factionMap),
@@ -745,12 +752,6 @@ export function useGameSync() {
         // Piracy: the faction's own projection. It arrives from the
         // authenticated /api/game/piracy endpoint rather than the world, because
         // faction shards are readable by everyone — see that route's header.
-        //
-        // Read the faction id from the store rather than this closure: the sync
-        // effect captures updateStoreFromWorld once, while playerFactionId is
-        // only set later from the lobby, so the captured value can still be null
-        // long after the player has a faction.
-        const activeFactionId = useUIStore.getState().playerFactionId ?? playerFactionId;
         const piracyState = useUIStore.getState().piracyState;
 
         // The SHADOW tab unlocks on how compromised the empire actually is —
