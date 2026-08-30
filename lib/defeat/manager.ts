@@ -70,12 +70,17 @@ export class DefeatManager {
         let doomScore = 0;
         let status: DefeatState['status'] = 'ALIVE';
 
-        // 1. Check Terminal Defeats (Game Over)
+        // 1. Check Terminal Defeats (Game Over). A CRITICAL result here is the
+        // zero-planet grace window — doomed but not yet done.
         const terminalDefeat = this.checkTerminalDefeats(factionId, world);
         if (terminalDefeat) {
             activeDefeats.push(terminalDefeat);
-            status = 'ELIMINATED';
-            doomScore = 100;
+            if (terminalDefeat.severity === 'TERMINAL') {
+                status = 'ELIMINATED';
+                doomScore = 100;
+            } else {
+                doomScore += 60; // grace window: deep in the red, not out
+            }
         }
 
         // 2. Check Strategic Defeats (Economy, Military)
@@ -105,20 +110,43 @@ export class DefeatManager {
         };
     }
 
+    /** Sim-seconds a faction may sit at zero planets before elimination.
+     *  15 sim days ≈ 24 real hours at the 15x clock — under the new
+     *  capital-only starts, one lost siege in week 1 must not end a friend's
+     *  whole season on the spot; a day is time to counterattack or be saved. */
+    private static readonly ZERO_PLANET_GRACE_SIM_SECONDS = 15 * 86400;
+
     private static checkTerminalDefeats(factionId: string, world: GameWorldState): ActiveDefeat | null {
-        // Condition: No planets owned
+        // Condition: No planets owned — sustained through the grace window.
         const ownedPlanets = Array.from(world.construction.planets.values()).filter(p => p.ownerId === factionId);
-        
-        if (ownedPlanets.length === 0) {
+        const econ = world.economy.factions.get(factionId) as any;
+
+        if (ownedPlanets.length > 0) {
+            if (econ?.zeroPlanetsSince) delete econ.zeroPlanetsSince; // recovered
+            return null;
+        }
+
+        if (econ && !econ.zeroPlanetsSince) econ.zeroPlanetsSince = world.nowSeconds;
+        const since = econ?.zeroPlanetsSince ?? world.nowSeconds;
+        const elapsed = world.nowSeconds - since;
+        if (elapsed < this.ZERO_PLANET_GRACE_SIM_SECONDS) {
+            const realHoursLeft = Math.max(1, Math.ceil((this.ZERO_PLANET_GRACE_SIM_SECONDS - elapsed) / 3600 / 15));
             return {
                 condition_id: DEFEAT_CONDITIONS['HOMEWORLD_LOST'].id,
                 triggered_at: nowISO(world),
                 status: 'ACTIVE',
-                severity: 'TERMINAL',
-                message: `All systems lost. Your faction has been eliminated.`
+                severity: 'CRITICAL',
+                message: `All worlds lost. Retake a planet within ~${realHoursLeft}h or the faction falls.`
             };
         }
-        return null;
+
+        return {
+            condition_id: DEFEAT_CONDITIONS['HOMEWORLD_LOST'].id,
+            triggered_at: nowISO(world),
+            status: 'ACTIVE',
+            severity: 'TERMINAL',
+            message: `All systems lost. Your faction has been eliminated.`
+        };
     }
 
     private static checkStrategicDefeats(factionId: string, world: GameWorldState): ActiveDefeat[] {

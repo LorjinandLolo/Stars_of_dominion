@@ -27,6 +27,7 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder } from '../lib/exploration/exploration-service';
+import { drainNotifications } from '../lib/time/notification-hooks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -822,6 +823,33 @@ async function runGameTick() {
         // 4. Seeding & Administrative recalculations ────────────────────────
         processSieges(world);
         recalculateSystemControl(world);
+
+        // Deliver notifications. fireNotification pushes to an in-memory queue
+        // in THIS process, but /api/notifications drains the Next.js server's
+        // own (empty) queue — season endings and eliminations were being
+        // announced into the void. Drain the worker queue onto each faction's
+        // record instead: the record rides the faction shard, which is the
+        // per-faction private sync channel, and the client feeds it into the
+        // notification store (which dedupes by id). 'all' broadcasts are
+        // copied to every faction — the old queue deleted them on first drain,
+        // so at most one of the 14 players would ever have seen a season close.
+        try {
+            const pendingNotes = drainNotifications();
+            for (const note of pendingNotes) {
+                const targets = note.factionId === 'all'
+                    ? [...world.economy.factions.keys()]
+                    : [note.factionId];
+                for (const target of targets) {
+                    const rec = world.economy.factions.get(target) as any;
+                    if (!rec) continue;
+                    const buf: any[] = (rec.pendingNotifications ??= []);
+                    buf.push(note.factionId === 'all' ? { ...note, factionId: target } : note);
+                    if (buf.length > 100) buf.splice(0, buf.length - 100);
+                }
+            }
+        } catch (e: any) {
+            console.error('[Tick Worker] notification delivery failed:', e.message);
+        }
         
         // Finalize state — persist only what changed. Orders and strategic
         // ticks save immediately (an executed order's doc is already deleted,

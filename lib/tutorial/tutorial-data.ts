@@ -53,6 +53,32 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
         requiredTab: 'galaxy',
     },
 
+    // ── Explore & Expand — the core loop ────────────────────────────────────
+    {
+        id: 'one-world-start',
+        title: 'One World Is All You Get',
+        body: 'Your empire begins with a single capital. The other worlds in your home system are unowned and colonizable — and beyond them, hundreds of unexplored systems. Everything else must be surveyed, settled, or taken.',
+        targetElementId: null,
+        category: 'galaxy',
+        requiredTab: 'galaxy',
+    },
+    {
+        id: 'build-a-fleet',
+        title: 'Commission a Fleet',
+        body: 'Select your capital, open its UNITS panel, and commission a fleet from the Space tab. A fleet is your eyes: scans and surveys of other systems require one in the system or one hyperlane away.',
+        targetElementId: null,
+        category: 'galaxy',
+        requiredTab: 'galaxy',
+    },
+    {
+        id: 'survey-and-colonize',
+        title: 'Survey, Then Settle',
+        body: 'Click an unexplored system and PING it, then SCAN, then SURVEY — each reveals more, and a survey charts the system\'s planets (and sometimes an anomaly). Unowned worlds tagged COLONIZABLE can then be settled for 20,000 credits, 1,000 metals and 1,000 food. Your home system\'s spare worlds are the cheapest place to start.',
+        targetElementId: null,
+        category: 'galaxy',
+        requiredTab: 'galaxy',
+    },
+
     // ── Economy ──────────────────────────────────────────────────────────────
     {
         id: 'economy-panel',
@@ -127,8 +153,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     // ── Victory ───────────────────────────────────────────────────────────────
     {
         id: 'victory',
-        title: 'Victory & Legacy',
-        body: 'Win by achieving one of several victory conditions: Conquest (control key regions), Enlightenment (cultural/tech dominance), Economic Hegemony (control trade routes), or Political Victory (control the Galactic Council). Each season locks some regions permanently — race to secure yours.',
+        title: 'The Season & Your Legacy',
+        body: 'The galaxy plays in seasons — the first is called The Beginning. When a season closes, every empire is ranked by prestige: territory, economy, technology, and the titles you earned along the way. Fallen empires are ranked too. Play for the standing you want history to record.',
         targetElementId: null,
         category: 'victory',
     },

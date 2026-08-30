@@ -87,12 +87,17 @@ docker compose -f compose.prod.yaml run --rm app npx prisma migrate deploy
 
 ```bash
 docker compose -f compose.prod.yaml run --rm app npx tsx scripts/push-init-state.ts
-docker compose -f compose.prod.yaml run --rm app npx tsx scripts/setup-dev-duel.ts
 ```
 
-The first pushes the world snapshot (systems, planets, factions). The second
-creates the dev accounts and faction claims — skip it if you'd rather register
-real accounts through the UI.
+This pushes the world snapshot (systems, planets, factions). Real players then
+register through the UI and claim factions in the lobby.
+
+> **Do NOT run `scripts/setup-dev-duel.ts` on a server friends will play on.**
+> It creates `dev1@stars.com` / `dev2@stars.com` with a password that is
+> committed to this repository, and pre-claims Aurelian + Vektori — two of the
+> fourteen playable factions. It is a dev-machine convenience only. If it was
+> ever run, delete the claims with the admin reset endpoint (below) and change
+> or remove the accounts.
 
 ### 1.7 Verify
 
@@ -307,13 +312,51 @@ Each published article logs a line. In the game, COMMS → PRESS is the front
 page and COMMS → ARCHIVE is everything ever written, filterable by news,
 exposés, obituaries and named eras.
 
-## 6. Later roadmap (in sensible order)
+## 6. Remote play — required for the friends launch
+
+The season is played by ~14 friends who are NOT on the LAN. Two workable
+routes; the tunnel is simpler and does not touch the Ziggo router.
+
+### 6.1 Cloudflare Tunnel (recommended: no port forwarding, free TLS)
+
+1. On the server: `sudo apt install cloudflared` (or grab the .deb from
+   Cloudflare), then `cloudflared tunnel login` and
+   `cloudflared tunnel create stardom`.
+2. Route a hostname you own (or a free `*.trycloudflare.com` quick tunnel for a
+   trial run): `cloudflared tunnel route dns stardom stardom.<your-domain>`.
+3. Run it as a service pointing at the app:
+   `cloudflared tunnel run --url http://localhost:3000 stardom`.
+4. In `.env` next to the compose file:
+   - `BETTER_AUTH_URL=https://stardom.<your-domain>`
+   - `TRUSTED_ORIGINS=http://<lan-ip>:3000` (so you can still play from the LAN)
+5. `docker compose -f compose.prod.yaml up -d` to restart with the new env.
+
+**The `TRUSTED_ORIGINS` line is not optional.** better-auth rejects sign-ins
+from any origin it hasn't been told about — the symptom is every remote friend
+getting a silent 403 on register/login while it works fine for you on the LAN.
+
+### 6.2 Port-forward + Nginx/Caddy (if you'd rather own the pipe)
+
+Forward 443 on the Ziggo router to the server, put Caddy in front for
+automatic HTTPS (`caddy reverse-proxy --from stardom.<domain> --to :3000`),
+same env rules as above. Needs the static IP / DHCP reservation first.
+
+### 6.3 Before inviting anyone
+
+- Set `GAME_ADMIN_SECRET` in `.env` — it's how you unclaim a faction for
+  someone who picked wrong: `curl -X POST https://<origin>/api/lobby/admin/reset
+  -H 'Content-Type: application/json'
+  -d '{"secret":"<GAME_ADMIN_SECRET>","factionId":"faction-..."}'`
+- Registration is open: anyone with the URL can make an account and claim a
+  faction. Share the URL privately, watch the lobby fill, and reset anything
+  that shouldn't be there. (An invite code is on the roadmap.)
+- Do not run the dev-duel seeding script (see 1.6).
+
+## 7. Later roadmap (in sensible order)
 
 1. **Static IP / DHCP reservation** for the server in the Ziggo router — so the
-   IP in `BETTER_AUTH_URL` never changes.
-2. **Nginx + HTTPS** — only worth it once the game is exposed beyond the LAN
-   (port forwarding or a Cloudflare Tunnel). At that point `BETTER_AUTH_URL`
-   becomes the public https URL.
+   LAN IP in `TRUSTED_ORIGINS` never changes.
+2. **Invite-gated registration** — closes the open-registration caveat in 6.3.
 3. **Monitoring (Grafana/Prometheus)** — nice to have, after backups.
 4. **Redis** — not until the code actually uses it. Nothing in the app speaks
    Redis today; adding the container now would do nothing.

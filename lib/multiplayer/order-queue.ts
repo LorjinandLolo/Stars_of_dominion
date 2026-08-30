@@ -101,29 +101,30 @@ async function getSessionUserId(): Promise<string | null> {
 }
 
 /**
- * Faction ownership check. Policy:
- *  - If the faction is claimed in player_profiles, the caller's session user
- *    must match the claimant.
- *  - Unclaimed factions are allowed (solo/dev play, AI factions).
+ * Faction ownership check. Policy: orders are accepted ONLY from the signed-in
+ * claimant of the faction. Unclaimed factions (AI empires, factions whose
+ * player hasn't arrived yet) accept orders from NOBODY — they used to fail
+ * open "for solo/dev play", which meant any signed-in player could command
+ * every AI empire's fleets and treasury through the real order queue. Dev
+ * play claims a faction like everyone else (scripts/setup-dev-duel.ts).
+ * DB errors fail CLOSED: a rejected click retries; a hijacked empire doesn't.
  */
 async function verifyFactionOwnership(
     factionId: string,
     userId: string | null
 ): Promise<{ ok: boolean; error?: string }> {
+    if (!userId) {
+        return { ok: false, error: 'Sign in to issue orders.' };
+    }
     try {
         const claim = await prisma.playerProfile.findUnique({ where: { factionId } });
-        if (!claim) return { ok: true }; // unclaimed — allow
-        if (userId && claim.userId === userId) return { ok: true };
-        return {
-            ok: false,
-            error: userId
-                ? 'This faction is claimed by another player.'
-                : 'This faction is claimed — sign in as its owner to issue orders.',
-        };
+        if (!claim) {
+            return { ok: false, error: 'This faction has no player claim — claim it in the lobby first.' };
+        }
+        if (claim.userId === userId) return { ok: true };
+        return { ok: false, error: 'This faction is claimed by another player.' };
     } catch {
-        // If profiles can't be read, fail open so a transient DB hiccup doesn't
-        // block all gameplay. Orders are still validated by the worker.
-        return { ok: true };
+        return { ok: false, error: 'Could not verify faction ownership — try again.' };
     }
 }
 

@@ -102,6 +102,9 @@ const ShadowPanel = dynamic(() => import('@/components/panels/ShadowPanel'), {
 });
 const ManualGuidebook = dynamic(() => import('@/components/manual/ManualGuidebook'), { ssr: false });
 const DevToolbox = dynamic(() => import('@/components/debug/DevToolbox'), { ssr: false });
+const DefeatOverlay = dynamic(() => import('@/components/defeat/DefeatOverlay'), { ssr: false });
+const NotificationFeed = dynamic(() => import('@/components/notifications/NotificationFeed'), { ssr: false });
+const TutorialOverlay = dynamic(() => import('@/components/tutorial/TutorialOverlay'), { ssr: false });
 
 const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
@@ -275,6 +278,15 @@ export default function GameShell() {
 
             {/* ── Season-end screen (full overlay) ──────────────────────────────── */}
             {(showSeasonEnd || seasonState.phase === 'locked') && <SeasonEndScreen />}
+
+            {/* ── Empire fallen (full overlay, dismissable to observer mode) ────── */}
+            <DefeatOverlay />
+
+            {/* ── Notification feed (opens from the TopNav bell) ────────────────── */}
+            <NotificationFeed />
+
+            {/* ── Guided tour (auto-starts on first login, ? button restarts) ───── */}
+            <TutorialOverlay />
 
             {/* ── Economic Terminal Modal ────────────────────────────────────────── */}
             <EconomicTerminalModal />

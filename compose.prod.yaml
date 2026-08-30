@@ -37,6 +37,14 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      # Comma-separated additional origins better-auth will accept sign-ins
+      # from. REQUIRED for remote play: friends reach the game via the tunnel
+      # or public origin, and better-auth 403s any origin it does not trust —
+      # a mismatch silently breaks registration/login for everyone remote.
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      # Admin secret for /api/lobby/admin/reset. No default here on purpose —
+      # the code's fallback is a string committed to this repo.
+      GAME_ADMIN_SECRET: ${GAME_ADMIN_SECRET}
       LLM_PROVIDER: ${LLM_PROVIDER:-template}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}

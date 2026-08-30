@@ -27,7 +27,20 @@ const PLAYERS = [
     { email: 'dev1@stars.com', name: 'Dev Commander 1', factionId: 'faction-aurelian', factionName: 'Aurelian Hegemony' },
     { email: 'dev2@stars.com', name: 'Dev Commander 2', factionId: 'faction-vektori',  factionName: 'Vektori Technocracy' },
 ];
-const PASSWORD = 'password123';
+const PASSWORD = process.env.DEV_DUEL_PASSWORD || 'password123';
+
+// This script is a DEV convenience: known accounts, a password that lives in
+// the repo, and two of the fourteen playable factions pre-claimed. On a server
+// real friends play on, that's two stolen factions and a public backdoor.
+if (process.env.NODE_ENV === 'production' && !process.env.DEV_DUEL_PASSWORD) {
+    console.error(
+        '✋ Refusing to seed dev accounts in production with the default password.\n' +
+        '   If you really want dev accounts on this server, set DEV_DUEL_PASSWORD to\n' +
+        '   something private and re-run. For a friends launch, do not run this at all —\n' +
+        '   see SERVER.md §1.6.'
+    );
+    process.exit(1);
+}
 
 async function findOrCreateUser(email: string, name: string): Promise<string> {
     const existing = await prisma.user.findUnique({ where: { email } });

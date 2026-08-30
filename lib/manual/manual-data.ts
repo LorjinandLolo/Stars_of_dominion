@@ -38,7 +38,7 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'EXPAND: Claim neutral systems and survey anomalies.',
+                            'EXPAND: You start with one capital. Commission a fleet (capital → UNITS → Space tab), then PING → SCAN → SURVEY unexplored systems from the system panel — a fleet in or next to the target is required for scans and surveys. A survey charts the system\'s worlds; unowned COLONIZABLE ones can be settled for 20,000 credits + 1,000 metals + 1,000 food. Your own home system holds your first colony targets.',
                             'DEVELOP: Build infrastructure and specialize planets.',
                             'INTERACT: Trade, spy, or negotiate with rivals.',
                             'RESPOND: Counter enemy sabotages and military incursions.',

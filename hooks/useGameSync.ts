@@ -314,6 +314,13 @@ export function useGameSync() {
                     read: false,
                 });
             }
+            // Worker-fired notifications (season endings, eliminations, anomaly
+            // discoveries, refunds) ride the faction record the same way — the
+            // worker keeps the last 100 on the record, the store dedupes by id.
+            const workerNotes = factionMap[playerFactionId]?.pendingNotifications;
+            if (Array.isArray(workerNotes) && workerNotes.length > 0) {
+                useNotificationStore.getState().addNotifications(workerNotes);
+            }
         }
 
         const playerPosture = playerFactionId ? world.movement.empirePostures.get(playerFactionId) : undefined;
@@ -802,6 +809,21 @@ export function useGameSync() {
                 activeFactionId &&
                 (o.factionId === activeFactionId ||
                     world.movement.fleets.get(o.fleetId)?.factionId === activeFactionId)) as any,
+            // The real season — name, phase, deadline — so the client can show
+            // "The Beginning" instead of TopNav's old fake epoch calendar.
+            seasonInfo: (world as any).activeSeason
+                ? {
+                    name: (world as any).activeSeason.name ?? `Season ${(world as any).activeSeason.seasonNumber}`,
+                    seasonNumber: (world as any).activeSeason.seasonNumber,
+                    phase: (world as any).activeSeason.phase,
+                    activatesAt: (world as any).activeSeason.activatesAt,
+                    endsAt: (world as any).activeSeason.endsAt,
+                }
+                : null,
+            // Latched by step20 each strategic tick; drives the defeat overlay.
+            playerDefeatStatus: activeFactionId
+                ? ((world as any).titles?.defeatStatuses?.get?.(activeFactionId) ?? null)
+                : null,
             diplomacyState,
             factions: factionMap,
             politicsState,

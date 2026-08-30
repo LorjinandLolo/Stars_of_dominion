@@ -532,10 +532,24 @@ function step18_leadershipXP(world: ReturnType<typeof getGameWorldState>) {
     }
 }
 
+/**
+ * True when this faction should be played by the AI. Same convention as the
+ * diplomatic AI (lib/ai/diplomatic-ai-service.ts): no claim list at all means
+ * the worker couldn't tell us who is human, so NOBODY is treated as AI —
+ * better a passive galaxy than an AI recruiting leaders, overwriting
+ * doctrines, or launching covert ops in a player's name from their treasury.
+ */
+function isAIRunFaction(world: any, factionId: string): boolean {
+    if (factionId === 'faction-pirates' || factionId === 'faction-neutral') return false;
+    const claimed = (world as any).claimedFactionIds;
+    if (!Array.isArray(claimed)) return false;
+    return !claimed.includes(factionId);
+}
+
 function step19_strategicAI(world: ReturnType<typeof getGameWorldState>) {
     try {
         for (const factionId of world.economy.factions.keys()) {
-            if (factionId === 'faction-pirates') continue;
+            if (!isAIRunFaction(world, factionId)) continue;
             StrategicAIService.processEmpireTurn(factionId, world);
         }
     } catch (e) {
@@ -554,8 +568,11 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         tickFactionIntel(world, delta);
         tickOpportunityBoard(world, delta);
 
+        // AI-run factions only: this turn SPENDS the faction's intel points
+        // and launches covert operations attributed to it — run on a human's
+        // faction it starts wars of espionage the player never chose.
         for (const factionId of world.economy.factions.keys()) {
-            if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
+            if (!isAIRunFaction(world, factionId)) continue;
             processEmpireIntelligenceTurn(factionId, world);
         }
     } catch (e) {

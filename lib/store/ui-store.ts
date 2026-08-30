@@ -253,6 +253,10 @@ export interface UIStore {
     setFactionVisibility: (vis: FactionVisibility | null) => void;
     /** The player's in-flight exploration orders (synced from the worker). */
     explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; completesAt: string }>;
+    /** The live season, straight from the worker's world.activeSeason. */
+    seasonInfo: { name: string; seasonNumber: number; phase: string; activatesAt: string; endsAt: string } | null;
+    /** The player's latched defeat status (ALIVE / DYING / ELIMINATED). */
+    playerDefeatStatus: string | null;
 
     // ── Floating Panels ──
     floatedTabs: Partial<Record<NavTab, { x: number; y: number; w: number; h: number } | null>>;
@@ -580,6 +584,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     factionVisibility: null,
     setFactionVisibility: (vis: FactionVisibility | null) => set({ factionVisibility: vis }),
     explorationOrders: [],
+    seasonInfo: null,
+    playerDefeatStatus: null,
 
     // ── Floating Panels ──
     floatedTabs: {},

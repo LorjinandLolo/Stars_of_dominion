@@ -398,8 +398,9 @@
         }
     },
     "seasons": {
-        "durationDays": 30,
-        "announcementLeadDays": 5,
+        "_comment": "Days here are SIM days, and the sim clock runs 15x real time — durationDays 300 + lead 15 gives a ~21-real-day season (the old 30/5 made a 'season' last 2.3 real days and churn three times a week).",
+        "durationDays": 300,
+        "announcementLeadDays": 15,
         "maxActiveModifiers": 3,
         "modifierPool": [
             {

@@ -23,6 +23,8 @@ import {
 import { Resource } from '@/lib/trade-system/types';
 import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
 import IdentityBadge from './IdentityBadge';
+import NotificationBell from '../notifications/NotificationBell';
+import TutorialLauncher from '../tutorial/TutorialLauncher';
 
 interface ResourceChipProps {
     icon: React.ReactNode;
@@ -63,11 +65,29 @@ export default function TopNav() {
 
     const activeCrises = crisisWindows.filter(w => w.phase !== 'warning');
     const emergency = councilState.emergencySession && councilState.status !== 'absent';
+    const seasonInfo = useUIStore(s => s.seasonInfo);
 
-    // Galactic calendar: 90-day seasons driven by the authoritative clock.
+    // Fallback calendar for worlds without a live season record.
     const dayOfSeason = Math.floor(nowSeconds / 86400) + 1;
     const season = Math.floor(dayOfSeason / 90) + 1;
     const relativeDay = ((dayOfSeason - 1) % 90) + 1;
+
+    // The live season, with its deadline converted to REAL time remaining
+    // (the sim clock runs 15x real speed — players plan in wall-clock days).
+    const SIM_SPEED = 15;
+    const seasonDeadline = seasonInfo
+        ? (seasonInfo.phase === 'announced' ? seasonInfo.activatesAt : seasonInfo.endsAt)
+        : null;
+    const realSecondsLeft = seasonDeadline
+        ? Math.max(0, (new Date(seasonDeadline).getTime() / 1000 - nowSeconds) / SIM_SPEED)
+        : 0;
+    const seasonCountdown = (() => {
+        const d = Math.floor(realSecondsLeft / 86400);
+        const h = Math.floor((realSecondsLeft % 86400) / 3600);
+        if (d > 0) return `${d}d ${h}h`;
+        const m = Math.floor((realSecondsLeft % 3600) / 60);
+        return `${h}h ${m}m`;
+    })();
 
     const res = (r: Resource) => ({ value: reserves[r] || 0, rate: production[r] || 0 });
 
@@ -117,18 +137,32 @@ export default function TopNav() {
 
                 <div className="h-6 w-px bg-slate-800/60" />
 
-                {/* Galactic date */}
-                <div className="flex items-center gap-2" title="Galactic calendar">
-                    <CalendarDays size={13} className="text-slate-500" />
-                    <div className="flex flex-col leading-none">
-                        <span className="text-[11px] font-mono font-bold text-slate-200">
-                            S{season} · D{relativeDay}
-                        </span>
-                        <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mt-0.5">
-                            Tick {Math.floor(nowSeconds / 10)}
-                        </span>
+                {/* Season clock — the real thing when the worker reports one */}
+                {seasonInfo ? (
+                    <div className="flex items-center gap-2" title={`Season ${seasonInfo.seasonNumber}: ${seasonInfo.name} — ${seasonInfo.phase === 'announced' ? 'starts' : 'ends'} in ~${seasonCountdown} (real time)`}>
+                        <CalendarDays size={13} className="text-slate-500" />
+                        <div className="flex flex-col leading-none">
+                            <span className="text-[10px] font-display font-bold tracking-widest text-slate-200 uppercase whitespace-nowrap">
+                                {seasonInfo.name}
+                            </span>
+                            <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mt-0.5">
+                                {seasonInfo.phase === 'announced' ? `Begins ${seasonCountdown}` : `Ends ${seasonCountdown}`}
+                            </span>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="flex items-center gap-2" title="Galactic calendar">
+                        <CalendarDays size={13} className="text-slate-500" />
+                        <div className="flex flex-col leading-none">
+                            <span className="text-[11px] font-mono font-bold text-slate-200">
+                                S{season} · D{relativeDay}
+                            </span>
+                            <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mt-0.5">
+                                Tick {Math.floor(nowSeconds / 10)}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Alerts */}
                 {(activeCrises.length > 0 || emergency) && (
@@ -150,6 +184,14 @@ export default function TopNav() {
                         </div>
                     </>
                 )}
+
+                <div className="h-6 w-px bg-slate-800/60" />
+
+                {/* Transmissions + tutorial. Both components existed but were
+                    only mounted in the orphaned legacy Navbar — meaning no
+                    player had a notification bell or the guided tour at all. */}
+                <NotificationBell factionId={playerFactionId ?? undefined} />
+                <TutorialLauncher />
 
                 <div className="h-6 w-px bg-slate-800/60" />
                 <IdentityBadge />

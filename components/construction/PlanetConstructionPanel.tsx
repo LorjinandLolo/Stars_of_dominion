@@ -227,7 +227,11 @@ export function PlanetConstructionPanel({
         }
     };
 
-    const hasShipyard = buildings.some(b => ['shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
+    // 'orbital_shipyard' is what every capital actually seeds (and what a
+    // civilization's authored starter list is forced to include) — the old
+    // list named three building ids that exist nowhere in data/buildings.ts,
+    // so the SPACE CONSTRUCTION tab never rendered for anyone.
+    const hasShipyard = buildings.some(b => ['orbital_shipyard', 'fleet_drydock', 'shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
 
     // Helper: get ownership color
     const getOwnershipColor = (ownerId: string | null) => {

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-const ADMIN_SECRET = process.env.GAME_ADMIN_SECRET || 'overdominion'; // Set this in .env.local
+// No fallback: the old default ('overdominion') was committed to a repo the
+// players themselves can read, which made "admin" mean "anyone". Unset env →
+// the endpoint is disabled, not open.
+const ADMIN_SECRET = process.env.GAME_ADMIN_SECRET;
 
 export async function POST(req: NextRequest) {
     try {
@@ -9,6 +12,9 @@ export async function POST(req: NextRequest) {
         const { factionId, userId, secret } = body;
 
         // 1. Validate Secret
+        if (!ADMIN_SECRET) {
+            return NextResponse.json({ error: 'Admin endpoint disabled: GAME_ADMIN_SECRET is not set.' }, { status: 503 });
+        }
         if (secret !== ADMIN_SECRET) {
             return NextResponse.json({ error: 'Unauthorized: Invalid Admin Secret' }, { status: 401 });
         }
