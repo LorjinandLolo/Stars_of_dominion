@@ -14,6 +14,9 @@ import { getGovernment, getFactionStability } from '../government/government-ser
 import { isFactionAtWar } from '../government/cohesion-service';
 import { breakawayOrigin } from '../government/civil-war-service';
 import { Resource } from '../trade-system/types';
+import { startConstruction } from '../construction/construction-service';
+import { RNG, seedFromString } from '../trade-system/rng';
+import { TechEngine, registry } from '../tech/engine';
 
 /**
  * How an empire is playing right now. The default AI assumes a going concern
@@ -58,7 +61,42 @@ export class StrategicAIService {
         this.manageLeaders(factionId, world, stance);
         this.manageDoctrines(factionId, world, stance);
         this.manageConstruction(factionId, world, stance);
+        this.manageResearch(factionId, world);
         this.manageEspionage(factionId, world, stance);
+    }
+
+    /**
+     * Keep the research slot warm. AI factions previously never researched at
+     * all: TECH_START_RESEARCH was the only assignment path and only players
+     * send orders, so every unclaimed empire's tree sat frozen at zero for a
+     * whole season. Picks the lowest-tier tech the engine will accept,
+     * deterministically (sorted by tier, then id).
+     */
+    private static manageResearch(factionId: string, world: GameWorldState): void {
+        let techState = world.tech.get(factionId);
+        if (!techState) {
+            // Same lazy init the player path uses (app/actions/tech.ts) — no
+            // production code ever seeds tech states up front.
+            techState = TechEngine.initPlayerState(factionId);
+            world.tech.set(factionId, techState);
+        }
+        const emptySlot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null);
+        if (!emptySlot) return;
+
+        const done = new Set(techState.unlockedTechIds ?? []);
+        const candidates = registry.getAll()
+            .filter(t => !done.has(t.id))
+            .sort((a, b) => (a.tier - b.tier) || a.id.localeCompare(b.id));
+
+        for (const tech of candidates.slice(0, 12)) {
+            try {
+                const newState = TechEngine.assignResearch(techState, emptySlot.slotId, tech.id, world.nowSeconds);
+                world.tech.set(factionId, newState);
+                return;
+            } catch {
+                // prerequisites unmet — try the next one
+            }
+        }
     }
 
     /**
@@ -200,28 +238,33 @@ export class StrategicAIService {
         const queueDepth = stance === 'survival' ? 1 : 2;
 
         planets.forEach(planet => {
-            if (planet.buildQueue.length < queueDepth) {
-                let buildingType = 'factory';
-                if (stance === 'survival') {
-                    // Order first, industry later. Research labs do not hold worlds.
-                    buildingType = 'security_hub';
-                } else if (planet.stability < 50) {
-                    buildingType = 'security_hub';
-                } else if (stance === 'consolidating') {
-                    // Rebuild the base before reaching for the frontier sciences.
-                    buildingType = 'factory';
-                } else if (Math.random() > 0.4) {
-                    buildingType = 'research_lab';
-                }
+            if (planet.buildQueue.length >= queueDepth) return;
 
-                planet.buildQueue.push({
-                    orderId: `ai-build-${factionId}-${Date.now()}-${Math.random()}`,
-                    buildingId: buildingType,
-                    tileId: `tile-${Math.floor(Math.random() * 1000)}`, // Assign to random tile for AI macro
-                    planetId: planet.id,
-                    startedAtSeconds: world.nowSeconds,
-                    completesAtSeconds: world.nowSeconds + 3600 // 1 hour build
-                });
+            // The old version fabricated tileIds (`tile-<random>`) that match no
+            // real tile and pushed straight onto buildQueue, bypassing
+            // startConstruction — so completeConstruction rejected every order
+            // and AI factions finished exactly zero buildings, silently, ever.
+            // Now: pick a real empty tile and go through the same entry point
+            // players use. Building choice is seeded — no Math.random in sim.
+            const emptyTile = planet.tiles.find(t => t.constructionState === 'empty' && !t.buildingId);
+            if (!emptyTile) return;
+
+            const rng = new RNG(seedFromString(`ai-build|${factionId}|${planet.id}|${Math.floor(world.nowSeconds / 3600)}`));
+            let buildingId = 'planetary_factory';
+            if (stance === 'survival' || planet.stability < 50) {
+                // Order first, industry later. Research labs do not hold worlds.
+                buildingId = 'security_bureau';
+            } else if (stance === 'consolidating') {
+                buildingId = 'planetary_factory';
+            } else if (rng.next() > 0.4) {
+                buildingId = 'research_lab';
+            }
+
+            const result = startConstruction(planet, emptyTile.tileId, buildingId, world.nowSeconds, world);
+            if (!result.success) {
+                // Missing infrastructure tier, district mismatch — fall back to
+                // the mine every world can dig.
+                startConstruction(planet, emptyTile.tileId, 'metal_mine', world.nowSeconds, world);
             }
         });
     }

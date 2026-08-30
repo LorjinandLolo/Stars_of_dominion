@@ -128,10 +128,15 @@ export function getFactionEconomyMods(world: GameWorldState, factionId: string):
         policy = getGovernmentModifiers(world, factionId) as unknown as Record<string, number>;
     } catch { /* government state absent on minimal worlds */ }
 
+    // Season legacy: endSeason awards the top three a small permanent
+    // credit_mult (and tech_mult, consumed by the research tick). This map was
+    // write-only for its whole life — winning a season did nothing.
+    const legacy = ((world as any).legacyPrestigeBonuses?.get?.(factionId) ?? {}) as Record<string, number>;
+
     return {
         production: (tech['eco_production_mult'] ?? 1) * (1 + (doctrine['productionCoordination'] ?? 0)) * (1 + (policy['production'] ?? 0)),
         manufacturing: tech['eco_manufacturing_mult'] ?? 1,
-        tax: (tech['eco_tax_mult'] ?? 1) * (1 + (doctrine['taxationRate'] ?? 0)) * (1 + (policy['tax_income'] ?? 0)),
+        tax: (tech['eco_tax_mult'] ?? 1) * (1 + (doctrine['taxationRate'] ?? 0)) * (1 + (policy['tax_income'] ?? 0)) * (legacy['credit_mult'] ?? 1),
         upkeep: (tech['eco_upkeep_mult'] ?? 1) * (1 + (policy['upkeep'] ?? 0)),
         popGrowth: (1 + (doctrine['popGrowth'] ?? 0)) * (1 + (policy['pop_growth'] ?? 0)),
     };
@@ -355,6 +360,14 @@ export function collectFactionTaxes(
     const taxRate = econ.taxation.productionTaxRate;
     if (taxRate <= 0) return;
 
+    // In-kind tithe: a slice of the tax skim is delivered to the national
+    // reserves as GOODS instead of being monetized. Faction reserves are what
+    // colonization (1k metals + 1k food per colony) and unit recruitment spend
+    // — before this, credits were the ONLY reserve with an income stream, so
+    // every faction (human and AI alike) hard-capped at about two colonies
+    // when its starting metals/food ran out, for the entire season.
+    const IN_KIND_SHARE = 0.5;
+
     for (const planet of ecoWorld.planets.values()) {
         const faction = ecoWorld.factions.get(planet.factionId);
         if (!faction) continue;
@@ -370,8 +383,12 @@ export function collectFactionTaxes(
             const taken = Math.min(available, produced * taxRate);
             if (taken <= 0) continue;
             planet.stockpile[resKey] = available - taken;
+
+            const inKind = taken * IN_KIND_SHARE;
+            faction.reserves[marketRes] = (faction.reserves[marketRes] ?? 0) + inKind;
+
             const price = ecoWorld.markets.get(`galactic:${marketRes}`)?.currentPrice ?? 10;
-            credits += taken * price;
+            credits += (taken - inKind) * price;
         }
 
         if (credits > 0) {

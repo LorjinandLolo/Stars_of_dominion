@@ -2227,7 +2227,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         // which made all army recruitment silently do nothing.
 
         case 'TECH_START_RESEARCH': {
-            const techState = world.tech.get(factionId);
+            let techState = world.tech.get(factionId);
+            if (!techState) {
+                // Lazy init, mirroring app/actions/tech.ts — without it a
+                // faction whose tech shard never materialized silently
+                // dropped every research order.
+                techState = TechEngine.initPlayerState(factionId);
+                world.tech.set(factionId, techState);
+            }
             if (techState) {
                 try {
                     const emptySlot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null);
@@ -2685,6 +2692,29 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                     `[Order] ${factionId} raising ${verdict.granted} Elder on ${payload.planetId} ` +
                     `(${verdict.living} already walking, cap ${verdict.living + verdict.granted} in use)`
                 );
+            }
+
+            // Config-priced units charge here, scaled by count (the registry
+            // cost is static and payload-blind). Elders skip this: they were
+            // hand-charged above.
+            if (payload.unitType !== ELDER_UNIT_TYPE) {
+                const perUnit = RecruitmentService.unitCost(payload.unitType);
+                const garrisonReserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+                if (garrisonReserves && Object.keys(perUnit).length > 0) {
+                    const n = Math.max(1, Math.floor(Number(recruitCount) || 0));
+                    for (const [key, amt] of Object.entries(perUnit)) {
+                        if (garrisonReserves[key] === undefined) continue;
+                        if ((garrisonReserves[key] ?? 0) < amt * n) {
+                            recordOrderFailure(world, factionId, actionId,
+                                `Cannot afford ${n}x ${payload.unitType}: needs ${amt * n} ${key}, has ${Math.floor(garrisonReserves[key] ?? 0)}.`);
+                            return;
+                        }
+                    }
+                    for (const [key, amt] of Object.entries(perUnit)) {
+                        if (garrisonReserves[key] === undefined) continue;
+                        garrisonReserves[key] = (garrisonReserves[key] ?? 0) - amt * n;
+                    }
+                }
             }
 
             const job = RecruitmentService.createJob(
@@ -3615,11 +3645,27 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_RECRUIT_FORMATION_UNIT': {
-            // Because recruitment takes time, we should queue it using RecruitmentService
-            // However, we need a way for RecruitmentService to assign it to the formation directly.
-            // For now, we will add it instantly for the prototype, or we can use the existing job system 
-            // and attach `formationId` to the job. Let's mutate instantly for now to satisfy UI responsiveness,
-            // OR use the queue but with formationId. The user said: "Production queue arrive over time. Should deduct resources"
+            // Units cost what the config says, scaled by count — the registry
+            // entry stays cost:{} because chargeOrderCost can't scale by
+            // payload, so the charge lives here. Free identical warships let
+            // any player field unlimited battleships for nothing.
+            const unitCount = Math.max(1, Math.floor(Number(payload.count) || 0));
+            const perUnit = RecruitmentService.unitCost(payload.unitType);
+            const recruitReserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+            if (recruitReserves && Object.keys(perUnit).length > 0) {
+                for (const [key, amt] of Object.entries(perUnit)) {
+                    if (recruitReserves[key] === undefined) continue; // untracked → free
+                    if ((recruitReserves[key] ?? 0) < amt * unitCount) {
+                        recordOrderFailure(world, factionId, 'MIL_RECRUIT_FORMATION_UNIT',
+                            `Cannot afford ${unitCount}x ${payload.unitType}: needs ${amt * unitCount} ${key}, has ${Math.floor(recruitReserves[key] ?? 0)}.`);
+                        return;
+                    }
+                }
+                for (const [key, amt] of Object.entries(perUnit)) {
+                    if (recruitReserves[key] === undefined) continue;
+                    recruitReserves[key] = (recruitReserves[key] ?? 0) - amt * unitCount;
+                }
+            }
             const job = RecruitmentService.createJob(
                 'formation-' + payload.formationId, // Use formationId as planetId spoof
                 factionId,

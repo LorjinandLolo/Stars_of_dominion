@@ -14,6 +14,8 @@ import { advanceExploration, tickFrontierClaims } from '../exploration/explorati
 import { seedAnomalyPool } from '../exploration/anomaly-catalog';
 import { materializeSystemBodies, systemHasBodies } from '../exploration/body-generator';
 import { tickAIColonization } from '../exploration/colonize-service';
+import { tickAIExpansion } from '../exploration/ai-expansion';
+import { tickVictory } from '../victory/victory-service';
 import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
@@ -328,6 +330,10 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
             try {
                 researchSpeed = Math.max(0.25, 1 + getGovernmentModifiers(world, factionId).research_speed);
             } catch { /* no government on minimal worlds */ }
+            // Season legacy: last season's podium finishers carry a permanent
+            // tech_mult — the other half of the previously write-only bonus map.
+            const legacyTechMult = ((world as any).legacyPrestigeBonuses?.get?.(factionId) as Record<string, number> | undefined)?.tech_mult;
+            if (legacyTechMult && legacyTechMult > 0) researchSpeed *= legacyTechMult;
 
             for (const slot of techState.activeSlots) {
                 if (slot.status !== 'researching') continue;
@@ -712,6 +718,10 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
         if (constr && !constr.tags.includes('anomaly')) constr.tags.push('anomaly');
     }
     tickAIColonization(world);
+    // AI factions scout and survey their way outward — colonization above can
+    // only settle what a faction can SEE, and before this nothing ever widened
+    // an AI's visibility past its home system.
+    try { tickAIExpansion(world); } catch (e) { console.error('[TickProcessor] tickAIExpansion failed:', e); }
 }
 
 function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
@@ -811,6 +821,31 @@ function step20_titlesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
                 payload: { defeatStatus: defeat.status }
             });
         }
+
+        // 1b. Victory evaluators — conquest detection, enlightenment progress,
+        //     post-victory transitions. Designed as season-title phase 3 and
+        //     never invoked until now; the machinery only ever ran in its own
+        //     test file. Before tickTitles so a feat completed this tick is in
+        //     the ledger the same strategic cycle.
+        try {
+            const before = (world as any).victoryState?.lastVictoryAt ?? null;
+            tickVictory(world, TICK_DELTA_SECONDS);
+            const vs = (world as any).victoryState;
+            if (vs?.lastVictoryAt && vs.lastVictoryAt !== before) {
+                fireNotification({
+                    id: `victory-${vs.lastVictoryType}-${vs.lastVictoryFactionId}-${vs.lastVictoryAt}`,
+                    factionId: 'all',
+                    category: 'system',
+                    priority: 'urgent',
+                    title: vs.lastVictoryType === 'conquest' ? 'THE GALAXY HAS A CONQUEROR' : 'TRANSCENDENCE ACHIEVED',
+                    body: `${world.economy.factions.get(vs.lastVictoryFactionId)?.name ?? vs.lastVictoryFactionId} has achieved ${vs.lastVictoryType} victory. The post-victory era begins.`,
+                    createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                    read: false,
+                    linkToTab: 'dashboard',
+                    payload: { victoryType: vs.lastVictoryType, factionId: vs.lastVictoryFactionId },
+                } as any);
+            }
+        } catch (e) { console.error('[TickProcessor] tickVictory failed:', e); }
 
         // 2. Titles: drain triggers, evaluate galactic firsts, migrate any
         //    legacy world.milestones entries into the ledger.

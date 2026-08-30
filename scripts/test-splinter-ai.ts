@@ -101,7 +101,11 @@ function main() {
     const queued = rebelWorlds.flatMap(p => p.buildQueue.map((o: any) => o.buildingId));
     console.log(`[5] its build queues: ${queued.join(', ') || '(empty)'}`);
     assert.ok(queued.length > 0, 'it should still be building something');
-    assert.ok(queued.every(b => b === 'security_hub'), 'a besieged state builds order, not research labs');
+    // 'security_bureau' is the real registry id (the old 'security_hub' matched
+    // nothing and the orders were silently discarded); 'metal_mine' is the
+    // legal fallback when the world's infrastructure tier refuses the bureau.
+    assert.ok(queued.every(b => b === 'security_bureau' || b === 'metal_mine'),
+        `a besieged state builds order, not research labs — got ${queued.join(', ')}`);
     assert.ok(rebelWorlds.every(p => p.buildQueue.length <= 1), 'and one thing at a time');
 
     // ── Its doctrines are defensive ──────────────────────────────────────────

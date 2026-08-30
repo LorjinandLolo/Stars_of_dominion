@@ -14,6 +14,21 @@ const unitsConfig = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'data
 export class RecruitmentService {
 
     /**
+     * Per-unit recruitment cost from config, in faction-reserve keys
+     * (CREDITS/METALS/...). Unknown types and deliberately cost-free entries
+     * (ELDER_INFERNOID is hand-charged by its trait pipeline) return {}.
+     */
+    static unitCost(unitType: string): Record<string, number> {
+        const cost = unitsConfig[unitType]?.cost;
+        if (!cost || typeof cost !== 'object') return {};
+        const out: Record<string, number> = {};
+        for (const [k, v] of Object.entries(cost)) {
+            if (typeof v === 'number' && v > 0) out[k.toUpperCase()] = v;
+        }
+        return out;
+    }
+
+    /**
      * Queues a new recruitment order.
      * Requires Military Infrastructure check (handled at higher level).
      */
@@ -70,12 +85,15 @@ export class RecruitmentService {
             const formationId = (job as any).targetFormationId;
             const isFleet = (job as any).isFleet;
             
+            // Power comes from the unit config now — a battleship is worth 90,
+            // a corvette 10; the old flat 10-per-unit made every hull identical.
+            const unitPower = unitsConfig[job.unitType]?.power ?? 10;
             if (isFleet) {
                 const fleet = world.movement.fleets.get(formationId);
                 if (fleet) {
                     const currentCount = fleet.composition[job.unitType] || 0;
                     fleet.composition[job.unitType] = currentCount + job.count;
-                    fleet.basePower += job.count * 10; // rough approximation
+                    fleet.basePower += job.count * unitPower;
                     console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Fleet ${fleet.name}`);
                 }
             } else {
@@ -83,7 +101,7 @@ export class RecruitmentService {
                 if (army) {
                     const currentCount = army.composition[job.unitType] || 0;
                     army.composition[job.unitType] = currentCount + job.count;
-                    army.basePower += job.count * 10;
+                    army.basePower += job.count * unitPower;
                     console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Army ${army.name}`);
                 }
             }
