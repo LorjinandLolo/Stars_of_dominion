@@ -16,6 +16,7 @@ import { tickCivilWar, fissionEmpire, breakawayStatesOf } from '../lib/governmen
 import { isAtWar } from '../lib/diplomacy/offer-service';
 import { Resource } from '../lib/trade-system/types';
 import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 
 const TICK = 6 * 60 * 60;
 
@@ -47,6 +48,12 @@ function main() {
     const parentId = 'faction-aurelian';
     const parentGov = getGovernment(world, parentId)!;
     const parentEconomy = world.economy.factions.get(parentId)!;
+    // Capital-only starts: settle the home system's bodies first, as live play does.
+    for (const p of world.construction.planets.values()) {
+        if (!p.ownerId && p.systemId === parentEconomy.capitalSystemId && p.tags.includes('colonizable')) {
+            colonizePlanet(world, parentId, p.id);
+        }
+    }
     const parentPlanets = [...world.construction.planets.values()].filter(p => p.ownerId === parentId);
     assert.ok(parentPlanets.length >= 3, 'need worlds to lose');
 

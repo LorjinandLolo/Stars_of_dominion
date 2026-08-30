@@ -34,6 +34,9 @@ export type SeasonPhase =
 export interface ActiveSeason {
     id: string;
     seasonNumber: number;
+    /** Authored era name ("The Beginning" for season 1). Optional so snapshots
+     *  from before the naming landed still deserialize. */
+    name?: string;
     phase: SeasonPhase;
     /** Active modifier pool (2–3 per spec). */
     modifiers: SeasonModifier[];

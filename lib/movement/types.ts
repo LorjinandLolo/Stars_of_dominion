@@ -402,6 +402,9 @@ export interface FrontierClaim {
 
 export interface ExplorationOrder {
     fleetId: string;
+    /** Stamped at issue time so a refund can find the payer even if the fleet
+     *  dies before the order completes. Optional: pre-stamp snapshots lack it. */
+    factionId?: string;
     targetSystemId: string;
     mode: 'ping' | 'scan' | 'survey';
     /** Whether issued by player or by doctrine automation. */

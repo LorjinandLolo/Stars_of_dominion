@@ -35,6 +35,7 @@ import {
     revealedSystems,
 } from '../lib/factions/buthari-council';
 import { computeVisibility } from '../lib/movement/visibility-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { getTechModifier } from '../lib/tech/modifiers';
 import {
     composePopulation,
@@ -178,6 +179,16 @@ console.log('\n[4] Unyielding Defence');
 {
     const home: any = [...world.construction.planets.values()]
         .find((p: any) => p.ownerId === BT && (p.tags ?? []).includes('homeworld'));
+    // Factions start capital-only now — found an ordinary colony the way the
+    // live game does, on one of the home system's unowned bodies.
+    {
+        const body = [...world.construction.planets.values()]
+            .find((p: any) => !p.ownerId && p.systemId === home?.systemId && (p.tags ?? []).includes('colonizable'));
+        if (body) {
+            const res = colonizePlanet(world, BT, body.id);
+            if (!res.ok) console.error(`  (colonize for probe failed: ${res.reason})`);
+        }
+    }
     const plain: any = [...world.construction.planets.values()]
         .find((p: any) => p.ownerId === BT && !(p.tags ?? []).includes('homeworld') && !(p.tags ?? []).includes('fortified'));
 

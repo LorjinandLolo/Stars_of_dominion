@@ -25,6 +25,20 @@ import { fireNotification } from '../time/notification-hooks';
 
 const seasonCfg = config.seasons;
 
+/**
+ * Authored season names. Season 1 is the galaxy's founding era; later numbers
+ * fall through to plain "Season N" until someone names them. The retrospective
+ * service may still coin a different name for a CLOSED era — this is the name
+ * the season carries while it runs.
+ */
+const SEASON_NAMES: Record<number, string> = {
+    1: 'The Beginning',
+};
+
+export function seasonNameFor(seasonNumber: number): string {
+    return SEASON_NAMES[seasonNumber] ?? `Season ${seasonNumber}`;
+}
+
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
 /**
@@ -59,6 +73,7 @@ export function scheduleNextSeason(
     const season: ActiveSeason = {
         id: `season-${seasonNumber}`,
         seasonNumber,
+        name: seasonNameFor(seasonNumber),
         phase: 'announced',
         modifiers: selected,
         announcedAt: toISO(now),
@@ -116,7 +131,7 @@ export function tickSeasonModifiers(
             ? world.seasonHistory[world.seasonHistory.length - 1].seasonNumber
             : 0;
         world.activeSeason = scheduleNextSeason(lastNumber + 1, world);
-        console.log(`[Seasons] Season ${lastNumber + 1} announced.`);
+        console.log(`[Seasons] Season ${lastNumber + 1} ("${seasonNameFor(lastNumber + 1)}") announced.`);
     }
 
     const season = world.activeSeason;
@@ -291,7 +306,7 @@ export function endSeason(world: GameWorldState): SeasonRecord | null {
         factionId: 'all',
         category: 'system',
         priority: 'urgent',
-        title: `SEASON ${seasonNumber} CONCLUDED`,
+        title: `SEASON ${seasonNumber} — ${seasonNameFor(seasonNumber).toUpperCase()} — CONCLUDED`,
         body: narrative,
         createdAt: toISO(world.nowSeconds),
         read: false,

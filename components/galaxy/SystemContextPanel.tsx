@@ -5,7 +5,6 @@ import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
 import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, LayoutGrid, Crosshair, AlertOctagon, Globe, Anchor, Swords } from 'lucide-react';
-import { surveySystemAction } from '@/app/actions/exploration';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -79,6 +78,9 @@ interface PlanetCardProps {
     onRecruitUnits?: (planetId: string, unitType: string, count: number) => void;
     activeJobs?: RecruitmentJob[];
     orbitIndex: number;
+    /** Worker-rule mirror: colonization needs a surveyed system and a
+     *  'colonizable' body — the button must never offer what the worker refuses. */
+    canColonize?: boolean;
 }
 
 function PlanetCard({
@@ -101,6 +103,7 @@ function PlanetCard({
     onRecruitUnits,
     activeJobs = [],
     orbitIndex,
+    canColonize = false,
 }: PlanetCardProps) {
     const [expanded, setExpanded] = React.useState(false);
     const [recruiting, setRecruiting] = React.useState(false);
@@ -325,20 +328,26 @@ function PlanetCard({
                 {/* Second action row: expansion & covert operations */}
                 {(isNeutral || isOwnedByPlayer || isEnemyOwned) && (
                     <div className="flex gap-1.5 mt-1.5">
-                        {/* Claim unowned world */}
-                        {isNeutral && (
+                        {/* Found a colony — only where the worker would accept it */}
+                        {isNeutral && canColonize && (
                             <button
                                 disabled={actionBusy === 'claim'}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
                                 }}
-                                title="Claim this unowned world for your faction (1,000 credits)"
+                                title="Found a colony on this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
                                 className="flex-1 py-1.5 bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/30 rounded text-[9px] text-sky-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
                             >
                                 <Globe size={10} />
-                                {actionBusy === 'claim' ? 'CLAIMING…' : 'CLAIM · 1000cr'}
+                                {actionBusy === 'claim' ? 'COLONIZING…' : 'COLONIZE · 20k cr'}
                             </button>
+                        )}
+                        {isNeutral && !canColonize && (
+                            <div className="flex-1 py-1.5 border border-slate-700/40 rounded text-[9px] text-slate-500 font-bold flex items-center justify-center gap-1">
+                                <Globe size={10} />
+                                {planet.tags?.includes('dead_matter') ? 'DEAD MATTER — UNINHABITABLE' : 'SURVEY SYSTEM TO COLONIZE'}
+                            </div>
                         )}
 
                         {/* Incite unrest on enemy world */}
@@ -784,6 +793,7 @@ export default function SystemContextPanel() {
         recruitmentJobs,
         armies,
         fleets,
+        explorationOrders,
     } = useUIStore();
     const [moving, setMoving] = React.useState(false);
     const [surveying, setSurveying] = React.useState(false);
@@ -798,12 +808,15 @@ export default function SystemContextPanel() {
 
     React.useEffect(() => {
         if (selectedSystemId) {
-            // Auto-switch to planets tab when there's more than 1
-            if (planets.length > 1) {
+            // Auto-switch to planets tab when there's more than 1 — but never
+            // for a system this faction hasn't even pinged: fronting planet
+            // cards for unexplored systems is a fog-of-war bypass.
+            const stage = factionVisibility?.[selectedSystemId]?.revealStage || 'unknown';
+            if (stage !== 'unknown' && planets.length > 1) {
                 setActiveTab('planets');
             }
         }
-    }, [selectedSystemId, planets.length]);
+    }, [selectedSystemId, planets.length, factionVisibility]);
 
     const system = systems.find((s) => s.id === selectedSystemId);
     if (!system) return null;
@@ -1090,7 +1103,7 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Tags */}
-                            {system.tags.length > 0 && system.isSurveyed !== false && (
+                            {system.tags.length > 0 && revealStage !== 'unknown' && (
                                 <div className="flex flex-wrap gap-1">
                                     {system.tags.map((tag) => (
                                         <span
@@ -1124,35 +1137,73 @@ export default function SystemContextPanel() {
                                 </div>
                             )}
 
-                            {/* Survey Button */}
-                            {system.isSurveyed === false && (
-                                <div className="py-2">
-                                    <button
-                                        disabled={surveying}
-                                        onClick={async () => {
-                                            setSurveying(true);
-                                            const res = await surveySystemAction(system.id);
-                                            if (res.success) {
-                                                useUIStore.getState().updateSystem(system.id, {
-                                                    isSurveyed: true,
-                                                    anomaly: res.anomaly as any
-                                                });
-                                            }
-                                            setSurveying(false);
-                                        }}
-                                        className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-display text-[10px] tracking-[0.2em] rounded flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]"
-                                    >
-                                        <Search size={14} />
-                                        {surveying ? 'ANALYZING SPECTRUM...' : 'SURVEY SYSTEM'}
-                                    </button>
-                                    <p className="text-[9px] text-slate-500 mt-2 text-center italic">
-                                        Scanners restricted. Full data unavailable until surveyed.
-                                    </p>
-                                </div>
-                            )}
+                            {/* Exploration: ping → scan → survey, issued as a real order.
+                                Scan/survey need a fleet in-system or one hyperlane out
+                                (the worker enforces the same rule). */}
+                            {revealStage !== 'surveyed' && (() => {
+                                const nextMode: 'ping' | 'scan' | 'survey' =
+                                    revealStage === 'unknown' ? 'ping' :
+                                    revealStage === 'pinged' ? 'scan' : 'survey';
+                                const playerFleets = ((fleets as any[]) ?? []).filter((f: any) => f.factionId === playerFactionId);
+                                const neighbors: string[] = (system as any).hyperlaneNeighbors ?? [];
+                                const eligibleFleet = nextMode === 'ping'
+                                    ? playerFleets[0]
+                                    : playerFleets.find((f: any) =>
+                                        f.currentSystemId === system.id || neighbors.includes(f.currentSystemId));
+                                const labels = { ping: 'PING SYSTEM', scan: 'SCAN SYSTEM', survey: 'SURVEY SYSTEM' } as const;
+                                // Order underway: the reveal only lands when the worker's
+                                // sim clock reaches completesAt (30s/120s/480s) — show
+                                // that instead of a silent re-billable button.
+                                const inFlight = (explorationOrders ?? []).find(o => o.targetSystemId === system.id);
+                                if (inFlight) {
+                                    return (
+                                        <div className="py-2">
+                                            <div className="w-full py-3 bg-slate-800/80 border border-amber-600/30 text-amber-500/80 font-display text-[10px] tracking-[0.2em] rounded flex items-center justify-center gap-2">
+                                                <Search size={14} className="animate-pulse" />
+                                                {inFlight.mode.toUpperCase()} IN PROGRESS…
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 mt-2 text-center italic">
+                                                Results arrive with the fleet&apos;s next telemetry burst.
+                                            </p>
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <div className="py-2">
+                                        <button
+                                            disabled={surveying || !eligibleFleet}
+                                            onClick={async () => {
+                                                if (!eligibleFleet) return;
+                                                setSurveying(true);
+                                                try {
+                                                    await dispatchOrder({
+                                                        actionId: 'EXPLORE_ISSUE_ORDER',
+                                                        factionId: playerFactionId || 'PLAYER_FACTION',
+                                                        payload: { fleetId: eligibleFleet.id, targetSystemId: system.id, mode: nextMode },
+                                                        label: `${labels[nextMode]}: ${system.name ?? system.id}`,
+                                                    });
+                                                } finally {
+                                                    setSurveying(false);
+                                                }
+                                            }}
+                                            className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-display text-[10px] tracking-[0.2em] rounded flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                                        >
+                                            <Search size={14} />
+                                            {surveying ? 'TRANSMITTING ORDER...' : `${labels[nextMode]} · 500cr`}
+                                        </button>
+                                        <p className="text-[9px] text-slate-500 mt-2 text-center italic">
+                                            {eligibleFleet
+                                                ? 'Scanners restricted. Full data unavailable until surveyed.'
+                                                : nextMode === 'ping'
+                                                    ? 'No fleet under your command.'
+                                                    : 'Move a fleet within one hyperlane to scan or survey.'}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Resource Biosphere Modifiers */}
-                            {hasActiveModifiers && system.isSurveyed !== false && (
+                            {hasActiveModifiers && revealStage === 'surveyed' && (
                                 <div className="mt-3 pt-3 border-t border-slate-700/60">
                                     <span className="text-[10px] text-slate-500 font-display tracking-widest mb-1.5 block">PLANETARY OUTPUT</span>
                                     <div className="grid grid-cols-2 gap-2">
@@ -1174,7 +1225,7 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Stats */}
-                            {revealStage !== 'unknown' && system.isSurveyed !== false ? (
+                            {revealStage !== 'unknown' ? (
                                 <div className="space-y-2.5">
                                     <StatRow label="SECURITY" value={system.security} color={statusColor(100 - system.security)} />
                                     <StatRow label="TRADE VALUE" value={system.tradeValue} color="#f59e0b" />
@@ -1302,7 +1353,11 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Planet Cards */}
-                            {loadingPlanets ? (
+                            {revealStage === 'unknown' ? (
+                                <div className="text-center py-6 text-slate-500 text-[10px] font-display tracking-widest uppercase">
+                                    Sensor data insufficient — ping this system to chart it
+                                </div>
+                            ) : loadingPlanets ? (
                                 <div className="space-y-2">
                                     {[1, 2].map(i => (
                                         <div key={i} className="h-20 bg-slate-800/50 rounded-xl animate-pulse" />
@@ -1334,6 +1389,7 @@ export default function SystemContextPanel() {
                                         onRecruitUnits={handleRecruitUnits}
                                         activeJobs={recruitmentJobs.filter(j => j.planetId === planet.id)}
                                         orbitIndex={i}
+                                        canColonize={revealStage === 'surveyed' && !!planet.tags?.includes('colonizable')}
                                     />
                                 ))
                             )}

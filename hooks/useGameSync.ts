@@ -201,6 +201,22 @@ export function useGameSync() {
                 .map(f => f.currentSystemId as string)
         );
 
+        // Planets follow the same fog rules as fleets and armies: your own
+        // worlds always sync; anyone else's only once the system is at least
+        // pinged, or you are physically parked there. Without this every
+        // construction planet — including the unowned bodies exploration now
+        // materializes across the galaxy — reached every client, and the
+        // system panels dutifully leaked names, types and stats for systems
+        // the player had never even pinged.
+        if (playerFactionId && visibility) {
+            planetList = planetList.filter(p => {
+                if (p.ownerId === playerFactionId) return true;
+                if (p.systemId && myPresenceSystems.has(p.systemId)) return true;
+                const entry = visibility[p.systemId];
+                return !!entry && entry.revealStage !== 'unknown';
+            });
+        }
+
         if (playerFactionId && visibility) {
             fleetList = fleetList.filter(f => {
                 if (f.factionId === playerFactionId) return true;
@@ -779,6 +795,13 @@ export function useGameSync() {
             forwardBases: Array.from((world.movement as any).forwardBases?.values?.() || []),
             nowSeconds: world.nowSeconds,
             factionVisibility: visibility,
+            // The player's own in-flight exploration orders, so the explore
+            // button can show progress instead of silently accepting repeat
+            // clicks (each of which the worker would bill).
+            explorationOrders: (world.movement.explorationOrders ?? []).filter((o: any) =>
+                activeFactionId &&
+                (o.factionId === activeFactionId ||
+                    world.movement.fleets.get(o.fleetId)?.factionId === activeFactionId)) as any,
             diplomacyState,
             factions: factionMap,
             politicsState,

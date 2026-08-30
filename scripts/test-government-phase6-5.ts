@@ -25,6 +25,7 @@ import {
 import { OPERATION_CATALOG } from '../lib/espionage/operation-catalog';
 import { isAtWar } from '../lib/diplomacy/offer-service';
 import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 
 const TICK = 6 * 60 * 60;
 
@@ -62,6 +63,14 @@ function main() {
     const meddlerId = 'faction-vektori';
     const bystanderId = 'faction-covenant';
     const targetGov = getGovernment(world, targetId)!;
+    // Capital-only starts: settle the home system's bodies first, as live play does.
+    const targetHomeSys = world.economy.factions.get(targetId)!.capitalSystemId;
+    for (const p of world.construction.planets.values()) {
+        if (!p.ownerId && p.systemId === targetHomeSys && p.tags.includes('colonizable')) {
+            colonizePlanet(world, targetId, p.id);
+        }
+    }
+    ensureGovernors(world); // the new colonies need governors like any other world
     const targetPlanets = [...world.construction.planets.values()].filter(p => p.ownerId === targetId);
     const region = [targetPlanets[0], targetPlanets[1]];
     const systemId = region[0].systemId;

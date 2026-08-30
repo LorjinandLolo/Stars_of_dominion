@@ -10,6 +10,11 @@ import { tickForwardBases } from '../movement/forward-base-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
 import { computeVisibility } from '../movement/visibility-service';
+import { advanceExploration, tickFrontierClaims } from '../exploration/exploration-service';
+import { seedAnomalyPool } from '../exploration/anomaly-catalog';
+import { materializeSystemBodies, systemHasBodies } from '../exploration/body-generator';
+import { tickAIColonization } from '../exploration/colonize-service';
+import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { Fleet } from '../movement/types';
@@ -200,6 +205,11 @@ export async function runStrategicTick(
 
     // 10: Visibility refresh (Fog of War)
     step10_visibility(world);
+    // 10b: Exploration — survey orders complete (materializing the surveyed
+    // system's bodies before anomaly attachment), frontier claims advance, and
+    // AI factions found colonies on surveyed unowned worlds. After visibility
+    // so a fleet parked next to a body this tick can already colonize it.
+    try { step10b_exploration(world); } catch (e) { console.error('[TickProcessor] step10b_exploration failed:', e); }
     // Steps 11-15 lacked the per-step try/catch that every other step has. A single
     // throw here (e.g. a system missing hyperlaneNeighbors) propagated all the way out
     // of the scheduler, which then never advanced its marker — permanently freezing the
@@ -611,6 +621,82 @@ function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
  * Step 12: Pirate Tactical AI
  * Processes autonomous behavior for all pirate-faction fleets.
  */
+function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
+    // Older snapshots predate the anomaly catalog — seed once, idempotent.
+    seedAnomalyPool(world.movement);
+    advanceExploration(
+        world.movement,
+        TICK_DELTA_SECONDS,
+        (systemId) => materializeSystemBodies(world, systemId),
+        // Scout died mid-order: refund what the order cost and say so — the
+        // alternative was a silent 500cr hole and a button that just reappears.
+        (order) => {
+            const factionId = order.factionId;
+            if (!factionId) return;
+            const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+            const cost = (ACTION_DEFINITIONS as any).EXPLORE_ISSUE_ORDER?.cost ?? {};
+            if (reserves) {
+                for (const [res, amt] of Object.entries(cost)) {
+                    const key = res.toUpperCase();
+                    if (reserves[key] === undefined) continue;
+                    reserves[key] = (reserves[key] ?? 0) + (amt as number);
+                }
+            }
+            fireNotification({
+                id: `explore-lost-${order.fleetId}-${order.targetSystemId}-${world.nowSeconds}`,
+                factionId,
+                category: 'military',
+                priority: 'normal',
+                title: 'SURVEY MISSION LOST',
+                body: `The fleet conducting the ${order.mode} of ${world.movement.systems.get(order.targetSystemId)?.name ?? order.targetSystemId} no longer exists. The order fee has been refunded.`,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                read: false,
+                linkToTab: 'map',
+                payload: { systemId: order.targetSystemId },
+            } as any);
+        },
+        // A discovery nobody hears about is not a discovery.
+        (systemId, factionId, anomaly) => {
+            fireNotification({
+                id: `anomaly-${anomaly.id}-${systemId}`,
+                factionId,
+                category: 'system',
+                priority: 'urgent',
+                title: `ANOMALY DISCOVERED: ${anomaly.name.toUpperCase()}`,
+                body: anomaly.description,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                read: false,
+                linkToTab: 'map',
+                payload: { systemId, anomalyId: anomaly.id },
+            } as any);
+        }
+    );
+    tickFrontierClaims(world.movement, TICK_DELTA_SECONDS);
+    // A system can reach 'surveyed' without a survey ORDER — passive sensor
+    // strength ≥ 0.8 (visibility-service) or the Buthari council override write
+    // the stage directly. Materialize bodies for every such system too, or they
+    // become permanently body-less dead ends (the explore button hides at
+    // 'surveyed', so no order could ever be issued again). Idempotent and
+    // deterministic, so re-running for 0-body systems is a cheap no-op.
+    const surveyedSystems = new Set<string>();
+    for (const factionVis of world.movement.factionVisibility.values()) {
+        for (const [sysId, entry] of Object.entries(factionVis)) {
+            if ((entry as any)?.revealStage === 'surveyed') surveyedSystems.add(sysId);
+        }
+    }
+    for (const sysId of surveyedSystems) {
+        if (!systemHasBodies(world, sysId)) materializeSystemBodies(world, sysId);
+    }
+    // Mirror anomaly attachments onto the construction record so the client
+    // (which only syncs construction planets) can render the discovery.
+    for (const node of world.movement.planets.values()) {
+        if (node.anomalyIds.length === 0) continue;
+        const constr = world.construction.planets.get(node.id);
+        if (constr && !constr.tags.includes('anomaly')) constr.tags.push('anomaly');
+    }
+    tickAIColonization(world);
+}
+
 function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
     for (const [fleetId, fleet] of world.movement.fleets) {
         if (fleet.factionId !== 'faction-pirates') continue;

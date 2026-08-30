@@ -1,6 +1,11 @@
 import { GameWorldState } from '../game-world-state';
 import { DefeatState, ActiveDefeat, DefeatCondition } from '@/types/defeat';
 
+/** Records stamp the sim clock, never the wall clock — replayability rule. */
+function nowISO(world: GameWorldState): string {
+    return new Date(world.nowSeconds * 1000).toISOString();
+}
+
 // Define the conditions
 export const DEFEAT_CONDITIONS: Record<string, DefeatCondition> = {
     'HOMEWORLD_LOST': {
@@ -107,7 +112,7 @@ export class DefeatManager {
         if (ownedPlanets.length === 0) {
             return {
                 condition_id: DEFEAT_CONDITIONS['HOMEWORLD_LOST'].id,
-                triggered_at: new Date().toISOString(),
+                triggered_at: nowISO(world),
                 status: 'ACTIVE',
                 severity: 'TERMINAL',
                 message: `All systems lost. Your faction has been eliminated.`
@@ -125,7 +130,7 @@ export class DefeatManager {
         if ((econ.reserves.CREDITS || 0) < -5000) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['ECONOMIC_COLLAPSE'].id,
-                triggered_at: new Date().toISOString(),
+                triggered_at: nowISO(world),
                 status: 'ACTIVE',
                 severity: 'CRITICAL',
                 message: 'Massive debt has collapsed the economy. Production halted.'
@@ -133,7 +138,7 @@ export class DefeatManager {
         } else if ((econ.reserves.CREDITS || 0) < 0) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['BANKRUPTCY'].id,
-                triggered_at: new Date().toISOString(),
+                triggered_at: nowISO(world),
                 status: 'ACTIVE',
                 severity: 'WARNING',
                 message: 'Sovereign default. Credit rating is zero.'
@@ -153,7 +158,7 @@ export class DefeatManager {
         if (avgHappiness < 15) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['REBELLION'].id,
-                triggered_at: new Date().toISOString(),
+                triggered_at: nowISO(world),
                 status: 'ACTIVE',
                 severity: 'CRITICAL',
                 message: 'Planetary systems are in open revolt.'
@@ -161,7 +166,7 @@ export class DefeatManager {
         } else if (avgHappiness < 35) {
             defeats.push({
                 condition_id: DEFEAT_CONDITIONS['CIVIL_UNREST'].id,
-                triggered_at: new Date().toISOString(),
+                triggered_at: nowISO(world),
                 status: 'ACTIVE',
                 severity: 'WARNING',
                 message: 'Widespread civil disobedience detected.'

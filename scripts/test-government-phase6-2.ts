@@ -22,6 +22,7 @@ import { DEFIANCE_OPTIONS } from '../lib/government/defiance-types';
 import { getFactionEconomyMods } from '../lib/economy/economy-service';
 import { Resource } from '../lib/trade-system/types';
 import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 
 const TICK = 6 * 60 * 60;
 const DAY = 4 * TICK;
@@ -74,6 +75,14 @@ function main() {
 
     const factionId = 'faction-aurelian';
     const gov = getGovernment(world, factionId)!;
+    // Factions start capital-only now — settle the home system's unowned
+    // bodies the way the live game does before testing multi-world cohesion.
+    const homeSys = world.economy.factions.get(factionId)!.capitalSystemId;
+    for (const p of world.construction.planets.values()) {
+        if (!p.ownerId && p.systemId === homeSys && p.tags.includes('colonizable')) {
+            colonizePlanet(world, factionId, p.id);
+        }
+    }
     const planets = [...world.construction.planets.values()].filter(p => p.ownerId === factionId);
     assert.ok(planets.length >= 3, 'need a few worlds for this test');
 

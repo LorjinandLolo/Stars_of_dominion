@@ -95,7 +95,10 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
         return merged.length > 1 ? merged : COMMON;
     };
 
-    // 2. We want to ensure 4 planets exist in this system
+    // 2. We want to ensure 4 planets exist in this system: ONE owned capital
+    // plus three unowned, colonizable bodies. Every faction starts from a
+    // single world — the rest of the home system (and the galaxy beyond it)
+    // has to be surveyed and colonized. See lib/exploration/colonize-service.ts.
     const PLANET_DEFINITIONS: { idSuffix: string, type: EconomyPlanetType }[] = [
         { idSuffix: '', type: 'industrial' },    // The Capital
         { idSuffix: '-colony-1', type: 'agricultural' },
@@ -105,9 +108,46 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
 
     PLANET_DEFINITIONS.forEach((def, index) => {
         const planetId = `planet-${capitalSystemId}${def.idSuffix}`;
-        
-        if (world.economy.planets.has(planetId)) {
+
+        // Guard on CONSTRUCTION, not economy: the unowned bodies below have no
+        // economy record, and guarding on economy would recreate them (owned)
+        // on every worker boot.
+        if (world.construction.planets.has(planetId)) {
             return; // Already initialized
+        }
+
+        // ── Unowned home-system bodies ─────────────────────────────────────
+        if (index > 0) {
+            const bodyName = `${homeworldNameFor(factionId) ?? `${faction.name} Prime`} ${['II', 'III', 'IV'][index - 1]}`;
+            world.construction.planets.set(planetId, {
+                id: planetId,
+                name: bodyName,
+                ownerId: '',
+                systemId: capitalSystemId,
+                planetType: mapToConstructionType(def.type),
+                infrastructureLevel: 0,
+                stability: 100,
+                happiness: 50,
+                specialization: null,
+                maxTiles: 8,
+                tiles: Array.from({ length: 8 }).map((_, i) => ({
+                    tileId: `${planetId}-t${i + 1}`,
+                    districtType: 'any',
+                    buildingId: null,
+                    constructionState: 'empty',
+                    constructionCompleteAt: null
+                })),
+                buildQueue: [],
+                activeModifiers: [],
+                tags: ['colonizable'],
+                population: 0,
+                popCapacity: 50,
+                popGrowth: 0,
+                unrest: 0,
+                isOccupied: false,
+                demographics: []
+            });
+            return;
         }
 
         console.log(`[InitService] Initializing Starting Planet [${planetId}] (${def.type}) for ${factionId} in system ${capitalSystemId}.`);

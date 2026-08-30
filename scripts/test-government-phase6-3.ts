@@ -20,6 +20,7 @@ import {
 } from '../lib/government/secession-service';
 import { SECESSION_DEMANDS, SECESSION_SETTLE_THRESHOLD } from '../lib/government/secession-types';
 import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 
 const TICK = 6 * 60 * 60;
 
@@ -51,6 +52,13 @@ function main() {
 
     const factionId = 'faction-aurelian';
     const gov = getGovernment(world, factionId)!;
+    // Capital-only starts: settle the home system's bodies first, as live play does.
+    const homeSys = world.economy.factions.get(factionId)!.capitalSystemId;
+    for (const p of world.construction.planets.values()) {
+        if (!p.ownerId && p.systemId === homeSys && p.tags.includes('colonizable')) {
+            colonizePlanet(world, factionId, p.id);
+        }
+    }
     const planets = [...world.construction.planets.values()].filter(p => p.ownerId === factionId);
     assert.ok(planets.length >= 3, 'need a few worlds');
 

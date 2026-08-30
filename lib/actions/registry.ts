@@ -784,7 +784,16 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "PLANET_CLAIM",
     category: "economic",
     params: { planetId: "id" },
-    cost: { credits: 1000 }
+    // Must match COLONY_COST in lib/exploration/colonize-service.ts — this
+    // entry charges the player path (chargeOrderCost), COLONY_COST charges the
+    // AI path, and a refused claim refunds these exact numbers.
+    cost: { credits: 20000, metals: 1000, food: 1000 }
+  },
+  EXPLORE_ISSUE_ORDER: {
+    id: "EXPLORE_ISSUE_ORDER",
+    category: "military",
+    params: { fleetId: "id", targetSystemId: "id", mode: "string" },
+    cost: { credits: 500 }
   },
   DISCOURSE_POST_OPINION: {
     id: "DISCOURSE_POST_OPINION",

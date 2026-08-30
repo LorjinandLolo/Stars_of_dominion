@@ -251,6 +251,8 @@ export interface UIStore {
     // ── Visibility ──
     factionVisibility: FactionVisibility | null;
     setFactionVisibility: (vis: FactionVisibility | null) => void;
+    /** The player's in-flight exploration orders (synced from the worker). */
+    explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; completesAt: string }>;
 
     // ── Floating Panels ──
     floatedTabs: Partial<Record<NavTab, { x: number; y: number; w: number; h: number } | null>>;
@@ -577,6 +579,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Visibility ──
     factionVisibility: null,
     setFactionVisibility: (vis: FactionVisibility | null) => set({ factionVisibility: vis }),
+    explorationOrders: [],
 
     // ── Floating Panels ──
     floatedTabs: {},

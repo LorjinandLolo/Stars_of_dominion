@@ -16,6 +16,20 @@ import type {
 } from '../movement/types';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
+import { RNG, seedFromString } from '../trade-system/rng';
+
+/** Called when a survey completes, before anomaly attachment — the tick layer
+ *  uses it to materialize the system's bodies so anomalies have somewhere to
+ *  land. Kept as a callback so this module stays movement-only. */
+export type SurveyCompletionHook = (systemId: string, factionId: string) => void;
+
+/** Called when a completed order's fleet no longer exists — the tick layer
+ *  uses it to refund the order cost and tell the player their scout is gone. */
+export type OrderLostHook = (order: ExplorationOrder) => void;
+
+/** Called when a survey attaches an anomaly — the tick layer surfaces it as a
+ *  notification (nothing else subscribes to the event bus emission). */
+export type AnomalyDiscoveredHook = (systemId: string, factionId: string, anomaly: Anomaly) => void;
 
 // ─── Duration helpers ─────────────────────────────────────────────────────────
 
@@ -45,6 +59,7 @@ export function issueExploreOrder(
 
     const order: ExplorationOrder = {
         fleetId,
+        factionId: fleet.factionId,
         targetSystemId,
         mode,
         isAutomated: false,
@@ -64,7 +79,10 @@ export function issueExploreOrder(
  */
 export function advanceExploration(
     world: MovementWorldState,
-    deltaSeconds: number
+    deltaSeconds: number,
+    onSurveyed?: SurveyCompletionHook,
+    onOrderLost?: OrderLostHook,
+    onAnomaly?: AnomalyDiscoveredHook
 ): void {
     const now = world.nowSeconds;
     const completed: ExplorationOrder[] = [];
@@ -81,19 +99,43 @@ export function advanceExploration(
     world.explorationOrders = remaining;
 
     for (const order of completed) {
-        processCompletedOrder(order, world);
+        processCompletedOrder(order, world, onSurveyed, onOrderLost, onAnomaly);
     }
 }
 
-function processCompletedOrder(order: ExplorationOrder, world: MovementWorldState): void {
+function processCompletedOrder(
+    order: ExplorationOrder,
+    world: MovementWorldState,
+    onSurveyed?: SurveyCompletionHook,
+    onOrderLost?: OrderLostHook,
+    onAnomaly?: AnomalyDiscoveredHook
+): void {
     const fleet = world.fleets.get(order.fleetId);
-    if (!fleet) return;
+    if (!fleet) {
+        // The scout died (or was merged away) mid-order. Without this hook the
+        // order evaporated silently — no reveal, no notice, no refund.
+        onOrderLost?.(order);
+        return;
+    }
 
     const vis = world.factionVisibility.get(fleet.factionId);
     if (!vis) return;
 
     const existing = vis[order.targetSystemId];
     const prevStage: RevealStage = existing?.revealStage ?? 'unknown';
+
+    // Evaluated BEFORE the visibility upgrade: has anyone in the galaxy already
+    // surveyed this system? A system yields at most ONE onSurvey anomaly roll,
+    // ever — without this, every repeat survey (same player re-clicking, or
+    // each faction's first survey) consumed another entry from the
+    // once-per-galaxy anomaly pool, and one busy system could drain it all.
+    let surveyedByAnyone = false;
+    for (const factionVis of world.factionVisibility.values()) {
+        if (factionVis[order.targetSystemId]?.revealStage === 'surveyed') {
+            surveyedByAnyone = true;
+            break;
+        }
+    }
 
     const newStage: RevealStage =
         order.mode === 'ping' ? 'pinged' :
@@ -125,15 +167,25 @@ function processCompletedOrder(order: ExplorationOrder, world: MovementWorldStat
         timestamp: world.nowSeconds,
     });
 
-    // On survey: attempt anomaly attachment
+    // On survey: materialize the system's bodies first (via the tick layer's
+    // hook), then attempt anomaly attachment — anomalies attach to planets, so
+    // the order matters. The anomaly roll fires only on the FIRST survey of a
+    // system by anyone; the hook itself is idempotent and always runs.
     if (order.mode === 'survey') {
-        attachAnomaly(order.targetSystemId, 'onSurvey', fleet.factionId, world);
+        onSurveyed?.(order.targetSystemId, fleet.factionId);
+        if (!surveyedByAnyone) {
+            const found = attachAnomaly(order.targetSystemId, 'onSurvey', fleet.factionId, world);
+            if (found) onAnomaly?.(order.targetSystemId, fleet.factionId, found);
+        }
     }
 }
 
 function applyTagReveal(systemId: string, stage: RevealStage, world: MovementWorldState): void {
     const sys = world.systems.get(systemId);
     if (!sys) return;
+    // Systems loaded from generated-systems.json carry no tagReveal — default
+    // it from the live tag list instead of throwing on first reveal.
+    if (!sys.tagReveal) sys.tagReveal = { allTags: [...sys.tags], revealedAt: {} };
     const all = sys.tagReveal.allTags;
     // Distribute tags across stages based on reveal order:
     // pinged   → first 25%
@@ -150,7 +202,7 @@ function getVisibleTags(systemId: string, stage: RevealStage, world: MovementWor
     const sys = world.systems.get(systemId);
     if (!sys) return [];
     if (stage === 'unknown') return [];
-    return sys.tagReveal.revealedAt[stage] ?? [];
+    return sys.tagReveal?.revealedAt?.[stage] ?? [];
 }
 
 function pickHigherStage(a: RevealStage, b: RevealStage): RevealStage {
@@ -180,7 +232,10 @@ export function attachAnomaly(
         chance = Math.min(1, chance + boost);
     }
 
-    if (Math.random() > chance) return null;
+    // Seeded on system + trigger, so a worker restart replays the identical
+    // discovery — same defect class the pirate migration eliminated.
+    const rng = new RNG(seedFromString(`anomaly|${systemId}|${trigger}`));
+    if (rng.next() > chance) return null;
 
     // Pick an available anomaly from the pool that matches trigger
     const eligible = world.anomalyPool.filter(
@@ -196,16 +251,22 @@ export function attachAnomaly(
     }).sort((x, y) => y.score - x.score);
 
     const chosen = scored[0].a;
-    chosen.triggered = true;
-    chosen.triggeredAt = toISO(world.nowSeconds);
 
-    // Attach to planets in this system
+    // Find the attachment target BEFORE consuming the pool entry — a system
+    // that rolled zero bodies must not burn a once-per-galaxy anomaly with no
+    // observable effect.
+    let target = null as { anomalyIds: string[] } | null;
     for (const planet of world.planets.values()) {
         if (planet.systemId === systemId && !planet.anomalyIds.includes(chosen.id)) {
-            planet.anomalyIds.push(chosen.id);
+            target = planet;
             break;
         }
     }
+    if (!target) return null;
+
+    chosen.triggered = true;
+    chosen.triggeredAt = toISO(world.nowSeconds);
+    target.anomalyIds.push(chosen.id);
 
     eventBus.emit({
         type: 'anomalyDiscovered',

@@ -26,6 +26,8 @@ const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
+import { issueExploreOrder } from '../lib/exploration/exploration-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
     initDistrictWar,
@@ -664,69 +666,70 @@ async function runGameTick() {
             initializeFactionHomeWorld(world, id);
         });
 
-        // 5.6. Multi-Planet Seeding — ensures every faction capital has ≥2 planets.
-        // Idempotent: skips systems that already have orbit-2 planets.
-        // Once seeded, the planets are part of the snapshot and synced to all clients.
-        // Keyed by FACTION, not by system id. It used to be keyed by the four
-        // hardcoded capital system ids, so the ten factions with placeholder
-        // capitals silently got no secondary planets at all — and any future
-        // capital move would have quietly orphaned the table again.
-        const SECONDARY_PLANET_SPECS: Record<string, Array<{ name: string; planetType: string; ownerId: string; tags: string[] }>> = {
+        // 5.6. Home-system flavor bodies — every faction capital gets its two
+        // authored orbital bodies, UNOWNED. They used to be seeded as owned
+        // extras, which silently negated the one-owned-capital start the
+        // explore/expand design depends on: planets are earned by colonization
+        // (PLANET_CLAIM via lib/exploration/colonize-service.ts) or invasion,
+        // never granted here. Moons stay dead matter; everything else is a
+        // colonizable prize sitting in the faction's own front yard.
+        // Keyed by FACTION, not by system id — a placeholder capital gets nothing.
+        const SECONDARY_PLANET_SPECS: Record<string, Array<{ name: string; planetType: string; tags: string[] }>> = {
             'faction-aurelian': [
-                { name: 'Aurel Minor',  planetType: 'industrial',   ownerId: 'faction-aurelian',   tags: ['mining_world'] },
-                { name: 'Aurel Prime II', planetType: 'agricultural', ownerId: 'faction-aurelian', tags: ['fertile_soil'] },
+                { name: 'Aurel Minor',  planetType: 'industrial',   tags: ['mining_world'] },
+                { name: 'Aurel Prime II', planetType: 'agricultural', tags: ['fertile_soil'] },
             ],
             'faction-vektori': [
-                { name: 'Vek Station',  planetType: 'fortress',     ownerId: 'faction-vektori',    tags: ['fortified'] },
-                { name: 'Vek Fringe',   planetType: 'moon',         ownerId: '',                   tags: ['barren'] },
+                { name: 'Vek Station',  planetType: 'fortress',     tags: ['fortified'] },
+                { name: 'Vek Fringe',   planetType: 'moon',         tags: ['barren'] },
             ],
             'faction-null-syndicate': [
-                { name: 'Node-7',       planetType: 'research',     ownerId: 'faction-null-syndicate', tags: ['research_hub'] },
-                { name: 'Null Drift',   planetType: 'standard',     ownerId: '',                   tags: ['arid'] },
+                { name: 'Node-7',       planetType: 'research',     tags: ['research_hub'] },
+                { name: 'Null Drift',   planetType: 'standard',     tags: ['arid'] },
             ],
             'faction-covenant': [
-                { name: 'Sanctum II',   planetType: 'standard',     ownerId: 'faction-covenant',   tags: ['holy_world'] },
-                { name: 'The Void Eye', planetType: 'moon',         ownerId: 'faction-covenant',   tags: ['anomaly'] },
+                { name: 'Sanctum II',   planetType: 'standard',     tags: ['holy_world'] },
+                { name: 'The Void Eye', planetType: 'moon',         tags: ['anomaly'] },
             ],
             'nexulan_convergence': [
-                { name: 'Compute Node Theta', planetType: 'research', ownerId: 'nexulan_convergence', tags: ['research_hub'] },
-                { name: 'Refinery Moon',   planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+                { name: 'Compute Node Theta', planetType: 'research', tags: ['research_hub'] },
+                { name: 'Refinery Moon',   planetType: 'moon',       tags: ['barren'] },
             ],
             'banking_clan': [
-                { name: 'The Depository',  planetType: 'industrial', ownerId: 'banking_clan',        tags: ['trade_hub'] },
-                { name: 'Free Port',       planetType: 'standard',   ownerId: '',                     tags: ['trade_hub'] },
+                { name: 'The Depository',  planetType: 'industrial', tags: ['trade_hub'] },
+                { name: 'Free Port',       planetType: 'standard',   tags: ['trade_hub'] },
             ],
             'faction-rhimetals': [
-                { name: 'Updraft Spire',   planetType: 'research',   ownerId: 'faction-rhimetals',   tags: ['research_hub'] },
-                { name: 'Storm Shelf',     planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+                { name: 'Updraft Spire',   planetType: 'research',   tags: ['research_hub'] },
+                { name: 'Storm Shelf',     planetType: 'moon',       tags: ['barren'] },
             ],
             'faction-gabagoonians': [
-                { name: 'Capacola Terrace', planetType: 'agricultural', ownerId: 'faction-gabagoonians', tags: ['fertile_soil'] },
-                { name: 'Canteen Moon',    planetType: 'moon',       ownerId: 'faction-gabagoonians', tags: ['barren'] },
+                { name: 'Capacola Terrace', planetType: 'agricultural', tags: ['fertile_soil'] },
+                { name: 'Canteen Moon',    planetType: 'moon',       tags: ['barren'] },
             ],
             'faction-infernoids': [
-                { name: 'The Cinder Yards', planetType: 'industrial', ownerId: 'faction-infernoids',  tags: ['mining_world'] },
-                { name: 'Ashfall',         planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+                { name: 'The Cinder Yards', planetType: 'industrial', tags: ['mining_world'] },
+                { name: 'Ashfall',         planetType: 'moon',       tags: ['barren'] },
             ],
             'faction-movanites': [
-                { name: 'Deep Canyon Works', planetType: 'industrial', ownerId: 'faction-movanites',  tags: ['mining_world'] },
-                { name: 'The Overflow',    planetType: 'standard',   ownerId: 'faction-movanites',   tags: ['arid'] },
+                { name: 'Deep Canyon Works', planetType: 'industrial', tags: ['mining_world'] },
+                { name: 'The Overflow',    planetType: 'standard',   tags: ['arid'] },
             ],
             'faction-leopantheri': [
-                { name: 'Starlit Mesa',    planetType: 'research',   ownerId: 'faction-leopantheri', tags: ['research_hub'] },
-                { name: 'The Duelling Ground', planetType: 'standard', ownerId: 'faction-leopantheri', tags: ['holy_world'] },
+                { name: 'Starlit Mesa',    planetType: 'research',   tags: ['research_hub'] },
+                { name: 'The Duelling Ground', planetType: 'standard', tags: ['holy_world'] },
             ],
             'faction-buthari': [
-                { name: 'Terrace Farms',   planetType: 'agricultural', ownerId: 'faction-buthari',   tags: ['fertile_soil'] },
-                { name: 'The High Altar',  planetType: 'fortress',   ownerId: 'faction-buthari',     tags: ['fortified'] },
+                { name: 'Terrace Farms',   planetType: 'agricultural', tags: ['fertile_soil'] },
+                { name: 'The High Altar',  planetType: 'fortress',   tags: ['fortified'] },
             ],
             'faction-sarrak': [
-                { name: 'The Mud Arenas',  planetType: 'fortress',   ownerId: 'faction-sarrak',      tags: ['fortified'] },
-                { name: 'Rootworks',       planetType: 'agricultural', ownerId: 'faction-sarrak',    tags: ['fertile_soil'] },
+                { name: 'The Mud Arenas',  planetType: 'fortress',   tags: ['fortified'] },
+                { name: 'Rootworks',       planetType: 'agricultural', tags: ['fertile_soil'] },
             ],
             'faction-kaerruun': [
-                { name: 'The Hunting Range', planetType: 'fortress', ownerId: 'faction-kaerruun',    tags: ['fortified'] },
-                { name: 'Trophy Moon',     planetType: 'moon',       ownerId: '',                     tags: ['barren'] },
+                { name: 'The Hunting Range', planetType: 'fortress', tags: ['fortified'] },
+                { name: 'Trophy Moon',     planetType: 'moon',       tags: ['barren'] },
             ],
         };
 
@@ -739,15 +742,16 @@ async function runGameTick() {
                 const planetId = `planet-${systemId}-orbit-${i + 2}`;
                 if (!world.construction.planets.has(planetId)) {
                     const spec = specs[i];
+                    const deadMatter = spec.planetType === 'moon';
                     world.construction.planets.set(planetId, {
                         id: planetId,
                         name: spec.name,
-                        ownerId: spec.ownerId,
+                        ownerId: '',
                         systemId,
                         planetType: spec.planetType as any,
-                        infrastructureLevel: 1,
-                        stability: 60 + Math.floor(Math.random() * 25),
-                        happiness: 70,
+                        infrastructureLevel: 0,
+                        stability: 100,
+                        happiness: 50,
                         specialization: null,
                         maxTiles: 6,
                         tiles: [
@@ -756,18 +760,15 @@ async function runGameTick() {
                         ],
                         buildQueue: [],
                         activeModifiers: [],
-                        tags: spec.tags,
-                        population: 10 + Math.floor(Math.random() * 30),
-                        popCapacity: 50,
-                        popGrowth: 0.02,
-                        unrest: Math.floor(Math.random() * 20),
+                        tags: [...spec.tags, deadMatter ? 'dead_matter' : 'colonizable'],
+                        population: 0,
+                        popCapacity: deadMatter ? 0 : 50,
+                        popGrowth: 0,
+                        unrest: 0,
                         isOccupied: false,
-                        demographics: [
-                            { speciesId: 'species-colonist', name: 'Colonists', percentage: 80, socialClass: 'Citizen' },
-                            { speciesId: 'species-labor',    name: 'Labor Caste', percentage: 20, socialClass: 'Resident' },
-                        ],
+                        demographics: [],
                     });
-                    console.log(`[Tick Worker] Seeded secondary planet "${spec.name}" in system ${systemId}.`);
+                    console.log(`[Tick Worker] Seeded unowned flavor body "${spec.name}" in system ${systemId}.`);
                 }
             }
         }
@@ -1149,6 +1150,27 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
     }
     charges.forEach(([key, amt]) => { reserves[key] = (reserves[key] ?? 0) - amt; });
     return true;
+}
+
+/**
+ * Reverse exactly what chargeOrderCost deducted for this action. A refused
+ * order must never be billed — every handler that rejects after the central
+ * charge must call this before returning. Mirrors chargeOrderCost's rules
+ * (untracked resource keys were never charged, so they are never refunded —
+ * refunding unconditionally would MINT resources for sparse-reserve factions
+ * like pirate-successor states).
+ */
+function refundOrderCost(world: any, factionId: string, actionId: string): void {
+    const def = (ACTION_DEFINITIONS as any)[actionId];
+    const cost = def?.cost;
+    if (!cost || Object.keys(cost).length === 0) return;
+    const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
+    if (!reserves) return;
+    for (const [res, amt] of Object.entries(cost)) {
+        const key = res.toUpperCase();
+        if (reserves[key] === undefined) continue; // was never charged
+        reserves[key] = (reserves[key] ?? 0) + (amt as number);
+    }
 }
 
 /**
@@ -4676,17 +4698,67 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'PLANET_CLAIM': {
-             const planet = world.construction.planets.get(payload.planetId);
-             if (!planet) return;
-             // Only unowned/neutral planets can be claimed outright — owned worlds
-             // must be taken by invasion. (Previously any faction could steal any
-             // planet with a single order.)
-             if (planet.ownerId && planet.ownerId !== 'faction-neutral' && planet.ownerId !== '') {
-                 console.warn(`[Security] ${factionId} tried to claim ${planet.name}, already owned by ${planet.ownerId}`);
+             // Colonization: unowned, surveyed worlds only — owned worlds must
+             // be taken by invasion. The registry cost was already charged by
+             // chargeOrderCost, so a refused claim must refund it.
+             const result = colonizePlanet(world, factionId, payload?.planetId);
+             if (!result.ok) {
+                 refundOrderCost(world, factionId, 'PLANET_CLAIM');
+                 recordOrderFailure(world, factionId, 'PLANET_CLAIM', result.reason ?? 'Colonization failed.');
                  return;
              }
-             planet.ownerId = factionId;
-             console.log(`[Order] Faction ${factionId} claimed planet ${planet.name}`);
+             break;
+        }
+
+        case 'EXPLORE_ISSUE_ORDER': {
+             // payload: { fleetId, targetSystemId, mode: 'ping' | 'scan' | 'survey' }
+             // The registry cost was charged centrally before this switch, so
+             // every refusal below must refund — a refused order is never billed.
+             const refuse = (reason: string) => {
+                 refundOrderCost(world, factionId, 'EXPLORE_ISSUE_ORDER');
+                 recordOrderFailure(world, factionId, 'EXPLORE_ISSUE_ORDER', reason);
+             };
+             const { fleetId, targetSystemId, mode } = payload ?? {};
+             const fleet = world.movement.fleets.get(fleetId);
+             if (!fleet || fleet.factionId !== factionId) {
+                 refuse('No such fleet under your command.');
+                 return;
+             }
+             if (!['ping', 'scan', 'survey'].includes(mode)) {
+                 refuse(`Unknown exploration mode: ${mode}`);
+                 return;
+             }
+             const target = world.movement.systems.get(targetSystemId);
+             if (!target) {
+                 refuse('No such system.');
+                 return;
+             }
+             // Scans and surveys need the fleet on-site or one hyperlane hop
+             // out; a ping can reach anywhere sensors do.
+             if (mode !== 'ping') {
+                 const inSystem = fleet.currentSystemId === targetSystemId;
+                 const adjacent = (target.hyperlaneNeighbors ?? []).includes(fleet.currentSystemId);
+                 if (!inSystem && !adjacent) {
+                     refuse(`${target.name ?? targetSystemId} is beyond ${fleet.name ?? 'the fleet'}'s sensor reach — move within one hyperlane first.`);
+                     return;
+                 }
+             }
+             // One in-flight order per (faction, system): the client disables
+             // the button while an order runs, but the worker is authoritative —
+             // without this, every extra click through a stale UI bills 500cr.
+             const inFlight = world.movement.explorationOrders.some((o: any) =>
+                 o.targetSystemId === targetSystemId &&
+                 (o.factionId === factionId || world.movement.fleets.get(o.fleetId)?.factionId === factionId));
+             if (inFlight) {
+                 refuse(`An exploration order for ${target.name ?? targetSystemId} is already underway.`);
+                 return;
+             }
+             const order = issueExploreOrder(fleetId, targetSystemId, mode, world.movement);
+             if (!order) {
+                 refuse('Could not issue exploration order.');
+                 return;
+             }
+             console.log(`[Order] ${factionId} began ${mode} of ${target.name ?? targetSystemId} with ${fleet.name ?? fleetId}.`);
              break;
         }
 

@@ -49,7 +49,7 @@ This design absorbs four systems that currently overlap and disagree.
 - `resolveSeasonTransition()` — a *second, competing* end-of-season path: ranks factions by prestige, awards `Grand Sovereign` / `Exarch` / `Legate` to the top three, writes `legacyPrestigeBonuses`, archives to `hallOfFame`, clears milestones. Explicitly a soft reset: territory, fleets, and tech survive.
 
 **Victory, twice** — neither of which this design keeps as a game-ender:
-- `lib/victory/manager.ts` — `VictoryManager.checkVictory` (economic monopoly ≥ 75%, last faction standing). **Never called anywhere.** Dead code with its own `VictoryState` type in `@/types/victory` that collides by name with the seasons' `VictoryState`.
+- ~~`lib/victory/manager.ts`~~ — `VictoryManager.checkVictory` (economic monopoly ≥ 75%, last faction standing) was never called anywhere; its `VictoryState` type in `@/types/victory` collided by name with the seasons' `VictoryState`. **Deleted** along with the never-rendered `VictoryModal`. The monopoly rule survives as the *Master of Coin* feat.
 - `lib/victory/victory-service.ts` — the Pillar 7 conquest/enlightenment machinery (`ConquestState` with `rebellionPressure`, `EnlightenmentProgress` with qualification/transcendence phases, `PostVictoryTransition` with 48h instability multipliers, `TerritoryPersistenceRecord`). Exercised only by `lib/victory/victory-tests.ts`; not wired into the tick.
 
 **Defeat** (`lib/defeat/manager.ts`, called every tick in step 20):
@@ -60,9 +60,9 @@ This design absorbs four systems that currently overlap and disagree.
 **Six defects the design has to fix, not inherit:**
 1. ~~**Seasons never actually run.**~~ *(fixed — phase 1.)* `scheduleNextSeason` and `tickSeasonModifiers` were reachable only from debug endpoints; the live tick neither started a season, nor applied modifier pressure, nor scheduled the next after a close. The pillar was dormant in production. Step 20 now drives the whole clock.
 2. ~~**Two competing season-end truths.**~~ *(fixed — phase 1.)* The tick closed a season via `MilestoneService.resolveSeasonTransition` (prestige ranking, Grand Sovereign); the debug path closed it via `endSeason` (modifier endurance, Merchant Prince). Merged into one closer, where both scores now have a defined job.
-3. **Two `VictoryState` types** with the same name in different modules, one of them belonging to a system that is never invoked. *(Phase 3 deletes the dead one.)*
+3. ~~**Two `VictoryState` types**~~ *(fixed — dead code deleted.)* `lib/victory/manager.ts`, `@/types/victory` and the never-rendered `components/victory/VictoryModal.tsx` (a literal victory screen — the thing this design forbids) are gone. The seasons' `VictoryState` is now the only one. The monopoly thresholds live on in the feat table above; phase 3 implements the *Master of Coin* evaluator fresh rather than re-homing the dead one.
 4. ~~**Elimination spam.**~~ *(fixed — phase 0.)* `step20` fired a `FACTION ELIMINATED` notification with a fresh `Date.now()` id **every tick** for as long as the condition held. Now latched to status transitions.
-5. **Non-determinism.** ~~`scheduleNextSeason` used `Math.random()`~~ *(fixed — phase 1; seeded on season number, so a restart reschedules the identical season)*; defeat and victory records still stamp `new Date()` rather than the sim clock. Same defect class the pirate migration is eliminating.
+5. ~~**Non-determinism.**~~ *(fixed.)* `scheduleNextSeason` is seeded on the season number (phase 1), and every defeat/victory/title record now stamps `world.nowSeconds` — no `Math.random()`, no wall clock anywhere in `lib/{defeat,seasons,titles,victory}`.
 6. ~~**Titles have no registry.**~~ *(fixed — phase 0.)* `earnedTitles` were loose strings in season records and milestones lived in a separate map; nothing owned the catalog, checked uniqueness, or remembered who held what when. `lib/titles/` does all three.
 
 ---
@@ -250,7 +250,7 @@ Each phase ships alone and is testable alone (tsx scripts, per repo convention �
 
 **Phase 2 — Held titles.** *(shipped — `scripts/test-titles-phase2.ts`, 64 checks.)* All fourteen metrics in `lib/titles/metrics.ts`, hysteresis and transfer in `lib/titles/crown-service.ts`, ratification and tenure at the season close, cosmetic badge/masthead on every transition, `crownStandings()` for the ending-phase UI. *Scourge of the Lanes* is held by pirate organizations, proving the non-faction subject path. Dynasty fires at the third consecutive ratified close; Regicide fires when a crown is taken off a two-season holder. Company metrics remain unwired — the seam is a catalog entry plus a metric function.
 
-**Phase 3 — Feats + leader epithets.** Invoke conquest/enlightenment evaluators from the tick; re-home the monopoly check from dead `VictoryManager` and delete it (resolving the `VictoryState` name collision — `@/types/victory` goes with it); epithet triggers into `Leader.history`. Test: victory-tests migrate and extend.
+**Phase 3 — Feats + leader epithets.** Invoke conquest/enlightenment evaluators from the tick; implement the *Master of Coin* monopoly evaluator (the dead `VictoryManager` that once held the rule is already deleted); epithet triggers into `Leader.history`. Test: victory-tests migrate and extend.
 
 **Phase 4 — Narrative + UI.** Chronicle emission for all transitions (or notification fallback until the narrative system's phase 0 lands); Hall of Fame / crown-board panel; per-faction title case in the faction view.
 

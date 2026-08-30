@@ -17,6 +17,7 @@ import { formSecessionCrises, openSecessions, tickSecession } from '../lib/gover
 import { tickCivilWar, breakawayOrigin } from '../lib/government/civil-war-service';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
 import { getOrCreateRivalry } from '../lib/diplomacy/offer-service';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { Resource } from '../lib/trade-system/types';
 
 const TICK = 6 * 60 * 60;
@@ -50,6 +51,16 @@ function main() {
     world.nowSeconds = 1_800_000_000;
 
     const parentId = 'faction-aurelian';
+
+    // Capital-only starts: a one-world empire correctly reads as
+    // "consolidating" — settle the home system first so the healthy-great-power
+    // baseline below still exercises the normal stance.
+    const parentHomeSys = world.economy.factions.get(parentId)!.capitalSystemId;
+    for (const p of world.construction.planets.values()) {
+        if (!p.ownerId && p.systemId === parentHomeSys && p.tags.includes('colonizable')) {
+            colonizePlanet(world, parentId, p.id);
+        }
+    }
 
     // ── A healthy great power plays normally ─────────────────────────────────
     const healthy = StrategicAIService.assessStance(parentId, world);
