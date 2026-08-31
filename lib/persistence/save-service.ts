@@ -285,6 +285,22 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // snapshot; these are the empire-wide aggregates the UI would otherwise
         // have to recompute on every poll.
         planetaryLogistics: buildPlanetaryLogisticsSummary(world, factionId),
+        // Compact fog map: systemId → revealStage for every system this faction
+        // has at least pinged, plus the systems its fleets are parked in. This
+        // is what lets /api/game/sync fog RIVAL fleets server-side without
+        // deserializing the whole world per poll (the shard-privacy KNOWN GAP):
+        // the route reads the CALLER's shard for this map, then filters every
+        // rival shard's fleet list against it.
+        visibility: (() => {
+            const vis = world.movement.factionVisibility.get(factionId);
+            if (!vis) return {};
+            const out: Record<string, string> = {};
+            for (const [sysId, entry] of Object.entries(vis)) {
+                const stage = (entry as any)?.revealStage;
+                if (stage && stage !== 'unknown') out[sysId] = stage;
+            }
+            return out;
+        })(),
         // NOTE: pirate state deliberately does NOT ride here, and should not be
         // added back. A shard is now owner-scoped ON THE WIRE — /api/game/sync
         // authenticates the caller and serves rivals only the public projection

@@ -171,33 +171,35 @@ export default function GameShell() {
             // The server resolves that from the session now and answers with
             // `myFactionId` / `isMine`; it no longer hands out other players'
             // account ids for the client to compare against.
-            let claims: Record<string, { isMine: boolean }> = {};
+            let serverAnswered = false;
             try {
                 const res = await fetch('/api/lobby/claim');
-                const data = await res.json();
-                claims = data.claimedFactions || {};
-                if (data.myFactionId) {
-                    localStorage.setItem('selectedFactionId', data.myFactionId);
-                    setPlayerFactionId(data.myFactionId);
-                    return;
+                if (res.ok) {
+                    const data = await res.json();
+                    serverAnswered = true;
+                    if (data.myFactionId) {
+                        localStorage.setItem('selectedFactionId', data.myFactionId);
+                        setPlayerFactionId(data.myFactionId);
+                        return;
+                    }
                 }
-            } catch { /* fall back to local selection below */ }
+            } catch { /* transient failure — resolved below */ }
 
-            const saved = localStorage.getItem('selectedFactionId');
-            if (saved) {
-                // Stale selection guard: if the locally remembered faction is
-                // claimed by a DIFFERENT account, playing it would just get every
-                // order rejected with 403 — send the player to the lobby instead.
-                const claimant = claims[saved];
-                if (claimant && !claimant.isMine) {
-                    localStorage.removeItem('selectedFactionId');
-                    router.replace('/lobby');
-                    return;
-                }
-                setPlayerFactionId(saved);
-            } else {
+            if (serverAnswered) {
+                // The server said this account has NO claim. A stale
+                // localStorage selection used to let the account enter the game
+                // as any UNCLAIMED faction anyway. No claim → the lobby, always.
+                localStorage.removeItem('selectedFactionId');
                 router.replace('/lobby');
+                return;
             }
+
+            // Claim API unreachable (blip mid-session): fall back to the local
+            // selection rather than kicking a valid player to the lobby — the
+            // order queue is authoritative and rejects anything illegitimate.
+            const saved = localStorage.getItem('selectedFactionId');
+            if (saved) setPlayerFactionId(saved);
+            else router.replace('/lobby');
         };
 
         checkAuthAndFaction();
@@ -294,8 +296,9 @@ export default function GameShell() {
             {/* ── Manual Guidebook (HOI4-style) ────────────────────────────────── */}
             <ManualGuidebook />
 
-            {/* ── Developer Toolbox (Ctrl+D) ───────────────────────────────────── */}
-            <DevToolbox />
+            {/* ── Developer Toolbox (Ctrl+D) — dev builds only. In production it
+                 rendered "Auth: Root Admin" controls to every player. ───────── */}
+            {process.env.NODE_ENV !== 'production' && <DevToolbox />}
 
         </div>
     );

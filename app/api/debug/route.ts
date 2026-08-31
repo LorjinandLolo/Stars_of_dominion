@@ -7,6 +7,18 @@ import { establishForwardBase, dismantleForwardBase } from '@/lib/movement/forwa
 
 export async function POST(req: NextRequest) {
     try {
+        // Dev-only surface. It mutates the Next process's own world singleton
+        // (not the worker's authoritative one), but "mostly harmless" is not a
+        // security posture: in production it answers only to the admin secret,
+        // and with no secret configured it is off.
+        if (process.env.NODE_ENV === 'production') {
+            const adminSecret = process.env.GAME_ADMIN_SECRET;
+            const provided = req.headers.get('x-admin-secret');
+            if (!adminSecret || provided !== adminSecret) {
+                return NextResponse.json({ error: 'Debug endpoint disabled in production.' }, { status: 403 });
+            }
+        }
+
         const { action, payload } = await req.json();
         const world = getGameWorldState();
 

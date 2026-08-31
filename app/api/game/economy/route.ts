@@ -3,11 +3,22 @@ export const dynamic = 'force-dynamic';
 import { prisma } from '@/lib/db';
 import { getEconomyState } from '@/lib/economy/economy-service';
 import { deserializeWorld, injectFactionShard } from '@/lib/persistence/save-service';
+import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 
 const SESSION_DOC_ID = 'default-session';
 
 export async function GET(req: NextRequest) {
     try {
+        // Identity from the session cookie, never from a query parameter — this
+        // route used to hand any caller any faction's reserves, treasury and
+        // debt for a ?factionId= they typed themselves.
+        const { userId, factionId: callerFactionId } = await resolveCallerFaction(req);
+        if (!userId) {
+            return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+        }
+        if (!callerFactionId) {
+            return NextResponse.json({ error: 'No faction claimed — claim one in the lobby first.' }, { status: 403 });
+        }
         // Load the worker's persisted world. The Next.js process singleton is a
         // different process from the game-loop worker, so reading it showed a
         // freshly built world instead of the simulated one.
@@ -34,11 +45,7 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        // Use the requesting player's faction (falling back to Aurelian only if none was
-        // supplied) so each player sees their own economy rather than a hardcoded one.
-        const { searchParams } = new URL(req.url);
-        const playerFactionId = searchParams.get('factionId') || 'faction-aurelian';
-
+        const playerFactionId = callerFactionId;
         const state = getEconomyState(world, playerFactionId);
 
         return NextResponse.json({

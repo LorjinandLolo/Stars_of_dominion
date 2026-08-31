@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
-import { projectShardForCaller } from '@/lib/persistence/shard-privacy';
+import { projectShardForCaller, viewerContextFromOwnShard } from '@/lib/persistence/shard-privacy';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +57,19 @@ export async function GET(req: NextRequest) {
 
         const sessionChanged = !sessionSince || session.updatedAt > new Date(sessionSince);
 
+        // The caller's own shard carries their fog map (`visibility`) and fleet
+        // positions — the ViewerContext every RIVAL shard's fleet list is
+        // filtered against. A delta poll may not include the caller's row (it
+        // only returns rows changed since shardsSince), so fetch it explicitly:
+        // serving rivals unfiltered because the caller's own shard happened to
+        // be quiet would reopen the un-fogged-fleets hole on most polls.
+        let viewer = undefined;
+        if (factionId) {
+            const ownRow = shards.find(s => s.factionId === factionId)
+                ?? await prisma.gameFactionShard.findUnique({ where: { id: factionId } });
+            viewer = viewerContextFromOwnShard(ownRow?.data);
+        }
+
         return NextResponse.json({
             session: sessionChanged
                 ? {
@@ -67,7 +80,7 @@ export async function GET(req: NextRequest) {
             sessionUpdatedAt: session.updatedAt.toISOString(),
             factions: shards.map(s => ({
                 id: s.id,
-                data: projectShardForCaller(s.data, !!factionId && s.factionId === factionId),
+                data: projectShardForCaller(s.data, !!factionId && s.factionId === factionId, viewer),
                 updatedAt: s.updatedAt.toISOString(),
             })),
         });

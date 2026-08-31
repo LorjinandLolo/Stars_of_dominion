@@ -41,8 +41,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
              }
         });
 
-        // Fetch Taken Factions
-        fetch('/api/lobby/claim')
+        // Fetch Taken Factions — and keep fetching. Fourteen friends sit in
+        // this lobby at the same time on launch night; a single fetch on mount
+        // meant nobody saw anyone else's claim until a manual refresh.
+        const fetchClaims = () => fetch('/api/lobby/claim')
             .then(res => res.json())
             .then(data => {
                 if (data.claimedFactions) {
@@ -57,6 +59,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 }
             })
             .catch(err => console.error("Failed to fetch claims:", err));
+
+        fetchClaims();
+        const pollId = setInterval(fetchClaims, 5000);
+        return () => clearInterval(pollId);
     }, [currentUser?.$id]);
 
     const handleSelect = (factionId: string) => {
@@ -84,8 +90,8 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             });
 
             if (!res.ok) {
-                 const err = await res.json();
-                 alert(`Cannot claim faction: ${err.error}`);
+                 const err = await res.json().catch(() => ({}));
+                 alert(err.error || 'That claim did not go through — refresh and try again.');
                  setConfirming(false);
                  return;
             }
@@ -309,8 +315,35 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                                 : 'Select a faction first'}
                 </button>
                 {currentUserHasClaim && !confirming && (
-                    <p className="text-slate-500 text-sm mt-3">
-                        Your choice is locked. Contact an admin if you need to reset your claim.
+                    <div className="mt-3 space-y-1">
+                        <p className="text-slate-500 text-sm">
+                            Your choice is locked for the season.
+                        </p>
+                        <button
+                            onClick={async () => {
+                                if (!window.confirm('Release your faction claim? Anyone can then claim it — including its current empire, mid-flight.')) return;
+                                try {
+                                    const res = await fetch('/api/lobby/claim', { method: 'DELETE' });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (!res.ok) { alert(data.error || 'Could not release the claim.'); return; }
+                                    localStorage.removeItem('selectedFactionId');
+                                    setPlayerFactionId(null as any);
+                                    setSelectedId(null);
+                                    window.location.reload();
+                                } catch {
+                                    alert('Could not reach the server.');
+                                }
+                            }}
+                            className="text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
+                        >
+                            picked wrong? release my claim
+                        </button>
+                    </div>
+                )}
+                {!currentUserHasClaim && !selectedId && Object.keys(takenFactions).length >= 14 && (
+                    <p className="text-amber-500/80 text-sm mt-3 max-w-md mx-auto">
+                        All fourteen factions are claimed for this season. You can watch the
+                        gazette from outside, or ask the host to free a seat.
                     </p>
                 )}
             </div>

@@ -8,6 +8,24 @@ import { getGameWorldState } from '@/lib/game-world-state-singleton';
 import { serializeWorld, deserializeWorld } from '@/lib/persistence/save-service';
 import { getCurrentTickState } from '@/lib/time/tick-scheduler';
 import type { ActionResult } from '@/lib/actions/types';
+import { auth } from '@/lib/auth';
+import { headers } from 'next/headers';
+
+// Single-player dev tooling: these actions snapshot and hot-swap the NEXT
+// process's world singleton, which in the worker-backed multiplayer deployment
+// is not the live game. They are disabled in production (loading a save there
+// would only desync the API process from the worker), and always require a
+// session — deleteSaveAction deletes rows by id.
+async function saveLoadGate(): Promise<string | null> {
+    if (process.env.NODE_ENV === 'production') return 'Save/load is disabled on the multiplayer server.';
+    try {
+        const session = await auth.api.getSession({ headers: await headers() });
+        if (!session?.user?.id) return 'Not signed in.';
+    } catch {
+        return 'Not signed in.';
+    }
+    return null;
+}
 
 // ─── Save ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +34,8 @@ export async function saveGameAction(
     factionId: string
 ): Promise<ActionResult & { saveId?: string }> {
     try {
+        const gateErr = await saveLoadGate();
+        if (gateErr) return { success: false, error: gateErr };
         const world   = getGameWorldState();
         const { tickIndex } = getCurrentTickState();
         const snapshot = serializeWorld(world);
@@ -42,6 +62,8 @@ export async function saveGameAction(
 
 export async function loadGameAction(saveId: string): Promise<ActionResult> {
     try {
+        const gateErr = await saveLoadGate();
+        if (gateErr) return { success: false, error: gateErr };
         const doc = await prisma.gameSave.findUnique({ where: { id: saveId } });
 
         if (!doc?.snapshot) return { success: false, error: 'Save file has no snapshot.' };
@@ -88,6 +110,8 @@ export async function listSavesAction(factionId: string) {
 
 export async function deleteSaveAction(saveId: string): Promise<ActionResult> {
     try {
+        const gateErr = await saveLoadGate();
+        if (gateErr) return { success: false, error: gateErr };
         await prisma.gameSave.delete({ where: { id: saveId } });
         revalidatePath('/');
         return { success: true };

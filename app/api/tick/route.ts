@@ -10,7 +10,11 @@ export async function POST(req: NextRequest) {
     const secret  = req.headers.get('x-cron-secret');
     const allowed = process.env.CRON_SECRET;
 
-    if (allowed && secret !== allowed) {
+    // No secret configured means the endpoint is OFF, not open — the old
+    // guard skipped itself entirely when CRON_SECRET was unset, so a forgotten
+    // env on the self-host let any unauthenticated caller force ticks. (The
+    // game-loop worker drives the real clock; this route is a legacy cron hook.)
+    if (!allowed || secret !== allowed) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

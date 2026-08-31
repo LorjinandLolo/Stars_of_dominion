@@ -50,7 +50,10 @@ function selfTest() {
     console.log(`\n=== self-test against a synthetic shard ===`);
     const shard: any = {
         factionId: 'faction-probe',
-        fleets: [{ id: 'fleet-1', factionId: 'faction-probe', isDetectable: false }],
+        fleets: [
+            { id: 'fleet-1', factionId: 'faction-probe', currentSystemId: 'sys-seen', isDetectable: false },
+            { id: 'fleet-2', factionId: 'faction-probe', currentSystemId: 'sys-dark' },
+        ],
         economy: {
             id: 'faction-probe', name: 'Probe Combine', capitalSystemId: 'sys-1',
             theatreId: 'theatre-probe', civilizationId: 'civ-probe', ideologyId: 'ideo-probe',
@@ -71,14 +74,21 @@ function selfTest() {
         planetaryLogistics: { defensePower: 999 },
     };
 
-    const pub = projectPublicShard(shard);
+    // Rival fleets are FOGGED server-side now: only what the viewer's own fog
+    // map (or fleet presence) entitles them to see. No viewer at all = nothing.
+    const viewer = { visibility: { 'sys-seen': 'scanned' } as Record<string, string>, presenceSystems: new Set<string>() };
+    const pub = projectPublicShard(shard, viewer);
     for (const key of PRIVATE_KEYS) {
         if (pub[key] !== undefined) fail(`self-test: rival payload carries "${key}"`);
     }
     for (const key of PRIVATE_ECONOMY_KEYS) {
         if (pub.economy?.[key] !== undefined) fail(`self-test: rival payload carries economy.${key}`);
     }
-    if (!pub.fleets?.length) fail('self-test: rival payload lost fleets — the galaxy would not render');
+    if (pub.fleets?.length !== 1 || pub.fleets[0].id !== 'fleet-1') {
+        fail(`self-test: viewer with sys-seen scanned should see exactly fleet-1, got [${(pub.fleets ?? []).map((f: any) => f.id).join(', ')}]`);
+    }
+    const blind = projectPublicShard(shard);
+    if (blind.fleets?.length !== 0) fail('self-test: viewer-less rival payload must carry NO fleets (fail closed)');
     if (pub.economy?.capitalSystemId !== 'sys-1') fail('self-test: rival payload lost economy.capitalSystemId');
     if (pub.economy?.name !== 'Probe Combine') fail('self-test: rival payload lost economy.name');
     console.log(`  rival keys kept: [${Object.keys(pub).sort().join(', ')}]`);

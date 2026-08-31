@@ -912,6 +912,15 @@ export function useGameSync() {
                 : '';
             const res = await fetch(`/api/game/sync${params}`, { cache: 'no-store' });
             if (!res.ok) {
+                // An expired better-auth session is not a network problem: a
+                // weeks-long season WILL outlive sessions, and showing
+                // "Connection lost." made an idle friend think the server died.
+                // Reload — the root page renders the login screen for a dead
+                // session, and the game restores itself after sign-in.
+                if (res.status === 401 && typeof window !== 'undefined') {
+                    window.location.reload();
+                    throw new Error('Session expired — returning to sign-in.');
+                }
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body?.error || `Sync failed (${res.status})`);
             }
