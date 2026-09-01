@@ -476,7 +476,26 @@ async function acquireLease(): Promise<boolean> {
     }
     let holder: { holderId: string; expiresAt: number } | null = null;
     try { holder = JSON.parse(doc.snapshot); } catch { holder = null; }
-    if (holder && holder.holderId !== WORKER_ID && holder.expiresAt > now) return false;
+    if (holder && holder.holderId !== WORKER_ID && holder.expiresAt > now) {
+        // The lease says someone holds it — but is the holder ALIVE? A healthy
+        // worker force-saves the session snapshot at least every 30 seconds
+        // (SNAPSHOT_SAVE_EVERY_TICKS), so a session row untouched for minutes
+        // means the holder is gone (OOM-kill, power loss, laptop sleep) and its
+        // unexpired lease is a corpse. This used to freeze the game for up to
+        // 15 minutes after every hard crash and made scripts/clear-lease.ts a
+        // routine ops chore; now the replacement takes over on its own.
+        const HOLDER_DEAD_AFTER_MS = 3 * 60 * 1000;
+        try {
+            const session = await prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID } });
+            const lastSaveMs = session?.updatedAt?.getTime() ?? 0;
+            if (lastSaveMs && now - lastSaveMs < HOLDER_DEAD_AFTER_MS) {
+                return false; // holder demonstrably alive — back off
+            }
+            console.warn(`[Tick Worker] Lease held by ${holder.holderId} but the session has not been saved for ${Math.round((now - lastSaveMs) / 1000)}s — holder presumed dead, taking over.`);
+        } catch {
+            return false; // can't verify liveness — err on the side of not split-braining
+        }
+    }
     await prisma.multiplayerSession.update({ where: { id: LEASE_DOC_ID }, data: leasePayload });
     lastLeaseRenewal = now;
     return true;
@@ -501,6 +520,7 @@ async function runGameTick() {
         return;
     }
     cycleInProgress = true;
+    cycleStartedAtMs = Date.now();
 
     try {
         // Lease renewal — 2 tiny ops per 5 minutes. If another worker has taken
@@ -523,6 +543,18 @@ async function runGameTick() {
         // 2. Advance Simulation Time
         const oldNow = world.nowSeconds;
         world.nowSeconds += TIME_STEP_SECONDS;
+
+        // 3a. Grave-sweep: failed orders are kept as processed=true rows (their
+        // failure reason already reached the player via lastOrderError), and
+        // nothing ever deleted them — weeks of 14 players' rejected clicks grow
+        // the table monotonically. Hourly, drop rows older than a day.
+        if (tickCounter % 720 === 1) {
+            prisma.gameOrder.deleteMany({
+                where: { processed: true, createdAt: { lt: new Date(Date.now() - 24 * 3600 * 1000) } },
+            }).then(r => {
+                if (r.count > 0) console.log(`[Tick Worker] Pruned ${r.count} processed order row(s).`);
+            }).catch(() => { /* retried next hour */ });
+        }
 
         // 3. Process Pending Player Orders (server-side filter on processed=false;
         // executed orders are deleted, so the queue can never starve).
@@ -5310,15 +5342,32 @@ function processSieges(world: GameWorldState) {
     }
 }
 
+// Watchdog: a HUNG cycle (one stuck await on a dead DB connection) leaves the
+// process alive, so `restart: unless-stopped` never fires and the game freezes
+// silently forever — SERVER.md's "the UI works, nothing ever changes" failure.
+// A cycle that has been "in progress" this long is not slow, it is stuck; exit
+// non-zero and let the supervisor (docker restart policy, or the operator's
+// terminal) bring up a fresh worker, which now also self-clears the lease.
+const CYCLE_HANG_LIMIT_MS = 5 * 60 * 1000;
+let cycleStartedAtMs = 0;
+function startHangWatchdog(): void {
+    setInterval(() => {
+        if (cycleInProgress && cycleStartedAtMs && Date.now() - cycleStartedAtMs > CYCLE_HANG_LIMIT_MS) {
+            console.error(`[Tick Worker] WATCHDOG: cycle stuck for ${Math.round((Date.now() - cycleStartedAtMs) / 1000)}s — exiting so a fresh worker can take over.`);
+            process.exit(1);
+        }
+    }, 60 * 1000);
+}
+
 // Start
 async function main() {
     console.log(`[Tick Worker] Starting (worker id: ${WORKER_ID})...`);
     if (!(await acquireLease())) {
-        console.error('[Tick Worker] Another worker already holds the lease — refusing to start.');
-        console.error(`[Tick Worker] If no other worker is running, the stale lease expires within ${LEASE_TTL_MS / 60000} minutes.`);
+        console.error('[Tick Worker] Another worker already holds the lease and is demonstrably alive — refusing to start.');
         process.exit(1);
     }
     console.log('[Tick Worker] Galactic Heartbeat Started.');
+    startHangWatchdog();
     setInterval(runGameTick, POLL_INTERVAL_MS);
 }
 

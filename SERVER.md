@@ -230,7 +230,13 @@ independently is what makes it a backup rather than a convenience.
 - **Auth errors from other devices** — `BETTER_AUTH_URL` in `.env` must match
   the URL in the players' address bar exactly, scheme and port included.
   Changed it? `docker compose -f compose.prod.yaml up -d` to recreate.
-- **Game state frozen** — worker is down. `docker compose -f compose.prod.yaml logs worker`.
+- **Game state frozen** — worker is down or stuck. `docker compose -f compose.prod.yaml logs worker`.
+  The worker supervises itself: a cycle stuck for 5 minutes makes it exit so
+  the restart policy brings up a fresh one, and a replacement worker detects a
+  dead predecessor on its own (lease holder that hasn't saved the session for
+  3 minutes gets taken over — no more 15-minute stale-lease freeze, and
+  `scripts/clear-lease.ts` is now only for exotic situations, not routine ops).
+  If the log shows crash-loops instead, read the actual error above the exit.
 - **Gazette stays empty** — first check whether anything has actually happened:
   `docker exec -it stardom-postgres psql -U stars -d stars_dominion -c 'select type, importance, "narratedAt" from chronicle_events order by "createdAt" desc limit 10;'`
   (the double quotes are required — Prisma's columns are camelCase, and

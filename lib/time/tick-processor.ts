@@ -581,6 +581,16 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
             if (!isAIRunFaction(world, factionId)) continue;
             processEmpireIntelligenceTurn(factionId, world);
         }
+
+        // Attribution records are appended on every resolved operation and were
+        // never pruned — with AI espionage live that is unbounded growth inside
+        // the shared snapshot, rewritten to Postgres every 30s for weeks. The
+        // ladder from suspicion to exposure only ever reads recent history;
+        // keep the newest 500.
+        const attribution = (world.espionage as any).attributionRecords;
+        if (Array.isArray(attribution) && attribution.length > 500) {
+            attribution.splice(0, attribution.length - 500);
+        }
     } catch (e) {
         console.error('[TickProcessor] step8_intelligence failed:', e);
     }
