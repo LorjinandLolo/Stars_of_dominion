@@ -4,7 +4,8 @@ import React from 'react';
 import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
-import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, LayoutGrid, Crosshair, AlertOctagon, Globe, Anchor, Swords } from 'lucide-react';
+import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer } from 'lucide-react';
+import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -268,14 +269,16 @@ function PlanetCard({
                         UNITS
                     </button>
 
-                    {/* Systems management (legacy multi-tab sheet, player-owned) */}
+                    {/* Planetary construction — where building actually happens.
+                        Was labelled SYSTEMS, which nobody read as "build here". */}
                     {isOwnedByPlayer && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onConstruct(planet.id); }}
-                            className="flex-1 py-1.5 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/50 rounded text-[9px] text-slate-400 font-bold transition-all flex items-center justify-center gap-1"
+                            title="Planetary construction — buildings, orbital structures, infrastructure, logistics"
+                            className="flex-1 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/40 rounded text-[9px] text-sky-300 font-bold transition-all flex items-center justify-center gap-1"
                         >
-                            <LayoutGrid size={10} />
-                            SYSTEMS
+                            <Hammer size={10} />
+                            BUILD
                         </button>
                     )}
 
@@ -810,6 +813,8 @@ export default function SystemContextPanel() {
     const [surveying, setSurveying] = React.useState(false);
     const [sieging, setSieging] = React.useState<string | null>(null);
     const storePlanets = useUIStore(s => s.planets);
+    const storeFactions = useUIStore(s => s.factions);
+    const shipyardSystemIds = useUIStore(s => s.shipyardSystemIds);
     const planets = React.useMemo(() => 
         storePlanets.filter(p => p.systemId === selectedSystemId),
     [storePlanets, selectedSystemId]);
@@ -1179,6 +1184,56 @@ export default function SystemContextPanel() {
                                         </div>
                                     );
                                 }
+                                // Unknown system: a relay ping from the nearest shipyard.
+                                // No fleet needed; the price climbs with distance and the
+                                // worker quotes it with the same function, so this number
+                                // is what the treasury pays.
+                                if (nextMode === 'ping') {
+                                    const capitalId = playerFactionId ? (storeFactions as any)?.[playerFactionId]?.capitalSystemId : undefined;
+                                    const anchors = shipyardSystemIds.length > 0 ? shipyardSystemIds : capitalId ? [capitalId] : [];
+                                    const quote = relayPingQuote(systems as any, anchors, system.id);
+                                    const anchorName = quote.anchorSystemId
+                                        ? (systems.find(s => s.id === quote.anchorSystemId)?.name ?? quote.anchorSystemId)
+                                        : null;
+                                    const fromYard = shipyardSystemIds.length > 0;
+                                    return (
+                                        <div className="py-2">
+                                            <button
+                                                disabled={surveying || !playerFactionId}
+                                                onClick={async () => {
+                                                    setSurveying(true);
+                                                    try {
+                                                        await dispatchOrder({
+                                                            actionId: 'EXPLORE_RELAY_PING',
+                                                            factionId: playerFactionId || 'PLAYER_FACTION',
+                                                            payload: { targetSystemId: system.id },
+                                                            label: `PING SYSTEM: ${system.name ?? system.id}`,
+                                                        });
+                                                    } finally {
+                                                        setSurveying(false);
+                                                    }
+                                                }}
+                                                className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-display text-[10px] tracking-[0.2em] rounded flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                                            >
+                                                <Radar size={14} />
+                                                {surveying ? 'TRANSMITTING ORDER...' : `PING SYSTEM · ${quote.credits.toLocaleString()}cr`}
+                                            </button>
+                                            <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-slate-500 uppercase tracking-wider">
+                                                <span>
+                                                    {anchorName
+                                                        ? <>Relay: <span className="text-slate-300">{anchorName}</span> {fromYard ? '(shipyard)' : '(capital)'}</>
+                                                        : 'No relay point'}
+                                                </span>
+                                                <span>{quote.jumps} {quote.jumps === 1 ? 'jump' : 'jumps'}{quote.metric === 'grid' ? ' · off-lane' : ''}</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 mt-1.5 text-center italic">
+                                                {RELAY_PING_BASE_CREDITS}cr + {RELAY_PING_PER_JUMP_CREDITS}cr per jump from your nearest shipyard
+                                                {!fromYard && capitalId ? ' — build a shipyard closer to ping cheaper' : ''}.
+                                                {' '}Charts the star; scanning and surveying its worlds still takes a fleet within one jump.
+                                            </p>
+                                        </div>
+                                    );
+                                }
                                 return (
                                     <div className="py-2">
                                         <button
@@ -1205,9 +1260,7 @@ export default function SystemContextPanel() {
                                         <p className="text-[9px] text-slate-500 mt-2 text-center italic">
                                             {eligibleFleet
                                                 ? 'Scanners restricted. Full data unavailable until surveyed.'
-                                                : nextMode === 'ping'
-                                                    ? 'No fleet under your command.'
-                                                    : 'Move a fleet within one hyperlane to scan or survey.'}
+                                                : 'Move a fleet within one hyperlane to scan or survey.'}
                                         </p>
                                     </div>
                                 );
@@ -1366,7 +1419,7 @@ export default function SystemContextPanel() {
                             {/* Planet Cards */}
                             {revealStage === 'unknown' ? (
                                 <div className="text-center py-6 text-slate-500 text-[10px] font-display tracking-widest uppercase">
-                                    Sensor data insufficient — ping this system to chart it
+                                    Sensor data insufficient — ping this system from the SYSTEM tab to chart it
                                 </div>
                             ) : loadingPlanets ? (
                                 <div className="space-y-2">

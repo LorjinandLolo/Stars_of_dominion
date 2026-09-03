@@ -401,12 +401,23 @@ export interface FrontierClaim {
 }
 
 export interface ExplorationOrder {
+    /** Empty string for a relay ping — no fleet is involved. */
     fleetId: string;
     /** Stamped at issue time so a refund can find the payer even if the fleet
      *  dies before the order completes. Optional: pre-stamp snapshots lack it. */
     factionId?: string;
     targetSystemId: string;
     mode: 'ping' | 'scan' | 'survey';
+    /**
+     * 'fleet' (default) — a scout on site. 'relay' — a sensor ping bounced
+     * from the faction's nearest shipyard, priced by distance; it needs no
+     * fleet and resolves on completesAt regardless of what the navy is doing.
+     */
+    source?: 'fleet' | 'relay';
+    /** For relay pings: the shipyard system the ping was sent from. */
+    relayFromSystemId?: string;
+    /** For relay pings: what the treasury paid, so the notice can say so. */
+    creditsPaid?: number;
     /** Whether issued by player or by doctrine automation. */
     isAutomated: boolean;
     issuedAt: string;

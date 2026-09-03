@@ -702,6 +702,31 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
                 linkToTab: 'map',
                 payload: { systemId, anomalyId: anomaly.id },
             } as any);
+        },
+        // The reveal itself: tell whoever ordered it that the map changed.
+        // Doctrine automation stays quiet — it would fire every few ticks.
+        (order, factionId, stage) => {
+            if (order.isAutomated) return;
+            const name = world.movement.systems.get(order.targetSystemId)?.name ?? order.targetSystemId;
+            const verb = order.mode === 'ping' ? 'PINGED' : order.mode === 'scan' ? 'SCANNED' : 'SURVEYED';
+            const via = order.source === 'relay'
+                ? `Relayed from ${world.movement.systems.get(order.relayFromSystemId ?? '')?.name ?? 'your sensor net'}${order.creditsPaid ? ` for ${order.creditsPaid} credits` : ''}.`
+                : `Reported by ${world.movement.fleets.get(order.fleetId)?.name ?? 'the fleet'}.`;
+            const next = stage === 'pinged'
+                ? ' Move a fleet within one jump to scan it.'
+                : stage === 'scanned' ? ' Survey it to map its worlds.' : ' Its worlds are mapped — colonizable ones can be settled.';
+            fireNotification({
+                id: `explore-done-${factionId}-${order.targetSystemId}-${order.mode}-${world.nowSeconds}`,
+                factionId,
+                category: 'military',
+                priority: 'normal',
+                title: `${name.toUpperCase()} ${verb}`,
+                body: `${via}${next}`,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                read: false,
+                linkToTab: 'map',
+                payload: { systemId: order.targetSystemId },
+            } as any);
         }
     );
     tickFrontierClaims(world.movement, TICK_DELTA_SECONDS);

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
 import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
@@ -823,6 +824,9 @@ export function useGameSync() {
                 activeFactionId &&
                 (o.factionId === activeFactionId ||
                     world.movement.fleets.get(o.fleetId)?.factionId === activeFactionId)) as any,
+            // Where the player's yards are, so the relay-ping button can quote
+            // the same distance price the worker will charge.
+            shipyardSystemIds: activeFactionId ? shipyardSystemIdsFor(world as any, activeFactionId) : [],
             // The real season — name, phase, deadline — so the client can show
             // "The Beginning" instead of TopNav's old fake epoch calendar.
             seasonInfo: (world as any).activeSeason

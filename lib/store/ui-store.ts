@@ -252,7 +252,9 @@ export interface UIStore {
     factionVisibility: FactionVisibility | null;
     setFactionVisibility: (vis: FactionVisibility | null) => void;
     /** The player's in-flight exploration orders (synced from the worker). */
-    explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; completesAt: string }>;
+    explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; source?: 'fleet' | 'relay'; completesAt: string }>;
+    /** Systems where the player has a working shipyard — relay pings are priced from the nearest one. */
+    shipyardSystemIds: string[];
     /** The live season, straight from the worker's world.activeSeason. */
     seasonInfo: { name: string; seasonNumber: number; phase: string; activatesAt: string; endsAt: string } | null;
     /** The player's latched defeat status (ALIVE / DYING / ELIMINATED). */
@@ -584,6 +586,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     factionVisibility: null,
     setFactionVisibility: (vis: FactionVisibility | null) => set({ factionVisibility: vis }),
     explorationOrders: [],
+    shipyardSystemIds: [],
     seasonInfo: null,
     playerDefeatStatus: null,
 

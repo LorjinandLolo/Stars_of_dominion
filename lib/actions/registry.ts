@@ -795,6 +795,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", targetSystemId: "id", mode: "string" },
     cost: { credits: 500 }
   },
+  EXPLORE_RELAY_PING: {
+    id: "EXPLORE_RELAY_PING",
+    category: "military",
+    params: { targetSystemId: "id" },
+    // Priced by distance from the nearest shipyard, not a flat fee — the
+    // handler quotes and charges it itself (lib/exploration/ping-cost.ts),
+    // so the central affordability gate sees an empty cost here.
+    cost: {}
+  },
   DISCOURSE_POST_OPINION: {
     id: "DISCOURSE_POST_OPINION",
     category: "cultural",

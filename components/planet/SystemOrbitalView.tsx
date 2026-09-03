@@ -554,9 +554,10 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
                 <button
                     onClick={onSystems}
                     disabled={!isOwner}
-                    className="flex items-center justify-center gap-1.5 py-2 rounded border border-slate-700/60 bg-slate-900/60 hover:bg-slate-800/60 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-[9px] font-display tracking-[0.15em] transition-all"
+                    title="Planetary construction — buildings, orbital structures, infrastructure, logistics"
+                    className="flex items-center justify-center gap-1.5 py-2 rounded border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-sky-300 text-[9px] font-display tracking-[0.15em] transition-all"
                 >
-                    <Wrench size={11} /> SYSTEMS
+                    <Hammer size={11} /> BUILD
                 </button>
             </div>
 

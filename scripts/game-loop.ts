@@ -26,7 +26,8 @@ const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
-import { issueExploreOrder } from '../lib/exploration/exploration-service';
+import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
+import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
@@ -4881,6 +4882,45 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  return;
              }
              console.log(`[Order] ${factionId} began ${mode} of ${target.name ?? targetSystemId} with ${fleet.name ?? fleetId}.`);
+             break;
+        }
+
+        case 'EXPLORE_RELAY_PING': {
+             // payload: { targetSystemId }
+             // A sensor ping bounced from the nearest shipyard: no fleet needed,
+             // priced by distance. The registry cost is empty, so nothing was
+             // charged centrally — quote, check and deduct here, and only after
+             // every refusal below, so a refused ping never bills.
+             const { targetSystemId } = payload ?? {};
+             const target = world.movement.systems.get(targetSystemId);
+             if (!target) {
+                 recordOrderFailure(world, factionId, actionId, 'No such system.');
+                 return;
+             }
+             const stage = world.movement.factionVisibility.get(factionId)?.[targetSystemId]?.revealStage ?? 'unknown';
+             if (stage !== 'unknown') {
+                 recordOrderFailure(world, factionId, actionId,
+                     `${target.name ?? targetSystemId} is already charted — bring a fleet within one jump to scan or survey it.`);
+                 return;
+             }
+             const inFlight = world.movement.explorationOrders.some((o: any) =>
+                 o.targetSystemId === targetSystemId &&
+                 (o.factionId === factionId || world.movement.fleets.get(o.fleetId)?.factionId === factionId));
+             if (inFlight) {
+                 recordOrderFailure(world, factionId, actionId,
+                     `An exploration order for ${target.name ?? targetSystemId} is already underway.`);
+                 return;
+             }
+             const quote = quoteRelayPing(world, factionId, targetSystemId);
+             const reserves = world.economy?.factions?.get?.(factionId)?.reserves as Record<string, number> | undefined;
+             if (reserves && reserves.CREDITS !== undefined && (reserves.CREDITS ?? 0) < quote.credits) {
+                 recordOrderFailure(world, factionId, actionId,
+                     `Relay ping of ${target.name ?? targetSystemId} costs ${quote.credits} credits (${quote.jumps} jumps from your nearest yard); the treasury holds ${Math.floor(reserves.CREDITS ?? 0)}.`);
+                 return;
+             }
+             if (reserves && reserves.CREDITS !== undefined) reserves.CREDITS -= quote.credits;
+             issueRelayPing(factionId, targetSystemId, quote.anchorSystemId, quote.credits, world.movement);
+             console.log(`[Order] ${factionId} relay-pinged ${target.name ?? targetSystemId} from ${quote.anchorSystemId ?? 'nowhere'} (${quote.jumps} jumps, ${quote.credits}cr).`);
              break;
         }
 

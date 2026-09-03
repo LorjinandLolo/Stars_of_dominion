@@ -71,6 +71,38 @@ export function issueExploreOrder(
     return order;
 }
 
+/**
+ * Ping a system from a shipyard's sensor array — no fleet involved. The
+ * caller has already quoted and charged the distance price
+ * (lib/exploration/ping-cost.ts); this only schedules the reveal.
+ */
+export function issueRelayPing(
+    factionId: string,
+    targetSystemId: string,
+    relayFromSystemId: string | null,
+    creditsPaid: number,
+    world: MovementWorldState
+): ExplorationOrder {
+    const now = world.nowSeconds;
+    const order: ExplorationOrder = {
+        fleetId: '',
+        factionId,
+        targetSystemId,
+        mode: 'ping',
+        source: 'relay',
+        relayFromSystemId: relayFromSystemId ?? undefined,
+        creditsPaid,
+        isAutomated: false,
+        issuedAt: toISO(now),
+        completesAt: toISO(now + STAGE_DURATIONS.ping),
+    };
+    world.explorationOrders.push(order);
+    return order;
+}
+
+/** Called when any stage lands — the tick layer tells the player who ordered it. */
+export type StageCompleteHook = (order: ExplorationOrder, factionId: string, stage: RevealStage) => void;
+
 // ─── Advance exploration tick ──────────────────────────────────────────────────
 
 /**
@@ -82,7 +114,8 @@ export function advanceExploration(
     deltaSeconds: number,
     onSurveyed?: SurveyCompletionHook,
     onOrderLost?: OrderLostHook,
-    onAnomaly?: AnomalyDiscoveredHook
+    onAnomaly?: AnomalyDiscoveredHook,
+    onStageComplete?: StageCompleteHook
 ): void {
     const now = world.nowSeconds;
     const completed: ExplorationOrder[] = [];
@@ -99,7 +132,7 @@ export function advanceExploration(
     world.explorationOrders = remaining;
 
     for (const order of completed) {
-        processCompletedOrder(order, world, onSurveyed, onOrderLost, onAnomaly);
+        processCompletedOrder(order, world, onSurveyed, onOrderLost, onAnomaly, onStageComplete);
     }
 }
 
@@ -108,17 +141,20 @@ function processCompletedOrder(
     world: MovementWorldState,
     onSurveyed?: SurveyCompletionHook,
     onOrderLost?: OrderLostHook,
-    onAnomaly?: AnomalyDiscoveredHook
+    onAnomaly?: AnomalyDiscoveredHook,
+    onStageComplete?: StageCompleteHook
 ): void {
-    const fleet = world.fleets.get(order.fleetId);
-    if (!fleet) {
+    // A relay ping has no fleet to lose — its payer is stamped on the order.
+    const fleet = order.source === 'relay' ? undefined : world.fleets.get(order.fleetId);
+    const factionId = order.source === 'relay' ? order.factionId : fleet?.factionId;
+    if (!factionId) {
         // The scout died (or was merged away) mid-order. Without this hook the
         // order evaporated silently — no reveal, no notice, no refund.
         onOrderLost?.(order);
         return;
     }
 
-    const vis = world.factionVisibility.get(fleet.factionId);
+    const vis = world.factionVisibility.get(factionId);
     if (!vis) return;
 
     const existing = vis[order.targetSystemId];
@@ -163,19 +199,20 @@ function processCompletedOrder(
         fleetId: order.fleetId,
         systemId: order.targetSystemId,
         stage: order.mode,
-        factionId: fleet.factionId,
+        factionId,
         timestamp: world.nowSeconds,
     });
+    onStageComplete?.(order, factionId, effectiveStage);
 
     // On survey: materialize the system's bodies first (via the tick layer's
     // hook), then attempt anomaly attachment — anomalies attach to planets, so
     // the order matters. The anomaly roll fires only on the FIRST survey of a
     // system by anyone; the hook itself is idempotent and always runs.
     if (order.mode === 'survey') {
-        onSurveyed?.(order.targetSystemId, fleet.factionId);
+        onSurveyed?.(order.targetSystemId, factionId);
         if (!surveyedByAnyone) {
-            const found = attachAnomaly(order.targetSystemId, 'onSurvey', fleet.factionId, world);
-            if (found) onAnomaly?.(order.targetSystemId, fleet.factionId, found);
+            const found = attachAnomaly(order.targetSystemId, 'onSurvey', factionId, world);
+            if (found) onAnomaly?.(order.targetSystemId, factionId, found);
         }
     }
 }

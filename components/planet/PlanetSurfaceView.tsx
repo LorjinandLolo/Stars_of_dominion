@@ -25,7 +25,7 @@ import { computeRoadNetwork, computeBridges } from './roadNetwork';
 import { factionColor } from '@/components/galaxy/starVisuals';
 import { terrainCostForCiv } from '@/lib/factions/terrain-affinity';
 import {
-    X, Users, Landmark, Wrench, Heart, AlertTriangle, PanelsTopLeft,
+    X, Users, Landmark, Wrench, Heart, AlertTriangle, PanelsTopLeft, Hammer,
 } from 'lucide-react';
 
 const BUILDING_BY_ID = new Map(BUILDINGS.map(b => [b.id, b]));
@@ -306,9 +306,9 @@ export default function PlanetSurfaceView() {
                         <button
                             onClick={() => setConstructionPlanet(planet.id)}
                             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-[9px] font-display tracking-[0.15em] transition-all"
-                            title="Orbital, infrastructure and logistics management"
+                            title="Planetary construction — buildings, orbital structures, infrastructure, logistics"
                         >
-                            <Wrench size={11} /> SYSTEMS
+                            <Hammer size={11} /> BUILD
                         </button>
                     )}
                     <button
