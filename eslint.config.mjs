@@ -25,6 +25,9 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'react-hooks/exhaustive-deps': 'warn',
+      // Legacy `useEffect(() => setMounted(true), [])` portals and similar
+      // predate the React 19 compiler rules; surface them without failing lint.
+      'react-hooks/set-state-in-effect': 'warn',
       'react/no-unescaped-entities': 'off',
     },
   },

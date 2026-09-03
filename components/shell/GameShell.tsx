@@ -3,6 +3,8 @@
 import React, { useEffect, useRef } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { useGameSync } from '@/hooks/useGameSync';
+import BootScreen from '@/components/auth/BootScreen';
+import { factionColor } from '@/components/galaxy/starVisuals';
 import DraggablePanel from '@/components/ui/DraggablePanel';
 import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
@@ -153,7 +155,19 @@ export default function GameShell() {
     const router = useRouter();
 
     // Sync global state via API polling
-    useGameSync();
+    const { isLoading: syncLoading, error: syncError } = useGameSync();
+
+    // Boot checklist: stays up until the faction is known AND the first
+    // snapshot has landed, so the player sees "faction registered" and the
+    // galaxy count tick in rather than a black map that may or may not be
+    // loading. Once it drops it never comes back for reconnects.
+    const bootDoneRef = useRef(false);
+    const galaxyReady = systems.length > 0;
+    const booting = !bootDoneRef.current && (!playerFactionId || !galaxyReady || syncLoading);
+    if (!booting) bootDoneRef.current = true;
+    const bootFactionName = playerFactionId
+        ? (factions[playerFactionId]?.name ?? playerFactionId.replace(/^faction-/, '').replace(/[_-]/g, ' '))
+        : null;
 
     // On mount: check auth, then reconcile the played faction with the account's
     // ACTUAL claim. localStorage can hold a stale faction (e.g. selected before
@@ -271,6 +285,34 @@ export default function GameShell() {
 
             {/* ── Command Dock: the one persistent navigation surface ───────────── */}
             <CommandDock />
+
+            {/* ── Boot checklist (full overlay until the first snapshot lands) ─── */}
+            <BootScreen
+                visible={booting}
+                title={syncError ? 'Uplink fault' : bootFactionName ? 'Faction registered' : 'Verifying identity'}
+                subtitle={syncError
+                    ? 'The command deck could not reach the galaxy. Retrying…'
+                    : bootFactionName ? `${bootFactionName} answers to you. Synchronizing the galaxy…` : 'Confirming which empire this account commands'}
+                accent={playerFactionId ? factionColor(playerFactionId) : '#f59e0b'}
+                steps={[
+                    { label: 'Identity verified', state: 'done' },
+                    {
+                        label: 'Faction registered',
+                        state: playerFactionId ? 'done' : 'active',
+                        detail: bootFactionName ?? 'Reading your claim',
+                    },
+                    {
+                        label: 'Synchronizing galaxy',
+                        state: syncError ? 'error' : galaxyReady ? 'done' : playerFactionId ? 'active' : 'pending',
+                        detail: syncError ? String(syncError) : galaxyReady ? `${systems.length} systems charted` : 'Pulling the latest snapshot',
+                    },
+                    {
+                        label: 'Command uplink',
+                        state: galaxyReady && !syncLoading ? 'done' : galaxyReady ? 'active' : 'pending',
+                        detail: galaxyReady && !syncLoading ? 'Live' : undefined,
+                    },
+                ]}
+            />
 
             {/* ── Pending orders HUD (optimistic feedback) ───────────────────────── */}
             <PendingOrdersIndicator />

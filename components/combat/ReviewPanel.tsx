@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { UnitCard } from './UnitCard';
+import UnitIcon from '@/components/units/UnitIcon';
 import { GroundUnitType, PlanetaryDefenseState, InvadingForceState } from '@/lib/combat/siege/siege-types';
 import { Shield, Swords, Anchor, X, Users } from 'lucide-react';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -16,23 +17,6 @@ const BATTALION_SIZES: Record<GroundUnitType, number> = {
     SPECIAL_OPS: 100,
     MILITIA: 800,
     ELDER_INFERNOID: 1,   // they are counted one at a time
-};
-
-const UNIT_ICONS: Record<string, string> = {
-    INFANTRY: '🪖',
-    ARMOR: '🛡️',
-    ARTILLERY: '💥',
-    ANTI_ARMOR: '🚀',
-    AIRBORNE: '🪂',
-    SPECIAL_OPS: '🥷',
-    MILITIA: '👨‍🌾',
-    ELDER_INFERNOID: '🗼',
-    CORVETTE: '🛸',
-    DESTROYER: '🚀',
-    CRUISER: '🛰️',
-    BATTLESHIP: '🛸',
-    STATION: '🛰️',
-    DEFENSE_PLATFORM: '🛡️'
 };
 
 interface RenderableUnit {
@@ -482,7 +466,7 @@ export function ReviewPanel() {
                                 <UnitCard
                                     key={u.id}
                                     type={u.type}
-                                    icon={UNIT_ICONS[u.type] || '❓'}
+                                    icon={<UnitIcon type={u.type} size={30} title={u.type.replace(/_/g, ' ')} />}
                                     name={u.type.replace('_', ' ')}
                                     currentHealth={u.currentHealth}
                                     maxHealth={u.maxHealth}
@@ -511,7 +495,9 @@ export function ReviewPanel() {
                                     onClick={() => handleRecruit(type)}
                                     className="w-32 py-3 px-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-center group transition-all flex flex-col items-center hover:bg-slate-800"
                                 >
-                                    <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{UNIT_ICONS[type] || '❓'}</span>
+                                    <span className={`mb-2 p-2 rounded-lg border transition-all group-hover:scale-110 ${isSpaceTheme ? 'text-indigo-300 border-indigo-500/30 bg-indigo-500/10 group-hover:text-amber-300 group-hover:border-amber-500/40' : 'text-slate-300 border-slate-600/50 bg-slate-800/60 group-hover:text-amber-300 group-hover:border-amber-500/40'}`}>
+                                        <UnitIcon type={type} size={28} />
+                                    </span>
                                     <div className="text-[10px] font-bold text-slate-300 group-hover:text-amber-300">{type.replace('_', ' ')}</div>
                                     <div className="text-[9px] text-slate-500 mt-1 flex items-center gap-1">
                                         {isSpaceTheme

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
+import BootScreen from '@/components/auth/BootScreen';
 
 interface LobbyFaction {
     id: string;
@@ -27,6 +28,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const [hoveredId, setHoveredId] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
+    // Set the moment the claim is accepted: the lobby is replaced by the boot
+    // checklist ("faction registered — loading galaxy") until the game route
+    // mounts and GameShell's own boot screen takes over.
+    const [entering, setEntering] = useState<{ name: string; accent: string } | null>(null);
 
     const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -99,6 +104,8 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             // Success
             localStorage.setItem('selectedFactionId', selectedId);
             setPlayerFactionId(selectedId);
+            const picked = factions.find(f => f.id === selectedId);
+            setEntering({ name: picked?.name ?? selectedId, accent: picked?.accentColor ?? '#f59e0b' });
             router.push('/');
         } catch (e) {
             alert('Failed to contact server.');
@@ -109,6 +116,23 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const selected = factions.find(f => f.id === selectedId);
     const hovered = factions.find(f => f.id === hoveredId);
     const currentUserHasClaim = currentUser && Object.values(takenFactions).some((d: any) => d.isMine);
+
+    if (entering) {
+        return (
+            <BootScreen
+                visible
+                title="Faction registered"
+                subtitle={`${entering.name} answers to you. Loading the galaxy…`}
+                accent={entering.accent}
+                steps={[
+                    { label: 'Identity verified', state: 'done', detail: currentUser?.email ?? currentUser?.name },
+                    { label: 'Faction registered', state: 'done', detail: entering.name },
+                    { label: 'Loading galaxy', state: 'active', detail: 'Handing you to the command deck' },
+                    { label: 'Command uplink', state: 'pending' },
+                ]}
+            />
+        );
+    }
 
     return (
         <div

@@ -34,18 +34,18 @@ function clampToViewport(p: { x: number; y: number; w: number; h: number }) {
 }
 
 export default function DraggablePanel({ title, children, initialPos, onClose, onUpdatePos }: DraggablePanelProps) {
-    const [pos, setPos] = useState(initialPos);
+    // Fitted on first render (the store seeds 800×600 blind), then re-fitted
+    // whenever the viewport shrinks under the window.
+    const [pos, setPos] = useState(() => clampToViewport(initialPos));
     const draggingRef = useRef(false);
     const resizingRef = useRef(false);
     const startPosRef = useRef({ x: 0, y: 0, px: 0, py: 0, pw: 0, ph: 0 });
 
-    // Fit on mount and whenever the viewport shrinks under the window.
     useEffect(() => {
         const fit = () => setPos(p => {
             const next = clampToViewport(p);
             return next.x === p.x && next.y === p.y && next.w === p.w && next.h === p.h ? p : next;
         });
-        fit();
         window.addEventListener('resize', fit);
         return () => window.removeEventListener('resize', fit);
     }, []);

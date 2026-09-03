@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
+import BootScreen from './BootScreen';
 
 export default function LoginForm() {
     const router = useRouter();
@@ -22,6 +23,11 @@ export default function LoginForm() {
         });
     }, []);
 
+    // Once credentials clear, the form is replaced by the boot checklist
+    // until the lobby route takes over — a dark screen after clicking
+    // "Initiate Uplink" read as "did it take?" to every first-time tester.
+    const [entering, setEntering] = useState<string | null>(null);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -34,11 +40,11 @@ export default function LoginForm() {
                 // Registers AND signs in on success.
                 await authService.register(email, password, name);
             }
+            setEntering(email);
             router.push('/lobby');
         } catch (err: any) {
             console.error("Auth error:", err);
             setError(err.message || "An unexpected error occurred.");
-        } finally {
             setLoading(false);
         }
     };
@@ -51,13 +57,28 @@ export default function LoginForm() {
         setError(null);
         try {
             await authService.login(devEmail, 'password123');
+            setEntering(devEmail);
             router.push('/lobby');
         } catch (err: any) {
             setError(err.message || 'Quick login failed — run: npm run setup:duel');
-        } finally {
             setLoading(false);
         }
     };
+
+    if (entering) {
+        return (
+            <BootScreen
+                visible
+                title="Identity verified"
+                subtitle="Locating your faction claim…"
+                steps={[
+                    { label: 'Identity verified', state: 'done', detail: entering },
+                    { label: 'Locating faction claim', state: 'active', detail: 'Checking which empire this account commands' },
+                    { label: 'Loading command deck', state: 'pending' },
+                ]}
+            />
+        );
+    }
 
     return (
         <div className="w-full max-w-md p-8 rounded-2xl border border-slate-700/50 bg-slate-900/80 backdrop-blur-xl shadow-2xl relative overflow-hidden group">
