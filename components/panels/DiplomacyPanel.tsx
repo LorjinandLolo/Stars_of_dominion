@@ -16,60 +16,9 @@ import { computeActionSupport, SUPPORT_BAND_LABELS, DiplomaticActionKind } from 
 import { ReputationSignal } from '@/lib/integration/types';
 import DiscourseTerminal from '../politics/DiscourseTerminal';
 import { MessageSquare } from 'lucide-react';
-
-const FACTIONS = [
-    {
-        id: 'faction-aurelian',
-        name: 'Aurelian Combine',
-        color: '#3b82f6',
-        description: 'A centralized industrial hegemony focused on order, expansion, and technological superiority.',
-        alignment: 'Imperial / Order',
-        strength: 'High',
-        leader: 'Archon Valerius',
-        traits: ['Industrial Powerhouse', 'Strict Hierarchy', 'Technological Zeal'],
-    },
-    {
-        id: 'faction-vektori',
-        name: 'Vektori Directorate',
-        color: '#ef4444',
-        description: 'A ruthless corporate-military conglomerate that prioritizes efficiency and profit above all else.',
-        alignment: 'Mercantile / Authoritarian',
-        strength: 'Moderate',
-        leader: 'Director Kaelen',
-        traits: ['Market Manipulation', 'Private Military', 'Resource Efficient'],
-    },
-    {
-        id: 'faction-null-syndicate',
-        name: 'Null Syndicate',
-        color: '#a855f7',
-        description: 'A shadowy network of hackers, smugglers, and information brokers operating from the deep space fringes.',
-        alignment: 'Shadow / Subversive',
-        strength: 'Variable',
-        leader: 'The Whisper',
-        traits: ['Information Warfare', 'Black Market Access', 'Untraceable'],
-    },
-    {
-        id: 'faction-covenant',
-        name: 'Covenant of Shogor',
-        color: '#22c55e',
-        description: 'A religious federation of worlds united by an ancient spiritual mandate.',
-        alignment: 'Federalist / Spiritual',
-        strength: 'Moderate',
-        leader: 'High Priestess Elara',
-        traits: ['Cultural Influence', 'Diplomatic Weight', 'Ancient Wisdom'],
-    },
-];
-
-const ESCALATION_LABELS: Record<number, string> = {
-    0: 'CALM',
-    1: 'RIVALRY',
-    2: 'TENSE',
-    3: 'CONFRONTATION',
-    4: 'COVERT WAR',
-    5: 'COLD WAR',
-    6: 'NEAR-HOT',
-    7: 'AT WAR',
-};
+import ContactSwitcher from './diplomacy/ContactSwitcher';
+import ContactRail from './diplomacy/ContactRail';
+import { buildContacts, ESCALATION_LABELS } from './diplomacy/contact-model';
 
 const BAND_COLORS: Record<string, string> = {
     mandate: 'text-emerald-400',
@@ -188,22 +137,27 @@ export default function DiplomacyPanel() {
     /** Only a mercenary civilization may originate a contract. */
     const isMercenaryCiv = (factions as any)?.[playerState.factionId]?.civilizationId === 'civ-kaerruun';
 
-    const liveFactions = useMemo(() => {
-        return (politicsState.allFactions || []).filter(f => f.id !== playerState.factionId).map(f => {
-            const mock = FACTIONS.find(m => m.id === f.id);
-            return {
-                id: f.id,
-                name: f.name || mock?.name || f.id,
-                color: mock?.color || '#94a3b8',
-                description: mock?.description || 'Data on this faction is restricted or unavailable.',
-                traits: mock?.traits || ['Sovereign State'],
-                ...f
-            };
-        });
-    }, [politicsState.allFactions, playerState.factionId]);
+    const liveFactions = useMemo(() => buildContacts({
+        allFactions: politicsState.allFactions || [],
+        playerFactionId: playerState.factionId,
+        diplomacy: diplomacyState,
+        breakaways: politicsState.government?.breakaways,
+    }), [politicsState.allFactions, politicsState.government?.breakaways, playerState.factionId, diplomacyState]);
 
-    const [selectedFactionId, setSelectedFactionId] = useState(liveFactions[0]?.id || '');
-    const selectedFaction = liveFactions.find(f => f.id === selectedFactionId) || liveFactions[0];
+    // The picked id may lag the faction list (empty until the first sync), so
+    // every order below targets selectedFaction.id, never the raw pick.
+    const [pickedFactionId, setSelectedFactionId] = useState(liveFactions[0]?.id || "");
+    const [swapDir, setSwapDir] = useState<"next" | "prev" | "jump">("jump");
+    const [swapKey, setSwapKey] = useState(0);
+    const selectedFaction = liveFactions.find(f => f.id === pickedFactionId) || liveFactions[0];
+    const selectedFactionId = selectedFaction?.id ?? "";
+
+    const selectContact = (id: string, direction: "next" | "prev" | "jump" = "jump") => {
+        if (id === selectedFactionId) return;
+        setSwapDir(direction);
+        setSwapKey(k => k + 1);
+        setSelectedFactionId(id);
+    };
     
     if (!selectedFaction) {
         return (
@@ -306,73 +260,74 @@ export default function DiplomacyPanel() {
             </div>
 
             <div className="flex flex-1 overflow-hidden">
-                {/* Faction Selector Sidebar */}
-                <div className="w-24 border-r border-white/5 flex flex-col gap-8 py-8 items-center bg-black/20 overflow-y-auto custom-scrollbar">
-                    {liveFactions.map((faction) => (
-                        <button
-                            key={faction.id}
-                            onClick={() => setSelectedFactionId(faction.id)}
-                            className={`group relative w-14 h-14 rounded-2xl border transition-all duration-500 flex items-center justify-center overflow-hidden ${
-                                selectedFactionId === faction.id 
-                                ? 'border-indigo-500 shadow-[0_0_25px_rgba(99,102,241,0.3)] bg-indigo-500/20' 
-                                : 'border-white/5 hover:border-white/20 grayscale opacity-40 hover:opacity-100 hover:grayscale-0 bg-white/5'
+                {/* Main Action Area */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10 bg-[url('/grid-dark.svg')] bg-repeat">
+                    <div className="max-w-5xl mx-auto space-y-8">
+
+                        {/* Who am I talking to — arrows, dropdown, labelled facts */}
+                        <ContactSwitcher
+                            contacts={liveFactions}
+                            selectedId={selectedFaction.id}
+                            onSelect={selectContact}
+                        />
+
+                        {/* Every other empire, one click away */}
+                        <ContactRail
+                            contacts={liveFactions}
+                            selectedId={selectedFaction.id}
+                            onSelect={(id) => selectContact(id, 'jump')}
+                        />
+
+                        {/* The dossier slides in from the side you moved toward. */}
+                        <div
+                            key={swapKey}
+                            className={`space-y-12 ${
+                                swapDir === 'next' ? 'animate-contact-swap-right'
+                                : swapDir === 'prev' ? 'animate-contact-swap-left'
+                                : 'animate-contact-swap-fade'
                             }`}
                         >
-                            <Shield className="w-7 h-7" style={{ color: faction.color }} />
-                            {selectedFactionId === faction.id && (
-                                <div className="absolute left-0 top-0 w-1 h-full bg-indigo-500 shadow-[0_0_10px_indigo]" />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                    ))}
-                </div>
+                        {/* Tension + direct line */}
+                        <div className="flex items-stretch justify-between gap-4 border-b pb-8" style={{ borderColor: `${selectedFaction.color}33` }}>
+                            <div className="glass-panel px-5 py-4 rounded-2xl border-white/10 group cursor-help transition-all hover:bg-white/5 flex items-center gap-6">
+                                <div>
+                                    <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Tension Index</span>
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-3xl font-mono text-white tracking-tighter">
+                                            {rivalry ? rivalry.rivalryScore.toFixed(0) : '—'}
+                                        </div>
+                                        <Activity className={`w-5 h-5 ${(rivalry?.rivalryScore ?? 0) >= 70 ? 'text-rose-400' : 'text-emerald-400'}`} />
+                                    </div>
+                                </div>
+                                {(leverageHeld > 0 || leverageAgainst > 0 || mandate) && (
+                                    <div className="border-l border-white/10 pl-6 space-y-1">
+                                        {(leverageHeld > 0 || leverageAgainst > 0) && (
+                                            <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">
+                                                Leverage <span className="text-emerald-400">{leverageHeld}</span> held
+                                                {' / '}<span className="text-rose-400">{leverageAgainst}</span> against
+                                            </div>
+                                        )}
+                                        {mandate && (
+                                            <div className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest"
+                                                 title={`Granted at ${mandate.supportAtGrant}% public support`}>
+                                                ★ {mandate.label}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
 
-                {/* Main Action Area */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-10 bg-[url('/grid-dark.svg')] bg-repeat">
-                    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in slide-in-from-right-8 duration-700">
-                        
-                        {/* Profile Header */}
-                        <div className="flex items-end justify-between border-b border-white/5 pb-8">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: selectedFaction.color }} />
-                                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em]">Active Contact // {selectedFaction.id}</span>
-                                </div>
-                                <h2 className="text-5xl font-display uppercase tracking-[0.1em] text-white drop-shadow-2xl">{selectedFaction.name}</h2>
-                                <div className="flex gap-2 pt-2">
-                                    {selectedFaction.traits.map((trait: string) => (
-                                        <span key={trait} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-slate-400 uppercase tracking-tighter">{trait}</span>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="text-right glass-panel p-4 rounded-2xl border-white/10 group cursor-help transition-all hover:bg-white/5">
-                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Tension Index</span>
-                                <div className="flex items-center gap-3 justify-end">
-                                    <div className="text-3xl font-mono text-white tracking-tighter">
-                                        {rivalry ? rivalry.rivalryScore.toFixed(0) : '—'}
-                                    </div>
-                                    <Activity className={`w-5 h-5 ${(rivalry?.rivalryScore ?? 0) >= 70 ? 'text-rose-400' : 'text-emerald-400'}`} />
-                                </div>
-                                {(leverageHeld > 0 || leverageAgainst > 0) && (
-                                    <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mt-2">
-                                        Leverage <span className="text-emerald-400">{leverageHeld}</span> held
-                                        {' / '}<span className="text-rose-400">{leverageAgainst}</span> against
-                                    </div>
-                                )}
-                                {mandate && (
-                                    <div className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest mt-1"
-                                         title={`Granted at ${mandate.supportAtGrant}% public support`}>
-                                        ★ {mandate.label}
-                                    </div>
-                                )}
-                            </div>
-                            
-                            <button 
+                            <button
                                 onClick={() => setShowDiscourse(true)}
-                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-display tracking-[0.2em] uppercase flex items-center gap-2 shadow-lg shadow-indigo-900/20 transition-all hover:scale-105 active:scale-95"
+                                className="self-center px-6 py-3 text-white rounded-xl text-[10px] font-display tracking-[0.2em] uppercase flex items-center gap-2 shadow-lg transition-all hover:scale-105 active:scale-95"
+                                style={{
+                                    background: `linear-gradient(135deg, ${selectedFaction.color}cc, ${selectedFaction.color}80)`,
+                                    boxShadow: `0 8px 24px ${selectedFaction.color}33`,
+                                    border: `1px solid ${selectedFaction.color}`,
+                                }}
                             >
                                 <MessageSquare size={16} />
-                                Initiate Direct Discourse
+                                Speak with {selectedFaction.empireName}
                             </button>
                         </div>
 
@@ -1044,6 +999,7 @@ export default function DiplomacyPanel() {
                                 />
                             </div>
                         )}
+                        </div>
                     </div>
                 </div>
             </div>

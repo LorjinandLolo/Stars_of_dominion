@@ -69,6 +69,15 @@ const PORTFOLIO_LABELS: Record<string, string> = {
 
 export function useGameSync() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
+
+    // Mirror the lobby's faction pick into playerState the moment it lands.
+    // Snapshot updates only run when a shard changed, so stamping it there
+    // alone leaves playerState.factionId at '' on a quiet world.
+    useEffect(() => {
+        if (playerFactionId && useUIStore.getState().playerState.factionId !== playerFactionId) {
+            useUIStore.getState().updatePlayer({ factionId: playerFactionId });
+        }
+    }, [playerFactionId]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
@@ -783,6 +792,11 @@ export function useGameSync() {
         const playerFaction = activeFactionId ? world.economy.factions.get(activeFactionId) : undefined;
         const dashboard = piracyState.dashboard;
         const shadowMetrics = {
+            // playerState.factionId had no writer at all — every panel that
+            // filtered "them vs us" on it (diplomacy contacts, rivalry lookups,
+            // galaxy friend/foe rings) compared against ''. Stamp it here from
+            // the same resolved id politicsState uses.
+            ...(activeFactionId ? { factionId: activeFactionId } : {}),
             pirateInvolvementScore: Math.round(playerFaction?.infamy ?? 0),
             infamy: Math.round(dashboard?.infamy ?? playerFaction?.infamy ?? 0),
             heat: Math.round(dashboard?.heat ?? 0),

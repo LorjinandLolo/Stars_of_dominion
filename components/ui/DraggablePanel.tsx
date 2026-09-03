@@ -12,11 +12,43 @@ interface DraggablePanelProps {
     onUpdatePos: (pos: { x: number; y: number; w: number; h: number }) => void;
 }
 
+const EDGE_MARGIN = 8;
+const MIN_W = 360;
+const MIN_H = 280;
+
+/**
+ * Keep a window inside the viewport. The store seeds every float at
+ * 800×600 @ (100,100), which on a narrow pane (the in-app preview is ~830px
+ * wide) put the right third of the panel off-screen with no way to reach it.
+ * Shrink to fit first, then slide back inside.
+ */
+function clampToViewport(p: { x: number; y: number; w: number; h: number }) {
+    if (typeof window === 'undefined') return p;
+    const maxW = Math.max(MIN_W, window.innerWidth - EDGE_MARGIN * 2);
+    const maxH = Math.max(MIN_H, window.innerHeight - EDGE_MARGIN * 2);
+    const w = Math.min(Math.max(MIN_W, p.w), maxW);
+    const h = Math.min(Math.max(MIN_H, p.h), maxH);
+    const x = Math.min(Math.max(EDGE_MARGIN, p.x), window.innerWidth - w - EDGE_MARGIN);
+    const y = Math.min(Math.max(EDGE_MARGIN, p.y), window.innerHeight - h - EDGE_MARGIN);
+    return { x, y, w, h };
+}
+
 export default function DraggablePanel({ title, children, initialPos, onClose, onUpdatePos }: DraggablePanelProps) {
     const [pos, setPos] = useState(initialPos);
     const draggingRef = useRef(false);
     const resizingRef = useRef(false);
     const startPosRef = useRef({ x: 0, y: 0, px: 0, py: 0, pw: 0, ph: 0 });
+
+    // Fit on mount and whenever the viewport shrinks under the window.
+    useEffect(() => {
+        const fit = () => setPos(p => {
+            const next = clampToViewport(p);
+            return next.x === p.x && next.y === p.y && next.w === p.w && next.h === p.h ? p : next;
+        });
+        fit();
+        window.addEventListener('resize', fit);
+        return () => window.removeEventListener('resize', fit);
+    }, []);
 
     const handleMouseDown = (e: React.MouseEvent, type: 'drag' | 'resize') => {
         // Only left click
@@ -43,19 +75,17 @@ export default function DraggablePanel({ title, children, initialPos, onClose, o
             const dy = e.clientY - startPosRef.current.y;
 
             if (draggingRef.current) {
-                const newPos = {
+                setPos(clampToViewport({
                     ...pos,
                     x: startPosRef.current.px + dx,
                     y: startPosRef.current.py + dy
-                };
-                setPos(newPos);
+                }));
             } else if (resizingRef.current) {
-                const newPos = {
+                setPos(clampToViewport({
                     ...pos,
-                    w: Math.max(400, startPosRef.current.pw + dx),
-                    h: Math.max(300, startPosRef.current.ph + dy)
-                };
-                setPos(newPos);
+                    w: startPosRef.current.pw + dx,
+                    h: startPosRef.current.ph + dy
+                }));
             }
         };
 

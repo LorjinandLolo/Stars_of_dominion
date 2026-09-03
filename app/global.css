@@ -96,4 +96,24 @@ body {
   background: radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.15) 0%, transparent 60%),
               radial-gradient(circle at 80% 20%, rgba(88, 28, 135, 0.1) 0%, transparent 40%),
               radial-gradient(circle at 10% 80%, rgba(15, 118, 110, 0.1) 0%, transparent 40%);
-}
+}
+/* Diplomacy: switching the active contact slides the dossier in from the side
+   you moved toward, so the change registers even when two empires look alike. */
+@keyframes contact-swap-right {
+  0%   { opacity: 0; transform: translateX(18px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes contact-swap-left {
+  0%   { opacity: 0; transform: translateX(-18px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes contact-swap-fade {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-contact-swap-right { animation: contact-swap-right 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-contact-swap-left  { animation: contact-swap-left  0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-contact-swap-fade  { animation: contact-swap-fade  0.32s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-contact-swap-right, .animate-contact-swap-left, .animate-contact-swap-fade { animation: none; }
+}
