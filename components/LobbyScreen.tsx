@@ -31,7 +31,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     // Set the moment the claim is accepted: the lobby is replaced by the boot
     // checklist ("faction registered — loading galaxy") until the game route
     // mounts and GameShell's own boot screen takes over.
-    const [entering, setEntering] = useState<{ name: string; accent: string } | null>(null);
+    const [entering, setEntering] = useState<{ name: string; accent: string; registered: boolean } | null>(null);
 
     const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -82,7 +82,11 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const handleConfirm = async () => {
         if (!selectedId || !currentUser) return;
         setConfirming(true);
-        
+        // Boot screen from the click, not from the server's answer — the claim
+        // round-trip is the longest silent moment in the whole flow.
+        const picked = factions.find(f => f.id === selectedId);
+        setEntering({ name: picked?.name ?? selectedId, accent: picked?.accentColor ?? '#f59e0b', registered: false });
+
         try {
             const res = await fetch('/api/lobby/claim', {
                 method: 'POST',
@@ -96,6 +100,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
             if (!res.ok) {
                  const err = await res.json().catch(() => ({}));
+                 setEntering(null);
                  alert(err.error || 'That claim did not go through — refresh and try again.');
                  setConfirming(false);
                  return;
@@ -104,10 +109,10 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             // Success
             localStorage.setItem('selectedFactionId', selectedId);
             setPlayerFactionId(selectedId);
-            const picked = factions.find(f => f.id === selectedId);
-            setEntering({ name: picked?.name ?? selectedId, accent: picked?.accentColor ?? '#f59e0b' });
+            setEntering(e => e ? { ...e, registered: true } : e);
             router.push('/');
         } catch (e) {
+            setEntering(null);
             alert('Failed to contact server.');
             setConfirming(false);
         }
@@ -121,13 +126,15 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
         return (
             <BootScreen
                 visible
-                title="Faction registered"
-                subtitle={`${entering.name} answers to you. Loading the galaxy…`}
+                title={entering.registered ? 'Faction registered' : 'Registering faction'}
+                subtitle={entering.registered
+                    ? `${entering.name} answers to you. Loading the galaxy…`
+                    : `Filing your claim on ${entering.name} with the server…`}
                 accent={entering.accent}
                 steps={[
                     { label: 'Identity verified', state: 'done', detail: currentUser?.email ?? currentUser?.name },
-                    { label: 'Faction registered', state: 'done', detail: entering.name },
-                    { label: 'Loading galaxy', state: 'active', detail: 'Handing you to the command deck' },
+                    { label: 'Faction registered', state: entering.registered ? 'done' : 'active', detail: entering.name },
+                    { label: 'Loading galaxy', state: entering.registered ? 'active' : 'pending', detail: entering.registered ? 'Handing you to the command deck' : undefined },
                     { label: 'Command uplink', state: 'pending' },
                 ]}
             />

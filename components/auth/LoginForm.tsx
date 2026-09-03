@@ -26,12 +26,13 @@ export default function LoginForm() {
     // Once credentials clear, the form is replaced by the boot checklist
     // until the lobby route takes over — a dark screen after clicking
     // "Initiate Uplink" read as "did it take?" to every first-time tester.
-    const [entering, setEntering] = useState<string | null>(null);
+    const [entering, setEntering] = useState<{ who: string; verified: boolean } | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setEntering({ who: email, verified: false });
 
         try {
             if (isLogin) {
@@ -40,10 +41,11 @@ export default function LoginForm() {
                 // Registers AND signs in on success.
                 await authService.register(email, password, name);
             }
-            setEntering(email);
+            setEntering({ who: email, verified: true });
             router.push('/lobby');
         } catch (err: any) {
             console.error("Auth error:", err);
+            setEntering(null);
             setError(err.message || "An unexpected error occurred.");
             setLoading(false);
         }
@@ -55,11 +57,13 @@ export default function LoginForm() {
     const quickLogin = async (devEmail: string) => {
         setLoading(true);
         setError(null);
+        setEntering({ who: devEmail, verified: false });
         try {
             await authService.login(devEmail, 'password123');
-            setEntering(devEmail);
+            setEntering({ who: devEmail, verified: true });
             router.push('/lobby');
         } catch (err: any) {
+            setEntering(null);
             setError(err.message || 'Quick login failed — run: npm run setup:duel');
             setLoading(false);
         }
@@ -69,11 +73,11 @@ export default function LoginForm() {
         return (
             <BootScreen
                 visible
-                title="Identity verified"
-                subtitle="Locating your faction claim…"
+                title={entering.verified ? 'Identity verified' : 'Verifying identity'}
+                subtitle={entering.verified ? 'Locating your faction claim…' : 'Checking your credentials with the server…'}
                 steps={[
-                    { label: 'Identity verified', state: 'done', detail: entering },
-                    { label: 'Locating faction claim', state: 'active', detail: 'Checking which empire this account commands' },
+                    { label: 'Identity verified', state: entering.verified ? 'done' : 'active', detail: entering.who },
+                    { label: 'Locating faction claim', state: entering.verified ? 'active' : 'pending', detail: entering.verified ? 'Checking which empire this account commands' : undefined },
                     { label: 'Loading command deck', state: 'pending' },
                 ]}
             />
