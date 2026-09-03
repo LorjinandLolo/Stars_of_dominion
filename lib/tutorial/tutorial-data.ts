@@ -57,7 +57,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'one-world-start',
         title: 'One World Is All You Get',
-        body: 'Your empire begins with a single capital. The other worlds in your home system are unowned and colonizable — and beyond them, hundreds of unexplored systems. Everything else must be surveyed, settled, or taken.',
+        body: 'Your empire begins with a single capital. The other worlds in your home system are unowned and waiting to be settled — and beyond them, hundreds of unexplored systems. Everything else must be surveyed, settled, or taken.',
         targetElementId: null,
         category: 'galaxy',
         requiredTab: 'galaxy',
@@ -73,7 +73,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'survey-and-colonize',
         title: 'Survey, Then Settle',
-        body: 'Click an unexplored system and PING it, then SCAN, then SURVEY — each reveals more, and a survey charts the system\'s planets (and sometimes an anomaly). Unowned worlds tagged COLONIZABLE can then be settled for 20,000 credits, 1,000 metals and 1,000 food. Your home system\'s spare worlds are the cheapest place to start.',
+        body: 'Click an unexplored system and PING it, then SCAN, then SURVEY — each reveals more, and a survey charts the system\'s planets (and sometimes an anomaly). Unowned worlds marked UNSETTLED can then be settled for 20,000 credits, 1,000 metals and 1,000 food. Your home system\'s spare worlds are the cheapest place to start.',
         targetElementId: null,
         category: 'galaxy',
         requiredTab: 'galaxy',

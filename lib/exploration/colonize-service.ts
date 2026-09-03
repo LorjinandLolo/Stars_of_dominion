@@ -46,12 +46,12 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     if (!constr) return { ok: false, reason: 'No such planet.' };
     if (!isUnowned(constr.ownerId)) return { ok: false, reason: `${constr.name} is already owned.` };
     if (constr.tags?.includes('dead_matter')) {
-        return { ok: false, reason: `${constr.name} cannot support a colony.` };
+        return { ok: false, reason: `${constr.name} cannot support a settlement.` };
     }
     const faction = world.economy.factions.get(factionId);
     if (!faction) return { ok: false, reason: 'Unknown faction.' };
     if (!canSeeSystem(world, factionId, constr.systemId)) {
-        return { ok: false, reason: `${constr.name} has not been surveyed.` };
+        return { ok: false, reason: `${constr.name} has not been surveyed — settlement needs charts.` };
     }
 
     // Rewrite the tag array IN PLACE before the economy record is built — the

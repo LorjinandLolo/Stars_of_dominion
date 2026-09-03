@@ -79,8 +79,8 @@ function chunkUnits(
 }
 
 export function ReviewPanel() {
-    const { 
-        selectedPlanetId, 
+    const {
+        selectedPlanetId,
         selectedFleetId,
         setSelectedPlanet,
         setSelectedFleetId,
@@ -88,7 +88,8 @@ export function ReviewPanel() {
         fleets,
         armies,
         playerFactionId,
-        factions
+        factions,
+        recruitmentJobs,
     } = useUIStore();
 
     /**
@@ -185,6 +186,21 @@ export function ReviewPanel() {
     const isSpaceTheme = activeData.type === 'fleet' || activeData.type === 'orbital';
     const isOwner = selectedPlanet?.ownerId === playerFactionId || selectedFleet?.factionId === playerFactionId;
 
+    // In-production queue for THIS panel's context. Fleet-bound jobs carry
+    // targetFormationId (their planetId is a `formation-` spoof, which is why
+    // they matched no planet's queue and looked like the click was swallowed);
+    // garrison jobs match the planet directly.
+    const relevantFleetIds = new Set(
+        (fleets as any[])
+            .filter(f => f.factionId === playerFactionId
+                && (f.id === selectedFleetId || (selectedPlanet && f.currentSystemId === selectedPlanet.systemId)))
+            .map(f => f.id)
+    );
+    const pendingJobs = (recruitmentJobs ?? []).filter((j: any) =>
+        isSpaceTheme
+            ? (j.targetFormationId && relevantFleetIds.has(j.targetFormationId))
+            : (selectedPlanet && j.planetId === selectedPlanet.id));
+
     const handleRecruit = async (unitType: string) => {
         if (isSpaceTheme) {
             let targetFleetId = selectedFleetId;
@@ -194,17 +210,19 @@ export function ReviewPanel() {
                 if (alliedFleet) {
                     targetFleetId = alliedFleet.id;
                 } else {
-                    // No fleet here yet: commission one first. Non-blocking — the
-                    // pending chip (bottom-left) tracks it; the new fleet appears
-                    // within ~10s, then recruit ships into it.
+                    // No fleet here yet: commission one WITH the clicked hull
+                    // chained into it server-side. The old two-click contract
+                    // (first click = empty task force, second = the ship) read
+                    // as "recruitment is broken" to every first-time tester.
                     await dispatchOrder({
                         actionId: 'MIL_BUILD_FLEET',
                         factionId: playerFactionId || 'PLAYER_FACTION',
                         payload: {
                             planetId: selectedPlanet.id,
-                            systemId: selectedPlanet.systemId
+                            systemId: selectedPlanet.systemId,
+                            recruitUnitType: unitType,
                         },
-                        label: 'Commissioning new fleet (~10s) — then recruit ships into it',
+                        label: `Commissioning fleet + ${unitType.toLowerCase()}`,
                     });
                     return;
                 }
@@ -257,6 +275,12 @@ export function ReviewPanel() {
                     <span className={`absolute left-4 text-[10px] font-display tracking-widest uppercase flex items-center gap-2 ${isSpaceTheme ? 'text-indigo-300' : 'text-slate-400'}`}>
                         {activeData.type === 'fleet' || activeData.type === 'orbital' ? <Anchor size={12} /> : activeData.type === 'invasion' ? <Swords size={12} /> : <Shield size={12} />}
                         {activeData.name} ({units.length} Units)
+                        {pendingJobs.length > 0 && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 normal-case tracking-normal">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                {pendingJobs.map((j: any) => `${j.count}× ${String(j.unitType).toLowerCase()} ${Math.floor(j.progress ?? 0)}%`).join(' · ')}
+                            </span>
+                        )}
                     </span>
 
                     {/* Mode Toggles */}

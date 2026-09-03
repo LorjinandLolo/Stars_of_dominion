@@ -204,7 +204,7 @@ function wedgeOf(x: number, y: number): number {
 
 // ─── Terrain generation ─────────────────────────────────────────────────────
 
-function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean): TerrainType[] {
+function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean): TerrainType[] {
     const pool = ARCHETYPE_TERRAIN[archetype];
 
     // Seed 9-12 terrain blobs at random districts; every district takes the
@@ -241,6 +241,19 @@ function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: 
         }
         return best.terrain;
     });
+
+    // An UNSETTLED world has no cities. A body tagged colonizable/dead_matter
+    // was rendering an urban capital core and metropolitan sprawl before
+    // anyone had ever landed — remap any urban blob to wilderness (ruins on an
+    // arcology: dead megastructure is the fiction, not a living city) and skip
+    // the capital-core seeding entirely. The surface cache keys on tags, so
+    // the moment settlement flips the tags, the settled surface takes over.
+    if (!settled) {
+        for (let i = 0; i < terrain.length; i++) {
+            if (terrain[i] === 'urban') terrain[i] = archetype === 'arcology' ? 'ruins' : 'plains';
+        }
+        return terrain;
+    }
 
     // Capital core: the innermost district is always settled ground. Make the
     // heart urban along with its most hospitable neighbours.
@@ -347,6 +360,7 @@ function generateRegions(
     rand: () => number,
     terrain: TerrainType[],
     seeds: SeedPoint[],
+    settled = true,
 ): { regions: SurfaceRegion[]; regionOf: string[] } {
     // The capital region: every urban district in the settled core.
     const capitalSectors: number[] = [];
@@ -386,11 +400,13 @@ function generateRegions(
 
     regions.push({
         id: 'region-capital',
-        name: 'Capital District',
+        // A world nobody has settled has no Capital District — just the spot
+        // a survey team would put one.
+        name: settled ? 'Capital District' : 'Prime Landing Site',
         kind: 'capital',
         sectorIndexes: capitalSectors,
         color: REGION_COLORS.capital,
-        socialGroups: buildSocialGroups(rand, 'capital'),
+        socialGroups: settled ? buildSocialGroups(rand, 'capital') : [],
     });
 
     memberships.forEach((sectorIdxs, ci) => {
@@ -483,8 +499,12 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
     );
 
     const landBias = /capital|homeworld/i.test(typeHint ?? '');
-    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias);
-    const { regions, regionOf } = generateRegions(rand, terrain, seeds);
+    // Nobody lives on a body that is still waiting to be settled (or that can
+    // never be) — its surface must read as wilderness, not as a city that
+    // predates its own founding.
+    const settled = !(tags?.includes('colonizable') || tags?.includes('dead_matter'));
+    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled);
+    const { regions, regionOf } = generateRegions(rand, terrain, seeds, settled);
 
     const rough = (t: TerrainType) => t === 'mountains' || t === 'volcanic' || t === 'ocean';
     const passable = (t: TerrainType) => t === 'plains' || t === 'desert' || t === 'forest' || t === 'urban';

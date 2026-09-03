@@ -1213,6 +1213,31 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
 }
 
 /**
+ * Charge per-unit recruitment costs (config-priced, count-scaled). Returns
+ * false — after recording the failure for the player — when the faction can't
+ * pay. Untracked reserve keys are free, mirroring chargeOrderCost.
+ */
+function chargeUnitCost(world: any, factionId: string, unitType: string, count: number, actionId: string): boolean {
+    const perUnit = RecruitmentService.unitCost(unitType);
+    const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+    if (!reserves || Object.keys(perUnit).length === 0) return true;
+    const n = Math.max(1, Math.floor(Number(count) || 0));
+    for (const [key, amt] of Object.entries(perUnit)) {
+        if (reserves[key] === undefined) continue;
+        if ((reserves[key] ?? 0) < amt * n) {
+            recordOrderFailure(world, factionId, actionId,
+                `Cannot afford ${n}x ${unitType}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`);
+            return false;
+        }
+    }
+    for (const [key, amt] of Object.entries(perUnit)) {
+        if (reserves[key] === undefined) continue;
+        reserves[key] = (reserves[key] ?? 0) - amt * n;
+    }
+    return true;
+}
+
+/**
  * Reverse exactly what chargeOrderCost deducted for this action. A refused
  * order must never be billed — every handler that rejects after the central
  * charge must call this before returning. Mirrors chargeOrderCost's rules
@@ -2729,24 +2754,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // Config-priced units charge here, scaled by count (the registry
             // cost is static and payload-blind). Elders skip this: they were
             // hand-charged above.
-            if (payload.unitType !== ELDER_UNIT_TYPE) {
-                const perUnit = RecruitmentService.unitCost(payload.unitType);
-                const garrisonReserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
-                if (garrisonReserves && Object.keys(perUnit).length > 0) {
-                    const n = Math.max(1, Math.floor(Number(recruitCount) || 0));
-                    for (const [key, amt] of Object.entries(perUnit)) {
-                        if (garrisonReserves[key] === undefined) continue;
-                        if ((garrisonReserves[key] ?? 0) < amt * n) {
-                            recordOrderFailure(world, factionId, actionId,
-                                `Cannot afford ${n}x ${payload.unitType}: needs ${amt * n} ${key}, has ${Math.floor(garrisonReserves[key] ?? 0)}.`);
-                            return;
-                        }
-                    }
-                    for (const [key, amt] of Object.entries(perUnit)) {
-                        if (garrisonReserves[key] === undefined) continue;
-                        garrisonReserves[key] = (garrisonReserves[key] ?? 0) - amt * n;
-                    }
-                }
+            if (payload.unitType !== ELDER_UNIT_TYPE
+                && !chargeUnitCost(world, factionId, payload.unitType, recruitCount, actionId)) {
+                return;
             }
 
             const job = RecruitmentService.createJob(
@@ -3640,6 +3650,26 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             };
             world.movement.fleets.set(fleetId, newFleet);
             console.log(`[Order] Faction ${factionId} commissioned new fleet ${fleetId} at ${payload.systemId}`);
+
+            // One-click commissioning: the client can ask for the first hull in
+            // the same order (payload.recruitUnitType). Without this, clicking
+            // a ship with no fleet present commissioned an EMPTY task force and
+            // silently required a second click for the actual ship — every
+            // tester read that as "recruitment is broken".
+            if (payload.recruitUnitType && typeof payload.recruitUnitType === 'string') {
+                if (chargeUnitCost(world, factionId, payload.recruitUnitType, 1, actionId)) {
+                    const chainJob = RecruitmentService.createJob(
+                        `formation-${fleetId}`, factionId,
+                        payload.recruitUnitType as GroundUnitType, 1, world.nowSeconds
+                    );
+                    (chainJob as any).targetFormationId = fleetId;
+                    (chainJob as any).isFleet = true;
+                    if (!world.combat) world.combat = {};
+                    if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
+                    world.combat.recruitmentJobs.push(chainJob);
+                    console.log(`[Order] ${factionId} chained 1x ${payload.recruitUnitType} into ${fleetId}.`);
+                }
+            }
             break;
         }
 
@@ -3681,22 +3711,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // entry stays cost:{} because chargeOrderCost can't scale by
             // payload, so the charge lives here. Free identical warships let
             // any player field unlimited battleships for nothing.
-            const unitCount = Math.max(1, Math.floor(Number(payload.count) || 0));
-            const perUnit = RecruitmentService.unitCost(payload.unitType);
-            const recruitReserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
-            if (recruitReserves && Object.keys(perUnit).length > 0) {
-                for (const [key, amt] of Object.entries(perUnit)) {
-                    if (recruitReserves[key] === undefined) continue; // untracked → free
-                    if ((recruitReserves[key] ?? 0) < amt * unitCount) {
-                        recordOrderFailure(world, factionId, 'MIL_RECRUIT_FORMATION_UNIT',
-                            `Cannot afford ${unitCount}x ${payload.unitType}: needs ${amt * unitCount} ${key}, has ${Math.floor(recruitReserves[key] ?? 0)}.`);
-                        return;
-                    }
-                }
-                for (const [key, amt] of Object.entries(perUnit)) {
-                    if (recruitReserves[key] === undefined) continue;
-                    recruitReserves[key] = (recruitReserves[key] ?? 0) - amt * unitCount;
-                }
+            if (!chargeUnitCost(world, factionId, payload.unitType, payload.count, 'MIL_RECRUIT_FORMATION_UNIT')) {
+                return;
             }
             const job = RecruitmentService.createJob(
                 'formation-' + payload.formationId, // Use formationId as planetId spoof

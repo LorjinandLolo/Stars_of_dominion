@@ -58,6 +58,15 @@ const PLANET_TYPE_ICONS: Record<string, { icon: string; color: string }> = {
 const ORBIT_SIZES = [26, 19, 15, 12];
 const ORBIT_COLORS = ['#38bdf8', '#818cf8', '#34d399', '#fb923c'];
 
+/** Display names for internal planet tags — the ids feed the engine, the
+ *  words face players. 'Colony' framing retired in favor of 'settlement'. */
+const TAG_DISPLAY: Record<string, string> = {
+    colonizable: 'unsettled',
+    colony: 'settlement',
+    dead_matter: 'dead matter',
+    settled_core: 'settled core',
+};
+
 interface PlanetCardProps {
     planet: any;
     playerFactionId: string | null;
@@ -192,10 +201,12 @@ function PlanetCard({
                     </div>
                 )}
 
-                {/* Tags row */}
+                {/* Tags row. Internal tag ids stay what the engine and probes
+                    expect; only the DISPLAY vocabulary drops the colonial
+                    framing ("colony" → "settlement"). */}
                 {planet.tags && planet.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
-                        {planet.tags.slice(0, 2).map((tag: string) => (
+                        {planet.tags.slice(0, 2).map((raw: string) => TAG_DISPLAY[raw] ?? raw).map((tag: string) => (
                             <span
                                 key={tag}
                                 className="flex items-center gap-0.5 text-[9px] font-display px-1 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/50"
@@ -336,17 +347,17 @@ function PlanetCard({
                                     e.stopPropagation();
                                     runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
                                 }}
-                                title="Found a colony on this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
+                                title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
                                 className="flex-1 py-1.5 bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/30 rounded text-[9px] text-sky-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
                             >
                                 <Globe size={10} />
-                                {actionBusy === 'claim' ? 'COLONIZING…' : 'COLONIZE · 20k cr'}
+                                {actionBusy === 'claim' ? 'SETTLING…' : 'SETTLE · 20k cr'}
                             </button>
                         )}
                         {isNeutral && !canColonize && (
                             <div className="flex-1 py-1.5 border border-slate-700/40 rounded text-[9px] text-slate-500 font-bold flex items-center justify-center gap-1">
                                 <Globe size={10} />
-                                {planet.tags?.includes('dead_matter') ? 'DEAD MATTER — UNINHABITABLE' : 'SURVEY SYSTEM TO COLONIZE'}
+                                {planet.tags?.includes('dead_matter') ? 'DEAD MATTER — UNINHABITABLE' : 'SURVEY SYSTEM TO SETTLE'}
                             </div>
                         )}
 
@@ -1365,7 +1376,7 @@ export default function SystemContextPanel() {
                                 </div>
                             ) : planets.length === 0 ? (
                                 <div className="text-center py-6 text-slate-500 text-[10px] font-display tracking-widest uppercase">
-                                    No colonized worlds in this system
+                                    No settled worlds in this system
                                 </div>
                             ) : (
                                 planets.map((planet, i) => (

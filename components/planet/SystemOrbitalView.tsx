@@ -38,6 +38,9 @@ export default function SystemOrbitalView() {
     const planets = useUIStore(s => s.planets);
     const factions = useUIStore(s => s.factions);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    const fleets = useUIStore(s => s.fleets);
+    const selectedFleetId = useUIStore(s => s.selectedFleetId);
+    const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
 
     const system = systems.find((s: any) => s.id === systemViewId);
     const systemPlanets = React.useMemo(
@@ -320,6 +323,43 @@ export default function SystemOrbitalView() {
                                 NO CHARTED WORLDS
                             </text>
                         )}
+
+                        {/* Fleets present in-system — same triangles the galaxy
+                            map shows, holding station off the star (orbit of a
+                            specific world is client cosmetics, not sim state).
+                            Click selects the fleet for move/engage orders. */}
+                        {(() => {
+                            const localFleets = (fleets as any[]).filter(f => f.currentSystemId === systemViewId);
+                            if (!localFleets.length) return null;
+                            const baseX = SUN_X + 150;
+                            const baseY = SUN_Y - 170;
+                            return localFleets.slice(0, 8).map((f: any, fi: number) => {
+                                const fx = baseX + (fi % 2) * 130;
+                                const fy = baseY - Math.floor(fi / 2) * 46;
+                                const col = factionColor(f.factionId);
+                                const mine = f.factionId === playerFactionId;
+                                const isSel = selectedFleetId === f.id;
+                                return (
+                                    <g key={`fleet-${f.id}`} className="cursor-pointer"
+                                        onClick={() => setSelectedFleetId(isSel ? null : f.id)}>
+                                        <circle cx={fx} cy={fy} r={22} fill="transparent" />
+                                        {isSel && <circle cx={fx} cy={fy} r={16} fill="none" stroke="#ffffff" strokeWidth={1.2} strokeDasharray="3 4" className="sv-spin" />}
+                                        <polygon
+                                            points={`${fx},${fy - 9} ${fx - 8},${fy + 7} ${fx + 8},${fy + 7}`}
+                                            fill={col}
+                                            stroke="#020617"
+                                            strokeWidth={1}
+                                            opacity={mine ? 1 : 0.85}
+                                        />
+                                        <text x={fx + 14} y={fy + 4} fontSize={11}
+                                            fill={mine ? '#e2e8f0' : '#94a3b8'} fontFamily="var(--font-display)"
+                                            style={{ letterSpacing: '0.08em' }} pointerEvents="none">
+                                            {f.name ?? f.id}
+                                        </text>
+                                    </g>
+                                );
+                            });
+                        })()}
 
                         </g>{/* end camera */}
 
