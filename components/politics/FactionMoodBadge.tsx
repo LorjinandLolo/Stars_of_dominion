@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { DiscourseStance } from '@/lib/politics/faction-discourse-types';
+import { formatPercent } from '@/lib/ui/format';
 
 interface Props {
   satisfaction: number;
@@ -37,7 +38,7 @@ export function FactionMoodBadge({ satisfaction, stance, intensity = 1 }: Props)
     <div className="flex flex-col gap-1.5 min-w-[120px]">
       <div className="flex justify-between items-center text-[10px] uppercase tracking-wider font-bold text-slate-400">
         <span>Satisfaction</span>
-        <span className={satisfaction > 50 ? 'text-emerald-400' : 'text-rose-400'}>{satisfaction}%</span>
+        <span className={satisfaction > 50 ? 'text-emerald-400' : 'text-rose-400'}>{formatPercent(satisfaction, 3)}</span>
       </div>
       
       <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">

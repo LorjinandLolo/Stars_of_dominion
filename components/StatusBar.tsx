@@ -2,6 +2,7 @@ import { Coins, Hammer, FlaskConical, Wheat, Activity, Home } from 'lucide-react
 import React, { useState, useEffect } from 'react';
 import { EconomyState } from '@/types';
 import { useUIStore } from '@/lib/store/ui-store';
+import { formatPercent } from '@/lib/ui/format';
 
 export default function StatusBar({ state }: { state: EconomyState }) {
     const { resources, income_rates, expenses, economic_health, last_updated } = state;
@@ -74,7 +75,7 @@ export default function StatusBar({ state }: { state: EconomyState }) {
                 <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700" title="Stability">
                     <Activity size={14} className={getStabilityColor(stability)} />
                     <span className={`font-display font-bold ${getStabilityColor(stability)}`}>
-                        {Math.floor(stability)}%
+                        {formatPercent(stability, 3)}
                     </span>
                 </div>
                 {economic_health?.status !== 'solvent' && (

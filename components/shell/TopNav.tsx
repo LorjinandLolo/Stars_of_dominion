@@ -25,6 +25,7 @@ import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
 import IdentityBadge from './IdentityBadge';
 import NotificationBell from '../notifications/NotificationBell';
 import TutorialLauncher from '../tutorial/TutorialLauncher';
+import { formatPercent } from '@/lib/ui/format';
 
 interface ResourceChipProps {
     icon: React.ReactNode;
@@ -131,7 +132,7 @@ export default function TopNav() {
                                 style={{ width: `${stability}%` }}
                             />
                         </div>
-                        <span className="text-[9px] font-mono font-bold text-slate-300">{stability}%</span>
+                        <span className="text-[9px] font-mono font-bold text-slate-300">{formatPercent(stability, 3)}</span>
                     </div>
                 </div>
 

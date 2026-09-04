@@ -24,6 +24,7 @@ import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { computeRoadNetwork, computeBridges } from './roadNetwork';
 import { factionColor } from '@/components/galaxy/starVisuals';
 import { terrainCostForCiv } from '@/lib/factions/terrain-affinity';
+import { formatPercent } from '@/lib/ui/format';
 import {
     X, Users, Landmark, Wrench, Heart, AlertTriangle, PanelsTopLeft, Hammer,
 } from 'lucide-react';
@@ -281,14 +282,14 @@ export default function PlanetSurfaceView() {
                         <Users size={11} className="text-slate-500" />{Math.floor(planet.population ?? 0).toLocaleString()}
                     </span>
                     <span className="flex items-center gap-1 text-emerald-400" title="Stability">
-                        <Landmark size={11} />{planet.stability ?? 0}%
+                        <Landmark size={11} />{formatPercent(planet.stability ?? 0, 3)}
                     </span>
                     <span className="flex items-center gap-1 text-pink-400" title="Happiness">
-                        <Heart size={11} />{planet.happiness ?? 0}%
+                        <Heart size={11} />{formatPercent(planet.happiness ?? 0, 1)}
                     </span>
                     {(planet.unrest ?? 0) > 20 && (
                         <span className="flex items-center gap-1 text-amber-400 animate-pulse" title="Unrest">
-                            <AlertTriangle size={11} />{planet.unrest}%
+                            <AlertTriangle size={11} />{formatPercent(planet.unrest, 1)}
                         </span>
                     )}
                     <span className="text-slate-500" title="Developed sectors">{developedCount}/64 developed</span>

@@ -9,7 +9,17 @@ import { safeGenerateFactionReply } from './llm-provider';
 export function buildFactionSystemPrompt(context: FactionContextSummary): string {
   const { empire, faction, speaker } = context;
 
-  return `You are ${speaker.name}, ${speaker.title}, spokesperson for the ${faction.name} inside the empire of ${empire.name}.
+  // A foreign envoy is not a domestic interest group: framing Domina Scalex as
+  // a bloc "inside" the player's empire primed the model to grovel for budget.
+  const foreign = faction.kind === 'empire';
+  const role = foreign
+    ? `envoy of ${faction.name}, a sovereign foreign power in contact with the empire of ${empire.name}`
+    : `spokesperson for the ${faction.name} inside the empire of ${empire.name}`;
+  const standing = foreign
+    ? `Your power's disposition toward ${empire.name} is ${faction.satisfaction}% (100 = cordial, 0 = at war). This should dictate your cooperativeness; you owe them nothing.`
+    : `Your faction's satisfaction is ${faction.satisfaction}% and influence is ${faction.influence}%. This should dictate your cooperativeness.`;
+
+  return `You are ${speaker.name}, ${speaker.title}, ${role}.
 
 You are a political actor, not an assistant. You have interests, fears, demands, and ideological commitments.
 Your tone is ${speaker.tone}. Your political style is ${speaker.politicalStyle}.
@@ -18,7 +28,7 @@ Your core values are: ${speaker.coreValues.join(', ')}.
 RULES:
 1. Stay in character at all times.
 2. Ground your reply strictly in the provided simulation state.
-3. Your faction's satisfaction is ${faction.satisfaction}% and influence is ${faction.influence}%. This should dictate your cooperativeness.
+3. ${standing}
 4. Do not invent new facts, events, or outcomes.
 5. Do not mention being an AI or assistant.
 6. Do not narrate gameplay mechanics.

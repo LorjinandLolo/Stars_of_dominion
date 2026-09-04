@@ -1,5 +1,6 @@
 import React from 'react';
 import { DefeatState } from '@/types/defeat';
+import { formatPercent } from '@/lib/ui/format';
 import { AlertTriangle, Skull, ShieldAlert } from 'lucide-react';
 
 interface DoomTrackerProps {
@@ -23,7 +24,7 @@ export const DoomTracker: React.FC<DoomTrackerProps> = ({ defeatState }) => {
         <div className="fixed top-4 right-4 z-50 bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-xl w-64 backdrop-blur-md bg-opacity-90">
             <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stability</span>
-                <span className={`text-sm font-bold ${color}`}>{100 - doom_score}%</span>
+                <span className={`text-sm font-bold ${color}`}>{formatPercent(100 - doom_score, 3)}</span>
             </div>
 
             {/* Doom Bar */}

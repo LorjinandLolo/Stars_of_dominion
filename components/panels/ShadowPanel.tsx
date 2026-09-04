@@ -16,6 +16,7 @@ import {
     Coins, HandCoins, ShieldAlert, Crosshair, Radio,
 } from 'lucide-react';
 import type { OverlayType } from '@/types/ui-state';
+import { formatPercent } from '@/lib/ui/format';
 
 const SHADOW_OVERLAYS: { type: OverlayType; label: string; icon: React.ReactNode }[] = [
     { type: 'tradeHeat', label: 'Smuggling Density', icon: <ShoppingBag size={12} /> },
@@ -177,7 +178,7 @@ function BandDashboard({ dashboard }: { dashboard: NonNullable<ReturnType<typeof
                                         )}
                                     </span>
                                     <span className="font-mono text-slate-500">
-                                        {wing.pressure}% · mood {wing.satisfaction}
+                                        {wing.pressure}% · mood {formatPercent(wing.satisfaction, 0)}
                                     </span>
                                 </div>
                                 <StatBar

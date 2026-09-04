@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
+import { formatPercent } from '@/lib/ui/format';
+import {
     BarChart3, 
     Handshake, 
     ShieldAlert, 
@@ -112,8 +113,9 @@ export default function EconomicTerminal({
                             <div className="flex items-center gap-2">
                                 <Landmark className="text-amber-400" size={12} />
                                 <span className="text-[10px] text-slate-500 font-bold uppercase">Stability</span>
-                                <span className={`text-[11px] font-mono font-bold ${factions.find(f => f.id === playerFactionId)?.metrics.confidenceIndex || 100 > 70 ? 'text-green-400' : 'text-amber-400'}`}>
-                                    {(factions.find(f => f.id === playerFactionId)?.metrics.confidenceIndex || 100).toFixed(0)}%
+                                {/* `a || 100 > 70` parsed as `a || (100 > 70)` — green for every non-zero value. */}
+                                <span className={`text-[11px] font-mono font-bold ${((factions.find(f => f.id === playerFactionId)?.metrics.confidenceIndex ?? 100) > 70) ? 'text-green-400' : 'text-amber-400'}`}>
+                                    {formatPercent(factions.find(f => f.id === playerFactionId)?.metrics.confidenceIndex ?? 100, 3)}
                                 </span>
                             </div>
                             <div className="w-px h-4 bg-slate-800/50"></div>

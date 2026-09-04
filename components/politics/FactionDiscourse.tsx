@@ -10,6 +10,7 @@ import {
 } from '@/lib/politics/faction-discourse-types';
 import { FactionMoodBadge } from './FactionMoodBadge';
 import { FactionSpeakerCard } from './FactionSpeakerCard';
+import { formatPercent } from '@/lib/ui/format';
 
 interface Props {
   factionId: string;
@@ -135,7 +136,7 @@ export function FactionDiscourse({ factionId }: Props) {
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-slate-500">Stability</span>
-                  <span className="text-slate-300">{context.empire.stability}%</span>
+                  <span className="text-slate-300">{formatPercent(context.empire.stability, 3)}</span>
                 </div>
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-slate-500">Narrative</span>

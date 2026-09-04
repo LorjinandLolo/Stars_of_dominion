@@ -16,6 +16,7 @@ import {
     guaranteeBreakawayAction,
 } from '@/app/actions/politics';
 import type { PolicyOption } from '@/types/ui-state';
+import { formatPercent } from '@/lib/ui/format';
 
 const CATEGORY_ICON: Record<string, React.ReactNode> = {
     military: <ShieldCheck size={14} />,
@@ -105,7 +106,7 @@ function Meter({ label, value, max, color }: { label: string; value: number; max
 }
 
 export default function GovernmentPanel() {
-    const { playerState, politicsState, updatePolitics, setActiveTab, updateDiscourse } = useUIStore();
+    const { playerState, politicsState, updatePolitics, setActiveTab, updateDiscourse, nowSeconds } = useUIStore();
     const gov = politicsState?.government;
     const catalog = politicsState?.policyCatalog;
     const [pending, setPending] = React.useState<string | null>(null);
@@ -125,9 +126,9 @@ export default function GovernmentPanel() {
 
     const activePolicies = gov?.activePolicies ?? politicsState?.activePolicies ?? [];
     const capital = gov?.politicalCapital ?? 0;
-    // Defiance deadlines are sim-clock seconds; the authoritative clock is the
-    // tick timestamp the worker last wrote.
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    // Defiance and secession deadlines are sim-clock seconds (world.nowSeconds
+    // at creation), so they are measured against the synced tick clock — the
+    // wall clock drifts away from it at 15x and is impure in render anyway.
 
     const runResolveDebate = async (questionId: string, resolutionId: string) => {
         setPending(`${questionId}:${resolutionId}`);
@@ -977,10 +978,10 @@ export default function GovernmentPanel() {
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
                                         <div className="text-xs font-display text-slate-200 uppercase tracking-wide group-hover:text-amber-400 transition-colors">{bloc.name}</div>
-                                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">INFLUENCE: {bloc.influence.toFixed(0)}%</div>
+                                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">INFLUENCE: {formatPercent(bloc.influence, 1)}</div>
                                     </div>
                                     <div className={`text-[10px] font-mono font-bold ${bloc.satisfaction > 70 ? 'text-green-400' : bloc.satisfaction < 40 ? 'text-red-400' : 'text-amber-400'}`}>
-                                        {bloc.satisfaction.toFixed(0)}% SATISFIED
+                                        {formatPercent(bloc.satisfaction, 3)} SATISFIED
                                     </div>
                                 </div>
                                 <div className="h-1.5 bg-slate-950 rounded-full overflow-hidden flex gap-0.5">

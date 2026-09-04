@@ -15,6 +15,7 @@ import {
     Loader2
 } from 'lucide-react';
 import { getFactionSpeaker } from '@/lib/ai/faction-personalities';
+import { formatPercent } from '@/lib/ui/format';
 
 export default function DiscoursePanel() {
     const { discourseState, politicsState, updateDiscourse, addDiscourseMessage } = useUIStore();
@@ -136,7 +137,7 @@ export default function DiscoursePanel() {
                                     <div className="flex-1 h-0.5 bg-slate-800 rounded-full overflow-hidden">
                                         <div className="h-full bg-slate-500" style={{ width: `${bloc.satisfaction}%` }} />
                                     </div>
-                                    <span className="text-[8px] font-mono text-slate-600 uppercase">SAT: {bloc.satisfaction}%</span>
+                                    <span className="text-[8px] font-mono text-slate-600 uppercase">SAT: {formatPercent(bloc.satisfaction, 3)}</span>
                                 </div>
                             </button>
                         );
@@ -161,7 +162,7 @@ export default function DiscoursePanel() {
                         <div className="flex items-center gap-4 text-[9px] uppercase tracking-tighter text-slate-500">
                            <div className="flex items-center gap-1.5">
                                <span>Influence</span>
-                               <span className="text-slate-300 font-mono">{summary.faction.influence}%</span>
+                               <span className="text-slate-300 font-mono">{formatPercent(summary.faction.influence, 1)}</span>
                            </div>
                         </div>
                     )}

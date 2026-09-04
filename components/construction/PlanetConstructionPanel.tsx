@@ -11,6 +11,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { OrbitalLayerTab } from './OrbitalLayerTab';
 import { InfrastructureTab } from './InfrastructureTab';
 import { LogisticsTab } from './LogisticsTab';
+import { formatPercent } from '@/lib/ui/format';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -288,15 +289,15 @@ export function PlanetConstructionPanel({
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Heart className="w-3 h-3 text-rose-400" />
-                                        <span className="font-mono text-slate-200">HAP {planet.happiness || 80}%</span>
+                                        <span className="font-mono text-slate-200">HAP {formatPercent(planet.happiness || 80, 1)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Zap className="w-3 h-3 text-amber-400" />
-                                        <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>UNR {(planet.unrest || 0).toFixed(0)}%</span>
+                                        <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>UNR {formatPercent(planet.unrest || 0, 1)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Shield className="w-3 h-3 text-cyan-400" />
-                                        <span className={`font-mono ${planet.stability < 40 ? 'text-red-400' : 'text-slate-200'}`}>STA {(planet.stability || 0).toFixed(0)}%</span>
+                                        <span className={`font-mono ${planet.stability < 40 ? 'text-red-400' : 'text-slate-200'}`}>STA {formatPercent(planet.stability || 0, 3)}</span>
                                     </div>
                                 </div>
                             )}
@@ -764,7 +765,7 @@ export function PlanetConstructionPanel({
                                                             {demo.socialClass}
                                                         </span>
                                                     </div>
-                                                    <span className="font-mono text-slate-400">{demo.percentage}%</span>
+                                                    <span className="font-mono text-slate-400">{formatPercent(demo.percentage, 1)}</span>
                                                 </div>
                                                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                                                     <div 
@@ -794,7 +795,7 @@ export function PlanetConstructionPanel({
                                                 <ShieldCheck className="w-5 h-5 text-emerald-400" />
                                                 <span className="text-sm font-medium text-slate-300">Planetary Stability</span>
                                             </div>
-                                            <span className="text-lg font-bold text-emerald-400">{planet?.stability || 0}%</span>
+                                            <span className="text-lg font-bold text-emerald-400">{formatPercent(planet?.stability || 0, 3)}</span>
                                         </div>
                                         <div className="space-y-3 px-1">
                                             <div className="flex justify-between text-xs text-slate-500">

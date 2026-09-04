@@ -10,6 +10,7 @@ import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
+import { formatPercent } from '@/lib/ui/format';
 
 
 function StatBar({ value, color }: { value: number; color: string }) {
@@ -229,7 +230,7 @@ function PlanetCard({
                                 style={{ width: `${stability}%`, backgroundColor: stability > 60 ? '#22c55e' : stability > 30 ? '#f59e0b' : '#ef4444' }}
                             />
                         </div>
-                        <span className="text-[9px] font-mono text-slate-400">{stability}%</span>
+                        <span className="text-[9px] font-mono text-slate-400">{formatPercent(stability, 3)}</span>
                     </div>
                     {unrest > 0 && (
                         <div className="flex items-center gap-2">
@@ -240,7 +241,7 @@ function PlanetCard({
                                     style={{ width: `${unrest}%` }}
                                 />
                             </div>
-                            <span className="text-[9px] font-mono text-orange-400">{unrest}%</span>
+                            <span className="text-[9px] font-mono text-orange-400">{formatPercent(unrest, 1)}</span>
                         </div>
                     )}
                 </div>

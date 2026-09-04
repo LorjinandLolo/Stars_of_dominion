@@ -117,3 +117,25 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-contact-swap-right, .animate-contact-swap-left, .animate-contact-swap-fade { animation: none; }
 }
+/* Research: a node under active research breathes amber so in-flight work is
+   findable on a canvas of a hundred cards without reading a single label. */
+@keyframes tech-researching {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.8); box-shadow: 0 0 6px rgba(245, 158, 11, 0.25); }
+  50%      { border-color: rgba(252, 211, 77, 1);   box-shadow: 0 0 18px rgba(245, 158, 11, 0.55); }
+}
+.animate-tech-researching { animation: tech-researching 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* Keep the steady glow so the state still reads; drop only the motion. */
+  .animate-tech-researching { animation: none; box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+}
+
+/* Research: an authorized-but-not-yet-synced node ticks its dashed border
+   between dim and bright. No glow, so it never passes for a researching card. */
+@keyframes tech-pending {
+  0%, 100% { border-color: rgba(251, 191, 36, 0.35); }
+  50%      { border-color: rgba(251, 191, 36, 0.9); }
+}
+.animate-tech-pending { animation: tech-pending 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-tech-pending { animation: none; border-color: rgba(251, 191, 36, 0.7); }
+}

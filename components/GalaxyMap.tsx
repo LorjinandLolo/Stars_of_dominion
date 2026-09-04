@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { HexGrid } from '@/lib/hex-grid';
 import { useUIStore } from '@/lib/store/ui-store';
+import { formatPercent } from '@/lib/ui/format';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { Activity } from 'lucide-react';
 import HexCell from './map/HexCell';
@@ -347,7 +348,7 @@ export default function GalaxyMap({ planets, factions, armies, onHexClick, selec
                                 <div className="flex justify-between items-center">
                                     <span className="text-[8px] text-slate-500 uppercase tracking-widest">Internal Stability</span>
                                     <span className={`text-[10px] font-mono ${selectedPlanet.unrest > 80 ? 'text-red-400' : 'text-green-400'}`}>
-                                        {100 - selectedPlanet.unrest}%
+                                        {formatPercent(100 - selectedPlanet.unrest, 3)}
                                     </span>
                                 </div>
                                 <div className="h-1 bg-white/5 rounded-full overflow-hidden">

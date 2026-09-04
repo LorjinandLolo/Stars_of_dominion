@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { sendDiscourseMessageAction, getFactionStatusSummary } from '@/app/actions/discourse';
 import { DiscourseMessage } from '@/lib/politics/faction-discourse-types';
+import { formatPercent } from '@/lib/ui/format';
 
 interface DiscourseTerminalProps {
     factionId: string;
@@ -123,7 +124,7 @@ export default function DiscourseTerminal({ factionId, onClose }: DiscourseTermi
                         <Heart size={12} className="text-rose-400" />
                         <span className="text-[9px] font-mono text-slate-500 uppercase tracking-tighter">Satisfaction:</span>
                         <span className={`text-[9px] font-mono uppercase ${context.faction.satisfaction > 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {context.faction.satisfaction}%
+                            {formatPercent(context.faction.satisfaction, 3)}
                         </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

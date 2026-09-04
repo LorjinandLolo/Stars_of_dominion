@@ -27,6 +27,13 @@ export interface FactionSpeakerProfile {
   negotiationStyle: string;
   worldview: string;
   avatarKey?: string;
+  /**
+   * The civilization this voice belongs to (lib/civilization/data/civilizations.ts).
+   * Lets a faction that has no entry of its own — a breakaway state, a rebel
+   * junta — borrow the voice of its parent civilization instead of a stranger's.
+   * Bloc speakers and the generic envoy pool leave it unset.
+   */
+  civilizationId?: string;
 }
 
 export interface DiscourseMessage {
@@ -56,6 +63,8 @@ export interface FactionContextSummary {
   faction: {
     id: string;
     name: string;
+    /** A bloc inside the player's empire, or a foreign empire on the same channel. */
+    kind?: 'bloc' | 'empire';
     ideology?: string;
     satisfaction: number;
     influence: number;

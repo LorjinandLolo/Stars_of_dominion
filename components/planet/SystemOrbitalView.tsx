@@ -11,6 +11,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { classifyStar, factionColor, hashString } from '@/components/galaxy/starVisuals';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import { ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
+import { formatPercent } from '@/lib/ui/format';
 import {
     X, Globe, Users, Landmark, Heart, ShieldCheck, Wrench, AlertTriangle, Hammer, Swords, Crosshair,
 } from 'lucide-react';
@@ -477,10 +478,10 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
 
             <div className="flex-1 overflow-y-auto">
                 <Stat icon={<Users size={10} />} label="Population" value={Math.floor(planet.population ?? 0).toLocaleString()} />
-                <Stat icon={<Landmark size={10} />} label="Stability" value={`${planet.stability ?? 0}%`} tone={(planet.stability ?? 0) > 50 ? 'text-emerald-400' : 'text-amber-400'} />
-                <Stat icon={<Heart size={10} />} label="Support" value={`${planet.happiness ?? 0}%`} tone="text-pink-400" />
+                <Stat icon={<Landmark size={10} />} label="Stability" value={formatPercent(planet.stability ?? 0, 3)} tone={(planet.stability ?? 0) > 50 ? 'text-emerald-400' : 'text-amber-400'} />
+                <Stat icon={<Heart size={10} />} label="Support" value={formatPercent(planet.happiness ?? 0, 1)} tone="text-pink-400" />
                 {(planet.unrest ?? 0) > 0 && (
-                    <Stat icon={<AlertTriangle size={10} />} label="Unrest" value={`${planet.unrest}%`} tone={(planet.unrest ?? 0) > 30 ? 'text-rose-400' : 'text-slate-300'} />
+                    <Stat icon={<AlertTriangle size={10} />} label="Unrest" value={formatPercent(planet.unrest, 1)} tone={(planet.unrest ?? 0) > 30 ? 'text-rose-400' : 'text-slate-300'} />
                 )}
                 <Stat icon={<Wrench size={10} />} label="Infrastructure" value={`Level ${planet.infrastructureLevel ?? 1}`} />
                 <Stat icon={<ShieldCheck size={10} />} label="Defense" value={'★'.repeat(defenseStars) + '☆'.repeat(5 - defenseStars)} tone="text-amber-300" />
