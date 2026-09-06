@@ -69,13 +69,10 @@ export type { CombatState, ShipDesign, LeadershipWorldState, EmpireDoctrines, Fa
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
-export type OverlayType =
-    | 'tradeHeat'
-    | 'instability'
-    | 'institutionalAlignment'
-    | 'escalation'
-    | 'regionalStability'
-    | 'deepSpace';
+// The four fog-aware lenses (Charted / Relations / Settle / Stability) live in
+// lib/galaxy/overlays.ts; this alias keeps the store's field name.
+import type { OverlayId as OverlayType } from '@/lib/galaxy/overlays';
+export type { OverlayType };
 
 // ─── System Nodes ─────────────────────────────────────────────────────────────
 export interface Anomaly {

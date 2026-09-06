@@ -3,13 +3,21 @@
 import React, { memo } from 'react';
 import { classifyStar, systemSize, revealBrightness, dominantTagVisual, OBSERVABLE_TAGS, PHENOMENA_TAGS, RELATIONSHIP_COLORS } from './starVisuals';
 import type { Relationship } from './starVisuals';
+import type { OverlaySystemStyle } from '@/lib/galaxy/overlays';
 
 interface SystemNodeProps {
     sys: any;
     px: { x: number; y: number };
     isSelected: boolean;
     revealStage: string;
-    styles: any;
+    /**
+     * The active overlay's verdict for this system (lib/galaxy/overlays.ts),
+     * or null when no overlay is on or the overlay has nothing to say here.
+     * It paints the HEX only — the star core always keeps its class colour.
+     */
+    overlay: OverlaySystemStyle | null;
+    /** Hover line for the hex under Charted ('PING 550cr · 2 jumps from …'). */
+    overlayHint?: string | null;
     contested: boolean;
     isMobile: boolean;
     hexPoints: string;
@@ -21,13 +29,12 @@ interface SystemNodeProps {
     isCapital: boolean;
     ownerColor: string;
     relationship: Relationship | null;
-    activeOverlay: string | null;
     showLabel: boolean;
 }
 
 const SystemNode = memo(({
-    sys, px, isSelected, revealStage, styles, contested, isMobile, hexPoints, onSelect, onOrder,
-    targeting, isCapital, ownerColor, relationship, activeOverlay, showLabel,
+    sys, px, isSelected, revealStage, overlay, overlayHint, contested, isMobile, hexPoints, onSelect, onOrder,
+    targeting, isCapital, ownerColor, relationship, showLabel,
 }: SystemNodeProps) => {
     const isOwned = !!sys.ownerId;
     // The star AND its ownership/borders are common knowledge (always shown). "contentsKnown"
@@ -36,8 +43,6 @@ const SystemNode = memo(({
     const star = classifyStar(sys);
     const size = systemSize(sys, isCapital);
     const brightness = revealBrightness(revealStage, isOwned, isCapital);
-    // Overlay heat is intel — only tint the core when the system's contents are known.
-    const coreColor = (activeOverlay && contentsKnown) ? styles.fill : star.core;
     const groupOpacity = isSelected ? 1 : brightness;
 
     const showOwner = isOwned;         // ownership/flag is public
@@ -47,6 +52,18 @@ const SystemNode = memo(({
     // Phenomena (nebula, black hole, …) are drawn big by the dedicated layer, so don't
     // also mark them with a small glyph here.
     const showTag = !!tagMark && (contentsKnown || OBSERVABLE_TAGS.has(tagMark.tag)) && !PHENOMENA_TAGS.has(tagMark.tag);
+
+    // The hex is also the click target, so an overlay with "no fill" still
+    // needs a paintable (transparent) fill or clicks would fall through it.
+    const hexFill = overlay
+        ? (overlay.fill === 'none' ? 'transparent' : overlay.fill)
+        : (showOwner ? `${ownerColor}14` : 'transparent');
+    const hexStroke = isSelected
+        ? 'var(--color-neon-blue)'
+        : overlay
+            ? (overlay.stroke ?? 'transparent')
+            : (showOwner ? `${ownerColor}44` : 'transparent');
+    const hexStrokeWidth = isSelected ? 1.5 : overlay ? (overlay.strokeWidth ?? 1) : 0.75;
 
     return (
         <g
@@ -59,12 +76,19 @@ const SystemNode = memo(({
             }}
             style={{ cursor: targeting ? 'crosshair' : 'pointer', opacity: groupOpacity }}
         >
-            {/* Territory tint + click target (owner tint only when scanned) */}
+            {overlayHint && <title>{overlayHint}</title>}
+
+            {/* Territory tint + click target. With an overlay on, the hex carries
+                the overlay's verdict instead of the baseline owner tint. */}
             <polygon
                 points={hexPoints}
-                fill={showOwner ? `${ownerColor}14` : 'transparent'}
-                stroke={isSelected ? 'var(--color-neon-blue)' : showOwner ? `${ownerColor}44` : 'transparent'}
-                strokeWidth={isSelected ? 1.5 : 0.75}
+                fill={hexFill}
+                fillOpacity={overlay ? overlay.fillOpacity : undefined}
+                stroke={hexStroke}
+                strokeOpacity={overlay && !isSelected ? overlay.strokeOpacity : undefined}
+                strokeWidth={hexStrokeWidth}
+                strokeDasharray={overlay && !isSelected ? overlay.dash : undefined}
+                className={overlay?.pulse ? 'gx-breathe' : undefined}
             />
 
             <g pointerEvents="none">
@@ -100,7 +124,7 @@ const SystemNode = memo(({
                     </>
                 )}
 
-                {/* Star core (by class) */}
+                {/* Star core (by class) — never tinted by an overlay */}
                 {star.dark ? (
                     <>
                         <circle r={size.core} fill={star.core} />
@@ -109,12 +133,12 @@ const SystemNode = memo(({
                     </>
                 ) : star.binary ? (
                     <>
-                        <circle cx={-size.core * 0.55} r={size.core * 0.62} fill={coreColor}
+                        <circle cx={-size.core * 0.55} r={size.core * 0.62} fill={star.core}
                             filter={!isMobile ? 'url(#hex-glow)' : undefined} />
-                        <circle cx={size.core * 0.55} r={size.core * 0.48} fill={coreColor} />
+                        <circle cx={size.core * 0.55} r={size.core * 0.48} fill={star.core} />
                     </>
                 ) : (
-                    <circle r={size.core} fill={coreColor}
+                    <circle r={size.core} fill={star.core}
                         filter={!isMobile ? 'url(#hex-glow)' : undefined} />
                 )}
 
@@ -140,6 +164,30 @@ const SystemNode = memo(({
                             style={{ paintOrder: 'stroke', stroke: '#020617', strokeWidth: 0.7 }}
                         >
                             {tagMark.v.icon}
+                        </text>
+                    </g>
+                )}
+
+                {/* Overlay count badge (Settle sites, pirate influence) — top-LEFT
+                    vertex; the FOB marker owns top-right. */}
+                {overlay?.badge && (
+                    <g transform="translate(-9, -9)">
+                        <circle
+                            r={3}
+                            fill={overlay.badge.hollow ? '#020617' : overlay.badge.color}
+                            fillOpacity={overlay.badge.hollow ? 0.7 : 1}
+                            stroke={overlay.badge.hollow ? overlay.badge.color : '#020617'}
+                            strokeWidth={0.5}
+                        />
+                        <text
+                            textAnchor="middle"
+                            y={1.4}
+                            fontSize={4}
+                            fontFamily="monospace"
+                            fontWeight={700}
+                            fill={overlay.badge.hollow ? overlay.badge.color : '#052e16'}
+                        >
+                            {overlay.badge.count}
                         </text>
                     </g>
                 )}
@@ -184,12 +232,22 @@ const SystemNode = memo(({
         </g>
     );
 }, (prev, next) => {
+    const a = prev.overlay, b = next.overlay;
+    const sameOverlay = a === b || (!!a && !!b &&
+        a.fill === b.fill &&
+        a.fillOpacity === b.fillOpacity &&
+        a.stroke === b.stroke &&
+        a.strokeOpacity === b.strokeOpacity &&
+        a.strokeWidth === b.strokeWidth &&
+        a.dash === b.dash &&
+        a.pulse === b.pulse &&
+        a.badge?.count === b.badge?.count &&
+        a.badge?.color === b.badge?.color &&
+        a.badge?.hollow === b.badge?.hollow);
     return (
+        sameOverlay &&
+        prev.overlayHint === next.overlayHint &&
         prev.sys.id === next.sys.id &&
-        prev.sys.instability === next.sys.instability &&
-        prev.sys.tradeValue === next.sys.tradeValue &&
-        prev.sys.escalationLevel === next.sys.escalationLevel &&
-        prev.sys.security === next.sys.security &&
         prev.sys.ownerId === next.sys.ownerId &&
         prev.sys.tags?.join(',') === next.sys.tags?.join(',') &&
         prev.px.x === next.px.x &&
@@ -203,10 +261,7 @@ const SystemNode = memo(({
         prev.isCapital === next.isCapital &&
         prev.ownerColor === next.ownerColor &&
         prev.relationship === next.relationship &&
-        prev.activeOverlay === next.activeOverlay &&
-        prev.showLabel === next.showLabel &&
-        prev.styles.fill === next.styles.fill &&
-        prev.styles.opacity === next.styles.opacity
+        prev.showLabel === next.showLabel
     );
 });
 

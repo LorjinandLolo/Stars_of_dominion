@@ -12,17 +12,20 @@
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
-    Skull, Flame, Network, ShoppingBag, Users, Eye, Map, Anchor,
+    Skull, Flame, Network, ShoppingBag, Users, Map, Anchor,
     Coins, HandCoins, ShieldAlert, Crosshair, Radio,
 } from 'lucide-react';
-import type { OverlayType } from '@/types/ui-state';
 import { formatPercent } from '@/lib/ui/format';
 
-const SHADOW_OVERLAYS: { type: OverlayType; label: string; icon: React.ReactNode }[] = [
-    { type: 'tradeHeat', label: 'Smuggling Density', icon: <ShoppingBag size={12} /> },
-    { type: 'instability', label: 'Trade Vulnerability', icon: <Eye size={12} /> },
-    { type: 'deepSpace', label: 'Deep Space Lanes', icon: <Map size={12} /> },
-];
+// The old "shadow overlays" (smuggling density / trade vulnerability / deep
+// space lanes) are gone: PiracyState carries no per-system smuggling heat, so
+// they only recoloured star cores by trade value and instability — never
+// pirate data — and two of them leaked intel on any scanned system. Band
+// influence (piracyState.view.influence) now shows on the Stability overlay
+// as the purple badge, on systems the player has pinged or better.
+
+/** Band influence high enough that the Stability overlay will badge it. */
+const INFLUENCE_BADGE_THRESHOLD = 25;
 
 /** The four rungs, in the order an investigation walks them. */
 const EXPOSURE_STEPS = ['invisible', 'suspected', 'attributed', 'exposed'] as const;
@@ -514,8 +517,11 @@ function useDashboard() {
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
 export default function ShadowPanel() {
-    const { playerState, activeOverlay, toggleOverlay, piracyState } = useUIStore();
+    const { playerState, piracyState, setActiveOverlay, setActiveTab } = useUIStore();
     const { view, dashboard } = piracyState;
+    // Only offer the map when it will actually draw something for this player.
+    const influenceOnMap = !!dashboard ||
+        Object.values(view?.influence ?? {}).some(v => v >= INFLUENCE_BADGE_THRESHOLD);
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
@@ -542,31 +548,25 @@ export default function ShadowPanel() {
                     <Empty>Waiting for the next report from the frontier.</Empty>
                 )}
 
-                <div>
-                    <div className="text-[10px] font-display tracking-widest text-slate-500 mb-2">
-                        SHADOW OVERLAYS
+                {influenceOnMap && (
+                    <div>
+                        <div className="text-[10px] font-display tracking-widest text-slate-500 mb-2">
+                            ON THE MAP
+                        </div>
+                        <button
+                            onClick={() => {
+                                setActiveOverlay('stability');
+                                // The panel may be floating over another tab; the
+                                // toggle must have a visible effect.
+                                setActiveTab('galaxy');
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded text-xs font-display tracking-wide transition-all border border-slate-700/40 text-slate-400 hover:bg-purple-900/20 hover:border-purple-500/40 hover:text-purple-200"
+                        >
+                            <Map size={12} /> Show band influence on map
+                            <span className="ml-auto text-[9px] text-slate-500">STABILITY</span>
+                        </button>
                     </div>
-                    <div className="space-y-1">
-                        {SHADOW_OVERLAYS.map(({ type, label, icon }) => {
-                            const isActive = activeOverlay === type;
-                            return (
-                                <button
-                                    key={type}
-                                    onClick={() => toggleOverlay(type)}
-                                    className={[
-                                        'w-full flex items-center gap-2 px-3 py-2 rounded text-xs font-display tracking-wide transition-all border',
-                                        isActive
-                                            ? 'border-purple-500/60 bg-purple-900/30 text-purple-300'
-                                            : 'border-slate-700/40 text-slate-400 hover:bg-slate-800/40 hover:text-slate-200',
-                                    ].join(' ')}
-                                >
-                                    {icon} {label}
-                                    {isActive && <span className="ml-auto text-[9px] text-purple-400">ACTIVE</span>}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
+                )}
 
                 {dashboard && dashboard.heat > 60 && (
                     <div className="px-3 py-2 bg-red-950/40 border border-red-800/50 rounded text-xs text-red-400 font-display">

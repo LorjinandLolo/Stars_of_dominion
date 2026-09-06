@@ -4,7 +4,7 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
-import OverlayToggleBar from './OverlayToggleBar';
+import OverlayPicker from './OverlayPicker';
 import FleetCommandBar from './FleetCommandBar';
 import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
@@ -15,6 +15,14 @@ import SystemNode from './SystemNode';
 import StellarPhenomenon, { hasPhenomenon } from './StellarPhenomenon';
 import { STAR_CLASSES, factionColor } from './starVisuals';
 import { formatFleetEta } from '@/lib/movement/eta';
+import {
+    computeOverlayStyles,
+    pingAnchorsFor,
+    relayPingDistances,
+    chartedPingHint,
+    type OverlayInput,
+    type OverlayResult,
+} from '@/lib/galaxy/overlays';
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
@@ -70,80 +78,29 @@ function SimulationTimer() {
     );
 }
 
-/** Color for a system based on active overlay and system data */
-function systemColor(
-    activeOverlay: string | null,
-    instability: number,
-    tradeValue: number,
-    escalationLevel: number,
-    security: number,
-    /** Phase 6.1: lowest cohesion among the player's worlds here, if any. */
-    cohesion?: number,
-): { fill: string; stroke: string } {
-    switch (activeOverlay) {
-        case 'tradeHeat': {
-            const v = Math.round((tradeValue / 100) * 255);
-            return { fill: `rgb(${v}, ${Math.round(v * 0.6)}, 0)`, stroke: '#92400e' };
-        }
-        case 'instability': {
-            const v = Math.round((instability / 100) * 255);
-            return { fill: `rgb(${v}, 0, 0)`, stroke: '#7f1d1d' };
-        }
-        case 'escalation': {
-            const v = escalationLevel / 10;
-            return {
-                fill: `rgb(${Math.round(v * 249)}, ${Math.round((1 - v) * 115)}, 22)`,
-                stroke: '#9a3412',
-            };
-        }
-        case 'institutionalAlignment': {
-            // Empire Cohesion: cyan worlds accept the political order, red ones
-            // are on their way out. Systems we hold nothing in stay neutral.
-            if (cohesion === undefined) return { fill: '#1e293b', stroke: '#334155' };
-            if (cohesion >= 60) return { fill: '#164e63', stroke: '#22d3ee' };
-            if (cohesion >= 40) return { fill: '#452a0a', stroke: '#f59e0b' };
-            if (cohesion >= 20) return { fill: '#4a1d05', stroke: '#f97316' };
-            return { fill: '#450a0a', stroke: '#ef4444' };
-        }
-        case 'regionalStability': {
-            const stable = security > 60;
-            return stable
-                ? { fill: '#14532d', stroke: '#22c55e' }
-                : { fill: '#451a03', stroke: '#92400e' };
-        }
-        case 'deepSpace':
-            return { fill: '#334155', stroke: '#38bdf8' };
-        default:
-            return { fill: '#64748b', stroke: '#cbd5e1' };
-    }
-}
-
-function getVisibilityStyles(
-    revealStage: string | undefined,
-    baseColors: { fill: string; stroke: string }
-) {
-    switch (revealStage) {
-        case 'pinged':
-            return { fill: '#0f172a', stroke: '#1e293b', opacity: 0.6, showDetails: false, showDot: true };
-        case 'scanned':
-        case 'surveyed':
-            return { ...baseColors, opacity: 1, showDetails: true, showDot: true };
-        case 'unknown':
-        default:
-            return { fill: '#1e293b', stroke: '#334155', opacity: 0.7, showDetails: false, showDot: false };
-    }
-}
-
 /** Stable identity so the selector above never churns the render loop. */
 const EMPTY_COHESION: Record<string, number> = {};
+const EMPTY_HINTS: ReadonlyMap<string, string> = new Map();
+
+/**
+ * Staleness in the Stability overlay is measured on the sim clock, but the
+ * clock moves every snapshot; quantising it to 5 minutes keeps the overlay
+ * memo from recomputing on every poll for a change nobody can see.
+ */
+const OVERLAY_CLOCK_QUANTUM_SECONDS = 300;
 
 export default function GalaxyShell() {
     const systems = useUIStore(s => s.systems);
     const regions = useUIStore(s => s.regions);
     const activeOverlay = useUIStore(s => s.activeOverlay);
     // Phase 6.1: systemId → lowest cohesion among our worlds there, for the
-    // Institutional overlay. Empty until the worker has ticked cohesion once.
+    // Stability overlay. Empty until the worker has ticked cohesion once.
     const systemCohesion = useUIStore(s => s.politicsState.government?.systemCohesion) ?? EMPTY_COHESION;
+    const planets = useUIStore(s => s.planets);
+    const shipyardSystemIds = useUIStore(s => s.shipyardSystemIds);
+    const explorationOrders = useUIStore(s => s.explorationOrders);
+    const piracyInfluence = useUIStore(s => s.piracyState.view?.influence);
+    const nowSecondsTick = useUIStore(s => Math.floor(s.nowSeconds / OVERLAY_CLOCK_QUANTUM_SECONDS) * OVERLAY_CLOCK_QUANTUM_SECONDS);
     const selectedSystemId = useUIStore(s => s.selectedSystemId);
     const setSelectedSystem = useUIStore(s => s.setSelectedSystem);
     const fleets = useUIStore(s => s.fleets);
@@ -188,6 +145,48 @@ export default function GalaxyShell() {
         return map;
     }, [systems]);
 
+    // The active overlay's verdict for every system, computed ONCE per data
+    // change — never on pan/zoom — and shared by the map and the picker so a
+    // colour on a hex always matches a chip and a count in the legend bar.
+    const overlayResult = useMemo<OverlayResult | null>(() => {
+        if (!activeOverlay) return null;
+        const input: OverlayInput = {
+            systems: systems as any,
+            visibility: factionVisibility,
+            fleets: fleets as any,
+            planets,
+            factions: factions as any,
+            diplomacy: diplomacyState as any,
+            shipyardSystemIds,
+            explorationOrders,
+            systemCohesion,
+            contestedSystemIds,
+            playerFactionId,
+            piracyInfluence,
+            nowSeconds: nowSecondsTick,
+        };
+        return computeOverlayStyles(activeOverlay, input);
+    }, [activeOverlay, systems, factionVisibility, fleets, planets, factions, diplomacyState, shipyardSystemIds,
+        explorationOrders, systemCohesion, contestedSystemIds, playerFactionId, piracyInfluence, nowSecondsTick]);
+
+    // Hover line for uncharted hexes under Charted: the same price the SYSTEM
+    // tab's PING button prints and the worker charges, from public geometry.
+    const overlayHints = useMemo<ReadonlyMap<string, string>>(() => {
+        if (activeOverlay !== 'charted') return EMPTY_HINTS;
+        const capital = playerFactionId ? (factions as any)[playerFactionId]?.capitalSystemId : undefined;
+        const anchors = pingAnchorsFor(shipyardSystemIds, capital);
+        const quotes = relayPingDistances(systems as any, anchors);
+        const out = new Map<string, string>();
+        for (const sys of systems as any[]) {
+            if (playerFactionId && sys.ownerId === playerFactionId) continue;
+            if ((factionVisibility?.[sys.id]?.revealStage ?? 'unknown') !== 'unknown') continue;
+            const q = quotes.get(sys.id);
+            if (!q) continue;
+            out.set(sys.id, chartedPingHint(q, q.anchorSystemId ? systemMap.get(q.anchorSystemId)?.name : null));
+        }
+        return out;
+    }, [activeOverlay, systems, systemMap, factionVisibility, factions, shipyardSystemIds, playerFactionId]);
+
     // Which systems are faction capitals (for cinematic treatment).
     const capitalSet = useMemo(() => {
         const set = new Set<string>();
@@ -216,7 +215,9 @@ export default function GalaxyShell() {
                 if (seen.has(key)) continue;
                 seen.add(key);
                 const pb = hexToPixel(b.q, b.r);
-                const strong = (!!a.ownerId && a.ownerId === b.ownerId) || (a.tradeValue || 0) > 50 || (b.tradeValue || 0) > 50;
+                // Same-owner only: trade value is intel the player may not
+                // have for either end, so it must not brighten a lane.
+                const strong = !!a.ownerId && a.ownerId === b.ownerId;
                 out.push({ ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, key, strong });
             }
         }
@@ -305,9 +306,11 @@ export default function GalaxyShell() {
         return () => clearInterval(t);
     }, []);
     // When a fresh snapshot lands, restart the countdown baseline.
-    const fleetsReceivedAt = useRef(Date.now());
-    useEffect(() => { fleetsReceivedAt.current = Date.now(); }, [fleets]);
-    const etaElapsedMs = nowMs - fleetsReceivedAt.current;
+    // Null until the first snapshot effect runs: the clock is read in the
+    // effect, not during render, so re-renders stay pure.
+    const [fleetsReceivedAt, setFleetsReceivedAt] = useState<number | null>(null);
+    useEffect(() => { setFleetsReceivedAt(Date.now()); }, [fleets]);
+    const etaElapsedMs = fleetsReceivedAt === null ? 0 : nowMs - fleetsReceivedAt;
 
     // EaW-style order confirmation ping at the target system.
     const [orderPings, setOrderPings] = useState<Array<{ key: number; x: number; y: number }>>([]);
@@ -464,8 +467,8 @@ export default function GalaxyShell() {
                     );
                 })()}
 
-                {/* Constellation / hyperspace lanes (culled to viewport). Owned or
-                    high-trade lanes flow brighter to read as active commerce. */}
+                {/* Constellation / hyperspace lanes (culled to viewport). Lanes
+                    inside one faction's territory flow brighter. */}
                 {lanes.map((ln: any) => {
                     const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
                     const buffer = HEX_WIDTH * 3;
@@ -511,7 +514,8 @@ export default function GalaxyShell() {
                             key={`region-halo-${sid}`}
                             points={HEX_POINTS}
                             transform={`translate(${px.x}, ${px.y})`}
-                            fill={`${region.color}18`}
+                            // An overlay owns the hex fill; the region keeps its border.
+                            fill={activeOverlay ? 'none' : `${region.color}18`}
                             stroke={region.color}
                             strokeWidth={region.status === 'emerging' ? 0.5 : 1}
                             strokeOpacity={0.5}
@@ -524,7 +528,6 @@ export default function GalaxyShell() {
                     const px = hexToPixel(sys.q, sys.r);
                     const isSelected = selectedSystemId === sys.id;
                     const revealStage = factionVisibility?.[sys.id]?.revealStage || 'unknown';
-                    const styles = getVisibilityStyles(revealStage, systemColor(activeOverlay, sys.instability, sys.tradeValue, sys.escalationLevel, sys.security, systemCohesion[sys.id]));
 
                     return (
                         <SystemNode
@@ -533,7 +536,8 @@ export default function GalaxyShell() {
                             px={px}
                             isSelected={isSelected}
                             revealStage={revealStage}
-                            styles={styles}
+                            overlay={overlayResult?.styles.get(sys.id) ?? null}
+                            overlayHint={overlayHints.get(sys.id) ?? null}
                             contested={contestedSystemIds.has(sys.id)}
                             isMobile={isMobile}
                             hexPoints={HEX_POINTS}
@@ -545,7 +549,6 @@ export default function GalaxyShell() {
                             relationship={sys.ownerId
                                 ? (sys.ownerId === playerState?.factionId ? 'mine' : (relationshipByFaction[sys.ownerId] || 'neutral'))
                                 : null}
-                            activeOverlay={activeOverlay}
                             showLabel={zoom > 2.2}
                         />
                     );
@@ -866,7 +869,7 @@ export default function GalaxyShell() {
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] animate-scanlines" />
             </div>
 
-            <OverlayToggleBar />
+            <OverlayPicker result={overlayResult} />
             <FleetCommandBar />
             <SystemContextPanel />
             <CrisisBottomTray />

@@ -44,14 +44,6 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
         category: 'galaxy',
         requiredTab: 'galaxy',
     },
-    {
-        id: 'galaxy-overlay',
-        title: 'Overlay Intelligence',
-        body: 'Use overlays to reveal hidden strategic information: Trade Heat (economic flow), Instability (rebellion risk), Escalation (conflict intensity), and Deep Space (unexplored regions). Toggle them in the top-right of the map.',
-        targetElementId: 'galaxy-overlay-controls',
-        category: 'galaxy',
-        requiredTab: 'galaxy',
-    },
 
     // ── Explore & Expand — the core loop ────────────────────────────────────
     {
@@ -59,6 +51,14 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
         title: 'One World Is All You Get',
         body: 'Your empire begins with a single capital. The other worlds in your home system are unowned and waiting to be settled — and beyond them, hundreds of unexplored systems. Everything else must be surveyed, settled, or taken.',
         targetElementId: null,
+        category: 'galaxy',
+        requiredTab: 'galaxy',
+    },
+    {
+        id: 'galaxy-overlay',
+        title: 'Map Overlays: One Question Each',
+        body: 'Four overlays, one question each. Charted — what you know, what the next relay ping costs from your nearest shipyard, and where your fleets can scan right now. Relations — who holds what, and whether they are with you, against you, or sliding toward war. Settle — where your next world is and whether you can afford it. Stability — which of the systems you can see inside are about to break. Press 1–4 (0 or Esc clears), or open the OVERLAY pill in the top-left of the map.',
+        targetElementId: 'galaxy-overlay-controls',
         category: 'galaxy',
         requiredTab: 'galaxy',
     },

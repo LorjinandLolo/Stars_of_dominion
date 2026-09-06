@@ -139,3 +139,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-tech-pending { animation: none; border-color: rgba(251, 191, 36, 0.7); }
 }
+
+/* Galaxy overlay legend: the swatch of a pulsing tier (in-flight order,
+   breaking world) breathes like the hex it explains, so the chip and the
+   mark on the map read as the same thing. */
+@keyframes sod-overlay-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.sod-overlay-pulse { animation: sod-overlay-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sod-overlay-pulse { animation: none; }
+}
