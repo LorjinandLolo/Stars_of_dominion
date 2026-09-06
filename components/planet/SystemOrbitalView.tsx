@@ -10,6 +10,7 @@ import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { classifyStar, factionColor, hashString } from '@/components/galaxy/starVisuals';
+import { hasAsteroidBelt, beltLaneIndex } from '@/lib/movement/belts';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import { ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
 import { formatPercent } from '@/lib/ui/format';
@@ -255,6 +256,32 @@ export default function SystemOrbitalView() {
     const selected = systemPlanets.find((p: any) => p.id === selectedId) ?? null;
     const lane = orbitLane(systemPlanets.length);
     const planetPos = (i: number) => planetPosAt(i, systemPlanets.length, orbitSeconds);
+    // The belt is a real feature now (lib/movement/belts.ts): same roll the
+    // worker makes, so what you see is what you can lurk in.
+    const hasBelt = hasAsteroidBelt(system.id);
+    const beltRadius = systemPlanets.length > 0
+        ? planetPos(beltLaneIndex(system.id, systemPlanets.length)).r + lane * 0.5
+        : 320;
+
+    /** My fleet parked here — the selected one if it is, else the first. */
+    const myParkedFleet = (() => {
+        const mine = (fleets as any[]).filter(f => f.factionId === playerFactionId && f.currentSystemId === systemViewId && !f.destinationSystemId);
+        return mine.find(f => f.id === selectedFleetId) ?? mine[0] ?? null;
+    })();
+    const beltAction = hasBelt && myParkedFleet && playerFactionId ? (() => {
+        const lurking = myParkedFleet.stance === 'belt';
+        const name = myParkedFleet.name ?? myParkedFleet.id;
+        return {
+            label: lurking ? `LEAVE BELT · ${name}` : `LURK IN BELT · ${name}`,
+            lurking,
+            onClick: () => dispatchOrder({
+                actionId: 'MIL_FLEET_STANCE',
+                factionId: playerFactionId,
+                payload: { fleetId: myParkedFleet.id, stance: lurking ? 'open' : 'belt' },
+                label: lurking ? `${name} leaving the belt` : `${name} slipping into the asteroid belt`,
+            }),
+        };
+    })() : null;
 
     /**
      * The dossier's orbit action for a world: the selected fleet if it is mine,
@@ -305,10 +332,25 @@ export default function SystemOrbitalView() {
                     <div className="min-w-0">
                         <div className="text-[13px] font-display tracking-[0.22em] text-slate-100 uppercase truncate">{system.name}</div>
                         <div className="text-[8px] font-display tracking-[0.15em] text-slate-500 uppercase">
-                            {star.label} · {systemPlanets.length} {systemPlanets.length === 1 ? 'world' : 'worlds'}
+                            {star.label} · {systemPlanets.length} {systemPlanets.length === 1 ? 'world' : 'worlds'}{hasBelt ? ' · asteroid belt' : ''}
                         </div>
                     </div>
                 </div>
+                {beltAction && (
+                    <button
+                        onClick={beltAction.onClick}
+                        title={beltAction.lurking
+                            ? 'Leave the belt and hold openly'
+                            : 'Hide in the asteroid belt: unseen unless they have surveyed this system and hold a fleet here; ambushes enemies passing through'}
+                        className={`mr-2 flex items-center gap-1.5 px-3 py-1.5 rounded border text-[9px] font-display tracking-[0.15em] transition-all ${
+                            beltAction.lurking
+                                ? 'border-stone-300/60 bg-stone-500/25 text-stone-100 hover:bg-stone-500/15'
+                                : 'border-stone-500/50 bg-stone-700/30 hover:bg-stone-600/40 text-stone-200'
+                        }`}
+                    >
+                        <span className="text-[11px] leading-none">◌</span> {beltAction.label}
+                    </button>
+                )}
                 <button
                     onClick={() => setSystemView(null)}
                     className="p-2 text-slate-400 hover:text-red-300 rounded hover:bg-red-500/10"
@@ -399,14 +441,9 @@ export default function SystemOrbitalView() {
                             />
                         ))}
 
-                        {/* Asteroid belt: seeded per system, slowly turning */}
-                        {(() => {
-                            const h = hashString(system.id + ':belt');
-                            if (h % 100 >= 55) return null; // ~55% of systems carry a belt
-                            const orbits = systemPlanets.length;
-                            const beltR = orbits > 0
-                                ? planetPos(Math.min(orbits - 1, Math.floor((h >> 4) % Math.max(1, orbits)))).r + lane * 0.5
-                                : 320;
+                        {/* Asteroid belt: a real system feature (lib/movement/belts.ts), slowly turning */}
+                        {hasBelt && (() => {
+                            const beltR = beltRadius;
                             return (
                                 <g className="sv-belt" style={{ transformOrigin: `${SUN_X}px ${SUN_Y}px` }}>
                                     <circle cx={SUN_X} cy={SUN_Y} r={beltR} fill="none" stroke="#78716c" strokeWidth={7} strokeDasharray="1.5 11" opacity={0.5} />
@@ -532,8 +569,13 @@ export default function SystemOrbitalView() {
                                 const orbitPos = orbitIdx >= 0 ? planetPos(orbitIdx) : null;
                                 const orbitRing = orbitIdx >= 0 ? planetRadius(systemPlanets[orbitIdx]) + 30 : 0;
                                 const orbitAngle = -0.95 + fi * 0.65;
-                                const fx = orbitPos ? orbitPos.x + orbitRing * Math.cos(orbitAngle) : baseX + (fi % 2) * 130;
-                                const fy = orbitPos ? orbitPos.y + orbitRing * Math.sin(orbitAngle) : baseY - Math.floor(fi / 2) * 46;
+                                // Lurking: ride the belt itself, tucked among the rocks.
+                                const inBelt = f.stance === 'belt' && hasBelt;
+                                const beltAngle = -1.15 + fi * 0.5;
+                                const fx = inBelt ? SUN_X + beltRadius * Math.cos(beltAngle)
+                                    : orbitPos ? orbitPos.x + orbitRing * Math.cos(orbitAngle) : baseX + (fi % 2) * 130;
+                                const fy = inBelt ? SUN_Y + beltRadius * Math.sin(beltAngle)
+                                    : orbitPos ? orbitPos.y + orbitRing * Math.sin(orbitAngle) : baseY - Math.floor(fi / 2) * 46;
                                 const col = factionColor(f.factionId);
                                 const mine = f.factionId === playerFactionId;
                                 const isSel = selectedFleetId === f.id;
@@ -553,10 +595,13 @@ export default function SystemOrbitalView() {
                                             strokeWidth={1}
                                             opacity={mine ? 1 : 0.85}
                                         />
+                                        {inBelt && (
+                                            <circle cx={fx} cy={fy} r={15} fill="none" stroke="#a8a29e" strokeWidth={0.9} strokeDasharray="2 3" opacity={0.8} />
+                                        )}
                                         <text x={fx + 14} y={fy + 4} fontSize={11}
                                             fill={mine ? '#e2e8f0' : '#94a3b8'} fontFamily="var(--font-display)"
                                             style={{ letterSpacing: '0.08em' }} pointerEvents="none">
-                                            {f.name ?? f.id}
+                                            {f.name ?? f.id}{inBelt ? ' · lurking' : ''}
                                         </text>
                                     </g>
                                 );

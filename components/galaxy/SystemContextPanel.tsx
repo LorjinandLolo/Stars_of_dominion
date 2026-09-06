@@ -6,6 +6,7 @@ import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
 import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer } from 'lucide-react';
 import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
+import { hasAsteroidBelt } from '@/lib/movement/belts';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -1122,6 +1123,17 @@ export default function SystemContextPanel() {
 
                     {activeTab === 'system' && (
                         <>
+                            {/* Asteroid belt: a place to lurk and a place to be ambushed */}
+                            {hasAsteroidBelt(system.id) && (
+                                <div className="flex items-start gap-2 p-2 rounded-lg bg-stone-900/50 border border-stone-600/40">
+                                    <span className="text-stone-400 text-[10px] leading-none mt-0.5">◌</span>
+                                    <p className="text-[10px] text-stone-300/90 leading-relaxed">
+                                        <strong className="text-stone-200">Asteroid belt.</strong> A parked fleet can lurk here (system view → LURK IN BELT):
+                                        unseen unless you have surveyed the system and hold a fleet in it, and it ambushes enemies passing through.
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Region badge */}
                             {region && (
                                 <div className="flex items-center gap-2">

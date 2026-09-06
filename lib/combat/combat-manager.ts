@@ -22,6 +22,7 @@ import { getSurgeBonus } from '../factions/gabagoon';
 import { phaseShieldBonus, precognitionBonus } from '../factions/nexulan';
 import { FIREBLOOD_FLEET_COEFF, isInfernoid, recordDetonation } from '../factions/infernoid';
 import { issueMoveOrder } from '../movement/movement-service';
+import { AMBUSH_FRESH_SECONDS, AMBUSH_ORGANIZATION_FACTOR } from '../movement/belts';
 import { RNG, seedFromString } from '../trade-system/rng';
 
 /** Engine default for a correct stance prediction (combat-engine.ts:259). */
@@ -118,15 +119,38 @@ function handleEngagement(
         }
 
         state = initiateCombat(
-            combatId, 
-            { 
-                systemId, 
-                terrainModifier: 1.0, 
-                infrastructureIntegrity: 1.0 
+            combatId,
+            {
+                systemId,
+                terrainModifier: 1.0,
+                infrastructureIntegrity: 1.0
             },
-            attacker, 
+            attacker,
             defender
         );
+
+        // Ambush from the asteroid belt: the tick stamped the victim when a
+        // belt-lurker sprang on it. The lurker opens with full momentum and
+        // the victim with shaken organization — one bad opening round, not a
+        // scripted win. The stamp is consumed here so a re-engagement is fair.
+        const ambushOf = (victims: Fleet[], byFaction: string) => victims.find(f =>
+            f.ambushedBy?.factionId === byFaction &&
+            f.ambushedBy?.systemId === systemId &&
+            world.nowSeconds - f.ambushedBy.atSeconds <= AMBUSH_FRESH_SECONDS);
+        const aAmbushedByB = ambushOf(fleetsA, factionB);
+        const bAmbushedByA = ambushOf(fleetsB, factionA);
+        if (bAmbushedByA) {
+            state.momentum = 1;
+            state.defender.organization *= AMBUSH_ORGANIZATION_FACTOR;
+            for (const f of fleetsB) f.ambushedBy = null;
+            console.log(`[CombatManager] ${factionA} ambushed ${factionB} from the belt at ${systemId}`);
+        } else if (aAmbushedByB) {
+            state.momentum = -1;
+            state.attacker.organization *= AMBUSH_ORGANIZATION_FACTOR;
+            for (const f of fleetsA) f.ambushedBy = null;
+            console.log(`[CombatManager] ${factionB} ambushed ${factionA} from the belt at ${systemId}`);
+        }
+
         world.activeCombats.set(combatId, state);
         console.log(`[CombatManager] Initiated engagement at ${systemId} between ${factionA} and ${factionB}`);
     }

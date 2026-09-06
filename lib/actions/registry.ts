@@ -57,6 +57,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", planetId: "id" },
     cost: {}
   },
+  MIL_FLEET_STANCE: {
+    id: "MIL_FLEET_STANCE",
+    category: "military",
+    // stance: 'open' | 'belt' — belt lurking needs a parked fleet in a belt system.
+    params: { fleetId: "id", stance: "string" },
+    cost: {}
+  },
   MIL_ESTABLISH_GARRISON: {
     id: "MIL_ESTABLISH_GARRISON",
     category: "military",

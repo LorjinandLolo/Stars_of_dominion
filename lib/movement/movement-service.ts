@@ -405,9 +405,10 @@ export function issueMoveOrder(
             transitProgress: 0,
             activeLayer: 'deepSpace' as MovementLayer,
             orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
-            // Departing breaks orbit; the order handler re-stamps an arrival orbit if asked.
+            // Departing breaks orbit and leaves the belt; the order handler re-stamps an arrival orbit if asked.
             orbitingPlanetId: null,
             arrivalOrbitPlanetId: null,
+            stance: null,
         };
     }
 
@@ -419,9 +420,10 @@ export function issueMoveOrder(
         etaSeconds: result.totalSeconds,
         transitProgress: 0,
         orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
-        // Departing breaks orbit; the order handler re-stamps an arrival orbit if asked.
+        // Departing breaks orbit and leaves the belt; the order handler re-stamps an arrival orbit if asked.
         orbitingPlanetId: null,
         arrivalOrbitPlanetId: null,
+        stance: null,
     };
 }
 

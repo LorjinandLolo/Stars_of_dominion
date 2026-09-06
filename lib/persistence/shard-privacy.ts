@@ -55,8 +55,13 @@ export interface ViewerContext {
 function fleetVisibleToViewer(fleet: any, viewer: ViewerContext): boolean {
     const sysId = fleet?.currentSystemId || fleet?.destinationSystemId;
     if (!sysId) return false;
-    if (viewer.presenceSystems.has(sysId)) return true;
     const stage = viewer.visibility[sysId];
+    // A fleet lurking in the asteroid belt is the ambush the belt exists for:
+    // only a viewer who has SURVEYED the system and is parked there sees it.
+    if (fleet?.stance === 'belt') {
+        return stage === 'surveyed' && viewer.presenceSystems.has(sysId);
+    }
+    if (viewer.presenceSystems.has(sysId)) return true;
     return stage === 'scanned' || stage === 'surveyed';
 }
 

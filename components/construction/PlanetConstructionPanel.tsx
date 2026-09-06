@@ -235,10 +235,10 @@ export function PlanetConstructionPanel({
     const hasShipyard = buildings.some(b => ['orbital_shipyard', 'fleet_drydock', 'shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
 
     // Build slots mirror lib/construction/construction-service.ts buildSlotsFor:
-    // two per world, +1 per operational Builder Outpost, at most three extra.
+    // two per world, +1 per operational Builder Outpost, at most five extra.
     // Orders past the cap are accepted and wait; the worker promotes them.
     const outposts = buildings.filter(b => b.type === 'construction_yard' && b.status === 'operational').length;
-    const buildSlots = 2 + Math.min(3, outposts);
+    const buildSlots = 2 + Math.min(5, outposts);
     const busySlots = queue.filter(q => !(q as any).queued).length;
     const waitingOrders = queue.filter(q => (q as any).queued).length;
 
@@ -424,7 +424,7 @@ export function PlanetConstructionPanel({
                                     <span className="font-mono text-amber-300">{waitingOrders} waiting for a slot</span>
                                 )}
                                 <span className="text-slate-500">
-                                    A world works {buildSlots} site{buildSlots === 1 ? '' : 's'} at a time · each Builder Outpost adds one (up to +3){busySlots >= buildSlots ? ' · new orders will queue' : ''}
+                                    A world works {buildSlots} site{buildSlots === 1 ? '' : 's'} at a time · each Builder Outpost adds one (up to +5){busySlots >= buildSlots ? ' · new orders will queue' : ''}
                                 </span>
                             </div>
                             {categories.map(cat => (

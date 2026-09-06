@@ -268,9 +268,11 @@ export default function FleetCommandBar() {
                                                 {inTransit ? <Navigation size={8} /> : <Anchor size={8} />}
                                                 {inTransit
                                                     ? `→ ${sysName(fleet.destinationSystemId)} · ETA ${formatFleetEta(fleet.etaSeconds, etaElapsedMs) ?? '—'}`
-                                                    : fleet.orbitingPlanetId
-                                                        ? `orbiting ${planetName(fleet.orbitingPlanetId)} · ${sysName(fleet.currentSystemId)}`
-                                                        : `holding at ${sysName(fleet.currentSystemId)}`}
+                                                    : fleet.stance === 'belt'
+                                                        ? `lurking in the belt · ${sysName(fleet.currentSystemId)}`
+                                                        : fleet.orbitingPlanetId
+                                                            ? `orbiting ${planetName(fleet.orbitingPlanetId)} · ${sysName(fleet.currentSystemId)}`
+                                                            : `holding at ${sysName(fleet.currentSystemId)}`}
                                             </span>
                                             <span className="text-[9px] font-mono text-slate-400">
                                                 {ships > 0 ? `${ships} ships` : `pwr ${fleet.basePower ?? 0}`}

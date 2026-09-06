@@ -232,8 +232,13 @@ export function useGameSync() {
                 if (f.factionId === playerFactionId) return true;
                 const sysId = f.currentSystemId || f.destinationSystemId;
                 if (!sysId) return false;
-                if (f.currentSystemId && myPresenceSystems.has(f.currentSystemId)) return true;
                 const entry = visibility[sysId];
+                // Same rule as lib/persistence/shard-privacy.ts: a belt-lurker is
+                // seen only from a surveyed system you are parked in.
+                if (f.stance === 'belt') {
+                    return !!f.currentSystemId && myPresenceSystems.has(f.currentSystemId) && entry?.revealStage === 'surveyed';
+                }
+                if (f.currentSystemId && myPresenceSystems.has(f.currentSystemId)) return true;
                 return entry && (entry.revealStage === 'scanned' || entry.revealStage === 'surveyed');
             });
         }

@@ -75,13 +75,13 @@ export function canBuildOnTile(
 
 // ── Build slots ───────────────────────────────────────────────────────────────
 // A world works on a few sites at once, not all of them. Every planet has two
-// slots; each Builder Outpost (construction_yard) adds one, up to three more.
+// slots; each Builder Outpost (construction_yard) adds one, up to five more.
 // Orders past the cap still go through — materials paid, tile reserved — but
 // wait in the queue and start when a slot frees. Playtesters asked for exactly
 // this: "only build a few things at a time, and outposts to raise it".
 export const BASE_BUILD_SLOTS = 2;
 export const BUILD_SLOT_BUILDING_ID = 'construction_yard';
-export const MAX_EXTRA_BUILD_SLOTS = 3;
+export const MAX_EXTRA_BUILD_SLOTS = 5;
 
 export function buildSlotsFor(planet: Planet): number {
   const yards = planet.tiles.filter(t => t.buildingId === BUILD_SLOT_BUILDING_ID && t.constructionState === 'active').length;

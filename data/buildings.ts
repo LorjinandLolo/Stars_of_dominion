@@ -18,7 +18,7 @@ export const BUILDINGS: BuildingDefinition[] = [
   {
     id: 'construction_yard',
     name: 'Builder Outpost',
-    description: 'Crews, cranes and a materials yard. Each outpost lets the world work on one more site at a time (base two; up to three outposts count).',
+    description: 'Crews, cranes and a materials yard. Each outpost lets the world work on one more site at a time (base two; up to five outposts count).',
     category: 'industrial',
     tier: 1,
     allowedDistricts: ['industrial', 'civilian', 'any'],

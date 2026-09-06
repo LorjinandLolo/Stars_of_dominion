@@ -27,6 +27,8 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
+import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movement/belts';
+import { fireNotification } from '../lib/time/notification-hooks';
 import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
@@ -641,7 +643,41 @@ async function runGameTick() {
         for (const [fleetId, fleet] of world.movement.fleets) {
             if (fleet.destinationSystemId) {
                 const updated = advanceFleet(fleet, FLEET_STEP_SECONDS, world.movement);
-                world.movement.fleets.set(fleetId, updated);
+                // Belt ambush: the moment a fleet completes a hop INTO a system
+                // (arriving or just passing through), a belt-lurking fleet of a
+                // faction at war with it springs. The mover is dragged out of
+                // transit and parked here; the combat manager engages them this
+                // same tick and reads the ambush stamp for the opening round.
+                const arrivedAt = updated.currentSystemId && !fleet.currentSystemId ? updated.currentSystemId : null;
+                const passingThrough = !updated.currentSystemId && updated.plannedPath.length > 1 && updated.plannedPath[0] !== fleet.plannedPath[0]
+                    ? updated.plannedPath[0] : null;
+                const entered = arrivedAt ?? passingThrough;
+                const ambusher = entered ? findBeltAmbusher(world, updated, entered) : null;
+                if (entered && ambusher) {
+                    const stopped = ambushedFleet(updated, entered, ambusher, world.nowSeconds);
+                    world.movement.fleets.set(fleetId, stopped);
+                    const where = world.movement.systems.get(entered)?.name ?? entered;
+                    const stamp = new Date(world.nowSeconds * 1000).toISOString();
+                    fireNotification({
+                        id: `ambush-${entered}-${fleetId}-${world.nowSeconds}`,
+                        factionId: stopped.factionId,
+                        category: 'military', priority: 'urgent',
+                        title: `AMBUSHED AT ${where.toUpperCase()}`,
+                        body: `${stopped.name ?? fleetId} was jumped from the asteroid belt by ${ambusher.name ?? ambusher.id}. The fleet is held in-system and fighting.`,
+                        createdAt: stamp, read: false, linkToTab: 'map', payload: { systemId: entered },
+                    } as any);
+                    fireNotification({
+                        id: `ambush-sprung-${entered}-${ambusher.id}-${world.nowSeconds}`,
+                        factionId: ambusher.factionId,
+                        category: 'military', priority: 'urgent',
+                        title: `AMBUSH SPRUNG AT ${where.toUpperCase()}`,
+                        body: `${ambusher.name ?? ambusher.id} struck ${stopped.name ?? fleetId} from the belt. They open shaken; press it.`,
+                        createdAt: stamp, read: false, linkToTab: 'map', payload: { systemId: entered },
+                    } as any);
+                    console.log(`[Tick Worker] AMBUSH at ${entered}: ${ambusher.factionId} (${ambusher.id}) sprang on ${stopped.factionId} (${fleetId}).`);
+                } else {
+                    world.movement.fleets.set(fleetId, updated);
+                }
                 fleetsMoved++;
             }
         }
@@ -1918,6 +1954,36 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'MIL_FLEET_STANCE': {
+            // payload: { fleetId, stance: 'open' | 'belt' } — how a parked fleet
+            // holds the system. 'belt' lurks in the asteroid belt: hidden from
+            // anyone who has not surveyed the system and parked a fleet there,
+            // and it ambushes enemies passing through (lib/movement/belts.ts).
+            const fleet = world.movement.fleets.get(payload.fleetId);
+            if (!fleet || fleet.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such fleet under your command.');
+                return;
+            }
+            const stance = payload.stance === 'belt' ? 'belt' : 'open';
+            if (!fleet.currentSystemId || fleet.destinationSystemId) {
+                recordOrderFailure(world, factionId, actionId, 'Fleet is under way — a stance is taken once it is parked.');
+                return;
+            }
+            if (stance === 'belt' && !hasAsteroidBelt(fleet.currentSystemId)) {
+                recordOrderFailure(world, factionId, actionId,
+                    `${world.movement.systems.get(fleet.currentSystemId)?.name ?? 'This system'} has no asteroid belt to lurk in.`);
+                return;
+            }
+            if (stance === 'belt' && !isFleetOperational(fleet)) {
+                recordOrderFailure(world, factionId, actionId, 'Fleet has no ships — nothing to lurk with.');
+                return;
+            }
+            fleet.stance = stance === 'belt' ? 'belt' : null;
+            if (stance === 'belt') fleet.orbitingPlanetId = null; // the belt is not an orbit
+            console.log(`[Order] ${factionId} fleet ${fleet.id} ${stance === 'belt' ? 'slipped into the belt' : 'left the belt'} at ${fleet.currentSystemId}.`);
+            break;
+        }
+
         case 'MIL_ORBIT_PLANET': {
             // payload: { fleetId, planetId } — toggle orbit over a world in the
             // fleet's own system. Used to be a log-only no-op with the orbit kept
@@ -1948,6 +2014,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.log(`[Order] ${factionId} fleet ${fleet.id} left orbit of ${planet.name ?? planet.id}.`);
             } else {
                 fleet.orbitingPlanetId = planet.id;
+                fleet.stance = null; // an orbit is not a belt
                 console.log(`[Order] ${factionId} fleet ${fleet.id} took orbit over ${planet.name ?? planet.id}.`);
             }
             break;

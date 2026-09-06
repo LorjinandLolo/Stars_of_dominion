@@ -332,6 +332,15 @@ export interface Fleet {
     orbitingPlanetId?: string | null;
     /** Orbit to take the moment the current move order arrives (orbit on arrival). */
     arrivalOrbitPlanetId?: string | null;
+    /**
+     * How a parked fleet holds the system. 'belt' = lurking in the asteroid
+     * belt (only in systems that have one, see lib/movement/belts.ts): hidden
+     * from anyone who has not surveyed the system AND parked a fleet there,
+     * and it ambushes hostile fleets that pass through. Departing clears it.
+     */
+    stance?: 'open' | 'belt' | null;
+    /** Stamped on a fleet that was just ambushed: who sprang it and when (sim seconds). */
+    ambushedBy?: { factionId: string; atSeconds: number; systemId: string } | null;
     /** ID of the Admiral commanding this fleet, if any. */
     leaderId?: string;
     /**
