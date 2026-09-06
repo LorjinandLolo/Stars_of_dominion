@@ -95,31 +95,32 @@ export default function TutorialOverlay() {
                 className="absolute pointer-events-auto"
                 style={getTooltipPosition(rect)}
             >
-                <div className={`w-80 rounded-2xl overflow-hidden border border-white/20 shadow-2xl shadow-black/80 bg-slate-950`}>
+                {/* Sized for reading at arm's length: testers found the old 14px body hard to read. */}
+                <div className={`w-[26rem] max-w-[calc(100vw-2rem)] rounded-2xl overflow-hidden border border-white/20 shadow-2xl shadow-black/80 bg-slate-950`}>
                     {/* Gradient header */}
-                    <div className={`bg-gradient-to-r ${colorClass} px-5 py-4`}>
-                        <div className="flex items-center justify-between">
+                    <div className={`bg-gradient-to-r ${colorClass} px-6 py-5`}>
+                        <div className="flex items-center justify-between gap-3">
                             <div>
-                                <p className="text-[9px] font-mono text-white/60 uppercase tracking-widest mb-1">
+                                <p className="text-[11px] font-mono text-white/70 uppercase tracking-widest mb-1.5">
                                     Step {currentStepIndex + 1} of {totalSteps} · {step.category}
                                 </p>
-                                <h3 className="text-base font-display uppercase tracking-wider text-white">
+                                <h3 className="text-xl font-display uppercase tracking-wider text-white leading-tight">
                                     {step.title}
                                 </h3>
                             </div>
                             <button
                                 onClick={skip}
-                                className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+                                className="p-2 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors shrink-0"
                                 title="Skip tutorial"
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
                     </div>
 
                     {/* Body */}
-                    <div className="px-5 py-4">
-                        <p className="text-sm text-slate-300 leading-relaxed">{step.body}</p>
+                    <div className="px-6 py-5">
+                        <p className="text-base text-slate-200 leading-relaxed">{step.body}</p>
                     </div>
 
                     {/* Progress bar */}
@@ -133,27 +134,27 @@ export default function TutorialOverlay() {
                     </div>
 
                     {/* Navigation */}
-                    <div className="flex items-center justify-between px-5 py-4 border-t border-white/10">
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
                         <button
                             onClick={prev}
                             disabled={currentStepIndex === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-display text-slate-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-display text-slate-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                            <ChevronLeft className="w-3.5 h-3.5" /> Back
+                            <ChevronLeft className="w-4 h-4" /> Back
                         </button>
 
                         <button
                             onClick={skip}
-                            className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+                            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
                         >
                             Skip tutorial
                         </button>
 
                         <button
                             onClick={next}
-                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[11px] font-display bg-blue-600 hover:bg-blue-500 text-white transition-all"
+                            className="flex items-center gap-1.5 px-5 py-2 rounded-lg text-sm font-display bg-blue-600 hover:bg-blue-500 text-white transition-all"
                         >
-                            {isLastStep() ? 'Finish' : 'Next'} <ChevronRight className="w-3.5 h-3.5" />
+                            {isLastStep() ? 'Finish' : 'Next'} <ChevronRight className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
@@ -172,8 +173,9 @@ function getTooltipPosition(rect: SpotlightRect | null): React.CSSProperties {
         };
     }
 
-    const CARD_WIDTH  = 320;
-    const CARD_HEIGHT = 280;
+    // Keep in step with the card's w-[26rem] and its larger type.
+    const CARD_WIDTH  = 416;
+    const CARD_HEIGHT = 330;
     const MARGIN      = 16;
     const vw = window.innerWidth;
     const vh = window.innerHeight;

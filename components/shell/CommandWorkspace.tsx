@@ -7,16 +7,12 @@
 import React from 'react';
 import { useUIStore, isShadowTabVisible, isCouncilTabVisible } from '@/lib/store/ui-store';
 import { categoryForTab } from './dockConfig';
-import type { NavTab } from '@/types/ui-state';
 import { X, Maximize2 } from 'lucide-react';
 
 interface CommandWorkspaceProps {
     /** The active panel content (dynamically imported by GameShell). */
     children: React.ReactNode;
 }
-
-/** Tabs that want more breathing room than the default workspace height. */
-const TALL_TABS: NavTab[] = ['tech', 'designer', 'war', 'economy'];
 
 export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
     const activeTab = useUIStore(s => s.activeTab);
@@ -50,13 +46,13 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
         t.conditional === 'shadow' ? showShadow :
         t.conditional === 'council' ? showCouncil : true
     );
-    const tall = TALL_TABS.includes(activeTab);
-
+    // Full height of the play area (the resource bar above stays visible).
+    // The old 58%/72% drawer left the galaxy peeking out behind every panel,
+    // which playtesters read as "the menu only takes up half the screen".
     return (
         <div
             className={[
-                'absolute bottom-0 left-0 right-0 z-40 flex flex-col',
-                tall ? 'h-[72%]' : 'h-[58%]',
+                'absolute inset-0 z-40 flex flex-col',
                 'bg-slate-950/95 backdrop-blur-xl border-t',
                 'shadow-[0_-16px_48px_rgba(0,0,0,0.7)]',
             ].join(' ')}

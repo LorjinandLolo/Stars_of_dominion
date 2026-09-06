@@ -424,7 +424,12 @@ export function useGameSync() {
             // the same world snapshot and the same pure engine the worker uses —
             // the panel only renders, so the button can never promise a band the
             // order then fails to deliver.
-            openQuestions: ((playerPosture as any)?.openQuestions ?? []).map((q: any) => ({
+            // Dedupe by id: the posture has carried the same debate twice
+            // (debate-<faction>-<kind>-<ts>), which React reports as duplicate
+            // keys on every render of the Government panel.
+            openQuestions: (((playerPosture as any)?.openQuestions ?? []) as any[])
+                .filter((q, i, arr) => arr.findIndex(x => x?.id === q?.id) === i)
+                .map((q: any) => ({
                 ...q,
                 title: debateTitle(q),
                 ticksLeft: ticksRemaining(q, world.nowSeconds),
