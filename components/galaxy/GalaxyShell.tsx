@@ -110,6 +110,10 @@ export default function GalaxyShell() {
     const selectedPlanetId = useUIStore(s => s.selectedPlanetId);
     const setSelectedPlanet = useUIStore(s => s.setSelectedPlanet);
     const constructionPlanetId = useUIStore(s => s.constructionPlanetId);
+    // The system view (dock SYSTEM button) opens a system without selecting it,
+    // so BUILD from its dossier had no system to hand the panel and did nothing.
+    const systemViewId = useUIStore(s => s.systemViewId);
+    const constructionSystemId = selectedSystemId ?? systemViewId;
     const setConstructionPlanet = useUIStore(s => s.setConstructionPlanet);
     const playerState = useUIStore(s => s.playerState);
     const factionVisibility = useUIStore(s => s.factionVisibility);
@@ -875,10 +879,10 @@ export default function GalaxyShell() {
             <CrisisBottomTray />
             <ReviewPanel />
 
-            {constructionPlanetId && selectedSystemId && (
+            {constructionPlanetId && constructionSystemId && (
                 <PlanetConstructionPanel
                     planetId={constructionPlanetId}
-                    systemId={selectedSystemId}
+                    systemId={constructionSystemId}
                     factionId={playerState.factionId}
                     factionCredits={reserves['CREDITS'] || 0}
                     factionMetals={reserves['METALS'] || 0}
