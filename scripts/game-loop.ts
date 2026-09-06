@@ -1430,7 +1430,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.log(`[Order] Fleet ${payload.fleetId} already en route to ${payload.destinationId} — duplicate order skipped.`);
                 return;
             }
+            // Orbit on arrival: the world to park over once the fleet gets there.
+            // Optional in the payload; validated here so the arrival step can
+            // trust it blindly.
+            const orbitPlanetId: string | null = payload.orbitPlanetId ?? null;
+            if (orbitPlanetId) {
+                const orbitTarget = world.construction.planets.get(orbitPlanetId);
+                if (!orbitTarget || orbitTarget.systemId !== payload.destinationId) {
+                    recordOrderFailure(world, factionId, actionId, 'That world is not in the target system.');
+                    return;
+                }
+            }
             if (!fleet.destinationSystemId && fleet.currentSystemId === payload.destinationId) {
+                if (orbitPlanetId) {
+                    // Already parked here: just take the orbit.
+                    fleet.orbitingPlanetId = orbitPlanetId;
+                    console.log(`[Order] Fleet ${payload.fleetId} already at ${payload.destinationId} — took orbit over ${orbitPlanetId}.`);
+                    return;
+                }
                 console.log(`[Order] Fleet ${payload.fleetId} is already at ${payload.destinationId} — order skipped.`);
                 return;
             }
@@ -1446,7 +1463,12 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 recordOrderFailure(world, factionId, actionId, `No route from the fleet's position to the target system.`);
                 return;
             }
+            updated.orbitingPlanetId = null;
+            updated.arrivalOrbitPlanetId = orbitPlanetId;
             world.movement.fleets.set(payload.fleetId, updated);
+            if (orbitPlanetId) {
+                console.log(`[Order] Fleet ${payload.fleetId} → ${payload.destinationId}, will orbit ${orbitPlanetId} on arrival.`);
+            }
             if (!fleet.currentSystemId) {
                 console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
             }
@@ -1897,9 +1919,37 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_ORBIT_PLANET': {
-            // Client-local UX only — no world-state mutation needed.
-            // Logged here for audit trail.
-            console.log(`[Order] ${factionId} fleet ${payload.fleetId} established orbit around ${payload.planetId}.`);
+            // payload: { fleetId, planetId } — toggle orbit over a world in the
+            // fleet's own system. Used to be a log-only no-op with the orbit kept
+            // client-side, so a fleet was never actually in orbit for anyone else
+            // and the system view had nowhere to draw it.
+            const fleet = world.movement.fleets.get(payload.fleetId);
+            if (!fleet || fleet.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such fleet under your command.');
+                return;
+            }
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!planet) {
+                recordOrderFailure(world, factionId, actionId, 'No such world.');
+                return;
+            }
+            if (!fleet.currentSystemId || fleet.destinationSystemId) {
+                recordOrderFailure(world, factionId, actionId,
+                    'Fleet is under way — send it to the system with a world selected and it will take orbit on arrival.');
+                return;
+            }
+            if (planet.systemId !== fleet.currentSystemId) {
+                recordOrderFailure(world, factionId, actionId,
+                    `${planet.name ?? 'That world'} is in another system — move the fleet there first (it can orbit on arrival).`);
+                return;
+            }
+            if (fleet.orbitingPlanetId === planet.id) {
+                fleet.orbitingPlanetId = null;
+                console.log(`[Order] ${factionId} fleet ${fleet.id} left orbit of ${planet.name ?? planet.id}.`);
+            } else {
+                fleet.orbitingPlanetId = planet.id;
+                console.log(`[Order] ${factionId} fleet ${fleet.id} took orbit over ${planet.name ?? planet.id}.`);
+            }
             break;
         }
 
@@ -2087,7 +2137,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             }
             const queued = planet.buildQueue.find((q: any) => q.tileId === tileId);
             if (queued) (queued as any).sectorIndex = sectorIdx;
-            console.log(`[Order] ${factionId} building ${def.id} on ${planet.id} sector ${sectorIdx}`);
+            console.log(`[Order] ${factionId} ${started.queued ? 'queued (build slots full)' : 'building'} ${def.id} on ${planet.id} sector ${sectorIdx}`);
             break;
         }
 

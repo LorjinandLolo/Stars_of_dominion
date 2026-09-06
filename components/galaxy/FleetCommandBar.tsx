@@ -18,6 +18,7 @@ import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors,
 export default function FleetCommandBar() {
     const fleets = useUIStore(s => s.fleets);
     const systems = useUIStore(s => s.systems);
+    const planets = useUIStore(s => s.planets);
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const selectedFleetId = useUIStore(s => s.selectedFleetId);
     const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
@@ -50,6 +51,8 @@ export default function FleetCommandBar() {
 
     const sysName = (id: string | null | undefined) =>
         systems.find((s: any) => s.id === id)?.name ?? (id ? id.slice(0, 10) : '—');
+    const planetName = (id: string | null | undefined) =>
+        (planets as any[]).find(p => p.id === id)?.name ?? (id ? id.slice(0, 10) : '—');
 
     /** Best "where is it" system for a fleet — current, next hop, or destination. */
     const fleetSystemId = (fleet: any): string | null =>
@@ -265,7 +268,9 @@ export default function FleetCommandBar() {
                                                 {inTransit ? <Navigation size={8} /> : <Anchor size={8} />}
                                                 {inTransit
                                                     ? `→ ${sysName(fleet.destinationSystemId)} · ETA ${formatFleetEta(fleet.etaSeconds, etaElapsedMs) ?? '—'}`
-                                                    : `holding at ${sysName(fleet.currentSystemId)}`}
+                                                    : fleet.orbitingPlanetId
+                                                        ? `orbiting ${planetName(fleet.orbitingPlanetId)} · ${sysName(fleet.currentSystemId)}`
+                                                        : `holding at ${sysName(fleet.currentSystemId)}`}
                                             </span>
                                             <span className="text-[9px] font-mono text-slate-400">
                                                 {ships > 0 ? `${ships} ships` : `pwr ${fleet.basePower ?? 0}`}

@@ -73,29 +73,28 @@ export function canBuildOnTile(
   return { canBuild: true };
 }
 
-/**
- * Starts construction on a tile.
- */
-export function startConstruction(
-  planet: Planet,
-  tileId: string,
-  buildingId: string,
-  now: number,
-  /** Optional — supplies the owner's researched construction_speed modifier.
-   *  Omitted by unit fixtures, which then build at the untouched base rate. */
-  world?: any
-): { success: boolean; error?: string } {
-  const tile = planet.tiles.find(t => t.tileId === tileId);
-  if (!tile) return { success: false, error: 'Tile not found' };
+// ── Build slots ───────────────────────────────────────────────────────────────
+// A world works on a few sites at once, not all of them. Every planet has two
+// slots; each Builder Outpost (construction_yard) adds one, up to three more.
+// Orders past the cap still go through — materials paid, tile reserved — but
+// wait in the queue and start when a slot frees. Playtesters asked for exactly
+// this: "only build a few things at a time, and outposts to raise it".
+export const BASE_BUILD_SLOTS = 2;
+export const BUILD_SLOT_BUILDING_ID = 'construction_yard';
+export const MAX_EXTRA_BUILD_SLOTS = 3;
 
-  const buildingDef = BUILDINGS.find(b => b.id === buildingId);
-  if (!buildingDef) return { success: false, error: 'Building definition not found' };
+export function buildSlotsFor(planet: Planet): number {
+  const yards = planet.tiles.filter(t => t.buildingId === BUILD_SLOT_BUILDING_ID && t.constructionState === 'active').length;
+  return BASE_BUILD_SLOTS + Math.min(MAX_EXTRA_BUILD_SLOTS, yards);
+}
 
-  // Note: Resource subtraction should happen in the calling action/service that has access to empire state.
-  
-  tile.constructionState = 'under_construction';
-  tile.buildingId = buildingId;
-  
+/** Orders whose clock is running (not waiting for a slot). */
+export function activeBuildCount(planet: Planet): number {
+  return planet.buildQueue.filter(q => !q.queued).length;
+}
+
+/** Seconds a building takes on this planet right now, all speed modifiers applied. */
+function buildSecondsFor(planet: Planet, buildingDef: BuildingDefinition, world?: any): number {
   const stats = recalculatePlanetStats(planet);
   // Clamp the speed modifier to a small positive floor. A modifier of 0 produced
   // Infinity (the building never completes); a negative one produced a completion time
@@ -105,7 +104,50 @@ export function startConstruction(
     * constructionLogisticsMultiplier(planet)
     * computeInfrastructureEffects(planet).constructionSpeed
     * getTechModifier(world, planet.ownerId, 'construction_speed'));
-  const buildTime = buildingDef.buildTimeSeconds / buildSpeed;
+  return buildingDef.buildTimeSeconds / buildSpeed;
+}
+
+/**
+ * Starts construction on a tile — or queues it when every build slot is busy.
+ */
+export function startConstruction(
+  planet: Planet,
+  tileId: string,
+  buildingId: string,
+  now: number,
+  /** Optional — supplies the owner's researched construction_speed modifier.
+   *  Omitted by unit fixtures, which then build at the untouched base rate. */
+  world?: any
+): { success: boolean; error?: string; queued?: boolean } {
+  const tile = planet.tiles.find(t => t.tileId === tileId);
+  if (!tile) return { success: false, error: 'Tile not found' };
+
+  const buildingDef = BUILDINGS.find(b => b.id === buildingId);
+  if (!buildingDef) return { success: false, error: 'Building definition not found' };
+
+  // Slots full: reserve the tile and wait. The tick promotes it when one frees.
+  if (activeBuildCount(planet) >= buildSlotsFor(planet)) {
+    tile.constructionState = 'under_construction';
+    tile.buildingId = buildingId;
+    tile.constructionCompleteAt = null;
+    planet.buildQueue.push({
+      orderId: `order_${Math.random().toString(36).substr(2, 9)}`,
+      buildingId,
+      tileId,
+      planetId: planet.id,
+      startedAtSeconds: now,
+      completesAtSeconds: 0,
+      queued: true,
+    });
+    return { success: true, queued: true };
+  }
+
+  // Note: Resource subtraction should happen in the calling action/service that has access to empire state.
+  
+  tile.constructionState = 'under_construction';
+  tile.buildingId = buildingId;
+  
+  const buildTime = buildSecondsFor(planet, buildingDef, world);
   const completionTime = now + buildTime;
   tile.constructionCompleteAt = completionTime;
 
@@ -158,12 +200,12 @@ export function completeConstruction(planet: Planet, tileId: string): boolean {
 /**
  * Processes completed construction orders.
  */
-export function processConstructionQueue(planet: Planet, now: number): string[] {
+export function processConstructionQueue(planet: Planet, now: number, world?: any): string[] {
   const completedTiles: string[] = [];
   const remainingQueue: BuildOrder[] = [];
 
   for (const order of planet.buildQueue) {
-    if (now >= order.completesAtSeconds) {
+    if (!order.queued && now >= order.completesAtSeconds) {
       completeConstruction(planet, order.tileId);
       completedTiles.push(order.tileId);
     } else {
@@ -172,6 +214,24 @@ export function processConstructionQueue(planet: Planet, now: number): string[] 
   }
 
   planet.buildQueue = remainingQueue;
+
+  // Promote waiting orders, oldest first, into whatever slots just opened.
+  // Build time is priced now, not at order time, so a Builder Outpost or a
+  // road finished in the meantime shortens the wait.
+  const slots = buildSlotsFor(planet);
+  for (const order of planet.buildQueue) {
+    if (!order.queued) continue;
+    if (activeBuildCount(planet) >= slots) break;
+    const def = BUILDINGS.find(b => b.id === order.buildingId);
+    const tile = planet.tiles.find(t => t.tileId === order.tileId);
+    if (!def || !tile) { order.queued = false; order.completesAtSeconds = now; continue; }
+    const completesAt = now + buildSecondsFor(planet, def, world);
+    order.queued = false;
+    order.startedAtSeconds = now;
+    order.completesAtSeconds = completesAt;
+    tile.constructionCompleteAt = completesAt;
+  }
+
   return completedTiles;
 }
 
@@ -189,7 +249,7 @@ export function tickConstructionGlobal(world: GameWorldState, deltaSeconds = 0):
 
   // 1. Process planetary build queues
   for (const planet of world.construction.planets.values()) {
-    processConstructionQueue(planet, now);
+    processConstructionQueue(planet, now, world);
   }
 
   // 2. Orbital layer: finish structures and repair battle damage

@@ -74,6 +74,8 @@ interface PlanetCardProps {
     playerFactionId: string | null;
     selectedFleetId: string | null;
     orbitedPlanetId: string | null;
+    /** The selected fleet is parked in THIS system (orbit now vs orbit on arrival). */
+    fleetInSystem?: boolean;
     selectedPlanetId: string | null;
     armiesPresent: number;
     onOrbit: (planetId: string) => void;
@@ -99,6 +101,7 @@ function PlanetCard({
     playerFactionId,
     selectedFleetId,
     orbitedPlanetId,
+    fleetInSystem = false,
     selectedPlanetId,
     armiesPresent,
     onOrbit,
@@ -283,14 +286,20 @@ function PlanetCard({
                         </button>
                     )}
 
-                    {/* Orbit (if fleet selected and not already orbiting) */}
-                    {selectedFleetId && !isOrbitedByFleet && (
+                    {/* Orbit: in-system fleets take it now; a fleet elsewhere is
+                        sent here and takes it on arrival. Orbiting → leave. */}
+                    {selectedFleetId && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onOrbit(planet.id); }}
-                            className="flex-1 py-1 bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/30 rounded text-[9px] text-indigo-400 font-bold transition-all flex items-center justify-center gap-1"
+                            title={isOrbitedByFleet ? 'Leave orbit' : fleetInSystem ? 'Take orbit over this world' : 'Send the fleet here; it takes orbit on arrival'}
+                            className={`flex-1 py-1 rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 border ${
+                                isOrbitedByFleet
+                                    ? 'bg-indigo-500/30 border-indigo-400/60 text-indigo-100 hover:bg-indigo-500/20'
+                                    : 'bg-indigo-600/20 hover:bg-indigo-600/35 border-indigo-500/30 text-indigo-400'
+                            }`}
                         >
                             <Crosshair size={9} />
-                            ORBIT
+                            {isOrbitedByFleet ? 'LEAVE ORBIT' : fleetInSystem ? 'ORBIT' : 'JUMP & ORBIT'}
                         </button>
                     )}
 
@@ -797,8 +806,6 @@ export default function SystemContextPanel() {
         setSelectedPlanet,
         selectedPlanetId,
         playerFactionId,
-        orbitedPlanetId,
-        setOrbitedPlanet,
         setSystemContested,
         setPlanets,
         setNowSeconds,
@@ -840,6 +847,13 @@ export default function SystemContextPanel() {
 
     const revealStage = factionVisibility?.[system.id]?.revealStage || 'unknown';
 
+    // Orbit is fleet state now (worker-owned, synced to everyone). Read it off
+    // the selected fleet instead of the client-local toggle that the old
+    // log-only MIL_ORBIT_PLANET left behind.
+    const selectedFleet = selectedFleetId ? (fleets as any[]).find(f => f.id === selectedFleetId) ?? null : null;
+    const fleetInSystem = !!selectedFleet && selectedFleet.currentSystemId === system.id && !selectedFleet.destinationSystemId;
+    const fleetOrbitPlanetId: string | null = fleetInSystem ? (selectedFleet.orbitingPlanetId ?? null) : null;
+
     const region = regions.find((r) => r.systemIds.includes(system.id));
 
     const statusColor = (v: number) =>
@@ -850,7 +864,6 @@ export default function SystemContextPanel() {
 
     // Game rule: an empty fleet (no ships, no Admiral) cannot move — hide the
     // JUMP TO SYSTEM affordance and point the player at recruitment instead.
-    const selectedFleet = (fleets as any[])?.find((f: any) => f.id === selectedFleetId);
     const selectedFleetCanMove = !selectedFleet || isFleetOperational(selectedFleet);
 
     // ── Contested system logic ─────────────────────────────────────────────────
@@ -883,9 +896,29 @@ export default function SystemContextPanel() {
         }
     };
 
-    const handleOrbitPlanet = (planetId: string) => {
-        // Toggle: if already orbiting this planet, leave orbit; else enter orbit
-        setOrbitedPlanet(orbitedPlanetId === planetId ? null : planetId);
+    // In-system: toggle orbit (the worker flips it). Elsewhere: send the fleet
+    // here with the world attached, and it takes orbit the moment it arrives —
+    // the "no option to orbit after I send a ship" gap from the playtest.
+    const handleOrbitPlanet = async (planetId: string) => {
+        if (!selectedFleet) return;
+        const planetName = planets.find(p => p.id === planetId)?.name ?? planetId;
+        const fleetName = selectedFleet.name ?? selectedFleet.id;
+        if (fleetInSystem) {
+            const leaving = fleetOrbitPlanetId === planetId;
+            await dispatchOrder({
+                actionId: 'MIL_ORBIT_PLANET',
+                factionId: playerFactionId || 'PLAYER_FACTION',
+                payload: { fleetId: selectedFleet.id, planetId },
+                label: leaving ? `${fleetName} leaving orbit of ${planetName}` : `${fleetName} taking orbit over ${planetName}`,
+            });
+            return;
+        }
+        await dispatchOrder({
+            actionId: 'MIL_MOVE_FLEET',
+            factionId: playerFactionId || 'PLAYER_FACTION',
+            payload: { fleetId: selectedFleet.id, destinationId: system.id, orbitPlanetId: planetId },
+            label: `${fleetName} en route to orbit ${planetName}`,
+        });
     };
 
     const handleSiegePlanet = async (planetId: string) => {
@@ -924,7 +957,6 @@ export default function SystemContextPanel() {
                 const owners = [...new Set(updated.map((p: any) => p.ownerId).filter(Boolean))];
                 setSystemContested(system.id, owners.length > 1);
             }
-            setOrbitedPlanet(null);
         } finally {
             setSieging(null);
         }
@@ -1379,7 +1411,7 @@ export default function SystemContextPanel() {
                                         const radius = ORBIT_SIZES[i % ORBIT_SIZES.length] + 12;
                                         const x = Math.cos(angle) * radius;
                                         const y = Math.sin(angle) * radius;
-                                        const isOrbited = orbitedPlanetId === planet.id;
+                                        const isOrbited = fleetOrbitPlanetId === planet.id;
                                         return (
                                             <div
                                                 key={planet.id}
@@ -1408,11 +1440,13 @@ export default function SystemContextPanel() {
                             )}
 
                             {/* Orbital siege/fleet instructions */}
-                            {selectedFleetId && !orbitedPlanetId && (
+                            {selectedFleetId && !fleetOrbitPlanetId && (
                                 <div className="flex items-start gap-2 p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-500/20">
                                     <Crosshair size={12} className="text-indigo-400 flex-shrink-0 mt-0.5" />
                                     <p className="text-[10px] text-indigo-300/80 leading-relaxed">
-                                        Fleet is in system. Select <strong>ORBIT</strong> on a planet to establish orbital superiority, then <strong>SIEGE</strong> to begin ground assault.
+                                        {fleetInSystem
+                                            ? <>Fleet is in system. Select <strong>ORBIT</strong> on a world to establish orbital superiority, then <strong>SIEGE</strong> to begin ground assault.</>
+                                            : <>Fleet is elsewhere. <strong>JUMP &amp; ORBIT</strong> on a world sends it here and parks it in orbit the moment it arrives.</>}
                                     </p>
                                 </div>
                             )}
@@ -1439,7 +1473,8 @@ export default function SystemContextPanel() {
                                         planet={planet}
                                         playerFactionId={playerFactionId}
                                         selectedFleetId={selectedFleetId}
-                                        orbitedPlanetId={orbitedPlanetId}
+                                        orbitedPlanetId={fleetOrbitPlanetId}
+                                        fleetInSystem={fleetInSystem}
                                         selectedPlanetId={selectedPlanetId}
                                         armiesPresent={armies.filter(a => (a as any).currentPlanetId === planet.id).length}
                                         onSelect={handleSelectPlanet}

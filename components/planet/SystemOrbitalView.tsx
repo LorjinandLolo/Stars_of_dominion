@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { classifyStar, factionColor, hashString } from '@/components/galaxy/starVisuals';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import { ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
@@ -255,6 +256,43 @@ export default function SystemOrbitalView() {
     const lane = orbitLane(systemPlanets.length);
     const planetPos = (i: number) => planetPosAt(i, systemPlanets.length, orbitSeconds);
 
+    /**
+     * The dossier's orbit action for a world: the selected fleet if it is mine,
+     * else my fleet parked here. In-system → take/leave orbit now; elsewhere →
+     * send it here and it takes orbit on arrival.
+     */
+    const orbitActionFor = (planet: any) => {
+        const mine = (fleets as any[]).filter(f => f.factionId === playerFactionId);
+        const picked = mine.find(f => f.id === selectedFleetId)
+            ?? mine.find(f => f.currentSystemId === systemViewId && !f.destinationSystemId);
+        if (!picked || !playerFactionId) return null;
+        const name = picked.name ?? picked.id;
+        const here = picked.currentSystemId === systemViewId && !picked.destinationSystemId;
+        if (here) {
+            const active = picked.orbitingPlanetId === planet.id;
+            return {
+                label: active ? `LEAVE ORBIT · ${name}` : `ORBIT HERE · ${name}`,
+                active,
+                onClick: () => dispatchOrder({
+                    actionId: 'MIL_ORBIT_PLANET',
+                    factionId: playerFactionId,
+                    payload: { fleetId: picked.id, planetId: planet.id },
+                    label: active ? `${name} leaving orbit of ${planet.name}` : `${name} taking orbit over ${planet.name}`,
+                }),
+            };
+        }
+        return {
+            label: `SEND ${name} · ORBIT ON ARRIVAL`,
+            active: false,
+            onClick: () => dispatchOrder({
+                actionId: 'MIL_MOVE_FLEET',
+                factionId: playerFactionId,
+                payload: { fleetId: picked.id, destinationId: systemViewId, orbitPlanetId: planet.id },
+                label: `${name} en route to orbit ${planet.name}`,
+            }),
+        };
+    };
+
     return (
         <div
             className="absolute inset-0 z-[38] flex flex-col bg-[radial-gradient(ellipse_at_20%_50%,_#0b1220_0%,_#020617_75%)]"
@@ -487,14 +525,25 @@ export default function SystemOrbitalView() {
                             const baseX = SUN_X + 150;
                             const baseY = SUN_Y - 170;
                             return localFleets.slice(0, 8).map((f: any, fi: number) => {
-                                const fx = baseX + (fi % 2) * 130;
-                                const fy = baseY - Math.floor(fi / 2) * 46;
+                                // Parked over a world: ride a tight ring around it (and move
+                                // with it); otherwise hold station off the star. The old fixed
+                                // slot put every fleet "a little too far" from anything.
+                                const orbitIdx = f.orbitingPlanetId ? systemPlanets.findIndex((p: any) => p.id === f.orbitingPlanetId) : -1;
+                                const orbitPos = orbitIdx >= 0 ? planetPos(orbitIdx) : null;
+                                const orbitRing = orbitIdx >= 0 ? planetRadius(systemPlanets[orbitIdx]) + 30 : 0;
+                                const orbitAngle = -0.95 + fi * 0.65;
+                                const fx = orbitPos ? orbitPos.x + orbitRing * Math.cos(orbitAngle) : baseX + (fi % 2) * 130;
+                                const fy = orbitPos ? orbitPos.y + orbitRing * Math.sin(orbitAngle) : baseY - Math.floor(fi / 2) * 46;
                                 const col = factionColor(f.factionId);
                                 const mine = f.factionId === playerFactionId;
                                 const isSel = selectedFleetId === f.id;
                                 return (
                                     <g key={`fleet-${f.id}`} className="cursor-pointer"
                                         onClick={() => setSelectedFleetId(isSel ? null : f.id)}>
+                                        {orbitPos && (
+                                            <circle cx={orbitPos.x} cy={orbitPos.y} r={orbitRing} fill="none" stroke={col}
+                                                strokeWidth={0.8} strokeDasharray="3 5" opacity={0.55} pointerEvents="none" />
+                                        )}
                                         <circle cx={fx} cy={fy} r={22} fill="transparent" />
                                         {isSel && <circle cx={fx} cy={fy} r={16} fill="none" stroke="#ffffff" strokeWidth={1.2} strokeDasharray="3 4" className="sv-spin" />}
                                         <polygon
@@ -546,6 +595,7 @@ export default function SystemOrbitalView() {
                         onSurface={() => setSurfacePlanet(selected.id)}
                         onSystems={() => setConstructionPlanet(selected.id)}
                         onUnits={() => setSelectedPlanet(selected.id)}
+                        orbit={orbitActionFor(selected)}
                         onClose={() => selectPlanet(null)}
                     />
                 )}
@@ -570,6 +620,8 @@ interface DossierProps {
     onSurface: () => void;
     onSystems: () => void;
     onUnits: () => void;
+    /** Orbit action for the player's fleet, or null when they have none to send. */
+    orbit?: { label: string; active: boolean; onClick: () => void } | null;
     onClose: () => void;
 }
 
@@ -584,7 +636,7 @@ function Stat({ icon, label, value, tone = 'text-slate-200' }: { icon: React.Rea
     );
 }
 
-function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems, onUnits, onClose }: DossierProps) {
+function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems, onUnits, orbit, onClose }: DossierProps) {
     const surface = generateSurface(planet.id, planet.planetType, planet.tags);
     const [inner, outer] = ARCHETYPE_CORE[surface.archetype];
     const isOwner = planet.ownerId === playerFactionId;
@@ -690,6 +742,18 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
             </div>
 
             <div className="p-2 border-t border-slate-800/60 grid grid-cols-2 gap-1.5">
+                {orbit && (
+                    <button
+                        onClick={orbit.onClick}
+                        className={`col-span-2 flex items-center justify-center gap-2 py-2 rounded border text-[10px] font-display tracking-[0.15em] transition-all ${
+                            orbit.active
+                                ? 'border-indigo-400/70 bg-indigo-500/25 text-indigo-100 hover:bg-indigo-500/15'
+                                : 'border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300'
+                        }`}
+                    >
+                        <Crosshair size={12} /> {orbit.label}
+                    </button>
+                )}
                 <button
                     onClick={onSurface}
                     className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded border border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-[10px] font-display tracking-[0.2em] transition-all"

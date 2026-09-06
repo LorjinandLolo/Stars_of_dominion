@@ -16,6 +16,22 @@ export const BUILDINGS: BuildingDefinition[] = [
     tags: ['resource', 'metals'],
   },
   {
+    id: 'construction_yard',
+    name: 'Builder Outpost',
+    description: 'Crews, cranes and a materials yard. Each outpost lets the world work on one more site at a time (base two; up to three outposts count).',
+    category: 'industrial',
+    tier: 1,
+    allowedDistricts: ['industrial', 'civilian', 'any'],
+    infrastructureRequired: 1,
+    cost: { metals: 120, chemicals: 30, food: 0, manpower: 60, credits: 250 },
+    upkeep: { manpower: 20, credits: 10 },
+    buildTimeSeconds: 240,
+    // Read by buildSlotsFor (lib/construction/construction-service.ts), not by
+    // the stats recalculation — it is a capacity, not an output.
+    effects: [{ type: 'build_slots', value: 1 }],
+    tags: ['industrial', 'construction'],
+  },
+  {
     id: 'chemical_plant',
     name: 'Chemical Plant',
     description: 'Processes raw minerals into volatile compounds and industrial chemicals.',

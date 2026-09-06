@@ -234,6 +234,14 @@ export function PlanetConstructionPanel({
     // so the SPACE CONSTRUCTION tab never rendered for anyone.
     const hasShipyard = buildings.some(b => ['orbital_shipyard', 'fleet_drydock', 'shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
 
+    // Build slots mirror lib/construction/construction-service.ts buildSlotsFor:
+    // two per world, +1 per operational Builder Outpost, at most three extra.
+    // Orders past the cap are accepted and wait; the worker promotes them.
+    const outposts = buildings.filter(b => b.type === 'construction_yard' && b.status === 'operational').length;
+    const buildSlots = 2 + Math.min(3, outposts);
+    const busySlots = queue.filter(q => !(q as any).queued).length;
+    const waitingOrders = queue.filter(q => (q as any).queued).length;
+
     // Helper: get ownership color
     const getOwnershipColor = (ownerId: string | null) => {
         if (!ownerId) return 'var(--color-owner-neutral)';
@@ -409,6 +417,16 @@ export function PlanetConstructionPanel({
 
                     {activeTab === 'BUILD' && (
                         <div className="space-y-8">
+                            <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 rounded-xl border text-xs ${busySlots >= buildSlots ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-700/50 bg-slate-900/60'}`}>
+                                <span className="font-display tracking-widest uppercase text-slate-400">Build slots</span>
+                                <span className={`font-mono font-bold ${busySlots >= buildSlots ? 'text-amber-300' : 'text-cyan-300'}`}>{busySlots} / {buildSlots} busy</span>
+                                {waitingOrders > 0 && (
+                                    <span className="font-mono text-amber-300">{waitingOrders} waiting for a slot</span>
+                                )}
+                                <span className="text-slate-500">
+                                    A world works {buildSlots} site{buildSlots === 1 ? '' : 's'} at a time · each Builder Outpost adds one (up to +3){busySlots >= buildSlots ? ' · new orders will queue' : ''}
+                                </span>
+                            </div>
                             {categories.map(cat => (
                                 <div key={cat} className="space-y-4">
                                     <h3 className="text-xs font-bold tracking-widest text-slate-500 uppercase flex items-center gap-2">
@@ -543,10 +561,12 @@ export function PlanetConstructionPanel({
                                                         </div>
                                                         <div>
                                                             <div className="font-semibold text-slate-200">
-                                                                {isUpgrade ? `Upgrading: ${def.name}` : `Constructing: ${def.name}`}
+                                                                {(order as any).queued ? `Queued: ${def.name}` : isUpgrade ? `Upgrading: ${def.name}` : `Constructing: ${def.name}`}
                                                             </div>
-                                                            <div className="text-xs text-slate-400 font-medium font-mono">
-                                                                ETA: {formatDuration(order.completesAtSeconds - (Math.floor(Date.now() / 1000)))}
+                                                            <div className={`text-xs font-medium font-mono ${(order as any).queued ? 'text-amber-300' : 'text-slate-400'}`}>
+                                                                {(order as any).queued
+                                                                    ? `Waiting for a build slot (${busySlots} / ${buildSlots} busy)`
+                                                                    : `ETA: ${formatDuration(order.completesAtSeconds - (Math.floor(Date.now() / 1000)))}`}
                                                             </div>
                                                         </div>
                                                     </div>

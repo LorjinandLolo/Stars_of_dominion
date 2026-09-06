@@ -405,6 +405,9 @@ export function issueMoveOrder(
             transitProgress: 0,
             activeLayer: 'deepSpace' as MovementLayer,
             orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
+            // Departing breaks orbit; the order handler re-stamps an arrival orbit if asked.
+            orbitingPlanetId: null,
+            arrivalOrbitPlanetId: null,
         };
     }
 
@@ -416,6 +419,9 @@ export function issueMoveOrder(
         etaSeconds: result.totalSeconds,
         transitProgress: 0,
         orders: [...fleet.orders, order].slice(-config.movement.orderQueueMaxLength),
+        // Departing breaks orbit; the order handler re-stamps an arrival orbit if asked.
+        orbitingPlanetId: null,
+        arrivalOrbitPlanetId: null,
     };
 }
 
@@ -623,6 +629,10 @@ export function advanceFleet(
             plannedPath: arrived ? [] : updatedPath,
             activeLayer: arrived ? null : edge.layer,
             etaSeconds: Math.max(0, fleet.etaSeconds - deltaSeconds),
+            // Orbit on arrival: the order handler validated the world is in the
+            // destination system when it stamped arrivalOrbitPlanetId.
+            orbitingPlanetId: arrived ? (fleet.arrivalOrbitPlanetId ?? null) : null,
+            arrivalOrbitPlanetId: arrived ? null : (fleet.arrivalOrbitPlanetId ?? null),
         };
     }
 

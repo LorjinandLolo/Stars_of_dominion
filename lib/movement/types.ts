@@ -324,6 +324,14 @@ export interface Fleet {
     isDetectable: boolean;
     /** IDs of armies currently loaded onto this fleet as transport. */
     transportedArmyIds?: string[];
+    /**
+     * The world this fleet holds orbit over while parked in currentSystemId;
+     * null/undefined = holding station off the star. Worker-owned: set by
+     * MIL_ORBIT_PLANET or on arrival, cleared when the fleet departs.
+     */
+    orbitingPlanetId?: string | null;
+    /** Orbit to take the moment the current move order arrives (orbit on arrival). */
+    arrivalOrbitPlanetId?: string | null;
     /** ID of the Admiral commanding this fleet, if any. */
     leaderId?: string;
     /**

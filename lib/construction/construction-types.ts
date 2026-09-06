@@ -115,6 +115,12 @@ export interface BuildOrder {
   completesAtSeconds: number; // Changed to match UI
   /** Surface board position this order will occupy on completion (0-63). */
   sectorIndex?: number;
+  /**
+   * Waiting for a build slot (see buildSlotsFor). Materials are paid and the
+   * tile is reserved, but the clock has not started: completesAtSeconds is 0
+   * until processConstructionQueue promotes it.
+   */
+  queued?: boolean;
 }
 
 export interface Modifier {
