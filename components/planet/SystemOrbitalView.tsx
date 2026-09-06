@@ -336,21 +336,6 @@ export default function SystemOrbitalView() {
                         </div>
                     </div>
                 </div>
-                {beltAction && (
-                    <button
-                        onClick={beltAction.onClick}
-                        title={beltAction.lurking
-                            ? 'Leave the belt and hold openly'
-                            : 'Hide in the asteroid belt: unseen unless they have surveyed this system and hold a fleet here; ambushes enemies passing through'}
-                        className={`mr-2 flex items-center gap-1.5 px-3 py-1.5 rounded border text-[9px] font-display tracking-[0.15em] transition-all ${
-                            beltAction.lurking
-                                ? 'border-stone-300/60 bg-stone-500/25 text-stone-100 hover:bg-stone-500/15'
-                                : 'border-stone-500/50 bg-stone-700/30 hover:bg-stone-600/40 text-stone-200'
-                        }`}
-                    >
-                        <span className="text-[11px] leading-none">◌</span> {beltAction.label}
-                    </button>
-                )}
                 <button
                     onClick={() => setSystemView(null)}
                     className="p-2 text-slate-400 hover:text-red-300 rounded hover:bg-red-500/10"
@@ -400,7 +385,24 @@ export default function SystemOrbitalView() {
                 </div>
 
                 {/* Orbital diagram — drag to pan, wheel to zoom, like the galaxy map */}
-                <div className="flex-1 flex items-center justify-center overflow-hidden">
+                <div className="flex-1 flex items-center justify-center overflow-hidden relative">
+                    {/* Belt stance lives on the canvas — top-left is clear of the centred
+                        clock widget and of the pending-orders HUD in the bottom-left. */}
+                    {beltAction && (
+                        <button
+                            onClick={beltAction.onClick}
+                            title={beltAction.lurking
+                                ? 'Leave the belt and hold openly'
+                                : 'Hide in the asteroid belt: unseen unless they have surveyed this system and hold a fleet here; ambushes enemies passing through'}
+                            className={`absolute left-3 top-3 z-10 flex items-center gap-1.5 px-3 py-2 rounded-lg border backdrop-blur-sm text-[9px] font-display tracking-[0.15em] transition-all shadow-lg ${
+                                beltAction.lurking
+                                    ? 'border-stone-300/60 bg-stone-500/30 text-stone-100 hover:bg-stone-500/20'
+                                    : 'border-stone-500/50 bg-stone-900/80 hover:bg-stone-700/60 text-stone-200'
+                            }`}
+                        >
+                            <span className="text-[11px] leading-none">◌</span> {beltAction.label}
+                        </button>
+                    )}
                     <svg
                         ref={svgRef}
                         viewBox={`0 0 ${VIEW} ${VIEW}`}
