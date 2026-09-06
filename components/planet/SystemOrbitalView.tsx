@@ -19,6 +19,54 @@ import {
 const VIEW = 1000;
 const SUN_X = 150;
 const SUN_Y = VIEW / 2;
+const FOCUS_ZOOM = 1.32;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3.2;
+
+// Orbits laid out left-to-right from the star, evenly spaced. Each world sits
+// at a staggered base angle so names never collide, then travels its orbit at
+// its own period. Pure in (index, count, seconds) so the renderer, the hit
+// targets and the camera all agree on where a world IS — the old version
+// rotated worlds with a CSS animation while the camera eased toward their
+// t=0 layout position, so a selected world slid out from under the camera.
+const LANE_START = 300;
+const LANE_END = VIEW - 120;
+function orbitLane(count: number): number {
+    return count > 1 ? (LANE_END - LANE_START) / (count - 1) : 0;
+}
+function orbitPeriodSeconds(i: number): number {
+    return 260 + i * 95;
+}
+function planetPosAt(i: number, count: number, seconds: number): { x: number; y: number; r: number } {
+    const orbitR = LANE_START + i * orbitLane(count) - SUN_X;
+    const base = ((i % 2 === 0 ? -1 : 1) * (14 + (i % 3) * 9) * Math.PI) / 180;
+    const angle = base + (2 * Math.PI * seconds) / orbitPeriodSeconds(i);
+    return {
+        x: SUN_X + orbitR * Math.cos(angle),
+        y: SUN_Y + orbitR * Math.sin(angle),
+        r: orbitR,
+    };
+}
+
+interface Camera { x: number; y: number; zoom: number }
+const CAMERA_HOME: Camera = { x: 0, y: 0, zoom: 1 };
+
+/** Camera that puts a world at 44% width, mid-height, at the focus zoom. */
+function cameraFocusing(px: number, py: number): Camera {
+    return { x: VIEW * 0.44 - px * FOCUS_ZOOM, y: VIEW * 0.5 - py * FOCUS_ZOOM, zoom: FOCUS_ZOOM };
+}
+
+function usePrefersReducedMotion(): boolean {
+    const [reduced, setReduced] = React.useState(false);
+    React.useEffect(() => {
+        const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const update = () => setReduced(mq.matches);
+        update();
+        mq.addEventListener('change', update);
+        return () => mq.removeEventListener('change', update);
+    }, []);
+    return reduced;
+}
 
 /** Planet marker radius from its type/size hints. */
 function planetRadius(planet: any): number {
@@ -52,6 +100,130 @@ export default function SystemOrbitalView() {
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
     React.useEffect(() => { setSelectedId(null); }, [systemViewId]);
 
+    // ── Orbit clock + camera ─────────────────────────────────────────────
+    // One rAF loop advances the orbit clock and eases the camera toward its
+    // target. The camera FOLLOWS the selected world (its live position, not
+    // its layout position) until the player pans or zooms, which hands the
+    // camera to them until the next selection.
+    const reducedMotion = usePrefersReducedMotion();
+    const [orbitSeconds, setOrbitSeconds] = React.useState(0);
+    const [cam, setCam] = React.useState<Camera>(CAMERA_HOME);
+    const camRef = React.useRef<Camera>(CAMERA_HOME);
+    const followRef = React.useRef(true);
+    const frameRef = React.useRef({ selectedIndex: -1, count: 0, seconds: 0 });
+    const dragRef = React.useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
+    const [dragging, setDragging] = React.useState(false);
+    const svgRef = React.useRef<SVGSVGElement | null>(null);
+
+    // The rAF loop aims the camera from these without waiting for a render.
+    const selectedIndex = selectedId ? systemPlanets.findIndex((p: any) => p.id === selectedId) : -1;
+    React.useLayoutEffect(() => {
+        frameRef.current.selectedIndex = selectedIndex;
+        frameRef.current.count = systemPlanets.length;
+    }, [selectedIndex, systemPlanets.length]);
+
+    /** Selecting (or clearing) re-arms the follow; a pan/zoom disarms it. */
+    const selectPlanet = React.useCallback((id: string | null) => {
+        followRef.current = true;
+        setSelectedId(id);
+    }, []);
+
+    React.useEffect(() => {
+        if (!systemViewId) return;
+        let raf = 0;
+        const start = performance.now();
+        let last = start;
+        let lastOrbitCommit = -1;
+        const tick = (now: number) => {
+            const dt = Math.min(0.1, (now - last) / 1000);
+            last = now;
+            const seconds = reducedMotion ? 0 : (now - start) / 1000;
+            frameRef.current.seconds = seconds;
+            // ~20 orbit commits a second is plenty for worlds that take minutes per lap.
+            if (now - lastOrbitCommit > 50) {
+                lastOrbitCommit = now;
+                setOrbitSeconds(seconds);
+            }
+            if (followRef.current) {
+                const { selectedIndex, count } = frameRef.current;
+                const target = selectedIndex >= 0
+                    ? (() => { const p = planetPosAt(selectedIndex, count, seconds); return cameraFocusing(p.x, p.y); })()
+                    : CAMERA_HOME;
+                const cur = camRef.current;
+                const k = reducedMotion ? 1 : 1 - Math.exp(-dt * 7);
+                const next = {
+                    x: cur.x + (target.x - cur.x) * k,
+                    y: cur.y + (target.y - cur.y) * k,
+                    zoom: cur.zoom + (target.zoom - cur.zoom) * k,
+                };
+                if (Math.abs(next.x - cur.x) > 0.01 || Math.abs(next.y - cur.y) > 0.01 || Math.abs(next.zoom - cur.zoom) > 0.0005) {
+                    camRef.current = next;
+                    setCam(next);
+                }
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [systemViewId, reducedMotion]);
+
+    /** Screen point → root SVG user units (before the camera transform). */
+    const toUser = React.useCallback((clientX: number, clientY: number) => {
+        const svg = svgRef.current;
+        const ctm = svg?.getScreenCTM();
+        if (!svg || !ctm) return null;
+        const pt = svg.createSVGPoint();
+        pt.x = clientX; pt.y = clientY;
+        const q = pt.matrixTransform(ctm.inverse());
+        return { x: q.x, y: q.y };
+    }, []);
+
+    const setCameraNow = React.useCallback((next: Camera) => {
+        followRef.current = false;
+        camRef.current = next;
+        setCam(next);
+    }, []);
+
+    const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+        const p = toUser(e.clientX, e.clientY);
+        if (!p) return;
+        const cur = camRef.current;
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cur.zoom * Math.exp(-e.deltaY * 0.0012)));
+        const ratio = zoom / cur.zoom;
+        // Keep the point under the cursor fixed while zooming.
+        setCameraNow({ x: p.x - (p.x - cur.x) * ratio, y: p.y - (p.y - cur.y) * ratio, zoom });
+    };
+
+    const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (e.button !== 0) return;
+        dragRef.current = { x: e.clientX, y: e.clientY, cam: camRef.current, moved: false };
+    };
+    const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+        const d = dragRef.current;
+        const svg = svgRef.current;
+        if (!d || !svg) return;
+        const dxPx = e.clientX - d.x;
+        const dyPx = e.clientY - d.y;
+        if (!d.moved && Math.hypot(dxPx, dyPx) < 4) return; // a click, not a drag
+        if (!d.moved) {
+            // Capture only once it IS a drag: capturing on pointerdown would
+            // retarget the click to the svg and worlds would stop selecting.
+            d.moved = true;
+            setDragging(true);
+            e.currentTarget.setPointerCapture(e.pointerId);
+        }
+        const scale = VIEW / svg.getBoundingClientRect().width; // px → user units
+        setCameraNow({ x: d.cam.x + dxPx * scale, y: d.cam.y + dyPx * scale, zoom: d.cam.zoom });
+    };
+    const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        // Cleared on the next tick so the click that ends a drag still sees `moved`.
+        const d = dragRef.current;
+        setDragging(false);
+        if (d?.moved) setTimeout(() => { if (dragRef.current === d) dragRef.current = null; }, 0);
+        else dragRef.current = null;
+    };
+
     // A vanished system (sync purge, stale id) must not strand the player.
     React.useEffect(() => {
         if (systemViewId && !system) setSystemView(null);
@@ -65,6 +237,7 @@ export default function SystemOrbitalView() {
             if (useUIStore.getState().activeTab !== 'galaxy') return;
             if (useUIStore.getState().surfacePlanetId) return; // surface board owns it
             e.preventDefault();
+            followRef.current = true;
             setSelectedId(cur => {
                 if (cur) return null;
                 setSystemView(null);
@@ -79,23 +252,8 @@ export default function SystemOrbitalView() {
 
     const star = classifyStar(system);
     const selected = systemPlanets.find((p: any) => p.id === selectedId) ?? null;
-
-    // Orbits laid out left-to-right from the star, evenly spaced. Each world
-    // sits at a staggered angle on its orbit so names never collide.
-    const laneStart = 300;
-    const laneEnd = VIEW - 120;
-    const lane = systemPlanets.length > 1
-        ? (laneEnd - laneStart) / (systemPlanets.length - 1)
-        : 0;
-    const planetPos = (i: number): { x: number; y: number; r: number } => {
-        const orbitR = laneStart + i * lane - SUN_X;
-        const angle = ((i % 2 === 0 ? -1 : 1) * (14 + (i % 3) * 9) * Math.PI) / 180;
-        return {
-            x: SUN_X + orbitR * Math.cos(angle),
-            y: SUN_Y + orbitR * Math.sin(angle),
-            r: orbitR,
-        };
-    };
+    const lane = orbitLane(systemPlanets.length);
+    const planetPos = (i: number) => planetPosAt(i, systemPlanets.length, orbitSeconds);
 
     return (
         <div
@@ -135,7 +293,7 @@ export default function SystemOrbitalView() {
                         return (
                             <button
                                 key={p.id}
-                                onClick={() => setSelectedId(cur => cur === p.id ? null : p.id)}
+                                onClick={() => selectPlanet(selectedId === p.id ? null : p.id)}
                                 className={[
                                     'flex items-center gap-2.5 px-3 py-2.5 border-b border-slate-900/80 text-left transition-colors',
                                     isSel ? 'bg-sky-500/10 border-l-2 border-l-sky-400' : 'hover:bg-slate-900/60',
@@ -161,9 +319,19 @@ export default function SystemOrbitalView() {
                     })}
                 </div>
 
-                {/* Orbital diagram */}
+                {/* Orbital diagram — drag to pan, wheel to zoom, like the galaxy map */}
                 <div className="flex-1 flex items-center justify-center overflow-hidden">
-                    <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full h-full max-h-[88vh]">
+                    <svg
+                        ref={svgRef}
+                        viewBox={`0 0 ${VIEW} ${VIEW}`}
+                        className={`w-full h-full max-h-[88vh] select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                        onWheel={handleWheel}
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerCancel={handlePointerUp}
+                        onDoubleClick={() => { followRef.current = true; }}
+                    >
                         <defs>
                             <radialGradient id="sv-star">
                                 <stop offset="0%" stopColor="#ffffff" />
@@ -176,21 +344,9 @@ export default function SystemOrbitalView() {
                             </radialGradient>
                         </defs>
 
-                        {/* Camera: eases toward the selected world */}
-                        <g
-                            style={{
-                                transform: (() => {
-                                    if (!selected) return 'translate(0px, 0px) scale(1)';
-                                    const i = systemPlanets.findIndex((p: any) => p.id === selectedId);
-                                    const { x, y } = planetPos(Math.max(0, i));
-                                    const zoom = 1.32;
-                                    const tx = VIEW * 0.44 - x * zoom;
-                                    const ty = VIEW * 0.5 - y * zoom;
-                                    return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${zoom})`;
-                                })(),
-                                transition: 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)',
-                            }}
-                        >
+                        {/* Camera: eased by the rAF loop — follows the selected world's
+                            LIVE orbit position until the player pans or zooms. */}
+                        <g transform={`translate(${cam.x.toFixed(2)} ${cam.y.toFixed(2)}) scale(${cam.zoom.toFixed(4)})`}>
 
                         {/* Orbit arcs */}
                         {systemPlanets.map((p: any, i: number) => (
@@ -240,11 +396,9 @@ export default function SystemOrbitalView() {
                             return (
                                 <g
                                     key={p.id}
-                                    className="sv-orbiter"
-                                    style={{ transformOrigin: `${SUN_X}px ${SUN_Y}px`, animationDuration: `${260 + i * 95}s` }}
+                                    className="cursor-pointer"
+                                    onClick={() => { if (!dragRef.current?.moved) selectPlanet(selectedId === p.id ? null : p.id); }}
                                 >
-                                <g className="sv-counter" style={{ animationDuration: `${260 + i * 95}s` }}>
-                                <g className="cursor-pointer" onClick={() => setSelectedId(cur => cur === p.id ? null : p.id)}>
                                     {/* Hit target */}
                                     <circle cx={x} cy={y} r={rad + 26} fill="transparent" />
                                     {isSelected && (
@@ -306,8 +460,6 @@ export default function SystemOrbitalView() {
                                             </g>
                                         </g>
                                     )}
-                                </g>
-                                </g>
                                 </g>
                             );
                         })}
@@ -372,16 +524,14 @@ export default function SystemOrbitalView() {
                             .sv-pulse { transform-box: fill-box; transform-origin: center; animation: sv-pulse 1.8s ease-out infinite; }
                             @keyframes sv-pulse { 0% { transform: scale(0.92); opacity: 0.9; } 100% { transform: scale(1.25); opacity: 0; } }
 
-                            /* The system LIVES: worlds drift along their orbits; their
-                               labels counter-rotate so text stays upright. */
-                            .sv-orbiter { animation: sv-orbit linear infinite; }
-                            .sv-counter { transform-box: fill-box; transform-origin: center; animation: sv-orbit-rev linear infinite; }
-                            @keyframes sv-orbit     { to { transform: rotate(360deg); } }
-                            @keyframes sv-orbit-rev { to { transform: rotate(-360deg); } }
+                            /* Worlds move along their orbits from the JS clock (see
+                               planetPosAt); only the small cosmetic satellites — moons,
+                               stations, the belt — still spin with CSS. */
+                            @keyframes sv-orbit { to { transform: rotate(360deg); } }
                             .sv-moon { animation: sv-orbit linear infinite; }
                             .sv-belt { animation: sv-orbit 480s linear infinite; }
                             @media (prefers-reduced-motion: reduce) {
-                                .sv-orbiter, .sv-counter, .sv-moon, .sv-belt, .sv-breathe, .sv-spin, .sv-pulse { animation: none; }
+                                .sv-moon, .sv-belt, .sv-breathe, .sv-spin, .sv-pulse { animation: none; }
                             }
                         `}</style>
                     </svg>
@@ -396,7 +546,7 @@ export default function SystemOrbitalView() {
                         onSurface={() => setSurfacePlanet(selected.id)}
                         onSystems={() => setConstructionPlanet(selected.id)}
                         onUnits={() => setSelectedPlanet(selected.id)}
-                        onClose={() => setSelectedId(null)}
+                        onClose={() => selectPlanet(null)}
                     />
                 )}
             </div>
