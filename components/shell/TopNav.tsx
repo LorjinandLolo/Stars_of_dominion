@@ -25,6 +25,7 @@ import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
 import IdentityBadge from './IdentityBadge';
 import NotificationBell from '../notifications/NotificationBell';
 import TutorialLauncher from '../tutorial/TutorialLauncher';
+import MusicControl from '../audio/MusicControl';
 import { formatPercent } from '@/lib/ui/format';
 
 interface ResourceChipProps {
@@ -192,6 +193,7 @@ export default function TopNav() {
                     only mounted in the orphaned legacy Navbar — meaning no
                     player had a notification bell or the guided tour at all. */}
                 <NotificationBell factionId={playerFactionId ?? undefined} />
+                <MusicControl />
                 <TutorialLauncher />
 
                 <div className="h-6 w-px bg-slate-800/60" />

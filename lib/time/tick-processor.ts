@@ -15,6 +15,7 @@ import { seedAnomalyPool } from '../exploration/anomaly-catalog';
 import { materializeSystemBodies, systemHasBodies } from '../exploration/body-generator';
 import { tickAIColonization } from '../exploration/colonize-service';
 import { tickAIExpansion } from '../exploration/ai-expansion';
+import { tickAIBeltAmbush } from '../ai/belt-ambush-ai';
 import { tickVictory } from '../victory/victory-service';
 import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
@@ -757,6 +758,8 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
     // only settle what a faction can SEE, and before this nothing ever widened
     // an AI's visibility past its home system.
     try { tickAIExpansion(world); } catch (e) { console.error('[TickProcessor] tickAIExpansion failed:', e); }
+    // AI factions at war lay belt ambushes on the lanes an invader must use.
+    try { tickAIBeltAmbush(world as any); } catch (e) { console.error('[TickProcessor] tickAIBeltAmbush failed:', e); }
 }
 
 function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {

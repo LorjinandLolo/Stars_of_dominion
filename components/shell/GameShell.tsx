@@ -107,6 +107,7 @@ const DevToolbox = dynamic(() => import('@/components/debug/DevToolbox'), { ssr:
 const DefeatOverlay = dynamic(() => import('@/components/defeat/DefeatOverlay'), { ssr: false });
 const NotificationFeed = dynamic(() => import('@/components/notifications/NotificationFeed'), { ssr: false });
 const TutorialOverlay = dynamic(() => import('@/components/tutorial/TutorialOverlay'), { ssr: false });
+const MusicPlayer = dynamic(() => import('@/components/audio/MusicPlayer'), { ssr: false });
 
 const PANEL_MAP = {
     galaxy: null,         // No overlay — pure map view
@@ -331,6 +332,9 @@ export default function GameShell() {
 
             {/* ── Guided tour (auto-starts on first login, ? button restarts) ───── */}
             <TutorialOverlay />
+
+            {/* ── Soundtrack (headless; the control lives in TopNav) ─────────────── */}
+            <MusicPlayer />
 
             {/* ── Economic Terminal Modal ────────────────────────────────────────── */}
             <EconomicTerminalModal />

@@ -53,8 +53,17 @@ function hexPoints(c: number, r: number): string {
 }
 const SWATCH_HEX = hexPoints(6, 5);
 
-/** The chip's swatch IS the mark — a tiny hex (or badge) with the entry's real fill/stroke/dash. */
+/** The chip's swatch IS the mark — a tiny hex (or badge, or ring) with the entry's real fill/stroke/dash. */
 function Swatch({ entry }: { entry: OverlayLegendEntry }) {
+    if (entry.ring) {
+        return (
+            <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden="true" className="shrink-0">
+                <circle cx={6} cy={6} r={1.6} fill="#e2e8f0" opacity={0.7} />
+                <circle cx={6} cy={6} r={4.6} fill="none" stroke={entry.stroke} strokeOpacity={entry.strokeOpacity}
+                    strokeWidth={1} strokeDasharray={entry.dash} />
+            </svg>
+        );
+    }
     if (entry.badge) {
         const hollow = entry.badge === 'hollow';
         return (

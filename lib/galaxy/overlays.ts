@@ -17,7 +17,14 @@
 //
 // A LEAF on purpose: it is bundled into the browser. Imports are types,
 // ping-cost (pricing), capital-distance (hexDistance), colonize-service
-// (COLONY_COST) and movement-config.json — no React, no store, no db.
+// (COLONY_COST), belts (hasAsteroidBelt) and movement-config.json — no React,
+// no store, no db.
+//
+// ASTEROID BELTS. A belt is rolled from the system id (lib/movement/belts.ts),
+// so it is public geometry, but you learn it the way you learn any feature —
+// by scanning. Charted and Relations draw a rocky ring round every belt
+// system at scanned/surveyed (or yours): that is where a fleet can lurk, and
+// where one may be lurking for you.
 
 import {
     relayPingCredits,
@@ -26,6 +33,7 @@ import {
 } from '../exploration/ping-cost';
 import { hexDistance } from '../government/capital-distance';
 import { COLONY_COST } from '../exploration/colonize-service';
+import { hasAsteroidBelt } from '../movement/belts';
 import config from '../movement/movement-config.json';
 
 // ─── Ids and defs ─────────────────────────────────────────────────────────────
@@ -55,6 +63,8 @@ export interface OverlayLegendEntry {
     pulse?: boolean;
     /** Settle chips draw the badge swatch instead of a hex. */
     badge?: 'filled' | 'hollow';
+    /** The chip draws a dashed ring (the belt mark) instead of a hex. */
+    ring?: boolean;
     /** The chip is an explanation, not a bucket (e.g. 'no colour — no reading'). */
     isAction?: boolean;
 }
@@ -98,6 +108,12 @@ const SETTLE_STROKE = '#a3e635';
 const STEADY = '#06b6d4';
 const FRAYING = '#f97316';
 const CALM = '#64748b';
+/** Rock and dust — the belt ring, distinct from amber (cost) and orange (contested). */
+export const BELT_COLOR = '#d6b26e';
+const BELT_LEGEND_ENTRY: OverlayLegendEntry = {
+    key: 'belt', label: 'Asteroid belt — ambush ground', fill: 'none', fillOpacity: 0,
+    stroke: BELT_COLOR, strokeOpacity: 0.9, dash: '1 1.5', ring: true,
+};
 
 const STANCE_COLOR: Record<Stance, string> = {
     mine: MINE,
@@ -118,6 +134,7 @@ const CHARTED_LEGEND: readonly OverlayLegendEntry[] = [
     { key: 'overBudget', label: 'over budget', fill: 'none', fillOpacity: 0, stroke: C.danger, strokeOpacity: 0.45, dash: '1 2' },
     { key: 'reach', label: 'reach', fill: 'none', fillOpacity: 0, stroke: C.reach, strokeOpacity: 0.95, strokeWidth: 1.2 },
     { key: 'inFlight', label: 'in progress', fill: 'none', fillOpacity: 0, stroke: C.inFlight, strokeOpacity: 0.9, dash: '3 2', pulse: true },
+    BELT_LEGEND_ENTRY,
 ];
 
 const RELATIONS_LEGEND: readonly OverlayLegendEntry[] = [
@@ -129,6 +146,7 @@ const RELATIONS_LEGEND: readonly OverlayLegendEntry[] = [
     { key: 'hostile', label: 'Hostile', fill: C.danger, fillOpacity: 0.26, stroke: C.danger, strokeOpacity: 0.75, dash: '2 2' },
     { key: 'contested', label: 'Contested', fill: CONTESTED, fillOpacity: 0.30, stroke: CONTESTED, strokeOpacity: 0.8, dash: '3 2' },
     { key: 'unclaimed', label: 'Unclaimed', fill: 'none', fillOpacity: 0, stroke: C.none, strokeOpacity: 0.30 },
+    BELT_LEGEND_ENTRY,
 ];
 
 const SETTLE_LEGEND: readonly OverlayLegendEntry[] = [
@@ -211,7 +229,7 @@ export interface OverlaySystemStyle {
     dash?: string;
     /** SystemNode adds className gx-breathe */
     pulse?: boolean;
-    /** reserved (colour) — unused by the four shipped overlays, kept for a future ring mark */
+    /** Colour of a dashed ring round the star — the asteroid-belt mark (Charted, Relations). */
     ring?: string;
     badge?: { count: number; color: string; hollow: boolean };
     /** legend key this system was counted under */
@@ -302,6 +320,13 @@ export function revealStageOf(input: OverlayInput, systemId: string): RevealStag
 
 function isKnownStage(stage: RevealStage): boolean {
     return stage === 'scanned' || stage === 'surveyed';
+}
+
+/** The belt mark: a scanned-or-better (or own) system that rolled a belt. */
+function markBelt(ctx: Ctx, sys: OverlayInputSystem, stage: RevealStage, style: OverlaySystemStyle): void {
+    if (!isKnownStage(stage) || !hasAsteroidBelt(sys.id)) return;
+    style.ring = BELT_COLOR;
+    bump(ctx, 'belt');
 }
 
 /**
@@ -597,6 +622,7 @@ function computeCharted(ctx: Ctx): OverlayResult {
             style.stroke = C.reach; style.strokeOpacity = 0.95; style.strokeWidth = 1.2; delete style.dash;
             bump(ctx, 'reach');
         }
+        markBelt(ctx, sys, stage, style);
         ctx.styles.set(sys.id, style);
     }
 
@@ -610,7 +636,7 @@ function computeCharted(ctx: Ctx): OverlayResult {
     } else {
         relay = `relay: ${input.shipyardSystemIds.length} yards`;
     }
-    const footer = `Charted ${cov.charted} of ${total} · ${cov.surveyed} surveyed · ${withinBudget} pings within budget · treasury ${fmt(credits)}cr · ${relay}`;
+    const footer = `Charted ${cov.charted} of ${total} · ${cov.surveyed} surveyed · ${ctx.counts.belt} belts known · ${withinBudget} pings within budget · treasury ${fmt(credits)}cr · ${relay}`;
     const empty = anchors.length === 0 ? 'No relay point — you need a capital or a shipyard to ping from' : null;
     return { styles: ctx.styles, coverage: { withData, total }, counts: ctx.counts, footer, empty };
 }
@@ -652,6 +678,7 @@ function computeRelations(ctx: Ctx): OverlayResult {
         }
         if (style.dash === undefined) delete style.dash;
         if (capitals.has(sys.id)) style.strokeWidth = 1.6;
+        markBelt(ctx, sys, stageOf(input, sys), style);
         ctx.styles.set(sys.id, style);
     }
 
@@ -663,7 +690,7 @@ function computeRelations(ctx: Ctx): OverlayResult {
         STANCE_ORDER[a.stance!] - STANCE_ORDER[b.stance!] || b.count - a.count || a.label.localeCompare(b.label));
 
     const c = ctx.counts;
-    const footer = `Mine ${c.mine} · Allied ${c.ally} · Pact ${c.pact} · Neutral ${c.neutral} · Tension ${c.tension} · Hostile ${c.hostile} · Unclaimed ${c.unclaimed} — borders are common knowledge, contents are not`;
+    const footer = `Mine ${c.mine} · Allied ${c.ally} · Pact ${c.pact} · Neutral ${c.neutral} · Tension ${c.tension} · Hostile ${c.hostile} · Unclaimed ${c.unclaimed} · ${c.belt} belts known — borders are common knowledge, contents are not`;
     const empty = input.systems.length === 0 ? 'No systems synced yet' : null;
     return { styles: ctx.styles, coverage: { withData, total: input.systems.length }, counts: ctx.counts, footer, empty, rows };
 }

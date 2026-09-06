@@ -168,6 +168,15 @@ const SystemNode = memo(({
                     </g>
                 )}
 
+                {/* Overlay ring — the asteroid-belt mark (Charted, Relations):
+                    rocks and dust round the star, outside the ownership and
+                    relationship halos, inside the capital's outer ring. */}
+                {overlay?.ring && (
+                    <circle r={size.core + 7.5} fill="none" stroke={overlay.ring}
+                        strokeWidth={0.8} strokeDasharray="1 1.5" opacity={0.85}
+                        className="gx-spin-slow" />
+                )}
+
                 {/* Overlay count badge (Settle sites, pirate influence) — top-LEFT
                     vertex; the FOB marker owns top-right. */}
                 {overlay?.badge && (
@@ -241,6 +250,7 @@ const SystemNode = memo(({
         a.strokeWidth === b.strokeWidth &&
         a.dash === b.dash &&
         a.pulse === b.pulse &&
+        a.ring === b.ring &&
         a.badge?.count === b.badge?.count &&
         a.badge?.color === b.badge?.color &&
         a.badge?.hollow === b.badge?.hollow);
