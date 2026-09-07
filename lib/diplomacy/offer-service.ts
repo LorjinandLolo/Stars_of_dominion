@@ -10,6 +10,8 @@ import type { RivalryState, Treaty, TreatyType } from '@/lib/politics/cold-war-t
 import { calculateEscalationLevel } from '@/lib/politics/cold-war-service';
 import { isButhari, isInfernoid, isMovanite, grievanceStore, readsGrievances } from '../factions/civ-ids';
 import { ReputationService } from '@/lib/reputation/reputation-service';
+import { bumpMetric } from '@/lib/tech/history-ledger';
+import { DEED_TREATIES_SIGNED } from '@/lib/tech/deed-metrics';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
 import * as chronicle from '@/lib/narrative/chronicle';
@@ -397,6 +399,9 @@ function applyAcceptedOffer(world: GameWorldState, offer: DiplomaticOffer): void
             shiftRivalry(world, from, to, -10, 'treaty_signed', offer.treatyType);
             ReputationService.updateScore(world, from, { honor: 2 }, `signed_${offer.treatyType}`);
             ReputationService.updateScore(world, to, { honor: 2 }, `signed_${offer.treatyType}`);
+            // The saga: a signature on both ledgers.
+            bumpMetric(world, from, DEED_TREATIES_SIGNED);
+            bumpMetric(world, to, DEED_TREATIES_SIGNED);
             break;
         }
         case 'trade_pact': {

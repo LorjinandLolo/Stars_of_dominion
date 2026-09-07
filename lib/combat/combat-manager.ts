@@ -16,6 +16,8 @@ import {
     advanceRound
 } from './combat-engine';
 import { getTechModifiers } from '../tech/modifiers';
+import { bumpMetric } from '../tech/history-ledger';
+import { DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../tech/deed-metrics';
 import { getBrutalityBonus, recordTrophyKill, shouldRoutFromFear, FEAR_ROUT_GRACE_SECONDS } from '../factions/kaerruun';
 import { getSerumBonus } from '../factions/sarrak';
 import { getSurgeBonus } from '../factions/gabagoon';
@@ -201,10 +203,20 @@ function handleEngagement(
             // re-initiated against it every tick ("zombie" engagements).
             for (const fleet of [...fleetsA, ...fleetsB]) {
                 if (fleet.strength <= 0) {
+                    // processSectorCombats hands every hostile pair in a system
+                    // the SAME fleet array. A fleet annihilated by the first
+                    // pair is deleted from the map but not from that array, so
+                    // without this guard the next pair counted the corpse
+                    // again — a second "fleet lost", a kill credited to a
+                    // faction that never fired, a second trophy.
+                    if (!world.movement.fleets.has(fleet.id)) continue;
                     // Credit the other side before the fleet is gone — the
                     // Reaper's Toll crown measures destroyed power per season.
                     const killer = fleet.factionId === factionA ? factionB : factionA;
                     notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
+                    // The saga: one line on each ledger.
+                    bumpMetric(world, killer, DEED_FLEETS_DESTROYED);
+                    bumpMetric(world, fleet.factionId, DEED_FLEETS_LOST);
                     // Ritual Brutality: the Kaer'Ruun keep a trophy for every
                     // kill, and it makes them permanently deadlier. This is the
                     // only site where a kill is unambiguously attributed — note

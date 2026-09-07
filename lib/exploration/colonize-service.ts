@@ -6,6 +6,8 @@
 import type { GameWorldState } from '../game-world-state';
 import type { PlanetProduction } from '../economy/economy-types';
 import { initializePlanetServices } from '../economy/services/service-engine';
+import { bumpMetric } from '../tech/history-ledger';
+import { DEED_COLONIES_FOUNDED } from '../tech/deed-metrics';
 
 /**
  * What a colony costs, in faction reserve keys. The PLANET_CLAIM entry in
@@ -115,6 +117,9 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     if (region && !region.systemIds.includes(constr.systemId)) {
         region.systemIds.push(constr.systemId);
     }
+
+    // The saga: one line per world settled.
+    bumpMetric(world, factionId, DEED_COLONIES_FOUNDED);
 
     console.log(`[Colonize] ${factionId} founded a colony on ${constr.name} (${constr.systemId}).`);
     return { ok: true };

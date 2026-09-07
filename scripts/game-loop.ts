@@ -10,6 +10,7 @@ import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
 import { bumpMetric } from '../lib/tech/history-ledger';
+import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../lib/tech/deed-metrics';
 import { registry as techRegistryForOrders } from '../lib/tech/engine';
 import {
     addBlueprint,
@@ -2593,6 +2594,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'DIP_DECLARE_WAR': {
+             // Already at war: nothing to declare. Without this, a double
+             // click before the next sync (or a replayed order) re-ran the
+             // whole act-of-war path and counted a second declaration on
+             // both ledgers.
+             if (isAtWar(world, factionId, payload.targetFactionId)) {
+                 recordOrderFailure(world, factionId, actionId, 'You are already at war with that power.');
+                 return;
+             }
              // Public support is read BEFORE the war state lands so the rivalry
              // score still reflects the pre-war standoff ("was this justified?").
              evaluateSupportAndApply(world, factionId, 'declare_war', payload.targetFactionId);
@@ -2602,8 +2611,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
              // Phase 5: what an empire does reshapes what it becomes.
              recordPoliticalEvent(world, factionId, 'declare_war');
              // History: counted on the TARGET's ledger — being attacked
-             // repeatedly is what teaches a defensive doctrine.
-             bumpMetric(world, payload.targetFactionId, 'war.declaredAgainstUs');
+             // repeatedly is what teaches a defensive doctrine — and on the
+             // declarer's, for the saga.
+             bumpMetric(world, payload.targetFactionId, DEED_WARS_DECLARED_ON_US);
+             bumpMetric(world, factionId, DEED_WARS_DECLARED);
              console.log(`[Order] Faction ${factionId} declared War on ${payload.targetFactionId}`);
              break;
         }
@@ -4039,7 +4050,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // are deleted (they merged into it). Only fleets still HOLDING in
             // the locked system are touched — a fleet that jumped out
             // mid-battle escaped the engagement.
-            const applySideResult = (fleetIds: string[], rawSide: any, pre: any) => {
+            const applySideResult = (fleetIds: string[], rawSide: any, pre: any, opponentId: string) => {
                 const side = sanitizeSide(rawSide, pre);
                 const existing = fleetIds.filter((fid) => {
                     const f = world.movement.fleets.get(fid);
@@ -4047,7 +4058,17 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 });
                 if (!side || existing.length === 0) return;
                 if (side.destroyed) {
-                    for (const fid of existing) world.movement.fleets.delete(fid);
+                    // The saga: a fleet that dies on the tactical screen is as
+                    // lost as one the auto-resolver kills — the auto-resolver
+                    // skips a locked pair, so this is the only writer here.
+                    for (const fid of existing) {
+                        const dead = world.movement.fleets.get(fid);
+                        if (dead) {
+                            bumpMetric(world, dead.factionId, DEED_FLEETS_LOST);
+                            bumpMetric(world, opponentId, DEED_FLEETS_DESTROYED);
+                        }
+                        world.movement.fleets.delete(fid);
+                    }
                     return;
                 }
                 const survivor = world.movement.fleets.get(existing[0]);
@@ -4063,8 +4084,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 survivor.basePower = Math.max(1, Math.round((pooledBasePower || pre?.totalBasePower || 100) * ratio));
                 for (const fid of existing.slice(1)) world.movement.fleets.delete(fid);
             };
-            applySideResult(playerFleetIds, playerResult, lock.preBattle?.player);
-            applySideResult(enemyFleetIds, enemyResult, lock.preBattle?.enemy);
+            applySideResult(playerFleetIds, playerResult, lock.preBattle?.player, enemyFactionId);
+            applySideResult(enemyFleetIds, enemyResult, lock.preBattle?.enemy, factionId);
 
             // Drop any auto-resolve engagement for this pair — ids look like
             // combat-<systemId>-<facA>-<facB> (either faction order).

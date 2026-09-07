@@ -100,8 +100,12 @@ export function issueRelayPing(
     return order;
 }
 
-/** Called when any stage lands — the tick layer tells the player who ordered it. */
-export type StageCompleteHook = (order: ExplorationOrder, factionId: string, stage: RevealStage) => void;
+/**
+ * Called when any stage lands — the tick layer tells the player who ordered
+ * it. `prevStage` is what this faction knew before the order, so a caller can
+ * tell a first survey from a re-survey (the saga counts only the first).
+ */
+export type StageCompleteHook = (order: ExplorationOrder, factionId: string, stage: RevealStage, prevStage: RevealStage) => void;
 
 // ─── Advance exploration tick ──────────────────────────────────────────────────
 
@@ -202,7 +206,7 @@ function processCompletedOrder(
         factionId,
         timestamp: world.nowSeconds,
     });
-    onStageComplete?.(order, factionId, effectiveStage);
+    onStageComplete?.(order, factionId, effectiveStage, prevStage);
 
     // On survey: materialize the system's bodies first (via the tick layer's
     // hook), then attempt anomaly attachment — anomalies attach to planets, so

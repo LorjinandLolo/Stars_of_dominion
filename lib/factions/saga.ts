@@ -19,10 +19,24 @@
 //
 // Top-of-stack like traits-service: imports every faction module, is imported
 // only by the client and the probe. Engine services must never import it.
+//
+// EVERY empire has a saga, not only the ten. The founding four used to get a
+// grey box saying "no bespoke mechanics"; now the model carries three things
+// any faction can answer: who you are (the lobby card you chose, your ideology,
+// and — for the ten — the civilization authored for you), the edge your people
+// bring (the civilization/ideology modifiers, marked live or dormant by whether
+// the engine actually reads them — never a number the worker would disagree
+// with), and the deeds every empire accrues under the common rules
+// (lib/tech/deed-metrics.ts). Bespoke statuses and records sit on top.
 
 import type { GameWorldState } from '../game-world-state';
 import { civilizationOf } from './civ-ids';
 import { getMetric } from '../tech/history-ledger';
+import { DEED_DEFS } from '../tech/deed-metrics';
+import { CivilizationRegistry } from '../civilization/registry';
+import { getCivilizationModifiers, getAuthoredBundles, UNCONSUMED_KEYS } from '../civilization/modifiers';
+import { lobbyFactionById } from '../../data/factions/lobby-factions';
+import combatConfig from '../combat/combat-config.json';
 import {
     KAERRUUN_CIV_ID, TROPHY_METRIC, VIOLATION_METRIC,
     isInBloodmoonCeasefire, bloodmoonSecondsRemaining, getBrutalityBonus, activeContracts,
@@ -64,13 +78,45 @@ export interface SagaRecord {
     value: number;
 }
 
+/** Who you are: the lobby card, the ideology, and (for the ten) the civilization authored for you. */
+export interface SagaIdentity {
+    name: string;
+    leader?: string;
+    tagline?: string;
+    description?: string;
+    playstyle?: string;
+    traits: string[];
+    species?: string;
+    ideology?: { name: string; description: string };
+    weaknesses: string[];
+    preferredVictories: string[];
+}
+
+/** One civilization/ideology modifier, as the engine sees it. */
+export interface SagaEdge {
+    id: string;
+    label: string;
+    /** Already formatted: '+15%', '-0.15/day', '+5 pts'. */
+    value: string;
+    /** 'active' = a consumer reads it today; 'dormant' = authored, not yet wired. */
+    tone: 'active' | 'dormant';
+    detail: string;
+}
+
 export interface FactionSaga {
     factionId: string;
     civilizationId?: string;
     /** False for the founding four and anyone else without bespoke mechanics. */
     hasBespokeMechanics: boolean;
+    identity: SagaIdentity;
+    /** The civilization's numbers — what the engine reads and what it does not yet. */
+    edges: SagaEdge[];
+    /** Bespoke live gauges (the ten). */
     statuses: SagaStatus[];
+    /** Bespoke lifetime ledger (the ten). */
     records: SagaRecord[];
+    /** Common-rules lifetime ledger — every empire. */
+    deeds: SagaRecord[];
 }
 
 const TICK_SECONDS = 6 * 60 * 60;
@@ -81,6 +127,200 @@ const ticks = (seconds: number) => Math.max(0, Math.ceil(seconds / TICK_SECONDS)
 function record(out: SagaRecord[], id: string, label: string, value: number): void {
     if (value > 0) out.push({ id, label, value });
 }
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
+/**
+ * The civilizations authored FOR their faction. The founding four borrow one
+ * of the eight legacy definitions for their numbers (Aurelian runs on
+ * civ-elyndra's bundle), but that definition's name and lore are not theirs —
+ * the lobby card is — so only these ten surface the registry's prose. A
+ * breakaway state (civil-war-service copies the parent's civilizationId onto
+ * a fresh faction with no lobby card) inherits the same rule: numbers yes,
+ * prose no.
+ */
+const AUTHORED_CIV_IDS = new Set([
+    'civ-kaerruun', 'civ-sarrak', 'civ-buthari', 'civ-infernoid', 'civ-movanite',
+    'civ-leopantheri', 'civ-rhimetals', 'civ-gabagoon', 'civ-nexulan', 'civ-intergalactic',
+]);
+
+export function buildSagaIdentity(world: GameWorldState, factionId: string): SagaIdentity {
+    const faction = world?.economy?.factions?.get?.(factionId) as { name?: string; civilizationId?: string; ideologyId?: string } | undefined;
+    const lobby = lobbyFactionById(factionId);
+    const civ = faction?.civilizationId ? CivilizationRegistry.getCivilization(faction.civilizationId) : undefined;
+    const ideology = faction?.ideologyId ? CivilizationRegistry.getIdeology(faction.ideologyId) : undefined;
+    const civIsTheirs = !!civ && AUTHORED_CIV_IDS.has(civ.id);
+
+    const identity: SagaIdentity = {
+        name: faction?.name ?? lobby?.name ?? factionId,
+        traits: [],
+        weaknesses: civIsTheirs ? [...(civ!.weaknesses ?? [])] : [],
+        preferredVictories: civIsTheirs ? [...(civ!.preferredVictories ?? [])] : [],
+    };
+    if (lobby) {
+        identity.leader = lobby.leader;
+        identity.tagline = lobby.tagline;
+        identity.description = lobby.description;
+        identity.playstyle = lobby.playstyle;
+        identity.traits = [...lobby.traits];
+    } else if (civIsTheirs) {
+        identity.tagline = civ!.shortDescription;
+        identity.description = civ!.lore;
+        identity.traits = [...(civ!.playstyleTags ?? [])];
+    }
+    if (civIsTheirs) identity.species = civ!.speciesType;
+    if (ideology) identity.ideology = { name: ideology.name, description: ideology.description };
+    return identity;
+}
+
+// ─── The edge ────────────────────────────────────────────────────────────────
+
+type EdgeUnit = 'pct' | 'points' | 'pctPoints' | 'perDay';
+interface EdgeDef { label: string; unit: EdgeUnit; detail: string }
+
+/** Consumer keys (lib/tech/modifiers.ts and lib/government/modifiers.ts vocabularies) → how to read them. */
+const EDGE_DEFS: Record<string, EdgeDef> = {
+    'tech:eco_tax_mult': { label: 'Tax income', unit: 'pct', detail: 'Credits raised from every world you hold.' },
+    'tech:eco_production_mult': { label: 'Resource output', unit: 'pct', detail: 'Raw extraction on every world.' },
+    'tech:eco_manufacturing_mult': { label: 'Manufacturing', unit: 'pct', detail: 'Manufactured goods output.' },
+    'tech:eco_upkeep_mult': { label: 'Upkeep', unit: 'pct', detail: 'Service upkeep — lower is cheaper.' },
+    'tech:construction_speed': { label: 'Construction speed', unit: 'pct', detail: 'Buildings rise faster.' },
+    'tech:research_speed': { label: 'Research speed', unit: 'pct', detail: 'Research throughput.' },
+    'tech:combat_power_multiplier': { label: 'Combat power', unit: 'pct', detail: 'Every engagement, every layer.' },
+    'tech:ground_power_multiplier': { label: 'Ground assault', unit: 'pct', detail: 'Ground combat only.' },
+    'tech:orbital_power_multiplier': { label: 'Fleet power', unit: 'pct', detail: 'Orbital combat only.' },
+    'tech:esp_op_success_add': { label: 'Covert op success', unit: 'pctPoints', detail: 'Added to every operation roll.' },
+    'tech:esp_exposure_mult': { label: 'Exposure risk', unit: 'pct', detail: 'How often your operations are caught — lower is quieter.' },
+    'government:approval': { label: 'Approval', unit: 'points', detail: 'Baseline approval, on the 0–100 scale.' },
+    'government:legitimacy_drift': { label: 'Legitimacy', unit: 'perDay', detail: 'Legitimacy drift, per day.' },
+    'government:pop_growth': { label: 'Population growth', unit: 'pct', detail: 'Every world grows faster.' },
+};
+
+/**
+ * Authored and routed, but the consumer named in the registry does not read
+ * the composed value: getFactionEconomyMods reads the researched bundle
+ * straight off world.tech (economy-service.ts), and the research tick reads
+ * only the government vocabulary (tick-processor step4). Listed here so the
+ * Saga says "dormant" instead of promising income the treasury never pays.
+ * Remove a key the day its consumer switches to getTechModifiers.
+ */
+export const DORMANT_EDGE_KEYS = new Set([
+    'tech:eco_tax_mult', 'tech:eco_production_mult', 'tech:eco_manufacturing_mult', 'tech:eco_upkeep_mult',
+    'tech:research_speed',
+]);
+
+/**
+ * Authored keys the modifier map knowingly drops (UNCONSUMED_KEYS) — shown as
+ * dormant, by name. Most are authored as fractions; diplomatic_trust_cap is a
+ * point-scale cap (civ-mycelari authors -50), so it carries its own unit.
+ */
+const DECORATIVE_DEFS: Record<string, { label: string; unit: EdgeUnit }> = {
+    diplomatic_trust_cap: { label: 'Trust ceiling', unit: 'points' },
+    diplomatic_influence: { label: 'Diplomatic influence', unit: 'pct' },
+    treaty_trust_gain: { label: 'Treaty trust', unit: 'pct' },
+    autonomy_boost: { label: 'Autonomy', unit: 'pct' },
+    leader_xp_gain: { label: 'Leader experience', unit: 'pct' },
+    unit_experience_gain: { label: 'Unit veterancy', unit: 'pct' },
+    manpower_upkeep: { label: 'Manpower upkeep', unit: 'pct' },
+};
+
+const DORMANT_DETAIL = 'Authored for your people; the engine does not read it yet.';
+
+/**
+ * combat-engine multiplies base power by (1 + combat_power + layer bonus) and
+ * then clamps the WHOLE multiplier to ±maxVarianceCap. Three of the ten are
+ * authored past that ceiling (Infernoids +55%, Sarrak +50%, Kaer'Ruun +45%),
+ * so the Saga shows the number the engine lands on, and says why.
+ */
+const COMBAT_EDGE_KEYS = new Set(['tech:combat_power_multiplier', 'tech:ground_power_multiplier', 'tech:orbital_power_multiplier']);
+export const COMBAT_POWER_CAP: number = combatConfig.constants.maxVarianceCap;
+
+function capCombatEdge(id: string, value: number, def: EdgeDef): { value: number; detail: string } {
+    if (!COMBAT_EDGE_KEYS.has(id)) return { value, detail: def.detail };
+    const capPct = `±${Math.round(COMBAT_POWER_CAP * 100)}%`;
+    if (Math.abs(value) <= COMBAT_POWER_CAP) {
+        return { value, detail: `${def.detail} The engine caps the whole multiplier at ${capPct}.` };
+    }
+    const capped = Math.sign(value) * COMBAT_POWER_CAP;
+    return {
+        value: capped,
+        detail: `Authored ${formatEdgeValue(value, def.unit)}; the engine caps the whole multiplier at ${capPct}, so this is what lands.`,
+    };
+}
+
+function trimNumber(n: number): string {
+    return String(Math.round(n * 100) / 100);
+}
+
+export function formatEdgeValue(value: number, unit: EdgeUnit): string {
+    const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+    const abs = Math.abs(value);
+    switch (unit) {
+        case 'pct': return `${sign}${Math.round(abs * 100)}%`;
+        case 'pctPoints': return `${sign}${Math.round(abs * 100)} pts`;
+        case 'points': return `${sign}${trimNumber(abs)} pts`;
+        case 'perDay': return `${sign}${trimNumber(abs)}/day`;
+    }
+}
+
+export function buildSagaEdges(world: GameWorldState, factionId: string): SagaEdge[] {
+    const edges: SagaEdge[] = [];
+    for (const target of ['tech', 'government'] as const) {
+        const mods = getCivilizationModifiers(world, factionId, target);
+        for (const key of Object.keys(mods).sort()) {
+            const value = mods[key];
+            if (!Number.isFinite(value) || value === 0) continue;
+            const id = `${target}:${key}`;
+            const def = EDGE_DEFS[id] ?? { label: key, unit: 'pct' as EdgeUnit, detail: '' };
+            const dormant = DORMANT_EDGE_KEYS.has(id);
+            const shown = capCombatEdge(id, value, def);
+            edges.push({
+                id,
+                label: def.label,
+                value: formatEdgeValue(shown.value, def.unit),
+                tone: dormant ? 'dormant' : 'active',
+                detail: dormant ? DORMANT_DETAIL : shown.detail,
+            });
+        }
+    }
+    // The decorative half: authored, mapped nowhere, still part of who you are.
+    const decorative = new Map<string, number>();
+    for (const bundle of getAuthoredBundles(world, factionId)) {
+        for (const [key, value] of Object.entries(bundle)) {
+            if (!UNCONSUMED_KEYS.has(key) || typeof value !== 'number' || !Number.isFinite(value) || value === 0) continue;
+            decorative.set(key, (decorative.get(key) ?? 0) + value);
+        }
+    }
+    for (const key of [...decorative.keys()].sort()) {
+        const value = decorative.get(key)!;
+        // Unknown decorative keys: anything past ±1 cannot be a fraction.
+        const def = DECORATIVE_DEFS[key] ?? { label: key, unit: (Math.abs(value) > 1 ? 'points' : 'pct') as EdgeUnit };
+        edges.push({
+            id: `authored:${key}`,
+            label: def.label,
+            value: formatEdgeValue(value, def.unit),
+            tone: 'dormant',
+            detail: DORMANT_DETAIL,
+        });
+    }
+    // Live first, then dormant — the player reads what counts before what waits.
+    return edges.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'active' ? -1 : 1));
+}
+
+// ─── Deeds ───────────────────────────────────────────────────────────────────
+
+/** The common-rules ledger: every counter every empire can earn, plus the tech shelf. */
+export function buildSagaDeeds(world: GameWorldState, factionId: string): SagaRecord[] {
+    const deeds: SagaRecord[] = [];
+    for (const def of DEED_DEFS) {
+        record(deeds, def.metric, def.label, getMetric(world as any, factionId, def.metric));
+    }
+    const techs = world?.tech?.get?.(factionId)?.unlockedTechIds?.length ?? 0;
+    record(deeds, 'tech.mastered', 'Technologies mastered', techs);
+    return deeds;
+}
+
+// ─── The saga ────────────────────────────────────────────────────────────────
 
 export function buildFactionSaga(world: GameWorldState, factionId: string): FactionSaga {
     const civilizationId = civilizationOf(world, factionId);
@@ -330,7 +570,10 @@ export function buildFactionSaga(world: GameWorldState, factionId: string): Fact
         factionId,
         civilizationId,
         hasBespokeMechanics: statuses.length > 0,
+        identity: buildSagaIdentity(world, factionId),
+        edges: buildSagaEdges(world, factionId),
         statuses,
         records,
+        deeds: buildSagaDeeds(world, factionId),
     };
 }

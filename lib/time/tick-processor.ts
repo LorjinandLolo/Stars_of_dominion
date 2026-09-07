@@ -16,6 +16,8 @@ import { materializeSystemBodies, systemHasBodies } from '../exploration/body-ge
 import { tickAIColonization } from '../exploration/colonize-service';
 import { tickAIExpansion } from '../exploration/ai-expansion';
 import { tickAIBeltAmbush } from '../ai/belt-ambush-ai';
+import { bumpMetric } from '../tech/history-ledger';
+import { DEED_SYSTEMS_SURVEYED } from '../tech/deed-metrics';
 import { tickVictory } from '../victory/victory-service';
 import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
@@ -706,7 +708,13 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
         },
         // The reveal itself: tell whoever ordered it that the map changed.
         // Doctrine automation stays quiet — it would fire every few ticks.
-        (order, factionId, stage) => {
+        (order, factionId, stage, prevStage) => {
+            // The saga: a system charted the first time THIS faction brings it
+            // to surveyed. Re-surveys, pings and scans do not count. Automated
+            // surveys still do — the map changed either way.
+            if (stage === 'surveyed' && prevStage !== 'surveyed') {
+                bumpMetric(world, factionId, DEED_SYSTEMS_SURVEYED);
+            }
             if (order.isAutomated) return;
             const name = world.movement.systems.get(order.targetSystemId)?.name ?? order.targetSystemId;
             const verb = order.mode === 'ping' ? 'PINGED' : order.mode === 'scan' ? 'SCANNED' : 'SURVEYED';

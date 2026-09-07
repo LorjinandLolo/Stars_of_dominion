@@ -1,0 +1,195 @@
+// data/factions/lobby-factions.ts
+// The fourteen playable empires as the player meets them: the card in the
+// lobby, and the identity block at the top of the Saga tab. One authored list,
+// read by both, so the empire you chose is the empire the game calls you.
+//
+// A leaf: no imports. lib/factions/saga.ts is bundled into the browser through
+// useGameSync, so anything it reads must stay one.
+
+export interface LobbyFaction {
+    id: string;
+    name: string;
+    leader: string;
+    tagline: string;
+    description: string;
+    color: string;
+    accentColor: string;
+    icon: string;
+    playstyle: string;
+    traits: string[];
+}
+
+export const LOBBY_FACTIONS: readonly LobbyFaction[] = [
+    {
+        id: 'faction-aurelian',
+        name: 'Aurelian Hegemony',
+        leader: 'Grand Strategos Valerian',
+        tagline: 'Order through strength. Peace through unity.',
+        description: 'A militaristic, collectivist empire that values honor and hierarchy. Their disciplined fleets are the vanguard of galactic order.',
+        color: '#7f1d1d',
+        accentColor: '#f87171',
+        icon: '/assets/factions/aurelians.png',
+        playstyle: 'Militaristic / Collectivist',
+        traits: ['Military Production', 'Fleet Morale', 'Honor Culture'],
+    },
+    {
+        id: 'faction-vektori',
+        name: 'Vektori Technocracy',
+        leader: 'Prime Archon Xylos',
+        tagline: 'The universe is a riddle. We are the solution.',
+        description: 'An individualist society focused on science and logical optimization. They prefer advanced research and diplomacy over war.',
+        color: '#1e3a8a',
+        accentColor: '#60a5fa',
+        icon: '/assets/factions/vektori.png',
+        playstyle: 'Scientific / Individualist',
+        traits: ['Science Output', 'Diplomatic Trust', 'Logic Directives'],
+    },
+    {
+        id: 'faction-null-syndicate',
+        name: 'Nullward Syndicate',
+        leader: 'The Shadow Broker',
+        tagline: 'Information is the only true currency.',
+        description: 'A secretive mercantile network that thrives in grey markets. Specialists in espionage, subversion, and high-stakes information warfare.',
+        color: '#312e81',
+        accentColor: '#818cf8',
+        icon: '/assets/factions/syndicate.png',
+        playstyle: 'Espionage / Mercantile',
+        traits: ['Black Market Network', 'Shadow Operations', 'Debt Arbitrage'],
+    },
+    {
+        id: 'faction-covenant',
+        name: 'Altaris Covenant',
+        leader: 'High Exarch Solari',
+        tagline: 'By the Light of the Core, we are one.',
+        description: 'A religious collectivist society dedicated to ancient stellar traditions and the study of the First Stars.',
+        color: '#4c1d95',
+        accentColor: '#a78bfa',
+        icon: '/assets/factions/covenant.png',
+        playstyle: 'Religious / Traditionalist',
+        traits: ['Cultural Unity', 'State Religion', 'Stellar Mysticism'],
+    },
+    {
+        id: 'nexulan_convergence',
+        name: 'Nexulan Convergence',
+        leader: 'Consensus Overmind 01',
+        tagline: 'Efficiency is the final evolution.',
+        description: 'A transhumanist synthetic collective that has converted their entire homeworld into a Dyson Shell. Driven by total resource optimization.',
+        color: '#065f46',
+        accentColor: '#34d399',
+        icon: '/assets/factions/nexulans.png',
+        playstyle: 'Technological / Dyson-Builders',
+        traits: ['Research Speed', 'Resource Efficiency', 'Synthetic Optimization'],
+    },
+    {
+        id: 'banking_clan',
+        name: 'Intergalactic Banking Clan',
+        leader: 'Chairman Gredshun',
+        tagline: 'Debt is a heavier chain than iron.',
+        description: 'Predatory financiers who control the credit flow of the galaxy. They weaponize debt and sponsor mercenaries to protect their assets.',
+        color: '#92400e',
+        accentColor: '#fbbf24',
+        icon: '/assets/factions/banking_clan.png',
+        playstyle: 'Predatory Economic / Mercenary',
+        traits: ['Tax Havens', 'Financial Neutrality', 'Debt Arbitrators'],
+    },
+    {
+        id: 'faction-rhimetals',
+        name: 'Rhimetals / Rufus',
+        leader: 'Wofrrs, The Crowned Wing',
+        tagline: 'We do not conquer. We correct.',
+        description: 'Statuesque humanoids with metallic skin and enormous feathered wings. They function as galactic custodians, enforcers of peace and order through a unified Hive Mind.',
+        color: '#94a3b8',
+        accentColor: '#38bdf8',
+        icon: '/assets/factions/rhimetals.png',
+        playstyle: 'Skirmishers / Peacekeepers',
+        traits: ['Hive Mind Network', 'Supersonic Flight', 'Limited Telepathy'],
+    },
+    {
+        id: 'faction-gabagoonians',
+        name: 'Gabagoonians / Cohen',
+        leader: 'Eileen Ulick, The Soprano-Savant',
+        tagline: 'You come to me, on the day of my dinner?',
+        description: 'Short, wide, and squishy ovals shaped like upright ovals. Obsessed with "The Sopranos" and capacola vines. Formidable brawlers when fueled by their favorite snack.',
+        color: '#b45309',
+        accentColor: '#facc15',
+        icon: '/assets/factions/gabagoonians.png',
+        playstyle: 'Momentum-based Brawlers',
+        traits: ['Capacola Surge', 'Cultural Obsession', 'Tactical Gooning'],
+    },
+    {
+        id: 'faction-infernoids',
+        name: 'Infernoids / Martijn',
+        leader: 'Mulgar, The Pyreborn Tyrant',
+        tagline: 'Purity is flame. The rest is ash.',
+        description: 'Obsidian-plated predators forged in volcanic hellscapes. Living weapons that weaponize their own fireblood and embrace pain as honor.',
+        color: '#7f1d1d',
+        accentColor: '#ef4444',
+        icon: '/assets/factions/infernoids.png',
+        playstyle: 'Planetary Juggernauts',
+        traits: ['Thermal Vision', 'Fireblood Detonation', 'Morale Inversion'],
+    },
+    {
+        id: 'faction-movanites',
+        name: 'Movanites / David',
+        leader: 'Cedeti the Third, Grand Komptroller',
+        tagline: 'Peace is our policy. But so is trampling.',
+        description: 'Quadruped centaur forms with chitin-plated backs. Industrial powerhouses from a super-Earth with crushing gravity. Master of mass mobilization.',
+        color: '#365314',
+        accentColor: '#84cc16',
+        icon: '/assets/factions/movanites.png',
+        playstyle: 'Horde-builders / Industrial',
+        traits: ['Mass Mobilization', 'Crushing Density', 'Bureaucratic Stampede'],
+    },
+    {
+        id: 'faction-leopantheri',
+        name: 'Leo-pantheri / Lolo',
+        leader: "T'Kharan Maul, The Harmonious Roar",
+        tagline: 'Be not the sheep. Be the lion.',
+        description: 'Tall, muscular lion-esque humanoids who combine ritual combat with advanced scientific research. Philosopher-kings of the starlight plains.',
+        color: '#78350f',
+        accentColor: '#fbbf24',
+        icon: '/assets/factions/leopantheri.png',
+        playstyle: 'Philosopher-Kings / Diplomats',
+        traits: ['Ritual Combat', 'Dual-Tech Trees', 'Eyes of Twin Suns'],
+    },
+    {
+        id: 'faction-buthari',
+        name: 'The Buthari / Hisham',
+        leader: 'The Council of Five',
+        tagline: 'Come vibe. But never confuse the fire with the flame.',
+        description: 'Mountain-animal adapted bodies with human faces. Master manipulators and fortress-hold mystics dwelling in rugged peaks laced with psychoactive flora.',
+        color: '#1e1b4b',
+        accentColor: '#818cf8',
+        icon: '/assets/factions/buthari.png',
+        playstyle: 'Manipulators / Fortress-Hold',
+        traits: ['Chemical Immunity', 'The Five Champions', 'Tribal Communalism'],
+    },
+    {
+        id: 'faction-sarrak',
+        name: 'Sarrak / Sil',
+        leader: 'Domina Scalex, First Fang',
+        tagline: 'Strength is sacred. The weak are fuel.',
+        description: 'Crocodilian humanoids with armored scales and genetic hair strips. Relentless war machine from bioluminescent god-swamps.',
+        color: '#064e3b',
+        accentColor: '#10b981',
+        icon: '/assets/factions/sarrak.png',
+        playstyle: 'Conquest / War Machine',
+        traits: ['Swamp Juice Infusion', 'Slave Economy', 'Monotheistic Fanaticism'],
+    },
+    {
+        id: 'faction-kaerruun',
+        name: 'Kaer’Ruun / Otto',
+        leader: 'High Warlord Rekk’tan',
+        tagline: 'We conquer to prove we deserve to exist.',
+        description: 'Stealthy apex predators with facial mandibles and obsidian skin. Sacred mercenaries who hunt through the twilight of deathworlds.',
+        color: '#18181b',
+        accentColor: '#a8a29e',
+        icon: '/assets/factions/kaerruun.png',
+        playstyle: 'Stealth Shock Troops',
+        traits: ['Ritual Brutality', 'Kaefer Blades', 'Mercenary Contracts'],
+    },
+];
+
+export function lobbyFactionById(id: string): LobbyFaction | undefined {
+    return LOBBY_FACTIONS.find(f => f.id === id);
+}
