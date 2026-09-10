@@ -137,7 +137,15 @@ All commands from `~/servers/stardom/Stars_of_dominion`.
 ### Deploying a new version
 
 ```bash
-git pull
+bash scripts/deploy-server.sh            # pull, rebuild, migrate, verify
+bash scripts/deploy-server.sh --backup   # same, with a pg_dump first
+```
+
+The script is the three commands below plus a health wait and a version
+fingerprint (`/api/music` answers 200 only on code from 2026-09-06 on):
+
+```bash
+git pull --ff-only
 docker compose -f compose.prod.yaml up -d --build
 docker compose -f compose.prod.yaml run --rm app npx prisma migrate deploy
 ```
