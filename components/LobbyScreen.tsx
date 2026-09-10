@@ -122,6 +122,67 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     const hovered = factions.find(f => f.id === hoveredId);
     const currentUserHasClaim = currentUser && Object.values(takenFactions).some((d: any) => d.isMine);
 
+    // The confirm / re-enter block. For a locked player it renders in the HEADER:
+    // under the 65vh card scroller it sat below the fold on a laptop screen, and
+    // "I registered but cannot continue" was the first thing said on launch night.
+    const confirmBlock = (
+                <div className="relative z-10 text-center">
+                    <button
+                        onClick={handleConfirm}
+                        disabled={(!selectedId || confirming) && !currentUserHasClaim}
+                        className="px-12 py-4 rounded-lg font-bold text-lg transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        style={{
+                            background: selectedId
+                                ? `linear-gradient(135deg, ${selected!.accentColor}, ${selected!.color})`
+                                : 'rgba(100,116,139,0.2)',
+                            color: selectedId ? '#fff' : 'rgba(148,163,184,0.5)',
+                            boxShadow: selectedId ? `0 0 30px ${selected!.accentColor}50` : 'none',
+                            transform: selectedId && !confirming ? 'scale(1.02)' : 'scale(1)',
+                        }}
+                    >
+                        {confirming 
+                            ? '⏳ Entering game...' 
+                            : currentUserHasClaim 
+                                ? '🚀 Re-enter Game' 
+                                : selectedId 
+                                    ? `🚀 Play as ${selected!.name}` 
+                                    : 'Select a faction first'}
+                    </button>
+                    {currentUserHasClaim && !confirming && (
+                        <div className="mt-3 space-y-1">
+                            <p className="text-slate-500 text-sm">
+                                Your choice is locked for the season.
+                            </p>
+                            <button
+                                onClick={async () => {
+                                    if (!window.confirm('Release your faction claim? Anyone can then claim it — including its current empire, mid-flight.')) return;
+                                    try {
+                                        const res = await fetch('/api/lobby/claim', { method: 'DELETE' });
+                                        const data = await res.json().catch(() => ({}));
+                                        if (!res.ok) { alert(data.error || 'Could not release the claim.'); return; }
+                                        localStorage.removeItem('selectedFactionId');
+                                        setPlayerFactionId(null as any);
+                                        setSelectedId(null);
+                                        window.location.reload();
+                                    } catch {
+                                        alert('Could not reach the server.');
+                                    }
+                                }}
+                                className="text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
+                            >
+                                picked wrong? release my claim
+                            </button>
+                        </div>
+                    )}
+                    {!currentUserHasClaim && !selectedId && Object.keys(takenFactions).length >= 14 && (
+                        <p className="text-amber-500/80 text-sm mt-3 max-w-md mx-auto">
+                            All fourteen factions are claimed for this season. You can watch the
+                            gazette from outside, or ask the host to free a seat.
+                        </p>
+                    )}
+                </div>
+    );
+
     if (entering) {
         return (
             <BootScreen
@@ -200,6 +261,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         </span>
                     </div>
                 )}
+                {currentUserHasClaim && <div className="mt-6">{confirmBlock}</div>}
                 {currentUser && !currentUserHasClaim && Object.keys(takenFactions).length > 0 && (
                     <p className="mt-2 text-[10px] text-amber-400/80 max-w-md mx-auto leading-relaxed">
                         This account hasn't claimed a faction. If you expected one of the claimed
@@ -322,62 +384,9 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 </div>
             </div>
 
-            {/* Confirm Button */}
-            <div className="relative z-10 text-center">
-                <button
-                    onClick={handleConfirm}
-                    disabled={(!selectedId || confirming) && !currentUserHasClaim}
-                    className="px-12 py-4 rounded-lg font-bold text-lg transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
-                    style={{
-                        background: selectedId
-                            ? `linear-gradient(135deg, ${selected!.accentColor}, ${selected!.color})`
-                            : 'rgba(100,116,139,0.2)',
-                        color: selectedId ? '#fff' : 'rgba(148,163,184,0.5)',
-                        boxShadow: selectedId ? `0 0 30px ${selected!.accentColor}50` : 'none',
-                        transform: selectedId && !confirming ? 'scale(1.02)' : 'scale(1)',
-                    }}
-                >
-                    {confirming 
-                        ? '⏳ Entering game...' 
-                        : currentUserHasClaim 
-                            ? '🚀 Re-enter Game' 
-                            : selectedId 
-                                ? `🚀 Play as ${selected!.name}` 
-                                : 'Select a faction first'}
-                </button>
-                {currentUserHasClaim && !confirming && (
-                    <div className="mt-3 space-y-1">
-                        <p className="text-slate-500 text-sm">
-                            Your choice is locked for the season.
-                        </p>
-                        <button
-                            onClick={async () => {
-                                if (!window.confirm('Release your faction claim? Anyone can then claim it — including its current empire, mid-flight.')) return;
-                                try {
-                                    const res = await fetch('/api/lobby/claim', { method: 'DELETE' });
-                                    const data = await res.json().catch(() => ({}));
-                                    if (!res.ok) { alert(data.error || 'Could not release the claim.'); return; }
-                                    localStorage.removeItem('selectedFactionId');
-                                    setPlayerFactionId(null as any);
-                                    setSelectedId(null);
-                                    window.location.reload();
-                                } catch {
-                                    alert('Could not reach the server.');
-                                }
-                            }}
-                            className="text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
-                        >
-                            picked wrong? release my claim
-                        </button>
-                    </div>
-                )}
-                {!currentUserHasClaim && !selectedId && Object.keys(takenFactions).length >= 14 && (
-                    <p className="text-amber-500/80 text-sm mt-3 max-w-md mx-auto">
-                        All fourteen factions are claimed for this season. You can watch the
-                        gazette from outside, or ask the host to free a seat.
-                    </p>
-                )}
-            </div>
+            {/* Confirm button — a fresh choice confirms under the cards; a locked
+                player already has theirs in the header. */}
+            {!currentUserHasClaim && confirmBlock}
         </div>
     );
 }
