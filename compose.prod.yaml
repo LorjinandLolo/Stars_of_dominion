@@ -3,11 +3,21 @@
 # Reads secrets from a .env file next to this compose file (see .env.server.example).
 name: stardom
 
+# Every container logs to json-file with a cap. Without this the worker's
+# per-tick chatter grows without bound under /var/lib/docker for the whole
+# season, and the game dies of a full disk in week three.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:17-alpine
     container_name: stardom-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -29,12 +39,19 @@ services:
     image: stardom-app
     container_name: stardom-app
     restart: unless-stopped
+    logging: *default-logging
     # PID 1 is `npx` with no init — without one, docker's SIGTERM can fail to
     # reach the node process and every redeploy waits out the 10s kill grace.
     init: true
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # The soundtrack lives in the checkout, not the image: drop tracks into
+      # public/music/<mood>/ on the server (or commit them), then
+      # `docker compose -f compose.prod.yaml restart app` — Next lists public/
+      # once at startup. See public/music/README.md.
+      - ./public/music:/app/public/music:ro
     environment: &app-env
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -71,6 +88,7 @@ services:
     pull_policy: never
     container_name: stardom-worker
     restart: unless-stopped
+    logging: *default-logging
     # init forwards SIGTERM to the game loop so releaseLease() actually runs on
     # redeploys; the grace period gives a mid-cycle save time to finish. Even
     # when a kill IS hard, the replacement now detects the dead holder (no
@@ -92,6 +110,7 @@ services:
     pull_policy: never
     container_name: stardom-narrator
     restart: unless-stopped
+    logging: *default-logging
     init: true
     depends_on:
       postgres:
