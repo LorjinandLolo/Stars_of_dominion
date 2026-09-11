@@ -16,6 +16,8 @@ import {
     advanceRound
 } from './combat-engine';
 import { getTechModifiers } from '../tech/modifiers';
+import { addProfile, normalizeComposition } from './ship-registry';
+import type { DesignProfile } from './ship-types';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../tech/deed-metrics';
 import { getBrutalityBonus, recordTrophyKill, shouldRoutFromFear, FEAR_ROUT_GRACE_SECONDS } from '../factions/kaerruun';
@@ -336,24 +338,31 @@ function nearestOwnedSystem(world: GameWorldState, factionId: string, fromSystem
 function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender', world?: any): CombatantState {
     const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
     
-    // Combine compositions
+    // Combine compositions. Keys are normalized to lowercase here so the
+    // screening math below and the engine's counter grid see one vocabulary
+    // whatever a fleet was built with.
     const mergedComp: UnitComposition = {};
+    let mergedProfile: DesignProfile | undefined;
     fleets.forEach(f => {
         // A fleet can carry an empty composition object ({}), which is truthy — so
         // `f.composition || fallback` would never trigger. Fall back whenever the
         // composition has no actual ship entries, so production-built fleets still fight.
-        const comp = (f.composition && Object.keys(f.composition).length > 0)
-            ? f.composition
+        const normalized = normalizeComposition(f.composition);
+        const comp = Object.keys(normalized).length > 0
+            ? normalized
             : { destroyer: Math.max(1, Math.floor(f.basePower / 150)) };
         for (const [type, count] of Object.entries(comp)) {
             const uType = type as keyof UnitComposition;
             mergedComp[uType] = (mergedComp[uType] || 0) + (count as number);
         }
+        if (f.designProfile) {
+            mergedProfile = addProfile(mergedProfile, f.designProfile);
+        }
     });
 
     // HOI4 Naval Math: Screens vs Capitals (Air wings like interceptors and bombers excluded)
-    const screens = (mergedComp['destroyer'] || 0);
-    const capitals = (mergedComp['cruiser'] || 0) + (mergedComp['carrier'] || 0);
+    const screens = (mergedComp['destroyer'] || 0) + (mergedComp['corvette'] || 0);
+    const capitals = (mergedComp['cruiser'] || 0) + (mergedComp['carrier'] || 0) + (mergedComp['battleship'] || 0);
     // 3 screens per capital is 100% efficient
     let screenEff = 1.0;
     if (capitals > 0) {
@@ -374,6 +383,7 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         maxOrganization: org,
         screeningEfficiency: screenEff,
         composition: mergedComp,
+        designProfile: mergedProfile,
         intelLevel: 'observing',
         supply: fleets[0]?.doctrine.supplyLevel ?? 1.0,
         // NOTE: `+` binds tighter than `??`, so `moraleDrift ?? 0 + 100` parsed as

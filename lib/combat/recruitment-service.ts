@@ -1,15 +1,43 @@
 /**
  * lib/combat/recruitment-service.ts
- * 
- * Handles the production of ground units (Infantry, Armor, Artilery, etc.)
- * Units are added to a planet's garrison unit composition upon completion.
+ *
+ * Handles the production of ground units (Infantry, Armor, Artillery, ...)
+ * and ships. Ground units land in a planet's garrison or an army; ships land
+ * in a fleet, keyed by lowercase ship class, carrying the power and design
+ * signature the recruit order resolved (lib/combat/ship-design-service.ts).
  */
 
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from './siege/siege-types';
-import * as fs from 'fs';
-import * as path from 'path';
+import { addProfile, normalizeComposition, normalizeUnitKey, unitConfigFor } from './ship-registry';
+import type { DesignProfile } from './ship-types';
 
-const unitsConfig = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'data/combat/ground-units.json'), 'utf-8'));
+/** Fields a job may carry beyond the siege-types base shape. */
+export interface RecruitmentJobExtras {
+    /** Formation (fleet or army) the units join on completion; planetId is a `formation-` spoof. */
+    targetFormationId?: string;
+    isFleet?: boolean;
+    /** Ship design the job was priced from. */
+    designId?: string;
+    designName?: string;
+    /** Lowercase composition key for ships. */
+    classKey?: string;
+    /** Per-unit power to add to the formation. Falls back to the unit config. */
+    unitPower?: number;
+    /** Per-ship design signature. */
+    unitProfile?: DesignProfile;
+}
+
+export type RecruitmentJobRecord = RecruitmentJob & RecruitmentJobExtras;
+
+export interface CreateJobOptions {
+    /** Seconds per unit. Falls back to the unit config, then 60. */
+    buildTimePerUnit?: number;
+    designId?: string;
+    designName?: string;
+    classKey?: string;
+    unitPower?: number;
+    unitProfile?: DesignProfile;
+}
 
 export class RecruitmentService {
 
@@ -17,9 +45,10 @@ export class RecruitmentService {
      * Per-unit recruitment cost from config, in faction-reserve keys
      * (CREDITS/METALS/...). Unknown types and deliberately cost-free entries
      * (ELDER_INFERNOID is hand-charged by its trait pipeline) return {}.
+     * Case-insensitive: the config is keyed UPPERCASE.
      */
     static unitCost(unitType: string): Record<string, number> {
-        const cost = unitsConfig[unitType]?.cost;
+        const cost = unitConfigFor(unitType)?.cost;
         if (!cost || typeof cost !== 'object') return {};
         const out: Record<string, number> = {};
         for (const [k, v] of Object.entries(cost)) {
@@ -33,26 +62,33 @@ export class RecruitmentService {
      * Requires Military Infrastructure check (handled at higher level).
      */
     static createJob(
-        planetId: string, 
-        factionId: string, 
-        unitType: GroundUnitType, 
-        count: number, 
-        now: number
-    ): RecruitmentJob {
-        const config = unitsConfig[unitType];
-        const buildTimePerUnit = config?.buildTime || 60; // seconds
+        planetId: string,
+        factionId: string,
+        unitType: GroundUnitType,
+        count: number,
+        now: number,
+        options: CreateJobOptions = {},
+    ): RecruitmentJobRecord {
+        const config = unitConfigFor(unitType);
+        const buildTimePerUnit = options.buildTimePerUnit ?? config?.buildTime ?? 60; // seconds
         const totalBuildTime = buildTimePerUnit * count;
 
-        return {
-            id: `recruit-${planetId}-${Date.now()}`,
+        const job: RecruitmentJobRecord = {
+            id: `recruit-${planetId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             planetId,
             factionId,
             unitType,
             count,
             startedAt: now,
             completesAt: now + totalBuildTime,
-            progress: 0
+            progress: 0,
         };
+        if (options.designId) job.designId = options.designId;
+        if (options.designName) job.designName = options.designName;
+        if (options.classKey) job.classKey = options.classKey;
+        if (options.unitPower !== undefined) job.unitPower = options.unitPower;
+        if (options.unitProfile) job.unitProfile = options.unitProfile;
+        return job;
     }
 
     /**
@@ -80,21 +116,31 @@ export class RecruitmentService {
         world.combat.recruitmentJobs = remainingJobs;
     }
 
-    private static completeJob(world: any, job: RecruitmentJob) {
-        if ((job as any).targetFormationId) {
-            const formationId = (job as any).targetFormationId;
-            const isFleet = (job as any).isFleet;
-            
-            // Power comes from the unit config now — a battleship is worth 90,
-            // a corvette 10; the old flat 10-per-unit made every hull identical.
-            const unitPower = unitsConfig[job.unitType]?.power ?? 10;
-            if (isFleet) {
+    private static completeJob(world: any, job: RecruitmentJobRecord) {
+        if (job.targetFormationId) {
+            const formationId = job.targetFormationId;
+
+            // Power comes from the job when a design priced it, else from the
+            // unit config — a battleship is worth 90, a corvette 10; the old
+            // flat 10-per-unit made every hull identical.
+            const unitPower = job.unitPower ?? unitConfigFor(job.unitType)?.power ?? 10;
+            if (job.isFleet) {
                 const fleet = world.movement.fleets.get(formationId);
                 if (fleet) {
-                    const currentCount = fleet.composition[job.unitType] || 0;
-                    fleet.composition[job.unitType] = currentCount + job.count;
+                    // Ships live under their lowercase class so the combat
+                    // engine's counter grid and the tactical adapter find them.
+                    const key = job.classKey ?? normalizeUnitKey(job.unitType);
+                    fleet.composition = normalizeComposition(fleet.composition);
+                    fleet.composition[key] = (fleet.composition[key] || 0) + job.count;
                     fleet.basePower += job.count * unitPower;
-                    console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Fleet ${fleet.name}`);
+                    if (job.unitProfile) {
+                        fleet.designProfile = addProfile(fleet.designProfile, job.unitProfile, job.count);
+                    }
+                    if (job.designId) {
+                        if (!fleet.designCounts) fleet.designCounts = {};
+                        fleet.designCounts[job.designId] = (fleet.designCounts[job.designId] || 0) + job.count;
+                    }
+                    console.log(`[Recruitment] Completed ${job.count}x ${job.designName ?? job.unitType} for Fleet ${fleet.name}`);
                 }
             } else {
                 const army = world.movement.armies.get(formationId);
@@ -131,11 +177,11 @@ export class RecruitmentService {
         }
 
         const defenseState = planet.garrison as PlanetaryDefenseState;
-        
+
         // Add units
         const currentCount = defenseState.unitComposition[job.unitType] || 0;
         defenseState.unitComposition[job.unitType] = currentCount + job.count;
-        
+
         // Update total troop count summary
         defenseState.garrisonTroops += job.count;
 

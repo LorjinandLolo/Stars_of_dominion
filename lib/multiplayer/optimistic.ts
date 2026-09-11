@@ -219,6 +219,9 @@ export function describeOrder(actionId: string, payload: Record<string, any>): s
         case 'MIL_INVASION_PLANET': return 'Planetary invasion order';
         case 'PLANET_CONSTRUCT_BUILDING': return `Construction: ${payload?.buildingType ?? 'building'}`;
         case 'MIL_BUILD_FLEET': return 'Commissioning fleet';
+        case 'MIL_RECRUIT_FORMATION_UNIT': return `Commissioning ${payload?.count ?? 1}× ${String(payload?.designName ?? payload?.unitType ?? 'unit').toLowerCase()}`;
+        case 'SHIP_DESIGN_SAVE': return `Filing design: ${payload?.design?.name ?? 'ship'}`;
+        case 'SHIP_DESIGN_DELETE': return 'Retiring ship design';
         case 'MIL_CREATE_ARMY': return 'Raising army';
         case 'TECH_START_RESEARCH': return 'Research directive';
         case 'AIR_LAUNCH_SORTIE': return 'Air sortie launch';

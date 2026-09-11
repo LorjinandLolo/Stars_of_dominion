@@ -15,6 +15,7 @@ import {
     TargetDetails
 } from './combat-types';
 import config from './combat-config.json';
+import { designProfileModifier, normalizeComposition } from './ship-registry';
 
 // Utility for applying bounds
 function clamp(val: number, min: number, max: number): number {
@@ -27,6 +28,11 @@ function clamp(val: number, min: number, max: number): number {
  * Evaluates the Soft RPS grid.
  * Returns a modifier between -0.20 and +0.20 (based on maxRpsBonusCap).
  * Weighted by unit composition sizes.
+ *
+ * Keys are matched case-insensitively. The counter tables are lowercase but
+ * player-built formations were stored with UPPERCASE keys (CORVETTE,
+ * INFANTRY, ...), so every lookup for a player fleet or garrison missed and
+ * the grid only ever applied to AI and pirate forces.
  */
 export function calculateCompositionModifier(
     composition: UnitComposition,
@@ -34,6 +40,9 @@ export function calculateCompositionModifier(
     layer: 'orbital' | 'ground'
 ): number {
     const counters = layer === 'orbital' ? config.unitCounters.orbital : config.unitCounters.ground;
+
+    composition = normalizeComposition(composition as Record<string, number>) as UnitComposition;
+    enemyComposition = normalizeComposition(enemyComposition as Record<string, number>) as UnitComposition;
 
     let totalFriends = 0;
     let totalEnemies = 0;
@@ -77,13 +86,21 @@ export function calculateEffectivePower(
 ): number {
     const compMod = calculateCompositionModifier(combatant.composition, enemy.composition, layer);
 
+    // Ship-design rock-paper-scissors: this side's weapon mix against the
+    // other side's defense mix. Orbital only — ground units carry no design.
+    // Sits inside the ±40% clamp like the composition grid; it is meant to be
+    // the same order of magnitude, not a trump card.
+    const designMod = layer === 'orbital'
+        ? calculateDesignModifier(combatant, enemy)
+        : 0;
+
     // Morale curve: Drops off hard below 50%
     const moraleMod = combatant.morale >= 0.5 ? 1.0 : (0.5 + combatant.morale);
 
     // Supply curve: Drops off below 30%
     const supplyMod = combatant.supply >= 0.3 ? 1.0 : 0.5;
 
-    let totalMultiplier = 1.0 + compMod;
+    let totalMultiplier = 1.0 + compMod + designMod;
     totalMultiplier *= terrainMulti;
     totalMultiplier *= supplyMod;
     totalMultiplier *= moraleMod;
@@ -105,6 +122,28 @@ export function calculateEffectivePower(
 
     // Simple Scaling for now: hp is the "Health/Mass" of the fleet.
     return Math.max(0, combatant.hp * totalMultiplier);
+}
+
+function countShips(composition: UnitComposition | null | undefined): number {
+    let n = 0;
+    for (const c of Object.values(composition ?? {})) n += Math.max(0, Number(c) || 0);
+    return n;
+}
+
+/**
+ * Design-profile modifier for `combatant` against `enemy`, in
+ * [-maxDesignBonusCap, +maxDesignBonusCap]. Zero when either side carries no
+ * profile (legacy fleets, AI fleets spawned without designs).
+ */
+export function calculateDesignModifier(combatant: CombatantState, enemy: CombatantState): number {
+    if (!combatant.designProfile || !enemy.designProfile) return 0;
+    const cap = (config.constants as Record<string, number>).maxDesignBonusCap ?? 0.15;
+    return designProfileModifier(
+        combatant.designProfile,
+        enemy.designProfile,
+        countShips(enemy.composition),
+        cap,
+    );
 }
 
 // ─── 2. Initiation ────────────────────────────────────────────────────────────

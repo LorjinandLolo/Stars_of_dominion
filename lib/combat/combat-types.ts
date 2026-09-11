@@ -1,6 +1,8 @@
 // lib/combat/combat-types.ts
 // Combat Engine State & Type Definitions
 
+import type { DesignProfile } from './ship-types';
+
 export type CombatPhase = 'orbital' | 'ground';
 
 export type OrbitalAllocation = 'bombardment' | 'interdiction' | 'defensive_orbit';
@@ -16,7 +18,11 @@ export type CombatStance = 'blitz' | 'entrench' | 'shock' | 'feint' | 'sabotage'
 
 // ─── Unit Definitions ─────────────────────────────────────────────────────────
 
-export type OrbitalUnitType = 'interceptor' | 'destroyer' | 'cruiser' | 'bomber' | 'carrier';
+/**
+ * Lowercase composition keys. The four buildable hulls (lib/combat/ship-types.ts
+ * ShipClassId) plus carrier and its two strike-craft wings.
+ */
+export type OrbitalUnitType = 'corvette' | 'interceptor' | 'destroyer' | 'cruiser' | 'battleship' | 'bomber' | 'carrier';
 export type GroundUnitType = 'infantry' | 'armor' | 'anti_armor' | 'airborne' | 'artillery' | 'special_ops';
 
 export type UnitType = OrbitalUnitType | GroundUnitType;
@@ -57,6 +63,13 @@ export interface CombatantState {
     screeningEfficiency: number; // 0 to 1, prevents torpedoes hitting capitals
     
     composition: UnitComposition;
+    /**
+     * Summed per-ship design signature of every fleet on this side (see
+     * lib/combat/ship-types.ts). Absent for formations built before designs
+     * existed or spawned by code that never picked one; the engine treats
+     * absence as "no modifier", never as "bare".
+     */
+    designProfile?: DesignProfile;
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy
     supply: number; // 0–1
     morale: number; // Global Morale (different from tactical Organization)

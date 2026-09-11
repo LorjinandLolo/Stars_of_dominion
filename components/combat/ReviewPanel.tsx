@@ -7,6 +7,8 @@ import UnitIcon from '@/components/units/UnitIcon';
 import { GroundUnitType, PlanetaryDefenseState, InvadingForceState } from '@/lib/combat/siege/siege-types';
 import { Shield, Swords, Anchor, X, Users } from 'lucide-react';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import ShipDesignPicker from '@/components/units/ShipDesignPicker';
+import type { ShipDesign } from '@/lib/combat/ship-types';
 
 const BATTALION_SIZES: Record<GroundUnitType, number> = {
     INFANTRY: 800,
@@ -135,10 +137,12 @@ export function ReviewPanel() {
         defendingFleets.forEach((fleet) => {
             Object.entries(fleet.composition || {}).forEach(([type, count]) => {
                 const actualCount = count as number;
+                // Compositions are lowercase ship classes; the icon set is UPPERCASE.
+                const iconType = type.toUpperCase() === 'ARMOR' ? 'CORVETTE' : type.toUpperCase();
                 for(let i=0; i<actualCount; i++) {
                     units.push({
                         id: `ship-${fleet.id}-${type}-${i}`,
-                        type: (type === 'ARMOR' ? 'CORVETTE' : type) as any, // Map legacy script data
+                        type: iconType as any,
                         currentHealth: 100, maxHealth: 100,
                         ammo: 100, experience: 100
                     });
@@ -149,10 +153,11 @@ export function ReviewPanel() {
         const fleet = activeData.state as any;
         Object.entries(fleet.composition || {}).forEach(([type, count]) => {
             const actualCount = count as number;
+            const iconType = type.toUpperCase() === 'ARMOR' ? 'CORVETTE' : type.toUpperCase();
             for(let i=0; i<actualCount; i++) {
                 units.push({
                     id: `ship-${fleet.id}-${type}-${i}`,
-                    type: (type === 'ARMOR' ? 'CORVETTE' : type) as any,
+                    type: iconType as any,
                     currentHealth: 100, maxHealth: 100,
                     ammo: 100, experience: 100
                 });
@@ -185,8 +190,9 @@ export function ReviewPanel() {
             ? (j.targetFormationId && relevantFleetIds.has(j.targetFormationId))
             : (selectedPlanet && j.planetId === selectedPlanet.id));
 
-    const handleRecruit = async (unitType: string) => {
+    const handleRecruit = async (unitType: string, design?: ShipDesign) => {
         if (isSpaceTheme) {
+            const shipLabel = design?.name ?? unitType.toLowerCase();
             let targetFleetId = selectedFleetId;
             if (!targetFleetId && selectedPlanet) {
                 // Find first allied fleet in this system/planet orbit
@@ -194,7 +200,7 @@ export function ReviewPanel() {
                 if (alliedFleet) {
                     targetFleetId = alliedFleet.id;
                 } else {
-                    // No fleet here yet: commission one WITH the clicked hull
+                    // No fleet here yet: commission one WITH the clicked design
                     // chained into it server-side. The old two-click contract
                     // (first click = empty task force, second = the ship) read
                     // as "recruitment is broken" to every first-time tester.
@@ -205,8 +211,9 @@ export function ReviewPanel() {
                             planetId: selectedPlanet.id,
                             systemId: selectedPlanet.systemId,
                             recruitUnitType: unitType,
+                            recruitDesignId: design?.id,
                         },
-                        label: `Commissioning fleet + ${unitType.toLowerCase()}`,
+                        label: `Commissioning fleet + ${shipLabel}`,
                     });
                     return;
                 }
@@ -219,9 +226,11 @@ export function ReviewPanel() {
                     formationId: targetFleetId,
                     isFleet: true,
                     unitType,
+                    designId: design?.id,
+                    designName: design?.name,
                     count: 1
                 },
-                label: `Commissioning ${unitType.toLowerCase()}`,
+                label: `Commissioning ${shipLabel}`,
             });
             if (!res.success) console.error('Fleet recruitment failed:', res.error);
         } else {
@@ -484,38 +493,43 @@ export function ReviewPanel() {
                         <h4 className="text-amber-400 font-display tracking-widest text-sm mb-4 uppercase">
                             {isSpaceTheme ? 'Commission Space Forces' : 'Commission Ground Forces'}
                         </h4>
-                        <div className="flex gap-4">
-                            {(isSpaceTheme
-                                ? ['CORVETTE', 'DESTROYER', 'CRUISER', 'BATTLESHIP']
-                                : ['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS',
-                                   ...(isInfernoidCiv ? ['ELDER_INFERNOID'] : [])]
-                            ).map(type => (
-                                <button
-                                    key={type}
-                                    onClick={() => handleRecruit(type)}
-                                    className="w-32 py-3 px-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-center group transition-all flex flex-col items-center hover:bg-slate-800"
-                                >
-                                    <span className={`mb-2 p-2 rounded-lg border transition-all group-hover:scale-110 ${isSpaceTheme ? 'text-indigo-300 border-indigo-500/30 bg-indigo-500/10 group-hover:text-amber-300 group-hover:border-amber-500/40' : 'text-slate-300 border-slate-600/50 bg-slate-800/60 group-hover:text-amber-300 group-hover:border-amber-500/40'}`}>
-                                        <UnitIcon type={type} size={28} />
-                                    </span>
-                                    <div className="text-[10px] font-bold text-slate-300 group-hover:text-amber-300">{type.replace('_', ' ')}</div>
-                                    <div className="text-[9px] text-slate-500 mt-1 flex items-center gap-1">
-                                        {isSpaceTheme
-                                            ? '⚓ 1 Ship'
-                                            : type === 'ELDER_INFERNOID'
+                        {isSpaceTheme ? (
+                            <>
+                                <ShipDesignPicker
+                                    layout="row"
+                                    onCommission={(design) => handleRecruit(design.hullId.toUpperCase(), design)}
+                                />
+                                <p className="text-[9px] text-slate-500 mt-3 text-center">
+                                    Standard patterns are always available. Draft your own in the Ship Designer.
+                                </p>
+                            </>
+                        ) : (
+                            <div className="flex gap-4">
+                                {['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'SPECIAL_OPS',
+                                  ...(isInfernoidCiv ? ['ELDER_INFERNOID'] : [])].map(type => (
+                                    <button
+                                        key={type}
+                                        onClick={() => handleRecruit(type)}
+                                        className="w-32 py-3 px-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-center group transition-all flex flex-col items-center hover:bg-slate-800"
+                                    >
+                                        <span className="mb-2 p-2 rounded-lg border transition-all group-hover:scale-110 text-slate-300 border-slate-600/50 bg-slate-800/60 group-hover:text-amber-300 group-hover:border-amber-500/40">
+                                            <UnitIcon type={type} size={28} />
+                                        </span>
+                                        <div className="text-[10px] font-bold text-slate-300 group-hover:text-amber-300">{type.replace('_', ' ')}</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 flex items-center gap-1">
+                                            {type === 'ELDER_INFERNOID'
                                                 ? <><Users size={10} /> 1 Titan</>
                                                 : <><Users size={10} /> +10 Bat.</>}
-                                    </div>
-                                    <div className="text-[8px] text-slate-600 mt-1">
-                                        {isSpaceTheme
-                                            ? 'Production Queue'
-                                            : type === 'ELDER_INFERNOID'
+                                        </div>
+                                        <div className="text-[8px] text-slate-600 mt-1">
+                                            {type === 'ELDER_INFERNOID'
                                                 ? '40k credits · 1.5k metals · max 3'
                                                 : '30s Construction'}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
                 

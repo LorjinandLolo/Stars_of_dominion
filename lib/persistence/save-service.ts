@@ -10,6 +10,7 @@ import { computeOrbitalRatings } from '@/lib/orbital/orbital-service';
 import { isRetooling } from '@/lib/specialization/specialization-effects';
 import { buildPirateDashboard, buildPirateView } from '@/lib/piracy/pirate-view';
 import { applyHomeworldArchetypes } from '@/lib/galaxy/faction-capitals';
+import { normalizeComposition } from '@/lib/combat/ship-registry';
 
 export interface GameSaveMetadata {
     id: string;
@@ -79,6 +80,11 @@ export function serializeWorld(world: GameWorldState): string {
 export function deserializeWorld(snapshot: string): GameWorldState {
     const world = recordsToMaps(JSON.parse(snapshot)) as GameWorldState;
     normalizeEspionageState(world);
+    // Fleets normally arrive via shards, but bootstrap snapshots
+    // (scripts/push-init-state.ts) and probes carry them inline.
+    for (const f of world.movement?.fleets?.values?.() ?? []) {
+        if (f && f.composition) f.composition = normalizeComposition(f.composition);
+    }
     // Planet tags persist, and the authored homeworld archetype rides on one.
     // A code-only change would therefore leave every existing save generating
     // the old all-continental boards — Pyrothar a temperate forest world — with
@@ -281,6 +287,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
             .filter(r => r.ownerFactionId === factionId),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
+        // Ship designs are the owner's alone. They ride the shard (not the
+        // shared snapshot) and the public projection in shard-privacy.ts is an
+        // allow-list, so rivals never see them on the wire.
+        shipDesigns: Array.from(world.shipDesigns?.values() ?? []).filter(d => d.factionId === factionId),
         // Planet-layer rollups. The per-planet detail already rides along in the
         // snapshot; these are the empire-wide aggregates the UI would otherwise
         // have to recompute on every poll.
@@ -319,7 +329,16 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (!shardJson) return;
     const shard = recordsToMaps(JSON.parse(shardJson));
     if (shard.fleets) {
-        shard.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
+        shard.fleets.forEach((f: any) => {
+            // Fold legacy UPPERCASE ship keys into the lowercase vocabulary
+            // the combat engine speaks. Idempotent.
+            if (f && f.composition) f.composition = normalizeComposition(f.composition);
+            world.movement.fleets.set(f.id, f);
+        });
+    }
+    if (shard.shipDesigns) {
+        if (!(world.shipDesigns instanceof Map)) world.shipDesigns = new Map();
+        shard.shipDesigns.forEach((d: any) => { if (d?.id) world.shipDesigns!.set(d.id, d); });
     }
     if (shard.economy) world.economy.factions.set(shard.factionId, shard.economy);
     if (shard.tech) world.tech.set(shard.factionId, shard.tech);
@@ -386,6 +405,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.movement.fleets.clear();
     cloned.economy.factions.clear();
     cloned.tech.clear();
+    if (cloned.shipDesigns instanceof Map) cloned.shipDesigns.clear();
     cloned.espionage.agents.clear();
     cloned.espionage.intelNetworks.clear();
     cloned.espionage.factionIntel.clear();

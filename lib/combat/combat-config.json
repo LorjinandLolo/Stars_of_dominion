@@ -13,7 +13,8 @@
         "orbitalBombardmentIndiscriminateDamage": 0.25,
         "orbitalBombardmentIndiscriminateInfraDamage": 0.30,
         "orbitalBombardmentIndiscriminateMoraleDamage": 0.15,
-        "maxRpsBonusCap": 0.20
+        "maxRpsBonusCap": 0.20,
+        "maxDesignBonusCap": 0.15
     },
     "intelPredictionProbabilities": {
         "blind": {
@@ -39,17 +40,32 @@
                 "bomber": 0.15,
                 "destroyer": -0.15
             },
+            "bomber": {
+                "cruiser": 0.15,
+                "battleship": 0.15,
+                "interceptor": -0.15,
+                "corvette": -0.15
+            },
+            "corvette": {
+                "bomber": 0.15,
+                "interceptor": 0.10,
+                "destroyer": -0.15
+            },
             "destroyer": {
+                "corvette": 0.15,
                 "interceptor": 0.15,
                 "cruiser": -0.15
             },
             "cruiser": {
                 "destroyer": 0.15,
-                "bomber": -0.15
+                "bomber": -0.15,
+                "battleship": -0.15
             },
-            "bomber": {
+            "battleship": {
                 "cruiser": 0.15,
-                "interceptor": -0.15
+                "destroyer": 0.10,
+                "bomber": -0.15,
+                "corvette": -0.10
             },
             "carrier": {}
         },

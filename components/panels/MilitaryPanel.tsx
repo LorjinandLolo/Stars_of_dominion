@@ -5,12 +5,18 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Shield, Crosshair, Map, Swords, Users, RefreshCw, Rocket, Target } from 'lucide-react';
 import { GroundUnitType } from '@/lib/combat/siege/siege-types';
+import ShipDesignPicker from '@/components/units/ShipDesignPicker';
+import { DEFAULT_DESIGNS } from '@/lib/combat/ship-registry';
+import type { ShipDesign } from '@/lib/combat/ship-types';
 
 export default function MilitaryPanel() {
-    const { 
-        armies, fleets, playerFactionId, selectedPlanetId, selectedSystemId, 
-        systems, planets, empireIdentity 
+    const {
+        armies, fleets, playerFactionId, selectedPlanetId, selectedSystemId,
+        systems, planets, empireIdentity, shipDesigns
     } = useUIStore();
+
+    const designNameById = (id: string) =>
+        shipDesigns.find(d => d.id === id)?.name ?? DEFAULT_DESIGNS.find(d => d.id === id)?.name ?? id;
 
     const { leadership } = empireIdentity;
     const availableLeaders = Array.from(leadership.leaders.values())
@@ -26,9 +32,9 @@ export default function MilitaryPanel() {
     const activeList = activeTab === 'armies' ? myArmies : myFleets;
     const selectedFormation = activeList.find(f => f.id === selectedFormationId);
 
-    const handleRecruitUnit = async (unitType: string, count: number = 1) => {
+    const handleRecruitUnit = async (unitType: string, count: number = 1, design?: ShipDesign) => {
         if (!selectedFormationId) return;
-        
+
         await executePlayerAction({
             id: `act_${Date.now()}`,
             actionId: 'MIL_RECRUIT_FORMATION_UNIT',
@@ -38,6 +44,8 @@ export default function MilitaryPanel() {
                 formationId: selectedFormationId,
                 isFleet: activeTab === 'fleets',
                 unitType,
+                designId: design?.id,
+                designName: design?.name,
                 count
             },
             timestamp: Math.floor(Date.now() / 1000)
@@ -186,10 +194,22 @@ export default function MilitaryPanel() {
                                     ) : (
                                         Object.entries(selectedFormation.composition || {}).map(([type, count]) => (
                                             <div key={type} className="flex justify-between items-center bg-slate-800/80 p-2 rounded border border-slate-700">
-                                                <span className="font-mono text-sm text-cyan-200">{type}</span>
+                                                <span className="font-mono text-sm text-cyan-200">{String(type).toUpperCase()}</span>
                                                 <span className="font-mono font-bold text-amber-400">x{count as number}</span>
                                             </div>
                                         ))
+                                    )}
+                                    {activeTab === 'fleets' && (selectedFormation as any).designCounts
+                                        && Object.keys((selectedFormation as any).designCounts).length > 0 && (
+                                        <div className="pt-2 border-t border-slate-800 space-y-1">
+                                            <div className="text-[9px] uppercase tracking-widest text-slate-500">By design</div>
+                                            {Object.entries((selectedFormation as any).designCounts as Record<string, number>).map(([designId, n]) => (
+                                                <div key={designId} className="flex justify-between text-[11px] font-mono">
+                                                    <span className="text-slate-300 truncate">{designNameById(designId)}</span>
+                                                    <span className="text-slate-400">×{n}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -243,28 +263,23 @@ export default function MilitaryPanel() {
                                     
                                     {activeTab === 'armies' ? (
                                         <div className="grid grid-cols-2 gap-2">
-                                            {['INFANTRY', 'ARMOR', 'ARTILLERY', 'MECH'].map(unit => (
-                                                <button 
+                                            {/* Every entry must exist in data/combat/ground-units.json — the
+                                                worker refuses unknown types (they used to recruit for free). */}
+                                            {['INFANTRY', 'ARMOR', 'ARTILLERY', 'ANTI_ARMOR'].map(unit => (
+                                                <button
                                                     key={unit}
                                                     onClick={() => handleRecruitUnit(unit)}
                                                     className="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded text-xs font-mono transition-colors text-slate-300"
                                                 >
-                                                    + {unit}
+                                                    + {unit.replace('_', ' ')}
                                                 </button>
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {['CORVETTE', 'DESTROYER', 'CRUISER', 'BATTLESHIP'].map(unit => (
-                                                <button 
-                                                    key={unit}
-                                                    onClick={() => handleRecruitUnit(unit)}
-                                                    className="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded text-xs font-mono transition-colors text-slate-300"
-                                                >
-                                                    + {unit}
-                                                </button>
-                                            ))}
-                                        </div>
+                                        <ShipDesignPicker
+                                            layout="grid"
+                                            onCommission={(design) => handleRecruitUnit(design.hullId.toUpperCase(), 1, design)}
+                                        />
                                     )}
                                 </div>
                             </div>

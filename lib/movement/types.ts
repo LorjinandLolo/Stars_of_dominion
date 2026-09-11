@@ -3,6 +3,7 @@
 // Extends lib/trade-system/types.ts; does not replace it.
 
 import type { EconomyWorldState } from '../economy/economy-types';
+import type { DesignProfile } from '../combat/ship-types';
 import type { IdeologyProfile } from '../politics/ideology-types';
 
 // ─── Movement Layers ─────────────────────────────────────────────────────────
@@ -316,8 +317,21 @@ export interface Fleet {
     strength: number;
     /** The aggregate base power of the entire fleet. */
     basePower: number;
-    /** The unit breakdown (e.g. { interceptor: 10, destroyer: 2 }). */
+    /**
+     * The unit breakdown, keyed by lowercase ship class
+     * (e.g. { corvette: 3, destroyer: 2 }). Older saves may still carry
+     * UPPERCASE keys; lib/combat/ship-registry.ts#normalizeComposition folds
+     * them on load and every reader should tolerate either.
+     */
     composition: any; // Using any for now to avoid circular deps if needed, but will refine to UnitComposition
+    /**
+     * Summed per-ship design signature (lib/combat/ship-types.ts) of every
+     * ship commissioned into this fleet. Grows on recruit completion, adds on
+     * merge, scales on split. Absent on fleets built before ship designs.
+     */
+    designProfile?: DesignProfile;
+    /** designId -> ships of that design aboard. Display only; power lives in basePower. */
+    designCounts?: Record<string, number>;
     /** Hyperdrive profile this fleet uses for layer modifiers. */
     hyperdriveProfile: HyperdriveProfile;
     /** Whether this fleet is detectable above threshold (ui hint). */

@@ -1,274 +1,343 @@
 // components/panels/ShipDesignerPanel.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useUIStore } from '@/lib/store/ui-store';
-import { 
-    Shield, Sword, Zap, Activity, Save, Trash2, 
-    Plus, ChevronRight, Info, AlertOctagon,
-    Cpu, Target, Gauge, ArrowRight, Maximize2
+// The Ship Designer. Everything shown here is computed by
+// lib/combat/ship-registry.ts#summarizeDesign — the same function the worker
+// prices and validates with — so the panel can never promise a ship the
+// server refuses. Saves go through the order queue (SHIP_DESIGN_SAVE); the
+// registry list comes back via sync, with an optimistic local copy in between.
+
+import React, { useMemo, useState } from 'react';
+import {
+    Shield, Sword, Zap, Save, Trash2, Plus, Copy, Info, AlertOctagon,
+    Cpu, Gauge, Maximize2, Lock, Clock, Coins, Loader2, CheckCircle2, Crosshair,
 } from 'lucide-react';
-import { SHIP_HULLS, SHIP_COMPONENTS, calculateDesignStats } from '@/lib/combat/ship-registry';
-import { ShipDesign, ShipStats } from '@/lib/combat/ship-types';
-import { saveShipDesignAction, deleteShipDesignAction } from '@/app/actions/ship-design';
+import { useUIStore } from '@/lib/store/ui-store';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { registry as techRegistry } from '@/lib/tech/engine';
+import {
+    DEFAULT_DESIGNS,
+    MAX_DESIGNS_PER_FACTION,
+    MAX_DESIGN_NAME_LENGTH,
+    SHIP_COMPONENTS,
+    SHIP_HULLS,
+    defaultDesignFor,
+    getComponent,
+    getHull,
+    summarizeDesign,
+} from '@/lib/combat/ship-registry';
+import type { DesignSummary, HullSlot, ShipClassId, ShipDesign, SlotType } from '@/lib/combat/ship-types';
+import UnitIcon from '@/components/units/UnitIcon';
+import { formatBuildTime, formatCredits } from '@/components/units/ShipDesignPicker';
+
+const SLOT_META: Record<SlotType, { label: string; icon: React.ReactNode; tint: string }> = {
+    weapon: { label: 'Weapon', icon: <Sword size={16} />, tint: 'text-red-400' },
+    utility: { label: 'Defense', icon: <Shield size={16} />, tint: 'text-blue-400' },
+    core: { label: 'Core', icon: <Zap size={16} />, tint: 'text-amber-400' },
+};
+
+function techName(id: string | undefined): string {
+    if (!id) return '';
+    return techRegistry.get(id)?.name ?? id;
+}
+
+function energyLabel(energy: number): string {
+    if (energy < 0) return `+${-energy} pwr`;
+    if (energy === 0) return '0 pwr';
+    return `−${energy} pwr`;
+}
+
+function sameDesign(a: { name: string; hullId: string; components: Record<string, string> }, b: ShipDesign | undefined): boolean {
+    if (!b) return false;
+    if (a.name !== b.name || a.hullId !== b.hullId) return false;
+    const ak = Object.entries(a.components).filter(([, v]) => v).sort();
+    const bk = Object.entries(b.components ?? {}).filter(([, v]) => v).sort();
+    return JSON.stringify(ak) === JSON.stringify(bk);
+}
 
 export default function ShipDesignerPanel() {
-    const { shipDesigns, addShipDesign, updateShipDesign, deleteShipDesign, toggleFloatTab } = useUIStore();
-    const [selectedHullId, setSelectedHullId] = useState(SHIP_HULLS[0].id);
-    const [currentComponents, setCurrentComponents] = useState<Record<string, string>>({});
-    const [designName, setDesignName] = useState('New Design');
-    const [activeDesignId, setActiveDesignId] = useState<string | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
+    const { shipDesigns, upsertShipDesign, removeShipDesign, toggleFloatTab, playerFactionId, techState } = useUIStore();
+    const unlocked = useMemo(() => new Set(techState.unlockedTechIds ?? []), [techState.unlockedTechIds]);
 
-    const selectedHull = SHIP_HULLS.find(h => h.id === selectedHullId)!;
+    const [hullId, setHullId] = useState<ShipClassId>('corvette');
+    const [components, setComponents] = useState<Record<string, string>>({});
+    const [name, setName] = useState('New Pattern');
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-    // Load design if selected
-    const handleLoadDesign = (design: ShipDesign) => {
-        setActiveDesignId(design.id);
-        setSelectedHullId(design.hullId);
-        setCurrentComponents(design.components);
-        setDesignName(design.name);
+    const hull = getHull(hullId) ?? SHIP_HULLS[0];
+    const draft = { hullId, name, components };
+    const summary = useMemo(() => summarizeDesign(draft, unlocked), [hullId, name, components, unlocked]);
+    const bare = useMemo(() => summarizeDesign({ hullId, name: 'bare', components: {} }, null), [hullId]);
+    const standard = defaultDesignFor(hullId);
+    const standardSummary = useMemo(() => standard ? summarizeDesign(standard, null) : null, [standard]);
+
+    const activeDesign = activeId ? shipDesigns.find(d => d.id === activeId) : undefined;
+    const dirty = !sameDesign(draft, activeDesign);
+    const atCap = !activeDesign && shipDesigns.length >= MAX_DESIGNS_PER_FACTION;
+
+    const ownSorted = useMemo(() => {
+        const order = new Map(SHIP_HULLS.map((h, i) => [h.id, i]));
+        return [...shipDesigns].sort((a, b) =>
+            (order.get(a.hullId) ?? 9) - (order.get(b.hullId) ?? 9) || a.name.localeCompare(b.name));
+    }, [shipDesigns]);
+
+    // ── Editor actions ────────────────────────────────────────────────────
+
+    const loadDesign = (d: ShipDesign, asCopy: boolean) => {
+        setHullId(d.hullId);
+        setComponents({ ...(d.components ?? {}) });
+        setName(asCopy ? `${d.name} Mk II`.slice(0, MAX_DESIGN_NAME_LENGTH) : d.name);
+        setActiveId(asCopy ? null : d.id);
+        setConfirmDelete(false);
+        setNotice(null);
     };
 
-    const handleNewDesign = () => {
-        setActiveDesignId(null);
-        setSelectedHullId(SHIP_HULLS[0].id);
-        setCurrentComponents({});
-        setDesignName('New Design');
+    const newDesign = () => {
+        setHullId('corvette');
+        setComponents({});
+        setName('New Pattern');
+        setActiveId(null);
+        setConfirmDelete(false);
+        setNotice(null);
     };
 
-    const handleComponentChange = (slotId: string, compId: string) => {
-        setCurrentComponents(prev => ({
-            ...prev,
-            [slotId]: compId
-        }));
-    };
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        const design: ShipDesign = {
-            id: activeDesignId || `design-${Date.now()}`,
-            name: designName,
-            hullId: selectedHullId,
-            components: currentComponents
-        };
-
-        const res = await saveShipDesignAction(design);
-        if (res.success) {
-            if (activeDesignId) {
-                updateShipDesign(activeDesignId, design);
-            } else {
-                addShipDesign(design);
-                setActiveDesignId(design.id);
-            }
+    const changeHull = (next: ShipClassId) => {
+        const nextHull = getHull(next);
+        if (!nextHull) return;
+        const slotType = new Map(nextHull.slots.map(s => [s.id, s.type]));
+        // Keep whatever still fits — same slot id, same slot type.
+        const kept: Record<string, string> = {};
+        for (const [slotId, compId] of Object.entries(components)) {
+            const comp = getComponent(compId);
+            if (comp && slotType.get(slotId) === comp.type) kept[slotId] = compId;
         }
-        setIsSaving(false);
+        setHullId(next);
+        setComponents(kept);
     };
 
-    const stats = calculateDesignStats(selectedHullId, currentComponents);
-    const powerBalance = stats.powerDraw; // In our registry, negative draw = production
+    const setSlot = (slotId: string, compId: string) => {
+        setComponents(prev => {
+            const next = { ...prev };
+            if (compId) next[slotId] = compId;
+            else delete next[slotId];
+            return next;
+        });
+    };
+
+    const save = async () => {
+        if (!summary.valid || busy || !playerFactionId || atCap) return;
+        setBusy(true);
+        setNotice(null);
+        const id = activeId ?? `design-${playerFactionId}-${Date.now()}`;
+        const design: ShipDesign = {
+            id,
+            factionId: playerFactionId,
+            name: name.trim(),
+            hullId,
+            components: Object.fromEntries(Object.entries(components).filter(([, v]) => v)),
+        };
+        const res = await dispatchOrder({
+            actionId: 'SHIP_DESIGN_SAVE',
+            factionId: playerFactionId,
+            payload: { design },
+            label: `Filing design: ${design.name}`,
+        });
+        if (res.success) {
+            upsertShipDesign({ ...design, pending: true });
+            setActiveId(id);
+            setNotice({ kind: 'ok', text: activeId ? 'Design updated. Ships already built keep their old fit.' : 'Design filed. It appears in every Requisition panel once the yard confirms.' });
+        } else {
+            setNotice({ kind: 'err', text: res.error ?? 'The yard rejected the design.' });
+        }
+        setBusy(false);
+    };
+
+    const del = async () => {
+        if (!activeDesign || !playerFactionId || busy) return;
+        if (!confirmDelete) { setConfirmDelete(true); return; }
+        setBusy(true);
+        const res = await dispatchOrder({
+            actionId: 'SHIP_DESIGN_DELETE',
+            factionId: playerFactionId,
+            payload: { designId: activeDesign.id },
+            label: `Retiring design: ${activeDesign.name}`,
+        });
+        if (res.success) {
+            removeShipDesign(activeDesign.id);
+            newDesign();
+            setNotice({ kind: 'ok', text: 'Design retired. Existing ships are unaffected.' });
+        } else {
+            setNotice({ kind: 'err', text: res.error ?? 'Could not retire the design.' });
+        }
+        setBusy(false);
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────
+
+    const library = (
+        <DesignLibrary
+            own={ownSorted}
+            activeId={activeId}
+            unlocked={unlocked}
+            onLoad={loadDesign}
+            onNew={newDesign}
+        />
+    );
 
     return (
         <div className="flex h-full bg-slate-950/80 backdrop-blur-xl border-l border-white/5 text-slate-200">
-            {/* Design Library (Left) */}
-            <div className="w-64 border-r border-white/5 bg-black/40 flex flex-col">
-                <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                    <h3 className="text-xs font-display tracking-widest text-slate-400 uppercase">Registry</h3>
-                    <button 
-                        onClick={handleNewDesign}
-                        className="p-1.5 hover:bg-white/10 rounded transition-colors"
-                        title="New Design"
-                    >
-                        <Plus size={14} className="text-blue-400" />
-                    </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {shipDesigns.map(design => (
-                        <button
-                            key={design.id}
-                            onClick={() => handleLoadDesign(design)}
-                            className={`w-full p-3 rounded-lg text-left transition-all border ${
-                                activeDesignId === design.id
-                                ? 'bg-blue-500/10 border-blue-500/30'
-                                : 'border-transparent hover:bg-white/5'
-                            }`}
-                        >
-                            <div className="text-xs font-display text-white truncate">{design.name}</div>
-                            <div className="text-[10px] text-slate-500 uppercase mt-1">
-                                {SHIP_HULLS.find(h => h.id === design.hullId)?.name || 'Unknown Hull'}
-                            </div>
-                        </button>
-                    ))}
-                </div>
+            {/* Library (wide screens) */}
+            <div className="hidden md:flex w-56 shrink-0 border-r border-white/5 bg-black/40 flex-col">
+                {library}
             </div>
 
-            {/* Editor (Center/Right) */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Editor Header */}
-                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-blue-500/5 to-transparent">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                            <Cpu className="w-6 h-6 text-blue-400" />
+            {/* Editor */}
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between gap-3 bg-gradient-to-r from-blue-500/5 to-transparent">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl shrink-0">
+                            <Cpu className="w-5 h-5 text-blue-400" />
                         </div>
-                        <div>
-                            <input 
-                                value={designName}
-                                onChange={(e) => setDesignName(e.target.value)}
-                                className="bg-transparent border-none focus:ring-0 text-xl font-display text-white p-0 uppercase tracking-widest block w-64"
+                        <div className="min-w-0">
+                            <input
+                                value={name}
+                                maxLength={MAX_DESIGN_NAME_LENGTH}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Pattern name"
+                                className="bg-transparent border-b border-transparent focus:border-blue-500/40 focus:outline-none text-lg font-display text-white p-0 uppercase tracking-widest block w-full max-w-xs"
                             />
-                            <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1">Sovereign Fleet Engineer v4.2</p>
+                            <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1 truncate">
+                                {hull.name} · {activeDesign ? (activeDesign.pending ? 'syncing with yard…' : 'saved pattern') : 'unsaved draft'}
+                                {activeDesign && dirty ? ' · edited' : ''}
+                            </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button 
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
                             onClick={() => toggleFloatTab('designer')}
-                            className="p-2.5 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
-                            title="Detach Panel"
+                            className="p-2 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
+                            title="Detach panel"
                         >
-                            <Maximize2 size={16} />
+                            <Maximize2 size={14} />
                         </button>
-                        <button 
-                            onClick={handleSave}
-                            disabled={isSaving}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all font-display text-xs tracking-widest disabled:opacity-50"
+                        {activeDesign && (
+                            <>
+                                <button
+                                    onClick={() => loadDesign({ ...activeDesign, name, hullId, components }, true)}
+                                    className="p-2 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
+                                    title="Save as a new pattern"
+                                >
+                                    <Copy size={14} />
+                                </button>
+                                <button
+                                    onClick={del}
+                                    disabled={busy}
+                                    className={`p-2 border rounded-lg transition-all ${confirmDelete
+                                        ? 'bg-red-600 border-red-500 text-white'
+                                        : 'bg-slate-900/50 hover:bg-red-900/40 border-white/5 text-slate-400 hover:text-red-300'}`}
+                                    title={confirmDelete ? 'Click again to retire this pattern' : 'Retire pattern'}
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </>
+                        )}
+                        <button
+                            onClick={save}
+                            disabled={busy || !summary.valid || atCap || (!!activeDesign && !dirty)}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all font-display text-xs tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={atCap ? `Registry full (${MAX_DESIGNS_PER_FACTION})` : summary.valid ? 'File this pattern with the yard' : summary.issues[0]}
                         >
-                            <Save size={14} />
-                            {isSaving ? 'SYNCING...' : 'SAVE DESIGN'}
+                            {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            {activeDesign ? 'UPDATE' : 'FILE DESIGN'}
                         </button>
                     </div>
                 </div>
 
+                {notice && (
+                    <div className={`mx-5 mt-3 px-3 py-2 rounded-lg border text-[11px] flex items-center gap-2 ${notice.kind === 'ok'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                        : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
+                        {notice.kind === 'ok' ? <CheckCircle2 size={12} /> : <AlertOctagon size={12} />}
+                        <span>{notice.text}</span>
+                    </div>
+                )}
+
                 <div className="flex-1 flex overflow-hidden">
-                    {/* Configuration Panels */}
-                    <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-                        {/* Hull Selection */}
-                        <section className="space-y-4">
+                    <div className="flex-1 min-w-0 overflow-y-auto p-5 space-y-7 custom-scrollbar">
+                        {/* Library (narrow screens) */}
+                        <div className="md:hidden border border-white/5 rounded-xl bg-black/30 max-h-64 flex flex-col">
+                            {library}
+                        </div>
+
+                        {/* Hull */}
+                        <section className="space-y-3">
                             <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <Activity size={12} /> SELECT HULL ARCHETYPE
+                                <Crosshair size={12} /> Hull
                             </h4>
-                            <div className="flex flex-wrap gap-3">
-                                {SHIP_HULLS.map(hull => (
-                                    <button
-                                        key={hull.id}
-                                        onClick={() => setSelectedHullId(hull.id)}
-                                        className={`p-4 rounded-xl border transition-all text-left flex flex-col justify-between h-24 min-w-[140px] flex-1 ${
-                                            selectedHullId === hull.id
-                                            ? 'bg-blue-500/10 border-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
-                                            : 'bg-white/5 border-white/10 hover:border-white/20'
-                                        }`}
-                                    >
-                                        <div className="flex justify-between items-start w-full">
-                                            <span className="text-[11px] font-display text-white uppercase tracking-wider leading-tight">
-                                                {hull.name}
-                                            </span>
-                                            <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-blue-400 font-bold shrink-0">
-                                                {hull.size}
-                                            </span>
-                                        </div>
-                                        <div className="text-[9px] text-slate-500 uppercase tracking-[0.2em] font-mono">
-                                            {hull.slots.length} MODULES
-                                        </div>
-                                    </button>
+                            <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                {SHIP_HULLS.map(h => {
+                                    const selected = h.id === hullId;
+                                    const w = h.slots.filter(s => s.type === 'weapon').length;
+                                    const u = h.slots.filter(s => s.type === 'utility').length;
+                                    return (
+                                        <button
+                                            key={h.id}
+                                            onClick={() => changeHull(h.id)}
+                                            className={`p-3 rounded-xl border transition-all text-left flex flex-col gap-2 ${selected
+                                                ? 'bg-blue-500/10 border-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
+                                                : 'bg-white/5 border-white/10 hover:border-white/20'}`}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="flex items-center gap-2 min-w-0">
+                                                    <span className="text-indigo-300"><UnitIcon type={h.id.toUpperCase() as any} size={18} /></span>
+                                                    <span className="text-[11px] font-display text-white uppercase tracking-wider truncate">{h.name}</span>
+                                                </span>
+                                                <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-blue-400 font-bold shrink-0">{h.size}</span>
+                                            </div>
+                                            <div className="text-[9px] text-slate-500 font-mono flex flex-wrap gap-x-3 gap-y-0.5">
+                                                <span title="Bare hull power">⚡ {h.basePower}</span>
+                                                <span title="Slots">{w}W · {u}D · 1C</span>
+                                                <span title="Built-in reactor">{h.baseEnergy} pwr</span>
+                                                <span title="Bare hull cost">{formatCredits(h.baseCost.credits)} cr</span>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-relaxed">{hull.description}</p>
+                        </section>
+
+                        {/* Slots */}
+                        <section className="space-y-3">
+                            <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <Gauge size={12} /> Fit — {summary.fitted}/{summary.slots} slots
+                            </h4>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                                {hull.slots.map(slot => (
+                                    <SlotEditor
+                                        key={slot.id}
+                                        slot={slot}
+                                        value={components[slot.id] ?? ''}
+                                        unlocked={unlocked}
+                                        locked={summary.lockedComponentIds.includes(components[slot.id] ?? '')}
+                                        onChange={(id) => setSlot(slot.id, id)}
+                                    />
                                 ))}
                             </div>
                         </section>
 
-                        {/* Component Slots */}
-                        <section className="space-y-4">
-                            <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <Target size={12} /> COMPONENT SLOTTING
-                            </h4>
-                            <div className="grid grid-cols-1 gap-3">
-                                {selectedHull.slots.map(slot => {
-                                    const currentCompId = currentComponents[slot.id];
-                                    const currentComp = SHIP_COMPONENTS.find(c => c.id === currentCompId);
-                                    
-                                    return (
-                                        <div key={slot.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col gap-3">
-                                            <div className="flex items-center gap-4 w-full">
-                                                <div className="w-10 h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
-                                                    {slot.type === 'weapon' && <Sword size={18} className="text-red-400" />}
-                                                    {slot.type === 'utility' && <Shield size={18} className="text-blue-400" />}
-                                                    {slot.type === 'core' && <Zap size={18} className="text-amber-400" />}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-[10px] text-slate-500 uppercase tracking-widest">{slot.type} slot</div>
-                                                    <select 
-                                                        value={currentCompId || ''}
-                                                        onChange={(e) => handleComponentChange(slot.id, e.target.value)}
-                                                        className="w-full bg-transparent border-none focus:ring-0 text-sm text-white p-0 mt-1 cursor-pointer appearance-none"
-                                                        style={{ background: 'none' }}
-                                                    >
-                                                        <option value="" className="bg-slate-900 text-slate-400">SELECT MODULE</option>
-                                                        {SHIP_COMPONENTS.filter(c => c.type === slot.type).map(comp => (
-                                                            <option key={comp.id} value={comp.id} className="bg-slate-900">
-                                                                {comp.name}
-                                                                {comp.stats?.powerDraw !== undefined && ` (${Math.abs(comp.stats.powerDraw)}P)`}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            {currentComp && (
-                                                <div className="pl-14 text-[11px] text-slate-400 leading-relaxed border-t border-white/5 pt-2">
-                                                    {currentComp.description}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </section>
+                        {/* Specs (narrow screens) */}
+                        <div className="xl:hidden">
+                            <Specs summary={summary} bare={bare} standard={standardSummary} standardName={standard?.name} />
+                        </div>
                     </div>
 
-                    {/* Stats Summary (Right) */}
-                    <div className="w-80 border-l border-white/5 bg-black/20 p-8 space-y-6">
-                        <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                            <Gauge size={12} /> DESIGN SPECIFICATIONS
-                        </h4>
-
-                        <div className="space-y-4">
-                            <StatBar label="OFFENSIVE DAMAGE" value={stats.damage} max={200} color="bg-red-500" />
-                            <StatBar label="SURVIVAL POWER" value={stats.baseForce} max={1000} color="bg-blue-500" />
-                            <StatBar label="MITIGATION FIELD" value={stats.shields} max={200} color="bg-cyan-500" />
-                            <StatBar label="EVASION / SPEED" value={stats.speed} max={100} color="bg-green-500" />
-                        </div>
-
-                        <div className="pt-6 border-t border-white/5 space-y-4">
-                            <div className="flex justify-between items-end">
-                                <div className="text-[10px] text-slate-500 uppercase tracking-widest">Power Generation</div>
-                                <div className={`text-xl font-mono ${powerBalance <= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {Math.abs(powerBalance)} units
-                                </div>
-                            </div>
-                            <div className="p-3 rounded-lg bg-black/40 border border-white/5 flex gap-3">
-                                {powerBalance > 0 ? (
-                                    <>
-                                        <AlertOctagon size={16} className="text-red-400 shrink-0" />
-                                        <div className="text-[10px] text-red-400/80 leading-tight">
-                                            CRITICAL: Power draw exceeds production. Design will be non-functional.
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Info size={16} className="text-blue-400 shrink-0" />
-                                        <div className="text-[10px] text-slate-500 leading-tight">
-                                            STABLE: Power generation sufficient for all subsystems.
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Visual Breakdown */}
-                        <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/10 space-y-3">
-                            <div className="text-[10px] font-display text-blue-400 uppercase tracking-widest">Composite Efficiency</div>
-                            <div className="flex items-center gap-2">
-                                <div className="text-3xl font-mono text-white">{( (stats.damage + stats.shields + stats.speed) / 3 ).toFixed(1)}</div>
-                                <ArrowRight size={14} className="text-slate-600" />
-                                <div className="text-[10px] text-slate-400 uppercase">Class-V Integration</div>
-                            </div>
-                        </div>
+                    {/* Specs (wide screens) */}
+                    <div className="hidden xl:block w-72 shrink-0 border-l border-white/5 bg-black/20 p-5 overflow-y-auto custom-scrollbar">
+                        <Specs summary={summary} bare={bare} standard={standardSummary} standardName={standard?.name} />
                     </div>
                 </div>
             </div>
@@ -276,19 +345,216 @@ export default function ShipDesignerPanel() {
     );
 }
 
-function StatBar({ label, value, max, color }: { label: string, value: number, max: number, color: string }) {
-    const percentage = Math.min((value / max) * 100, 100);
+// ─── Pieces ──────────────────────────────────────────────────────────────────
+
+function DesignLibrary({ own, activeId, unlocked, onLoad, onNew }: {
+    own: ShipDesign[];
+    activeId: string | null;
+    unlocked: Set<string>;
+    onLoad: (d: ShipDesign, asCopy: boolean) => void;
+    onNew: () => void;
+}) {
     return (
-        <div className="space-y-2">
-            <div className="flex justify-between text-[9px] uppercase tracking-widest font-mono">
-                <span className="text-slate-500">{label}</span>
-                <span className="text-white font-bold">{value}</span>
+        <>
+            <div className="p-3 border-b border-white/5 flex items-center justify-between">
+                <h3 className="text-[10px] font-display tracking-widest text-slate-400 uppercase">
+                    Registry <span className="text-slate-600">{own.length}/{MAX_DESIGNS_PER_FACTION}</span>
+                </h3>
+                <button onClick={onNew} className="p-1.5 hover:bg-white/10 rounded transition-colors" title="New pattern">
+                    <Plus size={14} className="text-blue-400" />
+                </button>
             </div>
-            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <div 
-                    className={`h-full ${color} transition-all duration-1000 shadow-[0_0_8px_rgba(255,255,255,0.1)]`} 
-                    style={{ width: `${percentage}%` }}
-                />
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                {own.length === 0 && (
+                    <p className="text-[10px] text-slate-500 px-2 py-3 leading-relaxed">
+                        No patterns filed yet. Load a standard pattern below, change the fit, and file it under a new name.
+                    </p>
+                )}
+                {own.map(d => (
+                    <LibraryRow key={d.id} design={d} summary={summarizeDesign(d, unlocked)} active={activeId === d.id} onClick={() => onLoad(d, false)} />
+                ))}
+                <div className="pt-3 pb-1 px-2 text-[9px] font-display tracking-widest text-slate-600 uppercase">Standard patterns</div>
+                {DEFAULT_DESIGNS.map(d => (
+                    <LibraryRow key={d.id} design={d} summary={summarizeDesign(d, null)} active={false} standard onClick={() => onLoad(d, true)} />
+                ))}
+            </div>
+        </>
+    );
+}
+
+function LibraryRow({ design, summary, active, standard, onClick }: {
+    design: ShipDesign; summary: DesignSummary; active: boolean; standard?: boolean; onClick: () => void;
+}) {
+    const hull = getHull(design.hullId);
+    return (
+        <button
+            onClick={onClick}
+            className={`w-full p-2.5 rounded-lg text-left transition-all border flex items-center gap-2 ${active
+                ? 'bg-blue-500/10 border-blue-500/30'
+                : 'border-transparent hover:bg-white/5'}`}
+            title={standard ? 'Load as a template for a new pattern' : design.name}
+        >
+            <span className={standard ? 'text-indigo-300' : 'text-cyan-300'}>
+                <UnitIcon type={design.hullId.toUpperCase() as any} size={16} />
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="text-[11px] font-display text-white truncate flex items-center gap-1.5">
+                    {design.name}
+                    {design.pending && <Loader2 size={9} className="text-amber-300 animate-spin" />}
+                    {!summary.valid && <Lock size={9} className="text-red-300" />}
+                </span>
+                <span className="text-[9px] text-slate-500 uppercase block mt-0.5 font-mono">
+                    {hull?.name ?? design.hullId} · ⚡{summary.power} · {formatCredits(summary.cost.CREDITS)}cr
+                </span>
+            </span>
+            {standard && <Copy size={10} className="text-slate-600 shrink-0" />}
+        </button>
+    );
+}
+
+function SlotEditor({ slot, value, unlocked, locked, onChange }: {
+    slot: HullSlot; value: string; unlocked: Set<string>; locked: boolean; onChange: (id: string) => void;
+}) {
+    const meta = SLOT_META[slot.type];
+    const options = SHIP_COMPONENTS.filter(c => c.type === slot.type);
+    const current = getComponent(value);
+    return (
+        <div className={`p-3 rounded-xl border flex flex-col gap-2 ${locked ? 'bg-red-500/5 border-red-500/20' : 'bg-white/5 border-white/5'}`}>
+            <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0 ${meta.tint}`}>
+                    {meta.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest">{meta.label} · {slot.id}</div>
+                    <select
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        className="w-full bg-slate-900/70 border border-white/10 rounded px-2 py-1 mt-1 text-xs text-white focus:outline-none focus:border-blue-500/40 cursor-pointer"
+                    >
+                        <option value="">— empty —</option>
+                        {options.map(c => {
+                            const gated = !!c.techPrerequisite && !unlocked.has(c.techPrerequisite);
+                            return (
+                                <option key={c.id} value={c.id} disabled={gated && c.id !== value} className="bg-slate-900">
+                                    {gated ? '🔒 ' : ''}{c.name} · {c.powerMult < 0 ? '−' : '+'}{Math.abs(Math.round(c.powerMult * 100))}% · {energyLabel(c.energy)} · {c.cost.credits}cr
+                                    {gated ? ` · needs ${techName(c.techPrerequisite)}` : ''}
+                                </option>
+                            );
+                        })}
+                    </select>
+                </div>
+            </div>
+            {current && (
+                <div className="pl-12 text-[10px] text-slate-400 leading-relaxed">
+                    {current.description}
+                    {locked && current.techPrerequisite && (
+                        <span className="block text-red-300 mt-1">Requires research: {techName(current.techPrerequisite)}.</span>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function Specs({ summary, bare, standard, standardName }: {
+    summary: DesignSummary; bare: DesignSummary; standard: DesignSummary | null; standardName?: string;
+}) {
+    const vsBare = bare.power > 0 ? Math.round(((summary.power - bare.power) / bare.power) * 100) : 0;
+    const vsStd = standard && standard.power > 0 ? Math.round(((summary.power - standard.power) / standard.power) * 100) : null;
+    const energyPct = summary.energyProduced > 0 ? Math.min(100, (summary.energyDrawn / summary.energyProduced) * 100) : 0;
+    const over = summary.energyBalance < 0;
+    const attack = [['energy', 'Energy', 'bg-fuchsia-400'], ['kinetic', 'Kinetic', 'bg-orange-400'], ['explosive', 'Explosive', 'bg-red-400']] as const;
+    const defense = [['shield', 'Shield', 'bg-cyan-400'], ['armor', 'Armor', 'bg-slate-300'], ['evasion', 'Evasion', 'bg-emerald-400']] as const;
+    const maxWeight = Math.max(1, ...attack.map(([k]) => summary.profile[k]), ...defense.map(([k]) => summary.profile[k]));
+
+    return (
+        <div className="space-y-5">
+            <h4 className="text-[10px] font-display text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                <Gauge size={12} /> Specification
+            </h4>
+
+            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/10">
+                <div className="text-[9px] uppercase tracking-widest text-blue-400 font-display">Combat power per ship</div>
+                <div className="flex items-end gap-3 mt-1">
+                    <div className="text-3xl font-mono text-white">{summary.power}</div>
+                    <div className="text-[10px] text-slate-400 leading-tight pb-1">
+                        <div>{vsBare >= 0 ? '+' : ''}{vsBare}% vs bare hull</div>
+                        {vsStd !== null && <div className={vsStd >= 0 ? 'text-emerald-400' : 'text-amber-400'}>{vsStd >= 0 ? '+' : ''}{vsStd}% vs {standardName ?? 'standard'}</div>}
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <div className="p-2.5 rounded-lg bg-black/30 border border-white/5">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-1"><Coins size={9} /> Cost</div>
+                    <div className="text-white mt-1">{summary.cost.CREDITS.toLocaleString()} cr</div>
+                    <div className="text-slate-400">{summary.cost.METALS.toLocaleString()} metals</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-black/30 border border-white/5">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-1"><Clock size={9} /> Build</div>
+                    <div className="text-white mt-1">{formatBuildTime(summary.buildTime)}</div>
+                    <div className="text-slate-400">{summary.buildTime > bare.buildTime ? `+${formatBuildTime(summary.buildTime - bare.buildTime)} fit` : 'bare hull'}</div>
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <div className="flex justify-between text-[9px] uppercase tracking-widest font-mono">
+                    <span className="text-slate-500">Power grid</span>
+                    <span className={over ? 'text-red-400 font-bold' : 'text-white'}>{summary.energyDrawn} / {summary.energyProduced}</span>
+                </div>
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <div className={`h-full transition-all duration-500 ${over ? 'bg-red-500' : energyPct > 85 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${over ? 100 : energyPct}%` }} />
+                </div>
+                <div className="text-[10px] text-slate-500 flex gap-2 items-start">
+                    {over ? <AlertOctagon size={12} className="text-red-400 shrink-0" /> : <Info size={12} className="text-blue-400 shrink-0" />}
+                    <span>{over
+                        ? `Draw exceeds output by ${-summary.energyBalance}. Fit a stronger core or drop a module.`
+                        : `${summary.energyBalance} spare. Hull reactor plus core feed every module.`}</span>
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                <div className="text-[9px] uppercase tracking-widest font-mono text-slate-500">Signature</div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                        <div className="text-[9px] text-slate-600 uppercase">Attack</div>
+                        {attack.map(([k, label, color]) => <ProfileBar key={k} label={label} value={summary.profile[k]} max={maxWeight} color={color} />)}
+                    </div>
+                    <div className="space-y-1.5">
+                        <div className="text-[9px] text-slate-600 uppercase">Defense</div>
+                        {defense.map(([k, label, color]) => <ProfileBar key={k} label={label} value={summary.profile[k]} max={maxWeight} color={color} />)}
+                    </div>
+                </div>
+                <p className="text-[9px] text-slate-500 leading-relaxed">
+                    Energy burns shields, kinetics crack armor, explosives ruin bare hulls and miss evasive ones. Fleets compare signatures in battle for up to ±15% power.
+                </p>
+            </div>
+
+            <div className={`p-3 rounded-lg border text-[10px] leading-relaxed ${summary.valid
+                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+                : 'bg-red-500/5 border-red-500/20 text-red-300'}`}>
+                {summary.valid ? (
+                    <span className="flex gap-2"><CheckCircle2 size={12} className="shrink-0" /> Ready to file. Commission it from any fleet&apos;s Requisition panel or a planet&apos;s Commission Space Forces.</span>
+                ) : (
+                    <ul className="space-y-1">
+                        {summary.issues.map((issue, i) => <li key={i} className="flex gap-2"><AlertOctagon size={12} className="shrink-0 mt-0.5" />{issue}</li>)}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ProfileBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+    const pct = Math.min(100, (value / max) * 100);
+    return (
+        <div>
+            <div className="flex justify-between text-[9px] font-mono">
+                <span className="text-slate-500">{label}</span>
+                <span className="text-slate-300">{value % 1 === 0 ? value : value.toFixed(1)}</span>
+            </div>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${pct}%` }} />
             </div>
         </div>
     );

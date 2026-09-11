@@ -25,6 +25,7 @@ import type { EmpireDoctrines } from './doctrine/types';
 import type { FactionReputation } from './reputation/types';
 import type { FactionTraitState } from './factions/faction-traits-types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
+import type { ShipDesign } from './combat/ship-types';
 import type { CorporateWorldState } from './economy/corporate/company-registry';
 
 
@@ -240,6 +241,14 @@ export interface GameWorldState {
     combat: {
         recruitmentJobs: RecruitmentJob[];
     };
+
+    /**
+     * Player ship designs, keyed by design id. Per-faction data: rides each
+     * owner's shard (extractFactionShard) and is cleared from the shared
+     * snapshot by cleanWorldForSave. Standard patterns are code, not state —
+     * see DEFAULT_DESIGNS in lib/combat/ship-registry.ts.
+     */
+    shipDesigns?: Map<string, ShipDesign>;
 }
 
 // ─── Shared-state helpers ─────────────────────────────────────────────────────

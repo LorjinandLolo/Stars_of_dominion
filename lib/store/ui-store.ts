@@ -235,10 +235,12 @@ export interface UIStore {
     setRecruitmentJobs: (jobs: RecruitmentJob[]) => void;
 
     // ── Ship Designs ──
+    /** The player's own designs. Authoritative copy comes from the worker via sync. */
     shipDesigns: ShipDesign[];
-    addShipDesign: (design: ShipDesign) => void;
-    updateShipDesign: (id: string, patch: Partial<ShipDesign>) => void;
-    deleteShipDesign: (id: string) => void;
+    /** Optimistic insert/replace after dispatching SHIP_DESIGN_SAVE; sync reconciles. */
+    upsertShipDesign: (design: ShipDesign) => void;
+    /** Optimistic removal after dispatching SHIP_DESIGN_DELETE. */
+    removeShipDesign: (id: string) => void;
 
     // ── Empire Identity (Phase 3) ──
     empireIdentity: EmpireIdentityState;
@@ -564,13 +566,16 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Ship Designs ──
     shipDesigns: [],
-    addShipDesign: (design) =>
-        set((state) => ({ shipDesigns: [...state.shipDesigns, design] })),
-    updateShipDesign: (id, patch) =>
-        set((state) => ({
-            shipDesigns: state.shipDesigns.map((d) => (d.id === id ? { ...d, ...patch } : d)),
-        })),
-    deleteShipDesign: (id) =>
+    upsertShipDesign: (design) =>
+        set((state) => {
+            const exists = state.shipDesigns.some((d) => d.id === design.id);
+            return {
+                shipDesigns: exists
+                    ? state.shipDesigns.map((d) => (d.id === design.id ? { ...d, ...design } : d))
+                    : [...state.shipDesigns, design],
+            };
+        }),
+    removeShipDesign: (id) =>
         set((state) => ({ shipDesigns: state.shipDesigns.filter((d) => d.id !== id) })),
 
     // ── Empire Identity ──

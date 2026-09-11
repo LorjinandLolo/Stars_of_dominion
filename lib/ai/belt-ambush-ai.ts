@@ -33,7 +33,9 @@ export interface BeltAmbushWorldView {
 
 /** Three corvettes and a destroyer, priced like the player's MIL_BUILD_FLEET + hull recruits. */
 export const PICKET_COST: Readonly<Record<string, number>> = { CREDITS: 5200, METALS: 2100 };
-export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { CORVETTE: 3, DESTROYER: 1 };
+// Lowercase: the combat engine's counter grid and the tactical adapter key
+// compositions by lowercase ship class (lib/combat/ship-registry.ts).
+export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 3, destroyer: 1 };
 /** 100 base + 3×10 + 22, matching data/combat/ground-units.json power values. */
 export const PICKET_BASE_POWER = 152;
 /** Pickets per faction at war — one per trap, at most this many. */

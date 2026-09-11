@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
 import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
+import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import type { GameWorldState } from '@/lib/game-world-state';
@@ -856,6 +857,17 @@ export function useGameSync() {
             factions: factionMap,
             politicsState,
             techState,
+            // The player's own ship designs (only their shard carries any).
+            // Locally-filed designs the worker has not echoed yet stay in the
+            // list so the registry does not blink between save and sync.
+            shipDesigns: (() => {
+                const fromWorld = activeFactionId
+                    ? Array.from(world.shipDesigns?.values?.() ?? []).filter(d => d.factionId === activeFactionId)
+                    : [];
+                const known = new Set(fromWorld.map(d => d.id));
+                const pendingLocal = useUIStore.getState().shipDesigns.filter(d => d.pending && !known.has(d.id));
+                return [...fromWorld, ...pendingLocal];
+            })(),
             contestedSystemIds,
             espionageState,
             corporateState,
@@ -889,7 +901,16 @@ export function useGameSync() {
         const injectMappedShard = (world: GameWorldState, mappedShard: any) => {
             if (!mappedShard) return;
             if (mappedShard.fleets) {
-                mappedShard.fleets.forEach((f: any) => world.movement.fleets.set(f.id, f));
+                mappedShard.fleets.forEach((f: any) => {
+                    // Same fold as save-service#injectFactionShard — this path
+                    // bypasses it (web-worker deserialize).
+                    if (f && f.composition) f.composition = normalizeComposition(f.composition);
+                    world.movement.fleets.set(f.id, f);
+                });
+            }
+            if (mappedShard.shipDesigns) {
+                if (!(world.shipDesigns instanceof Map)) world.shipDesigns = new Map();
+                mappedShard.shipDesigns.forEach((d: any) => { if (d?.id) world.shipDesigns!.set(d.id, d); });
             }
             if (mappedShard.economy) world.economy.factions.set(mappedShard.factionId, mappedShard.economy);
             if (mappedShard.tech) world.tech.set(mappedShard.factionId, mappedShard.tech);

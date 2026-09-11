@@ -35,6 +35,18 @@ import { drainNotifications } from '../lib/time/notification-hooks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
+    saveDesign as saveShipDesign,
+    deleteDesign as deleteShipDesign,
+    resolveRecruitSpec,
+    type RecruitSpec,
+} from '../lib/combat/ship-design-service';
+import {
+    addProfile as addDesignProfile,
+    scaleProfile as scaleDesignProfile,
+    normalizeComposition,
+    normalizeUnitKey,
+} from '../lib/combat/ship-registry';
+import {
     initDistrictWar,
     advanceFront,
     occupationShare,
@@ -1256,7 +1268,22 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
  * pay. Untracked reserve keys are free, mirroring chargeOrderCost.
  */
 function chargeUnitCost(world: any, factionId: string, unitType: string, count: number, actionId: string): boolean {
-    const perUnit = RecruitmentService.unitCost(unitType);
+    return chargePerUnitCost(world, factionId, RecruitmentService.unitCost(unitType), count, actionId, unitType);
+}
+
+/**
+ * Charge an explicit per-unit price map (CREDITS/METALS/...), count-scaled.
+ * This is what design-priced ship recruits go through: the price comes from
+ * lib/combat/ship-registry.ts#summarizeDesign, not the unit config.
+ */
+function chargePerUnitCost(
+    world: any,
+    factionId: string,
+    perUnit: Record<string, number>,
+    count: number,
+    actionId: string,
+    label: string,
+): boolean {
     const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
     if (!reserves || Object.keys(perUnit).length === 0) return true;
     const n = Math.max(1, Math.floor(Number(count) || 0));
@@ -1264,7 +1291,7 @@ function chargeUnitCost(world: any, factionId: string, unitType: string, count: 
         if (reserves[key] === undefined) continue;
         if ((reserves[key] ?? 0) < amt * n) {
             recordOrderFailure(world, factionId, actionId,
-                `Cannot afford ${n}x ${unitType}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`);
+                `Cannot afford ${n}x ${label}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`);
             return false;
         }
     }
@@ -1273,6 +1300,41 @@ function chargeUnitCost(world: any, factionId: string, unitType: string, count: 
         reserves[key] = (reserves[key] ?? 0) - amt * n;
     }
     return true;
+}
+
+/**
+ * Queue a formation recruit priced by a resolved RecruitSpec. Shared by the
+ * one-click MIL_BUILD_FLEET chain and MIL_RECRUIT_FORMATION_UNIT so the two
+ * cannot drift on how a ship is charged, timed, or tagged.
+ */
+function queueFormationRecruit(
+    world: any,
+    factionId: string,
+    formationId: string,
+    isFleet: boolean,
+    spec: RecruitSpec,
+    count: number,
+): void {
+    const job = RecruitmentService.createJob(
+        `formation-${formationId}`, // formationId as planetId spoof
+        factionId,
+        spec.unitType as GroundUnitType,
+        count,
+        world.nowSeconds,
+        {
+            buildTimePerUnit: spec.buildTime,
+            designId: spec.designId,
+            designName: spec.designName,
+            classKey: spec.classKey,
+            unitPower: spec.unitPower,
+            unitProfile: spec.unitProfile,
+        },
+    );
+    job.targetFormationId = formationId;
+    job.isFleet = isFleet;
+    if (!world.combat) world.combat = {};
+    if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
+    world.combat.recruitmentJobs.push(job);
 }
 
 /**
@@ -2751,14 +2813,25 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'SHIP_DESIGN_SAVE': {
-            if (!world.shipDesigns) world.shipDesigns = new Map();
-            const designId = payload.design.id || `design-${factionId}-${Date.now()}`;
-            world.shipDesigns.set(designId, { 
-                ...payload.design, 
-                id: designId, 
-                factionId 
-            });
-            console.log(`[Tick Worker] Saved Ship Design ${designId} for ${factionId}`);
+            // Validation (hull, slots, energy budget, tech gates, ownership,
+            // registry cap) lives in lib/combat/ship-design-service.ts. The
+            // payload's factionId is ignored: the order's is authoritative.
+            const saved = saveShipDesign(world, factionId, payload?.design, world.nowSeconds);
+            if (!saved.ok) {
+                recordOrderFailure(world, factionId, actionId, saved.reason);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} filed ship design "${saved.design.name}" (${saved.design.id}).`);
+            break;
+        }
+
+        case 'SHIP_DESIGN_DELETE': {
+            const removed = deleteShipDesign(world, factionId, payload?.designId);
+            if (!removed.ok) {
+                recordOrderFailure(world, factionId, actionId, removed.reason);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} retired ship design ${payload.designId}.`);
             break;
         }
 
@@ -2882,16 +2955,25 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
             // Config-priced units charge here, scaled by count (the registry
             // cost is static and payload-blind). Elders skip this: they were
-            // hand-charged above.
-            if (payload.unitType !== ELDER_UNIT_TYPE
-                && !chargeUnitCost(world, factionId, payload.unitType, recruitCount, actionId)) {
-                return;
+            // hand-charged above. Anything the config does not know is
+            // refused — an unknown type used to price at {} and recruit free.
+            let groundUnitType: string = payload.unitType;
+            if (payload.unitType !== ELDER_UNIT_TYPE) {
+                const resolved = resolveRecruitSpec(world, factionId, payload, 'ground');
+                if (!resolved.ok) {
+                    recordOrderFailure(world, factionId, actionId, resolved.reason);
+                    return;
+                }
+                groundUnitType = resolved.spec.unitType;
+                if (!chargePerUnitCost(world, factionId, resolved.spec.cost, recruitCount, actionId, groundUnitType)) {
+                    return;
+                }
             }
 
             const job = RecruitmentService.createJob(
                 payload.planetId,
                 factionId,
-                payload.unitType as GroundUnitType,
+                groundUnitType as GroundUnitType,
                 recruitCount,
                 world.nowSeconds
             );
@@ -3785,18 +3867,20 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // a ship with no fleet present commissioned an EMPTY task force and
             // silently required a second click for the actual ship — every
             // tester read that as "recruitment is broken".
-            if (payload.recruitUnitType && typeof payload.recruitUnitType === 'string') {
-                if (chargeUnitCost(world, factionId, payload.recruitUnitType, 1, actionId)) {
-                    const chainJob = RecruitmentService.createJob(
-                        `formation-${fleetId}`, factionId,
-                        payload.recruitUnitType as GroundUnitType, 1, world.nowSeconds
-                    );
-                    (chainJob as any).targetFormationId = fleetId;
-                    (chainJob as any).isFleet = true;
-                    if (!world.combat) world.combat = {};
-                    if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
-                    world.combat.recruitmentJobs.push(chainJob);
-                    console.log(`[Order] ${factionId} chained 1x ${payload.recruitUnitType} into ${fleetId}.`);
+            // `recruitDesignId` names a ship design; `recruitUnitType` alone
+            // builds that hull's standard pattern.
+            if ((payload.recruitUnitType && typeof payload.recruitUnitType === 'string')
+                || (payload.recruitDesignId && typeof payload.recruitDesignId === 'string')) {
+                const resolved = resolveRecruitSpec(
+                    world, factionId,
+                    { unitType: payload.recruitUnitType, designId: payload.recruitDesignId },
+                    'fleet',
+                );
+                if (!resolved.ok) {
+                    recordOrderFailure(world, factionId, actionId, resolved.reason);
+                } else if (chargePerUnitCost(world, factionId, resolved.spec.cost, 1, actionId, resolved.spec.designName ?? resolved.spec.unitType)) {
+                    queueFormationRecruit(world, factionId, fleetId, true, resolved.spec, 1);
+                    console.log(`[Order] ${factionId} chained 1x ${resolved.spec.designName ?? resolved.spec.unitType} into ${fleetId}.`);
                 }
             }
             break;
@@ -3836,28 +3920,36 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_RECRUIT_FORMATION_UNIT': {
-            // Units cost what the config says, scaled by count — the registry
-            // entry stays cost:{} because chargeOrderCost can't scale by
-            // payload, so the charge lives here. Free identical warships let
-            // any player field unlimited battleships for nothing.
-            if (!chargeUnitCost(world, factionId, payload.unitType, payload.count, 'MIL_RECRUIT_FORMATION_UNIT')) {
+            // Units cost what their design or config says, scaled by count —
+            // the registry entry stays cost:{} because chargeOrderCost can't
+            // scale by payload, so the charge lives here. Free identical
+            // warships let any player field unlimited battleships for nothing.
+            const isFleet = !!payload.isFleet;
+            const formation = isFleet
+                ? world.movement.fleets.get(payload.formationId)
+                : world.movement.armies?.get(payload.formationId);
+            if (!formation) {
+                recordOrderFailure(world, factionId, actionId, 'That formation no longer exists.');
                 return;
             }
-            const job = RecruitmentService.createJob(
-                'formation-' + payload.formationId, // Use formationId as planetId spoof
-                factionId,
-                payload.unitType as GroundUnitType,
-                payload.count,
-                world.nowSeconds
-            );
-            // We'll tag the job with the real formation ID
-            (job as any).targetFormationId = payload.formationId;
-            (job as any).isFleet = payload.isFleet;
+            if (formation.factionId !== factionId) {
+                console.error(`[Security] ${factionId} tried to recruit into ${payload.formationId} owned by ${formation.factionId}.`);
+                recordOrderFailure(world, factionId, actionId, 'You do not command that formation.');
+                return;
+            }
 
-            if (!world.combat) world.combat = {};
-            if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
-            world.combat.recruitmentJobs.push(job);
-            console.log(`[Order] Faction ${factionId} queued ${payload.count}x ${payload.unitType} into formation ${payload.formationId}`);
+            const count = Math.max(1, Math.min(50, Math.floor(Number(payload.count) || 1)));
+            const resolved = resolveRecruitSpec(world, factionId, payload, isFleet ? 'fleet' : 'ground');
+            if (!resolved.ok) {
+                recordOrderFailure(world, factionId, actionId, resolved.reason);
+                return;
+            }
+            const label = resolved.spec.designName ?? resolved.spec.unitType;
+            if (!chargePerUnitCost(world, factionId, resolved.spec.cost, count, actionId, label)) {
+                return;
+            }
+            queueFormationRecruit(world, factionId, payload.formationId, isFleet, resolved.spec, count);
+            console.log(`[Order] Faction ${factionId} queued ${count}x ${label} into formation ${payload.formationId}`);
             break;
         }
 
@@ -4121,10 +4213,22 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 return;
             }
 
-            // Combine ship compositions
-            if (!tgt.composition) tgt.composition = {};
-            for (const [type, count] of Object.entries(src.composition || {})) {
+            // Combine ship compositions (lowercase-merged, so a legacy
+            // CORVETTE and a new corvette land in one bucket).
+            tgt.composition = normalizeComposition(tgt.composition);
+            for (const [type, count] of Object.entries(normalizeComposition(src.composition))) {
                 (tgt.composition as any)[type] = ((tgt.composition as any)[type] || 0) + (count as number);
+            }
+
+            // Design signatures and per-design counts add up too.
+            if (src.designProfile || tgt.designProfile) {
+                tgt.designProfile = addDesignProfile(tgt.designProfile, src.designProfile);
+            }
+            if (src.designCounts) {
+                tgt.designCounts = { ...(tgt.designCounts ?? {}) };
+                for (const [designId, n] of Object.entries(src.designCounts)) {
+                    tgt.designCounts[designId] = (tgt.designCounts[designId] ?? 0) + (Number(n) || 0);
+                }
             }
 
             // Strength becomes the power-weighted average; power adds up.
@@ -4170,15 +4274,16 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 return;
             }
 
-            if (!src.composition) src.composition = {};
+            src.composition = normalizeComposition(src.composition);
             const totalShips = Object.values(src.composition).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
             const moved: Record<string, number> = {};
             let movedCount = 0;
-            for (const [type, want] of Object.entries(payload.composition || {})) {
+            for (const [rawType, want] of Object.entries(payload.composition || {})) {
+                const type = normalizeUnitKey(rawType);
                 const have = (src.composition as any)[type] || 0;
                 const take = Math.max(0, Math.min(have, Math.floor(Number(want) || 0)));
-                if (take > 0) { moved[type] = take; movedCount += take; }
+                if (take > 0) { moved[type] = (moved[type] ?? 0) + take; movedCount += take; }
             }
             if (movedCount > 0 && movedCount >= totalShips) {
                 console.warn(`[Order] SPLIT rejected: cannot detach ALL ships — merge or rename instead.`);
@@ -4187,17 +4292,36 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
             const srcPower = src.basePower ?? 100;
             let newPower: number;
+            let splitRatio = 0.5;
             if (movedCount > 0) {
                 for (const [type, count] of Object.entries(moved)) {
                     (src.composition as any)[type] -= count;
                     if ((src.composition as any)[type] <= 0) delete (src.composition as any)[type];
                 }
-                const ratio = totalShips > 0 ? movedCount / totalShips : 0.5;
-                newPower = Math.max(10, Math.round(srcPower * ratio));
+                splitRatio = totalShips > 0 ? movedCount / totalShips : 0.5;
+                newPower = Math.max(10, Math.round(srcPower * splitRatio));
             } else {
                 newPower = Math.max(10, Math.round(srcPower / 2));
             }
             src.basePower = Math.max(10, srcPower - newPower);
+
+            // Design totals follow the ships by ratio. Per-design counts are
+            // display-only, so rounding drift there is harmless; the profile
+            // is what combat reads and it scales exactly.
+            const detachedProfile = src.designProfile ? scaleDesignProfile(src.designProfile, splitRatio) : undefined;
+            if (src.designProfile) src.designProfile = scaleDesignProfile(src.designProfile, 1 - splitRatio);
+            let detachedCounts: Record<string, number> | undefined;
+            if (src.designCounts) {
+                detachedCounts = {};
+                const kept: Record<string, number> = {};
+                for (const [designId, n] of Object.entries(src.designCounts)) {
+                    const total = Number(n) || 0;
+                    const take = Math.round(total * splitRatio);
+                    if (take > 0) detachedCounts[designId] = take;
+                    if (total - take > 0) kept[designId] = total - take;
+                }
+                src.designCounts = kept;
+            }
 
             const newFleetId = `fleet-${factionId}-${Date.now()}`;
             world.movement.fleets.set(newFleetId, {
@@ -4205,6 +4329,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 id: newFleetId,
                 name: payload.name || `${src.name || 'Task Force'} Detachment`,
                 composition: moved,
+                designProfile: detachedProfile,
+                designCounts: detachedCounts,
                 basePower: newPower,
                 strength: src.strength ?? 1,
                 transportedArmyIds: [],
