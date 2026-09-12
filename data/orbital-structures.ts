@@ -146,7 +146,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
     {
         id: 'advanced_spaceyard',
         name: 'Advanced Spaceyard',
-        description: 'Enclosed drydocks with their own foundries — the first yard that can lay down a capital keel.',
+        description: 'Enclosed drydocks with their own foundries — the first yard that can lay down a cruiser keel.',
         category: 'shipyard',
         tier: 3,
         cost: { metals: 1600, chemicals: 600, food: 0, manpower: 350, credits: 2000 },
@@ -166,7 +166,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
     {
         id: 'capital_spaceyard',
         name: 'Capital Spaceyard',
-        description: 'A shipbuilding city in orbit. Super-capital cradles, dedicated reactors, and a workforce that never goes home.',
+        description: 'A shipbuilding city in orbit. Battleship cradles, dedicated reactors, and a workforce that never goes home.',
         category: 'shipyard',
         tier: 4,
         cost: { metals: 3200, chemicals: 1200, food: 0, manpower: 600, credits: 4500 },

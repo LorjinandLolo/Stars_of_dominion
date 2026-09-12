@@ -9,7 +9,6 @@ import {
     orbitalSlotCount,
     ensureOrbitalState,
     computeOrbitalRatings,
-    buildableHullClasses,
     maxOrbitalDefensePower,
     isOrbitSuppressed,
     canBuildOrbital,
@@ -29,6 +28,7 @@ import { ORBITAL_STRUCTURES, ORBITAL_STRUCTURE_BY_ID } from '../data/orbital-str
 import { computeStorageCapacity } from '../lib/logistics/storage-service';
 import { updatePlanetLogistics } from '../lib/logistics/distribution-service';
 import { startSpaceConstruction } from '../lib/construction/ship-production-service';
+import { hullsBuildableAt, planetYardTier } from '../lib/combat/shipyard-gate';
 
 let passed = 0;
 let failed = 0;
@@ -278,9 +278,9 @@ console.log('\n5. Derived ratings');
     check('orbital handling is reported', near(ratings.storageThroughput, 30));
     check('logistics capacity is reported', near(ratings.logisticsCapacity, 30));
 
-    check('tier 1 unlocks frigates but not capitals',
-        buildableHullClasses(planet).includes('frigate') &&
-        !buildableHullClasses(planet).includes('capital'));
+    check('tier 1 lays destroyers but not cruisers',
+        hullsBuildableAt(planetYardTier(planet)).includes('destroyer') &&
+        !hullsBuildableAt(planetYardTier(planet)).includes('cruiser'));
 
     // Integrity scales effects linearly.
     const defenseSlot = planet.orbital!.slots.find(s => s.structureId === 'orbital_defense_network')!;
@@ -301,9 +301,9 @@ console.log('\n5. Derived ratings');
     // Tier takes the best yard, not the sum.
     place(planet, 'advanced_spaceyard');
     check('upgrading the yard raises the tier', computeOrbitalRatings(planet).shipyardTier === 2);
-    check('tier 2 unlocks destroyers but still not capitals',
-        buildableHullClasses(planet).includes('destroyer') &&
-        !buildableHullClasses(planet).includes('capital'));
+    check('tier 2 lays cruisers but still not battleships',
+        hullsBuildableAt(planetYardTier(planet)).includes('cruiser') &&
+        !hullsBuildableAt(planetYardTier(planet)).includes('battleship'));
 }
 
 // ─── 6. Battle damage ─────────────────────────────────────────────────────────
@@ -455,15 +455,19 @@ console.log('\n8. Cross-system integration');
     const tier1 = startSpaceConstruction(world, 'yard', 'corvette', cost, 600);
     check('a tier 1 yard builds corvettes', tier1.success, tier1.error);
     const tier1Destroyer = startSpaceConstruction(world, 'yard', 'destroyer', cost, 600);
-    check('a tier 1 yard cannot build destroyers', !tier1Destroyer.success, tier1Destroyer.error);
+    check('a tier 1 yard builds destroyers too', tier1Destroyer.success, tier1Destroyer.error);
+    const tier1Cruiser = startSpaceConstruction(world, 'yard', 'cruiser' as any, cost, 600);
+    check('a tier 1 yard cannot build cruisers', !tier1Cruiser.success, tier1Cruiser.error);
 
     place(yardPlanet, 'advanced_spaceyard');
-    const tier2Destroyer = startSpaceConstruction(world, 'yard', 'destroyer', cost, 600);
-    check('a tier 2 yard builds destroyers', tier2Destroyer.success, tier2Destroyer.error);
+    const tier2Cruiser = startSpaceConstruction(world, 'yard', 'cruiser' as any, cost, 600);
+    check('a tier 2 yard builds cruisers', tier2Cruiser.success, tier2Cruiser.error);
+    const tier2Battleship = startSpaceConstruction(world, 'yard', 'battleship' as any, cost, 600);
+    check('a tier 2 yard cannot build battleships', !tier2Battleship.success, tier2Battleship.error);
     check('a better yard builds faster', (() => {
-        const t2 = tier2Destroyer.order!.completesAtSeconds;
+        const t2 = tier2Cruiser.order!.completesAtSeconds;
         return t2 < 600; // 600s nominal, sped up by the yard bonus
-    })(), `completes at ${tier2Destroyer.order?.completesAtSeconds}`);
+    })(), `completes at ${tier2Cruiser.order?.completesAtSeconds}`);
 }
 
 // ─── 9. World tick ────────────────────────────────────────────────────────────

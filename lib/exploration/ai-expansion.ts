@@ -11,6 +11,29 @@
 import type { GameWorldState } from '../game-world-state';
 import { issueExploreOrder } from './exploration-service';
 import { issueMoveOrder } from '../movement/movement-service';
+import { SURFACE_YARD_TIERS, systemYardFor } from '../combat/shipyard-gate';
+import { repairBuilding } from '../construction/construction-service';
+
+/**
+ * Queue repairs on any ruined surface yard this faction owns in `systemId`.
+ * Sabotage (`sabotage_shipyard`), siege overrun and ruinBuilding all leave the
+ * tile in place with constructionState 'ruined', and nothing else ever repairs
+ * an AI tile — without this, one sabotage on the capital ended an AI empire's
+ * shipbuilding for the season. Time-gated exactly like a player's
+ * PLANET_REPAIR_BUILDING order, so the sabotage still bites for the repair.
+ */
+function repairRuinedYards(world: GameWorldState, factionId: string, systemId: string): void {
+    for (const planet of world.construction.planets.values()) {
+        if (planet.ownerId !== factionId || planet.systemId !== systemId) continue;
+        for (const tile of planet.tiles ?? []) {
+            if (!tile.buildingId || !(tile.buildingId in SURFACE_YARD_TIERS)) continue;
+            if ((tile.constructionState as string) !== 'ruined') continue;
+            if (repairBuilding(planet, tile.tileId, world.nowSeconds)) {
+                console.log(`[AI Expansion] ${factionId} repairing its ${tile.buildingId} on ${planet.name}.`);
+            }
+        }
+    }
+}
 
 /** What the scout hull costs — mirrors the MIL_BUILD_FLEET registry cost. */
 const SCOUT_FLEET_COST: Record<string, number> = { CREDITS: 1000, METALS: 500 };
@@ -72,6 +95,11 @@ export function tickAIExpansion(world: GameWorldState): void {
         if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
         const reserves = faction.reserves as Record<string, number> | undefined;
 
+        // ── 0. Keep the capital yard alive ──────────────────────────────────
+        // Runs whether or not a scout exists: the belt-picket AI needs the
+        // same yard, and it never repairs anything itself.
+        if (faction.capitalSystemId) repairRuinedYards(world, factionId, faction.capitalSystemId);
+
         // ── 1. A scout to see with ──────────────────────────────────────────
         let fleet = [...world.movement.fleets.values()]
             .filter(f => f.factionId === factionId)
@@ -81,6 +109,10 @@ export function tickAIExpansion(world: GameWorldState): void {
             if (!canAfford(reserves, SCOUT_FLEET_COST, 2)) continue;
             const capital = faction.capitalSystemId;
             if (!capital || !world.movement.systems.has(capital)) continue;
+            // Same yard rule as the player's MIL_BUILD_FLEET: no yard at the
+            // capital, no hull. Every seeded capital carries an Orbital
+            // Shipyard tile, so this only bites once that yard is lost.
+            if (systemYardFor(world.construction.planets.values(), factionId, capital, world.nowSeconds).tier < 1) continue;
             charge(reserves!, SCOUT_FLEET_COST);
             const fleetId = `fleet-${factionId}-scout-1`;
             fleet = {

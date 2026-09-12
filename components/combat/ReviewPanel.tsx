@@ -76,6 +76,7 @@ export function ReviewPanel() {
         playerFactionId,
         factions,
         recruitmentJobs,
+        systems,
     } = useUIStore();
 
     /**
@@ -94,6 +95,30 @@ export function ReviewPanel() {
     // 1. Identify what we are looking at (Planet Garrison/Siege, or Fleet)
     const selectedPlanet = useMemo(() => planets.find(p => p.id === selectedPlanetId), [planets, selectedPlanetId]);
     const selectedFleet = useMemo(() => fleets.find(f => f.id === selectedFleetId), [fleets, selectedFleetId]);
+
+    // Where a commissioned ship would be laid down: the selected fleet's
+    // system (only while it holds there), else the selected planet's. The
+    // picker mirrors the worker's shipyard gate against this anchor.
+    const systemNameOf = (id: string | null | undefined) =>
+        (id ? (systems as any[]).find(s => s.id === id)?.name : undefined) ?? id ?? null;
+    const yardAnchor = selectedFleet
+        ? {
+            systemId: selectedFleet.currentSystemId,
+            systemName: systemNameOf(selectedFleet.currentSystemId),
+            holding: !!selectedFleet.currentSystemId && !selectedFleet.destinationSystemId,
+        }
+        : selectedPlanet
+            ? { systemId: selectedPlanet.systemId, systemName: systemNameOf(selectedPlanet.systemId), holding: true }
+            : undefined;
+
+    // Planet-anchored recruit joins the first allied fleet HOLDING here; a fleet
+    // that has just been ordered away cannot take ships, so the click would
+    // raise a new task force (shell fee) instead. Say so before the click.
+    const departingOnlyFleet = !selectedFleet && selectedPlanet
+        ? (fleets.find(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId && !f.destinationSystemId)
+            ? null
+            : fleets.find(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId && !!f.destinationSystemId) ?? null)
+        : null;
 
     const localArmies = useMemo(() => selectedPlanet ? armies.filter(a => a.currentPlanetId === selectedPlanet.id && a.factionId === playerFactionId) : [], [armies, selectedPlanet, playerFactionId]);
     const localFleets = useMemo(() => selectedPlanet ? fleets.filter(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId) : [], [fleets, selectedPlanet, playerFactionId]);
@@ -195,8 +220,10 @@ export function ReviewPanel() {
             const shipLabel = design?.name ?? unitType.toLowerCase();
             let targetFleetId = selectedFleetId;
             if (!targetFleetId && selectedPlanet) {
-                // Find first allied fleet in this system/planet orbit
-                const alliedFleet = fleets.find(f => f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId);
+                // Find first allied fleet holding in this system (one already
+                // leaving cannot take on ships — the worker would refuse).
+                const alliedFleet = fleets.find(f =>
+                    f.currentSystemId === selectedPlanet.systemId && f.factionId === playerFactionId && !f.destinationSystemId);
                 if (alliedFleet) {
                     targetFleetId = alliedFleet.id;
                 } else {
@@ -459,7 +486,7 @@ export function ReviewPanel() {
                                     </span>
                                     <span className="text-[10px] text-slate-500 mt-1.5 max-w-xs leading-relaxed">
                                         This fleet fights with hull power only. Switch to <span className="text-amber-400 font-bold">RECRUIT</span> (top
-                                        right) while docked at your shipyard to commission corvettes, destroyers, and capital ships into it.
+                                        right) while holding in a system with your shipyard to commission ships into it — bigger hulls need a bigger yard.
                                     </span>
                                 </div>
                             ) : (!isOwner || (isSpaceTheme ? (!selectedFleetId && !selectedPlanet) : viewLayer !== 'ground')) && (
@@ -495,12 +522,18 @@ export function ReviewPanel() {
                         </h4>
                         {isSpaceTheme ? (
                             <>
+                                {departingOnlyFleet && (
+                                    <p className="w-full mb-2 px-3 py-2 rounded-lg border border-amber-500/20 bg-amber-500/5 text-[10px] text-amber-300">
+                                        {departingOnlyFleet.name ?? 'Your fleet'} is under way and cannot take on ships — commissioning here raises a new task force (shell fee applies).
+                                    </p>
+                                )}
                                 <ShipDesignPicker
                                     layout="row"
+                                    yardAnchor={yardAnchor}
                                     onCommission={(design) => handleRecruit(design.hullId.toUpperCase(), design)}
                                 />
                                 <p className="text-[9px] text-slate-500 mt-3 text-center">
-                                    Standard patterns are always available. Draft your own in the Ship Designer.
+                                    Standard patterns need no research; bigger hulls need a bigger yard (see above). Draft your own in the Ship Designer.
                                 </p>
                             </>
                         ) : (

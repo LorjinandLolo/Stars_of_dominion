@@ -12,6 +12,8 @@ import { OrbitalLayerTab } from './OrbitalLayerTab';
 import { InfrastructureTab } from './InfrastructureTab';
 import { LogisticsTab } from './LogisticsTab';
 import { formatPercent } from '@/lib/ui/format';
+import { SURFACE_YARD_TIERS } from '@/lib/combat/shipyard-gate';
+import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -133,11 +135,13 @@ export function PlanetConstructionPanel({
         setError(null);
         try {
             const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            // A hull class rides the modern chained recruit (standard pattern of
+            // that hull); the worker refuses and refunds anything else.
             const res = await dispatchOrder({
                 actionId: 'MIL_BUILD_FLEET',
                 factionId,
-                payload: { planetId, systemId, shipType },
-                label: 'Commissioning fleet from shipyard',
+                payload: { planetId, systemId, shipType, recruitUnitType: shipType.toUpperCase() },
+                label: `Commissioning fleet + ${shipType.replace(/_/g, ' ')}`,
             });
             if (!res.success) throw new Error(res.error || 'Failed to queue space construction');
             await loadData();
@@ -228,11 +232,14 @@ export function PlanetConstructionPanel({
         }
     };
 
-    // 'orbital_shipyard' is what every capital actually seeds (and what a
-    // civilization's authored starter list is forced to include) — the old
-    // list named three building ids that exist nowhere in data/buildings.ts,
-    // so the SPACE CONSTRUCTION tab never rendered for anyone.
-    const hasShipyard = buildings.some(b => ['orbital_shipyard', 'fleet_drydock', 'shipyard', 'naval_base', 'fleet_command'].includes(b.type) && b.status === 'operational');
+    // Same yard rule as the recruit gate (lib/combat/shipyard-gate.ts): the
+    // surface yards in SURFACE_YARD_TIERS, or any orbital yard tier. The old
+    // list named three building ids that exist nowhere in data/buildings.ts.
+    const hasShipyard = buildings.some(b => b.type in SURFACE_YARD_TIERS && b.status === 'operational')
+        || ((planetLayer?.orbital?.ratings?.shipyardTier ?? 0) >= 1);
+    // What the corvette card actually costs: the worker prices the chained hull
+    // from the standard pattern, never from a hard-coded string.
+    const corvetteSummary = summarizeDesign(defaultDesignFor('corvette')!, null);
 
     // Build slots mirror lib/construction/construction-service.ts buildSlotsFor:
     // two per world, +1 per operational Builder Outpost, at most five extra.
@@ -706,12 +713,16 @@ export function PlanetConstructionPanel({
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {[
-                                    { id: 'trade_fleet', name: 'Trade Fleet', desc: 'Automated freighter convoy for interstellar commerce.', cost: '500 Cr, 200 Met, 100 Chm' },
-                                    { id: 'corvette', name: 'Escort Corvette', desc: 'Fast, lightweight patrol vessel for local defense.', cost: '800 Cr, 300 Met, 150 Chm' },
-                                    { id: 'sensor_relay', name: 'Sensor Relay', desc: 'Static orbital node that expands system detection range.', cost: '400 Cr, 200 Met, 200 Chm' },
-                                    { id: 'exploration_node', name: 'Exploration Node', desc: 'Deep-space sensor array for clearing distant fog of war.', cost: '800 Cr, 400 Met, 400 Chm' }
+                                    // Only the corvette has a real production path (a new task
+                                    // force with the standard Picket Corvette chained in). The
+                                    // others are listed so players know they exist, disabled
+                                    // until their build path lands — the worker refuses them.
+                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', cost: `Task force 1,000 Cr / 500 Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met`, available: true },
+                                    { id: 'trade_fleet', name: 'Trade Fleet', desc: 'Automated freighter convoy for interstellar commerce.', cost: 'Not yet available', available: false },
+                                    { id: 'sensor_relay', name: 'Sensor Relay', desc: 'Static orbital node that expands system detection range.', cost: 'Not yet available', available: false },
+                                    { id: 'exploration_node', name: 'Exploration Node', desc: 'Deep-space sensor array for clearing distant fog of war.', cost: 'Not yet available', available: false },
                                 ].map(ship => (
-                                    <div key={ship.id} className="p-4 bg-slate-900 border border-slate-700 rounded-xl flex flex-col">
+                                    <div key={ship.id} className={`p-4 bg-slate-900 border border-slate-700 rounded-xl flex flex-col ${ship.available ? '' : 'opacity-60'}`}>
                                         <div className="flex justify-between items-start mb-2">
                                             <h4 className="font-bold text-slate-200 capitalize">{ship.name}</h4>
                                             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Orbital Order</div>
@@ -720,10 +731,10 @@ export function PlanetConstructionPanel({
                                         <div className="text-[10px] font-mono text-fuchsia-400 mb-4">{ship.cost}</div>
                                         <button
                                             onClick={() => handleQueueSpaceConstruction(ship.id)}
-                                            disabled={actionLoading}
-                                            className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-fuchsia-600/20"
+                                            disabled={actionLoading || !ship.available}
+                                            className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-fuchsia-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            REQUISITION
+                                            {ship.available ? 'REQUISITION' : 'UNAVAILABLE'}
                                         </button>
                                     </div>
                                 ))}

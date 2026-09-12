@@ -16,7 +16,6 @@ import {
     DAMAGED_INTEGRITY_THRESHOLD,
     REPAIR_INTEGRITY_PER_HOUR,
     ORBIT_CONTROL_THRESHOLD,
-    SHIPYARD_TIER_UNLOCKS,
     ORBITAL_DEFENSE_EFFECT,
     ORBITAL_SHIELD_EFFECT,
     ORBITAL_SENSOR_EFFECT,
@@ -163,11 +162,8 @@ export function computeOrbitalRatings(
     return ratings;
 }
 
-/** Hull classes this planet's orbit can currently lay down. */
-export function buildableHullClasses(planet: ConstructionPlanet | undefined): string[] {
-    const tier = computeOrbitalRatings(planet).shipyardTier;
-    return SHIPYARD_TIER_UNLOCKS[tier] ?? [];
-}
+// Hulls-per-tier moved to lib/combat/shipyard-gate.ts (hullsBuildableAt,
+// planetYardTier). It cannot live here: shipyard-gate imports this module.
 
 /** Peak defense power this orbit would have with everything intact. */
 export function maxOrbitalDefensePower(planet: ConstructionPlanet | undefined): number {

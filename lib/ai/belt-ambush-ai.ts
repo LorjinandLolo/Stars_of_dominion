@@ -19,6 +19,7 @@
 import type { Fleet } from '../movement/types';
 import { hasAsteroidBelt, AMBUSH_WAR_ESCALATION } from '../movement/belts';
 import { isFleetOperational, issueMoveOrder } from '../movement/movement-service';
+import { minYardTierFor, systemYardFor, type YardPlanetLike } from '../combat/shipyard-gate';
 
 /** The world slice this module reads and writes — GameWorldState satisfies it. */
 export interface BeltAmbushWorldView {
@@ -27,8 +28,11 @@ export interface BeltAmbushWorldView {
         fleets: Map<string, Fleet>;
         systems: Map<string, { id: string; ownerId?: string | null; hyperlaneNeighbors?: string[] }>;
     };
+    /** Planets, for the shipyard rule a picket must obey like any other hull. */
+    construction: { planets: Map<string, YardPlanetLike> };
     rivalries: Map<string, { empireAId: string; empireBId: string; escalationLevel?: number }>;
     economy: { factions: Map<string, { name?: string; capitalSystemId?: string; reserves?: Record<string, number> }> };
+    nowSeconds?: number;
 }
 
 /** Three corvettes and a destroyer, priced like the player's MIL_BUILD_FLEET + hull recruits. */
@@ -36,6 +40,8 @@ export const PICKET_COST: Readonly<Record<string, number>> = { CREDITS: 5200, ME
 // Lowercase: the combat engine's counter grid and the tactical adapter key
 // compositions by lowercase ship class (lib/combat/ship-registry.ts).
 export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 3, destroyer: 1 };
+/** Yard tier the capital must have to lay every hull in the picket (1: the seeded Orbital Shipyard suffices). */
+export const PICKET_REQUIRED_TIER = Math.max(...Object.keys(PICKET_COMPOSITION).map(minYardTierFor));
 /** 100 base + 3×10 + 22, matching data/combat/ground-units.json power values. */
 export const PICKET_BASE_POWER = 152;
 /** Pickets per faction at war — one per trap, at most this many. */
@@ -120,6 +126,10 @@ function commissionPicket(world: BeltAmbushWorldView, factionId: string, ordinal
     const faction = world.economy.factions.get(factionId);
     const capital = faction?.capitalSystemId;
     if (!faction || !capital || !world.movement.systems.has(capital)) return null;
+    // Same yard rule as every other hull: the capital must own a yard that
+    // can lay the picket's biggest ship. Checked before the charge.
+    const yardTier = systemYardFor(world.construction?.planets?.values?.() ?? [], factionId, capital, world.nowSeconds ?? 0).tier;
+    if (yardTier < PICKET_REQUIRED_TIER) return null;
     const reserves = faction.reserves;
     if (!canAfford(reserves, PICKET_COST, 2)) return null;
     for (const [k, v] of Object.entries(PICKET_COST)) reserves![k] = (reserves![k] ?? 0) - v;

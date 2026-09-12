@@ -133,7 +133,7 @@ export default function MilitaryPanel() {
                                     <span>Base Power: {formation.basePower}</span>
                                     <span>
                                         {activeTab === 'armies' 
-                                            ? `Planet: ${planets.find(p => p.$id === (formation as any).currentPlanetId)?.name || 'Unknown'}`
+                                            ? `Planet: ${planets.find(p => p.id === (formation as any).currentPlanetId)?.name || 'Unknown'}`
                                             : `System: ${systems.find(s => s.id === formation.currentSystemId)?.name || 'Transit'}`
                                         }
                                     </span>
@@ -278,6 +278,11 @@ export default function MilitaryPanel() {
                                     ) : (
                                         <ShipDesignPicker
                                             layout="grid"
+                                            yardAnchor={{
+                                                systemId: (selectedFormation as any).currentSystemId,
+                                                systemName: systems.find(s => s.id === (selectedFormation as any).currentSystemId)?.name,
+                                                holding: !!(selectedFormation as any).currentSystemId && !(selectedFormation as any).destinationSystemId,
+                                            }}
                                             onCommission={(design) => handleRecruitUnit(design.hullId.toUpperCase(), 1, design)}
                                         />
                                     )}

@@ -43,9 +43,11 @@ import {
 import {
     addProfile as addDesignProfile,
     scaleProfile as scaleDesignProfile,
+    isShipClass,
     normalizeComposition,
     normalizeUnitKey,
 } from '../lib/combat/ship-registry';
+import { checkShipyardGate } from '../lib/combat/shipyard-gate';
 import {
     initDistrictWar,
     advanceFront,
@@ -82,7 +84,7 @@ import {
     type BattlePlan,
 } from '../lib/combat/siege/battle-plans';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
-import { tickConstructionGlobal, startConstruction } from '../lib/construction/construction-service';
+import { tickConstructionGlobal, startConstruction, repairBuilding } from '../lib/construction/construction-service';
 import { BUILDINGS } from '../data/buildings';
 import { generateSurface, autoPlaceBuilding } from '../lib/planet-surface/generator';
 import { SURFACE_SECTOR_COUNT } from '../lib/planet-surface/types';
@@ -1284,22 +1286,44 @@ function chargePerUnitCost(
     actionId: string,
     label: string,
 ): boolean {
-    const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
-    if (!reserves || Object.keys(perUnit).length === 0) return true;
-    const n = Math.max(1, Math.floor(Number(count) || 0));
-    for (const [key, amt] of Object.entries(perUnit)) {
-        if (reserves[key] === undefined) continue;
-        if ((reserves[key] ?? 0) < amt * n) {
-            recordOrderFailure(world, factionId, actionId,
-                `Cannot afford ${n}x ${label}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`);
-            return false;
-        }
+    const shortfall = perUnitShortfall(world, factionId, perUnit, count, label);
+    if (shortfall) {
+        recordOrderFailure(world, factionId, actionId, shortfall);
+        return false;
     }
+    const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+    if (!reserves) return true;
+    const n = Math.max(1, Math.floor(Number(count) || 0));
     for (const [key, amt] of Object.entries(perUnit)) {
         if (reserves[key] === undefined) continue;
         reserves[key] = (reserves[key] ?? 0) - amt * n;
     }
     return true;
+}
+
+/**
+ * Non-mutating half of chargePerUnitCost: the failure reason if the faction
+ * cannot pay `count` units at `perUnit`, else null. Lets a handler refuse
+ * BEFORE it creates anything (MIL_BUILD_FLEET checks the chained hull here
+ * so an unaffordable ship never leaves a paid empty task force behind).
+ */
+function perUnitShortfall(
+    world: any,
+    factionId: string,
+    perUnit: Record<string, number>,
+    count: number,
+    label: string,
+): string | null {
+    const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+    if (!reserves || Object.keys(perUnit).length === 0) return null;
+    const n = Math.max(1, Math.floor(Number(count) || 0));
+    for (const [key, amt] of Object.entries(perUnit)) {
+        if (reserves[key] === undefined) continue;
+        if ((reserves[key] ?? 0) < amt * n) {
+            return `Cannot afford ${n}x ${label}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`;
+        }
+    }
+    return null;
 }
 
 /**
@@ -1366,6 +1390,12 @@ function refundOrderCost(world: any, factionId: string, actionId: string): void 
  * on later ticks is harmless. Without this, a rejected order was a bare `return`
  * and the queue loop deleted it as if it had succeeded — the player saw nothing.
  */
+/** Display name for a system in failure reasons; falls back to the id. */
+function systemNameFor(world: any, systemId: string | null | undefined): string | null {
+    if (!systemId) return null;
+    return world.movement?.systems?.get?.(systemId)?.name ?? systemId;
+}
+
 function recordOrderFailure(world: any, factionId: string, actionId: string, reason: string): void {
     const econFaction = world.economy?.factions?.get?.(factionId);
     if (!econFaction) return;
@@ -2455,9 +2485,28 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'PLANET_REPAIR_BUILDING': {
-             // payload: { buildingId }
-             console.log(`[Order] Faction ${factionId} repairing building ${payload.buildingId}`);
-             break;
+            // payload: { buildingId } — `bldg_<tileId>` as getBuildingsForSystem
+            // lists it, or a bare tileId. Used to be a log-only stub, which
+            // made a sabotaged shipyard permanent now that ships need one.
+            const tileId = String(payload.buildingId ?? '').replace(/^bldg_/, '');
+            let target: any = null;
+            for (const p of world.construction.planets.values()) {
+                if ((p.tiles ?? []).some((t: any) => t.tileId === tileId)) { target = p; break; }
+            }
+            if (!target) {
+                recordOrderFailure(world, factionId, actionId, 'That building no longer exists.');
+                return;
+            }
+            if (target.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You do not control that world.');
+                return;
+            }
+            if (!repairBuilding(target, tileId, world.nowSeconds)) {
+                recordOrderFailure(world, factionId, actionId, 'Only a ruined building can be repaired.');
+                return;
+            }
+            console.log(`[Order] Faction ${factionId} repairing ${tileId} on ${target.name ?? target.id}`);
+            break;
         }
 
         // NOTE: PLANET_RECRUIT_UNITS is handled further down. A stub case here
@@ -2922,7 +2971,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             );
 
             if (!hasMilitaryFacility && !BASIC_UNITS.includes(payload.unitType)) {
-                console.warn(`[Order] ${factionId} needs a barracks/foundry on ${payload.planetId} to recruit ${payload.unitType} — order skipped.`);
+                refundOrderCost(world, factionId, actionId);
+                recordOrderFailure(world, factionId, actionId,
+                    `Recruiting ${String(payload.unitType).replace(/_/g, ' ')} on ${planet.name ?? payload.planetId} needs an active Barracks, Tank Foundry or Military Academy.`);
                 return;
             }
 
@@ -3812,23 +3863,96 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_BUILD_FLEET': {
-            // payload: { planetId, systemId }
+            // payload: { planetId, systemId, recruitUnitType?, recruitDesignId? }
+            // The shell fee (registry cost) was charged centrally before this
+            // handler ran, so every refusal below refunds it.
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet) {
+                refundOrderCost(world, factionId, actionId);
                 recordOrderFailure(world, factionId, actionId, 'Target planet not found — it may no longer exist.');
                 return;
             }
             if (planet.ownerId !== factionId) {
+                refundOrderCost(world, factionId, actionId);
                 recordOrderFailure(world, factionId, actionId, 'You do not control the selected planet.');
                 return;
             }
-            
+
+            // The legacy SPACE CONSTRUCTION tab sends `shipType`. A hull class
+            // maps onto the modern chained recruit; the non-combat types have
+            // no production path yet and must not become a paid empty shell.
+            if (typeof payload.shipType === 'string' && payload.shipType
+                && !payload.recruitUnitType && !payload.recruitDesignId) {
+                if (isShipClass(payload.shipType)) {
+                    payload.recruitUnitType = String(payload.shipType).toUpperCase();
+                } else {
+                    refundOrderCost(world, factionId, actionId);
+                    recordOrderFailure(world, factionId, actionId,
+                        `${String(payload.shipType).replace(/_/g, ' ')} cannot be commissioned from a shipyard yet.`);
+                    return;
+                }
+            }
+
+            // One-click commissioning: the client can ask for the first hull in
+            // the same order. Resolve it BEFORE creating the fleet, so a hull the
+            // yard cannot lay never leaves an empty task force behind (the old
+            // two-click contract read as "recruitment is broken" to testers).
+            // `recruitDesignId` names a ship design; `recruitUnitType` alone
+            // builds that hull's standard pattern.
+            const wantsHull = (typeof payload.recruitUnitType === 'string' && payload.recruitUnitType)
+                || (typeof payload.recruitDesignId === 'string' && payload.recruitDesignId);
+            let chained: ReturnType<typeof resolveRecruitSpec> | null = null;
+            if (wantsHull) {
+                chained = resolveRecruitSpec(
+                    world, factionId,
+                    { unitType: payload.recruitUnitType, designId: payload.recruitDesignId },
+                    'fleet',
+                );
+                if (!chained.ok) {
+                    refundOrderCost(world, factionId, actionId);
+                    recordOrderFailure(world, factionId, actionId, chained.reason);
+                    return;
+                }
+            }
+
+            // Shipyard gate, anchored on the planet's REAL system — the payload's
+            // systemId is not trusted for placement any more.
+            const gate = checkShipyardGate(
+                world.construction.planets.values(),
+                factionId,
+                { systemId: planet.systemId, systemName: systemNameFor(world, planet.systemId), holding: true },
+                chained?.ok ? (chained.spec.classKey ?? null) : null,
+                world.nowSeconds,
+            );
+            if (!gate.ok) {
+                refundOrderCost(world, factionId, actionId);
+                recordOrderFailure(world, factionId, actionId, gate.reason);
+                return;
+            }
+            if (payload.systemId && payload.systemId !== planet.systemId) {
+                console.warn(`[Security] MIL_BUILD_FLEET from ${factionId}: payload.systemId ${payload.systemId} does not match planet ${planet.id} (${planet.systemId}); placing the fleet at the planet.`);
+            }
+
+            // The chained hull must be affordable AFTER the shell fee, checked
+            // before anything is created: otherwise the shell fee is kept and
+            // an empty task force appears — the exact outcome this handler is
+            // meant to rule out.
+            if (chained?.ok) {
+                const shortfall = perUnitShortfall(world, factionId, chained.spec.cost, 1, chained.spec.designName ?? chained.spec.unitType);
+                if (shortfall) {
+                    refundOrderCost(world, factionId, actionId);
+                    recordOrderFailure(world, factionId, actionId, shortfall);
+                    return;
+                }
+            }
+
             const fleetId = `fleet-${factionId}-${Date.now()}`;
             const newFleet = {
                 id: fleetId,
                 factionId,
                 name: `Task Force ${Math.floor(Math.random() * 100)}`,
-                currentSystemId: payload.systemId,
+                currentSystemId: planet.systemId,
+                orbitingPlanetId: planet.id,
                 destinationSystemId: null,
                 activeLayer: null,
                 transitProgress: 0,
@@ -3860,27 +3984,13 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 leaderId: undefined
             };
             world.movement.fleets.set(fleetId, newFleet);
-            console.log(`[Order] Faction ${factionId} commissioned new fleet ${fleetId} at ${payload.systemId}`);
+            console.log(`[Order] Faction ${factionId} commissioned new fleet ${fleetId} at ${planet.systemId} (${gate.yard.structureName ?? 'yard'} tier ${gate.yard.tier})`);
 
-            // One-click commissioning: the client can ask for the first hull in
-            // the same order (payload.recruitUnitType). Without this, clicking
-            // a ship with no fleet present commissioned an EMPTY task force and
-            // silently required a second click for the actual ship — every
-            // tester read that as "recruitment is broken".
-            // `recruitDesignId` names a ship design; `recruitUnitType` alone
-            // builds that hull's standard pattern.
-            if ((payload.recruitUnitType && typeof payload.recruitUnitType === 'string')
-                || (payload.recruitDesignId && typeof payload.recruitDesignId === 'string')) {
-                const resolved = resolveRecruitSpec(
-                    world, factionId,
-                    { unitType: payload.recruitUnitType, designId: payload.recruitDesignId },
-                    'fleet',
-                );
-                if (!resolved.ok) {
-                    recordOrderFailure(world, factionId, actionId, resolved.reason);
-                } else if (chargePerUnitCost(world, factionId, resolved.spec.cost, 1, actionId, resolved.spec.designName ?? resolved.spec.unitType)) {
-                    queueFormationRecruit(world, factionId, fleetId, true, resolved.spec, 1);
-                    console.log(`[Order] ${factionId} chained 1x ${resolved.spec.designName ?? resolved.spec.unitType} into ${fleetId}.`);
+            if (chained?.ok) {
+                const label = chained.spec.designName ?? chained.spec.unitType;
+                if (chargePerUnitCost(world, factionId, chained.spec.cost, 1, actionId, label)) {
+                    queueFormationRecruit(world, factionId, fleetId, true, chained.spec, 1);
+                    console.log(`[Order] ${factionId} chained 1x ${label} into ${fleetId}.`);
                 }
             }
             break;
@@ -3943,6 +4053,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (!resolved.ok) {
                 recordOrderFailure(world, factionId, actionId, resolved.reason);
                 return;
+            }
+            // Ships need a yard the faction owns in the fleet's current system,
+            // checked before any charge is taken. The army branch has no
+            // facility or location gate today (only PLANET_RECRUIT_UNITS checks
+            // for a barracks) — a known, pre-existing gap, not closed here.
+            if (isFleet) {
+                const holding = !!formation.currentSystemId && !formation.destinationSystemId;
+                const gate = checkShipyardGate(
+                    world.construction.planets.values(),
+                    factionId,
+                    { systemId: formation.currentSystemId, systemName: systemNameFor(world, formation.currentSystemId), holding },
+                    resolved.spec.classKey ?? null,
+                    world.nowSeconds,
+                );
+                if (!gate.ok) {
+                    recordOrderFailure(world, factionId, actionId, gate.reason);
+                    return;
+                }
             }
             const label = resolved.spec.designName ?? resolved.spec.unitType;
             if (!chargePerUnitCost(world, factionId, resolved.spec.cost, count, actionId, label)) {

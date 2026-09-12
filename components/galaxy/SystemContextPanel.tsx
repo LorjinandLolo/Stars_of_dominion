@@ -1389,8 +1389,8 @@ export default function SystemContextPanel() {
                                         </>
                                     ) : (
                                         <p className="text-[10px] text-amber-400/80 italic leading-relaxed">
-                                            This fleet has no ships aboard — recruit units into it from a
-                                            planet's <span className="font-bold">UNITS</span> panel before issuing movement orders.
+                                            This fleet has no ships aboard — recruit units into it from the
+                                            <span className="font-bold"> UNITS</span> panel of a world in a system where you have a shipyard, before issuing movement orders.
                                         </p>
                                     )}
                                 </div>

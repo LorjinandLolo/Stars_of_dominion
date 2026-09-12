@@ -271,7 +271,7 @@ export const BUILDINGS: BuildingDefinition[] = [
   {
     id: 'orbital_shipyard',
     name: 'Orbital Shipyard',
-    description: 'A dedicated facility for assembling trade fleets and small military vessels.',
+    description: 'A dedicated facility for assembling trade fleets, corvettes and destroyers.',
     category: 'space',
     tier: 2,
     allowedDistricts: ['industrial', 'any'],
@@ -286,7 +286,7 @@ export const BUILDINGS: BuildingDefinition[] = [
   {
     id: 'fleet_drydock',
     name: 'Fleet Drydock',
-    description: 'Advanced magnetic scaffolding for the construction of capital ships.',
+    description: 'Advanced magnetic scaffolding for cruiser keels. Battleships need an orbital Capital Spaceyard.',
     category: 'space',
     tier: 4,
     allowedDistricts: ['industrial'],

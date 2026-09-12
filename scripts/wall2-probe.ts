@@ -58,6 +58,38 @@ console.log('\n[3] AI expansion loop');
     faction.reserves.FOOD = 10000;
 
     check(`AI has no fleet yet`, ![...world.movement.fleets.values()].some(f => f.factionId === A));
+
+    // Shipyard gate: the AI obeys the same rule as the player. Strip the
+    // capital's yard → no scout, nothing charged. Restore → business as usual.
+    const capSys = faction.capitalSystemId;
+    const capPlanet = [...world.construction.planets.values()].find(p => p.systemId === capSys && p.ownerId === A) as any;
+    check(`AI capital planet found`, !!capPlanet);
+    if (capPlanet) {
+        capPlanet.tiles = capPlanet.tiles ?? [];
+        if (!capPlanet.tiles.some((t: any) => t.buildingId === 'orbital_shipyard')) {
+            capPlanet.tiles.push({ tileId: 'probe-yard', districtType: 'any', buildingId: 'orbital_shipyard', constructionState: 'active', constructionCompleteAt: null, sectorIndex: 0 });
+        }
+        const yardTiles = capPlanet.tiles.filter((t: any) => t.buildingId === 'orbital_shipyard');
+        for (const t of yardTiles) t.constructionState = 'under_construction';
+        tickAIExpansion(world);
+        check(`no yard at the capital → no scout commissioned`, ![...world.movement.fleets.values()].some(f => f.factionId === A));
+        check(`no yard → nothing charged`, faction.reserves.CREDITS === 100000 && faction.reserves.METALS === 10000,
+            `${faction.reserves.CREDITS}/${faction.reserves.METALS}`);
+
+        // Sabotage recovery: a RUINED starter yard is repaired by the AI itself
+        // (queued, time-gated), so one sabotage cannot end its shipbuilding.
+        for (const t of yardTiles) t.constructionState = 'ruined';
+        tickAIExpansion(world);
+        check(`ruined yard → repair queued, still no scout`,
+            yardTiles.every((t: any) => t.constructionState === 'under_construction')
+            && ![...world.movement.fleets.values()].some(f => f.factionId === A),
+            yardTiles.map((t: any) => t.constructionState).join(','));
+        // Simulate the repair completing, and drop its queue entry so later
+        // construction checks in this probe stay clean.
+        for (const t of yardTiles) { t.constructionState = 'active'; t.constructionCompleteAt = null; }
+        capPlanet.buildQueue = (capPlanet.buildQueue ?? []).filter((o: any) => !String(o.orderId).startsWith('repair_'));
+    }
+
     tickAIExpansion(world);
     const scout = [...world.movement.fleets.values()].find(f => f.factionId === A);
     check(`turn 1: scout commissioned`, !!scout, undefined);

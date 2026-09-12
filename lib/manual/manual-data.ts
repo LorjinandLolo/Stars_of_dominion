@@ -38,7 +38,7 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'EXPAND: You start with one capital. Commission a fleet (capital → UNITS → Space tab), then PING → SCAN → SURVEY unexplored systems from the system panel — a fleet in or next to the target is required for scans and surveys. A survey charts the system\'s worlds; unowned UNSETTLED ones can be settled for 20,000 credits + 1,000 metals + 1,000 food. Your own home system holds your first settlement targets.',
+                            'EXPAND: You start with one capital. Commission a fleet (capital → UNITS → Space tab — your capital\'s Orbital Shipyard lays corvettes and destroyers; cruisers need an Advanced Spaceyard or Fleet Drydock, battleships a Capital Spaceyard), then PING → SCAN → SURVEY unexplored systems from the system panel — a fleet in or next to the target is required for scans and surveys. A survey charts the system\'s worlds; unowned UNSETTLED ones can be settled for 20,000 credits + 1,000 metals + 1,000 food. Your own home system holds your first settlement targets.',
                             'DEVELOP: Build infrastructure and specialize planets.',
                             'INTERACT: Trade, spy, or negotiate with rivals.',
                             'RESPOND: Counter enemy sabotages and military incursions.',
@@ -176,7 +176,7 @@ export const MANUAL_DATA: ManualSection[] = [
                     },
                     {
                         type: 'paragraph',
-                        content: 'Recruiting units requires specific military infrastructure (Barracks, Foundries) and consumes MANPOWER and CREDITS in a real-time production queue.'
+                        content: 'Recruiting units requires specific military infrastructure (Barracks and Foundries for ground units; a shipyard in the fleet\'s system for ships — bigger hulls need a bigger yard) and consumes MANPOWER and CREDITS in a real-time production queue.'
                     }
                 ]
             },

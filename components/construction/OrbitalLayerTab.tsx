@@ -13,6 +13,7 @@ import {
 import { ORBITAL_STRUCTURES, ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
 import type { OrbitalCategory } from '@/lib/orbital/orbital-types';
 import type { Planet } from '@/lib/construction/construction-types';
+import { hullsBuildableAt, nextHullAfter, planetYardTier } from '@/lib/combat/shipyard-gate';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -56,6 +57,15 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
     const hasStation = Boolean(ratings?.hasStation);
     const freeSlots = slots.filter(s => s.state === 'empty' || s.state === 'destroyed').length;
 
+    // Yard tier as the recruit gate sees it: orbital yards AND the surface
+    // Orbital Shipyard tile every capital seeds, so a fresh capital reads 1
+    // here exactly as the picker does.
+    const yardTier = planetYardTier(planet as any, nowSeconds);
+    const yardNext = nextHullAfter(yardTier);
+    const yardHint = yardTier > 0
+        ? `Lays ${hullsBuildableAt(yardTier).join(', ')}${yardNext ? ` · next: ${yardNext.yardName} → ${yardNext.hull}` : ' · every hull'}`
+        : 'No yard — build an Orbital Shipyard on the surface or a Spaceyard in orbit';
+
     /** Why this structure cannot be laid down right now, or null if it can. */
     const blockedReason = (structureId: string): string | null => {
         const def = ORBITAL_STRUCTURE_BY_ID[structureId];
@@ -85,11 +95,11 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
                     { label: 'Slots', value: `${slots.filter(s => s.structureId && s.state !== 'destroyed').length} / ${slotCount}` },
                     { label: 'Defense', value: Math.round(ratings?.defensePower ?? 0) },
                     { label: 'Shields', value: Math.round(ratings?.shieldStrength ?? 0) },
-                    { label: 'Yard Tier', value: ratings?.shipyardTier ?? 0 },
+                    { label: 'Yard Tier', value: yardTier, hint: yardHint },
                     { label: 'Fleet Berths', value: Math.round(ratings?.fleetCapacity ?? 0) },
                     { label: 'Sensors', value: Math.round(ratings?.sensorStrength ?? 0) },
-                ].map(stat => (
-                    <div key={stat.label} className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg">
+                ].map((stat: { label: string; value: string | number; hint?: string }) => (
+                    <div key={stat.label} className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg" title={stat.hint}>
                         <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">{stat.label}</div>
                         <div className="text-lg font-mono text-slate-200">{stat.value}</div>
                     </div>

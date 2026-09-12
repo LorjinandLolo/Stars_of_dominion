@@ -48,6 +48,24 @@ and was consumed by nothing.
   issuer.
 - **Standard patterns use no tech-gated module** and must validate against an
   empty tech set (tested). They are what a bare hull name resolves to.
+- **Every FLEET recruit passes the shipyard gate** (`checkShipyardGate` in
+  `lib/combat/shipyard-gate.ts`) at ORDER time, anchored on the fleet's
+  current system (MIL_RECRUIT_FORMATION_UNIT) or the planet's system
+  (MIL_BUILD_FLEET; the payload's systemId is no longer trusted). Worker,
+  AI capital spawns (`ai-expansion`, `belt-ambush-ai` via `systemYardFor`) and
+  the recruit picker call the same function. The table is
+  `HULL_MIN_YARD_TIER`: corvette 1, destroyer 1, cruiser 2, battleship 3.
+  Yard tier per planet = max(orbital `shipyard_tier` effect, surface
+  `orbital_shipyard` = 1 / `fleet_drydock` = 2); every seeded capital is
+  tier 1 from its first cycle. Completion is never gated. Exempt by design:
+  pirate raiders/prizes, the Genthouli vanguard, debug spawns, air-sortie
+  wing recovery. A refused MIL_BUILD_FLEET refunds its shell fee, and an
+  unaffordable chained hull is refused BEFORE the fleet exists (no paid empty
+  shells). The legacy `shipType` payload from the SPACE CONSTRUCTION tab maps
+  a hull class onto `recruitUnitType`; non-combat types are refused with a
+  refund. A ruined surface yard is repairable: players via
+  `PLANET_REPAIR_BUILDING` (was a log-only stub), AI factions automatically
+  at their capital each expansion tick (`repairRuinedYards`).
 - **Profiles are totals.** `fleet.designProfile` is the sum of per-ship
   profiles; it adds on merge and scales by ship ratio on split. Losses reduce
   `strength`, not composition, so totals stay consistent. Fleets without a

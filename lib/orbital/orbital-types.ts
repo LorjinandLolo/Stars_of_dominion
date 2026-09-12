@@ -150,10 +150,5 @@ export const REPAIR_INTEGRITY_PER_HOUR = 8;
  */
 export const ORBIT_CONTROL_THRESHOLD = 0.25;
 
-/** Ship hull classes gated by shipyard tier. */
-export const SHIPYARD_TIER_UNLOCKS: Record<number, string[]> = {
-    0: [],
-    1: ['corvette', 'frigate', 'sensor_relay', 'exploration_node', 'trade_fleet'],
-    2: ['corvette', 'frigate', 'destroyer', 'sensor_relay', 'exploration_node', 'trade_fleet'],
-    3: ['corvette', 'frigate', 'destroyer', 'cruiser', 'capital', 'sensor_relay', 'exploration_node', 'trade_fleet'],
-};
+// Which hulls a yard tier lays down lives in lib/combat/shipyard-gate.ts
+// (HULL_MIN_YARD_TIER) — one table shared by the worker, the AI and the UI.

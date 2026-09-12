@@ -6,21 +6,18 @@
 // and charges with quoteRelayPing; the client shows the same number with
 // relayPingQuote over the synced system list — both call the one pure
 // function below, so the button never promises a price the treasury won't
-// pay. A leaf on purpose (types + one hex helper): useGameSync imports it
-// into the browser bundle.
+// pay. Client-safe by import graph (useGameSync pulls it into the browser
+// bundle): the yard rule comes from lib/combat/shipyard-gate.ts, which reads
+// only data files and pure orbital math.
 
 import type { GameWorldState } from '../game-world-state';
 import { hexDistance } from '../government/capital-distance';
+import { planetYardTier } from '../combat/shipyard-gate';
 
 export const RELAY_PING_BASE_CREDITS = 250;
 export const RELAY_PING_PER_JUMP_CREDITS = 150;
 /** Beyond this many jumps the price stops climbing — the far rim must stay reachable. */
 export const RELAY_PING_MAX_JUMPS = 20;
-
-/** Surface buildings that count as a yard (same list PlanetConstructionPanel uses). */
-const SHIPYARD_BUILDING_IDS = new Set(['orbital_shipyard', 'fleet_drydock', 'shipyard', 'naval_base', 'fleet_command']);
-/** Orbital structures that count as a yard, matched by id so new hull tiers join automatically. */
-const ORBITAL_YARD_PATTERN = /shipyard|spaceyard|drydock|slipway/i;
 
 export interface PingGraphSystem {
     id: string;
@@ -43,20 +40,20 @@ export function relayPingCredits(jumps: number): number {
     return RELAY_PING_BASE_CREDITS + RELAY_PING_PER_JUMP_CREDITS * capped;
 }
 
-/** Systems where this faction has a working yard, surface or orbital. */
+/**
+ * Systems where this faction has a working yard, surface or orbital — the
+ * same definition the recruit gate uses, so a system that anchors pings can
+ * always lay a corvette and vice versa.
+ */
 export function shipyardSystemIdsFor(world: GameWorldState, factionId: string): string[] {
     const out = new Set<string>();
     const planets = world?.construction?.planets;
     if (!planets) return [];
+    const now = (world as any)?.nowSeconds ?? 0;
     for (const planet of planets.values()) {
         const p = planet as any;
         if (p.ownerId !== factionId || !p.systemId) continue;
-        const surfaceYard = (p.tiles ?? []).some((t: any) =>
-            t?.buildingId && SHIPYARD_BUILDING_IDS.has(t.buildingId) && t.constructionState === 'active');
-        const orbitalYard = (p.orbital?.slots ?? []).some((s: any) =>
-            s?.structureId && ORBITAL_YARD_PATTERN.test(String(s.structureId)) &&
-            (s.state === undefined || s.state === 'active' || s.state === 'damaged'));
-        if (surfaceYard || orbitalYard) out.add(p.systemId);
+        if (planetYardTier(p, now) >= 1) out.add(p.systemId);
     }
     return [...out];
 }

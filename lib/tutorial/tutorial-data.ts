@@ -65,7 +65,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'build-a-fleet',
         title: 'Commission a Fleet',
-        body: 'Select your capital, open its UNITS panel, and commission a fleet from the Space tab. A fleet is your eyes: scans and surveys of other systems require one in the system or one hyperlane away.',
+        body: 'Select your capital, open its UNITS panel, and commission a fleet from the Space tab. A fleet is your eyes: scans and surveys of other systems require one in the system or one hyperlane away. Ships are laid down by the shipyard in the fleet\'s system: your capital\'s Orbital Shipyard lays corvettes and destroyers; cruisers need an Advanced Spaceyard (or a Fleet Drydock) and battleships a Capital Spaceyard in orbit.',
         targetElementId: null,
         category: 'galaxy',
         requiredTab: 'galaxy',

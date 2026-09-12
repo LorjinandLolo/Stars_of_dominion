@@ -10,7 +10,11 @@ import { MovementWorldState, Fleet, HyperdriveProfile } from '../movement/types'
 import { GameWorldState } from '../game-world-state';
 import { fireNotification } from '../time/notification-hooks';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
-import { SHIPYARD_TIER_UNLOCKS } from '../orbital/orbital-types';
+import { minYardTierFor, planetYardTier } from '../combat/shipyard-gate';
+import { isShipClass } from '../combat/ship-registry';
+
+/** Non-combat hulls any working yard can lay down. Everything else fails closed. */
+const ANY_YARD_SHIP_TYPES = new Set<string>(['sensor_relay', 'exploration_node', 'trade_fleet', 'frigate']);
 
 /**
  * Initiates a space construction order.
@@ -25,30 +29,21 @@ export function startSpaceConstruction(
   const planet = world.construction.planets.get(planetId);
   if (!planet) return { success: false, error: 'Planet not found' };
 
-  // A real orbital spaceyard is the modern path; the legacy surface buildings
-  // still count so worlds built before the orbital layer keep working.
-  const orbitalTier = computeOrbitalRatings(planet).shipyardTier;
-  const hasLegacyShipyard = planet.tiles.some(t =>
-    (t.buildingId === 'orbital_shipyard' || t.buildingId === 'fleet_drydock') &&
-    t.constructionState === 'active'
-  );
-
-  if (orbitalTier <= 0 && !hasLegacyShipyard) {
+  // Same yard rule as fleet recruitment (lib/combat/shipyard-gate.ts):
+  // orbital spaceyards and the legacy surface yards both count, best tier
+  // wins. Non-combat hulls (relays, trade fleets) need any yard at all.
+  const tier = planetYardTier(planet, world.nowSeconds ?? 0);
+  if (tier < 1) {
     return { success: false, error: 'Planet does not have an active shipyard' };
   }
-
-  // Hull class is gated by yard tier: a slipway that can turn out corvettes
-  // cannot lay a capital keel. Legacy surface yards are treated as tier 1.
-  if (orbitalTier > 0) {
-    const unlocked = SHIPYARD_TIER_UNLOCKS[orbitalTier] ?? [];
-    if (!unlocked.includes(shipType)) {
-      return { success: false, error: `Shipyard tier ${orbitalTier} cannot build ${shipType.replace(/_/g, ' ')}` };
-    }
-  } else {
-    const unlocked = SHIPYARD_TIER_UNLOCKS[1] ?? [];
-    if (!unlocked.includes(shipType)) {
-      return { success: false, error: `A surface shipyard cannot build ${shipType.replace(/_/g, ' ')}` };
-    }
+  const need = isShipClass(shipType)
+    ? minYardTierFor(shipType)
+    : ANY_YARD_SHIP_TYPES.has(shipType) ? 1 : Infinity;
+  if (!Number.isFinite(need)) {
+    return { success: false, error: `${shipType.replace(/_/g, ' ')} is not a hull any yard can lay down` };
+  }
+  if (need > tier) {
+    return { success: false, error: `Shipyard tier ${tier} cannot build ${shipType.replace(/_/g, ' ')}` };
   }
 
   // Resource subtraction should be handled by the caller (server action)

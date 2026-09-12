@@ -19,6 +19,21 @@ import {
 } from './ship-registry';
 import { deleteDesign, resolveRecruitSpec, saveDesign } from './ship-design-service';
 import { calculateCompositionModifier, calculateDesignModifier } from './combat-engine';
+import {
+    HULL_MIN_YARD_TIER,
+    MAX_YARD_TIER,
+    checkShipyardGate,
+    hullsBuildableAt,
+    minYardTierFor,
+    nextHullAfter,
+    planetYardSource,
+    planetYardTier,
+    systemYardFor,
+    yardLockReason,
+} from './shipyard-gate';
+import { ORBITAL_STRUCTURES } from '../../data/orbital-structures';
+import { shipyardSystemIdsFor } from '../exploration/ping-cost';
+import { SHIP_CLASS_IDS } from './ship-registry';
 import type { CombatantState } from './combat-types';
 import type { ShipDesign } from './ship-types';
 import config from './combat-config.json';
@@ -311,6 +326,125 @@ test('fleet: a saved design that later fails validation cannot be built', () => 
     const world = stubWorld();
     world.shipDesigns.set('d-bad', { id: 'd-bad', factionId: 'f1', name: 'Bad', hullId: 'corvette', components: { w1: 'wpn-spinal-lance' } });
     expectTrue(!resolveRecruitSpec(world, 'f1', { designId: 'd-bad' }, 'fleet').ok);
+});
+
+console.log('\n── Shipyard gate ──');
+
+function yardPlanet(
+    id: string,
+    opts: { owner?: string; system?: string; tiles?: Array<{ buildingId: string; constructionState: string }>; slots?: Array<{ structureId: string; state: string; integrity?: number }>; name?: string } = {},
+) {
+    return {
+        id,
+        name: opts.name ?? id,
+        ownerId: opts.owner ?? 'f1',
+        systemId: opts.system ?? 'sys-a',
+        tiles: opts.tiles ?? [],
+        orbital: opts.slots
+            ? { slots: opts.slots.map((s, i) => ({ id: `${id}-slot-${i}`, planetId: id, structureId: s.structureId, state: s.state, integrity: s.integrity ?? 100, completesAt: null })), buildQueue: [] }
+            : undefined,
+    } as any;
+}
+
+test('hull → yard tier table covers every hull, is monotone, and matches the orbital catalog', () => {
+    for (const h of SHIP_CLASS_IDS) expectTrue(Number.isFinite(HULL_MIN_YARD_TIER[h]), `missing tier for ${h}`);
+    const tiers = SHIP_CLASS_IDS.map(h => HULL_MIN_YARD_TIER[h]);
+    for (let i = 1; i < tiers.length; i++) expectTrue(tiers[i] >= tiers[i - 1], 'tiers must not decrease corvette → battleship');
+    expectEq(Math.max(...tiers), MAX_YARD_TIER);
+    const catalogMax = Math.max(...ORBITAL_STRUCTURES.flatMap(s => s.effects.filter(e => e.type === 'shipyard_tier').map(e => e.value)));
+    expectEq(catalogMax, MAX_YARD_TIER, 'MAX_YARD_TIER must equal the biggest shipyard_tier effect in data/orbital-structures.ts');
+    expectEq(minYardTierFor('CORVETTE'), 1, 'case-insensitive');
+    for (const bogus of ['frigate', 'capital', 'trade_fleet', '', undefined]) {
+        expectEq(minYardTierFor(bogus as any), Infinity, `${bogus} must fail closed`);
+    }
+});
+
+test('planetYardTier: surface tiles, orbital yards, integrity and construction state', () => {
+    expectEq(planetYardTier(undefined), 0);
+    expectEq(planetYardTier(yardPlanet('bare')), 0);
+    expectEq(planetYardTier(yardPlanet('surf', { tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }] })), 1);
+    expectEq(planetYardTier(yardPlanet('building', { tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'under_construction' }] })), 0);
+    expectEq(planetYardTier(yardPlanet('dock', { tiles: [{ buildingId: 'fleet_drydock', constructionState: 'active' }] })), 2);
+    expectEq(planetYardTier(yardPlanet('sy', { slots: [{ structureId: 'spaceyard', state: 'active' }] })), 1);
+    expectEq(planetYardTier(yardPlanet('asy', { slots: [{ structureId: 'advanced_spaceyard', state: 'active' }] })), 2);
+    expectEq(planetYardTier(yardPlanet('csy', { slots: [{ structureId: 'capital_spaceyard', state: 'active' }] })), 3);
+    // A wrecked orbital yard falls back to the surface tile, never sums.
+    expectEq(planetYardTier(yardPlanet('wreck', {
+        tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }],
+        slots: [{ structureId: 'advanced_spaceyard', state: 'damaged', integrity: 50 }],
+    })), 1);
+    expectEq(planetYardTier(yardPlanet('gone', { slots: [{ structureId: 'capital_spaceyard', state: 'destroyed', integrity: 0 }] })), 0);
+    expectEq(planetYardTier(yardPlanet('both', {
+        tiles: [{ buildingId: 'fleet_drydock', constructionState: 'active' }],
+        slots: [{ structureId: 'spaceyard', state: 'active' }],
+    })), 2, 'max, not sum');
+    const src = planetYardSource(yardPlanet('named', { name: 'Aglate', slots: [{ structureId: 'capital_spaceyard', state: 'active' }] }));
+    expectEq(src.structureName, 'Capital Spaceyard');
+    expectEq(src.planetName, 'Aglate');
+});
+
+test('systemYardFor: best owned yard in the system only', () => {
+    const planets = [
+        yardPlanet('a1', { system: 'sys-a', tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }] }),
+        yardPlanet('a2', { system: 'sys-a', slots: [{ structureId: 'advanced_spaceyard', state: 'active' }] }),
+        yardPlanet('rival', { system: 'sys-a', owner: 'f2', slots: [{ structureId: 'capital_spaceyard', state: 'active' }] }),
+        yardPlanet('far', { system: 'sys-b', slots: [{ structureId: 'capital_spaceyard', state: 'active' }] }),
+    ];
+    expectEq(systemYardFor(planets, 'f1', 'sys-a').tier, 2);
+    expectEq(systemYardFor(planets, 'f1', 'sys-a').planetId, 'a2');
+    expectEq(systemYardFor(planets, 'f2', 'sys-a').tier, 3);
+    expectEq(systemYardFor(planets, 'f1', 'sys-c').tier, 0);
+    expectEq(systemYardFor(planets, 'f1', null).planetId, null);
+});
+
+test('checkShipyardGate: transit, no yard, tier, ok — and the bare task force', () => {
+    const tier1 = [yardPlanet('cap', { system: 'home', name: 'Aglate', tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }] })];
+    const tier2 = [yardPlanet('cap', { system: 'home', name: 'Aglate', slots: [{ structureId: 'advanced_spaceyard', state: 'active' }] })];
+    const tier3 = [yardPlanet('cap', { system: 'home', name: 'Aglate', slots: [{ structureId: 'capital_spaceyard', state: 'active' }] })];
+    const home = { systemId: 'home', systemName: 'Home', holding: true };
+
+    const transit = checkShipyardGate(tier1, 'f1', { ...home, holding: false }, 'corvette');
+    expectTrue(!transit.ok && transit.code === 'transit' && transit.reason.includes('under way'));
+
+    const noYard = checkShipyardGate([], 'f1', home, 'corvette');
+    expectTrue(!noYard.ok && noYard.code === 'no_yard' && noYard.reason.includes('Orbital Shipyard') && noYard.reason.includes('Home'), (noYard as any).reason);
+
+    expectTrue(checkShipyardGate(tier1, 'f1', home, 'corvette').ok);
+    expectTrue(checkShipyardGate(tier1, 'f1', home, 'DESTROYER').ok, 'case-insensitive hull');
+    const cruiserAt1 = checkShipyardGate(tier1, 'f1', home, 'cruiser');
+    expectTrue(!cruiserAt1.ok && cruiserAt1.code === 'tier' && cruiserAt1.reason.includes('tier 2') && cruiserAt1.reason.includes('Advanced Spaceyard'), (cruiserAt1 as any).reason);
+    const bbAt2 = checkShipyardGate(tier2, 'f1', home, 'battleship');
+    expectTrue(!bbAt2.ok && bbAt2.reason.includes('Capital Spaceyard'), (bbAt2 as any).reason);
+    expectTrue(checkShipyardGate(tier2, 'f1', home, 'cruiser').ok);
+    expectTrue(checkShipyardGate(tier3, 'f1', home, 'battleship').ok);
+
+    // Bare task force needs any yard.
+    expectTrue(checkShipyardGate(tier1, 'f1', home, null).ok);
+    const bareNoYard = checkShipyardGate([], 'f1', home, null);
+    expectTrue(!bareNoYard.ok && bareNoYard.reason.startsWith('A task force can only be commissioned'), (bareNoYard as any).reason);
+
+    // Footer strings.
+    const yard1 = systemYardFor(tier1, 'f1', 'home');
+    expectEq(yardLockReason(yard1, { ...home, holding: false }, 'corvette'), 'Fleet under way');
+    expectEq(yardLockReason(systemYardFor([], 'f1', 'home'), home, 'corvette'), 'No shipyard here');
+    expectEq(yardLockReason(yard1, home, 'battleship'), 'Needs tier-3 yard');
+    expectEq(yardLockReason(yard1, home, 'destroyer'), null);
+    expectEq(hullsBuildableAt(1), ['corvette', 'destroyer']);
+    expectEq(nextHullAfter(1)?.hull, 'cruiser');
+    expectEq(nextHullAfter(3), null);
+});
+
+test('shipyardSystemIdsFor uses the same yard rule as the gate', () => {
+    const planets = new Map<string, any>([
+        ['surf', yardPlanet('surf', { system: 'sys-surface', tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }] })],
+        ['orb', yardPlanet('orb', { system: 'sys-orbital', slots: [{ structureId: 'spaceyard', state: 'active' }] })],
+        ['wreck', yardPlanet('wreck', { system: 'sys-wreck', slots: [{ structureId: 'spaceyard', state: 'damaged', integrity: 50 }] })],
+        ['rival', yardPlanet('rival', { system: 'sys-rival', owner: 'f2', tiles: [{ buildingId: 'orbital_shipyard', constructionState: 'active' }] })],
+        ['phantom', yardPlanet('phantom', { system: 'sys-phantom', tiles: [{ buildingId: 'naval_base', constructionState: 'active' }] })],
+        ['dup', yardPlanet('dup', { system: 'sys-surface', tiles: [{ buildingId: 'fleet_drydock', constructionState: 'active' }] })],
+    ]);
+    const ids = shipyardSystemIdsFor({ nowSeconds: 0, construction: { planets } } as any, 'f1').sort();
+    expectEq(ids, ['sys-orbital', 'sys-surface']);
 });
 
 console.log(`\nTests passed: ${passed}`);
