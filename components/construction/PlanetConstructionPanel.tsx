@@ -682,6 +682,13 @@ export function PlanetConstructionPanel({
                             nowSeconds={worldNowSeconds}
                             actionLoading={actionLoading}
                             onDispatch={handleLayerOrder}
+                            reserves={{
+                                CREDITS: factionCredits,
+                                METALS: factionMetals,
+                                CHEMICALS: factionChemicals,
+                                ENERGY: factionEnergy,
+                                RARES: factionRares,
+                            }}
                         />
                     )}
 

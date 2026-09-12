@@ -114,6 +114,19 @@ and was consumed by nothing.
   and `MIL_BUILD_FLEET { ..., recruitUnitType?, recruitDesignId? }` — a hull
   name without a design builds the standard pattern.
 
+## Orbital yard pricing
+
+`ORBITAL_CONSTRUCT` charges the structure's catalog cost from faction
+reserves (`orbitalStructureCharge` in `lib/orbital/orbital-service.ts`:
+credits/metals/chemicals/food/energy/rares; manpower has no pool and is not
+charged, matching surface buildings). Eligibility is checked before the
+charge; a failed start rolls it back; `ORBITAL_CANCEL` refunds exactly what
+the order recorded in `paid`. The orbital tab locks unaffordable structures
+with the same reason string. Reaching a Capital Spaceyard therefore costs
+station 800/600/200/50 + spaceyard 900/800/250 + advanced 2000/1600/600 +
+capital 4500/3200/1200 (credits/metals/chemicals/food) on top of the
+infrastructure track.
+
 ## Not done / next
 
 - Fleet movement speed ignores design (thrusters affect the signature only).

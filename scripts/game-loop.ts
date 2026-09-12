@@ -206,6 +206,9 @@ import { LOGISTICS_PRIORITIES } from '../lib/logistics/distribution-types';
 import {
     startOrbitalConstruction,
     cancelOrbitalConstruction,
+    canBuildOrbital,
+    orbitalStructureCharge,
+    orbitalChargeShortfall,
     applyOrbitalDamage,
     isOrbitSuppressed,
     ensureOrbitalState,
@@ -2413,33 +2416,77 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'ORBITAL_CONSTRUCT': {
             // payload: { planetId, structureId }
+            // Charges the structure's catalog cost from faction reserves (the
+            // registry entry is cost:{} because the price is per structure).
+            // Orbital yards were free until 2026-09-12, which made the shipyard
+            // tier ladder a pure time gate.
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet) return;
+            if (!planet) {
+                recordOrderFailure(world, factionId, actionId, 'Planet not found.');
+                return;
+            }
             if (planet.ownerId !== factionId) {
                 console.error(`[Security] Unauthorized ORBITAL build from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
+                recordOrderFailure(world, factionId, actionId, 'Planet is not under your control.');
                 return;
             }
             const def = ORBITAL_STRUCTURE_BY_ID[payload.structureId];
             if (!def) {
-                console.error(`[Tick Worker] Unknown orbital structure '${payload.structureId}'`);
+                recordOrderFailure(world, factionId, actionId, `Unknown orbital structure '${payload.structureId}'.`);
                 return;
             }
             const unlocked = new Set<string>(world.tech.get(factionId)?.unlockedTechIds ?? []);
-            const result = startOrbitalConstruction(planet, payload.structureId, world.nowSeconds, unlocked);
-            if (!result.success) {
-                console.warn(`[Tick Worker] Orbital build rejected on ${planet.name}: ${result.error}`);
+            // Eligibility first, so an ineligible order never touches reserves.
+            const eligible = canBuildOrbital(planet, payload.structureId, unlocked);
+            if (!eligible.canBuild) {
+                recordOrderFailure(world, factionId, actionId, eligible.reason ?? 'Cannot build that in orbit here.');
                 return;
             }
-            console.log(`[Tick Worker] ${def.name} laid down in orbit of ${planet.name} (slot ${result.order?.slotId})`);
+            const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+            const charge = orbitalStructureCharge(def);
+            const shortfall = orbitalChargeShortfall(reserves, charge);
+            if (shortfall) {
+                recordOrderFailure(world, factionId, actionId, `${def.name}: ${shortfall}`);
+                return;
+            }
+            const paid: Record<string, number> = {};
+            if (reserves) {
+                for (const [key, amt] of Object.entries(charge)) {
+                    if (reserves[key] === undefined) continue; // untracked → free, never refunded either
+                    reserves[key] = (reserves[key] ?? 0) - amt;
+                    paid[key] = amt;
+                }
+            }
+            const result = startOrbitalConstruction(planet, payload.structureId, world.nowSeconds, unlocked);
+            if (!result.success || !result.order) {
+                // Roll back exactly what was taken.
+                if (reserves) for (const [key, amt] of Object.entries(paid)) reserves[key] = (reserves[key] ?? 0) + amt;
+                recordOrderFailure(world, factionId, actionId, result.error ?? 'Orbital construction failed.');
+                return;
+            }
+            result.order.paid = paid;
+            console.log(`[Tick Worker] ${def.name} laid down in orbit of ${planet.name} (slot ${result.order.slotId}) for ${Object.entries(paid).map(([k, v]) => `${v} ${k}`).join(', ') || 'nothing'}`);
             break;
         }
 
         case 'ORBITAL_CANCEL': {
             // payload: { planetId, slotId }
+            // A cancelled build refunds exactly what it charged: nothing was
+            // consumed, and a paid-for slot the player cannot get back would
+            // just teach them never to cancel.
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet || planet.ownerId !== factionId) return;
+            const pending = planet.orbital?.buildQueue?.find((o: any) => o.slotId === payload.slotId);
+            const paid = pending?.paid ?? {};
             if (cancelOrbitalConstruction(planet, payload.slotId)) {
-                console.log(`[Tick Worker] Orbital construction cancelled on ${planet.name} slot ${payload.slotId}`);
+                const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+                if (reserves) {
+                    for (const [key, amt] of Object.entries(paid)) {
+                        if (reserves[key] === undefined) continue;
+                        reserves[key] = (reserves[key] ?? 0) + (Number(amt) || 0);
+                    }
+                }
+                console.log(`[Tick Worker] Orbital construction cancelled on ${planet.name} slot ${payload.slotId}; refunded ${Object.entries(paid).map(([k, v]) => `${v} ${k}`).join(', ') || 'nothing'}`);
             }
             break;
         }

@@ -68,6 +68,12 @@ export interface OrbitalBuildOrder {
     isUpgrade: boolean;
     /** Structure that occupied the slot before an upgrade started, for rollback on cancel. */
     replacedStructureId?: string;
+    /**
+     * What the owner's reserves were actually debited when this order was
+     * placed (reserve keys: CREDITS, METALS, ...). Refunded in full on cancel.
+     * Absent on orders placed before orbital structures cost anything.
+     */
+    paid?: Record<string, number>;
 }
 
 export interface OrbitalState {

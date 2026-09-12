@@ -298,6 +298,49 @@ export function startOrbitalConstruction(
     return { success: true, order };
 }
 
+// ─── Pricing ─────────────────────────────────────────────────────────────────
+
+/**
+ * A structure's catalog cost as a faction-reserve charge. Same mapping the
+ * surface-building handler uses: manpower has no reserve pool and is not
+ * charged; zero entries are dropped.
+ */
+export function orbitalStructureCharge(def: Pick<OrbitalStructureDefinition, 'cost'>): Record<string, number> {
+    const out: Record<string, number> = {};
+    const pairs: Array<[number | undefined, string]> = [
+        [def.cost.credits, 'CREDITS'],
+        [def.cost.metals, 'METALS'],
+        [def.cost.chemicals, 'CHEMICALS'],
+        [def.cost.food, 'FOOD'],
+        [def.cost.energy, 'ENERGY'],
+        [def.cost.rares, 'RARES'],
+    ];
+    for (const [amt, key] of pairs) {
+        if ((amt ?? 0) > 0) out[key] = amt as number;
+    }
+    return out;
+}
+
+/**
+ * The first resource `reserves` cannot cover for `charge`, as a player-facing
+ * reason, or null when affordable. Untracked reserve keys are free, matching
+ * chargeOrderCost in the worker (sparse-reserve factions must not be blocked
+ * by a resource they never hold).
+ */
+export function orbitalChargeShortfall(
+    reserves: Record<string, number> | null | undefined,
+    charge: Record<string, number>,
+): string | null {
+    if (!reserves) return null;
+    for (const [key, amt] of Object.entries(charge)) {
+        if (reserves[key] === undefined) continue;
+        if ((reserves[key] ?? 0) < amt) {
+            return `Insufficient ${key.toLowerCase()}: need ${amt}, have ${Math.floor(reserves[key] ?? 0)}.`;
+        }
+    }
+    return null;
+}
+
 /** Cancel an in-progress orbital build, restoring an upgraded structure if there was one. */
 export function cancelOrbitalConstruction(planet: ConstructionPlanet, slotId: string): boolean {
     const orbital = ensureOrbitalState(planet);

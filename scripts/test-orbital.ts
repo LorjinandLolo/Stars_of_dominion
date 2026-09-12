@@ -18,6 +18,8 @@ import {
     applyOrbitalDamage,
     repairOrbital,
     tickOrbitalGlobal,
+    orbitalStructureCharge,
+    orbitalChargeShortfall,
 } from '../lib/orbital/orbital-service';
 import {
     BASE_ORBITAL_SLOTS,
@@ -250,6 +252,19 @@ console.log('\n4. Construction lifecycle');
     const freshSlot = planet.orbital!.slots.find(s => s.slotId === fresh.order!.slotId)!;
     check('cancelling a fresh build empties the slot',
         freshSlot.structureId === null && freshSlot.state === 'empty');
+
+    // Pricing: the catalog cost as a reserve charge (what ORBITAL_CONSTRUCT debits).
+    const yard = ORBITAL_STRUCTURE_BY_ID['spaceyard']!;
+    const charge = orbitalStructureCharge(yard);
+    check('a spaceyard charges credits, metals and chemicals — never manpower',
+        charge.CREDITS === 900 && charge.METALS === 800 && charge.CHEMICALS === 250
+        && !('MANPOWER' in charge) && !('FOOD' in charge), JSON.stringify(charge));
+    check('a short treasury names the missing resource',
+        (orbitalChargeShortfall({ CREDITS: 5000, METALS: 100, CHEMICALS: 1000 }, charge) ?? '').startsWith('Insufficient metals'));
+    check('untracked reserve keys are free',
+        orbitalChargeShortfall({ CREDITS: 5000 }, charge) === null);
+    check('a full treasury is not short',
+        orbitalChargeShortfall({ CREDITS: 900, METALS: 800, CHEMICALS: 250 }, charge) === null);
 }
 
 // ─── 5. Derived ratings ───────────────────────────────────────────────────────

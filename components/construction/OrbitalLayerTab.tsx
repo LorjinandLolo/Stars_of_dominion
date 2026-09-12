@@ -14,6 +14,7 @@ import { ORBITAL_STRUCTURES, ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-stru
 import type { OrbitalCategory } from '@/lib/orbital/orbital-types';
 import type { Planet } from '@/lib/construction/construction-types';
 import { hullsBuildableAt, nextHullAfter, planetYardTier } from '@/lib/combat/shipyard-gate';
+import { orbitalChargeShortfall, orbitalStructureCharge } from '@/lib/orbital/orbital-service';
 
 function formatDuration(seconds: number): string {
     if (seconds <= 0) return 'Immediate';
@@ -41,9 +42,15 @@ interface Props {
     nowSeconds: number;
     actionLoading: boolean;
     onDispatch: (actionId: string, payload: Record<string, any>, label: string) => Promise<void>;
+    /**
+     * Faction reserves by key (CREDITS, METALS, ...). When given, structures
+     * the treasury cannot pay for are locked with the same reason the worker
+     * records. Keys not present are treated as untracked, like the worker does.
+     */
+    reserves?: Record<string, number>;
 }
 
-export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDispatch }: Props) {
+export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDispatch, reserves }: Props) {
     const [expandedCategory, setExpandedCategory] = useState<OrbitalCategory | null>('station');
 
     const slots = planet.orbital?.slots ?? [];
@@ -84,6 +91,8 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
         if (def.requiresStation && !hasStation) return 'Needs an operational station';
         if (def.uniquePerPlanet && occupiedIds.has(structureId)) return 'Already in orbit';
         if (freeSlots === 0) return 'No free orbital slot';
+        const shortfall = reserves ? orbitalChargeShortfall(reserves, orbitalStructureCharge(def)) : null;
+        if (shortfall) return shortfall;
         return null;
     };
 
