@@ -31,6 +31,7 @@ import { computeStorageCapacity } from '../lib/logistics/storage-service';
 import { updatePlanetLogistics } from '../lib/logistics/distribution-service';
 import { startSpaceConstruction } from '../lib/construction/ship-production-service';
 import { hullsBuildableAt, planetYardTier } from '../lib/combat/shipyard-gate';
+import { DEFAULT_DESIGNS, summarizeDesign } from '../lib/combat/ship-registry';
 
 let passed = 0;
 let failed = 0;
@@ -257,14 +258,36 @@ console.log('\n4. Construction lifecycle');
     const yard = ORBITAL_STRUCTURE_BY_ID['spaceyard']!;
     const charge = orbitalStructureCharge(yard);
     check('a spaceyard charges credits, metals and chemicals — never manpower',
-        charge.CREDITS === 900 && charge.METALS === 800 && charge.CHEMICALS === 250
+        charge.CREDITS === yard.cost.credits && charge.METALS === yard.cost.metals && charge.CHEMICALS === yard.cost.chemicals
         && !('MANPOWER' in charge) && !('FOOD' in charge), JSON.stringify(charge));
     check('a short treasury names the missing resource',
         (orbitalChargeShortfall({ CREDITS: 5000, METALS: 100, CHEMICALS: 1000 }, charge) ?? '').startsWith('Insufficient metals'));
     check('untracked reserve keys are free',
         orbitalChargeShortfall({ CREDITS: 5000 }, charge) === null);
     check('a full treasury is not short',
-        orbitalChargeShortfall({ CREDITS: 900, METALS: 800, CHEMICALS: 250 }, charge) === null);
+        orbitalChargeShortfall({ ...charge }, charge) === null);
+
+    // The ladder is priced against the starting kit: a fresh faction
+    // (lib/game-world-state-singleton.ts) must afford station + spaceyard AND a
+    // three-corvette starter squadron out of its opening reserves.
+    const FRESH_RESERVES: Record<string, number> = { CREDITS: 50000, METALS: 3000, CHEMICALS: 1500, FOOD: 2500, ENERGY: 5000 };
+    const station = ORBITAL_STRUCTURE_BY_ID['space_station']!;
+    const corvette = summarizeDesign(DEFAULT_DESIGNS.find(d => d.hullId === 'corvette')!, null).cost;
+    const opening: Record<string, number> = {};
+    for (const part of [orbitalStructureCharge(station), charge, corvette, corvette, corvette]) {
+        for (const [k, v] of Object.entries(part)) opening[k] = (opening[k] ?? 0) + v;
+    }
+    check('a fresh faction affords station + spaceyard + three standard corvettes',
+        Object.entries(opening).every(([k, v]) => (FRESH_RESERVES[k] ?? 0) >= v), JSON.stringify(opening));
+    check('station + spaceyard take under a third of the opening metals',
+        (station.cost.metals + yard.cost.metals) * 3 <= FRESH_RESERVES.METALS, `${station.cost.metals + yard.cost.metals}`);
+    const advanced = ORBITAL_STRUCTURE_BY_ID['advanced_spaceyard']!;
+    const capital = ORBITAL_STRUCTURE_BY_ID['capital_spaceyard']!;
+    const battleship = summarizeDesign(DEFAULT_DESIGNS.find(d => d.hullId === 'battleship')!, null).cost;
+    check('each yard rung costs more metal than the one below it',
+        yard.cost.metals < advanced.cost.metals && advanced.cost.metals < capital.cost.metals);
+    check('the capital spaceyard is cheaper than the battleship it builds',
+        capital.cost.metals < battleship.METALS && capital.cost.credits < battleship.CREDITS);
 }
 
 // ─── 5. Derived ratings ───────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
         description: 'The orbital hub: docking berths, traffic control, customs and the administration that makes the rest of the layer possible.',
         category: 'station',
         tier: 1,
-        cost: { metals: 600, chemicals: 200, food: 50, manpower: 150, credits: 800 },
+        cost: { metals: 450, chemicals: 150, food: 50, manpower: 120, credits: 700 },
         upkeep: { energy: 25, manpower: 40, credits: 20 },
         buildTimeSeconds: 1200,
         effects: [
@@ -124,13 +124,21 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
     },
 
     // ─── Shipyards ────────────────────────────────────────────────────────────
+    // Pricing rule (2026-09-13): a fresh faction holds 3,000 metals / 1,500
+    // chemicals / 50,000 credits (lib/game-world-state-singleton.ts) and its
+    // capital already has a surface Orbital Shipyard (yard tier 1). Station +
+    // Spaceyard must fit in under a third of that metal so the player can still
+    // commission a starter squadron (a standard corvette is 480 metals) or a
+    // colony (1,000 metals). Each rung is ~2.5× the last; the Capital Spaceyard
+    // stays cheaper than the battleship it lays down (3,580 metals).
+    // scripts/test-orbital.ts asserts the fresh-capital budget.
     {
         id: 'spaceyard',
         name: 'Spaceyard',
         description: 'Open slipways and gantries for hulls that could never be lifted off a surface.',
         category: 'shipyard',
         tier: 2,
-        cost: { metals: 800, chemicals: 250, food: 0, manpower: 200, credits: 900 },
+        cost: { metals: 500, chemicals: 150, food: 0, manpower: 150, credits: 700 },
         upkeep: { energy: 35, manpower: 80, credits: 25 },
         buildTimeSeconds: 1500,
         effects: [
@@ -149,7 +157,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
         description: 'Enclosed drydocks with their own foundries — the first yard that can lay down a cruiser keel.',
         category: 'shipyard',
         tier: 3,
-        cost: { metals: 1600, chemicals: 600, food: 0, manpower: 350, credits: 2000 },
+        cost: { metals: 1300, chemicals: 500, food: 0, manpower: 300, credits: 1800 },
         upkeep: { energy: 70, manpower: 150, credits: 55 },
         buildTimeSeconds: 2400,
         effects: [
@@ -169,7 +177,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
         description: 'A shipbuilding city in orbit. Battleship cradles, dedicated reactors, and a workforce that never goes home.',
         category: 'shipyard',
         tier: 4,
-        cost: { metals: 3200, chemicals: 1200, food: 0, manpower: 600, credits: 4500 },
+        cost: { metals: 2800, chemicals: 1000, food: 0, manpower: 550, credits: 4000 },
         upkeep: { energy: 130, manpower: 300, credits: 110 },
         buildTimeSeconds: 3600,
         effects: [

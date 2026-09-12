@@ -122,10 +122,28 @@ credits/metals/chemicals/food/energy/rares; manpower has no pool and is not
 charged, matching surface buildings). Eligibility is checked before the
 charge; a failed start rolls it back; `ORBITAL_CANCEL` refunds exactly what
 the order recorded in `paid`. The orbital tab locks unaffordable structures
-with the same reason string. Reaching a Capital Spaceyard therefore costs
-station 800/600/200/50 + spaceyard 900/800/250 + advanced 2000/1600/600 +
-capital 4500/3200/1200 (credits/metals/chemicals/food) on top of the
-infrastructure track.
+with the same reason string.
+
+The ladder is priced against the starting kit (rebalanced 2026-09-13). A
+fresh faction holds 3,000 metals / 1,500 chemicals / 50,000 credits and its
+capital already has a surface Orbital Shipyard (tier 1), so the orbital
+Spaceyard buys production speed, repair and the path upward, not the tier.
+Station + Spaceyard must fit in under a third of the opening metals so a
+starter squadron (three standard corvettes = 1,440 metals) or a colony
+(1,000 metals) is still affordable; each rung is ~2.5× the last and the
+Capital Spaceyard stays cheaper than a battleship (3,580 metals).
+`scripts/test-orbital.ts` asserts the budget.
+
+| Structure | Yard tier | Credits | Metals | Chemicals |
+|---|---|---|---|---|
+| Space Station | — | 700 | 450 | 150 |
+| Spaceyard | 1 | 700 | 500 | 150 |
+| Advanced Spaceyard | 2 | 1,800 | 1,300 | 500 |
+| Capital Spaceyard | 3 | 4,000 | 2,800 | 1,000 |
+
+Surface rungs for comparison: Orbital Shipyard 800/400/200 (tier 1), Fleet
+Drydock 2,000/1,000/500 (tier 2). Infrastructure levels 3 and 4 gate the
+upper orbital rungs on top of these prices.
 
 ## Not done / next
 
