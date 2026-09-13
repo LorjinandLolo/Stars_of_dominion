@@ -28,6 +28,7 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-manager';
 import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
+import { blendExperience } from '../lib/combat/veterancy';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
 import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movement/belts';
@@ -4428,6 +4429,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             if (srcPower + tgtPower > 0) {
                 tgt.strength = ((tgt.strength ?? 1) * tgtPower + (src.strength ?? 1) * srcPower) / (srcPower + tgtPower);
             }
+            // Crews average by power too: a veteran squadron absorbing a green one.
+            tgt.experience = blendExperience(tgt.experience, tgtPower, src.experience, srcPower);
             tgt.basePower = tgtPower + srcPower;
             tgt.originSystemId = null;
 

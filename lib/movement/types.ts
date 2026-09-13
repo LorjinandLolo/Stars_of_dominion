@@ -338,6 +338,12 @@ export interface Fleet {
      * slowest hull class — see lib/combat/fleet-speed.ts. Absent = 0.
      */
     designSpeedBonus?: number;
+    /**
+     * Veterancy, 0..0.25: multiplies combat power (lib/combat/veterancy.ts).
+     * Earned by surviving battles, more for winning them; diluted by fresh
+     * hulls, averaged by power on merge, copied on split. Absent = green.
+     */
+    experience?: number;
     /** Hyperdrive profile this fleet uses for layer modifiers. */
     hyperdriveProfile: HyperdriveProfile;
     /** Whether this fleet is detectable above threshold (ui hint). */

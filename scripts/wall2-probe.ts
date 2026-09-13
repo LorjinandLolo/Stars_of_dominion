@@ -71,6 +71,13 @@ console.log('\n[3] AI expansion loop');
         }
         const yardTiles = capPlanet.tiles.filter((t: any) => t.buildingId === 'orbital_shipyard');
         for (const t of yardTiles) t.constructionState = 'under_construction';
+        // Hold the AI yard ladder (lib/ai/yard-ladder-ai.ts) still: it runs in
+        // the same tick and would lay down a Space Station, which this probe's
+        // reserve arithmetic is not about. A pending orbital order blocks it.
+        capPlanet.orbital = {
+            slots: [],
+            buildQueue: [{ orderId: 'probe-hold', structureId: 'space_station', slotId: `${capPlanet.id}-orb0`, planetId: capPlanet.id, startedAtSeconds: 0, completesAtSeconds: 1e12, isUpgrade: false }],
+        };
         tickAIExpansion(world);
         check(`no yard at the capital → no scout commissioned`, ![...world.movement.fleets.values()].some(f => f.factionId === A));
         check(`no yard → nothing charged`, faction.reserves.CREDITS === 100000 && faction.reserves.METALS === 10000,

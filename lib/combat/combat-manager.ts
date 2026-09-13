@@ -33,6 +33,9 @@ import {
     splitDamage,
     PURSUIT_STRENGTH_LOSS,
 } from './engagement-rules';
+import { experienceMultiplier, gainExperience } from './veterancy';
+import { commandingAdmiral, admiralPowerBonus, admiralBattleXp, ADMIRAL_PREDICTION_POINTS } from './admiralty';
+import { LeadershipService } from '../leadership/leadership-service';
 
 /** Engine default for a correct stance prediction (combat-engine.ts:259). */
 const BASE_PREDICTION_BONUS = 0.15;
@@ -545,6 +548,28 @@ function finishBattle(
     state.outcome = { winnerId, reason, endedAtSeconds: world.nowSeconds };
     console.log(`[CombatManager] Battle at ${state.target.systemId} over (${reason}): ${winnerId ? `${winnerId} holds the field` : 'no clear winner'}.`);
 
+    // Every fleet that fought and is still afloat learned something; the side
+    // that held the field learned more. Withdrawn fleets were re-issued by
+    // issueMoveOrder, so write to the live record.
+    if ((state.elapsedRounds ?? 0) > 0 || reason !== 'withdrawal') {
+        for (const [fleets, factionId] of [[attackerFleets, state.attacker.factionId], [defenderFleets, state.defender.factionId]] as const) {
+            for (const stale of fleets) {
+                const fleet = world.movement.fleets.get(stale.id);
+                if (!fleet || fleet.strength <= 0) continue;
+                fleet.experience = gainExperience(fleet.experience, winnerId === factionId);
+            }
+        }
+        // The admirals learned too — far more than the 50 XP a quiet tick pays.
+        for (const side of [state.attacker, state.defender]) {
+            if (!side.admiralId || !(world.leadership?.leaders instanceof Map) || !world.leadership.leaders.has(side.admiralId)) continue;
+            try {
+                LeadershipService.grantXP(world, side.admiralId, admiralBattleXp(winnerId === side.factionId));
+            } catch (e: any) {
+                console.error(`[CombatManager] Admiral XP failed:`, e?.message ?? e);
+            }
+        }
+    }
+
     try {
         reportBattle(world, state, reason, winnerId);
     } catch (e: any) {
@@ -621,6 +646,28 @@ function reportBattle(world: GameWorldState, state: CombatState, reason: BattleE
             linkToTab: 'map',
             payload: { systemId, combatId: state.id, reason, winnerId },
         } as any);
+    }
+}
+
+/** Trait modifiers of the admiral assigned to this fleet; never lets the leadership module break a battle. */
+function safeLeaderModifiers(world: any, factionId: string, assignmentId: string | undefined, role: 'attacker' | 'defender'): Record<string, number> {
+    if (!assignmentId || !(world?.leadership?.leaders instanceof Map)) return {};
+    try {
+        const raw = LeadershipService.getLeaderModifiers(world, factionId, 'Admiral', assignmentId) ?? {};
+        // Leader traits speak their own vocabulary (data/leader-traits.json):
+        // offensiveDamage counts when attacking, defensiveStrength when
+        // defending, both onto the engine's combat_power_multiplier. Any key
+        // the engine already knows passes straight through.
+        const out: Record<string, number> = {};
+        const trait = role === 'attacker' ? raw['offensiveDamage'] : raw['defensiveStrength'];
+        if (typeof trait === 'number' && trait !== 0) out['combat_power_multiplier'] = trait;
+        for (const [key, value] of Object.entries(raw)) {
+            if (key === 'offensiveDamage' || key === 'defensiveStrength') continue;
+            if (/_multiplier$|_add$/.test(key) && typeof value === 'number') out[key] = (out[key] ?? 0) + value;
+        }
+        return out;
+    } catch {
+        return {};
     }
 }
 
@@ -718,12 +765,18 @@ function createCombatant(
     world?: any,
     fortification?: Fortification,
 ): CombatantState {
-    const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
+    // Veteran crews fight above their tonnage (lib/combat/veterancy.ts).
+    const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength * experienceMultiplier(f.experience)), 0);
 
     // Roster, design signature and screening as the ships stand right now
     // (scaled by each fleet's strength). Keys are lowercase so the engine's
     // counter grid sees one vocabulary whatever a fleet was built with.
     const force = snapshotForce(fleets);
+
+    // The commanding admiral (senior active Admiral on any fleet here). Fleets
+    // carried leaderId and leaders carried levels and traits; combat read
+    // neither.
+    const admiral = commandingAdmiral(fleets, world?.leadership?.leaders instanceof Map ? world.leadership.leaders : null);
 
     // Orbital defenses add their mass to the pool the engine tracks; a
     // Defense Network (160 power) weighs as much as a 160-power fleet.
@@ -744,6 +797,7 @@ function createCombatant(
         composition: force.composition,
         designProfile: force.designProfile,
         fortification,
+        admiralId: admiral?.id,
         intelLevel: 'observing',
         supply: fleets[0]?.doctrine?.supplyLevel ?? 1.0,
         // NOTE: `+` binds tighter than `??`, so `moraleDrift ?? 0 + 100` parsed as
@@ -751,7 +805,8 @@ function createCombatant(
         // power penalty). Parenthesise the `?? 0` and clamp the result to [0,1].
         morale: Math.max(0, Math.min(1, ((fleets[0]?.doctrine?.moraleDrift ?? 0) + 100) / 200)),
         doctrine: 'aggressive',
-        predictionPoints: 0,
+        // An admiral reads the enemy: one point in hand (three arm annihilation).
+        predictionPoints: admiral ? ADMIRAL_PREDICTION_POINTS : 0,
         selectedStance: 'shock',
         // combat-engine has read techModifiers since it was written, but nothing
         // ever populated the field — every tech combat bonus in the trees was
@@ -761,7 +816,15 @@ function createCombatant(
         // default, so techs contribute to it via prediction_bonus_add instead of
         // overwriting it with a smaller number.
         techModifiers: (() => {
-            const mods = getTechModifiers(world, factionId);
+            const mods: Record<string, number> = { ...getTechModifiers(world, factionId) };
+            if (admiral) {
+                // Raw power by level, plus whatever the leader's traits add.
+                mods['combat_power_multiplier'] = (mods['combat_power_multiplier'] ?? 0) + admiralPowerBonus(admiral);
+                const flagship = fleets.find(f => f.leaderId === admiral.id);
+                for (const [key, value] of Object.entries(safeLeaderModifiers(world, factionId, flagship?.id, role))) {
+                    mods[key] = (mods[key] ?? 0) + value;
+                }
+            }
             return {
                 ...mods,
                 // Nexulan Pre-Cognitive Algorithms compose here rather than

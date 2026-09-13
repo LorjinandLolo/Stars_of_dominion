@@ -79,6 +79,8 @@ export interface CombatantState {
      * combat-manager fortificationFor.
      */
     fortification?: { defensePower: number; shieldStrength: number; planetIds: string[] };
+    /** Leader id of the commanding admiral (lib/combat/admiralty.ts), if a fleet on this side has one. */
+    admiralId?: string;
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy
     supply: number; // 0–1
     morale: number; // Global Morale (different from tactical Organization)

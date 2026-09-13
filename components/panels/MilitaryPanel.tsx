@@ -8,6 +8,7 @@ import { GroundUnitType } from '@/lib/combat/siege/siege-types';
 import ShipDesignPicker from '@/components/units/ShipDesignPicker';
 import { DEFAULT_DESIGNS } from '@/lib/combat/ship-registry';
 import type { ShipDesign } from '@/lib/combat/ship-types';
+import { veterancyRank } from '@/lib/combat/veterancy';
 
 export default function MilitaryPanel() {
     const {
@@ -198,6 +199,12 @@ export default function MilitaryPanel() {
                                                 <span className="font-mono font-bold text-amber-400">x{count as number}</span>
                                             </div>
                                         ))
+                                    )}
+                                    {activeTab === 'fleets' && (
+                                        <div className="flex justify-between items-center text-[11px] font-mono pt-1" title="Veterancy: earned by surviving battles, more for winning them; fresh hulls dilute it.">
+                                            <span className="text-[9px] uppercase tracking-widest text-slate-500">Crew</span>
+                                            <span className="text-slate-300">{veterancyRank((selectedFormation as any).experience)}{((selectedFormation as any).experience ?? 0) > 0 ? ` (+${Math.round(((selectedFormation as any).experience ?? 0) * 100)}% power)` : ''}</span>
+                                        </div>
                                     )}
                                     {activeTab === 'fleets' && (selectedFormation as any).designCounts
                                         && Object.keys((selectedFormation as any).designCounts).length > 0 && (

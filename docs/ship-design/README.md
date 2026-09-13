@@ -238,6 +238,33 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
   (`vsShield`/`vsHull` options, target side's `armorBonus`). No profile
   → identity, the same rule as the strategic engine. The battle the player
   watches used to ignore the designer entirely.
+## AI yards, veterancy, admirals, design intel (2026-09-14)
+
+- **AI climbs the yard ladder** (`lib/ai/yard-ladder-ai.ts`, called from
+  `tickAIExpansion` each strategic tick; tests `npx tsx lib/ai/yard-ladder-ai-tests.ts`).
+  At its capital: Space Station → Spaceyard → Advanced Spaceyard → Capital
+  Spaceyard, one step a tick, through the same `canBuildOrbital` /
+  `startOrbitalConstruction` / `orbitalStructureCharge` the player uses and
+  with double the price in hand. When a rung needs more infrastructure the
+  weakest track is raised first (credits from the treasury, materials from
+  the planet stockpile, as `INFRA_UPGRADE_TRACK`). No AI faction ever fielded
+  anything above a destroyer before.
+- **Veterancy** (`lib/combat/veterancy.ts`, `Fleet.experience` 0..0.25). Every
+  fleet that survives a battle gains 0.02, the winner 0.04; combat power is
+  multiplied by 1 + experience in `createCombatant`; fresh hulls dilute it by
+  power on recruit completion, merge averages by power, split copies. The
+  fleet card shows the crew rank.
+- **Admirals command** (`lib/combat/admiralty.ts`). The senior active Admiral
+  on a side adds 2% combat power per level (cap 10%), opens the battle with
+  one prediction point, and maps the `aggressive_tactician` trait onto the
+  engine (offensiveDamage on attack, defensiveStrength on defence). An
+  admiral earns 150 XP per battle and 150 more for a win. `Fleet.leaderId`
+  had no combat effect at all before.
+- **Espionage reads the yards** (`designIntelLine` in
+  `lib/espionage/intel-reports.ts`). From the `embedded_network` stage on, a
+  military intercept names up to three of the target's designs with hull and
+  signature ("energy-heavy, shielded"); heavily distorted reports keep the
+  names and garble the details. Rival designs are never sent any other way.
 ## Not done / next
 
 - Reinforcements arriving mid-battle join the roster but not the side's hp.
@@ -245,4 +272,3 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
 - The tactical sim still fields each class's fixed loadout; designs tune it (shields, armour, speed, damage, mix) rather than replacing the weapons.
 - Refit: existing ships keep the fit they were built with. A refit order would
   be a per-fleet job that rewrites `designProfile`/`designCounts`.
-- Espionage could reveal a rival's designs through intel reports.

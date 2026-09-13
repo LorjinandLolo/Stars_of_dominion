@@ -91,6 +91,8 @@ console.log('\n2. Rout at the doctrine threshold');
     check('the routed fleet still exists', !!b);
     check('it is physically leaving', !!b?.destinationSystemId, String(b?.destinationSystemId));
     check('it broke at or under its threshold', (b?.strength ?? 1) <= 0.5 && (b?.strength ?? 0) > 0, String(b?.strength));
+    const a: any = world.movement.fleets.get('a');
+    check('the winner learned more than the runner', Math.abs((a?.experience ?? 0) - 0.04) < 1e-9 && Math.abs((b?.experience ?? 0) - 0.02) < 1e-9, `${a?.experience} / ${b?.experience}`);
     const after = cycle();
     check('the finished battle is dropped on the next pass', !after || !after.outcome, after ? after.outcome?.reason : 'none');
 }
@@ -203,6 +205,37 @@ console.log('\n7. Orbital defenses fight, and the battle is reported');
     check('a defeat is urgent, the rest normal', mine.concat(theirs).every(n => (n.title.startsWith('DEFEAT')) === (n.priority === 'urgent')));
     world.construction.planets.delete(fort.id);
     resetChronicleBuffer();
+}
+
+console.log('\n8. An admiral commands');
+{
+    reset();
+    if (!(world.leadership?.leaders instanceof Map)) (world as any).leadership = { ...(world as any).leadership, leaders: new Map() };
+    const admiral: any = { id: 'adm-test', factionId: A, name: 'Test Admiral', role: 'Admiral', level: 3, xp: 0, loyalty: 60, status: 'active', traits: ['aggressive_tactician'], history: [], assignmentId: 'a' };
+    world.leadership.leaders.set('adm-test', admiral);
+    // Baseline: the same fleets with nobody in command (the faction's own tech
+    // modifiers are whatever the world says they are).
+    world.movement.fleets.set('a', mkFleet('a', A, 2000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 200, { composition: { corvette: 2 }, arrivedAtSeconds: 100, doctrine: { moraleDrift: 0, retreatThreshold: 0.5, supplyLevel: 1 } }));
+    const plain = cycle();
+    const base = plain?.attacker.techModifiers?.['combat_power_multiplier'] ?? 0;
+    check('without an admiral the side has none', plain?.attacker.admiralId === undefined);
+    reset();
+    world.leadership.leaders.set('adm-test', admiral);
+    world.movement.fleets.set('a', mkFleet('a', A, 2000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, leaderId: 'adm-test' }));
+    world.movement.fleets.set('b', mkFleet('b', B, 200, { composition: { corvette: 2 }, arrivedAtSeconds: 100, doctrine: { moraleDrift: 0, retreatThreshold: 0.5, supplyLevel: 1 } }));
+    const opened = cycle();
+    check('the side knows its admiral', opened?.attacker.admiralId === 'adm-test', String(opened?.attacker.admiralId));
+    // Level 3: +6% raw; the aggressive tactician's +15% offensiveDamage carries
+    // the leadership module's own level bonus (1 + 2% per level above 1).
+    const expected = 0.06 + 0.15 * (1 + (3 - 1) * 0.02);
+    check('level 3 is +6% power, the aggressive tactician +15.6% more on the attack', Math.abs(((opened?.attacker.techModifiers?.['combat_power_multiplier'] ?? 0) - base) - expected) < 1e-9, `${opened?.attacker.techModifiers?.['combat_power_multiplier']} vs base ${base}`);
+    // The round already rolled intel predictions, so the admiral's point is a floor.
+    check('the admiral opens with a prediction point', (opened?.attacker.predictionPoints ?? 0) >= 1);
+    const s = opened?.outcome ? opened : untilOutcome();
+    check('the battle ends', !!s?.outcome);
+    check('the admiral earned battle XP for the win', admiral.xp === 300, String(admiral.xp));
+    world.leadership.leaders.delete('adm-test');
 }
 
 world.rivalries.delete(`rivalry-${A}-${B}`);

@@ -14,6 +14,11 @@
 import type { GameWorldState } from '../game-world-state';
 import type { EspionageOperation, IntelReport } from './espionage-types';
 import type { OperationDefinition } from './operation-catalog';
+import { factionDesigns } from '../combat/ship-design-service';
+import { summarizeDesign } from '../combat/ship-registry';
+import type { DesignProfile } from '../combat/ship-types';
+import { NETWORK_STAGES, stageForInfiltration } from './network-stages';
+import type { NetworkStage } from './network-stages';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -89,6 +94,45 @@ interface Finding {
     body: string;
 }
 
+/** Infiltration stage from which a military intercept reads the target's shipwright channels. */
+export const DESIGN_INTEL_MIN_STAGE: NetworkStage = 'embedded_network';
+
+const ATTACK_WORD: Record<'energy' | 'kinetic' | 'explosive', string> = { energy: 'energy-heavy', kinetic: 'kinetic-heavy', explosive: 'missile-heavy' };
+const DEFENSE_WORD: Record<'shield' | 'armor' | 'evasion', string> = { shield: 'shielded', armor: 'armoured', evasion: 'nimble' };
+
+/** "energy-heavy, shielded" — the dominant attack and defense dimensions of a design's signature. */
+export function describeDesignProfile(profile: DesignProfile): string {
+    const attack = (['energy', 'kinetic', 'explosive'] as const).reduce((best, k) => profile[k] > profile[best] ? k : best, 'energy' as 'energy' | 'kinetic' | 'explosive');
+    const defense = (['shield', 'armor', 'evasion'] as const).reduce((best, k) => profile[k] > profile[best] ? k : best, 'shield' as 'shield' | 'armor' | 'evasion');
+    const parts: string[] = [];
+    if (profile[attack] > 0) parts.push(ATTACK_WORD[attack]);
+    if (profile[defense] > 0) parts.push(DEFENSE_WORD[defense]);
+    return parts.length ? parts.join(', ') : 'unarmed';
+}
+
+/**
+ * The target's ship designs, as a sentence, once the owner's network is deep
+ * enough to have people in the yards. Rival designs are otherwise invisible
+ * (projectPublicShard never sends them). Heavily distorted reports keep the
+ * names but lose the details — a plant does not hand over the real fits.
+ */
+export function designIntelLine(world: GameWorldState, ownerFactionId: string, targetFactionId: string, severity: number): string {
+    const infiltration = world.espionage.factionIntel.get(ownerFactionId)?.infiltrationLevels?.[targetFactionId] ?? 0;
+    const stageIndex = (stage: NetworkStage) => NETWORK_STAGES.findIndex(s => s.stage === stage);
+    if (stageIndex(stageForInfiltration(infiltration)) < stageIndex(DESIGN_INTEL_MIN_STAGE)) return '';
+    const designs = factionDesigns(world, targetFactionId)
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        .slice(0, 3);
+    if (!designs.length) return ' Shipwright channels show only standard patterns on the slips.';
+    const garbled = severity >= 0.6;
+    const described = designs.map(d => {
+        const hull = d.hullId;
+        if (garbled) return `"${d.name}" (${hull}; details garbled)`;
+        return `"${d.name}" (${hull}; ${describeDesignProfile(summarizeDesign(d, null).profile)})`;
+    });
+    return ` Shipwright channels name ${designs.length === 1 ? 'a design' : 'designs'} on the slips: ${described.join(', ')}.`;
+}
+
 function militaryFinding(op: EspionageOperation, world: GameWorldState, severity: number): Finding {
     const fleets = [...world.movement.fleets.values()].filter(f => f.factionId === op.targetFactionId);
     const inTransit = fleets.filter(f => f.currentSystemId === null).length;
@@ -100,7 +144,8 @@ function militaryFinding(op: EspionageOperation, world: GameWorldState, severity
         title: 'Fleet Disposition Intercept',
         body: `Command traffic indicates ${reportedFleets} active fleet${reportedFleets === 1 ? '' : 's'}, ` +
             `${reportedTransit} currently in transit.` +
-            (staging ? ` Heaviest activity traced to ${staging}.` : ' No staging concentration identified.'),
+            (staging ? ` Heaviest activity traced to ${staging}.` : ' No staging concentration identified.') +
+            designIntelLine(world, op.actorFactionId, op.targetFactionId, severity),
     };
 }
 

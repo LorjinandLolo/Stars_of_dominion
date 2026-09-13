@@ -13,6 +13,7 @@ import { issueExploreOrder } from './exploration-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { SURFACE_YARD_TIERS, systemYardFor } from '../combat/shipyard-gate';
 import { repairBuilding } from '../construction/construction-service';
+import { tickAIYardLadder } from '../ai/yard-ladder-ai';
 
 /**
  * Queue repairs on any ruined surface yard this faction owns in `systemId`.
@@ -99,6 +100,12 @@ export function tickAIExpansion(world: GameWorldState): void {
         // Runs whether or not a scout exists: the belt-picket AI needs the
         // same yard, and it never repairs anything itself.
         if (faction.capitalSystemId) repairRuinedYards(world, factionId, faction.capitalSystemId);
+
+        // ── 0b. Climb the yard ladder ───────────────────────────────────────
+        // Station → Spaceyard → Advanced → Capital at the capital, one step a
+        // tick, raising infrastructure when a rung needs it. Without this no
+        // AI faction ever fielded anything above a destroyer.
+        tickAIYardLadder(world, factionId);
 
         // ── 1. A scout to see with ──────────────────────────────────────────
         let fleet = [...world.movement.fleets.values()]

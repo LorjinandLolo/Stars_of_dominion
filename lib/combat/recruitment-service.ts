@@ -10,6 +10,7 @@
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from './siege/siege-types';
 import { addProfile, normalizeComposition, normalizeUnitKey, unitConfigFor } from './ship-registry';
 import { blendSpeedBonus, shipCountOf } from './fleet-speed';
+import { blendExperience } from './veterancy';
 import type { DesignProfile } from './ship-types';
 
 /** Fields a job may carry beyond the siege-types base shape. */
@@ -137,6 +138,8 @@ export class RecruitmentService {
                     const key = job.classKey ?? normalizeUnitKey(job.unitType);
                     fleet.composition = normalizeComposition(fleet.composition);
                     fleet.composition[key] = (fleet.composition[key] || 0) + job.count;
+                    // Fresh hulls dilute a blooded crew, by power.
+                    fleet.experience = blendExperience(fleet.experience, fleet.basePower, 0, job.count * unitPower);
                     fleet.basePower += job.count * unitPower;
                     if (job.unitProfile) {
                         fleet.designProfile = addProfile(fleet.designProfile, job.unitProfile, job.count);
