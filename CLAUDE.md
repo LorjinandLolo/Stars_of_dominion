@@ -2,7 +2,7 @@
 
 Next.js 16 / React 19 / TypeScript. PostgreSQL via Prisma (`prisma/schema.prisma`, client generated into `lib/generated/prisma/`, singleton in `lib/db.ts`), better-auth for accounts (`lib/auth.ts`), Zustand state, Tailwind, Jest.
 
-- Database: `docker compose up -d` (Postgres 17 on port 5433). Migrations: `npm run db:migrate`.
+- Database: local dev runs on the native PostgreSQL 18 service on port 5432 (role `stars`, db `stars_dominion`, set in `.env.local`); Docker Desktop was dropped from local dev on 2026-09-14 because it kept dying under memory pressure. `docker compose up -d` (Postgres 17 on 5433) still works as an alternative; the home server uses `compose.prod.yaml`. Migrations: `npm run db:migrate`. Worker: `npm run worker:forever` restarts it when the hang watchdog exits.
 - Dev server: `npm run dev`. Game loop worker: `npm run worker` (scripts/game-loop.ts) — required for the live game.
 - Bootstrap a fresh DB: `npx tsx scripts/push-init-state.ts` (world snapshot) then `npm run setup:duel` (dev accounts + faction claims).
 - Client gets game state by polling `/api/game/sync` (hooks/useGameSync.ts); JSON-bearing DB columns are TEXT holding JSON strings — call sites JSON.parse/stringify.
