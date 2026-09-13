@@ -5,7 +5,8 @@
 // …) map onto the four V1 tactical classes; results map back onto the ORIGINAL
 // keys so the strategic fleet keeps its own vocabulary.
 
-import type { ReserveEntry, BattleResult, SideResult, BattlePlan } from './types';
+import type { ReserveEntry, BattleResult, SideResult, BattlePlan, DesignTuning } from './types';
+import { IDENTITY_TUNING } from './types';
 import { classForCompositionKey } from './ship-defs';
 
 /** Minimal strategic-fleet shape the adapter needs (subset of movement Fleet). */
@@ -16,6 +17,71 @@ export interface StrategicFleetLike {
     composition?: Record<string, number> | null;
     strength?: number;
     basePower?: number;
+    /** Summed per-ship design signature (lib/combat/ship-types DesignProfile). */
+    designProfile?: Partial<Record<string, number>> | null;
+}
+
+/** Composition keys that are strike craft riding inside hulls, not hulls. */
+const WING_KEYS = new Set(['interceptor', 'bomber']);
+
+/** Per module per ship: how much each design dimension moves the tactical numbers. */
+export const TUNING_RATES = Object.freeze({
+    /** One Deflector per ship = +25% shield pool. */
+    shieldPerModule: 0.25,
+    /** One Plating per ship = +8 points of armour on every aspect, capped. */
+    armorPerModule: 0.08,
+    armorCap: 0.30,
+    /** One Thruster (evasion 1) per ship = +8% speed. */
+    speedPerModule: 0.08,
+    /** Each weapon module per ship = +5% damage. */
+    weaponPerModule: 0.05,
+    /** Energy vs kinetic share swings shield/hull damage by up to ±30%. */
+    mixSwing: 0.30,
+    /** An all-explosive fit pierces a quarter of its damage straight to hull. */
+    explosivePierce: 0.25,
+});
+
+/**
+ * What a side's designs do to the sim, from the fleets' summed designProfile
+ * divided by the hulls aboard. A side with no profile (fleets from before
+ * designs, or AI spawns that never picked one) gets the identity, never a
+ * penalty — the same rule the strategic engine follows.
+ */
+export function designTuningFor(fleets: StrategicFleetLike[]): DesignTuning {
+    let ships = 0;
+    const sum = { energy: 0, kinetic: 0, explosive: 0, shield: 0, armor: 0, evasion: 0 };
+    let sawProfile = false;
+    for (const fleet of fleets) {
+        const strength = Math.min(1, Math.max(0, typeof fleet.strength === 'number' ? fleet.strength : 1));
+        for (const [key, count] of Object.entries(fleet.composition ?? {})) {
+            if (WING_KEYS.has(key.toLowerCase())) continue;
+            ships += Math.max(0, Number(count) || 0) * strength;
+        }
+        const p = fleet.designProfile;
+        if (!p) continue;
+        sawProfile = true;
+        for (const k of Object.keys(sum) as (keyof typeof sum)[]) {
+            sum[k] += Math.max(0, Number(p[k]) || 0) * strength;
+        }
+    }
+    if (!sawProfile || ships <= 0) return { ...IDENTITY_TUNING };
+
+    const per = (k: keyof typeof sum) => sum[k] / ships;
+    const weapons = per('energy') + per('kinetic') + per('explosive');
+    const totalAttack = sum.energy + sum.kinetic + sum.explosive;
+    const e = totalAttack > 0 ? sum.energy / totalAttack : 0;
+    const k = totalAttack > 0 ? sum.kinetic / totalAttack : 0;
+    const x = totalAttack > 0 ? sum.explosive / totalAttack : 0;
+    const r = TUNING_RATES;
+    return {
+        shieldMult: 1 + r.shieldPerModule * per('shield'),
+        armorBonus: Math.min(r.armorCap, r.armorPerModule * per('armor')),
+        speedMult: 1 + r.speedPerModule * per('evasion'),
+        weaponMult: 1 + r.weaponPerModule * weapons,
+        vsShield: 1 + r.mixSwing * (e - k),
+        vsHull: 1 + r.mixSwing * (k - e),
+        pierceBonus: r.explosivePierce * x,
+    };
 }
 
 /**

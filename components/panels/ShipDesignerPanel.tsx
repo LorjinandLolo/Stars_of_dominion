@@ -29,6 +29,7 @@ import {
 import type { DesignSummary, HullSlot, ShipClassId, ShipDesign, SlotType } from '@/lib/combat/ship-types';
 import UnitIcon from '@/components/units/UnitIcon';
 import { formatBuildTime, formatCredits } from '@/components/units/ShipDesignPicker';
+import { HULL_SPEED_FACTORS } from '@/lib/combat/fleet-speed';
 
 const SLOT_META: Record<SlotType, { label: string; icon: React.ReactNode; tint: string }> = {
     weapon: { label: 'Weapon', icon: <Sword size={16} />, tint: 'text-red-400' },
@@ -494,6 +495,9 @@ function Specs({ summary, bare, standard, standardName }: {
                     <div className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-1"><Clock size={9} /> Build</div>
                     <div className="text-white mt-1">{formatBuildTime(summary.buildTime)}</div>
                     <div className="text-slate-400">{summary.buildTime > bare.buildTime ? `+${formatBuildTime(summary.buildTime - bare.buildTime)} fit` : 'bare hull'}</div>
+                    <div className="text-slate-400" title="Strategic lane speed: the slowest hull in a fleet sets the pace; Thrusters and Afterburners add to it.">
+                        {`Lane speed ×${(HULL_SPEED_FACTORS[summary.hullId] * (1 + summary.speedMult)).toFixed(2)}`}{summary.speedMult > 0 ? ` (+${Math.round(summary.speedMult * 100)}% fit)` : ''}
+                    </div>
                 </div>
             </div>
 

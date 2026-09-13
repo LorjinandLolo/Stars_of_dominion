@@ -133,6 +133,8 @@ export interface RecruitSpec {
     unitPower: number;
     /** Per-ship design signature. Only set for ships. */
     unitProfile?: DesignProfile;
+    /** Per-ship lane-speed bonus from the fit (lib/combat/fleet-speed.ts). Only set for ships. */
+    unitSpeedMult?: number;
     /** Per-unit price in faction-reserve keys (CREDITS/METALS/...). */
     cost: Record<string, number>;
     /** Seconds per unit. */
@@ -214,6 +216,7 @@ export function resolveRecruitSpec(
             designName: design.name,
             unitPower: summary.power,
             unitProfile: summary.profile,
+            unitSpeedMult: summary.speedMult,
             cost: { CREDITS: summary.cost.CREDITS, METALS: summary.cost.METALS },
             buildTime: summary.buildTime,
         },

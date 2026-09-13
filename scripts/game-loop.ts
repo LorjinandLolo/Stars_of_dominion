@@ -27,6 +27,7 @@ const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-manager';
 import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
+import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
 import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movement/belts';
@@ -1360,6 +1361,7 @@ function queueFormationRecruit(
             classKey: spec.classKey,
             unitPower: spec.unitPower,
             unitProfile: spec.unitProfile,
+            unitSpeedMult: spec.unitSpeedMult,
         },
     );
     job.targetFormationId = formationId;
@@ -4410,6 +4412,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 for (const [designId, n] of Object.entries(src.designCounts)) {
                     tgt.designCounts[designId] = (tgt.designCounts[designId] ?? 0) + (Number(n) || 0);
                 }
+            }
+            // Lane-speed bonus blends by ship count (the composition above is
+            // already merged, so the target's own count is the difference).
+            {
+                const srcShips = shipCountOf(src.composition);
+                tgt.designSpeedBonus = blendSpeedBonus(
+                    tgt.designSpeedBonus, shipCountOf(tgt.composition) - srcShips,
+                    src.designSpeedBonus, srcShips);
             }
 
             // Strength becomes the power-weighted average; power adds up.

@@ -214,13 +214,35 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
 - **Worker supervisor.** `npm run worker:forever` (`scripts/worker-forever.js`)
   restarts the worker whenever it exits; the hang watchdog exits on purpose
   and nothing restarted it on a dev machine.
+## Designs move fleets and reach the tactical sim (2026-09-14)
+
+- **Lane speed follows the fleet** (`lib/combat/fleet-speed.ts`, tests
+  `npx tsx lib/combat/fleet-speed-tests.ts`). The slowest hull aboard sets
+  the pace (`HULL_SPEED_FACTORS`: corvette 1.2, destroyer 1.05, cruiser 0.9,
+  carrier 0.8, battleship 0.75) and the designs add to it: Thrusters
+  `speedMult` 0.10, Afterburners 0.20, summed by `summarizeDesign` into
+  `DesignSummary.speedMult`, carried by `resolveRecruitSpec` as
+  `unitSpeedMult`, and kept on the fleet as a ship-weighted average
+  `designSpeedBonus` (recruitment completion, merge; split copies it).
+  `effectiveEdgeCost` multiplies the layer speed by `fleetSpeedFactor`.
+  Fleets from before the stamp get the hull factor and a bonus of 0.
+  Every fleet used to cross a lane in the same time.
+- **Designs reach the tactical sim** (`lib/tactical/fleet-adapter.ts`
+  `designTuningFor`, `DesignTuning` in `lib/tactical/types.ts`). Per side,
+  the fleets' summed `designProfile` divided by hulls aboard becomes:
+  shields ×(1 + 0.25·S), armour +0.08·A per aspect (cap +0.30), speed
+  ×(1 + 0.08·E), weapon damage ×(1 + 0.05·W), and the attack mix swings
+  shield damage vs hull damage by ±30% (energy vs kinetic) with explosive
+  adding up to 0.25 shield pierce. Applied at spawn (`spawnShip`), in
+  `effectiveMaxSpeed`, at every fire site and in `applyDamage`
+  (`vsShield`/`vsHull` options, target side's `armorBonus`). No profile
+  → identity, the same rule as the strategic engine. The battle the player
+  watches used to ignore the designer entirely.
 ## Not done / next
 
-- Fleet movement speed ignores design (thrusters affect the signature only).
 - Reinforcements arriving mid-battle join the roster but not the side's hp.
 - A lone hostile fleet over an armed world is not engaged by the defenses (no fleet battle, no fortification).
-- The tactical sim (`lib/tactical/ship-defs.ts`) has its own per-class weapon
-  loadouts; designs do not yet feed it.
+- The tactical sim still fields each class's fixed loadout; designs tune it (shields, armour, speed, damage, mix) rather than replacing the weapons.
 - Refit: existing ships keep the fit they were built with. A refit order would
   be a per-fleet job that rewrites `designProfile`/`designCounts`.
 - Espionage could reveal a rival's designs through intel reports.

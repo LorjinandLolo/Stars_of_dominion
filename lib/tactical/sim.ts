@@ -36,6 +36,8 @@ import {
     FACING_PORT,
 } from './types';
 import { SHIP_CLASSES, SQUADRON_DEFS, freshSubsystems } from './ship-defs';
+import { IDENTITY_TUNING } from './types';
+import type { DesignTuning } from './types';
 
 const STEP = 1 / 30;             // internal fixed step (seconds)
 const ARRIVAL_DELAY = 4;         // reinforcement warp-in time
@@ -101,6 +103,9 @@ export interface BattleConfig {
     playerHasAdmiral?: boolean;
     enemyHasAdmiral?: boolean;
     timeLimit?: number;
+    /** Ship-design tuning per side (fleet-adapter designTuningFor). Identity when omitted. */
+    playerTuning?: DesignTuning;
+    enemyTuning?: DesignTuning;
 }
 
 function makeSide(
@@ -108,7 +113,8 @@ function makeSide(
     reserves: ReserveEntry[],
     plan: BattlePlan,
     strengthMult: number,
-    hasAdmiral: boolean
+    hasAdmiral: boolean,
+    tuning: DesignTuning = IDENTITY_TUNING
 ): SideState & { startHull: number } {
     return {
         capacity,
@@ -116,6 +122,7 @@ function makeSide(
         plan,
         withdrawing: false,
         strengthMult: Math.min(1, Math.max(0.3, strengthMult)),
+        tuning: { ...IDENTITY_TUNING, ...tuning },
         commandAbilities: hasAdmiral
             ? [
                 { id: 'coordinated_volley', cooldownRemaining: 0 },
@@ -141,11 +148,11 @@ export function createBattle(config: BattleConfig): BattleState {
         player: makeSide(
             config.playerCapacity ?? 12, config.playerReserves,
             config.playerPlan ?? { posture: 'balanced', retreatBelowFleetStrength: 0 },
-            config.playerStrength ?? 1, config.playerHasAdmiral ?? false),
+            config.playerStrength ?? 1, config.playerHasAdmiral ?? false, config.playerTuning),
         enemy: makeSide(
             config.enemyCapacity ?? 12, config.enemyReserves,
             config.enemyPlan ?? { posture: 'balanced', retreatBelowFleetStrength: 0.2 },
-            config.enemyStrength ?? 1, config.enemyHasAdmiral ?? false),
+            config.enemyStrength ?? 1, config.enemyHasAdmiral ?? false, config.enemyTuning),
         outcome: null,
         events: [],
         timeLimit: config.timeLimit ?? 480,
@@ -202,7 +209,8 @@ function spawnShip(
     const x = s === 'player' ? state.edgeZone + 40 : state.width - state.edgeZone - 40;
     const y = state.height / 2 + (fielded % 2 === 0 ? 1 : -1) * Math.ceil(fielded / 2) * 70;
     const hullMult = Math.min(1, Math.max(0.3, strengthMult));
-    const facing = def.maxShield / 4;
+    // Design: Deflectors and Hardened Shields grow the pool (fleet-adapter designTuningFor).
+    const facing = (def.maxShield * side(state, s).tuning.shieldMult) / 4;
     const ship: TacticalShip = {
         id: `ship-${state.nextId++}`,
         side: s,
@@ -659,7 +667,7 @@ function step(state: BattleState, h: number) {
 
 function effectiveMaxSpeed(state: BattleState, ship: TacticalShip): number {
     const def = SHIP_CLASSES[ship.classId];
-    let v = def.maxSpeed;
+    let v = def.maxSpeed * side(state, ship.side).tuning.speedMult;
     if (ship.hull < def.maxHull * LOW_HULL_FRACTION) v *= 0.5;
     if (ship.subsystems && ship.subsystems.engines <= 0) v *= ENGINES_DISABLED_SPEED_MULT;
     if (insideHazard(state, 'asteroid', ship.x, ship.y)) v *= ASTEROID_SPEED_MULT;
@@ -768,6 +776,10 @@ export interface DamageOpts {
     shieldPierce?: number;
     /** Called shot: a share of resulting hull damage also degrades this subsystem. */
     subsystem?: SubsystemId | null;
+    /** Design mix of the shooter: multiplier while the damage is eating shields. */
+    vsShield?: number;
+    /** Design mix of the shooter: multiplier once the damage reaches hull. */
+    vsHull?: number;
 }
 
 export function applyDamage(state: BattleState, target: TacticalShip, amount: number, opts: DamageOpts = {}) {
@@ -787,16 +799,24 @@ export function applyDamage(state: BattleState, target: TacticalShip, amount: nu
         : def.armor.fore;
 
     // Split: pierce fraction skips shields; the rest chews the facing first.
+    // The shooter's design mix scales each leg (energy bites shields, kinetic
+    // bites hull); the target's Plating adds to every armour aspect.
+    const vsShield = opts.vsShield ?? 1;
+    const vsHull = opts.vsHull ?? 1;
     const pierce = Math.min(1, Math.max(0, opts.shieldPierce ?? 0));
-    let hullDamage = dmg * pierce;
-    let shieldBound = dmg * (1 - pierce);
+    let hullDamage = dmg * pierce * vsHull;
+    const shieldBound = dmg * (1 - pierce);
 
-    const absorbed = Math.min(target.shields[facing], shieldBound);
+    const shieldHit = shieldBound * vsShield;
+    const absorbed = Math.min(target.shields[facing], shieldHit);
     target.shields[facing] -= absorbed;
-    hullDamage += shieldBound - absorbed;
+    // What the shields did not stop carries on to the hull, at the hull rate.
+    const leftover = shieldHit > 0 ? (shieldHit - absorbed) / vsShield : 0;
+    hullDamage += leftover * vsHull;
 
     if (hullDamage > 0) {
-        const throughArmor = hullDamage * (1 - Math.min(0.9, Math.max(0, armor)));
+        const armorBonus = side(state, target.side).tuning.armorBonus;
+        const throughArmor = hullDamage * (1 - Math.min(0.9, Math.max(0, armor + armorBonus)));
         target.hull -= throughArmor;
 
         // Called shot: degrade the targeted subsystem alongside the hull.
@@ -946,8 +966,10 @@ function tickWeapons(state: BattleState, ship: TacticalShip, h: number) {
             if (calledShot && Math.random() < SUBSYSTEM_TARGET_MISS_CHANCE) {
                 continue; // clean miss
             }
-            applyDamage(state, target, weapon.damage, {
+            const tuning = side(state, ship.side).tuning;
+            applyDamage(state, target, weapon.damage * tuning.weaponMult, {
                 sourceX: ship.x, sourceY: ship.y, subsystem: calledShot,
+                shieldPierce: tuning.pierceBonus, vsShield: tuning.vsShield, vsHull: tuning.vsHull,
             });
             state.beams.push({
                 x1: ship.x, y1: ship.y, x2: target.x, y2: target.y,
@@ -997,8 +1019,10 @@ function tickTorpedoes(state: BattleState, h: number) {
         const dist = Math.hypot(dx, dy);
         const hitDist = SHIP_CLASSES[target.classId].radius + 5;
         if (dist <= hitDist) {
-            applyDamage(state, target, torp.damage, {
+            const tuning = side(state, torp.side).tuning;
+            applyDamage(state, target, torp.damage * tuning.weaponMult, {
                 sourceX: torp.x, sourceY: torp.y, subsystem: torp.subsystem ?? null,
+                shieldPierce: tuning.pierceBonus, vsShield: tuning.vsShield, vsHull: tuning.vsHull,
             });
             state.explosions.push({ x: torp.x, y: torp.y, radius: 10, expiresAt: state.time + 0.4 });
             torp.expiresAt = 0;
@@ -1150,8 +1174,10 @@ function tickSquadrons(state: BattleState, h: number) {
             }
             if (shipTarget && Math.hypot(shipTarget.x - sq.x, shipTarget.y - sq.y) <= sdef.range
                 && targetVisible(state, sq.x, sq.y, shipTarget)) {
-                applyDamage(state, shipTarget, sdef.shipDps * strengthRatio * h, {
-                    sourceX: sq.x, sourceY: sq.y, shieldPierce: sdef.shieldPierce,
+                const tuning = side(state, sq.side).tuning;
+                applyDamage(state, shipTarget, sdef.shipDps * strengthRatio * h * tuning.weaponMult, {
+                    sourceX: sq.x, sourceY: sq.y, shieldPierce: sdef.shieldPierce + tuning.pierceBonus,
+                    vsShield: tuning.vsShield, vsHull: tuning.vsHull,
                 });
             }
         }

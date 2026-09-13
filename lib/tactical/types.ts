@@ -255,6 +255,35 @@ export interface ReserveEntry {
     count: number;
 }
 
+/**
+ * How a side's ship designs bend the tactical numbers. Derived once per side
+ * from the strategic fleets' summed designProfile (fleet-adapter
+ * designTuningFor); identity for fleets built before designs existed. This is
+ * the only way the designer reaches the battle the player actually watches:
+ * the sim's per-class stats are fixed, so a Spinal Lance battleship and a
+ * bare one used to be the same ship here.
+ */
+export interface DesignTuning {
+    /** Multiplier on spawned ships' shield pool (Deflectors, Hardened Shields). */
+    shieldMult: number;
+    /** Added to every armour aspect, as a fraction of hull damage absorbed (Plating, Reactive Armor). */
+    armorBonus: number;
+    /** Multiplier on max speed (Thrusters, Afterburners). */
+    speedMult: number;
+    /** Multiplier on all weapon and strike-craft damage (more weapon modules). */
+    weaponMult: number;
+    /** Multiplier on damage while it is eating shields (energy-heavy fits). */
+    vsShield: number;
+    /** Multiplier on damage once it reaches hull (kinetic-heavy fits). */
+    vsHull: number;
+    /** Shield pierce added to the side's fire (explosive-heavy fits). */
+    pierceBonus: number;
+}
+
+export const IDENTITY_TUNING: DesignTuning = Object.freeze({
+    shieldMult: 1, armorBonus: 0, speedMult: 1, weaponMult: 1, vsShield: 1, vsHull: 1, pierceBonus: 0,
+});
+
 export interface BattlePlan {
     posture: 'aggressive' | 'balanced' | 'defensive';
     /** Withdraw all ships when fleet strength (hull fraction of starting force) drops below this. 0 = fight to the end. */
@@ -278,6 +307,8 @@ export interface SideState {
     strengthMult: number;
     /** Fleet-command abilities; empty when the side has no admiral. */
     commandAbilities: CommandAbilityState[];
+    /** What this side's ship designs do to the numbers. Identity when unknown. */
+    tuning: DesignTuning;
 }
 
 export interface BattleOutcome {

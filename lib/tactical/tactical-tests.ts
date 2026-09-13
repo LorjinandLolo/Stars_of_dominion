@@ -44,6 +44,7 @@ import {
 import { SHIP_CLASSES, SQUADRON_DEFS, freshSubsystems, classForCompositionKey } from './ship-defs';
 import {
     fleetsToReserves,
+    designTuningFor,
     fleetsStrength,
     defaultEnemyPlan,
     buildResultPayload,
@@ -1159,6 +1160,55 @@ suite('Stale squadron attack orders self-heal to carrier defence', () => {
     runPinned(state, 0.5);
     assert(bombers.order === 'defend', 'attack order on a dead target resets to defend');
     assert(bombers.targetShipId === bombers.carrierId, 'squadron falls back to guarding its carrier');
+});
+
+suite('design tuning — what the designer does to the sim', () => {
+    const none = designTuningFor([{ id: 'f', factionId: 'x', composition: { corvette: 4 } }]);
+    assert(none.shieldMult === 1 && none.weaponMult === 1 && none.armorBonus === 0 && none.pierceBonus === 0, 'no profile → identity, never a penalty');
+
+    const shieldy = designTuningFor([{ id: 'f', factionId: 'x', composition: { corvette: 4 }, designProfile: { shield: 4, energy: 4 } }]);
+    assert(Math.abs(shieldy.shieldMult - 1.25) < 1e-9, 'one Deflector per ship → +25% shields');
+    assert(Math.abs(shieldy.vsShield - 1.3) < 1e-9 && Math.abs(shieldy.vsHull - 0.7) < 1e-9, 'an all-energy mix bites shields, spares hull');
+    assert(Math.abs(shieldy.weaponMult - 1.05) < 1e-9, 'one weapon per ship → +5% damage');
+
+    const armored = designTuningFor([{ id: 'f', factionId: 'x', composition: { battleship: 2, bomber: 12 }, designProfile: { armor: 10, kinetic: 8, evasion: 2 } }]);
+    assert(Math.abs(armored.armorBonus - 0.30) < 1e-9, 'five Plating per ship caps at +30 armour points');
+    assert(Math.abs(armored.vsHull - 1.3) < 1e-9, 'an all-kinetic mix bites hull');
+    assert(Math.abs(armored.speedMult - 1.08) < 1e-9, 'one Thruster per ship → +8% speed; bombers do not dilute it');
+
+    const boomer = designTuningFor([{ id: 'f', factionId: 'x', composition: { destroyer: 2 }, designProfile: { explosive: 4 } }]);
+    assert(Math.abs(boomer.pierceBonus - 0.25) < 1e-9 && boomer.vsShield === 1, 'an all-explosive mix pierces a quarter, no shield/hull swing');
+
+    const halved = designTuningFor([{ id: 'f', factionId: 'x', composition: { corvette: 4 }, strength: 0.5, designProfile: { shield: 4 } }]);
+    assert(Math.abs(halved.shieldMult - 1.25) < 1e-9, 'strength scales ships and profile alike, so the per-ship average holds');
+});
+
+suite('design tuning — spawn and damage', () => {
+    const state = createBattle({
+        playerReserves: [R('battleship', 1)], enemyReserves: [R('battleship', 1)],
+        playerTuning: { shieldMult: 2, armorBonus: 0, speedMult: 1, weaponMult: 1, vsShield: 1, vsHull: 1, pierceBonus: 0 },
+        enemyTuning: { shieldMult: 1, armorBonus: 0.2, speedMult: 1, weaponMult: 1, vsShield: 1, vsHull: 1, pierceBonus: 0 },
+    });
+    const mine = fielded(state, 'player', 'battleship')[0];
+    const theirs = fielded(state, 'enemy', 'battleship')[0];
+    const def = SHIP_CLASSES.battleship;
+    const pool = (sh: TacticalShip) => sh.shields.reduce((a, b) => a + b, 0);
+    assert(Math.abs(pool(mine) - def.maxShield * 2) < 1e-6, 'shieldMult doubles the spawned shield pool');
+    assert(Math.abs(pool(theirs) - def.maxShield) < 1e-6, 'the other side spawns at the class value');
+
+    const facingBefore = theirs.shields[0];
+    applyDamage(state, theirs, 10, { vsShield: 2 });
+    assert(Math.abs((facingBefore - theirs.shields[0]) - 20) < 1e-6, 'vsShield 2 takes twice the damage off the facing');
+    assert(Math.abs(theirs.hull - def.maxHull) < 1e-6, 'and none of it reached the hull');
+
+    const hullBefore = theirs.hull;
+    applyDamage(state, theirs, 10, { shieldPierce: 1, vsHull: 2 });
+    const expectedLoss = 20 * (1 - Math.min(0.9, def.armor.fore + 0.2));
+    assert(Math.abs((hullBefore - theirs.hull) - expectedLoss) < 1e-6, 'a pierced shot at vsHull 2 lands double, through the target side\'s armorBonus');
+
+    const myHullBefore = mine.hull;
+    applyDamage(state, mine, 10, { shieldPierce: 1, vsHull: 2 });
+    assert(Math.abs((myHullBefore - mine.hull) - 20 * (1 - def.armor.fore)) < 1e-6, 'a side without armorBonus takes the class armour only');
 });
 
 console.log('\n✅ All tests completed.\n');

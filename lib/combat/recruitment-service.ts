@@ -9,6 +9,7 @@
 
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from './siege/siege-types';
 import { addProfile, normalizeComposition, normalizeUnitKey, unitConfigFor } from './ship-registry';
+import { blendSpeedBonus, shipCountOf } from './fleet-speed';
 import type { DesignProfile } from './ship-types';
 
 /** Fields a job may carry beyond the siege-types base shape. */
@@ -25,6 +26,8 @@ export interface RecruitmentJobExtras {
     unitPower?: number;
     /** Per-ship design signature. */
     unitProfile?: DesignProfile;
+    /** Per-ship lane-speed bonus from the design (blended into fleet.designSpeedBonus on completion). */
+    unitSpeedMult?: number;
 }
 
 export type RecruitmentJobRecord = RecruitmentJob & RecruitmentJobExtras;
@@ -37,6 +40,7 @@ export interface CreateJobOptions {
     classKey?: string;
     unitPower?: number;
     unitProfile?: DesignProfile;
+    unitSpeedMult?: number;
 }
 
 export class RecruitmentService {
@@ -88,6 +92,7 @@ export class RecruitmentService {
         if (options.classKey) job.classKey = options.classKey;
         if (options.unitPower !== undefined) job.unitPower = options.unitPower;
         if (options.unitProfile) job.unitProfile = options.unitProfile;
+        if (options.unitSpeedMult !== undefined) job.unitSpeedMult = options.unitSpeedMult;
         return job;
     }
 
@@ -139,6 +144,14 @@ export class RecruitmentService {
                     if (job.designId) {
                         if (!fleet.designCounts) fleet.designCounts = {};
                         fleet.designCounts[job.designId] = (fleet.designCounts[job.designId] || 0) + job.count;
+                    }
+                    // Lane speed: the fleet's design bonus is a ship-weighted
+                    // average, and the composition above already counts the
+                    // new ships. Standard patterns carry 0 and still count.
+                    if (job.unitSpeedMult !== undefined) {
+                        fleet.designSpeedBonus = blendSpeedBonus(
+                            fleet.designSpeedBonus, shipCountOf(fleet.composition) - job.count,
+                            job.unitSpeedMult, job.count);
                     }
                     console.log(`[Recruitment] Completed ${job.count}x ${job.designName ?? job.unitType} for Fleet ${fleet.name}`);
                 }

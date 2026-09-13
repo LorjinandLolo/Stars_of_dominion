@@ -55,6 +55,8 @@ export interface ComponentDefinition {
     description: string;
     /** Fraction of the hull's basePower this module adds (0.10 = +10%). */
     powerMult: number;
+    /** Fraction added to the ship's strategic lane speed (Thrusters 0.10, Afterburners 0.20). See lib/combat/fleet-speed.ts. */
+    speedMult?: number;
     /** Energy drawn (> 0) or produced (< 0). */
     energy: number;
     profile?: Partial<DesignProfile>;
@@ -88,6 +90,8 @@ export interface DesignSummary {
     /** Faction-reserve keys, ready for the worker's charge helper. */
     cost: { CREDITS: number; METALS: number };
     buildTime: number;
+    /** Sum of the fitted modules' speedMult — the design's lane-speed bonus. */
+    speedMult: number;
     energyProduced: number;
     energyDrawn: number;
     energyBalance: number;

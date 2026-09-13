@@ -254,6 +254,7 @@ export const SHIP_COMPONENTS: ComponentDefinition[] = [
         type: 'utility',
         description: 'Vectored thrust for evasive burns. Sidesteps missiles and torpedoes.',
         powerMult: 0.04,
+        speedMult: 0.10,
         energy: 5,
         profile: { evasion: 1 },
         cost: { credits: 120, metals: 50 },
@@ -289,6 +290,7 @@ export const SHIP_COMPONENTS: ComponentDefinition[] = [
         type: 'utility',
         description: 'Emergency combustion. Nothing explosive catches a hull that lights these in time.',
         powerMult: 0.06,
+        speedMult: 0.20,
         energy: 12,
         profile: { evasion: 1.6 },
         cost: { credits: 220, metals: 80 },
@@ -523,6 +525,7 @@ export function summarizeDesign(
             power: 0,
             cost: { CREDITS: 0, METALS: 0 },
             buildTime: 0,
+            speedMult: 0,
             energyProduced: 0,
             energyDrawn: 0,
             energyBalance: 0,
@@ -540,6 +543,8 @@ export function summarizeDesign(
     else if (name.length > MAX_DESIGN_NAME_LENGTH) issues.push(`Name is longer than ${MAX_DESIGN_NAME_LENGTH} characters.`);
 
     let powerMult = 1;
+
+    let speedMult = 0;
     let credits = hull.baseCost.credits;
     let metals = hull.baseCost.metals;
     let buildTime = hull.baseBuildTime;
@@ -570,6 +575,7 @@ export function summarizeDesign(
         }
         fitted += 1;
         powerMult += comp.powerMult;
+        speedMult += comp.speedMult ?? 0;
         credits += comp.cost.credits;
         metals += comp.cost.metals;
         buildTime += comp.buildTime;
@@ -593,6 +599,7 @@ export function summarizeDesign(
         power: Math.max(1, Math.round(hull.basePower * powerMult)),
         cost: { CREDITS: Math.round(credits), METALS: Math.round(metals) },
         buildTime: Math.round(buildTime),
+        speedMult: Math.round(speedMult * 100) / 100,
         energyProduced,
         energyDrawn,
         energyBalance,

@@ -332,6 +332,12 @@ export interface Fleet {
     designProfile?: DesignProfile;
     /** designId -> ships of that design aboard. Display only; power lives in basePower. */
     designCounts?: Record<string, number>;
+    /**
+     * Ship-weighted average lane-speed bonus of the designs aboard (Thrusters
+     * 0.10, Afterburners 0.20). Multiplies layer speed together with the
+     * slowest hull class — see lib/combat/fleet-speed.ts. Absent = 0.
+     */
+    designSpeedBonus?: number;
     /** Hyperdrive profile this fleet uses for layer modifiers. */
     hyperdriveProfile: HyperdriveProfile;
     /** Whether this fleet is detectable above threshold (ui hint). */

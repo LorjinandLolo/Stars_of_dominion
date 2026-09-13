@@ -46,6 +46,7 @@ import {
     defaultEnemyPlan,
     fleetsStrength,
     fleetsToReserves,
+    designTuningFor,
     type StrategicFleetLike,
 } from '@/lib/tactical/fleet-adapter';
 import { FastForward, Flag, Pause, Play, X, Zap } from 'lucide-react';
@@ -155,6 +156,10 @@ export default function TacticalBattleView({
             enemyReserves: fleetsToReserves(enemyFleets),
             playerStrength: fleetsStrength(playerFleets),
             enemyStrength: fleetsStrength(enemyFleets),
+            // The designer reaches the battle the player watches: shields,
+            // armour, speed and the weapon mix come from the fleets' designs.
+            playerTuning: designTuningFor(playerFleets),
+            enemyTuning: designTuningFor(enemyFleets),
             enemyPlan: defaultEnemyPlan(),
             hazards,
             playerHasAdmiral,

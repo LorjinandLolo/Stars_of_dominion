@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { eventBus } from './event-bus';
 import config from './movement-config.json';
+import { fleetSpeedFactor } from '../combat/fleet-speed';
 
 // ─── Travel speed tuning ──────────────────────────────────────────────────────
 
@@ -161,7 +162,10 @@ function effectiveEdgeCost(
     // Speed modifier: higher = faster = lower time cost. A zero/negative/missing
     // multiplier (e.g. a fleet with no deep-space drive, or a partial snapshot
     // profile) must NOT divide to Infinity/NaN — that froze the fleet at 0%.
-    const speedMult = profile && profile.speedMultiplier > 0 ? profile.speedMultiplier : 1.0;
+    // What the fleet is made of: the slowest hull sets the pace, Thrusters and
+    // Afterburners on its designs add to it (lib/combat/fleet-speed.ts). Every
+    // fleet used to cross a lane in the same time whatever it was.
+    const speedMult = (profile && profile.speedMultiplier > 0 ? profile.speedMultiplier : 1.0) * fleetSpeedFactor(fleet);
     let cost = edge.baseTravelSeconds / speedMult;
 
     // Gate: add cooldown penalty if recently jumped
