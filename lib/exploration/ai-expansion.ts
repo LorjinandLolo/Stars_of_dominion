@@ -120,6 +120,7 @@ export function tickAIExpansion(world: GameWorldState): void {
                 factionId,
                 name: `${faction.name ?? factionId} Survey Wing`,
                 currentSystemId: capital,
+                arrivedAtSeconds: world.nowSeconds,
                 destinationSystemId: null,
                 activeLayer: null,
                 transitProgress: 0,

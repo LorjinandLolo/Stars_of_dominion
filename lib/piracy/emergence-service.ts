@@ -157,6 +157,7 @@ function createRaiderFleet(sys: SystemNode, world: GameWorldState, rng: RNG): Fl
         factionId: PIRATE_FACTION_ID,
         organizationId: null,
         currentSystemId: sys.id,
+        arrivedAtSeconds: world.nowSeconds,
         destinationSystemId: null,
         plannedPath: [],
         transitProgress: 0,

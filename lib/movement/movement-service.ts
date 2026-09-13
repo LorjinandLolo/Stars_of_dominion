@@ -355,6 +355,7 @@ export function recoverStrandedFleet(
     return {
         ...fleet,
         currentSystemId: snapTo,
+        arrivedAtSeconds: world.nowSeconds,
         destinationSystemId: null,
         originSystemId: null,
         plannedPath: [],
@@ -501,6 +502,7 @@ export function changeFleetCourse(
     const anchoredAt = (systemId: string): Fleet => ({
         ...fleet,
         currentSystemId: systemId,
+        arrivedAtSeconds: world.nowSeconds,
         destinationSystemId: null,
         plannedPath: [],
         transitProgress: 0,
@@ -625,6 +627,7 @@ export function advanceFleet(
         return {
             ...fleet,
             currentSystemId: arrived ? hopTo : null,
+            arrivedAtSeconds: arrived ? world.nowSeconds : fleet.arrivedAtSeconds,
             destinationSystemId: arrived ? null : fleet.destinationSystemId,
             originSystemId: arrived ? null : fleet.originSystemId,
             transitProgress: arrived ? 0 : newProgress - 1.0,

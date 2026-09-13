@@ -2,22 +2,15 @@
 import { GameWorldState } from '../game-world-state';
 import { Fleet } from '../movement/types';
 import { notifyTitleMetric, COUNTER_FLEET_POWER_DESTROYED } from '../titles/metrics';
-import { 
-    CombatantState, 
-    CombatState, 
-    UnitComposition, 
-    IntelLevel, 
-    EngagementArchetype,
-    CombatStance
-} from './combat-types';
+import { CombatantState, CombatState } from './combat-types';
 import {
     initiateCombat,
     resolveEngagementRound,
-    advanceRound
+    advanceRound,
+    checkAnnihilation,
+    applyPostBattleDirective,
 } from './combat-engine';
 import { getTechModifiers } from '../tech/modifiers';
-import { addProfile, normalizeComposition } from './ship-registry';
-import type { DesignProfile } from './ship-types';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../tech/deed-metrics';
 import { getBrutalityBonus, recordTrophyKill, shouldRoutFromFear, FEAR_ROUT_GRACE_SECONDS } from '../factions/kaerruun';
@@ -28,9 +21,18 @@ import { FIREBLOOD_FLEET_COEFF, isInfernoid, recordDetonation } from '../faction
 import { issueMoveOrder } from '../movement/movement-service';
 import { AMBUSH_FRESH_SECONDS, AMBUSH_ORGANIZATION_FACTOR } from '../movement/belts';
 import { RNG, seedFromString } from '../trade-system/rng';
+import {
+    pickRoles,
+    snapshotForce,
+    refreshCombatant,
+    breakingFleets,
+    PURSUIT_STRENGTH_LOSS,
+} from './engagement-rules';
 
 /** Engine default for a correct stance prediction (combat-engine.ts:259). */
 const BASE_PREDICTION_BONUS = 0.15;
+
+type BattleEnd = NonNullable<CombatState['outcome']>['reason'];
 
 /**
  * Handles real-time detection and resolution of fleet engagements.
@@ -48,9 +50,12 @@ export function processSectorCombats(world: GameWorldState) {
 
     const systemsWithFleets = new Map<string, Fleet[]>();
 
-    // 1. Group fleets by system
+    // 1. Group fleets by system. A fleet that has been ordered out
+    // (destinationSystemId set) is leaving, not holding: it stops fighting the
+    // cycle it disengages rather than eating one more round on the way out.
     for (const fleet of world.movement.fleets.values()) {
         if (!fleet.currentSystemId) continue; // In transit
+        if (fleet.destinationSystemId) continue; // Departing
         const list = systemsWithFleets.get(fleet.currentSystemId) || [];
         list.push(fleet);
         systemsWithFleets.set(fleet.currentSystemId, list);
@@ -86,22 +91,52 @@ export function processSectorCombats(world: GameWorldState) {
             }
         }
     }
+
+    sweepStaleCombats(world, systemsWithFleets);
 }
 
 function areAtWar(fA: string, fB: string, world: GameWorldState): boolean {
     const rivalryId = `rivalry-${fA}-${fB}`;
     const reverseRivalryId = `rivalry-${fB}-${fA}`;
     const rivalry = world.rivalries.get(rivalryId) || world.rivalries.get(reverseRivalryId);
-    
+
     // Direct War is escalation level 7
     return (rivalry?.escalationLevel || 0) >= 7;
 }
 
+/**
+ * Battles whose two sides are no longer both in the system: one withdrew
+ * (retreat order, rout, or simply moved on) or was wiped between passes. The
+ * old code only touched a CombatState from inside handleEngagement, which is
+ * only reached while BOTH factions still have fleets there, so such a state
+ * sat in activeCombats forever. A finished battle stays one more pass for the
+ * UI, then goes.
+ */
+function sweepStaleCombats(world: GameWorldState, systemsWithFleets: Map<string, Fleet[]>) {
+    for (const [id, state] of world.activeCombats) {
+        if (state.resolved) {
+            if ((state.outcome?.endedAtSeconds ?? -Infinity) < world.nowSeconds) world.activeCombats.delete(id);
+            continue;
+        }
+        const here = systemsWithFleets.get(state.target.systemId) ?? [];
+        const attackerFleets = here.filter(f => f.factionId === state.attacker.factionId);
+        const defenderFleets = here.filter(f => f.factionId === state.defender.factionId);
+        if (attackerFleets.length && defenderFleets.length) continue;
+
+        const winnerId = attackerFleets.length ? state.attacker.factionId
+            : defenderFleets.length ? state.defender.factionId
+            : null;
+        // Finished in place; the resolved branch above drops it next pass, so
+        // the UI (and tests) see the outcome once.
+        finishBattle(world, state, 'withdrawal', winnerId, attackerFleets, defenderFleets);
+    }
+}
+
 function handleEngagement(
-    systemId: string, 
-    factionA: string, 
-    factionB: string, 
-    allFleetsInSystem: Fleet[], 
+    systemId: string,
+    factionA: string,
+    factionB: string,
+    allFleetsInSystem: Fleet[],
     world: GameWorldState
 ) {
     const combatId = `combat-${systemId}-${factionA}-${factionB}`;
@@ -111,14 +146,24 @@ function handleEngagement(
     const fleetsB = allFleetsInSystem.filter(f => f.factionId === factionB);
 
     if (!state) {
-        // Initiate new combat
-        const attacker = createCombatant(factionA, fleetsA, 'attacker', world);
-        const defender = createCombatant(factionB, fleetsB, 'defender', world);
+        // Roles: whoever arrived last is attacking; the side that was already
+        // there (or owns the system) defends and gets the defender's terrain,
+        // stance default and the tie on orbital control. Faction A used to be
+        // the attacker purely by iteration order.
+        const owner = world.movement.systems.get(systemId)?.ownerFactionId ?? null;
+        const roles = pickRoles(fleetsA, fleetsB, owner);
+        const attackerId = roles.swapped ? factionB : factionA;
+        const defenderId = roles.swapped ? factionA : factionB;
+
+        const attacker = createCombatant(attackerId, roles.attackerFleets, 'attacker', world);
+        const defender = createCombatant(defenderId, roles.defenderFleets, 'defender', world);
 
         // Fear Aura — the only genuine pre-contact moment on the server path.
         // Both combatants are fully built, the raw fleet arrays are still in
         // scope, and the first round has not been resolved.
-        if (applyFearAura(world, combatId, factionA, attacker.hp, fleetsA, factionB, defender.hp, fleetsB)) {
+        if (applyFearAura(world, combatId,
+            attackerId, attacker.hp, roles.attackerFleets,
+            defenderId, defender.hp, roles.defenderFleets)) {
             return; // somebody broke and ran — no engagement this cycle
         }
 
@@ -141,118 +186,286 @@ function handleEngagement(
             f.ambushedBy?.factionId === byFaction &&
             f.ambushedBy?.systemId === systemId &&
             world.nowSeconds - f.ambushedBy.atSeconds <= AMBUSH_FRESH_SECONDS);
-        const aAmbushedByB = ambushOf(fleetsA, factionB);
-        const bAmbushedByA = ambushOf(fleetsB, factionA);
-        if (bAmbushedByA) {
+        if (ambushOf(roles.defenderFleets, attackerId)) {
             state.momentum = 1;
             state.defender.organization *= AMBUSH_ORGANIZATION_FACTOR;
-            for (const f of fleetsB) f.ambushedBy = null;
-            console.log(`[CombatManager] ${factionA} ambushed ${factionB} from the belt at ${systemId}`);
-        } else if (aAmbushedByB) {
+            for (const f of roles.defenderFleets) f.ambushedBy = null;
+            console.log(`[CombatManager] ${attackerId} ambushed ${defenderId} from the belt at ${systemId}`);
+        } else if (ambushOf(roles.attackerFleets, defenderId)) {
             state.momentum = -1;
             state.attacker.organization *= AMBUSH_ORGANIZATION_FACTOR;
-            for (const f of fleetsA) f.ambushedBy = null;
-            console.log(`[CombatManager] ${factionB} ambushed ${factionA} from the belt at ${systemId}`);
+            for (const f of roles.attackerFleets) f.ambushedBy = null;
+            console.log(`[CombatManager] ${defenderId} ambushed ${attackerId} from the belt at ${systemId}`);
         }
 
         world.activeCombats.set(combatId, state);
-        console.log(`[CombatManager] Initiated engagement at ${systemId} between ${factionA} and ${factionB}`);
+        console.log(`[CombatManager] Initiated engagement at ${systemId}: ${attackerId} attacks ${defenderId}`);
     }
 
-    // Advance round if not resolved
-    if (!state.resolved) {
-        // createCombatant runs only once, when the engagement is created, so a
-        // snapshot taken then would keep paying out a serum that has since worn
-        // off — and would never let a withdrawal bite mid-battle. Brutality only
-        // ever rises, so it can stay snapshotted; the serum cannot.
-        // The capacola surge is refreshed here for exactly the same reason as the
-        // serum: it expires, and a snapshot taken at engagement creation would
-        // keep paying out a surge that has worn off and would never let the crash
-        // bite mid-battle.
-        // Phase-shields are recomputed per round for the same reason: they GROW
-        // with elapsedRounds, so a value snapshotted at engagement creation would
-        // freeze at zero and the mechanic would never fire at all.
-        const elapsed = state.elapsedRounds ?? 0;
-        state.attacker.traitBonuses = {
-            ...state.attacker.traitBonuses,
-            serum: getSerumBonus(world, state.attacker.factionId),
-            capacola: getSurgeBonus(world, state.attacker.factionId),
-            phaseShield: phaseShieldBonus(world, state.attacker.factionId, elapsed, false),
-        };
-        state.defender.traitBonuses = {
-            ...state.defender.traitBonuses,
-            serum: getSerumBonus(world, state.defender.factionId),
-            capacola: getSurgeBonus(world, state.defender.factionId),
-            phaseShield: phaseShieldBonus(world, state.defender.factionId, elapsed, true),
-        };
-        try {
-            const report = resolveEngagementRound(state, {
-                roundNumber: state.round,
-                attackerStance: state.attacker.selectedStance || 'shock', 
-                defenderStance: state.defender.selectedStance || 'entrench',
-                attackerPredictedStance: state.attacker.selectedPrediction,
-                defenderPredictedStance: state.defender.selectedPrediction
-            });
+    // Live fleets per role. Roles are fixed for the life of the battle.
+    const fleetsAtk = state.attacker.factionId === factionA ? fleetsA : fleetsB;
+    const fleetsDef = fleetsAtk === fleetsA ? fleetsB : fleetsA;
 
-            console.log(`[CombatManager] Round ${state.round} resolved at ${systemId}. Dmg A: ${report.attackerDamageDealt.toFixed(1)}, Dmg B: ${report.defenderDamageDealt.toFixed(1)}`);
-
-            // Sync damage back to fleets
-            applyDamageToFleets(fleetsA, report.defenderDamageDealt);
-            applyDamageToFleets(fleetsB, report.attackerDamageDealt);
-
-            // Remove annihilated fleets (strength reduced to 0). Otherwise a wiped fleet
-            // lingered in-system with a hostile faction and a fresh no-op combat was
-            // re-initiated against it every tick ("zombie" engagements).
-            for (const fleet of [...fleetsA, ...fleetsB]) {
-                if (fleet.strength <= 0) {
-                    // processSectorCombats hands every hostile pair in a system
-                    // the SAME fleet array. A fleet annihilated by the first
-                    // pair is deleted from the map but not from that array, so
-                    // without this guard the next pair counted the corpse
-                    // again — a second "fleet lost", a kill credited to a
-                    // faction that never fired, a second trophy.
-                    if (!world.movement.fleets.has(fleet.id)) continue;
-                    // Credit the other side before the fleet is gone — the
-                    // Reaper's Toll crown measures destroyed power per season.
-                    const killer = fleet.factionId === factionA ? factionB : factionA;
-                    notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
-                    // The saga: one line on each ledger.
-                    bumpMetric(world, killer, DEED_FLEETS_DESTROYED);
-                    bumpMetric(world, fleet.factionId, DEED_FLEETS_LOST);
-                    // Ritual Brutality: the Kaer'Ruun keep a trophy for every
-                    // kill, and it makes them permanently deadlier. This is the
-                    // only site where a kill is unambiguously attributed — note
-                    // it is coarse (a whole fleet reaching zero), and air
-                    // sorties bypass this path entirely.
-                    recordTrophyKill(world, killer);
-
-                    // Fireblood: an Infernoid hull that dies takes its killer
-                    // with it. This is the only site where a kill is
-                    // unambiguously attributed, so it is the only place the
-                    // detonation can be aimed. Note the coarseness inherited
-                    // from the trophy counter: only a WHOLE fleet reaching zero
-                    // counts, and air sorties bypass this path entirely.
-                    if (isInfernoid(world, fleet.factionId)) {
-                        const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF;
-                        if (blast > 0) {
-                            applyDamageToFleets(fleet.factionId === factionA ? fleetsB : fleetsA, blast);
-                            recordDetonation(world, fleet.factionId);
-                            console.log(`[Infernoid] ${fleet.id} detonates — ${blast.toFixed(0)} damage answered in fire.`);
-                        }
-                    }
-
-                    world.movement.fleets.delete(fleet.id);
-                }
-            }
-
-            advanceRound(state);
-        } catch (e: any) {
-            console.error(`[CombatManager] Resolution failed:`, e.message);
-        }
-    } else {
-        // Cleanup resolved combat after a delay or immediately
-        // In 1.0, we just remove it to allow new ones to start if context shifts
+    if (state.resolved) {
+        // Finished last pass; kept one pass for the UI. Drop it so a fresh
+        // engagement can start if the two are still here and still at war.
         world.activeCombats.delete(combatId);
+        return;
+    }
+
+    // createCombatant runs only once, when the engagement is created, so a
+    // snapshot taken then would keep paying out a serum that has since worn
+    // off — and would never let a withdrawal bite mid-battle. Brutality only
+    // ever rises, so it can stay snapshotted; the serum cannot.
+    // The capacola surge is refreshed here for exactly the same reason as the
+    // serum: it expires, and a snapshot taken at engagement creation would
+    // keep paying out a surge that has worn off and would never let the crash
+    // bite mid-battle.
+    // Phase-shields are recomputed per round for the same reason: they GROW
+    // with elapsedRounds, so a value snapshotted at engagement creation would
+    // freeze at zero and the mechanic would never fire at all.
+    const elapsed = state.elapsedRounds ?? 0;
+    state.attacker.traitBonuses = {
+        ...state.attacker.traitBonuses,
+        serum: getSerumBonus(world, state.attacker.factionId),
+        capacola: getSurgeBonus(world, state.attacker.factionId),
+        phaseShield: phaseShieldBonus(world, state.attacker.factionId, elapsed, false),
+    };
+    state.defender.traitBonuses = {
+        ...state.defender.traitBonuses,
+        serum: getSerumBonus(world, state.defender.factionId),
+        capacola: getSurgeBonus(world, state.defender.factionId),
+        phaseShield: phaseShieldBonus(world, state.defender.factionId, elapsed, true),
+    };
+
+    // Ships as they stand now: losses so far, reinforcements that arrived.
+    // Damage lands on fleet `strength`, never on `composition`, so without
+    // this a side at 10% still fought with its full roster in the counter
+    // grid and the attack table.
+    refreshCombatant(state.attacker, fleetsAtk);
+    refreshCombatant(state.defender, fleetsDef);
+
+    try {
+        const report = resolveEngagementRound(state, {
+            roundNumber: state.round,
+            attackerStance: state.attacker.selectedStance || 'shock',
+            defenderStance: state.defender.selectedStance || 'entrench',
+            attackerPredictedStance: state.attacker.selectedPrediction,
+            defenderPredictedStance: state.defender.selectedPrediction
+        });
+
+        console.log(`[CombatManager] Round ${state.round} resolved at ${systemId}. Dmg A: ${report.attackerDamageDealt.toFixed(1)}, Dmg B: ${report.defenderDamageDealt.toFixed(1)}`);
+
+        // Sync damage back to fleets
+        applyDamageToFleets(fleetsAtk, report.defenderDamageDealt);
+        applyDamageToFleets(fleetsDef, report.attackerDamageDealt);
+
+        // Annihilation: the engine's own rule (three prediction points, a
+        // 1.25 hp ratio, enemy morale under 0.3, a 15% roll) has existed
+        // since the engine was written and was called by nothing.
+        const { annihilatedFactionId } = checkAnnihilation(state);
+        if (annihilatedFactionId) {
+            const doomed = annihilatedFactionId === state.attacker.factionId ? fleetsAtk : fleetsDef;
+            for (const f of doomed) f.strength = 0;
+            console.log(`[CombatManager] ${annihilatedFactionId} annihilated at ${systemId}.`);
+        }
+
+        // Remove destroyed fleets (strength 0), crediting the killer. Loops
+        // until quiet because an Infernoid detonation can take another fleet
+        // to zero in the same pass. Otherwise a wiped fleet lingered in-system
+        // with a hostile faction and a fresh no-op combat was re-initiated
+        // against it every tick ("zombie" engagements).
+        let again = true;
+        while (again) {
+            again = false;
+            for (const fleet of [...fleetsAtk, ...fleetsDef]) {
+                if (fleet.strength > 0 || !world.movement.fleets.has(fleet.id)) continue;
+                const onAttack = fleet.factionId === state.attacker.factionId;
+                destroyFleet(world, fleet, onAttack ? state.defender.factionId : state.attacker.factionId, onAttack ? fleetsDef : fleetsAtk);
+                again = true;
+            }
+        }
+
+        // Rout: fleets past their doctrine's retreatThreshold, or a whole side
+        // that fought this round under `withdraw`, break off and run for home.
+        const withdrawn = new Set<string>();
+        routSide(world, state, fleetsAtk, state.attacker, state.defender, fleetsDef, withdrawn);
+        routSide(world, state, fleetsDef, state.defender, state.attacker, fleetsAtk, withdrawn);
+
+        const standing = (fleets: Fleet[]) =>
+            fleets.some(f => world.movement.fleets.has(f.id) && f.strength > 0 && !withdrawn.has(f.id));
+        const attackerStands = standing(fleetsAtk);
+        const defenderStands = standing(fleetsDef);
+
+        if (annihilatedFactionId) {
+            const winnerId = annihilatedFactionId === state.attacker.factionId
+                ? state.defender.factionId : state.attacker.factionId;
+            finishBattle(world, state, 'annihilation', winnerId, fleetsAtk, fleetsDef);
+        } else if (!attackerStands || !defenderStands) {
+            const winnerId = attackerStands ? state.attacker.factionId
+                : defenderStands ? state.defender.factionId
+                : null;
+            finishBattle(world, state, withdrawn.size ? 'rout' : 'destroyed', winnerId, fleetsAtk, fleetsDef);
+        } else {
+            advanceRound(state);
+            if (state.resolved) {
+                // Fought to the end of the last round: whoever kept the larger
+                // share of their force carries the field.
+                const aFrac = state.attacker.hp / Math.max(1, state.attacker.maxHp);
+                const dFrac = state.defender.hp / Math.max(1, state.defender.maxHp);
+                const winnerId = aFrac > dFrac ? state.attacker.factionId
+                    : dFrac > aFrac ? state.defender.factionId
+                    : null;
+                finishBattle(world, state, 'rounds', winnerId, fleetsAtk, fleetsDef);
+            }
+        }
+    } catch (e: any) {
+        console.error(`[CombatManager] Resolution failed:`, e.message);
+    }
+}
+
+/**
+ * Delete a fleet that has reached zero strength and credit the kill. The
+ * single site where a kill is unambiguously attributed — the Reaper's Toll
+ * crown, the saga ledgers, Kaer'Ruun trophies and the Infernoid detonation
+ * all hang off it. Coarse by nature: a WHOLE fleet reaching zero. Air sorties
+ * bypass this path entirely.
+ */
+function destroyFleet(world: GameWorldState, fleet: Fleet, killer: string, enemyFleets: Fleet[]) {
+    if (!world.movement.fleets.has(fleet.id)) return;
+    notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
+    bumpMetric(world, killer, DEED_FLEETS_DESTROYED);
+    bumpMetric(world, fleet.factionId, DEED_FLEETS_LOST);
+    // Ritual Brutality: the Kaer'Ruun keep a trophy for every kill, and it
+    // makes them permanently deadlier.
+    recordTrophyKill(world, killer);
+
+    // Fireblood: an Infernoid hull that dies takes its killer with it.
+    if (isInfernoid(world, fleet.factionId)) {
+        const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF;
+        if (blast > 0) {
+            applyDamageToFleets(enemyFleets, blast);
+            recordDetonation(world, fleet.factionId);
+            console.log(`[Infernoid] ${fleet.id} detonates — ${blast.toFixed(0)} damage answered in fire.`);
+        }
+    }
+
+    world.movement.fleets.delete(fleet.id);
+}
+
+/**
+ * Break off every fleet on `side` that is past its doctrine's retreatThreshold
+ * (or the whole side, if it fought this round under `withdraw`). A breaking
+ * fleet runs for where it came from, else the nearest owned system; with
+ * nowhere to go it stays and fights. If the enemy chose the `pursue`
+ * directive, each fleet that gets away loses PURSUIT_STRENGTH_LOSS more on
+ * the way out — and one that cannot take it dies to the pursuers.
+ */
+function routSide(
+    world: GameWorldState,
+    state: CombatState,
+    fleets: Fleet[],
+    side: CombatantState,
+    enemy: CombatantState,
+    enemyFleets: Fleet[],
+    withdrawn: Set<string>,
+) {
+    const alive = fleets.filter(f => world.movement.fleets.has(f.id));
+    const breaking = breakingFleets(alive, side.currentStance);
+    if (!breaking.length) return;
+
+    const pursued = (enemy.selectedDirective ?? enemy.currentDirective) === 'pursue';
+    let moved = 0;
+    for (const fleet of breaking) {
+        if (pursued) {
+            fleet.strength = Math.max(0, fleet.strength - PURSUIT_STRENGTH_LOSS);
+            if (fleet.strength <= 0) {
+                destroyFleet(world, fleet, enemy.factionId, enemyFleets);
+                continue;
+            }
+        }
+        if (withdrawFleetHome(world, fleet)) {
+            withdrawn.add(fleet.id);
+            moved += 1;
+        }
+    }
+    if (moved) {
+        console.log(`[CombatManager] ${side.factionId} broke off at ${state.target.systemId}: ${moved} fleet(s) withdrawing${pursued ? ' under pursuit' : ''}.`);
+    }
+}
+
+/**
+ * Send a fleet home from a fight: where it set out from, else the nearest
+ * system its faction holds, else the capital. Returns false when there is
+ * nowhere to go (it has to fight). Shared by the rout, the Kaer'Ruun Fear
+ * Aura and the MIL_COMBAT_RETREAT order.
+ */
+export function withdrawFleetHome(world: GameWorldState, fleet: Fleet): boolean {
+    const target = fleet.originSystemId
+        || nearestOwnedSystem(world, fleet.factionId, fleet.currentSystemId)
+        || (world.economy?.factions?.get?.(fleet.factionId) as any)?.capitalSystemId
+        || null;
+    if (!target || target === fleet.currentSystemId) return false;
+    try {
+        const updated = issueMoveOrder(fleet, target, 'hyperlane', world.movement);
+        // Keeps the Fear Aura from re-rolling a fleet that is already leaving.
+        (updated as any).routedUntilSeconds = world.nowSeconds + FEAR_ROUT_GRACE_SECONDS;
+        world.movement.fleets.set(updated.id, updated);
+        return true;
+    } catch (e) {
+        // Pathing needs a full fleet record (hyperdriveProfile and the rest).
+        // A malformed one must not take down combat resolution for everybody
+        // else in the system — it just fights instead.
+        console.error(`[CombatManager] Could not withdraw ${fleet.id}:`, e);
+        return false;
+    }
+}
+
+/**
+ * Close the books on a battle. Runs the post-battle directives — the engine
+ * had them since day one, nothing ever called them — and carries what they
+ * change (supply, morale) back onto the fleets, because the combatant state
+ * dies with the battle. Idempotent: a battle is finished once.
+ */
+function finishBattle(
+    world: GameWorldState,
+    state: CombatState,
+    reason: BattleEnd,
+    winnerId: string | null,
+    attackerFleets: Fleet[],
+    defenderFleets: Fleet[],
+) {
+    if (state.outcome) return;
+    const before = {
+        attacker: { supply: state.attacker.supply, morale: state.attacker.morale },
+        defender: { supply: state.defender.supply, morale: state.defender.morale },
+    };
+    applyPostBattleDirective(state);
+    carryDirectiveToFleets(world, state.attacker, before.attacker, attackerFleets);
+    carryDirectiveToFleets(world, state.defender, before.defender, defenderFleets);
+
+    state.resolved = true;
+    state.outcome = { winnerId, reason, endedAtSeconds: world.nowSeconds };
+    console.log(`[CombatManager] Battle at ${state.target.systemId} over (${reason}): ${winnerId ? `${winnerId} holds the field` : 'no clear winner'}.`);
+}
+
+/** Supply and morale deltas from a directive land on every surviving fleet's doctrine. */
+function carryDirectiveToFleets(
+    world: GameWorldState,
+    side: CombatantState,
+    before: { supply: number; morale: number },
+    fleets: Fleet[],
+) {
+    const dSupply = side.supply - before.supply;
+    const dMorale = side.morale - before.morale;
+    if (!dSupply && !dMorale) return;
+    for (const stale of fleets) {
+        // A withdrawn fleet was re-issued by issueMoveOrder; write to the live record.
+        const fleet = world.movement.fleets.get(stale.id);
+        if (!fleet?.doctrine) continue;
+        if (dSupply) fleet.doctrine.supplyLevel = Math.max(0, Math.min(1, (fleet.doctrine.supplyLevel ?? 1) + dSupply));
+        // Combatant morale is (moraleDrift + 100) / 200, so a morale delta is 200 drift.
+        if (dMorale) fleet.doctrine.moraleDrift = Math.max(-100, Math.min(100, (fleet.doctrine.moraleDrift ?? 0) + dMorale * 200));
     }
 }
 
@@ -285,19 +498,7 @@ function applyFearAura(
 
         let moved = 0;
         for (const fleet of preyFleets) {
-            const target = fleet.originSystemId || nearestOwnedSystem(world, prey, fleet.currentSystemId);
-            if (!target || target === fleet.currentSystemId) continue;
-            try {
-                const updated = issueMoveOrder(fleet, target, 'hyperlane', world.movement);
-                (updated as any).routedUntilSeconds = world.nowSeconds + FEAR_ROUT_GRACE_SECONDS;
-                world.movement.fleets.set(updated.id, updated);
-                moved += 1;
-            } catch (e) {
-                // Pathing needs a full fleet record (hyperdriveProfile and the
-                // rest). A malformed one must not take down combat resolution
-                // for everybody else in the system — it just fights instead.
-                console.error(`[CombatManager] Fear Aura could not withdraw ${fleet.id}:`, e);
-            }
+            if (withdrawFleetHome(world, fleet)) moved += 1;
         }
         if (!moved) return false;   // nowhere to run — it has to fight after all
 
@@ -337,40 +538,14 @@ function nearestOwnedSystem(world: GameWorldState, factionId: string, fromSystem
 
 function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender', world?: any): CombatantState {
     const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
-    
-    // Combine compositions. Keys are normalized to lowercase here so the
-    // screening math below and the engine's counter grid see one vocabulary
-    // whatever a fleet was built with.
-    const mergedComp: UnitComposition = {};
-    let mergedProfile: DesignProfile | undefined;
-    fleets.forEach(f => {
-        // A fleet can carry an empty composition object ({}), which is truthy — so
-        // `f.composition || fallback` would never trigger. Fall back whenever the
-        // composition has no actual ship entries, so production-built fleets still fight.
-        const normalized = normalizeComposition(f.composition);
-        const comp = Object.keys(normalized).length > 0
-            ? normalized
-            : { destroyer: Math.max(1, Math.floor(f.basePower / 150)) };
-        for (const [type, count] of Object.entries(comp)) {
-            const uType = type as keyof UnitComposition;
-            mergedComp[uType] = (mergedComp[uType] || 0) + (count as number);
-        }
-        if (f.designProfile) {
-            mergedProfile = addProfile(mergedProfile, f.designProfile);
-        }
-    });
 
-    // HOI4 Naval Math: Screens vs Capitals (Air wings like interceptors and bombers excluded)
-    const screens = (mergedComp['destroyer'] || 0) + (mergedComp['corvette'] || 0);
-    const capitals = (mergedComp['cruiser'] || 0) + (mergedComp['carrier'] || 0) + (mergedComp['battleship'] || 0);
-    // 3 screens per capital is 100% efficient
-    let screenEff = 1.0;
-    if (capitals > 0) {
-        screenEff = Math.min(1.0, screens / (capitals * 3));
-    }
+    // Roster, design signature and screening as the ships stand right now
+    // (scaled by each fleet's strength). Keys are lowercase so the engine's
+    // counter grid sees one vocabulary whatever a fleet was built with.
+    const force = snapshotForce(fleets);
 
     const hp = totalPower * 10;
-    const org = 50 + ((fleets[0]?.doctrine.moraleDrift ?? 0) / 2); // 0-100 scale
+    const org = 50 + ((fleets[0]?.doctrine?.moraleDrift ?? 0) / 2); // 0-100 scale
 
     return {
         factionId,
@@ -381,15 +556,15 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         casualties: 0,
         organization: org,
         maxOrganization: org,
-        screeningEfficiency: screenEff,
-        composition: mergedComp,
-        designProfile: mergedProfile,
+        screeningEfficiency: force.screeningEfficiency,
+        composition: force.composition,
+        designProfile: force.designProfile,
         intelLevel: 'observing',
-        supply: fleets[0]?.doctrine.supplyLevel ?? 1.0,
+        supply: fleets[0]?.doctrine?.supplyLevel ?? 1.0,
         // NOTE: `+` binds tighter than `??`, so `moraleDrift ?? 0 + 100` parsed as
         // `moraleDrift ?? 100`, giving morale=0 for a default fleet (a permanent 50%
         // power penalty). Parenthesise the `?? 0` and clamp the result to [0,1].
-        morale: Math.max(0, Math.min(1, ((fleets[0]?.doctrine.moraleDrift ?? 0) + 100) / 200)),
+        morale: Math.max(0, Math.min(1, ((fleets[0]?.doctrine?.moraleDrift ?? 0) + 100) / 200)),
         doctrine: 'aggressive',
         predictionPoints: 0,
         selectedStance: 'shock',
@@ -430,7 +605,7 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
 
 function applyDamageToFleets(fleets: Fleet[], damage: number) {
     if (fleets.length === 0) return;
-    
+
     // Distribute damage proportionally to fleet strength
     const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
     if (totalPower <= 0) return;
@@ -438,7 +613,7 @@ function applyDamageToFleets(fleets: Fleet[], damage: number) {
     for (const fleet of fleets) {
         const share = (fleet.basePower * fleet.strength) / totalPower;
         const fleetDmg = damage * share;
-        
+
         // Convert damage back to strength loss
         // strength_loss = fleetDmg / basePower
         const strengthLoss = fleetDmg / (fleet.basePower || 1);

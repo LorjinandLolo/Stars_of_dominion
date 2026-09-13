@@ -25,7 +25,8 @@ import { stageForInfiltration } from '../lib/espionage/network-stages';
 /** Infiltration needed before documents can be lifted at all (embedded network). */
 const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
-import { processSectorCombats } from '../lib/combat/combat-manager';
+import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-manager';
+import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
 import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movement/belts';
@@ -888,16 +889,20 @@ async function runGameTick() {
         }
 
         // 5.8 Continuous dock repair — fleets holding (not moving) in a system
-        // they own patch up a little every cycle. The old repair only ran on the
-        // 6-hour strategic tick (~24 real minutes), far too slow to matter.
+        // they own patch up every cycle, and an orbital Spaceyard's
+        // fleet_repair_rate stacks on top (lib/combat/fleet-repair.ts). The old
+        // repair only ran on the 6-hour strategic tick (~24 real minutes), far
+        // too slow to matter.
         for (const fleet of world.movement.fleets.values()) {
             if (fleet.factionId === 'faction-pirates') continue;
-            if (!fleet.currentSystemId || fleet.destinationSystemId) continue;
             if ((fleet.strength ?? 1) >= 1.0) continue;
-            const sys = world.movement.systems.get(fleet.currentSystemId);
-            if (!sys || sys.ownerFactionId !== fleet.factionId) continue;
-            fleet.strength = Math.min(1.0, (fleet.strength ?? 0) + 0.01);
-            if (fleet.strength >= 1.0) console.log(`[REPAIR] ${fleet.name || fleet.id} fully repaired at ${sys.name}`);
+            const rate = dockRepairPerCycle(world, fleet);
+            if (rate <= 0) continue;
+            fleet.strength = Math.min(1.0, (fleet.strength ?? 0) + rate);
+            if (fleet.strength >= 1.0) {
+                const sys = world.movement.systems.get(fleet.currentSystemId!);
+                console.log(`[REPAIR] ${fleet.name || fleet.id} fully repaired at ${sys?.name ?? fleet.currentSystemId}`);
+            }
         }
 
         // 5.9 Genthouli raiders — a hostile NPC battle group guarding Genthouli.
@@ -3999,6 +4004,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 factionId,
                 name: `Task Force ${Math.floor(Math.random() * 100)}`,
                 currentSystemId: planet.systemId,
+                arrivedAtSeconds: world.nowSeconds,
                 orbitingPlanetId: planet.id,
                 destinationSystemId: null,
                 activeLayer: null,
@@ -4530,18 +4536,24 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.error(`[Security] ${factionId} tried to retreat from a battle they're not in.`);
                 return;
             }
-            const battleSystemId = combat.location?.systemId;
-            const homeSystemId = world.economy.factions.get(factionId)?.capitalSystemId;
-            if (battleSystemId && homeSystemId) {
-                for (const [fid, fleet] of world.movement.fleets) {
-                    if (fleet.factionId === factionId && fleet.currentSystemId === battleSystemId) {
-                        const updated = issueMoveOrder(fleet, homeSystemId, 'hyperlane', world.movement);
-                        world.movement.fleets.set(fid, updated);
-                    }
+            // The battle lives at combat.target.systemId; this read `location`,
+            // which no CombatState has, so no fleet ever moved and deleting the
+            // state just let a fresh battle start against the same fleets.
+            const battleSystemId = combat.target?.systemId ?? (combat as any).location?.systemId;
+            let moved = 0;
+            if (battleSystemId) {
+                for (const fleet of Array.from(world.movement.fleets.values()) as import('../lib/movement/types').Fleet[]) {
+                    if (fleet.factionId !== factionId || fleet.currentSystemId !== battleSystemId) continue;
+                    if (withdrawFleetHome(world, fleet)) moved += 1;
                 }
             }
-            world.activeCombats.delete(payload.combatId);
-            console.log(`[Order] ${factionId} DISENGAGED from battle ${payload.combatId} — fleets withdrawing home.`);
+            if (!moved) {
+                recordOrderFailure(world, factionId, actionId, 'Nowhere to withdraw to — the fleet has to fight.');
+                return;
+            }
+            // The battle itself closes on the next combat pass, once the fleets
+            // have left (combat-manager sweepStaleCombats records the outcome).
+            console.log(`[Order] ${factionId} DISENGAGED from battle ${payload.combatId} — ${moved} fleet(s) withdrawing home.`);
             break;
         }
 
@@ -4559,10 +4571,23 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         }
 
         case 'MIL_COMBAT_DIRECTIVE': {
+            // Post-battle directive (consolidate / exploit / pillage / pursue /
+            // orderly_retreat). This used to write selectedStance, so picking a
+            // directive silently changed the player's stance instead, and the
+            // directive itself was applied by nobody. combat-manager now runs
+            // applyPostBattleDirective when the battle ends and `pursue` bites
+            // fleets that break off.
             const combat = world.activeCombats.get(payload.combatId);
             if (!combat) return;
-            if (combat.attacker.factionId === factionId) combat.attacker.selectedStance = payload.stance;
-            else if (combat.defender.factionId === factionId) combat.defender.selectedStance = payload.stance;
+            const directive = payload.directive ?? payload.stance;
+            const DIRECTIVES = new Set(['consolidate', 'exploit', 'pillage', 'pursue', 'orderly_retreat']);
+            if (!DIRECTIVES.has(directive)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown battle directive '${directive}'.`);
+                return;
+            }
+            if (combat.attacker.factionId === factionId) combat.attacker.selectedDirective = directive;
+            else if (combat.defender.factionId === factionId) combat.defender.selectedDirective = directive;
+            else console.error(`[Security] ${factionId} tried to set a directive in a battle they are not in.`);
             break;
         }
 

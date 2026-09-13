@@ -140,6 +140,7 @@ function commissionPicket(world: BeltAmbushWorldView, factionId: string, ordinal
         factionId,
         name: `${faction.name ?? factionId} Belt Picket ${ordinal}`,
         currentSystemId: capital,
+        arrivedAtSeconds: world.nowSeconds ?? 0,
         destinationSystemId: null,
         activeLayer: null,
         transitProgress: 0,

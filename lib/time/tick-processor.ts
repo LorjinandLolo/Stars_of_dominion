@@ -22,6 +22,7 @@ import { tickVictory } from '../victory/victory-service';
 import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
+import { yardRepairBonus } from '../combat/fleet-repair';
 import { Fleet } from '../movement/types';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { reconcileRaiderRosters, tickPirateMetrics, tickPirateOrganizations } from '../piracy/organization-service';
@@ -829,6 +830,10 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
         if (hasSpaceyard) {
             repairRate = 0.15;
         }
+
+        // Orbital yards: the best fleet_repair_rate among this faction's
+        // planets here. Was summed into OrbitalRatings and read by nobody.
+        repairRate += yardRepairBonus(world.construction?.planets?.values?.(), fleet.factionId, fleet.currentSystemId, world.nowSeconds ?? 0);
 
         // Repair doctrine research scales dock throughput.
         repairRate *= getTechModifier(world, fleet.factionId, 'mil_repair_rate_mult');

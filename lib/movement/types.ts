@@ -347,6 +347,13 @@ export interface Fleet {
     /** Orbit to take the moment the current move order arrives (orbit on arrival). */
     arrivalOrbitPlanetId?: string | null;
     /**
+     * Sim seconds when the fleet last entered currentSystemId (stamped on
+     * arrival and at spawn). Sector combat makes the later arrival the
+     * attacker. Absent on fleets from before the stamp, which count as having
+     * always been there: they defend.
+     */
+    arrivedAtSeconds?: number;
+    /**
      * How a parked fleet holds the system. 'belt' = lurking in the asteroid
      * belt (only in systems that have one, see lib/movement/belts.ts): hidden
      * from anyone who has not surveyed the system AND parked a fleet there,

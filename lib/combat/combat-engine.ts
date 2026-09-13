@@ -357,15 +357,18 @@ export function resolveEngagementRound(
     }
 
     // HOI4 Damage Vectors Integration & Naval Air Support
+    // Every hull fights: corvettes screen alongside destroyers, battleships
+    // stand in the line with cruisers and carriers. Both were missing from
+    // this table, so a corvette wing or a battleship dealt zero damage.
     const aComp = state.attacker.composition;
-    const aScreens = (aComp['destroyer'] || 0);
-    const aCapitals = (aComp['cruiser'] || 0) + (aComp['carrier'] || 0);
+    const aScreens = (aComp['destroyer'] || 0) + (aComp['corvette'] || 0);
+    const aCapitals = (aComp['cruiser'] || 0) + (aComp['carrier'] || 0) + (aComp['battleship'] || 0);
     let aInterceptors = (aComp['interceptor'] || 0);
     let aBombers = (aComp['bomber'] || 0);
 
     const dComp = state.defender.composition;
-    const dScreens = (dComp['destroyer'] || 0);
-    const dCapitals = (dComp['cruiser'] || 0) + (dComp['carrier'] || 0);
+    const dScreens = (dComp['destroyer'] || 0) + (dComp['corvette'] || 0);
+    const dCapitals = (dComp['cruiser'] || 0) + (dComp['carrier'] || 0) + (dComp['battleship'] || 0);
     let dInterceptors = (dComp['interceptor'] || 0);
     let dBombers = (dComp['bomber'] || 0);
 
@@ -533,7 +536,10 @@ export function advanceRound(state: CombatState) {
 
 // ─── 7. Annihilation & Post-Battle ────────────────────────────────────────────
 
-export function checkAnnihilation(state: CombatState): { annihilatedFactionId: string | null; reason?: string } {
+export function checkAnnihilation(
+    state: CombatState,
+    roll: () => number = Math.random,
+): { annihilatedFactionId: string | null; reason?: string } {
     if (state.isSkirmish) return { annihilatedFactionId: null, reason: "Skirmishes cannot trigger annihilation." };
 
     const checkSide = (side: CombatantState, enemy: CombatantState) => {
@@ -545,7 +551,7 @@ export function checkAnnihilation(state: CombatState): { annihilatedFactionId: s
         if (enemy.morale > config.constants.annihilationMoraleThreshold) return false;
 
         // Randomized 15% attempt
-        if (Math.random() <= config.constants.annihilationRandomChance) {
+        if (roll() <= config.constants.annihilationRandomChance) {
             return true;
         }
         return false;

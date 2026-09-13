@@ -166,6 +166,18 @@ export interface CombatState {
     isSkirmish: boolean;
     annihilationEligible: boolean;
     resolved: boolean;
+    /**
+     * Set the moment the battle ends. `rounds`: the engine ran its course;
+     * `rout`: a side broke off; `destroyed`: a side lost every fleet;
+     * `annihilation`: the engine's annihilation roll; `withdrawal`: a side
+     * left the system (retreat order, or moved on). winnerId is null for a
+     * draw. The state is kept one more pass for the UI, then dropped.
+     */
+    outcome?: {
+        winnerId: string | null;
+        reason: 'rounds' | 'rout' | 'destroyed' | 'annihilation' | 'withdrawal';
+        endedAtSeconds: number;
+    };
 }
 
 // ─── Narrative / Report ───────────────────────────────────────────────────────

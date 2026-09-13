@@ -145,9 +145,58 @@ Surface rungs for comparison: Orbital Shipyard 800/400/200 (tier 1), Fleet
 Drydock 2,000/1,000/500 (tier 2). Infrastructure levels 3 and 4 gate the
 upper orbital rungs on top of these prices.
 
+## Engagement rules (2026-09-13)
+
+`lib/combat/combat-manager.ts` runs the engine; the rules it applies around
+it are pure functions in `lib/combat/engagement-rules.ts` (tests:
+`npx tsx lib/combat/engagement-rules-tests.ts`; the manager itself is driven
+end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
+
+- **The later arrival attacks.** `Fleet.arrivedAtSeconds` is stamped on
+  arrival and at spawn; `pickRoles` makes the newest side the attacker. Ties
+  and unstamped (legacy) fleets fall to the system owner defending. Faction A
+  used to attack purely by Map iteration order.
+- **Rosters follow strength.** Damage lands on `fleet.strength`, never on
+  `composition`, so `snapshotForce` scales every fleet's composition and
+  design profile by its strength, and `refreshCombatant` re-reads both at the
+  top of every round (strike craft keep the engine's air-phase attrition as a
+  ceiling). Reinforcements join the roster; hp stays as created.
+- **Every hull fights.** The engine's attack table counted destroyers as the
+  only screens and cruisers/carriers as the only capitals: a corvette wing or
+  a battleship line dealt zero damage. Corvettes now screen, battleships stand
+  in the line.
+- **Battles end.** A fleet whose strength falls to its doctrine's
+  `retreatThreshold` (0.15–0.55 by doctrine type; written since forever, read
+  by nothing) breaks off at the end of the round and runs for where it came
+  from, else the nearest owned system, else the capital (`withdrawFleetHome`).
+  A side that fought the round under the `withdraw` stance breaks entirely. A
+  fleet ordered out (`destinationSystemId` set) stops fighting that same
+  cycle. The battle closes when a side has nothing standing, when the
+  engine's annihilation roll fires (`checkAnnihilation`, wired for the first
+  time), or after the last round; `CombatState.outcome` records the winner
+  and the reason (`rounds | rout | destroyed | annihilation | withdrawal`),
+  the state lingers one pass for the UI, and `sweepStaleCombats` closes
+  battles whose sides are no longer both present (they used to leak forever).
+- **Directives are real.** `MIL_COMBAT_DIRECTIVE` wrote `selectedStance`, so
+  choosing a directive silently changed the stance. It now sets
+  `selectedDirective`; `applyPostBattleDirective` runs at the end and its
+  supply/morale deltas are carried onto surviving fleets' doctrine
+  (`supplyLevel`, `moraleDrift`). `pursue` costs each breaking enemy fleet a
+  further 5% strength on the way out. `MIL_COMBAT_RETREAT` read
+  `combat.location` (no such field) and moved nothing; it now withdraws via
+  the same helper and the battle closes on the next pass.
+- **Repair follows the yard.** `lib/combat/fleet-repair.ts`: a fleet holding
+  in a friendly system regains 0.01 strength per fast cycle plus the best
+  orbital `fleet_repair_rate` among its faction's planets there (Spaceyard
+  0.03, Advanced 0.05, Capital 0.07), times `mil_repair_rate_mult`. The
+  strategic-tick repair adds the same yard bonus. The rating was summed into
+  `OrbitalRatings` and read by nobody.
 ## Not done / next
 
 - Fleet movement speed ignores design (thrusters affect the signature only).
+- Reinforcements arriving mid-battle join the roster but not the side's hp.
+- Planets and orbital defenses do not take part in fleet battles.
+- Space battles emit no notification or chronicle event (console only).
 - The tactical sim (`lib/tactical/ship-defs.ts`) has its own per-class weapon
   loadouts; designs do not yet feed it.
 - Refit: existing ships keep the fit they were built with. A refit order would
