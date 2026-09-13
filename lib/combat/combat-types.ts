@@ -70,6 +70,15 @@ export interface CombatantState {
      * absence as "no modifier", never as "bare".
      */
     designProfile?: DesignProfile;
+    /**
+     * Orbital defenses fighting on this side: the planets its faction holds in
+     * the battle system, summed (defender only). Their mass joined this
+     * combatant's hp at creation (fortificationHpPerPower); defensePower is
+     * re-read each round as structures take damage, and the round's incoming
+     * damage is split between fleets and structures by remaining mass. See
+     * combat-manager fortificationFor.
+     */
+    fortification?: { defensePower: number; shieldStrength: number; planetIds: string[] };
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy
     supply: number; // 0–1
     morale: number; // Global Morale (different from tactical Organization)
@@ -166,6 +175,8 @@ export interface CombatState {
     isSkirmish: boolean;
     annihilationEligible: boolean;
     resolved: boolean;
+    /** Per-faction losses so far, kept by the manager for the battle report. */
+    tally?: Record<string, { fleetsLost: number; powerLost: number; structuresLost: number }>;
     /**
      * Set the moment the battle ends. `rounds`: the engine ran its course;
      * `rout`: a side broke off; `destroyed`: a side lost every fleet;

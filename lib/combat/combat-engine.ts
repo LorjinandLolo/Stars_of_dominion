@@ -413,8 +413,14 @@ export function resolveEngagementRound(
     const aAirDmg = aBombers * 25; 
     const dAirDmg = dBombers * 25;
 
-    const attackDmg = (aLightAtk + aHeavyAtk + aTorpedoDmg + aAirDmg) * aTotalMod;
-    const defendDmg = (dLightAtk + dHeavyAtk + dTorpedoDmg + dAirDmg) * dTotalMod;
+    // 4. Orbital defenses. A side holding armed planets in the system fires
+    // them alongside its ships (a Defense Network at 160 power hits like a
+    // dozen corvettes). Their mass is already inside hp/maxHp.
+    const aFortAtk = (state.attacker.fortification?.defensePower ?? 0) * config.constants.fortificationAttackPerPower;
+    const dFortAtk = (state.defender.fortification?.defensePower ?? 0) * config.constants.fortificationAttackPerPower;
+
+    const attackDmg = (aLightAtk + aHeavyAtk + aTorpedoDmg + aAirDmg + aFortAtk) * aTotalMod;
+    const defendDmg = (dLightAtk + dHeavyAtk + dTorpedoDmg + dAirDmg + dFortAtk) * dTotalMod;
 
     const attackOrgDmg = attackDmg * 0.15; // Organization drops as ships get hit
     const defendOrgDmg = defendDmg * 0.15;

@@ -127,6 +127,33 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
             };
 
         case 'battle_resolved': {
+            // Space battles share the type with ground sieges (feuds and
+            // precedent are counted by type); the theatre fact tells them apart.
+            if (str(e, 'theatre') === 'space') {
+                const reason = str(e, 'reason');
+                const winner = str(e, 'winnerName');
+                const aLost = num(e, 'attackerFleetsLost') ?? 0;
+                const dLost = num(e, 'defenderFleetsLost') ?? 0;
+                const structures = num(e, 'structuresLost') ?? 0;
+                const decisive = reason === 'destroyed' || reason === 'annihilation';
+                const headline = decisive
+                    ? `${where}: ${winner || actor} destroys an enemy fleet`
+                    : reason === 'rout'
+                        ? `${where}: ${winner || actor} drives the enemy off`
+                        : winner
+                            ? `Fleet action at ${where} goes to ${winner}`
+                            : `Inconclusive fleet action at ${where}`;
+                const losses = aLost + dLost > 0
+                    ? ` ${dLost} ${dLost === 1 ? 'formation was' : 'formations were'} lost by the defenders and ${aLost} by the attackers.`
+                    : ' Both fleets came away with their formations intact.';
+                return {
+                    headline,
+                    body: `${hedge}Warships under ${actor} engaged ${target} in orbit at ${where}.${losses}${
+                        structures > 0 ? ` ${structures} orbital ${structures === 1 ? 'structure was' : 'structures were'} destroyed in the exchange.` : ''
+                    }`,
+                    tone: decisive || reason === 'rout' ? 'grave' : 'neutral',
+                };
+            }
             const devastation = num(e, 'devastation');
             const cycles = num(e, 'siegeCycles');
             return {

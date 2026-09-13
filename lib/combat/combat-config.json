@@ -14,7 +14,9 @@
         "orbitalBombardmentIndiscriminateInfraDamage": 0.30,
         "orbitalBombardmentIndiscriminateMoraleDamage": 0.15,
         "maxRpsBonusCap": 0.20,
-        "maxDesignBonusCap": 0.15
+        "maxDesignBonusCap": 0.15,
+    "fortificationHpPerPower": 10,
+    "fortificationAttackPerPower": 0.4
     },
     "intelPredictionProbabilities": {
         "blind": {

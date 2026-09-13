@@ -191,12 +191,34 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
   0.03, Advanced 0.05, Capital 0.07), times `mil_repair_rate_mult`. The
   strategic-tick repair adds the same yard bonus. The rating was summed into
   `OrbitalRatings` and read by nobody.
+## Planets fight, battles are reported (2026-09-14)
+
+- **Orbital defenses join the defender.** `fortificationFor` sums
+  `orbital_defense_power` over the planets the defending faction holds in the
+  battle system. Their mass joins the defender's hp (`fortificationHpPerPower`
+  = 10, so a Defense Network weighs like a 160-power fleet) and they fire each
+  round (`fortificationAttackPerPower` = 0.4 per point, about a dozen
+  corvettes for a Defense Network). The defender's incoming volley is split
+  between fleets and structures by remaining mass (`splitDamage`) and the
+  structure share goes through `applyOrbitalDamage`, the bombardment path, so
+  shields soak, integrity drops and a slot can be destroyed; wrecked
+  structures stop shooting (`refreshFortification`). Only the defender gets
+  it, and only while a fleet battle is on: a lone hostile fleet parked over an
+  armed world is still handled by blockade/bombardment, not by this.
+- **Battle report.** `finishBattle` files one `battle_resolved` chronicle event
+  per battle with `theatre: 'space'` (the template writer renders it as a
+  fleet action, not a ground siege), losses per side from `CombatState.tally`,
+  and `importanceOverride: 20` for a standoff nobody bled for. Each side gets
+  one notification (VICTORY / DEFEAT / STANDOFF AT <system>; defeats are
+  urgent). Space battles left nothing but console lines before.
+- **Worker supervisor.** `npm run worker:forever` (`scripts/worker-forever.js`)
+  restarts the worker whenever it exits; the hang watchdog exits on purpose
+  and nothing restarted it on a dev machine.
 ## Not done / next
 
 - Fleet movement speed ignores design (thrusters affect the signature only).
 - Reinforcements arriving mid-battle join the roster but not the side's hp.
-- Planets and orbital defenses do not take part in fleet battles.
-- Space battles emit no notification or chronicle event (console only).
+- A lone hostile fleet over an armed world is not engaged by the defenses (no fleet battle, no fortification).
 - The tactical sim (`lib/tactical/ship-defs.ts`) has its own per-class weapon
   loadouts; designs do not yet feed it.
 - Refit: existing ships keep the fit they were built with. A refit order would

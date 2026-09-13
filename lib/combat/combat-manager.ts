@@ -10,6 +10,7 @@ import {
     checkAnnihilation,
     applyPostBattleDirective,
 } from './combat-engine';
+import config from './combat-config.json';
 import { getTechModifiers } from '../tech/modifiers';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../tech/deed-metrics';
@@ -21,11 +22,15 @@ import { FIREBLOOD_FLEET_COEFF, isInfernoid, recordDetonation } from '../faction
 import { issueMoveOrder } from '../movement/movement-service';
 import { AMBUSH_FRESH_SECONDS, AMBUSH_ORGANIZATION_FACTOR } from '../movement/belts';
 import { RNG, seedFromString } from '../trade-system/rng';
+import { computeOrbitalRatings, applyOrbitalDamage } from '../orbital/orbital-service';
+import * as chronicle from '../narrative/chronicle';
+import { fireNotification } from '../time/notification-hooks';
 import {
     pickRoles,
     snapshotForce,
     refreshCombatant,
     breakingFleets,
+    splitDamage,
     PURSUIT_STRENGTH_LOSS,
 } from './engagement-rules';
 
@@ -33,6 +38,7 @@ import {
 const BASE_PREDICTION_BONUS = 0.15;
 
 type BattleEnd = NonNullable<CombatState['outcome']>['reason'];
+type Fortification = NonNullable<CombatantState['fortification']>;
 
 /**
  * Handles real-time detection and resolution of fleet engagements.
@@ -155,8 +161,13 @@ function handleEngagement(
         const attackerId = roles.swapped ? factionB : factionA;
         const defenderId = roles.swapped ? factionA : factionB;
 
+        // The defender's armed planets in the system fight with it. Planets
+        // and stations used to sit out fleet battles entirely; only the
+        // blockade math read orbital_defense_power.
+        const fortification = fortificationFor(world, defenderId, systemId);
+
         const attacker = createCombatant(attackerId, roles.attackerFleets, 'attacker', world);
-        const defender = createCombatant(defenderId, roles.defenderFleets, 'defender', world);
+        const defender = createCombatant(defenderId, roles.defenderFleets, 'defender', world, fortification);
 
         // Fear Aura — the only genuine pre-contact moment on the server path.
         // Both combatants are fully built, the raw fleet arrays are still in
@@ -199,7 +210,8 @@ function handleEngagement(
         }
 
         world.activeCombats.set(combatId, state);
-        console.log(`[CombatManager] Initiated engagement at ${systemId}: ${attackerId} attacks ${defenderId}`);
+        console.log(`[CombatManager] Initiated engagement at ${systemId}: ${attackerId} attacks ${defenderId}`
+            + (fortification ? ` (orbital defenses: ${Math.round(fortification.defensePower)} power over ${fortification.planetIds.length} world(s))` : ''));
     }
 
     // Live fleets per role. Roles are fixed for the life of the battle.
@@ -241,9 +253,11 @@ function handleEngagement(
     // Ships as they stand now: losses so far, reinforcements that arrived.
     // Damage lands on fleet `strength`, never on `composition`, so without
     // this a side at 10% still fought with its full roster in the counter
-    // grid and the attack table.
+    // grid and the attack table. Orbital defenses likewise: a structure shot
+    // to pieces stops shooting back.
     refreshCombatant(state.attacker, fleetsAtk);
     refreshCombatant(state.defender, fleetsDef);
+    refreshFortification(world, state.defender);
 
     try {
         const report = resolveEngagementRound(state, {
@@ -256,9 +270,10 @@ function handleEngagement(
 
         console.log(`[CombatManager] Round ${state.round} resolved at ${systemId}. Dmg A: ${report.attackerDamageDealt.toFixed(1)}, Dmg B: ${report.defenderDamageDealt.toFixed(1)}`);
 
-        // Sync damage back to fleets
+        // Sync damage back to fleets. The defender's volley is split between
+        // its fleets and its orbital defenses by remaining mass.
         applyDamageToFleets(fleetsAtk, report.defenderDamageDealt);
-        applyDamageToFleets(fleetsDef, report.attackerDamageDealt);
+        applyDamageToSide(world, state, state.defender, fleetsDef, report.attackerDamageDealt);
 
         // Annihilation: the engine's own rule (three prediction points, a
         // 1.25 hp ratio, enemy morale under 0.3, a 15% roll) has existed
@@ -281,7 +296,7 @@ function handleEngagement(
             for (const fleet of [...fleetsAtk, ...fleetsDef]) {
                 if (fleet.strength > 0 || !world.movement.fleets.has(fleet.id)) continue;
                 const onAttack = fleet.factionId === state.attacker.factionId;
-                destroyFleet(world, fleet, onAttack ? state.defender.factionId : state.attacker.factionId, onAttack ? fleetsDef : fleetsAtk);
+                destroyFleet(world, state, fleet, onAttack ? state.defender.factionId : state.attacker.factionId, onAttack ? fleetsDef : fleetsAtk);
                 again = true;
             }
         }
@@ -324,6 +339,82 @@ function handleEngagement(
     }
 }
 
+// ─── Orbital defenses ────────────────────────────────────────────────────────
+
+/** The faction's armed planets in the system, summed. Undefined when it holds none. */
+function fortificationFor(world: GameWorldState, factionId: string, systemId: string): Fortification | undefined {
+    let defensePower = 0;
+    let shieldStrength = 0;
+    const planetIds: string[] = [];
+    for (const planet of world.construction?.planets?.values() ?? []) {
+        const p = planet as any;
+        if (p.ownerId !== factionId || p.systemId !== systemId || !p.orbital) continue;
+        const ratings = computeOrbitalRatings(p, world.nowSeconds);
+        if (ratings.defensePower <= 0) continue;
+        defensePower += ratings.defensePower;
+        shieldStrength += ratings.shieldStrength;
+        planetIds.push(p.id);
+    }
+    return planetIds.length ? { defensePower, shieldStrength, planetIds } : undefined;
+}
+
+/** Re-read the defenses' remaining power each round; wrecked structures stop shooting. */
+function refreshFortification(world: GameWorldState, side: CombatantState) {
+    if (!side.fortification) return;
+    let defensePower = 0;
+    let shieldStrength = 0;
+    for (const id of side.fortification.planetIds) {
+        const planet = world.construction?.planets?.get(id) as any;
+        if (!planet) continue;
+        const ratings = computeOrbitalRatings(planet, world.nowSeconds);
+        defensePower += ratings.defensePower;
+        shieldStrength += ratings.shieldStrength;
+    }
+    side.fortification = { ...side.fortification, defensePower, shieldStrength };
+}
+
+/**
+ * A side's incoming volley: fleets and orbital defenses share it by remaining
+ * mass. Structure damage goes through applyOrbitalDamage, the same path
+ * bombardment uses, so shields soak, integrity drops and a slot can be
+ * destroyed outright.
+ */
+function applyDamageToSide(world: GameWorldState, state: CombatState, side: CombatantState, fleets: Fleet[], damage: number) {
+    const fort = side.fortification;
+    if (!fort || fort.defensePower <= 0 || damage <= 0) {
+        applyDamageToFleets(fleets, damage);
+        return;
+    }
+    const fleetHp = fleets.reduce((sum, f) => sum + (f.basePower || 0) * Math.max(0, f.strength) * 10, 0);
+    const fortHp = fort.defensePower * config.constants.fortificationHpPerPower;
+    const split = splitDamage(damage, fleetHp, fortHp);
+    applyDamageToFleets(fleets, split.fleets);
+    if (split.fort <= 0) return;
+
+    const planets = fort.planetIds
+        .map(id => world.construction?.planets?.get(id) as any)
+        .filter(Boolean);
+    const weights = planets.map(p => computeOrbitalRatings(p, world.nowSeconds).defensePower);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    if (totalWeight <= 0) return;
+    planets.forEach((planet, i) => {
+        const share = split.fort * (weights[i] / totalWeight);
+        if (share <= 0) return;
+        const result = applyOrbitalDamage(planet, share, world.nowSeconds);
+        if (result.destroyedSlotIds.length) {
+            const tally = ensureTally(state, side.factionId);
+            tally.structuresLost += result.destroyedSlotIds.length;
+            console.log(`[CombatManager] ${result.destroyedSlotIds.length} orbital structure(s) over ${planet.name ?? planet.id} destroyed in the exchange.`);
+        }
+    });
+}
+
+function ensureTally(state: CombatState, factionId: string) {
+    if (!state.tally) state.tally = {};
+    if (!state.tally[factionId]) state.tally[factionId] = { fleetsLost: 0, powerLost: 0, structuresLost: 0 };
+    return state.tally[factionId];
+}
+
 /**
  * Delete a fleet that has reached zero strength and credit the kill. The
  * single site where a kill is unambiguously attributed — the Reaper's Toll
@@ -331,7 +422,7 @@ function handleEngagement(
  * all hang off it. Coarse by nature: a WHOLE fleet reaching zero. Air sorties
  * bypass this path entirely.
  */
-function destroyFleet(world: GameWorldState, fleet: Fleet, killer: string, enemyFleets: Fleet[]) {
+function destroyFleet(world: GameWorldState, state: CombatState, fleet: Fleet, killer: string, enemyFleets: Fleet[]) {
     if (!world.movement.fleets.has(fleet.id)) return;
     notifyTitleMetric(COUNTER_FLEET_POWER_DESTROYED, killer, fleet.basePower || 0);
     bumpMetric(world, killer, DEED_FLEETS_DESTROYED);
@@ -339,6 +430,10 @@ function destroyFleet(world: GameWorldState, fleet: Fleet, killer: string, enemy
     // Ritual Brutality: the Kaer'Ruun keep a trophy for every kill, and it
     // makes them permanently deadlier.
     recordTrophyKill(world, killer);
+
+    const tally = ensureTally(state, fleet.factionId);
+    tally.fleetsLost += 1;
+    tally.powerLost += fleet.basePower || 0;
 
     // Fireblood: an Infernoid hull that dies takes its killer with it.
     if (isInfernoid(world, fleet.factionId)) {
@@ -380,7 +475,7 @@ function routSide(
         if (pursued) {
             fleet.strength = Math.max(0, fleet.strength - PURSUIT_STRENGTH_LOSS);
             if (fleet.strength <= 0) {
-                destroyFleet(world, fleet, enemy.factionId, enemyFleets);
+                destroyFleet(world, state, fleet, enemy.factionId, enemyFleets);
                 continue;
             }
         }
@@ -425,7 +520,9 @@ export function withdrawFleetHome(world: GameWorldState, fleet: Fleet): boolean 
  * Close the books on a battle. Runs the post-battle directives — the engine
  * had them since day one, nothing ever called them — and carries what they
  * change (supply, morale) back onto the fleets, because the combatant state
- * dies with the battle. Idempotent: a battle is finished once.
+ * dies with the battle. Then files the report: a chronicle event for the
+ * press and a notification to each side. Idempotent: a battle is finished
+ * once.
  */
 function finishBattle(
     world: GameWorldState,
@@ -447,6 +544,84 @@ function finishBattle(
     state.resolved = true;
     state.outcome = { winnerId, reason, endedAtSeconds: world.nowSeconds };
     console.log(`[CombatManager] Battle at ${state.target.systemId} over (${reason}): ${winnerId ? `${winnerId} holds the field` : 'no clear winner'}.`);
+
+    try {
+        reportBattle(world, state, reason, winnerId);
+    } catch (e: any) {
+        // The report is for the press and the player; it must never undo the battle.
+        console.error(`[CombatManager] Battle report failed:`, e?.message ?? e);
+    }
+}
+
+/**
+ * The battle report. Space battles used to leave nothing but console lines:
+ * no notification, no chronicle event, so a player could lose a fleet and
+ * never hear of it and the narrator never saw a war at sea. One
+ * `battle_resolved` event per battle (theatre 'space' tells the prose apart
+ * from a ground siege) and one notification per side.
+ */
+function reportBattle(world: GameWorldState, state: CombatState, reason: BattleEnd, winnerId: string | null) {
+    const systemId = state.target.systemId;
+    const systemName = world.movement.systems.get(systemId)?.name ?? systemId;
+    const nameOf = (id: string) => (world.economy?.factions?.get?.(id) as any)?.name ?? id;
+    const attackerId = state.attacker.factionId;
+    const defenderId = state.defender.factionId;
+    const lossesOf = (id: string) => state.tally?.[id] ?? { fleetsLost: 0, powerLost: 0, structuresLost: 0 };
+    const attackerLosses = lossesOf(attackerId);
+    const defenderLosses = lossesOf(defenderId);
+    const decisive = reason === 'destroyed' || reason === 'annihilation';
+    const anyLoss = attackerLosses.fleetsLost + defenderLosses.fleetsLost + defenderLosses.structuresLost > 0;
+
+    chronicle.record(world, {
+        type: 'battle_resolved',
+        actorIds: [attackerId],
+        targetIds: [defenderId],
+        location: systemId,
+        facts: {
+            theatre: 'space',
+            reason,
+            winnerId: winnerId ?? '',
+            winnerName: winnerId ? nameOf(winnerId) : '',
+            rounds: state.elapsedRounds ?? 0,
+            attackerFleetsLost: attackerLosses.fleetsLost,
+            defenderFleetsLost: defenderLosses.fleetsLost,
+            attackerPowerLost: Math.round(attackerLosses.powerLost),
+            defenderPowerLost: Math.round(defenderLosses.powerLost),
+            structuresLost: defenderLosses.structuresLost,
+            decisive,
+        },
+        coalesceKey: `battle:${state.id}`,
+        // A standoff nobody bled for is not front-page news.
+        importanceOverride: anyLoss ? undefined : 20,
+    });
+
+    const reasonText: Record<BattleEnd, string> = {
+        rounds: 'The engagement ran its course',
+        rout: 'The beaten side broke off and withdrew',
+        destroyed: 'One side was destroyed to the last hull',
+        annihilation: 'One side was annihilated',
+        withdrawal: 'One side left the system',
+    };
+    const stamp = new Date(world.nowSeconds * 1000).toISOString();
+    for (const [me, them, mine, theirs] of [
+        [attackerId, defenderId, attackerLosses, defenderLosses],
+        [defenderId, attackerId, defenderLosses, attackerLosses],
+    ] as const) {
+        const word = winnerId === me ? 'VICTORY' : winnerId ? 'DEFEAT' : 'STANDOFF';
+        const structures = mine.structuresLost ? ` ${mine.structuresLost} orbital structure(s) destroyed.` : '';
+        fireNotification({
+            id: `battle-${state.id}-${me}-${world.nowSeconds}`,
+            factionId: me,
+            category: 'military',
+            priority: word === 'DEFEAT' ? 'urgent' : 'normal',
+            title: `${word} AT ${String(systemName).toUpperCase()}`,
+            body: `${reasonText[reason]} against ${nameOf(them)} at ${systemName}. Lost ${mine.fleetsLost} fleet(s); the enemy lost ${theirs.fleetsLost}.${structures}`,
+            createdAt: stamp,
+            read: false,
+            linkToTab: 'map',
+            payload: { systemId, combatId: state.id, reason, winnerId },
+        } as any);
+    }
 }
 
 /** Supply and morale deltas from a directive land on every surviving fleet's doctrine. */
@@ -536,7 +711,13 @@ function nearestOwnedSystem(world: GameWorldState, factionId: string, fromSystem
     return null;
 }
 
-function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 'defender', world?: any): CombatantState {
+function createCombatant(
+    factionId: string,
+    fleets: Fleet[],
+    role: 'attacker' | 'defender',
+    world?: any,
+    fortification?: Fortification,
+): CombatantState {
     const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
 
     // Roster, design signature and screening as the ships stand right now
@@ -544,7 +725,10 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
     // counter grid sees one vocabulary whatever a fleet was built with.
     const force = snapshotForce(fleets);
 
-    const hp = totalPower * 10;
+    // Orbital defenses add their mass to the pool the engine tracks; a
+    // Defense Network (160 power) weighs as much as a 160-power fleet.
+    const fortHp = (fortification?.defensePower ?? 0) * config.constants.fortificationHpPerPower;
+    const hp = totalPower * 10 + fortHp;
     const org = 50 + ((fleets[0]?.doctrine?.moraleDrift ?? 0) / 2); // 0-100 scale
 
     return {
@@ -559,6 +743,7 @@ function createCombatant(factionId: string, fleets: Fleet[], role: 'attacker' | 
         screeningEfficiency: force.screeningEfficiency,
         composition: force.composition,
         designProfile: force.designProfile,
+        fortification,
         intelLevel: 'observing',
         supply: fleets[0]?.doctrine?.supplyLevel ?? 1.0,
         // NOTE: `+` binds tighter than `??`, so `moraleDrift ?? 0 + 100` parsed as

@@ -122,6 +122,18 @@ export function refreshCombatant(side: CombatantState, fleets: Fleet[]): void {
 }
 
 /**
+ * Split a round's incoming damage between a side's fleets and its orbital
+ * defenses by their share of remaining mass, so a fortress soaks fire in
+ * proportion to how much of the line it is.
+ */
+export function splitDamage(damage: number, fleetHp: number, fortHp: number): { fleets: number; fort: number } {
+    const total = Math.max(0, fleetHp) + Math.max(0, fortHp);
+    if (damage <= 0 || total <= 0) return { fleets: Math.max(0, damage), fort: 0 };
+    const fort = damage * (Math.max(0, fortHp) / total);
+    return { fleets: damage - fort, fort };
+}
+
+/**
  * Fleets that break off at the end of a round: anyone whose doctrine's
  * `retreatThreshold` (a strength fraction) has been crossed, or every fleet
  * on a side that fought the round under the `withdraw` stance. Dead fleets

@@ -10,6 +10,8 @@ import { getGameWorldState } from '../game-world-state-singleton';
 import { ensureFactionTraits } from '../factions/traits-service';
 import { processSectorCombats } from './combat-manager';
 import type { CombatState } from './combat-types';
+import { pendingCount, resetChronicleBuffer } from '../narrative/chronicle';
+import { drainNotifications } from '../time/notification-hooks';
 
 const A = 'faction-sarrak';
 const B = 'faction-buthari';
@@ -162,6 +164,45 @@ console.log('\n6. Pursuit costs the runner');
     const b: any = world.movement.fleets.get('b');
     check('the runner got away', s?.outcome?.reason === 'rout' && !!b?.destinationSystemId, s?.outcome?.reason);
     check('but paid the pursuit toll on top of the round\'s damage', (b?.strength ?? 1) < strengthBeforeBreak - 0.05 + 1e-9, `${strengthBeforeBreak} -> ${b?.strength}`);
+}
+
+console.log('\n7. Orbital defenses fight, and the battle is reported');
+{
+    reset();
+    resetChronicleBuffer();
+    drainNotifications();
+    const fort: any = {
+        id: 'planet-fort-test', name: 'Bastion', ownerId: B, systemId: SYS,
+        infrastructureLevel: 2, specialization: null, stability: 90, tiles: [],
+        orbital: {
+            slots: [
+                { slotId: 'planet-fort-test-orb0', structureId: 'space_station', state: 'active', integrity: 100 },
+                { slotId: 'planet-fort-test-orb1', structureId: 'orbital_defense_network', state: 'active', integrity: 100 },
+            ],
+            buildQueue: [],
+        },
+    };
+    world.construction.planets.set(fort.id, fort);
+    // A pushes into B's fortified system with a modest force; B's picket alone would lose.
+    world.movement.fleets.set('a', mkFleet('a', A, 600, { composition: { cruiser: 3 }, arrivedAtSeconds: 900, doctrine: { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 } }));
+    world.movement.fleets.set('b', mkFleet('b', B, 300, { composition: { corvette: 3 }, arrivedAtSeconds: 100, doctrine: { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 } }));
+    const opened = cycle();
+    check('the defender fights with its orbital defenses', (opened?.defender.fortification?.defensePower ?? 0) === 185, String(opened?.defender.fortification?.defensePower));
+    check('the defenses add their mass to the defender', Math.abs((opened?.defender.maxHp ?? 0) - (300 * 10 + 185 * 10)) < 1e-6, String(opened?.defender.maxHp));
+    check('the attacker brings no fortification', opened?.attacker.fortification === undefined);
+    const network = () => fort.orbital.slots.find((sl: any) => sl.structureId === 'orbital_defense_network');
+    const s = untilOutcome();
+    check('the battle ends', !!s?.outcome, s?.outcome?.reason);
+    check('the structures took fire', network().integrity < 100, String(network().integrity));
+    check('the tally counted no phantom structure loss', (s?.tally?.[B]?.structuresLost ?? 0) === fort.orbital.slots.filter((sl: any) => sl.state === 'destroyed').length);
+    check('one chronicle event was filed for the battle', pendingCount() === 1, String(pendingCount()));
+    const mine = drainNotifications(A);
+    const theirs = drainNotifications(B);
+    check('each side got one notification', mine.length === 1 && theirs.length === 1, `${mine.length}/${theirs.length}`);
+    check('the notification names the system and the outcome', /VICTORY|DEFEAT|STANDOFF/.test(mine[0]?.title ?? '') && (mine[0]?.title ?? '').includes(String(world.movement.systems.get(SYS)?.name ?? SYS).toUpperCase()), mine[0]?.title);
+    check('a defeat is urgent, the rest normal', mine.concat(theirs).every(n => (n.title.startsWith('DEFEAT')) === (n.priority === 'urgent')));
+    world.construction.planets.delete(fort.id);
+    resetChronicleBuffer();
 }
 
 world.rivalries.delete(`rivalry-${A}-${B}`);
