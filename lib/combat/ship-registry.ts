@@ -511,6 +511,30 @@ export const MAX_DESIGN_NAME_LENGTH = 40;
  * Everything a design is worth. `unlockedTechIds` gates modules; pass null to
  * skip the tech check (display of standard patterns, tests).
  */
+/** How far past its rated output a reactor can be pushed, as a fraction of that output. */
+export const BROWNOUT_MAX_OVERDRAW = 0.25;
+/** Combat power lost per unit of overdraw ratio: 1% over output costs 1% power. */
+export const BROWNOUT_POWER_PER_OVERDRAW = 1.0;
+
+/**
+ * The brownout a fit incurs. Linear on purpose: a brute force over every
+ * hull × core × fit shows a linear 1:1 penalty never lets an overdrawn fit
+ * out-rate the best legal one, while a gentler curve does.
+ */
+export function brownoutPenaltyFor(produced: number, drawn: number): {
+    overdraw: number; ratio: number; maxEnergyDraw: number; penalty: number; overCap: boolean;
+} {
+    const overdraw = Math.max(0, drawn - produced);
+    const ratio = overdraw / Math.max(1, produced);
+    return {
+        overdraw,
+        ratio,
+        maxEnergyDraw: Math.floor(produced * (1 + BROWNOUT_MAX_OVERDRAW)),
+        penalty: Math.min(ratio, 0.9) * BROWNOUT_POWER_PER_OVERDRAW,
+        overCap: ratio > BROWNOUT_MAX_OVERDRAW + 1e-9,
+    };
+}
+
 export function summarizeDesign(
     design: Pick<ShipDesign, 'hullId' | 'components' | 'name'>,
     unlockedTechIds: ReadonlySet<string> | null | undefined,
@@ -523,16 +547,22 @@ export function summarizeDesign(
         return {
             hullId: (design.hullId ?? 'corvette') as ShipClassId,
             power: 0,
+            ratedPower: 0,
             cost: { CREDITS: 0, METALS: 0 },
             buildTime: 0,
             speedMult: 0,
             energyProduced: 0,
             energyDrawn: 0,
             energyBalance: 0,
+            overdraw: 0,
+            overdrawRatio: 0,
+            maxEnergyDraw: 0,
+            brownoutPenalty: 0,
             profile: emptyProfile(),
             fitted: 0,
             slots: 0,
             issues: [`Unknown hull "${String(design.hullId)}".`],
+            warnings: [],
             lockedComponentIds,
             valid: false,
         };
@@ -589,24 +619,47 @@ export function summarizeDesign(
         issues.push(`Research required for: ${names.join(', ')}.`);
     }
 
+    // Brownout. A reactor can be pushed past its rated output, and the ship
+    // pays for it in combat power: every 1% over costs 1%, up to a hard cap.
+    // Overdraw used to refuse the design outright, so the power grid was a
+    // wall rather than a trade. Cost, build time, signature and lane speed are
+    // not reduced — the modules are aboard and paid for, they just run starved.
     const energyBalance = energyProduced - energyDrawn;
-    if (energyBalance < 0) {
-        issues.push(`Power draw exceeds output by ${-energyBalance}. Fit a stronger core or lighter modules.`);
+    const brownout = brownoutPenaltyFor(energyProduced, energyDrawn);
+    const warnings: string[] = [];
+    if (brownout.overCap) {
+        issues.push(`Power draw ${energyDrawn} exceeds the ${brownout.maxEnergyDraw} this reactor can be pushed to (${energyProduced} + ${Math.round(BROWNOUT_MAX_OVERDRAW * 100)}%). Fit a stronger core or lighter modules.`);
+    } else if (brownout.overdraw > 0) {
+        const pct = Math.round(brownout.penalty * 100);
+        warnings.push(`Brownout: draw exceeds output by ${brownout.overdraw} (${pct}%). Ships fight at -${pct}% power.`);
     }
+    const rated = hull.basePower * powerMult;
+    const ratedPower = Math.max(1, Math.round(rated));
+    // floor, and at least one point below the rating: on a small hull a 3%
+    // penalty would otherwise round away and the overdraw would be free.
+    const netPower = brownout.overdraw > 0
+        ? Math.max(1, Math.min(ratedPower - 1, Math.floor(rated * (1 - brownout.penalty))))
+        : ratedPower;
 
     return {
         hullId: hull.id,
-        power: Math.max(1, Math.round(hull.basePower * powerMult)),
+        power: netPower,
+        ratedPower,
         cost: { CREDITS: Math.round(credits), METALS: Math.round(metals) },
         buildTime: Math.round(buildTime),
         speedMult: Math.round(speedMult * 100) / 100,
         energyProduced,
         energyDrawn,
         energyBalance,
+        overdraw: brownout.overdraw,
+        overdrawRatio: brownout.ratio,
+        maxEnergyDraw: brownout.maxEnergyDraw,
+        brownoutPenalty: brownout.overdraw > 0 && !brownout.overCap ? brownout.penalty : 0,
         profile,
         fitted,
         slots: hull.slots.length,
         issues,
+        warnings,
         lockedComponentIds,
         valid: issues.length === 0,
     };

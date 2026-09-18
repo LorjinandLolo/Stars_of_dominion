@@ -85,8 +85,10 @@ export interface ShipDesign {
 /** Everything the UI shows and the worker charges, derived from one design. */
 export interface DesignSummary {
     hullId: ShipClassId;
-    /** Per-ship combat power that lands in fleet.basePower on completion. */
+    /** Per-ship combat power that lands in fleet.basePower on completion. Net of any brownout penalty. */
     power: number;
+    /** Power the fit is rated for with the reactor covering the draw. Equals `power` when it does. */
+    ratedPower: number;
     /** Faction-reserve keys, ready for the worker's charge helper. */
     cost: { CREDITS: number; METALS: number };
     buildTime: number;
@@ -95,11 +97,21 @@ export interface DesignSummary {
     energyProduced: number;
     energyDrawn: number;
     energyBalance: number;
+    /** Draw beyond reactor output; 0 when the reactor covers the fit. */
+    overdraw: number;
+    /** overdraw / output. Above BROWNOUT_MAX_OVERDRAW the design is refused. */
+    overdrawRatio: number;
+    /** The most this reactor can be pushed to feed: output × (1 + BROWNOUT_MAX_OVERDRAW). */
+    maxEnergyDraw: number;
+    /** Fraction of combat power lost to brownout. Already applied to `power`. */
+    brownoutPenalty: number;
     profile: DesignProfile;
     fitted: number;
     slots: number;
     /** Human-readable reasons the design cannot be built. Empty when valid. */
     issues: string[];
+    /** Buildable, but the player should know: e.g. the brownout penalty. */
+    warnings: string[];
     /** Components whose tech prerequisite the faction has not researched. */
     lockedComponentIds: string[];
     valid: boolean;

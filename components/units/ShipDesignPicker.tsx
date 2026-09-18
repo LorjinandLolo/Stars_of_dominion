@@ -184,7 +184,10 @@ export default function ShipDesignPicker({ onCommission, layout = 'row', disable
                                 {hull?.name ?? design.hullId}{own ? '' : ' · standard'}
                             </div>
                             <div className="text-[9px] text-slate-400 mt-1 flex items-center gap-2 font-mono">
-                                <span className="flex items-center gap-0.5" title="Combat power"><Zap size={9} className="text-amber-400" />{summary.power}</span>
+                                <span className="flex items-center gap-0.5" title={summary.brownoutPenalty > 0 ? `Combat power ${summary.power} (rated ${summary.ratedPower}; brownout -${Math.round(summary.brownoutPenalty * 100)}%)` : 'Combat power'}>
+                                    <Zap size={9} className={summary.brownoutPenalty > 0 ? 'text-orange-400' : 'text-amber-400'} />{summary.power}
+                                    {summary.brownoutPenalty > 0 && <span className="text-orange-300">-{Math.round(summary.brownoutPenalty * 100)}%</span>}
+                                </span>
                                 <span className="flex items-center gap-0.5" title="Build time"><Clock size={9} className="text-slate-500" />{formatBuildTime(summary.buildTime)}</span>
                             </div>
                             <div className="text-[8px] text-slate-500 mt-0.5 flex items-center gap-1 font-mono">

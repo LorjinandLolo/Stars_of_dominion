@@ -447,6 +447,109 @@ test('shipyardSystemIdsFor uses the same yard rule as the gate', () => {
     expectEq(ids, ['sys-orbital', 'sys-surface']);
 });
 
+// ─── Energy brownout ─────────────────────────────────────────────────────────
+
+test('draw within output is not a brownout', () => {
+    // corvette: hull 10 + fission 40 = 50 produced; laser 8 + hardened shields 18 = 26 drawn
+    const s = summarizeDesign({ hullId: 'corvette', name: 'Even', components: { w1: 'wpn-pulse-laser', u1: 'util-hardened-shields', c1: 'core-fission' } }, null);
+    expectEq(s.overdraw, 0);
+    expectEq(s.warnings.length, 0);
+    expectEq(s.power, s.ratedPower);
+    expectEq(s.brownoutPenalty, 0);
+});
+
+test('a lance battleship on a fusion core browns out instead of being refused', () => {
+    const s = summarizeDesign({
+        hullId: 'battleship', name: 'Hot Lance',
+        components: { w1: 'wpn-spinal-lance', w2: 'wpn-spinal-lance', w3: 'wpn-spinal-lance', w4: 'wpn-spinal-lance', c1: 'core-fusion' },
+    }, null);
+    expectTrue(s.valid, s.issues.join(' | '));
+    expectEq(s.energyBalance, -6);           // 45 + 85 = 130 produced, 136 drawn
+    expectEq(s.overdraw, 6);
+    expectEq(s.maxEnergyDraw, 162);          // floor(130 × 1.25)
+    expectEq(s.ratedPower, 193);             // round(90 × 2.14)
+    expectEq(s.power, 183);                  // floor(192.6 × (1 − 6/130))
+    expectTrue(s.warnings.some(w => w.includes('Brownout')), s.warnings.join(' | '));
+});
+
+test('brownout costs power and nothing else', () => {
+    const fit = { w1: 'wpn-spinal-lance', w2: 'wpn-spinal-lance', w3: 'wpn-spinal-lance', w4: 'wpn-spinal-lance' };
+    const hot = summarizeDesign({ hullId: 'battleship', name: 'Hot', components: { ...fit, c1: 'core-fusion' } }, null);
+    const cool = summarizeDesign({ hullId: 'battleship', name: 'Cool', components: { ...fit, c1: 'core-singularity' } }, null);
+    expectTrue(hot.power < hot.ratedPower);
+    expectEq(hot.profile.energy, cool.profile.energy);
+    expectEq(hot.speedMult, cool.speedMult);
+    // any overdraw costs at least one point, even where the percentage rounds away
+    const tiny = summarizeDesign({ hullId: 'corvette', name: 'Warm', components: { w1: 'wpn-missile-rack', u1: 'util-reactive-armor' } }, null);
+    expectEq(tiny.overdraw, 1);              // hull 10 produced, 5 + 6 drawn
+    expectTrue(tiny.valid, tiny.issues.join(' | '));
+    expectEq(tiny.power, tiny.ratedPower - 1);
+});
+
+test('the cap still refuses a reactor pushed past 125%', () => {
+    const glass = summarizeDesign({
+        hullId: 'battleship', name: 'Glass Lance',
+        components: { w1: 'wpn-spinal-lance', w2: 'wpn-spinal-lance', w3: 'wpn-spinal-lance', w4: 'wpn-spinal-lance', c1: 'core-fission' },
+    }, null);
+    expectTrue(!glass.valid);                // 85 produced, 136 drawn = 60% over
+    expectTrue(glass.issues.some(i => i.includes('106')), glass.issues.join(' | '));
+    expectEq(glass.brownoutPenalty, 0);      // refused, not penalised
+});
+
+test('standard patterns never brown out', () => {
+    for (const d of DEFAULT_DESIGNS) {
+        const s = summarizeDesign(d, new Set());
+        expectEq(s.overdraw, 0, d.name);
+        expectEq(s.power, s.ratedPower, d.name);
+    }
+});
+
+test('a recruit is rated at the browned-out power', () => {
+    const world: any = { shipDesigns: new Map(), tech: new Map([['f1', { unlockedTechIds: ['mil_t3_4', 'inf_t2_ind_4'] }]]) };
+    const saved = saveDesign(world, 'f1', { id: 'design-f1-hot', name: 'Hot Lance', hullId: 'battleship', components: { w1: 'wpn-spinal-lance', w2: 'wpn-spinal-lance', w3: 'wpn-spinal-lance', w4: 'wpn-spinal-lance', c1: 'core-fusion' } } as any, 1);
+    expectTrue(saved.ok, (saved as any).reason);
+    const spec = resolveRecruitSpec(world, 'f1', { unitType: 'BATTLESHIP', designId: 'design-f1-hot' }, 'fleet');
+    expectTrue(spec.ok, (spec as any).reason);
+    if (spec.ok) expectEq(spec.spec.unitPower, 183);
+});
+
+test('no overdrawn fit out-rates the best legal fit on the same hull and core', () => {
+    const byType = (t: string) => SHIP_COMPONENTS.filter(c => c.type === t).map(c => c.id);
+    const multisets = (options: (string | null)[], size: number): (string | null)[][] => {
+        const out: (string | null)[][] = [];
+        const walk = (start: number, acc: (string | null)[]) => {
+            if (acc.length === size) { out.push(acc); return; }
+            for (let i = start; i < options.length; i++) walk(i, [...acc, options[i]]);
+        };
+        walk(0, []);
+        return out;
+    };
+    for (const hull of Object.values(SHIP_HULLS)) {
+        const slots = {
+            weapon: hull.slots.filter(s => s.type === 'weapon'),
+            utility: hull.slots.filter(s => s.type === 'utility'),
+            core: hull.slots.filter(s => s.type === 'core'),
+        };
+        const weaponSets = multisets([null, ...byType('weapon')], slots.weapon.length);
+        const utilitySets = multisets([null, ...byType('utility')], slots.utility.length);
+        for (const core of [null, ...byType('core')]) {
+            let bestLegal = 0;
+            let bestHot = 0;
+            for (const ws of weaponSets) for (const us of utilitySets) {
+                const components: Record<string, string> = {};
+                ws.forEach((id, i) => { if (id) components[slots.weapon[i].id] = id; });
+                us.forEach((id, i) => { if (id) components[slots.utility[i].id] = id; });
+                if (core && slots.core[0]) components[slots.core[0].id] = core;
+                const s = summarizeDesign({ hullId: hull.id, name: 'x', components }, null);
+                if (!s.valid) continue;
+                if (s.overdraw > 0) bestHot = Math.max(bestHot, s.power);
+                else bestLegal = Math.max(bestLegal, s.power);
+            }
+            expectTrue(bestHot <= bestLegal, `${hull.id} + ${core ?? 'no core'}: overdrawn ${bestHot} beats legal ${bestLegal}`);
+        }
+    }
+});
+
 console.log(`\nTests passed: ${passed}`);
 if (failed > 0) {
     console.error(`Tests failed: ${failed}`);

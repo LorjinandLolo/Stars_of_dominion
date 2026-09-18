@@ -462,8 +462,16 @@ function Specs({ summary, bare, standard, standardName }: {
 }) {
     const vsBare = bare.power > 0 ? Math.round(((summary.power - bare.power) / bare.power) * 100) : 0;
     const vsStd = standard && standard.power > 0 ? Math.round(((summary.power - standard.power) / standard.power) * 100) : null;
-    const energyPct = summary.energyProduced > 0 ? Math.min(100, (summary.energyDrawn / summary.energyProduced) * 100) : 0;
-    const over = summary.energyBalance < 0;
+    // Power grid: the bar runs to the most the reactor can be pushed to
+    // (output + 25%), with a tick at rated output. Past the tick is brownout:
+    // buildable, but every 1% over costs 1% combat power. Past the bar is refused.
+    const gridScale = Math.max(1, summary.maxEnergyDraw, summary.energyProduced);
+    const energyPct = Math.min(100, (summary.energyDrawn / gridScale) * 100);
+    const ratedTickPct = Math.min(100, (summary.energyProduced / gridScale) * 100);
+    const nearLimit = summary.energyProduced > 0 && summary.energyDrawn / summary.energyProduced > 0.85;
+    const overCap = summary.overdraw > 0 && summary.brownoutPenalty === 0;
+    const hot = summary.overdraw > 0 && !overCap;
+    const brownoutPct = Math.round(summary.brownoutPenalty * 100);
     const attack = [['energy', 'Energy', 'bg-fuchsia-400'], ['kinetic', 'Kinetic', 'bg-orange-400'], ['explosive', 'Explosive', 'bg-red-400']] as const;
     const defense = [['shield', 'Shield', 'bg-cyan-400'], ['armor', 'Armor', 'bg-slate-300'], ['evasion', 'Evasion', 'bg-emerald-400']] as const;
     const maxWeight = Math.max(1, ...attack.map(([k]) => summary.profile[k]), ...defense.map(([k]) => summary.profile[k]));
@@ -478,6 +486,12 @@ function Specs({ summary, bare, standard, standardName }: {
                 <div className="text-[9px] uppercase tracking-widest text-blue-400 font-display">Combat power per ship</div>
                 <div className="flex items-end gap-3 mt-1">
                     <div className="text-3xl font-mono text-white">{summary.power}</div>
+                    {hot && (
+                        <div className="pb-1 leading-tight" title={`Rated ${summary.ratedPower}; the starved reactor costs ${brownoutPct}% in battle.`}>
+                            <div className="text-sm font-mono text-slate-500 line-through">{summary.ratedPower}</div>
+                            <div className="text-[9px] font-display tracking-widest text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded px-1.5 py-0.5">BROWNOUT -{brownoutPct}%</div>
+                        </div>
+                    )}
                     <div className="text-[10px] text-slate-400 leading-tight pb-1">
                         <div>{vsBare >= 0 ? '+' : ''}{vsBare}% vs bare hull</div>
                         {vsStd !== null && <div className={vsStd >= 0 ? 'text-emerald-400' : 'text-amber-400'}>{vsStd >= 0 ? '+' : ''}{vsStd}% vs {standardName ?? 'standard'}</div>}
@@ -504,16 +518,31 @@ function Specs({ summary, bare, standard, standardName }: {
             <div className="space-y-2">
                 <div className="flex justify-between text-[9px] uppercase tracking-widest font-mono">
                     <span className="text-slate-500">Power grid</span>
-                    <span className={over ? 'text-red-400 font-bold' : 'text-white'}>{summary.energyDrawn} / {summary.energyProduced}</span>
+                    <span className={overCap ? 'text-red-400 font-bold' : hot ? 'text-orange-300 font-bold' : 'text-white'}>
+                        {summary.energyDrawn} / {summary.energyProduced}
+                        {(hot || overCap) && <span className="text-slate-500 font-normal"> (limit {summary.maxEnergyDraw})</span>}
+                    </span>
                 </div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div className={`h-full transition-all duration-500 ${over ? 'bg-red-500' : energyPct > 85 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${over ? 100 : energyPct}%` }} />
+                <div className="relative h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    {/* brownout zone: rated output up to the push limit */}
+                    <div className="absolute inset-y-0 bg-orange-500/15" style={{ left: `${ratedTickPct}%`, right: 0 }} />
+                    <div
+                        className={`relative h-full transition-all duration-500 ${overCap ? 'bg-red-500' : hot ? 'bg-orange-400' : nearLimit ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                        style={{ width: `${overCap ? 100 : energyPct}%` }}
+                    />
+                    <div className="absolute inset-y-0 w-px bg-white/60" style={{ left: `${ratedTickPct}%` }} title="Rated reactor output" />
                 </div>
                 <div className="text-[10px] text-slate-500 flex gap-2 items-start">
-                    {over ? <AlertOctagon size={12} className="text-red-400 shrink-0" /> : <Info size={12} className="text-blue-400 shrink-0" />}
-                    <span>{over
-                        ? `Draw exceeds output by ${-summary.energyBalance}. Fit a stronger core or drop a module.`
-                        : `${summary.energyBalance} spare. Hull reactor plus core feed every module.`}</span>
+                    {overCap
+                        ? <AlertOctagon size={12} className="text-red-400 shrink-0" />
+                        : hot
+                            ? <AlertOctagon size={12} className="text-orange-300 shrink-0" />
+                            : <Info size={12} className="text-blue-400 shrink-0" />}
+                    <span>{overCap
+                        ? `Draw ${summary.energyDrawn} is past the ${summary.maxEnergyDraw} this reactor can be pushed to. Fit a stronger core or drop a module.`
+                        : hot
+                            ? `Brownout: ${summary.overdraw} over (${brownoutPct}%). -${brownoutPct}% combat power. A stronger core clears it.`
+                            : `${summary.energyBalance} spare. A reactor can be pushed 25% past its output, at 1% combat power per 1% over.`}</span>
                 </div>
             </div>
 
@@ -535,9 +564,11 @@ function Specs({ summary, bare, standard, standardName }: {
             </div>
 
             <div className={`p-3 rounded-lg border text-[10px] leading-relaxed ${summary.valid
-                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+                ? hot ? 'bg-orange-500/5 border-orange-500/25 text-orange-200' : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
                 : 'bg-red-500/5 border-red-500/20 text-red-300'}`}>
-                {summary.valid ? (
+                {summary.valid && hot ? (
+                    <span className="flex gap-2"><AlertOctagon size={12} className="shrink-0 mt-0.5" /> Fileable with brownout: ships built from this pattern fight at -{brownoutPct}% power ({summary.power} instead of {summary.ratedPower}). Cost and build time are unchanged.</span>
+                ) : summary.valid ? (
                     <span className="flex gap-2"><CheckCircle2 size={12} className="shrink-0" /> Ready to file. Commission it from any fleet&apos;s Requisition panel or a planet&apos;s Commission Space Forces.</span>
                 ) : (
                     <ul className="space-y-1">
