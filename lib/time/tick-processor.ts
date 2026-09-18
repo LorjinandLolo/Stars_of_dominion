@@ -23,6 +23,7 @@ import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
 import { yardRepairBonus } from '../combat/fleet-repair';
+import { isSystemContested } from '../combat/war-status';
 import { Fleet } from '../movement/types';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { reconcileRaiderRosters, tickPirateMetrics, tickPirateOrganizations } from '../piracy/organization-service';
@@ -816,6 +817,9 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
 
         // If we are already full strength, skip
         if (fleet.strength >= 1.0) continue;
+
+        // No repair while an enemy fleet holds the system (lib/combat/war-status.ts).
+        if (isSystemContested(world, fleet.currentSystemId, fleet.factionId)) continue;
 
         // Base repair: 0.05
         let repairRate = 0.05;

@@ -6,7 +6,9 @@
 import type { Fleet } from '../movement/types';
 import type { CombatantState, CombatStance, UnitComposition, UnitType } from './combat-types';
 import type { DesignProfile } from './ship-types';
-import { addProfile, normalizeComposition, scaleProfile } from './ship-registry';
+import { addProfile, getHull, normalizeComposition, scaleProfile } from './ship-registry';
+import { experienceMultiplier } from './veterancy';
+import config from './combat-config.json';
 
 /** Strike-craft keys the engine attrits in place each round (combat-engine air phase). */
 const AIR_KEYS: UnitType[] = ['interceptor', 'bomber'];
@@ -15,6 +17,75 @@ const AIR_KEYS: UnitType[] = ['interceptor', 'bomber'];
 export const PURSUIT_STRENGTH_LOSS = 0.05;
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+
+// ─── One scale ───────────────────────────────────────────────────────────────
+// `basePower × strength` is the truth. A combatant's hp is a projection of it
+// at hpPerPower hp per point of power, re-derived from the live fleets every
+// round. Before this the pool ran at power × 10 while fleets lost
+// damage / basePower, so a fleet was dead when its pool had lost a tenth and
+// every hp / maxHp comparison in the engine was noise.
+
+/** A fleet's mass in the combat pool: power × strength × veterancy, on the hp scale. */
+export function fleetMass(fleet: Pick<Fleet, 'basePower' | 'strength' | 'experience'>): number {
+    return Math.max(0, fleet.basePower || 0) * clamp01(fleet.strength ?? 1)
+        * experienceMultiplier(fleet.experience) * config.constants.hpPerPower;
+}
+
+export function massOf(fleets: ReadonlyArray<Pick<Fleet, 'basePower' | 'strength' | 'experience'>>): number {
+    let total = 0;
+    for (const f of fleets) total += fleetMass(f);
+    return total;
+}
+
+/** Hull weight for power shares: the bare hull's rating; a carrier weighs as a cruiser, wings weigh nothing. */
+function hullWeight(key: string): number {
+    const k = key.toLowerCase();
+    if (k === 'carrier') return getHull('cruiser')?.basePower ?? 45;
+    return getHull(k as any)?.basePower ?? 0;
+}
+
+/**
+ * Share of a roster's hull weight that is screens (corvettes + destroyers).
+ * Screens carry the torpedoes, so this scales the bonus a side earns against
+ * unscreened capitals. 0 for an empty or wings-only roster.
+ */
+export function screenPowerShare(composition: UnitComposition | null | undefined): number {
+    let screens = 0;
+    let total = 0;
+    for (const [key, count] of Object.entries(composition ?? {})) {
+        const n = Math.max(0, Number(count) || 0);
+        if (n <= 0) continue;
+        const w = hullWeight(key) * n;
+        total += w;
+        const k = key.toLowerCase();
+        if (k === 'corvette' || k === 'destroyer') screens += w;
+    }
+    return total > 0 ? screens / total : 0;
+}
+
+/**
+ * Re-derive a side's pool from its standing fleets and orbital defenses.
+ * hp is what stands now; maxHp is everything the side has committed to this
+ * battle (each fleet at the mass it arrived with, the fort at its largest).
+ */
+export function syncPool(side: CombatantState, standingFleets: ReadonlyArray<Fleet>): void {
+    const H = config.constants.hpPerPower;
+    const fortMass = Math.max(0, side.fortification?.defensePower ?? 0) * config.constants.fortificationHpPerPower;
+    const committed = side.committed ?? (side.committed = {});
+    let mass = 0;
+    for (const f of standingFleets) {
+        const m = fleetMass(f);
+        mass += m;
+        if (committed[f.id] === undefined) committed[f.id] = m;
+    }
+    side.fortCommitted = Math.max(side.fortCommitted ?? 0, fortMass);
+    side.hp = mass + fortMass;
+    let committedTotal = side.fortCommitted;
+    for (const m of Object.values(committed)) committedTotal += m;
+    side.maxHp = Math.max(side.hp, committedTotal);
+    side.baseForceCount = side.hp / H;
+    side.casualties = (side.maxHp - side.hp) / H;
+}
 
 /** Sim time the most recent fleet on a side entered the system; -Infinity if none is stamped. */
 export function latestArrival(fleets: Fleet[]): number {

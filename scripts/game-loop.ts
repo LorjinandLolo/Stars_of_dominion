@@ -29,6 +29,9 @@ import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-ma
 import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { blendExperience } from '../lib/combat/veterancy';
+
+/** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
+const FLEET_SHELL_POWER = 10;
 import { initializeFactionHomeWorld } from '../lib/economy/services/initialization-service';
 import { issueExploreOrder, issueRelayPing } from '../lib/exploration/exploration-service';
 import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movement/belts';
@@ -4026,7 +4029,11 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 },
                 postureId: 'Expansionist',
                 strength: 1.0,
-                basePower: 100,
+                // The shell is a command tender. It used to rate 100, which was
+                // free toughness; under power-vs-power damage it would also be
+                // free firepower at 5 metals a point (a battleship pays 25), so
+                // merged empty shells would beat a bought fleet.
+                basePower: FLEET_SHELL_POWER,
                 composition: {},
                 hyperdriveProfile: {
                     hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },

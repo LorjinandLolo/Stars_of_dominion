@@ -12,9 +12,15 @@ import { processSectorCombats } from './combat-manager';
 import type { CombatState } from './combat-types';
 import { pendingCount, resetChronicleBuffer } from '../narrative/chronicle';
 import { drainNotifications } from '../time/notification-hooks';
+import { dockRepairPerCycle } from './fleet-repair';
 
 const A = 'faction-sarrak';
 const B = 'faction-buthari';
+
+// The engine rolls Math.random for its intel-prediction bonus (+5% on a hit)
+// and for annihilation. Pinned high so neither fires and every number below
+// is exact.
+Math.random = () => 0.99;
 
 let passed = 0;
 let failed = 0;
@@ -189,7 +195,10 @@ console.log('\n7. Orbital defenses fight, and the battle is reported');
     world.movement.fleets.set('a', mkFleet('a', A, 600, { composition: { cruiser: 3 }, arrivedAtSeconds: 900, doctrine: { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 } }));
     world.movement.fleets.set('b', mkFleet('b', B, 300, { composition: { corvette: 3 }, arrivedAtSeconds: 100, doctrine: { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 } }));
     const opened = cycle();
-    check('the defender fights with its orbital defenses', (opened?.defender.fortification?.defensePower ?? 0) === 185, String(opened?.defender.fortification?.defensePower));
+    // Station 25 + Defense Network 160 = 185 power committed; by the time we look
+    // the first volley has already landed on the structures.
+    check('the defender fights with its orbital defenses', opened?.defender.fortCommitted === 1850, String(opened?.defender.fortCommitted));
+    check('and they were shot at in the first round', (opened?.defender.fortification?.defensePower ?? 185) < 185, String(opened?.defender.fortification?.defensePower));
     check('the defenses add their mass to the defender', Math.abs((opened?.defender.maxHp ?? 0) - (300 * 10 + 185 * 10)) < 1e-6, String(opened?.defender.maxHp));
     check('the attacker brings no fortification', opened?.attacker.fortification === undefined);
     const network = () => fort.orbital.slots.find((sl: any) => sl.structureId === 'orbital_defense_network');
@@ -236,6 +245,134 @@ console.log('\n8. An admiral commands');
     check('the battle ends', !!s?.outcome);
     check('the admiral earned battle XP for the win', admiral.xp === 300, String(admiral.xp));
     world.leadership.leaders.delete('adm-test');
+}
+
+console.log('\n9. One scale: the pool is the fleets');
+{
+    reset();
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    world.movement.fleets.set('a', mkFleet('a', A, 800, { composition: { cruiser: 8 }, arrivedAtSeconds: 900, doctrine: noRout, experience: 0.25 }));
+    world.movement.fleets.set('a2', mkFleet('a2', A, 400, { composition: { destroyer: 10 }, arrivedAtSeconds: 900, doctrine: noRout, strength: 0.5 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1200, { composition: { cruiser: 12 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    const expectedPool = (ids: string[]) => ids.reduce((sum, id) => {
+        const f: any = world.movement.fleets.get(id);
+        return f ? sum + f.basePower * f.strength * (1 + (f.experience ?? 0)) * 10 : sum;
+    }, 0);
+    let ok = true;
+    let detail = '';
+    let s: CombatState | undefined;
+    for (let i = 0; i < 4; i++) {
+        s = cycle();
+        if (!s || s.outcome) break;
+        const a = expectedPool(['a', 'a2']);
+        const b = expectedPool(['b']);
+        if (Math.abs(s.attacker.hp - a) > 1e-6 || Math.abs(s.defender.hp - b) > 1e-6) { ok = false; detail = `round ${i + 1}: ${s.attacker.hp} vs ${a}, ${s.defender.hp} vs ${b}`; break; }
+    }
+    check('after every round hp equals sum(basePower × strength × veterancy) × 10', ok, detail);
+    check('maxHp is what each fleet brought in (a half-strength fleet commits half)', Math.abs((s?.attacker.maxHp ?? 0) - (800 * 1.25 * 10 + 400 * 0.5 * 10)) < 1e-6, String(s?.attacker.maxHp));
+    const lostA = (s?.tally?.[A]?.powerLost ?? 0);
+    const a: any = world.movement.fleets.get('a');
+    const a2: any = world.movement.fleets.get('a2');
+    check('the tally counts power actually removed', Math.abs(lostA - ((1 - a.strength) * 800 + (0.5 - a2.strength) * 400)) < 1e-6, String(lostA));
+}
+
+console.log('\n10. Power is firepower');
+{
+    // Same hulls, same count; one side is rated higher (better fits). It used
+    // to deal identical damage, because the old table counted ships.
+    const run = (powerA: number) => {
+        reset();
+        const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+        world.movement.fleets.set('a', mkFleet('a', A, powerA, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, doctrine: noRout }));
+        world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 100, doctrine: noRout }));
+        cycle();
+        return 1 - (world.movement.fleets.get('b') as any).strength;
+    };
+    const plain = run(1000);
+    const fitted = run(1500);
+    check('a better-rated fleet of the same hulls hits harder', fitted > plain * 1.4, `${plain.toFixed(4)} -> ${fitted.toFixed(4)}`);
+
+    // Veterancy: real for the first time (it used to cancel in power / maxHp).
+    const vet = (xp: number) => {
+        reset();
+        const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+        world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, doctrine: noRout, experience: xp }));
+        world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 100, doctrine: noRout }));
+        cycle();
+        return { dealt: 1 - (world.movement.fleets.get('b') as any).strength, taken: 1 - (world.movement.fleets.get('a') as any).strength };
+    };
+    const green = vet(0);
+    const elite = vet(0.25);
+    check('an elite crew deals 1.25× the damage', Math.abs(elite.dealt / green.dealt - 1.25) < 1e-6, `${green.dealt} -> ${elite.dealt}`);
+    check('and loses strength 1.25× slower', Math.abs(green.taken / elite.taken - 1.25) < 1e-6, `${green.taken} -> ${elite.taken}`);
+}
+
+console.log('\n11. Overkill cap and the destroyed floor');
+{
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 5000, { composition: { cruiser: 50 }, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 100, { composition: { corvette: 8 }, arrivedAtSeconds: 100, doctrine: { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 } }));
+    const first = cycle();
+    const b: any = world.movement.fleets.get('b');
+    check('a 50:1 stomp still leaves the victim 0.40 after one round', !!b && Math.abs(b.strength - 0.4) < 1e-9 && !first?.outcome, String(b?.strength));
+    const s = untilOutcome();
+    check('and finishes it in the second', s?.outcome?.reason === 'destroyed' && !world.movement.fleets.has('b'), s?.outcome?.reason);
+
+    reset();
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, doctrine: noRout, originSystemId: null }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 100, doctrine: noRout, originSystemId: null }));
+    let rounds = 0;
+    while (rounds < 80 && world.movement.fleets.has('a') && world.movement.fleets.has('b')) { cycle(); rounds++; }
+    check('two fleets that cannot rout do not fight forever', rounds < 80, `${rounds} passes`);
+}
+
+console.log('\n12. Reinforcements join the pool and cannot fake a win');
+{
+    reset();
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, doctrine: noRout }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    const opened = cycle();
+    const maxBefore = opened!.defender.maxHp;
+    world.movement.fleets.set('b2', mkFleet('b2', B, 500, { composition: { destroyer: 12 }, arrivedAtSeconds: 950, doctrine: noRout }));
+    const next = cycle();
+    check('a reinforcement raises the side\'s committed mass by its own', Math.abs(next!.defender.maxHp - (maxBefore + 5000)) < 1e-6, `${maxBefore} -> ${next!.defender.maxHp}`);
+    check('so its fraction kept stays a real fraction', next!.defender.hp <= next!.defender.maxHp + 1e-6 && next!.defender.hp / next!.defender.maxHp < 1);
+}
+
+console.log('\n13. Fort parity and quiet yards');
+{
+    reset();
+    const fort: any = {
+        id: 'planet-parity-test', name: 'Parity', ownerId: B, systemId: SYS,
+        infrastructureLevel: 2, specialization: null, stability: 90, tiles: [],
+        orbital: { slots: [{ slotId: 'pp-orb0', structureId: 'orbital_defense_network', state: 'active', integrity: 100 }], buildQueue: [] },
+    };
+    world.construction.planets.set(fort.id, fort);
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    world.movement.fleets.set('a', mkFleet('a', A, 600, { composition: { cruiser: 6 }, arrivedAtSeconds: 900, doctrine: noRout }));
+    world.movement.fleets.set('b', mkFleet('b', B, 160, { composition: { corvette: 12 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    cycle();
+    const b: any = world.movement.fleets.get('b');
+    const integrityLost = (100 - fort.orbital.slots[0].integrity) / 100;
+    const strengthLost = 1 - b.strength;
+    // Equal mass (160 power each): the volley splits evenly, so both lose the same fraction.
+    check('a fort and a fleet of equal mass lose the same share of themselves', Math.abs(integrityLost - strengthLost) < 1e-6 && integrityLost > 0, `${integrityLost} vs ${strengthLost}`);
+    world.construction.planets.delete(fort.id);
+
+    // Repair: shut while an enemy holds the system, open once it leaves.
+    const sys: any = world.movement.systems.get(SYS);
+    const ownerBefore = sys.ownerFactionId;
+    sys.ownerFactionId = B;
+    reset();
+    world.movement.fleets.set('b', mkFleet('b', B, 500, { strength: 0.5 }));
+    const quiet = dockRepairPerCycle(world, world.movement.fleets.get('b') as any);
+    world.movement.fleets.set('a', mkFleet('a', A, 500, {}));
+    const underFire = dockRepairPerCycle(world, world.movement.fleets.get('b') as any);
+    check('a docked fleet repairs in a quiet system', quiet > 0, String(quiet));
+    check('and not at all while an enemy fleet holds it', underFire === 0, String(underFire));
+    sys.ownerFactionId = ownerBefore;
 }
 
 world.rivalries.delete(`rivalry-${A}-${B}`);

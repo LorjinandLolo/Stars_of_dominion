@@ -16,6 +16,7 @@ import {
 } from './combat-types';
 import config from './combat-config.json';
 import { designProfileModifier, normalizeComposition } from './ship-registry';
+import { screenPowerShare } from './engagement-rules';
 
 // Utility for applying bounds
 function clamp(val: number, min: number, max: number): number {
@@ -298,7 +299,8 @@ export function resolveEngagementRound(
     state.defender.currentStance = dStance;
 
     // Power calculations
-    const layer = state.phase;
+    // A fleet action is orbital for all six rounds (see TargetDetails.fleetAction).
+    const layer = state.target.fleetAction ? 'orbital' : state.phase;
     let attackerPower = calculateEffectivePower(state.attacker, state.defender, layer, 1.0);
     let defenderPower = calculateEffectivePower(state.defender, state.attacker, layer, state.target.terrainModifier);
 
@@ -307,8 +309,8 @@ export function resolveEngagementRound(
     defenderPower *= (1.0 + defenderStanceMod);
 
     // Apply existing momentum (+ momentum favors attacker, - favors defender)
-    if (state.momentum > 0) attackerPower *= (1.0 + (state.momentum * 0.10));
-    if (state.momentum < 0) defenderPower *= (1.0 + (Math.abs(state.momentum) * 0.10));
+    if (state.momentum > 0) attackerPower *= (1.0 + (state.momentum * config.constants.momentumPowerPerPoint));
+    if (state.momentum < 0) defenderPower *= (1.0 + (Math.abs(state.momentum) * config.constants.momentumPowerPerPoint));
 
     // Civilization combat traits.
     //
@@ -356,19 +358,22 @@ export function resolveEngagementRound(
         manualDefenderBonus = true;
     }
 
-    // HOI4 Damage Vectors Integration & Naval Air Support
-    // Every hull fights: corvettes screen alongside destroyers, battleships
-    // stand in the line with cruisers and carriers. Both were missing from
-    // this table, so a corvette wing or a battleship dealt zero damage.
+    // ─── Power-vs-power damage ────────────────────────────────────────────
+    // A side deals a fixed fraction of its EFFECTIVE MASS each round: its pool
+    // (ships plus orbital defenses, hpPerPower hp per point of power) times
+    // every multiplier computed above.
+    //
+    // This replaced a ship-COUNT table (screens×4 + capitals×2 light,
+    // capitals×8 heavy, ...). Under it a 12-power corvette dealt 6 a round and
+    // a 142-power battleship 10: per point of power a corvette swarm hit seven
+    // times harder than a battle line, and a design's power rating bought
+    // toughness only, never firepower. Now power is firepower, so hull class,
+    // modules, brownout, veterancy and admirals all reach the guns.
+    const C = config.constants;
     const aComp = state.attacker.composition;
-    const aScreens = (aComp['destroyer'] || 0) + (aComp['corvette'] || 0);
-    const aCapitals = (aComp['cruiser'] || 0) + (aComp['carrier'] || 0) + (aComp['battleship'] || 0);
+    const dComp = state.defender.composition;
     let aInterceptors = (aComp['interceptor'] || 0);
     let aBombers = (aComp['bomber'] || 0);
-
-    const dComp = state.defender.composition;
-    const dScreens = (dComp['destroyer'] || 0) + (dComp['corvette'] || 0);
-    const dCapitals = (dComp['cruiser'] || 0) + (dComp['carrier'] || 0) + (dComp['battleship'] || 0);
     let dInterceptors = (dComp['interceptor'] || 0);
     let dBombers = (dComp['bomber'] || 0);
 
@@ -392,49 +397,51 @@ export function resolveEngagementRound(
     dComp['interceptor'] = dInterceptors;
     dComp['bomber'] = dBombers;
 
-    // 2. Surface Combat Math
-    const aLightAtk = aScreens * 4 + aCapitals * 2;
-    const aHeavyAtk = aCapitals * 8;
-    const aTorpedoAtk = aScreens * 2; // Surface torpedoes only
+    // 2. Every multiplier on each side's mass, as one number.
+    const aMult = state.attacker.hp > 0 ? attackerPower / state.attacker.hp : 0;
+    const dMult = state.defender.hp > 0 ? defenderPower / state.defender.hp : 0;
 
-    const dLightAtk = dScreens * 4 + dCapitals * 2;
-    const dHeavyAtk = dCapitals * 8;
-    const dTorpedoAtk = dScreens * 2;
+    // 3. The pool is ships plus orbital defenses; the fort fires at its own ratio.
+    const massSplit = (side: CombatantState) => {
+        const fort = Math.min(side.hp, Math.max(0, side.fortification?.defensePower ?? 0) * C.fortificationHpPerPower);
+        return { fort, ships: Math.max(0, side.hp - fort) };
+    };
+    const aMass = massSplit(state.attacker);
+    const dMass = massSplit(state.defender);
 
-    // Apply combat modifiers to raw attacks
-    const aTotalMod = attackerPower / Math.max(1, state.attacker.maxHp || 100);
-    const dTotalMod = defenderPower / Math.max(1, state.defender.maxHp || 100);
+    // 4. Torpedoes: screens earn a bonus against capitals the enemy has not
+    // screened (three screens per capital is full cover). Nothing against a
+    // fully screened line or a roster with no capitals at all.
+    const aTorpedo = 1 + C.torpedoBonus * screenPowerShare(aComp) * (1 - clamp(state.defender.screeningEfficiency, 0, 1));
+    const dTorpedo = 1 + C.torpedoBonus * screenPowerShare(dComp) * (1 - clamp(state.attacker.screeningEfficiency, 0, 1));
 
-    // Torpedoes are blocked by screening efficiency
-    const aTorpedoDmg = aTorpedoAtk * (1.0 - state.defender.screeningEfficiency);
-    const dTorpedoDmg = dTorpedoAtk * (1.0 - state.attacker.screeningEfficiency);
+    // 5. Bombers that got through strike the pool directly.
+    const aAirDmg = aBombers * C.bomberStrikeDamage * aMult;
+    const dAirDmg = dBombers * C.bomberStrikeDamage * dMult;
 
-    // 3. Air Support Damage (Bombers bypass screens completely and deal massive flat damage directly to HP)
-    const aAirDmg = aBombers * 25; 
-    const dAirDmg = dBombers * 25;
+    const attackDmg = C.roundDamageFraction * aMult * (aMass.ships * aTorpedo + aMass.fort * C.fortificationFirepowerRatio) + aAirDmg;
+    const defendDmg = C.roundDamageFraction * dMult * (dMass.ships * dTorpedo + dMass.fort * C.fortificationFirepowerRatio) + dAirDmg;
 
-    // 4. Orbital defenses. A side holding armed planets in the system fires
-    // them alongside its ships (a Defense Network at 160 power hits like a
-    // dozen corvettes). Their mass is already inside hp/maxHp.
-    const aFortAtk = (state.attacker.fortification?.defensePower ?? 0) * config.constants.fortificationAttackPerPower;
-    const dFortAtk = (state.defender.fortification?.defensePower ?? 0) * config.constants.fortificationAttackPerPower;
-
-    const attackDmg = (aLightAtk + aHeavyAtk + aTorpedoDmg + aAirDmg + aFortAtk) * aTotalMod;
-    const defendDmg = (dLightAtk + dHeavyAtk + dTorpedoDmg + dAirDmg + dFortAtk) * dTotalMod;
-
-    const attackOrgDmg = attackDmg * 0.15; // Organization drops as ships get hit
-    const defendOrgDmg = defendDmg * 0.15;
-
-    // Apply to states
+    // Apply to states. The sector-combat manager re-derives both pools from
+    // the fleets after it has applied this damage to them (syncPool); the
+    // subtraction here keeps the engine self-contained for its pure tests and
+    // for app/actions/combat.ts tickCombats.
     state.defender.hp = Math.max(0, state.defender.hp - attackDmg);
-    state.defender.organization = Math.max(0, state.defender.organization - attackOrgDmg);
-
     state.attacker.hp = Math.max(0, state.attacker.hp - defendDmg);
-    state.attacker.organization = Math.max(0, state.attacker.organization - defendOrgDmg);
 
-    // Momentum shift logic: Whoever dealt more damage shifts momentum to them
-    const dmgDelta = attackDmg - defendDmg;
-    const shift = clamp(dmgDelta / (attackerPower + defenderPower || 1), -0.2, 0.2); // Swing cap per round
+    // Organization falls with the share of the committed force lost.
+    state.defender.organization = Math.max(0, state.defender.organization
+        - state.defender.maxOrganization * C.organizationDamageScale * attackDmg / Math.max(1, state.defender.maxHp));
+    state.attacker.organization = Math.max(0, state.attacker.organization
+        - state.attacker.maxOrganization * C.organizationDamageScale * defendDmg / Math.max(1, state.attacker.maxHp));
+
+    // Momentum follows the damage SHARE, not the damage difference over total
+    // power (which was always ~0.01 and never moved it). Equal exchanges shift
+    // nothing; out-damaging 2:1 swings +0.167 a round.
+    const totalDmg = attackDmg + defendDmg;
+    const shift = totalDmg > 0
+        ? clamp(C.momentumSwingScale * (attackDmg - defendDmg) / totalDmg, -C.momentumSwingCap, C.momentumSwingCap)
+        : 0;
     state.momentum = clamp(state.momentum + shift, -1, 1);
 
     const report: CombatRoundReport = {
@@ -447,7 +454,13 @@ export function resolveEngagementRound(
         supplyDecayDefender: 0,
         attackerPointsGained: 0,
         defenderPointsGained: 0,
-        events: []
+        events: [],
+        attackerMultiplier: aMult,
+        defenderMultiplier: dMult,
+        attackerTorpedoFactor: aTorpedo,
+        defenderTorpedoFactor: dTorpedo,
+        attackerAirDamage: aAirDmg,
+        defenderAirDamage: dAirDmg,
     };
 
     if (attackerPredictionBonus > 0) report.events.push("Attacker Intel allowed stance prediction bonus.");

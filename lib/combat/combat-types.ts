@@ -47,6 +47,14 @@ export interface TargetDetails {
     planetId?: string;
     terrainModifier: number;
     infrastructureIntegrity: number;
+    /**
+     * A fleet-versus-fleet action (everything the sector-combat manager
+     * starts). All six rounds resolve on the orbital layer: the old 'ground'
+     * rounds 4-6 looked ships up in the GROUND counter table, where they match
+     * nothing, so the RPS grid and the design signature silently switched off
+     * halfway through every battle.
+     */
+    fleetAction?: boolean;
 }
 
 export interface CombatantState {
@@ -81,6 +89,15 @@ export interface CombatantState {
     fortification?: { defensePower: number; shieldStrength: number; planetIds: string[] };
     /** Leader id of the commanding admiral (lib/combat/admiralty.ts), if a fleet on this side has one. */
     admiralId?: string;
+    /**
+     * Mass each fleet brought into the battle, by fleet id, recorded the first
+     * round it is seen (engagement-rules syncPool). maxHp is the sum, so a
+     * reinforcement raises the denominator as well as the pool and cannot
+     * fake a "kept more of my force" win.
+     */
+    committed?: Record<string, number>;
+    /** Largest orbital-defense mass this side has fielded in the battle. */
+    fortCommitted?: number;
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy
     supply: number; // 0–1
     morale: number; // Global Morale (different from tactical Organization)
@@ -178,7 +195,7 @@ export interface CombatState {
     annihilationEligible: boolean;
     resolved: boolean;
     /** Per-faction losses so far, kept by the manager for the battle report. */
-    tally?: Record<string, { fleetsLost: number; powerLost: number; structuresLost: number }>;
+    tally?: Record<string, { fleetsLost: number; powerLost: number; structuresLost: number; powerAtStart?: number }>;
     /**
      * Set the moment the battle ends. `rounds`: the engine ran its course;
      * `rout`: a side broke off; `destroyed`: a side lost every fleet;
@@ -206,4 +223,12 @@ export interface CombatRoundReport {
     attackerPointsGained: number;
     defenderPointsGained: number;
     events: string[]; // Narrative event logs (e.g. "Attacker predicted defensive archetype")
+    /** Every multiplier on the side's mass this round, as one number (1.0 = none). */
+    attackerMultiplier?: number;
+    defenderMultiplier?: number;
+    /** 1 + torpedo bonus earned against the enemy's unscreened capitals. */
+    attackerTorpedoFactor?: number;
+    defenderTorpedoFactor?: number;
+    attackerAirDamage?: number;
+    defenderAirDamage?: number;
 }

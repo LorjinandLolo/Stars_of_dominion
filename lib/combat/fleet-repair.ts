@@ -7,6 +7,7 @@
 import type { Fleet } from '../movement/types';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
 import { getTechModifier } from '../tech/modifiers';
+import { isSystemContested } from './war-status';
 
 /** Strength a fleet holding in a friendly system regains per fast cycle with no yard. */
 export const DOCK_REPAIR_PER_CYCLE = 0.01;
@@ -51,6 +52,8 @@ export function isDocked(world: any, fleet: Fleet): boolean {
  */
 export function dockRepairPerCycle(world: any, fleet: Fleet): number {
     if (!isDocked(world, fleet)) return 0;
+    // No repair under fire: an enemy fleet holding in the system keeps the yard shut.
+    if (isSystemContested(world, fleet.currentSystemId, fleet.factionId)) return 0;
     const yard = yardRepairBonus(
         world.construction?.planets?.values?.(),
         fleet.factionId,

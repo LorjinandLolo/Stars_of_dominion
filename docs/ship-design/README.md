@@ -76,9 +76,19 @@ and was consumed by nothing.
 - Power per ship = hull power × (1 + Σ module `powerMult`). Hull power, cost
   and build time come from `ground-units.json`; modules add flat cost and
   seconds.
-- Energy: hull `baseEnergy` + cores (negative `energy`) must cover module
-  draw. Standard patterns fit under a Fission Core; a battleship with four
-  Spinal Lances needs a Singularity Core.
+- Energy: hull `baseEnergy` + cores (negative `energy`) feed module draw.
+  Standard patterns fit under a Fission Core. **Brownout** (2026-09-19): a
+  reactor can be pushed up to 25% past its output (`BROWNOUT_MAX_OVERDRAW`),
+  and every 1% over costs 1% combat power (`brownoutPenaltyFor`, floored, and
+  always at least one point). Past 125% the design is refused as before. The
+  penalty lives inside `summarizeDesign` (`power` is net, `ratedPower` is the
+  rating, plus `overdraw`, `overdrawRatio`, `maxEnergyDraw`,
+  `brownoutPenalty`, `warnings`), so it reaches recruits through
+  `unitPower` with no other code involved; cost, build time, signature and
+  lane speed are not reduced. Linear on purpose: a brute force over every
+  hull × core × fit (in `ship-design-tests.ts`) shows no overdrawn fit
+  out-rates the best legal one, where a gentler curve did. Four Spinal Lances
+  on a Fusion Core: 183 power instead of 193, against refused before.
 - Signature RPS (`designProfileModifier`, cap `maxDesignBonusCap` = 0.15 in
   `combat-config.json`): attack mix (energy/kinetic/explosive, normalised)
   against defense mix (shield/armor/evasion/bare, normalised by ship count).
@@ -160,7 +170,7 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
   `composition`, so `snapshotForce` scales every fleet's composition and
   design profile by its strength, and `refreshCombatant` re-reads both at the
   top of every round (strike craft keep the engine's air-phase attrition as a
-  ceiling). Reinforcements join the roster; hp stays as created.
+  ceiling). Reinforcements join the roster, and since 2026-09-19 the pool too.
 - **Every hull fights.** The engine's attack table counted destroyers as the
   only screens and cruisers/carriers as the only capitals: a corvette wing or
   a battleship line dealt zero damage. Corvettes now screen, battleships stand
@@ -197,8 +207,8 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
   `orbital_defense_power` over the planets the defending faction holds in the
   battle system. Their mass joins the defender's hp (`fortificationHpPerPower`
   = 10, so a Defense Network weighs like a 160-power fleet) and they fire each
-  round (`fortificationAttackPerPower` = 0.4 per point, about a dozen
-  corvettes for a Defense Network). The defender's incoming volley is split
+  round from that mass (`fortificationFirepowerRatio`, see Power-vs-power
+  damage below). The defender's incoming volley is split
   between fleets and structures by remaining mass (`splitDamage`) and the
   structure share goes through `applyOrbitalDamage`, the bombardment path, so
   shields soak, integrity drops and a slot can be destroyed; wrecked
@@ -265,9 +275,61 @@ end to end by `npx tsx lib/combat/combat-manager-tests.ts`).
   military intercept names up to three of the target's designs with hull and
   signature ("energy-heavy, shielded"); heavily distorted reports keep the
   names and garble the details. Rival designs are never sent any other way.
+## Power-vs-power damage (2026-09-19)
+
+Tests: `npx tsx lib/combat/damage-model-tests.ts` (formula, pacing),
+`combat-manager-tests.ts` sections 9-13 (pool, cap, floor, parity, repair).
+
+- **Why.** Round damage came from a ship-COUNT table (screens×4 +
+  capitals×2 light, capitals×8 heavy, ...). A 12-power corvette dealt 6 a
+  round and a 142-power battleship 10: per point of power a corvette swarm
+  hit seven times harder than a battle line, and a design's power rating
+  bought toughness only, never firepower. Pirate raiders (`{interceptor: 2}`)
+  dealt zero. And the pool ran at power × 10 while fleets lost
+  damage / basePower, so a fleet was dead when its pool had lost a tenth and
+  every `hp / maxHp` comparison was noise; veterancy sat in hp and maxHp alike
+  and cancelled.
+- **One scale.** `basePower × strength` is the truth. A combatant's hp is a
+  projection at `hpPerPower` (10) hp per point, re-derived from the standing
+  fleets and fort every round (`syncPool`, before and after the volley).
+  `maxHp` is what each fleet brought in (`CombatantState.committed`), so
+  reinforcements join the pool and cannot fake a "kept more" win.
+- **Formula** (`resolveEngagementRound`): `M` = effective power / hp, i.e.
+  every multiplier as one number (RPS grid, design RPS, morale, supply, tech,
+  admiral inside the ±40% clamp; stance, momentum, civ traits, prediction
+  outside it). `damage = roundDamageFraction × M × (shipMass × torpedo +
+  fortMass × fortificationFirepowerRatio) + bombers × bomberStrikeDamage × M`.
+  `torpedo = 1 + torpedoBonus × screenPowerShare × (1 − enemy screening)`:
+  screens earn up to +50% against capitals the enemy has not screened,
+  nothing against a covered line. Momentum follows the damage SHARE
+  (`momentumSwingScale`), organization the share of committed force lost.
+- **Fleets.** `applyDamageToFleets` splits a volley by mass and takes
+  damage / (fleet's full mass) off strength, veterancy included, so elite
+  crews hit 1.25× harder and die 1.25× slower. No round takes more than
+  `maxRoundStrengthLoss` (0.6) from a fleet, so a 50:1 stomp still leaves a
+  rout check; at or under `fleetDestroyedStrength` (0.05) a fleet is gone,
+  or two fleets that cannot rout would decay forever.
+- **Forts: percent parity.** The fort's share of a volley is converted with
+  `orbitalDamageScale` so losing x% of a planet's rated fort mass costs its
+  standing structures x% hull (shields and hardening on top).
+- **Fleet actions are orbital for all six rounds** (`TargetDetails.fleetAction`):
+  rounds 4-6 looked ships up in the GROUND counter table, matched nothing,
+  and silently switched the RPS grid and design signature off mid-battle.
+- **Quiet yards.** `lib/combat/war-status.ts` `isSystemContested`: no dock
+  repair (fast cycle or strategic tick) while an at-war fleet holds the
+  system. Under this model a defender repairing between rounds out-heals an
+  equal attacker.
+- **Fleet shell.** A new task force rates `FLEET_SHELL_POWER` = 10, not 100:
+  the shell was free toughness, and would have become free firepower at a
+  fifth of a battleship's metal per point. Existing fleets keep theirs.
+- **Pacing** (`roundDamageFraction` 0.08, neutral stances): equals keep 0.61
+  after one battle and break in the third; 1.25:1 takes two battles; 2:1 ends
+  inside one with the winner over 0.8; 5:1 in two rounds.
+
 ## Not done / next
 
-- Reinforcements arriving mid-battle join the roster but not the side's hp.
+- Default stances (shock v entrench) favour the attacker about 1.2:1 between equals.
+- A side in two engagements in one system fires its full power in both.
 - A lone hostile fleet over an armed world is not engaged by the defenses (no fleet battle, no fortification).
 - The tactical sim still fields each class's fixed loadout; designs tune it (shields, armour, speed, damage, mix) rather than replacing the weapons.
 - Refit: existing ships keep the fit they were built with. A refit order would

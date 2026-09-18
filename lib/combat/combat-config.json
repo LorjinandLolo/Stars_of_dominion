@@ -15,8 +15,18 @@
         "orbitalBombardmentIndiscriminateMoraleDamage": 0.15,
         "maxRpsBonusCap": 0.20,
         "maxDesignBonusCap": 0.15,
-    "fortificationHpPerPower": 10,
-    "fortificationAttackPerPower": 0.4
+        "fortificationHpPerPower": 10,
+        "fortificationFirepowerRatio": 1.0,
+        "hpPerPower": 10,
+        "roundDamageFraction": 0.08,
+        "torpedoBonus": 0.5,
+        "bomberStrikeDamage": 25,
+        "maxRoundStrengthLoss": 0.6,
+        "fleetDestroyedStrength": 0.05,
+        "momentumPowerPerPoint": 0.10,
+        "momentumSwingScale": 0.5,
+        "momentumSwingCap": 0.2,
+        "organizationDamageScale": 1.5
     },
     "intelPredictionProbabilities": {
         "blind": {

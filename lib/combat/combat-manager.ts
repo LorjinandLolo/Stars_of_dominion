@@ -31,8 +31,13 @@ import {
     refreshCombatant,
     breakingFleets,
     splitDamage,
+    fleetMass,
+    massOf,
+    syncPool,
     PURSUIT_STRENGTH_LOSS,
 } from './engagement-rules';
+import { areAtWar as factionsAtWar } from './war-status';
+import { orbitalDamageScale } from '../orbital/orbital-service';
 import { experienceMultiplier, gainExperience } from './veterancy';
 import { commandingAdmiral, admiralPowerBonus, admiralBattleXp, ADMIRAL_PREDICTION_POINTS } from './admiralty';
 import { LeadershipService } from '../leadership/leadership-service';
@@ -105,12 +110,9 @@ export function processSectorCombats(world: GameWorldState) {
 }
 
 function areAtWar(fA: string, fB: string, world: GameWorldState): boolean {
-    const rivalryId = `rivalry-${fA}-${fB}`;
-    const reverseRivalryId = `rivalry-${fB}-${fA}`;
-    const rivalry = world.rivalries.get(rivalryId) || world.rivalries.get(reverseRivalryId);
-
-    // Direct War is escalation level 7
-    return (rivalry?.escalationLevel || 0) >= 7;
+    // Direct War is escalation level 7 (lib/combat/war-status.ts, shared with
+    // the contested-system rule that shuts dock repair and refit).
+    return factionsAtWar(world, fA, fB);
 }
 
 /**
@@ -186,11 +188,15 @@ function handleEngagement(
             {
                 systemId,
                 terrainModifier: 1.0,
-                infrastructureIntegrity: 1.0
+                infrastructureIntegrity: 1.0,
+                // Ships fight ships for all six rounds (combat-types TargetDetails).
+                fleetAction: true,
             },
             attacker,
             defender
         );
+        ensureTally(state, attackerId).powerAtStart = powerOf(roles.attackerFleets);
+        ensureTally(state, defenderId).powerAtStart = powerOf(roles.defenderFleets);
 
         // Ambush from the asteroid belt: the tick stamped the victim when a
         // belt-lurker sprang on it. The lurker opens with full momentum and
@@ -261,6 +267,11 @@ function handleEngagement(
     refreshCombatant(state.attacker, fleetsAtk);
     refreshCombatant(state.defender, fleetsDef);
     refreshFortification(world, state.defender);
+    // One scale: the pools are re-derived from the fleets (and the fort) that
+    // stand right now, so hp / maxHp is the real fraction of the committed
+    // force and a reinforcement joins the pool as well as the roster.
+    syncPool(state.attacker, fleetsAtk);
+    syncPool(state.defender, fleetsDef);
 
     try {
         const report = resolveEngagementRound(state, {
@@ -275,8 +286,8 @@ function handleEngagement(
 
         // Sync damage back to fleets. The defender's volley is split between
         // its fleets and its orbital defenses by remaining mass.
-        applyDamageToFleets(fleetsAtk, report.defenderDamageDealt);
-        applyDamageToSide(world, state, state.defender, fleetsDef, report.attackerDamageDealt);
+        ensureTally(state, state.attacker.factionId).powerLost += applyDamageToFleets(fleetsAtk, report.defenderDamageDealt);
+        ensureTally(state, state.defender.factionId).powerLost += applyDamageToSide(world, state, state.defender, fleetsDef, report.attackerDamageDealt);
 
         // Annihilation: the engine's own rule (three prediction points, a
         // 1.25 hp ratio, enemy morale under 0.3, a 15% roll) has existed
@@ -284,6 +295,7 @@ function handleEngagement(
         const { annihilatedFactionId } = checkAnnihilation(state);
         if (annihilatedFactionId) {
             const doomed = annihilatedFactionId === state.attacker.factionId ? fleetsAtk : fleetsDef;
+            ensureTally(state, annihilatedFactionId).powerLost += powerOf(doomed);
             for (const f of doomed) f.strength = 0;
             console.log(`[CombatManager] ${annihilatedFactionId} annihilated at ${systemId}.`);
         }
@@ -310,10 +322,18 @@ function handleEngagement(
         routSide(world, state, fleetsAtk, state.attacker, state.defender, fleetsDef, withdrawn);
         routSide(world, state, fleetsDef, state.defender, state.attacker, fleetsAtk, withdrawn);
 
-        const standing = (fleets: Fleet[]) =>
-            fleets.some(f => world.movement.fleets.has(f.id) && f.strength > 0 && !withdrawn.has(f.id));
-        const attackerStands = standing(fleetsAtk);
-        const defenderStands = standing(fleetsDef);
+        const standingOf = (fleets: Fleet[]) =>
+            fleets.filter(f => world.movement.fleets.has(f.id) && f.strength > 0 && !withdrawn.has(f.id));
+        const standingAtk = standingOf(fleetsAtk);
+        const standingDef = standingOf(fleetsDef);
+        const attackerStands = standingAtk.length > 0;
+        const defenderStands = standingDef.length > 0;
+
+        // The pools follow the fleets: what was destroyed or ran is out, and
+        // structures shot up this round have stopped counting.
+        refreshFortification(world, state.defender);
+        syncPool(state.attacker, standingAtk);
+        syncPool(state.defender, standingDef);
 
         if (annihilatedFactionId) {
             const winnerId = annihilatedFactionId === state.attacker.factionId
@@ -382,27 +402,36 @@ function refreshFortification(world: GameWorldState, side: CombatantState) {
  * bombardment uses, so shields soak, integrity drops and a slot can be
  * destroyed outright.
  */
-function applyDamageToSide(world: GameWorldState, state: CombatState, side: CombatantState, fleets: Fleet[], damage: number) {
+function applyDamageToSide(world: GameWorldState, state: CombatState, side: CombatantState, fleets: Fleet[], damage: number): number {
     const fort = side.fortification;
     if (!fort || fort.defensePower <= 0 || damage <= 0) {
-        applyDamageToFleets(fleets, damage);
-        return;
+        return applyDamageToFleets(fleets, damage);
     }
-    const fleetHp = fleets.reduce((sum, f) => sum + (f.basePower || 0) * Math.max(0, f.strength) * 10, 0);
+    const fleetHp = massOf(fleets);
     const fortHp = fort.defensePower * config.constants.fortificationHpPerPower;
     const split = splitDamage(damage, fleetHp, fortHp);
-    applyDamageToFleets(fleets, split.fleets);
-    if (split.fort <= 0) return;
+    const powerRemoved = applyDamageToFleets(fleets, split.fleets);
+    if (split.fort <= 0) return powerRemoved;
 
     const planets = fort.planetIds
         .map(id => world.construction?.planets?.get(id) as any)
         .filter(Boolean);
     const weights = planets.map(p => computeOrbitalRatings(p, world.nowSeconds).defensePower);
     const totalWeight = weights.reduce((a, b) => a + b, 0);
-    if (totalWeight <= 0) return;
+    if (totalWeight <= 0) return powerRemoved;
     planets.forEach((planet, i) => {
-        const share = split.fort * (weights[i] / totalWeight);
-        if (share <= 0) return;
+        const poolShare = split.fort * (weights[i] / totalWeight);
+        if (poolShare <= 0) return;
+        // Percent parity: losing x% of this planet's RATED fort mass costs its
+        // standing structures x% of their hull (shields and fortress hardening
+        // are extra toughness on top). Pool damage is on the hp scale and hull
+        // strengths are not, so passing it through raw either melted a Defense
+        // Network in one volley or, divided by hpPerPower, left it all but
+        // immune while it soaked a third of the fire.
+        const scale = orbitalDamageScale(planet);
+        const ratedMass = scale.ratedDefensePower * config.constants.fortificationHpPerPower;
+        if (ratedMass <= 0 || scale.hullTotal <= 0) return;
+        const share = poolShare * scale.hullTotal / ratedMass;
         const result = applyOrbitalDamage(planet, share, world.nowSeconds);
         if (result.destroyedSlotIds.length) {
             const tally = ensureTally(state, side.factionId);
@@ -410,12 +439,18 @@ function applyDamageToSide(world: GameWorldState, state: CombatState, side: Comb
             console.log(`[CombatManager] ${result.destroyedSlotIds.length} orbital structure(s) over ${planet.name ?? planet.id} destroyed in the exchange.`);
         }
     });
+    return powerRemoved;
 }
 
 function ensureTally(state: CombatState, factionId: string) {
     if (!state.tally) state.tally = {};
-    if (!state.tally[factionId]) state.tally[factionId] = { fleetsLost: 0, powerLost: 0, structuresLost: 0 };
+    if (!state.tally[factionId]) state.tally[factionId] = { fleetsLost: 0, powerLost: 0, structuresLost: 0, powerAtStart: 0 };
     return state.tally[factionId];
+}
+
+/** Fleet power standing right now: basePower × strength, no veterancy (what the fleet card shows). */
+function powerOf(fleets: Fleet[]): number {
+    return fleets.reduce((sum, f) => sum + Math.max(0, f.basePower || 0) * Math.max(0, Math.min(1, f.strength ?? 1)), 0);
 }
 
 /**
@@ -434,15 +469,19 @@ function destroyFleet(world: GameWorldState, state: CombatState, fleet: Fleet, k
     // makes them permanently deadlier.
     recordTrophyKill(world, killer);
 
-    const tally = ensureTally(state, fleet.factionId);
-    tally.fleetsLost += 1;
-    tally.powerLost += fleet.basePower || 0;
+    // Power lost is tallied where strength is actually taken (damage, pursuit,
+    // annihilation); counting the whole hull again here would double it.
+    ensureTally(state, fleet.factionId).fleetsLost += 1;
 
-    // Fireblood: an Infernoid hull that dies takes its killer with it.
+    // Fireblood: an Infernoid hull that dies takes its killer with it. The
+    // coefficient is a share of the dead fleet's POWER, so it goes through the
+    // pool scale like every other volley.
     if (isInfernoid(world, fleet.factionId)) {
-        const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF;
+        const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF * config.constants.hpPerPower;
         if (blast > 0) {
-            applyDamageToFleets(enemyFleets, blast);
+            const victimId = enemyFleets[0]?.factionId;
+            const burned = applyDamageToFleets(enemyFleets, blast);
+            if (victimId) ensureTally(state, victimId).powerLost += burned;
             recordDetonation(world, fleet.factionId);
             console.log(`[Infernoid] ${fleet.id} detonates — ${blast.toFixed(0)} damage answered in fire.`);
         }
@@ -476,7 +515,11 @@ function routSide(
     let moved = 0;
     for (const fleet of breaking) {
         if (pursued) {
-            fleet.strength = Math.max(0, fleet.strength - PURSUIT_STRENGTH_LOSS);
+            const before = fleet.strength;
+            let after = Math.max(0, before - PURSUIT_STRENGTH_LOSS);
+            if (after <= config.constants.fleetDestroyedStrength) after = 0;
+            fleet.strength = after;
+            ensureTally(state, side.factionId).powerLost += (fleet.basePower || 0) * (before - after);
             if (fleet.strength <= 0) {
                 destroyFleet(world, state, fleet, enemy.factionId, enemyFleets);
                 continue;
@@ -634,13 +677,18 @@ function reportBattle(world: GameWorldState, state: CombatState, reason: BattleE
     ] as const) {
         const word = winnerId === me ? 'VICTORY' : winnerId ? 'DEFEAT' : 'STANDOFF';
         const structures = mine.structuresLost ? ` ${mine.structuresLost} orbital structure(s) destroyed.` : '';
+        // Losses as a share of the force each side brought, in the same power
+        // the fleet card shows: most battles end in a rout, not a wipe-out, so
+        // "lost 0 fleets" told a player who had bled 60% that nothing happened.
+        const pct = (l: typeof mine) => (l.powerAtStart ?? 0) > 0 ? Math.min(100, Math.round((l.powerLost / (l.powerAtStart as number)) * 100)) : 0;
+        const fleetsText = mine.fleetsLost ? `, ${mine.fleetsLost} fleet${mine.fleetsLost === 1 ? '' : 's'}` : '';
         fireNotification({
             id: `battle-${state.id}-${me}-${world.nowSeconds}`,
             factionId: me,
             category: 'military',
             priority: word === 'DEFEAT' ? 'urgent' : 'normal',
             title: `${word} AT ${String(systemName).toUpperCase()}`,
-            body: `${reasonText[reason]} against ${nameOf(them)} at ${systemName}. Lost ${mine.fleetsLost} fleet(s); the enemy lost ${theirs.fleetsLost}.${structures}`,
+            body: `${reasonText[reason]} against ${nameOf(them)} at ${systemName}. Lost ${pct(mine)}% of your force (${Math.round(mine.powerLost)} power${fleetsText}); the enemy lost ${pct(theirs)}%.${structures}`,
             createdAt: stamp,
             read: false,
             linkToTab: 'map',
@@ -765,8 +813,10 @@ function createCombatant(
     world?: any,
     fortification?: Fortification,
 ): CombatantState {
-    // Veteran crews fight above their tonnage (lib/combat/veterancy.ts).
-    const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength * experienceMultiplier(f.experience)), 0);
+    // The pool is the fleets' mass: power × strength × veterancy at hpPerPower
+    // (engagement-rules fleetMass). Veterancy only became real with
+    // power-vs-power damage: it used to sit in hp and maxHp alike and cancel.
+    const fleetsMass = massOf(fleets);
 
     // Roster, design signature and screening as the ships stand right now
     // (scaled by each fleet's strength). Keys are lowercase so the engine's
@@ -781,7 +831,7 @@ function createCombatant(
     // Orbital defenses add their mass to the pool the engine tracks; a
     // Defense Network (160 power) weighs as much as a 160-power fleet.
     const fortHp = (fortification?.defensePower ?? 0) * config.constants.fortificationHpPerPower;
-    const hp = totalPower * 10 + fortHp;
+    const hp = fleetsMass + fortHp;
     const org = 50 + ((fleets[0]?.doctrine?.moraleDrift ?? 0) / 2); // 0-100 scale
 
     return {
@@ -789,7 +839,7 @@ function createCombatant(
         role,
         hp: hp,
         maxHp: hp,
-        baseForceCount: totalPower * 100,
+        baseForceCount: hp / config.constants.hpPerPower,
         casualties: 0,
         organization: org,
         maxOrganization: org,
@@ -851,20 +901,44 @@ function createCombatant(
     };
 }
 
-function applyDamageToFleets(fleets: Fleet[], damage: number) {
-    if (fleets.length === 0) return;
+/**
+ * Land a volley (pool damage, hp scale) on a side's fleets, split by each
+ * fleet's share of the side's mass. Returns the fleet POWER removed, for the
+ * battle tally.
+ *
+ * One scale with the pool: a fleet's strength falls by damage over its own
+ * mass at full strength, so the pool and the fleets deplete together. It used
+ * to be damage / basePower against a pool of power × 10, which killed a fleet
+ * when its pool had lost a tenth. Veteran crews are tougher by the same
+ * multiplier that makes them hit harder.
+ *
+ * Two guards. No single round takes more than maxRoundStrengthLoss from a
+ * fleet, so even a 10:1 stomp leaves a rout check before the kill. And a
+ * fleet at or under fleetDestroyedStrength is gone: a geometric decay never
+ * reaches zero, so two fleets that cannot rout would otherwise fight forever.
+ */
+function applyDamageToFleets(fleets: Fleet[], damage: number): number {
+    if (fleets.length === 0 || !(damage > 0)) return 0;
+    const C = config.constants;
 
-    // Distribute damage proportionally to fleet strength
-    const totalPower = fleets.reduce((sum, f) => sum + (f.basePower * f.strength), 0);
-    if (totalPower <= 0) return;
-
-    for (const fleet of fleets) {
-        const share = (fleet.basePower * fleet.strength) / totalPower;
-        const fleetDmg = damage * share;
-
-        // Convert damage back to strength loss
-        // strength_loss = fleetDmg / basePower
-        const strengthLoss = fleetDmg / (fleet.basePower || 1);
-        fleet.strength = Math.max(0, fleet.strength - strengthLoss);
+    const totalMass = massOf(fleets);
+    if (totalMass <= 0) {
+        // Nothing here can absorb a volley: powerless hulls are simply lost.
+        for (const fleet of fleets) fleet.strength = 0;
+        return 0;
     }
+
+    let powerRemoved = 0;
+    for (const fleet of fleets) {
+        const mass = fleetMass(fleet);
+        if (mass <= 0) { fleet.strength = 0; continue; }
+        const fullMass = mass / Math.max(1e-9, Math.min(1, fleet.strength));   // this fleet at strength 1
+        const before = fleet.strength;
+        const loss = Math.min(C.maxRoundStrengthLoss, (damage * (mass / totalMass)) / fullMass);
+        let after = Math.max(0, before - loss);
+        if (after <= C.fleetDestroyedStrength) after = 0;
+        fleet.strength = after;
+        powerRemoved += (fleet.basePower || 0) * (before - after);
+    }
+    return powerRemoved;
 }

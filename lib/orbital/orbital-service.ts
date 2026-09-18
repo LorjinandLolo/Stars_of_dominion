@@ -465,6 +465,27 @@ export function applyOrbitalDamage(
 }
 
 /**
+ * The two totals a fleet battle needs to turn "a share of this planet's fort
+ * mass" into hull damage, over the same standing slots applyOrbitalDamage
+ * targets: their combined hull, and their RATED defense power (ignoring
+ * integrity). Losing x% of the rated fort mass should cost every standing
+ * structure x% integrity, before shields and hardening.
+ */
+export function orbitalDamageScale(planet: ConstructionPlanet | undefined): { hullTotal: number; ratedDefensePower: number } {
+    let hullTotal = 0;
+    let ratedDefensePower = 0;
+    for (const slot of planet?.orbital?.slots ?? []) {
+        if ((slot.state !== 'active' && slot.state !== 'damaged') || !slot.structureId || slot.integrity <= 0) continue;
+        const def = ORBITAL_STRUCTURE_BY_ID[slot.structureId];
+        hullTotal += def?.hullStrength ?? 500;
+        for (const effect of def?.effects ?? []) {
+            if (effect.type === ORBITAL_DEFENSE_EFFECT) ratedDefensePower += effect.value;
+        }
+    }
+    return { hullTotal, ratedDefensePower };
+}
+
+/**
  * Repair damaged structures. Destroyed ones are not repaired — they have to be
  * rebuilt into their slot. A planet under active siege repairs nothing.
  */
