@@ -404,7 +404,8 @@ export interface OrbitalDamageResult {
 export function applyOrbitalDamage(
     planet: ConstructionPlanet,
     incoming: number,
-    nowSeconds = 0
+    nowSeconds = 0,
+    opts: { armedOnly?: boolean } = {},
 ): OrbitalDamageResult {
     const orbital = ensureOrbitalState(planet);
     const result: OrbitalDamageResult = {
@@ -430,9 +431,13 @@ export function applyOrbitalDamage(
     const remaining = effectiveIncoming - result.shieldAbsorbed;
     result.hullDamageApplied = remaining;
 
+    // A fleet action (armedOnly) trades fire with the structures that shoot
+    // back; yards, warehouses and labs are bombardment targets, not combatants.
     const targets = orbital.slots.filter(s =>
-        (s.state === 'active' || s.state === 'damaged') && s.structureId && s.integrity > 0);
+        (s.state === 'active' || s.state === 'damaged') && s.structureId && s.integrity > 0
+        && (!opts.armedOnly || isArmedStructure(s.structureId)));
     if (targets.length === 0) {
+        if (opts.armedOnly) return result;
         result.orbitControlLost = true;
         orbital.orbitControlLost = true;
         return result;
@@ -464,6 +469,12 @@ export function applyOrbitalDamage(
     return result;
 }
 
+/** A structure that carries orbital defense power: it fights in a fleet action and takes fire in one. */
+export function isArmedStructure(structureId: string | null | undefined): boolean {
+    const def = structureId ? ORBITAL_STRUCTURE_BY_ID[structureId] : undefined;
+    return !!def?.effects?.some(e => e.type === ORBITAL_DEFENSE_EFFECT && e.value > 0);
+}
+
 /**
  * The two totals a fleet battle needs to turn "a share of this planet's fort
  * mass" into hull damage, over the same standing slots applyOrbitalDamage
@@ -476,6 +487,10 @@ export function orbitalDamageScale(planet: ConstructionPlanet | undefined): { hu
     let ratedDefensePower = 0;
     for (const slot of planet?.orbital?.slots ?? []) {
         if ((slot.state !== 'active' && slot.state !== 'damaged') || !slot.structureId || slot.integrity <= 0) continue;
+        // Armed structures only: the same slots applyOrbitalDamage targets
+        // with `armedOnly`. Counting civilian hull here dragged every yard and
+        // lab down at the fort's percentage.
+        if (!isArmedStructure(slot.structureId)) continue;
         const def = ORBITAL_STRUCTURE_BY_ID[slot.structureId];
         hullTotal += def?.hullStrength ?? 500;
         for (const effect of def?.effects ?? []) {

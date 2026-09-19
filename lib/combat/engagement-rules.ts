@@ -72,11 +72,22 @@ export function syncPool(side: CombatantState, standingFleets: ReadonlyArray<Fle
     const H = config.constants.hpPerPower;
     const fortMass = Math.max(0, side.fortification?.defensePower ?? 0) * config.constants.fortificationHpPerPower;
     const committed = side.committed ?? (side.committed = {});
+    const rated = side.committedRated ?? (side.committedRated = {});
     let mass = 0;
     for (const f of standingFleets) {
         const m = fleetMass(f);
         mass += m;
-        if (committed[f.id] === undefined) committed[f.id] = m;
+        // This fleet at full strength. When a recruit or refit lands in it
+        // mid-battle the rating grows, and so does what the side committed:
+        // otherwise hp rose against a frozen maxHp and a side that lost the
+        // exchange could read as having kept more of its force.
+        const full = fleetMass({ basePower: f.basePower, strength: 1, experience: f.experience });
+        if (committed[f.id] === undefined) {
+            committed[f.id] = m;
+        } else if (full > (rated[f.id] ?? full)) {
+            committed[f.id] += (full - rated[f.id]) * clamp01(f.strength ?? 1);
+        }
+        rated[f.id] = Math.max(rated[f.id] ?? 0, full);
     }
     side.fortCommitted = Math.max(side.fortCommitted ?? 0, fortMass);
     side.hp = mass + fortMass;

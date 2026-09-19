@@ -96,6 +96,8 @@ export interface CombatantState {
      * fake a "kept more of my force" win.
      */
     committed?: Record<string, number>;
+    /** Each committed fleet's mass at full strength when last seen (engagement-rules syncPool). */
+    committedRated?: Record<string, number>;
     /** Largest orbital-defense mass this side has fielded in the battle. */
     fortCommitted?: number;
     intelLevel: IntelLevel; // Intel the combatant has ON the enemy

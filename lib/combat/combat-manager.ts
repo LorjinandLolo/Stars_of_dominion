@@ -431,8 +431,12 @@ function applyDamageToSide(world: GameWorldState, state: CombatState, side: Comb
         const scale = orbitalDamageScale(planet);
         const ratedMass = scale.ratedDefensePower * config.constants.fortificationHpPerPower;
         if (ratedMass <= 0 || scale.hullTotal <= 0) return;
-        const share = poolShare * scale.hullTotal / ratedMass;
-        const result = applyOrbitalDamage(planet, share, world.nowSeconds);
+        // Capped like a fleet's round (maxRoundStrengthLoss). Uncapped, a
+        // 25-power station beside a picket soaked a 600-power volley as 90%
+        // integrity in one round while the picket next to it was held to 60%.
+        const fraction = Math.min(config.constants.maxRoundStrengthLoss, poolShare / ratedMass);
+        const share = fraction * scale.hullTotal;
+        const result = applyOrbitalDamage(planet, share, world.nowSeconds, { armedOnly: true });
         if (result.destroyedSlotIds.length) {
             const tally = ensureTally(state, side.factionId);
             tally.structuresLost += result.destroyedSlotIds.length;
@@ -917,6 +921,8 @@ function createCombatant(
  * fleet at or under fleetDestroyedStrength is gone: a geometric decay never
  * reaches zero, so two fleets that cannot rout would otherwise fight forever.
  */
+const ROUT_WINDOW_MARGIN = 0.01;
+
 function applyDamageToFleets(fleets: Fleet[], damage: number): number {
     if (fleets.length === 0 || !(damage > 0)) return 0;
     const C = config.constants;
@@ -936,6 +942,15 @@ function applyDamageToFleets(fleets: Fleet[], damage: number): number {
         const before = fleet.strength;
         const loss = Math.min(C.maxRoundStrengthLoss, (damage * (mass / totalMass)) / fullMass);
         let after = Math.max(0, before - loss);
+        // The rout window. The cap alone left a stomped fleet at 0.40, above
+        // the default retreatThreshold (0.3), so it never broke and the next
+        // volley killed it. A fleet that was still above its own threshold
+        // survives this volley just over the kill line; it breaks at the end
+        // of the round, and only one that cannot run is killed by the next.
+        const threshold = fleet.doctrine?.retreatThreshold ?? 0;
+        if (threshold > 0 && before > threshold && after <= C.fleetDestroyedStrength) {
+            after = Math.min(before, C.fleetDestroyedStrength + ROUT_WINDOW_MARGIN);
+        }
         if (after <= C.fleetDestroyedStrength) after = 0;
         fleet.strength = after;
         powerRemoved += (fleet.basePower || 0) * (before - after);

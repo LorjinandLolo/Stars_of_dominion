@@ -375,6 +375,82 @@ console.log('\n13. Fort parity and quiet yards');
     sys.ownerFactionId = ownerBefore;
 }
 
+console.log('\n14. Review 2026-09-19: fort cap, rout window, small fleets, mid-battle growth');
+{
+    // A station beside a picket, with civilian structures in the same orbit.
+    reset();
+    const home: any = {
+        id: 'planet-orbit-test', name: 'Orbit', ownerId: B, systemId: SYS,
+        infrastructureLevel: 2, specialization: null, stability: 90, tiles: [],
+        orbital: { slots: [
+            { slotId: 'o0', structureId: 'space_station', state: 'active', integrity: 100 },
+            { slotId: 'o1', structureId: 'capital_spaceyard', state: 'active', integrity: 100 },
+            { slotId: 'o2', structureId: 'orbital_warehouse', state: 'active', integrity: 100 },
+            { slotId: 'o3', structureId: 'orbital_research_complex', state: 'active', integrity: 100 },
+        ], buildQueue: [] },
+    };
+    world.construction.planets.set(home.id, home);
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    world.movement.fleets.set('a', mkFleet('a', A, 2000, { composition: { cruiser: 20 }, arrivedAtSeconds: 900, doctrine: noRout }));
+    world.movement.fleets.set('b', mkFleet('b', B, 50, { composition: { corvette: 4 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    cycle();
+    const slot = (id: string) => home.orbital.slots.find((s: any) => s.slotId === id);
+    check('a 40:1 volley takes no more from the station than from a fleet (60 points)', slot('o0').integrity >= 40 - 1e-6 && slot('o0').integrity < 100, String(slot('o0').integrity));
+    check('yards, warehouses and labs are not combatants: a fleet action leaves them whole', slot('o1').integrity === 100 && slot('o2').integrity === 100 && slot('o3').integrity === 100, home.orbital.slots.map((s: any) => s.integrity).join());
+    world.construction.planets.delete(home.id);
+
+    // The rout window: default doctrine (0.3) against a stomp.
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 5000, { composition: { cruiser: 50 }, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 200, { composition: { corvette: 16 }, arrivedAtSeconds: 100 }));
+    cycle();
+    check('round one leaves it at 0.40, above its 0.3 threshold', Math.abs(((world.movement.fleets.get('b') as any)?.strength ?? 0) - 0.4) < 1e-9);
+    const s = untilOutcome();
+    const b: any = world.movement.fleets.get('b');
+    check('round two breaks it instead of killing it', !!b && b.strength > 0 && s?.outcome?.reason === 'rout' && !!b.destinationSystemId, `${s?.outcome?.reason} ${b?.strength}`);
+
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 5000, { composition: { cruiser: 50 }, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 200, { composition: { corvette: 16 }, arrivedAtSeconds: 100, originSystemId: null }));
+    // Nowhere to run: no origin, no owned system, no capital on file.
+    const owners = new Map<string, any>();
+    for (const [id, planet] of world.construction.planets as Map<string, any>) { if (planet.ownerId === B) { owners.set(id, planet.ownerId); planet.ownerId = null; } }
+    const econB: any = world.economy?.factions?.get?.(B);
+    const capitalBefore = econB?.capitalSystemId;
+    if (econB) econB.capitalSystemId = undefined;
+    const dead = untilOutcome();
+    if (econB) econB.capitalSystemId = capitalBefore;
+    check('a fleet with nowhere to run gets the window once, then dies', !world.movement.fleets.has('b') && dead?.outcome?.reason === 'destroyed', dead?.outcome?.reason);
+    for (const [id, ownerId] of owners) (world.construction.planets.get(id) as any).ownerId = ownerId;
+
+    // Two young task forces: under the old skirmish line (50 power).
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 22, { composition: { corvette: 1 }, arrivedAtSeconds: 900, doctrine: noRout }));
+    world.movement.fleets.set('b', mkFleet('b', B, 22, { composition: { corvette: 1 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    const small1 = cycle();
+    const small2 = cycle();
+    check('a small fleet action is one battle, not one battle per round', !!small1 && !small1.outcome && !!small2 && small2.id === small1.id && !small2.outcome, `${small1?.outcome?.reason} / ${small2?.outcome?.reason}`);
+    const closed = untilOutcome();
+    check('and closes on rounds like any other', closed?.outcome?.reason === 'rounds', closed?.outcome?.reason);
+
+    // Ships land in a fleet mid-battle (a recruit job completing).
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 900, doctrine: noRout }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, arrivedAtSeconds: 100, doctrine: noRout }));
+    cycle(); cycle();
+    // The state object is mutated in place: keep numbers, not the reference.
+    const open = [...world.activeCombats.values()][0]!;
+    const maxBefore = open.defender.maxHp;
+    const fracBefore = open.defender.hp / open.defender.maxHp;
+    const grown: any = world.movement.fleets.get('b');
+    const strengthThen = grown.strength;
+    grown.basePower += 250;
+    const after = cycle()!;
+    check('ships landing mid-battle are committed at the mass they add', Math.abs(after.defender.maxHp - (maxBefore + 2500 * strengthThen)) < 1e-6, `${maxBefore} -> ${after.defender.maxHp}`);
+    // Frozen, the commitment stayed 10000 and the fraction jumped to 1.25 × strength.
+    check('so another lost round cannot read as having kept more', after.defender.hp / after.defender.maxHp < fracBefore, `${fracBefore} -> ${after.defender.hp / after.defender.maxHp}`);
+}
+
 world.rivalries.delete(`rivalry-${A}-${B}`);
 world.movement.fleets.clear();
 world.activeCombats.clear();

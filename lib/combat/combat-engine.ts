@@ -521,7 +521,11 @@ function applySupplyDecay(state: CombatState, report: CombatRoundReport, roundIn
 export function advanceRound(state: CombatState) {
     if (state.resolved) return;
 
-    if (state.isSkirmish) {
+    // Fleet actions run their six rounds whatever their size. On the power
+    // scale two young task forces (22 v 22) fall under the skirmish line, and
+    // a one-round battle at 8% a round was closed and re-opened every pass:
+    // eight "battles", eight XP awards and sixteen notifications for one fight.
+    if (state.isSkirmish && !state.target?.fleetAction) {
         // Skirmish ends immediately after 1 round.
         state.resolved = true;
         return;

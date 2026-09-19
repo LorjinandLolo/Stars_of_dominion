@@ -359,8 +359,9 @@ another of the SAME hull, at a yard. Tests: `npx tsx lib/combat/refit-tests.ts`
   `refitFrom` (source snapshot) and `paidPerUnit`, so persistence, shards,
   sync and the merge retarget come free. Until it lands the ships fight with
   the old fit. Completion is never yard-gated (the fleet may sail). Ships no
-  longer aboard by then are refunded at what was paid; a fleet that is gone
-  takes its bill with it. The owner gets a REFIT COMPLETE notification.
+  longer aboard by then are refunded at what was paid, and so is the whole
+  job when the fleet is gone or has changed hands (civil war). The owner gets
+  a REFIT COMPLETE notification.
 - **In-service lock** (`shipsInService`): a pattern that ships carry, or are
   being built or refit to or from, keeps its FIT. `saveDesign` refuses a
   changed hull or modules (a rename is fine) and `deleteDesign` refuses
@@ -380,6 +381,54 @@ another of the SAME hull, at a yard. Tests: `npx tsx lib/combat/refit-tests.ts`
   a live quote. `MilitaryPanel` carries it too but is not mounted anywhere.
 - **Left out**: cross-hull conversion, scrap refunds, a cancel order, dry-dock
   immobilisation, AI use of refit, bulk upgrades, wings and carriers.
+
+## Review fixes (2026-09-19)
+
+An adversarial review of the three commits above (six lenses, each finding
+re-checked by a skeptic) found that refit made `designCounts` load-bearing
+while four writers still treated it as display-only. Every hole was the same
+exploit by another door: make fitted ships look like bare hulls, then let
+refit sell them their own modules again at about a third of build price.
+
+- **Split never moves the books without ships.** `MIL_SPLIT_FLEET` with no
+  ships named used to halve `designCounts` while every hull stayed put (ten
+  battleships: 1420 to 1680 power per loop, unbounded). Now refused for a
+  fleet that has ships; a shipless shell halves its power only, and one under
+  2 power cannot split.
+- **A tactical result is a merge.** `MIL_TACTICAL_RESULT` pools the absorbed
+  fleets into the survivor the way `MIL_MERGE_FLEETS` does (`mergeBooks`,
+  crews, lane speed, carried armies, open yard jobs), clamps the survivors to
+  the ships that are actually there, and takes the losses off the books with
+  `splitRoster`, so power falls by what the dead ships were rated.
+- **Over-claiming books offer nothing** (`refittable` returns 0 for an
+  inconsistent hull, from any source; it used to clamp each pattern on its
+  own, so {A:5, B:5} on five hulls took ten refits). `reconcileBooks` shrinks
+  such books to the hulls that exist (largest remainder, claims only go
+  down); the refit order runs it first, and the panel shows the same view.
+- **Design ids are attacker JSON.** A new pattern's id must match
+  `design-[A-Za-z0-9_-]+` (no `constructor`, no `__proto__`), and an id that
+  ships still carry cannot be re-filed (that let the owner choose, after the
+  fact, what those ships are priced from). `isBookKey` guards every count
+  map; `applyRefit` and `completeRefit` refuse non-finite counts.
+- **One cap, one constant**: `REFIT_MAX_PER_ORDER` (50), used by the worker
+  and the panel.
+- **Combat.** The fort's share of a volley is capped per round like a
+  fleet's and lands on ARMED structures only (`isArmedStructure`; yards,
+  warehouses and labs are bombardment targets, not combatants): a 600-power
+  fleet used to strip a home orbit to 10% in one round because a picket was
+  parked there. The rout window: a fleet still above its `retreatThreshold`
+  survives the volley just over the kill line and breaks at the end of the
+  round (the 0.6 cap alone left it at 0.40, above the default 0.3, and the
+  next volley killed it); one that cannot run dies to the next. A fleet
+  action is never a one-round skirmish (two 22-power task forces fought eight
+  "battles" with eight XP awards). `syncPool` raises a side's commitment when
+  ships land in a fleet mid-battle (`committedRated`).
+- **Client.** The store's `recruitmentJobs` was never written, so every
+  reader saw `[]`; it is published now and a shard REPLACES its owner's jobs.
+  The refit panel uses `dispatchOrder`, mirrors the under-fire rule, shows
+  only the player's own fleets and disables patterns still syncing; the
+  designer's retire button honours the in-service lock; split is disabled
+  under an open refit; the optimistic split and merge carry the books.
 
 ## Not done / next
 
