@@ -13,6 +13,8 @@
 // pending entry is pruned and the overlay disappears naturally.
 
 import type { PendingOrder } from '@/lib/store/ui-store';
+import { splitRoster } from '@/lib/combat/fleet-roster';
+import { DEFAULT_DESIGNS } from '@/lib/combat/ship-registry';
 
 /** Marker set on any entity produced/modified by an overlay so components can
  *  render it as "syncing" (e.g. dashed movement line, ghosted queue item). */
@@ -129,9 +131,14 @@ function overlaySplitFleet(lists: OverlayLists, order: PendingOrder): OverlayLis
     }
     if (movedCount > 0 && movedCount >= totalShips) return lists; // server will reject
 
+    // Mirror the worker's split (lib/combat/fleet-roster.ts splitRoster): power
+    // leaves by what the moved hulls are rated, not by the ship ratio. The
+    // ghost only knows the standard patterns, so a fleet of own designs is
+    // approximated by hull weight until the next sync corrects it.
     const srcPower = src.basePower ?? 100;
-    const ratio = movedCount > 0 ? (totalShips > 0 ? movedCount / totalShips : 0.5) : 0.5;
-    const newPower = Math.max(10, Math.round(srcPower * ratio));
+    const newPower = movedCount > 0
+        ? Math.max(1, splitRoster(src, moved, (id: string) => DEFAULT_DESIGNS.find(d => d.id === id)).movedPower)
+        : Math.max(1, Math.round(srcPower / 2));
     for (const [type, count] of Object.entries(moved)) {
         srcComp[type] -= count;
         if (srcComp[type] <= 0) delete srcComp[type];
@@ -143,7 +150,7 @@ function overlaySplitFleet(lists: OverlayLists, order: PendingOrder): OverlayLis
             ...lists.fleets.map((f: any) => f.id !== fleetId ? f : {
                 ...f,
                 composition: srcComp,
-                basePower: Math.max(10, srcPower - newPower),
+                basePower: Math.max(1, srcPower - newPower),
                 [OPTIMISTIC_FLAG]: true,
             }),
             {
@@ -220,6 +227,7 @@ export function describeOrder(actionId: string, payload: Record<string, any>): s
         case 'PLANET_CONSTRUCT_BUILDING': return `Construction: ${payload?.buildingType ?? 'building'}`;
         case 'MIL_BUILD_FLEET': return 'Commissioning fleet';
         case 'MIL_RECRUIT_FORMATION_UNIT': return `Commissioning ${payload?.count ?? 1}× ${String(payload?.designName ?? payload?.unitType ?? 'unit').toLowerCase()}`;
+        case 'MIL_REFIT_FLEET': return `Refitting ${payload?.count ?? 1}× ${payload?.fromDesignName ?? 'unregistered hulls'} → ${payload?.toDesignName ?? 'new pattern'}`;
         case 'SHIP_DESIGN_SAVE': return `Filing design: ${payload?.design?.name ?? 'ship'}`;
         case 'SHIP_DESIGN_DELETE': return 'Retiring ship design';
         case 'MIL_CREATE_ARMY': return 'Raising army';

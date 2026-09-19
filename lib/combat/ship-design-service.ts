@@ -26,6 +26,7 @@ import {
     resolveDesign,
     summarizeDesign,
     unitConfigFor,
+    sameFit,
 } from './ship-registry';
 
 /** The slice of the world these helpers touch. */
@@ -48,6 +49,28 @@ export function factionDesigns(world: DesignBearingWorld | null | undefined, fac
     const map = world?.shipDesigns;
     if (!(map instanceof Map)) return [];
     return Array.from(map.values()).filter(d => d.factionId === factionId);
+}
+
+/**
+ * Ships of this faction that carry a pattern, or are on their way to or from
+ * it: fleets' designCounts plus open build and refit jobs. While this is above
+ * zero the pattern's FIT is frozen, because a refit is priced from the source
+ * pattern's definition: edit pattern X down to a bare hull, refit X -> Y for
+ * the price of every module Y has, and the ships gain modules they already
+ * carried. A rename is always allowed.
+ */
+export function shipsInService(world: DesignBearingWorld | null | undefined, factionId: string, designId: string): number {
+    const w = world as any;
+    let n = 0;
+    for (const fleet of w?.movement?.fleets?.values?.() ?? []) {
+        if (fleet?.factionId !== factionId) continue;
+        n += Math.max(0, Math.floor(Number(fleet.designCounts?.[designId]) || 0));
+    }
+    for (const job of w?.combat?.recruitmentJobs ?? []) {
+        if (job?.factionId !== factionId) continue;
+        if (job.designId === designId || job.refitFrom?.designId === designId) n += Math.max(0, Math.floor(Number(job.count) || 0));
+    }
+    return n;
 }
 
 export type DesignResult =
@@ -87,6 +110,12 @@ export function saveDesign(
     if (existing && existing.factionId !== factionId) {
         return { ok: false, reason: 'That design belongs to another faction.' };
     }
+    if (existing && !sameFit(existing, { hullId, components })) {
+        const inService = shipsInService(world, factionId, existing.id);
+        if (inService > 0) {
+            return { ok: false, reason: `${inService} ship${inService === 1 ? ' in service carries' : 's in service carry'} this pattern. File the change as a new pattern and refit ${inService === 1 ? 'it' : 'them'} at a yard.` };
+        }
+    }
     if (!existing && factionDesigns(world, factionId).length >= MAX_DESIGNS_PER_FACTION) {
         return { ok: false, reason: `Design registry full (${MAX_DESIGNS_PER_FACTION}). Retire one first.` };
     }
@@ -116,6 +145,10 @@ export function deleteDesign(
     const existing = map.get(designId);
     if (!existing) return { ok: false, reason: 'Design not found.' };
     if (existing.factionId !== factionId) return { ok: false, reason: 'That design belongs to another faction.' };
+    const inService = shipsInService(world, factionId, designId);
+    if (inService > 0) {
+        return { ok: false, reason: `${inService} ship${inService === 1 ? ' in service carries' : 's in service carry'} this pattern. Refit ${inService === 1 ? 'it' : 'them'} to another pattern first.` };
+    }
     map.delete(designId);
     return { ok: true };
 }

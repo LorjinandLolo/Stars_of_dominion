@@ -8,6 +8,7 @@ import { GroundUnitType, PlanetaryDefenseState, InvadingForceState } from '@/lib
 import { Shield, Swords, Anchor, X, Users } from 'lucide-react';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import ShipDesignPicker from '@/components/units/ShipDesignPicker';
+import FleetRefitPanel from '@/components/units/FleetRefitPanel';
 import type { ShipDesign } from '@/lib/combat/ship-types';
 
 const BATTALION_SIZES: Record<GroundUnitType, number> = {
@@ -298,7 +299,9 @@ export function ReviewPanel() {
                         {pendingJobs.length > 0 && (
                             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 normal-case tracking-normal">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                {pendingJobs.map((j: any) => `${j.count}× ${String(j.unitType).toLowerCase()} ${Math.floor(j.progress ?? 0)}%`).join(' · ')}
+                                {pendingJobs.map((j: any) => j.kind === 'refit'
+                                    ? `refit ${j.count}× ${j.refitFrom?.designName ?? 'unregistered'} → ${j.designName ?? 'new pattern'} ${Math.floor(j.progress ?? 0)}%`
+                                    : `${j.count}× ${String(j.designName ?? j.unitType).toLowerCase()} ${Math.floor(j.progress ?? 0)}%`).join(' · ')}
                             </span>
                         )}
                     </span>
@@ -535,6 +538,13 @@ export function ReviewPanel() {
                                 <p className="text-[9px] text-slate-500 mt-3 text-center">
                                     Standard patterns need no research; bigger hulls need a bigger yard (see above). Draft your own in the Ship Designer.
                                 </p>
+                                {/* Refit: convert ships already in the selected fleet to
+                                    another pattern of the same hull, at this yard. */}
+                                {isOwner && selectedFleet && yardAnchor && (
+                                    <div className="w-full max-w-xl mt-4">
+                                        <FleetRefitPanel fleet={selectedFleet} yardAnchor={yardAnchor} />
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className="flex gap-4">

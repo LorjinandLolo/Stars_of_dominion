@@ -44,14 +44,20 @@ import {
     saveDesign as saveShipDesign,
     deleteDesign as deleteShipDesign,
     resolveRecruitSpec,
+    factionDesigns,
+    unlockedTechSet,
     type RecruitSpec,
 } from '../lib/combat/ship-design-service';
+import { refittable, rosterByHull, splitRoster } from '../lib/combat/fleet-roster';
+import { isSystemContested } from '../lib/combat/war-status';
 import {
     addProfile as addDesignProfile,
     scaleProfile as scaleDesignProfile,
     isShipClass,
     normalizeComposition,
     normalizeUnitKey,
+    resolveDesign as resolveShipDesign,
+    quoteRefit,
 } from '../lib/combat/ship-registry';
 import { checkShipyardGate } from '../lib/combat/shipyard-gate';
 import {
@@ -4144,6 +4150,91 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             break;
         }
 
+        case 'MIL_REFIT_FLEET': {
+            // payload: { fleetId, fromDesignId: string | null, toDesignId, count }
+            // Converts ships already in the fleet from one pattern to another
+            // of the SAME hull, at a yard. Every check precedes the charge.
+            const fleet = world.movement.fleets.get(payload.fleetId);
+            if (!fleet) { recordOrderFailure(world, factionId, actionId, 'That fleet no longer exists.'); return; }
+            if (fleet.factionId !== factionId) {
+                console.error(`[Security] ${factionId} tried to refit ${payload.fleetId} owned by ${fleet.factionId}.`);
+                recordOrderFailure(world, factionId, actionId, 'You do not command that fleet.');
+                return;
+            }
+            const n = Math.floor(Number(payload.count));
+            if (!(n >= 1 && n <= 50)) { recordOrderFailure(world, factionId, actionId, 'Refit between 1 and 50 ships per order.'); return; }
+
+            // The target goes through the same resolver as a recruit: registry,
+            // ownership, tech gates and the brownout cap.
+            const target = resolveRecruitSpec(world, factionId, { designId: payload.toDesignId }, 'fleet');
+            if (!target.ok) { recordOrderFailure(world, factionId, actionId, target.reason); return; }
+            const ownDesigns = factionDesigns(world, factionId);
+            const lookup = (id: string) => resolveShipDesign(id, factionId, ownDesigns);
+            const toDesign = lookup(String(payload.toDesignId));
+            const fromId: string | null = typeof payload.fromDesignId === 'string' && payload.fromDesignId ? payload.fromDesignId : null;
+            const fromDesign = fromId ? lookup(fromId) : null;
+            if (!toDesign || (fromId && !fromDesign)) {
+                recordOrderFailure(world, factionId, actionId, 'That pattern is no longer on file, so its fit cannot be priced.');
+                return;
+            }
+            const quote = quoteRefit(fromDesign ?? null, toDesign, unlockedTechSet(world, factionId));
+            if (!quote.ok) { recordOrderFailure(world, factionId, actionId, quote.reason ?? 'That refit cannot be done.'); return; }
+
+            if (isSystemContested(world, fleet.currentSystemId, factionId)) {
+                recordOrderFailure(world, factionId, actionId, 'The fleet is under fire. Refit needs a quiet yard.');
+                return;
+            }
+            const refitGate = checkShipyardGate(
+                world.construction.planets.values(),
+                factionId,
+                { systemId: fleet.currentSystemId, systemName: systemNameFor(world, fleet.currentSystemId), holding: !!fleet.currentSystemId && !fleet.destinationSystemId },
+                quote.hullId,
+                world.nowSeconds,
+            );
+            if (!refitGate.ok) { recordOrderFailure(world, factionId, actionId, refitGate.reason); return; }
+
+            const roster = rosterByHull(fleet, lookup);
+            if (fromId === null && (roster.orphanIds.length > 0 || Object.values(roster.hulls).some(h => h.inconsistent))) {
+                recordOrderFailure(world, factionId, actionId, "This fleet's records do not account for every fit aboard; unregistered hulls cannot be told apart.");
+                return;
+            }
+            const fromName = fromDesign?.name ?? `unregistered ${quote.hullId}`;
+            const { available, reserved } = refittable(fleet, fromId, quote.hullId, lookup, world.combat?.recruitmentJobs ?? []);
+            if (n > available) {
+                recordOrderFailure(world, factionId, actionId,
+                    `Only ${available} ${fromName} ${available === 1 ? 'is' : 'are'} free in this fleet${reserved ? ` (${reserved} more already in refit)` : ''}.`);
+                return;
+            }
+            if (!chargePerUnitCost(world, factionId, quote.perShipCost, n, actionId, `${toDesign.name} refit`)) return;
+
+            const refitJob = RecruitmentService.createJob(
+                `formation-${fleet.id}`,
+                factionId,
+                target.spec.unitType as GroundUnitType,
+                n,
+                world.nowSeconds,
+                {
+                    buildTimePerUnit: quote.perShipSeconds,
+                    designId: toDesign.id,
+                    designName: toDesign.name,
+                    classKey: quote.hullId,
+                    unitPower: quote.to.power,
+                    unitProfile: quote.to.profile,
+                    unitSpeedMult: quote.to.speedMult,
+                    kind: 'refit',
+                    refitFrom: { designId: fromId, designName: fromDesign?.name, unitPower: quote.from.power, unitProfile: quote.from.profile, unitSpeedMult: quote.from.speedMult },
+                    paidPerUnit: quote.perShipCost,
+                },
+            );
+            refitJob.targetFormationId = fleet.id;
+            refitJob.isFleet = true;
+            if (!world.combat) world.combat = {};
+            if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
+            world.combat.recruitmentJobs.push(refitJob);
+            console.log(`[Order] ${factionId} sent ${n}x ${fromName} of ${fleet.name || fleet.id} to refit as ${toDesign.name} (${quote.perShipCost.CREDITS} cr / ${quote.perShipCost.METALS} metals and ${quote.perShipSeconds}s each).`);
+            break;
+        }
+
         case 'MIL_ATTACK_FLEET': {
             // payload: { attackerFleetId, defenderFleetId }
             const attacker = world.movement.fleets.get(payload.attackerFleetId);
@@ -4490,39 +4581,58 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Order] SPLIT rejected: cannot detach ALL ships — merge or rename instead.`);
                 return;
             }
+            // Ships in the yard's hands are reserved by count, not by hull
+            // number: a split underneath an open refit could take them away.
+            const shipsInRefit = (world.combat?.recruitmentJobs ?? [])
+                .filter((j: any) => j.kind === 'refit' && j.targetFormationId === src.id)
+                .reduce((sum: number, j: any) => sum + (Number(j.count) || 0), 0);
+            if (shipsInRefit > 0) {
+                recordOrderFailure(world, factionId, actionId, `Refit in progress: ${shipsInRefit} ship${shipsInRefit === 1 ? ' is' : 's are'} in the yard's hands.`);
+                return;
+            }
 
             const srcPower = src.basePower ?? 100;
             let newPower: number;
-            let splitRatio = 0.5;
+            let detachedProfile: any;
+            let detachedCounts: Record<string, number> | undefined;
             if (movedCount > 0) {
+                // The books follow the ships (lib/combat/fleet-roster.ts
+                // splitRoster): each hull's ships come off that hull's own
+                // designs, power moves by what those ships are rated, and the
+                // signature is the moved designs' own. The old split moved all
+                // three by the overall ship ratio, so detaching two battleships
+                // from ten corvettes and two battleships took a sixth of the
+                // power and a sixth of every design, and designCounts drifted
+                // away from composition. Refit reads designCounts, so it cannot.
+                const ownDesigns = factionDesigns(world, factionId);
+                const split = splitRoster(src, moved, (id: string) => resolveShipDesign(id, factionId, ownDesigns));
                 for (const [type, count] of Object.entries(moved)) {
                     (src.composition as any)[type] -= count;
                     if ((src.composition as any)[type] <= 0) delete (src.composition as any)[type];
                 }
-                splitRatio = totalShips > 0 ? movedCount / totalShips : 0.5;
-                newPower = Math.max(10, Math.round(srcPower * splitRatio));
+                newPower = Math.max(1, split.movedPower);
+                if (src.designCounts) { detachedCounts = split.movedCounts; src.designCounts = split.keptCounts; }
+                if (src.designProfile) { detachedProfile = split.movedProfile; src.designProfile = split.keptProfile; }
             } else {
-                newPower = Math.max(10, Math.round(srcPower / 2));
-            }
-            src.basePower = Math.max(10, srcPower - newPower);
-
-            // Design totals follow the ships by ratio. Per-design counts are
-            // display-only, so rounding drift there is harmless; the profile
-            // is what combat reads and it scales exactly.
-            const detachedProfile = src.designProfile ? scaleDesignProfile(src.designProfile, splitRatio) : undefined;
-            if (src.designProfile) src.designProfile = scaleDesignProfile(src.designProfile, 1 - splitRatio);
-            let detachedCounts: Record<string, number> | undefined;
-            if (src.designCounts) {
-                detachedCounts = {};
-                const kept: Record<string, number> = {};
-                for (const [designId, n] of Object.entries(src.designCounts)) {
-                    const total = Number(n) || 0;
-                    const take = Math.round(total * splitRatio);
-                    if (take > 0) detachedCounts[designId] = take;
-                    if (total - take > 0) kept[designId] = total - take;
+                // No roster to split: halve the rating and everything with it.
+                newPower = Math.max(1, Math.round(srcPower / 2));
+                if (src.designProfile) {
+                    detachedProfile = scaleDesignProfile(src.designProfile, 0.5);
+                    src.designProfile = scaleDesignProfile(src.designProfile, 0.5);
                 }
-                src.designCounts = kept;
+                if (src.designCounts) {
+                    detachedCounts = {};
+                    const kept: Record<string, number> = {};
+                    for (const [designId, n] of Object.entries(src.designCounts)) {
+                        const total = Number(n) || 0;
+                        const take = Math.floor(total / 2);
+                        if (take > 0) detachedCounts[designId] = take;
+                        if (total - take > 0) kept[designId] = total - take;
+                    }
+                    src.designCounts = kept;
+                }
             }
+            src.basePower = Math.max(1, srcPower - newPower);
 
             const newFleetId = `fleet-${factionId}-${Date.now()}`;
             world.movement.fleets.set(newFleetId, {

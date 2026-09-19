@@ -24,6 +24,7 @@ import {
     defaultDesignFor,
     getComponent,
     getHull,
+    sameFit,
     summarizeDesign,
 } from '@/lib/combat/ship-registry';
 import type { DesignSummary, HullSlot, ShipClassId, ShipDesign, SlotType } from '@/lib/combat/ship-types';
@@ -77,7 +78,27 @@ export default function ShipDesignerPanel() {
 
     const activeDesign = activeId ? shipDesigns.find(d => d.id === activeId) : undefined;
     const dirty = !sameDesign(draft, activeDesign);
-    const atCap = !activeDesign && shipDesigns.length >= MAX_DESIGNS_PER_FACTION;
+
+    // A pattern that ships carry (or are being built or refit to) keeps its
+    // fit: a refit is priced from the source pattern, so editing it in place
+    // would reprice ships already afloat. The worker refuses that; here the
+    // edit is filed as a new pattern instead, and the ships can be refit to it.
+    const fleets = useUIStore(s => s.fleets);
+    const recruitmentJobs = useUIStore(s => s.recruitmentJobs);
+    const inService = useMemo(() => {
+        if (!activeDesign || !playerFactionId) return 0;
+        let n = 0;
+        for (const f of fleets as any[]) {
+            if (f.factionId === playerFactionId) n += Math.max(0, Math.floor(Number(f.designCounts?.[activeDesign.id]) || 0));
+        }
+        for (const j of recruitmentJobs as any[]) {
+            if (j.factionId === playerFactionId && (j.designId === activeDesign.id || j.refitFrom?.designId === activeDesign.id)) n += Math.max(0, Math.floor(Number(j.count) || 0));
+        }
+        return n;
+    }, [activeDesign, fleets, recruitmentJobs, playerFactionId]);
+    const fitChanged = !!activeDesign && !sameFit(activeDesign, { hullId, components });
+    const saveAsNew = inService > 0 && fitChanged;
+    const atCap = (!activeDesign || saveAsNew) && shipDesigns.length >= MAX_DESIGNS_PER_FACTION;
 
     const ownSorted = useMemo(() => {
         const order = new Map(SHIP_HULLS.map((h, i) => [h.id, i]));
@@ -132,7 +153,8 @@ export default function ShipDesignerPanel() {
         if (!summary.valid || busy || !playerFactionId || atCap) return;
         setBusy(true);
         setNotice(null);
-        const id = activeId ?? `design-${playerFactionId}-${Date.now()}`;
+        const updating = !!activeId && !saveAsNew;
+        const id = updating ? activeId! : `design-${playerFactionId}-${Date.now()}`;
         const design: ShipDesign = {
             id,
             factionId: playerFactionId,
@@ -149,7 +171,14 @@ export default function ShipDesignerPanel() {
         if (res.success) {
             upsertShipDesign({ ...design, pending: true });
             setActiveId(id);
-            setNotice({ kind: 'ok', text: activeId ? 'Design updated. Ships already built keep their old fit.' : 'Design filed. It appears in every Requisition panel once the yard confirms.' });
+            setNotice({
+                kind: 'ok',
+                text: saveAsNew
+                    ? `Filed as a new pattern. The ${inService} ship${inService === 1 ? '' : 's'} in service keep the old fit; refit them from their fleet's dossier at a yard.`
+                    : updating
+                        ? 'Design updated.'
+                        : 'Design filed. It appears in every Requisition panel once the yard confirms.',
+            });
         } else {
             setNotice({ kind: 'err', text: res.error ?? 'The yard rejected the design.' });
         }
@@ -213,6 +242,7 @@ export default function ShipDesignerPanel() {
                             <p className="text-[10px] text-slate-500 font-mono tracking-widest mt-1 truncate">
                                 {hull.name} · {activeDesign ? (activeDesign.pending ? 'syncing with yard…' : 'saved pattern') : 'unsaved draft'}
                                 {activeDesign && dirty ? ' · edited' : ''}
+                                {inService > 0 ? ` · in service: ${inService} ship${inService === 1 ? '' : 's'}` : ''}
                             </p>
                         </div>
                     </div>
@@ -249,10 +279,16 @@ export default function ShipDesignerPanel() {
                             onClick={save}
                             disabled={busy || !summary.valid || atCap || (!!activeDesign && !dirty)}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all font-display text-xs tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
-                            title={atCap ? `Registry full (${MAX_DESIGNS_PER_FACTION})` : summary.valid ? 'File this pattern with the yard' : summary.issues[0]}
+                            title={atCap
+                                ? `Registry full (${MAX_DESIGNS_PER_FACTION})`
+                                : !summary.valid
+                                    ? summary.issues[0]
+                                    : saveAsNew
+                                        ? `${inService} ship${inService === 1 ? '' : 's'} carry this pattern, so its fit is kept. This files your change as a new pattern you can refit them to.`
+                                        : 'File this pattern with the yard'}
                         >
                             {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                            {activeDesign ? 'UPDATE' : 'FILE DESIGN'}
+                            {saveAsNew ? 'SAVE AS NEW PATTERN' : activeDesign ? 'UPDATE' : 'FILE DESIGN'}
                         </button>
                     </div>
                 </div>

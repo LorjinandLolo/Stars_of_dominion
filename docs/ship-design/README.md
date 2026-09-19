@@ -118,8 +118,10 @@ and was consumed by nothing.
 - `SHIP_DESIGN_SAVE { design: { id?, name, hullId, components } }` — validated
   server-side; payload `factionId` ignored; standard ids refused; cap 24 per
   faction. Client picks the id so the optimistic copy reconciles on sync.
-- `SHIP_DESIGN_DELETE { designId }` — own designs only. In-flight jobs keep
-  their snapshot; existing ships are unaffected.
+- `SHIP_DESIGN_DELETE { designId }` — own designs only, and refused while
+  any ship carries the pattern (see Refit).
+- `MIL_REFIT_FLEET { fleetId, fromDesignId | null, toDesignId, count }` — see
+  Refit below.
 - `MIL_RECRUIT_FORMATION_UNIT { formationId, isFleet, unitType, designId?, count }`
   and `MIL_BUILD_FLEET { ..., recruitUnitType?, recruitDesignId? }` — a hull
   name without a design builds the standard pattern.
@@ -326,11 +328,64 @@ Tests: `npx tsx lib/combat/damage-model-tests.ts` (formula, pacing),
   after one battle and break in the third; 1.25:1 takes two battles; 2:1 ends
   inside one with the winner over 0.8; 5:1 in two rounds.
 
+## Refit (2026-09-19)
+
+`MIL_REFIT_FLEET` converts ships already in a fleet from one pattern to
+another of the SAME hull, at a yard. Tests: `npx tsx lib/combat/refit-tests.ts`
+(51 checks); the handler is worker-inline and was verified live.
+
+- **Price** (`quoteRefit` in `ship-registry.ts`): both sides go through
+  `summarizeDesign`, so there is still one pricing function. The player pays
+  for the modules ADDED, compared as multisets (re-ordering slots is "the same
+  fit" and refused); removed modules refund nothing, so A → B → A pays twice.
+  Time is 10% of the hull's build time plus the added modules', per ship,
+  serial. `fromDesignId: null` means **unregistered hulls**: ships no pattern
+  accounts for (built before designs existed), rated as the bare hull, never
+  as `basePower / ships` (fleet shells would poison that).
+- **The books** (`lib/combat/fleet-roster.ts`): `rosterByHull` groups
+  `designCounts` under `composition`, flags hulls whose counts over-claim
+  (`inconsistent`) and ids whose pattern is gone (`orphanIds`); `refittable`
+  is what the books hold less what open refit jobs already reserved;
+  `applyRefit` rewrites exactly four fields (basePower, designProfile,
+  designCounts, designSpeedBonus). `designCounts` used to be display-only and
+  is load-bearing now.
+- **Validation order** (every check precedes the charge): fleet exists, is
+  yours, count 1-50, target resolves through `resolveRecruitSpec` (registry,
+  tech, brownout cap), source pattern still on file, quote ok, system not
+  contested (`isSystemContested`), `checkShipyardGate` for the target hull (a
+  battleship refit needs a tier 3 yard), unregistered source refused when the
+  books are unclear, count ≤ free ships, then `chargePerUnitCost`.
+- **The job** rides `world.combat.recruitmentJobs` with `kind: 'refit'`,
+  `refitFrom` (source snapshot) and `paidPerUnit`, so persistence, shards,
+  sync and the merge retarget come free. Until it lands the ships fight with
+  the old fit. Completion is never yard-gated (the fleet may sail). Ships no
+  longer aboard by then are refunded at what was paid; a fleet that is gone
+  takes its bill with it. The owner gets a REFIT COMPLETE notification.
+- **In-service lock** (`shipsInService`): a pattern that ships carry, or are
+  being built or refit to or from, keeps its FIT. `saveDesign` refuses a
+  changed hull or modules (a rename is fine) and `deleteDesign` refuses
+  outright. Without it: edit pattern X down to a bare hull, refit X → Y for
+  the price of every module, and the ships gain modules they already had. The
+  designer files such an edit as a new pattern instead.
+- **Split follows the books** (`splitRoster`): each hull's ships come off
+  that hull's own patterns by largest remainder, power moves by what those
+  ships are rated, and the signature is the moved patterns' own. The old
+  split moved all three by the overall ship ratio (two battleships out of ten
+  corvettes and two battleships took a sixth of the power) and let
+  designCounts drift off composition. A split is refused while a refit job
+  targets the fleet.
+- **UI**: `components/units/FleetRefitPanel.tsx`, shown under the commission
+  picker in `ReviewPanel` for the selected fleet: one row per pattern aboard
+  (and per hull with unregistered ships), a REFIT drawer with target, count and
+  a live quote. `MilitaryPanel` carries it too but is not mounted anywhere.
+- **Left out**: cross-hull conversion, scrap refunds, a cancel order, dry-dock
+  immobilisation, AI use of refit, bulk upgrades, wings and carriers.
+
 ## Not done / next
 
+- `components/panels/MilitaryPanel.tsx` is imported by nothing (the dock opens
+  WAR ROOM and SHIP DESIGNER). Fleet recruit and refit live in `ReviewPanel`.
 - Default stances (shock v entrench) favour the attacker about 1.2:1 between equals.
 - A side in two engagements in one system fires its full power in both.
 - A lone hostile fleet over an armed world is not engaged by the defenses (no fleet battle, no fortification).
 - The tactical sim still fields each class's fixed loadout; designs tune it (shields, armour, speed, damage, mix) rather than replacing the weapons.
-- Refit: existing ships keep the fit they were built with. A refit order would
-  be a per-fleet job that rewrites `designProfile`/`designCounts`.

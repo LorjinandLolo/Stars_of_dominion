@@ -33,6 +33,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { formationId: "id", isFleet: "boolean", unitType: "string", count: "number" },
     cost: {}
   },
+  MIL_REFIT_FLEET: {
+    id: "MIL_REFIT_FLEET",
+    category: "military",
+    // fromDesignId rides along too (string, or null for unregistered hulls).
+    // Priced per ship by quoteRefit in the worker, like the recruit sibling.
+    params: { fleetId: "id", toDesignId: "string", count: "number" },
+    cost: {}
+  },
   MIL_ATTACK_FLEET: {
     id: "MIL_ATTACK_FLEET",
     category: "military",

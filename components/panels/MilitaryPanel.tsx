@@ -6,18 +6,15 @@ import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Shield, Crosshair, Map, Swords, Users, RefreshCw, Rocket, Target } from 'lucide-react';
 import { GroundUnitType } from '@/lib/combat/siege/siege-types';
 import ShipDesignPicker from '@/components/units/ShipDesignPicker';
-import { DEFAULT_DESIGNS } from '@/lib/combat/ship-registry';
+import FleetRefitPanel from '@/components/units/FleetRefitPanel';
 import type { ShipDesign } from '@/lib/combat/ship-types';
 import { veterancyRank } from '@/lib/combat/veterancy';
 
 export default function MilitaryPanel() {
     const {
         armies, fleets, playerFactionId, selectedPlanetId, selectedSystemId,
-        systems, planets, empireIdentity, shipDesigns
+        systems, planets, empireIdentity
     } = useUIStore();
-
-    const designNameById = (id: string) =>
-        shipDesigns.find(d => d.id === id)?.name ?? DEFAULT_DESIGNS.find(d => d.id === id)?.name ?? id;
 
     const { leadership } = empireIdentity;
     const availableLeaders = Array.from(leadership.leaders.values())
@@ -206,17 +203,17 @@ export default function MilitaryPanel() {
                                             <span className="text-slate-300">{veterancyRank((selectedFormation as any).experience)}{((selectedFormation as any).experience ?? 0) > 0 ? ` (+${Math.round(((selectedFormation as any).experience ?? 0) * 100)}% power)` : ''}</span>
                                         </div>
                                     )}
-                                    {activeTab === 'fleets' && (selectedFormation as any).designCounts
-                                        && Object.keys((selectedFormation as any).designCounts).length > 0 && (
-                                        <div className="pt-2 border-t border-slate-800 space-y-1">
-                                            <div className="text-[9px] uppercase tracking-widest text-slate-500">By design</div>
-                                            {Object.entries((selectedFormation as any).designCounts as Record<string, number>).map(([designId, n]) => (
-                                                <div key={designId} className="flex justify-between text-[11px] font-mono">
-                                                    <span className="text-slate-300 truncate">{designNameById(designId)}</span>
-                                                    <span className="text-slate-400">×{n}</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                                    {/* Patterns aboard, each with a REFIT control; also lists hulls
+                                        no pattern accounts for (built before designs existed). */}
+                                    {activeTab === 'fleets' && (
+                                        <FleetRefitPanel
+                                            fleet={selectedFormation}
+                                            yardAnchor={{
+                                                systemId: (selectedFormation as any).currentSystemId,
+                                                systemName: systems.find(s => s.id === (selectedFormation as any).currentSystemId)?.name,
+                                                holding: !!(selectedFormation as any).currentSystemId && !(selectedFormation as any).destinationSystemId,
+                                            }}
+                                        />
                                     )}
                                 </div>
                             </div>

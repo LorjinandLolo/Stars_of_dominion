@@ -11,7 +11,11 @@ import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob 
 import { addProfile, normalizeComposition, normalizeUnitKey, unitConfigFor } from './ship-registry';
 import { blendSpeedBonus, shipCountOf } from './fleet-speed';
 import { blendExperience } from './veterancy';
-import type { DesignProfile } from './ship-types';
+import type { DesignProfile, ShipClassId } from './ship-types';
+import { resolveDesign } from './ship-registry';
+import { factionDesigns } from './ship-design-service';
+import { applyRefit, refittable } from './fleet-roster';
+import { fireNotification } from '../time/notification-hooks';
 
 /** Fields a job may carry beyond the siege-types base shape. */
 export interface RecruitmentJobExtras {
@@ -29,6 +33,16 @@ export interface RecruitmentJobExtras {
     unitProfile?: DesignProfile;
     /** Per-ship lane-speed bonus from the design (blended into fleet.designSpeedBonus on completion). */
     unitSpeedMult?: number;
+    /**
+     * 'refit': the job converts `count` ships already in the fleet from
+     * `refitFrom` to the design in designId/unitPower/unitProfile, instead of
+     * adding ships. The source side is snapshotted at order time, like the
+     * target, so a later edit cannot change what comes off.
+     */
+    kind?: 'refit';
+    refitFrom?: { designId: string | null; designName?: string; unitPower: number; unitProfile?: DesignProfile; unitSpeedMult?: number };
+    /** What each ship's refit was charged, for refunding ships that are gone by completion. */
+    paidPerUnit?: Record<string, number>;
 }
 
 export type RecruitmentJobRecord = RecruitmentJob & RecruitmentJobExtras;
@@ -42,6 +56,9 @@ export interface CreateJobOptions {
     unitPower?: number;
     unitProfile?: DesignProfile;
     unitSpeedMult?: number;
+    kind?: 'refit';
+    refitFrom?: RecruitmentJobExtras['refitFrom'];
+    paidPerUnit?: Record<string, number>;
 }
 
 export class RecruitmentService {
@@ -94,6 +111,9 @@ export class RecruitmentService {
         if (options.unitPower !== undefined) job.unitPower = options.unitPower;
         if (options.unitProfile) job.unitProfile = options.unitProfile;
         if (options.unitSpeedMult !== undefined) job.unitSpeedMult = options.unitSpeedMult;
+        if (options.kind) job.kind = options.kind;
+        if (options.refitFrom) job.refitFrom = options.refitFrom;
+        if (options.paidPerUnit) job.paidPerUnit = options.paidPerUnit;
         return job;
     }
 
@@ -122,7 +142,65 @@ export class RecruitmentService {
         world.combat.recruitmentJobs = remainingJobs;
     }
 
+    /**
+     * A refit lands: `count` ships of the source fit become the target fit.
+     * Never yard-gated, like a recruit: the fleet may have sailed. Ships that
+     * are no longer there to convert (lost, split away) are refunded at what
+     * was paid; a fleet that is gone entirely takes its yard bill with it.
+     */
+    private static completeRefit(world: any, job: RecruitmentJobRecord) {
+        const fleet = job.targetFormationId ? world.movement.fleets.get(job.targetFormationId) : undefined;
+        if (!fleet || !job.designId || !job.classKey || !job.refitFrom) {
+            console.log(`[Refit] Dropped ${job.count}x ${job.designName ?? job.designId}: the fleet is gone.`);
+            return;
+        }
+        const designs = factionDesigns(world, job.factionId);
+        const lookup = (id: string) => resolveDesign(id, job.factionId, designs);
+        const fromId = job.refitFrom.designId ?? null;
+        const { available } = refittable(fleet, fromId, job.classKey as ShipClassId, lookup, []);
+        const k = Math.max(0, Math.min(job.count, available));
+        const before = fleet.basePower ?? 0;
+        applyRefit(fleet, {
+            fromDesignId: fromId,
+            toDesignId: job.designId,
+            from: { power: job.refitFrom.unitPower, profile: job.refitFrom.unitProfile, speedMult: job.refitFrom.unitSpeedMult ?? 0 },
+            to: { power: job.unitPower ?? job.refitFrom.unitPower, profile: job.unitProfile, speedMult: job.unitSpeedMult ?? 0 },
+        }, k);
+
+        const short = job.count - k;
+        if (short > 0 && job.paidPerUnit) {
+            const reserves = world.economy?.factions?.get?.(job.factionId)?.reserves as Record<string, number> | undefined;
+            if (reserves) {
+                for (const [key, amt] of Object.entries(job.paidPerUnit)) {
+                    if (reserves[key] === undefined) continue;
+                    reserves[key] = (reserves[key] ?? 0) + amt * short;
+                }
+            }
+        }
+        const delta = Math.round((fleet.basePower ?? 0) - before);
+        console.log(`[Refit] ${k}x ${job.refitFrom.designName ?? 'unregistered hulls'} -> ${job.designName ?? job.designId} in ${fleet.name}${short > 0 ? ` (${short} no longer aboard, refunded)` : ''}`);
+        if (k > 0) {
+            fireNotification({
+                id: `refit-${job.id}`,
+                factionId: job.factionId,
+                category: 'military',
+                priority: 'normal',
+                title: 'REFIT COMPLETE',
+                body: `${k}× ${job.designName ?? 'new pattern'} in ${fleet.name}, rating ${delta >= 0 ? '+' : ''}${delta}.${short > 0 ? ` ${short} ship${short === 1 ? ' was' : 's were'} no longer aboard and ${short === 1 ? 'was' : 'were'} refunded.` : ''}`,
+                createdAt: new Date((world.nowSeconds ?? 0) * 1000).toISOString(),
+                read: false,
+                linkToTab: 'military',
+                payload: { fleetId: fleet.id },
+            } as any);
+        }
+    }
+
     private static completeJob(world: any, job: RecruitmentJobRecord) {
+        if (job.kind === 'refit') {
+            this.completeRefit(world, job);
+            return;
+        }
+
         if (job.targetFormationId) {
             const formationId = job.targetFormationId;
 

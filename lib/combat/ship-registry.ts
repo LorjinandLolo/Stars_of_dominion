@@ -669,3 +669,105 @@ export function summarizeDesign(
 export function designProfile(design: Pick<ShipDesign, 'hullId' | 'components' | 'name'>): DesignProfile {
     return summarizeDesign(design, null).profile;
 }
+
+// ─── Refit ───────────────────────────────────────────────────────────────────
+
+/** Share of the hull's own build time a refit costs before any module work. */
+export const REFIT_HULL_TIME_FRACTION = 0.10;
+
+export interface RefitQuote {
+    ok: boolean;
+    /** Why the refit cannot be done. Only when !ok. */
+    reason?: string;
+    hullId: ShipClassId;
+    /** Modules the target carries that the source does not (with multiplicity). These are what is paid for. */
+    addedModuleIds: string[];
+    /** Modules that come off. Scrapped: nothing is refunded. */
+    removedModuleIds: string[];
+    perShipCost: { CREDITS: number; METALS: number };
+    perShipSeconds: number;
+    from: { power: number; profile: DesignProfile; speedMult: number };
+    to: { power: number; profile: DesignProfile; speedMult: number; brownoutPenalty: number };
+    powerDelta: number;
+}
+
+/**
+ * Price converting one ship from `from` to `to`. `from` null = an
+ * unregistered hull (built before designs existed), rated as the bare hull.
+ *
+ * Both sides go through summarizeDesign, so there is still one pricing
+ * function. The price is the modules ADDED, as multisets: slots of one type
+ * are interchangeable, so re-ordering a fit is free and is refused as "the
+ * same fit". Removed modules refund nothing, which is what makes flipping
+ * A -> B -> A between battles cost twice. The source side skips the tech
+ * check (the ships exist) and so do standard patterns.
+ */
+export function quoteRefit(
+    from: Pick<ShipDesign, 'hullId' | 'components' | 'name'> | null,
+    to: Pick<ShipDesign, 'hullId' | 'components' | 'name'> & { factionId?: string },
+    unlockedTechIds: ReadonlySet<string> | null | undefined,
+): RefitQuote {
+    const toSummary = summarizeDesign(to, to.factionId === DEFAULT_DESIGN_FACTION ? null : unlockedTechIds);
+    const hull = getHull(to.hullId);
+    const bare = { hullId: to.hullId, name: 'Bare hull', components: {} };
+    const fromSummary = summarizeDesign(from ?? bare, null);
+    const empty: RefitQuote = {
+        ok: false,
+        hullId: toSummary.hullId,
+        addedModuleIds: [],
+        removedModuleIds: [],
+        perShipCost: { CREDITS: 0, METALS: 0 },
+        perShipSeconds: 0,
+        from: { power: fromSummary.power, profile: fromSummary.profile, speedMult: fromSummary.speedMult },
+        to: { power: toSummary.power, profile: toSummary.profile, speedMult: toSummary.speedMult, brownoutPenalty: toSummary.brownoutPenalty },
+        powerDelta: toSummary.power - fromSummary.power,
+    };
+    if (!hull || !toSummary.valid) return { ...empty, reason: `${to.name}: ${toSummary.issues[0] ?? 'design is not buildable.'}` };
+    if (from && normalizeUnitKey(from.hullId) !== hull.id) {
+        const fromHull = getHull(from.hullId);
+        return { ...empty, reason: `Refit keeps the hull: ${from.name} is a ${fromHull?.name ?? from.hullId} pattern, ${to.name} a ${hull.name}.` };
+    }
+
+    const bag = (design: Pick<ShipDesign, 'components'> | null) => {
+        const counts = new Map<string, number>();
+        for (const compId of Object.values(design?.components ?? {})) {
+            if (compId && getComponent(compId)) counts.set(compId, (counts.get(compId) ?? 0) + 1);
+        }
+        return counts;
+    };
+    const have = bag(from);
+    const want = bag(to);
+    const added: string[] = [];
+    const removed: string[] = [];
+    for (const [id, n] of want) for (let i = have.get(id) ?? 0; i < n; i++) added.push(id);
+    for (const [id, n] of have) for (let i = want.get(id) ?? 0; i < n; i++) removed.push(id);
+    if (added.length === 0 && removed.length === 0) return { ...empty, reason: 'Those ships already carry that fit.' };
+
+    let credits = 0;
+    let metals = 0;
+    let seconds = Math.round(REFIT_HULL_TIME_FRACTION * hull.baseBuildTime);
+    for (const id of added) {
+        const comp = getComponent(id)!;
+        credits += comp.cost.credits;
+        metals += comp.cost.metals;
+        seconds += comp.buildTime;
+    }
+    return {
+        ...empty,
+        ok: true,
+        addedModuleIds: added,
+        removedModuleIds: removed,
+        perShipCost: { CREDITS: Math.round(credits), METALS: Math.round(metals) },
+        perShipSeconds: Math.max(1, Math.round(seconds)),
+    };
+}
+
+/** Same hull and the same modules, whatever slots they sit in. */
+export function sameFit(
+    a: Pick<ShipDesign, 'hullId' | 'components'>,
+    b: Pick<ShipDesign, 'hullId' | 'components'>,
+): boolean {
+    if (normalizeUnitKey(a.hullId) !== normalizeUnitKey(b.hullId)) return false;
+    const ids = (d: Pick<ShipDesign, 'components'>) => Object.values(d.components ?? {}).filter(Boolean).sort().join('|');
+    return ids(a) === ids(b);
+}
