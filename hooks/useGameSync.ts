@@ -868,6 +868,13 @@ export function useGameSync() {
                 const pendingLocal = useUIStore.getState().shipDesigns.filter(d => d.pending && !known.has(d.id));
                 return [...fromWorld, ...pendingLocal];
             })(),
+            // The player's own yard queue (builds and refits). Nothing wrote
+            // this before, so every reader saw []: the refit panel could not
+            // see ships already in the yard, the designer's in-service count
+            // missed ships on order, and the queue chips never rendered.
+            recruitmentJobs: (activeFactionId
+                ? ((world as any).combat?.recruitmentJobs ?? []).filter((j: any) => j?.factionId === activeFactionId)
+                : []) as any,
             contestedSystemIds,
             espionageState,
             corporateState,
@@ -934,10 +941,15 @@ export function useGameSync() {
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };
-                const existingIds = new Set(world.combat.recruitmentJobs.map(j => j.id));
-                mappedShard.recruitmentJobs.forEach((j: any) => {
-                    if (!existingIds.has(j.id)) world.combat.recruitmentJobs.push(j);
-                });
+                // The shard is the whole truth about its owner's queue, so it
+                // REPLACES that faction's jobs. Adding unseen ids only meant a
+                // finished job never left and progress never moved until the
+                // next full session rebuild.
+                const owner = mappedShard.factionId;
+                world.combat.recruitmentJobs = [
+                    ...(world.combat.recruitmentJobs ?? []).filter((j: any) => j?.factionId !== owner),
+                    ...mappedShard.recruitmentJobs,
+                ];
             }
         };
 

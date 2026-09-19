@@ -11,9 +11,10 @@
 import React, { useMemo, useState } from 'react';
 import { Wrench, X, AlertOctagon } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { executePlayerAction } from '@/app/actions/registry-handler';
-import { getComponent, getHull, quoteRefit, resolveDesign } from '@/lib/combat/ship-registry';
-import { rosterByHull, refittable } from '@/lib/combat/fleet-roster';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { REFIT_MAX_PER_ORDER, getComponent, getHull, quoteRefit, resolveDesign } from '@/lib/combat/ship-registry';
+import { reconcileBooks, rosterByHull, refittable } from '@/lib/combat/fleet-roster';
+import { isSystemContested } from '@/lib/combat/war-status';
 import { yardLockReason, type YardAnchor } from '@/lib/combat/shipyard-gate';
 import { formatBuildTime, formatCredits, usePickerEntries, useYardAt } from '@/components/units/ShipDesignPicker';
 import type { ShipClassId } from '@/lib/combat/ship-types';
@@ -37,6 +38,8 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
     const unlockedTechIds = useUIStore(s => s.techState.unlockedTechIds);
     const recruitmentJobs = useUIStore(s => s.recruitmentJobs);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    const allFleets = useUIStore(s => s.fleets);
+    const rivalries = useUIStore(s => s.diplomacyState?.rivalries);
     const entries = usePickerEntries();
     const yard = useYardAt(yardAnchor);
 
@@ -51,7 +54,23 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
         [shipDesigns, playerFactionId],
     );
     const unlocked = useMemo(() => new Set(unlockedTechIds ?? []), [unlockedTechIds]);
-    const roster = useMemo(() => rosterByHull(fleet, lookup), [fleet, lookup]);
+    // The worker shrinks over-claiming books (old saves) to the hulls that
+    // exist before it prices a refit; show the same view it will act on.
+    const books = useMemo(() => {
+        const copy = { ...fleet };
+        reconcileBooks(copy, lookup);
+        return copy;
+    }, [fleet, lookup]);
+    const roster = useMemo(() => rosterByHull(books, lookup), [books, lookup]);
+    // Same rule as the worker (lib/combat/war-status.ts): no refit under fire.
+    const underFire = useMemo(() => isSystemContested(
+        {
+            rivalries: new Map((rivalries ?? []).map((r: any) => [r.id, r])),
+            movement: { fleets: { values: () => allFleets } },
+        },
+        fleet.currentSystemId,
+        playerFactionId ?? '',
+    ), [rivalries, allFleets, fleet.currentSystemId, playerFactionId]);
 
     const rows: Row[] = useMemo(() => {
         const out: Row[] = [];
@@ -66,6 +85,7 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
         return out;
     }, [roster, lookup]);
 
+    if (fleet.factionId !== playerFactionId) return null;
     if (rows.length === 0 && roster.orphanIds.length === 0) return null;
 
     const booksUnclear = roster.orphanIds.length > 0 || Object.values(roster.hulls).some(h => h.inconsistent);
@@ -82,11 +102,11 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
         if (!target || busy) return;
         setBusy(true);
         setError(null);
-        const res = await executePlayerAction({
-            id: `act_${Date.now()}`,
+        // dispatchOrder, like the recruit control beside this one: the order
+        // shows in the pending HUD and a worker refusal marks it failed.
+        const res = await dispatchOrder({
             actionId: 'MIL_REFIT_FLEET',
-            issuerId: playerFactionId || '',
-            targetId: fleet.id,
+            factionId: playerFactionId || '',
             payload: {
                 fleetId: fleet.id,
                 fromDesignId: row.fromDesignId,
@@ -95,7 +115,6 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
                 fromDesignName: row.name,
                 toDesignName: target.design.name,
             },
-            timestamp: Math.floor(Date.now() / 1000),
         });
         setBusy(false);
         if (!res.success) setError(res.error || 'The yard refused the order.');
@@ -106,10 +125,12 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
         <div className="pt-2 border-t border-slate-800 space-y-1">
             <div className="text-[9px] uppercase tracking-widest text-slate-500">By design</div>
             {rows.map(row => {
-                const { available, reserved } = refittable(fleet, row.fromDesignId, row.hullId, lookup, recruitmentJobs as any[]);
+                const { available: free, reserved } = refittable(books, row.fromDesignId, row.hullId, lookup, recruitmentJobs as any[]);
+                // One order carries at most REFIT_MAX_PER_ORDER ships; the rest go in the next.
+                const available = Math.min(free, REFIT_MAX_PER_ORDER);
                 const yardLock = yard ? yardLockReason(yard, yardAnchor, row.hullId) : 'No shipyard here';
                 const recordsLock = row.fromDesignId === null && booksUnclear ? 'Fleet records incomplete' : null;
-                const lock = yardLock ?? recordsLock ?? (available <= 0 ? (reserved > 0 ? 'All in refit' : 'None free') : null);
+                const lock = yardLock ?? (underFire ? 'Under fire' : null) ?? recordsLock ?? (available <= 0 ? (reserved > 0 ? 'All in refit' : 'None free') : null);
                 const isOpen = openKey === row.key;
                 const fromDesign = row.fromDesignId ? lookup(row.fromDesignId) ?? null : null;
                 const targets = entries.filter(e => e.design.hullId === row.hullId && e.design.id !== row.fromDesignId);
@@ -147,8 +168,8 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
                                     >
                                         <option value="" disabled>Refit to…</option>
                                         {targets.map(e => (
-                                            <option key={e.design.id} value={e.design.id} disabled={!e.summary.valid}>
-                                                {e.design.name} · {e.summary.power}{e.summary.valid ? '' : ` — ${e.summary.issues[0] ?? 'not buildable'}`}
+                                            <option key={e.design.id} value={e.design.id} disabled={!e.summary.valid || !!(e.design as any).pending}>
+                                                {e.design.name} · {e.summary.power}{(e.design as any).pending ? ' — syncing with yard…' : e.summary.valid ? '' : ` — ${e.summary.issues[0] ?? 'not buildable'}`}
                                             </option>
                                         ))}
                                     </select>
@@ -156,7 +177,7 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
                                         type="number" min={1} max={available} value={n}
                                         onChange={e => setCount(Math.floor(Number(e.target.value) || 1))}
                                         className="w-14 bg-slate-800 border border-slate-700 p-1 rounded text-[11px] text-slate-200"
-                                        title={`1 to ${available}`}
+                                        title={free > available ? `1 to ${available} per order (${free} free)` : `1 to ${available}`}
                                     />
                                     <button type="button" onClick={() => setOpenKey(null)} className="text-slate-500 hover:text-slate-300" title="Close"><X size={12} /></button>
                                 </div>

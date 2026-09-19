@@ -540,7 +540,7 @@ export function ReviewPanel() {
                                 </p>
                                 {/* Refit: convert ships already in the selected fleet to
                                     another pattern of the same hull, at this yard. */}
-                                {isOwner && selectedFleet && yardAnchor && (
+                                {selectedFleet && selectedFleet.factionId === playerFactionId && yardAnchor && (
                                     <div className="w-full max-w-xl mt-4">
                                         <FleetRefitPanel fleet={selectedFleet} yardAnchor={yardAnchor} />
                                     </div>

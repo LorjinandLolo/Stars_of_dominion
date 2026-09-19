@@ -8,7 +8,7 @@
 // verified live; everything it calls is covered here.
 
 import { DEFAULT_DESIGNS, quoteRefit, sameFit, summarizeDesign, resolveDesign, getComponent, getHull, REFIT_HULL_TIME_FRACTION } from './ship-registry';
-import { rosterByHull, refittable, applyRefit, splitRoster } from './fleet-roster';
+import { rosterByHull, refittable, applyRefit, splitRoster, reconcileBooks, mergeBooks, isBookKey } from './fleet-roster';
 import { saveDesign, deleteDesign, shipsInService } from './ship-design-service';
 import { RecruitmentService } from './recruitment-service';
 import { drainNotifications } from '../time/notification-hooks';
@@ -90,7 +90,10 @@ console.log('\n2. The books');
     check('less what an open refit has already taken', held.available === 1 && held.reserved === 2);
     check('another fleet\'s job reserves nothing here', refittable(fleet, 'default-corvette', 'corvette', lookup, [{ ...jobs[0], targetFormationId: 'other' }]).available === 3);
     check('a recruit job reserves nothing', refittable(fleet, 'default-corvette', 'corvette', lookup, [{ ...jobs[0], kind: undefined }]).available === 3);
-    check('never more than the hulls that exist', refittable({ id: 'x', composition: { corvette: 2 }, designCounts: { 'default-corvette': 5 } }, 'default-corvette', 'corvette', lookup).available === 2);
+    const overClaim: any = { id: 'x', composition: { corvette: 2 }, designCounts: { 'default-corvette': 5 } };
+    check('over-claimed books offer nothing until reconciled', refittable(overClaim, 'default-corvette', 'corvette', lookup).available === 0);
+    reconcileBooks(overClaim, lookup);
+    check('never more than the hulls that exist', refittable(overClaim, 'default-corvette', 'corvette', lookup).available === 2);
 }
 
 console.log('\n3. A refit rewrites four fields, and only those');
@@ -218,7 +221,73 @@ console.log('\n6. A refit job lands');
     w3.combat.recruitmentJobs.push(mkJob(2));
     w3.nowSeconds = 1e9;
     RecruitmentService.tick(w3);
-    check('a fleet that is gone takes its yard bill with it', w3.combat.recruitmentJobs.length === 0 && w3.economy.factions.get(F).reserves.CREDITS === 0);
+    check('a fleet that is gone is refunded in full, like ships lost from one that survived', w3.combat.recruitmentJobs.length === 0 && w3.economy.factions.get(F).reserves.CREDITS === 2 * q.perShipCost.CREDITS);
+
+    // A civil war hands the fleet to the rebels while the yard works.
+    const turned: any = { id: 'fl', factionId: 'rebels', name: 'Turned', composition: { corvette: 2 }, designCounts: { 'default-corvette': 2 }, basePower: 34, strength: 1 };
+    const w4: any = mkWorld(turned);
+    w4.combat.recruitmentJobs.push(mkJob(2));
+    w4.nowSeconds = 1e9;
+    RecruitmentService.tick(w4);
+    check('a refit never lands on a fleet that changed hands, and is refunded', turned.basePower === 34 && turned.designCounts['d-burn'] === undefined && w4.economy.factions.get(F).reserves.CREDITS === 2 * q.perShipCost.CREDITS);
+}
+
+console.log('\n7. Books that lie (review 2026-09-19)');
+{
+    const s = summarizeDesign(std('battleship'), null);
+
+    // Two patterns each claiming all five hulls: ten refits on five ships.
+    const over: any = { id: 'fl', composition: { battleship: 5 }, designCounts: { 'default-battleship': 5, 'd-lance': 5 }, basePower: 5 * s.power };
+    check('over-claiming books offer nothing from any source', refittable(over, 'default-battleship', 'battleship', lookup).available === 0 && refittable(over, 'd-lance', 'battleship', lookup).available === 0 && refittable(over, null, 'battleship', lookup).available === 0);
+    check('reconcile shrinks the claims to the hulls that exist', reconcileBooks(over, lookup) && over.designCounts['default-battleship'] + over.designCounts['d-lance'] === 5 && !rosterByHull(over, lookup).hulls.battleship.inconsistent, JSON.stringify(over.designCounts));
+    check('after reconcile the two sources together offer five, not ten', refittable(over, 'default-battleship', 'battleship', lookup).available + refittable(over, 'd-lance', 'battleship', lookup).available === 5);
+    check('reconcile never invents unregistered hulls', rosterByHull(over, lookup).hulls.battleship.unregistered === 0);
+    const honest: any = { composition: { corvette: 4 }, designCounts: { 'default-corvette': 3 } };
+    check('honest books are left alone', !reconcileBooks(honest, lookup) && honest.designCounts['default-corvette'] === 3);
+    const legacy: any = { composition: { corvette: 2 }, designCounts: { 'default-corvette': 1, 'd-rail': 1, 'd-burn': 1, 'd-perm-gone': 1 } };
+    reconcileBooks(legacy, lookup);
+    check('the old rounding split (three designs on two hulls) reconciles to two, orphan untouched', rosterByHull(legacy, lookup).hulls.corvette.known === 2 && legacy.designCounts['d-perm-gone'] === 1, JSON.stringify(legacy.designCounts));
+
+    // Ids that are Object.prototype keys.
+    check('prototype keys are not book keys', !isBookKey('constructor') && !isBookKey('__proto__') && !isBookKey('toString') && !isBookKey('') && isBookKey('design-f1-1'));
+    const proto: any = { id: 'fl', composition: { battleship: 4 }, designCounts: { 'default-battleship': 4 }, basePower: 4 * s.power };
+    const ghost = design('constructor', 'battleship', { ...std('battleship').components }, 'Ghost');
+    const ghostLookup = (id: string) => (id === 'constructor' ? ghost : lookup(id));
+    const held = refittable(proto, 'constructor', 'battleship', ghostLookup);
+    check('a prototype-key source holds zero ships, not NaN', held.available === 0 && Number.isFinite(held.available));
+    const before = JSON.stringify(proto);
+    applyRefit(proto, { fromDesignId: 'default-battleship', toDesignId: 'constructor', from: { power: s.power, speedMult: 0 }, to: { power: s.power + 50, speedMult: 0 } }, 4);
+    check('a refit to a prototype-key pattern changes nothing', JSON.stringify(proto) === before);
+    applyRefit(proto, { fromDesignId: 'default-battleship', toDesignId: 'd-lance', from: { power: s.power, speedMult: 0 }, to: { power: 186, speedMult: 0 } }, NaN);
+    check('a NaN count changes nothing', JSON.stringify(proto) === before && Number.isFinite(proto.basePower));
+
+    // saveDesign: the id is attacker JSON.
+    const world: any = { shipDesigns: new Map<string, ShipDesign>(), movement: { fleets: new Map() }, combat: { recruitmentJobs: [] }, tech: { get: () => ({ unlockedTechIds: [...ALL_TECH] }) } };
+    const draft = { name: 'Ghost', hullId: 'battleship', components: { ...std('battleship').components } };
+    check('a new pattern cannot be filed as "constructor"', !saveDesign(world, F, { ...draft, id: 'constructor' } as any, 1).ok);
+    check('nor as "__proto__"', !saveDesign(world, F, { ...draft, id: '__proto__' } as any, 1).ok);
+    check("the designer's own id format is accepted", saveDesign(world, F, { ...draft, id: 'design-f1-1789000000000' } as any, 1).ok);
+    check('no id at all mints one server-side', (() => { const r = saveDesign(world, F, { ...draft, name: 'Minted' } as any, 2); return r.ok && /^design-f1-/.test(r.design.id); })());
+
+    // An orphan id the ships still carry cannot be re-filed as a bare hull.
+    world.movement.fleets.set('fl', { id: 'fl', factionId: F, composition: { battleship: 4 }, designCounts: { 'design-f1-old': 4 }, basePower: 4 * s.power });
+    const refile = saveDesign(world, F, { id: 'design-f1-old', name: 'Hulk', hullId: 'battleship', components: {} } as any, 3);
+    check('an id ships still carry cannot be re-filed', !refile.ok && /already carry that pattern id/.test((refile as any).reason), JSON.stringify(refile));
+    check('nothing was stored under it', !world.shipDesigns.has('design-f1-old'));
+
+    // Tactical result / merge: the books follow the ships, then the losses leave them.
+    const a: any = { id: 'a', composition: { battleship: 5 }, designCounts: { 'default-battleship': 5 }, designProfile: { ...s.profile }, basePower: 5 * s.power };
+    const b: any = { id: 'b', composition: { battleship: 5 }, designCounts: { 'default-battleship': 5 }, designProfile: { ...s.profile }, basePower: 5 * s.power };
+    mergeBooks(a, b);
+    a.composition = { battleship: 10 }; a.basePower += b.basePower;
+    check('absorbed ships keep their pattern: no unregistered hulls', a.designCounts['default-battleship'] === 10 && rosterByHull(a, lookup).hulls.battleship.unregistered === 0);
+    check('so a null-source refit finds nothing to re-sell modules to', refittable(a, null, 'battleship', lookup).available === 0);
+    const losses = splitRoster(a, { battleship: 7 }, lookup);
+    check('seven lost: three remain on the books and power follows the rating', losses.keptCounts['default-battleship'] === 3 && a.basePower - losses.movedPower === 3 * s.power, `${JSON.stringify(losses.keptCounts)} ${a.basePower - losses.movedPower}`);
+    const c: any = { designCounts: { constructor: 3, 'd-lance': 2 } as any };
+    const d: any = {};
+    mergeBooks(d, c);
+    check('mergeBooks drops prototype-key ids', d.designCounts['d-lance'] === 2 && !Object.prototype.hasOwnProperty.call(d.designCounts, 'constructor'));
 }
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failed} failed`);

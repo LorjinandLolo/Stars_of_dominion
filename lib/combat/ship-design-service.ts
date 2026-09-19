@@ -29,6 +29,9 @@ import {
     sameFit,
 } from './ship-registry';
 
+/** What the designer mints: `design-<factionId>-<timestamp>`. */
+const DESIGN_ID_FORMAT = /^design-[A-Za-z0-9_-]{1,100}$/;
+
 /** The slice of the world these helpers touch. */
 export interface DesignBearingWorld {
     shipDesigns?: Map<string, ShipDesign>;
@@ -106,9 +109,25 @@ export function saveDesign(
     if (requestedId && isDefaultDesignId(requestedId)) {
         return { ok: false, reason: 'Standard patterns cannot be overwritten. Save a copy under a new name.' };
     }
+    // The id is attacker JSON and ends up as a key in every fleet's
+    // designCounts: only the designer's own format is honoured, so it can
+    // never be `constructor` or `__proto__` (lib/combat/fleet-roster.ts).
     const existing = requestedId ? map.get(requestedId) : undefined;
     if (existing && existing.factionId !== factionId) {
         return { ok: false, reason: 'That design belongs to another faction.' };
+    }
+    if (!existing && requestedId && !DESIGN_ID_FORMAT.test(requestedId)) {
+        return { ok: false, reason: 'That design id is not valid.' };
+    }
+    // A NEW pattern filed under an id ships still carry (one retired before
+    // the in-service lock existed) would let its owner choose, after the
+    // fact, what those ships are priced FROM: file it as a bare hull, refit
+    // to the real fit, and they gain modules they already had.
+    if (!existing && requestedId) {
+        const carried = shipsInService(world, factionId, requestedId);
+        if (carried > 0) {
+            return { ok: false, reason: `${carried} ship${carried === 1 ? '' : 's'} on the books already carry that pattern id. File this as a new pattern.` };
+        }
     }
     if (existing && !sameFit(existing, { hullId, components })) {
         const inService = shipsInService(world, factionId, existing.id);

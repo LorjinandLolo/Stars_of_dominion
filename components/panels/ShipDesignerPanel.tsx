@@ -158,7 +158,11 @@ export default function ShipDesignerPanel() {
         const design: ShipDesign = {
             id,
             factionId: playerFactionId,
-            name: name.trim(),
+            // A pattern filed beside the one in service needs its own name,
+            // or the refit row reads "Lancer -> Lancer".
+            name: saveAsNew && activeDesign && name.trim() === activeDesign.name
+                ? `${name.trim()} Mk II`.slice(0, MAX_DESIGN_NAME_LENGTH)
+                : name.trim(),
             hullId,
             components: Object.fromEntries(Object.entries(components).filter(([, v]) => v)),
         };
@@ -187,6 +191,14 @@ export default function ShipDesignerPanel() {
 
     const del = async () => {
         if (!activeDesign || !playerFactionId || busy) return;
+        // The worker refuses to retire a pattern ships still carry
+        // (lib/combat/ship-design-service.ts deleteDesign); say so here
+        // instead of reporting a retirement that then comes back.
+        if (inService > 0) {
+            setConfirmDelete(false);
+            setNotice({ kind: 'err', text: `${inService} ship${inService === 1 ? ' carries' : 's carry'} this pattern. Refit ${inService === 1 ? 'it' : 'them'} to another pattern first.` });
+            return;
+        }
         if (!confirmDelete) { setConfirmDelete(true); return; }
         setBusy(true);
         const res = await dispatchOrder({
@@ -198,7 +210,7 @@ export default function ShipDesignerPanel() {
         if (res.success) {
             removeShipDesign(activeDesign.id);
             newDesign();
-            setNotice({ kind: 'ok', text: 'Design retired. Existing ships are unaffected.' });
+            setNotice({ kind: 'ok', text: 'Retirement filed with the yard.' });
         } else {
             setNotice({ kind: 'err', text: res.error ?? 'Could not retire the design.' });
         }
@@ -265,11 +277,13 @@ export default function ShipDesignerPanel() {
                                 </button>
                                 <button
                                     onClick={del}
-                                    disabled={busy}
-                                    className={`p-2 border rounded-lg transition-all ${confirmDelete
+                                    disabled={busy || inService > 0}
+                                    className={`p-2 border rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${confirmDelete
                                         ? 'bg-red-600 border-red-500 text-white'
                                         : 'bg-slate-900/50 hover:bg-red-900/40 border-white/5 text-slate-400 hover:text-red-300'}`}
-                                    title={confirmDelete ? 'Click again to retire this pattern' : 'Retire pattern'}
+                                    title={inService > 0
+                                        ? `${inService} ship${inService === 1 ? ' carries' : 's carry'} this pattern: refit ${inService === 1 ? 'it' : 'them'} first`
+                                        : confirmDelete ? 'Click again to retire this pattern' : 'Retire pattern'}
                                 >
                                     <Trash2 size={14} />
                                 </button>

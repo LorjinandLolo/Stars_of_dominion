@@ -674,6 +674,8 @@ export function designProfile(design: Pick<ShipDesign, 'hullId' | 'components' |
 
 /** Share of the hull's own build time a refit costs before any module work. */
 export const REFIT_HULL_TIME_FRACTION = 0.10;
+/** Ships one refit order may send to the yard. The worker refuses more; the panel clamps to it. */
+export const REFIT_MAX_PER_ORDER = 50;
 
 export interface RefitQuote {
     ok: boolean;

@@ -14,7 +14,7 @@ import { blendExperience } from './veterancy';
 import type { DesignProfile, ShipClassId } from './ship-types';
 import { resolveDesign } from './ship-registry';
 import { factionDesigns } from './ship-design-service';
-import { applyRefit, refittable } from './fleet-roster';
+import { applyRefit, isBookKey, refittable } from './fleet-roster';
 import { fireNotification } from '../time/notification-hooks';
 
 /** Fields a job may carry beyond the siege-types base shape. */
@@ -145,20 +145,33 @@ export class RecruitmentService {
     /**
      * A refit lands: `count` ships of the source fit become the target fit.
      * Never yard-gated, like a recruit: the fleet may have sailed. Ships that
-     * are no longer there to convert (lost, split away) are refunded at what
-     * was paid; a fleet that is gone entirely takes its yard bill with it.
+     * are no longer there to convert are refunded at what was paid, whether
+     * two of three were lost, the whole fleet was, or it changed hands (a
+     * civil war reassigns fleets): the yard never touched them.
      */
     private static completeRefit(world: any, job: RecruitmentJobRecord) {
+        const refund = (ships: number) => {
+            if (!(ships > 0) || !job.paidPerUnit) return;
+            const reserves = world.economy?.factions?.get?.(job.factionId)?.reserves as Record<string, number> | undefined;
+            if (!reserves) return;
+            for (const [key, amt] of Object.entries(job.paidPerUnit)) {
+                if (reserves[key] === undefined) continue;
+                reserves[key] = (reserves[key] ?? 0) + amt * ships;
+            }
+        };
         const fleet = job.targetFormationId ? world.movement.fleets.get(job.targetFormationId) : undefined;
-        if (!fleet || !job.designId || !job.classKey || !job.refitFrom) {
-            console.log(`[Refit] Dropped ${job.count}x ${job.designName ?? job.designId}: the fleet is gone.`);
+        if (!fleet || fleet.factionId !== job.factionId || !job.designId || !job.classKey || !job.refitFrom) {
+            refund(job.count);
+            console.log(`[Refit] Dropped ${job.count}x ${job.designName ?? job.designId}: the fleet is ${fleet ? 'no longer ours' : 'gone'}. Refunded.`);
             return;
         }
         const designs = factionDesigns(world, job.factionId);
         const lookup = (id: string) => resolveDesign(id, job.factionId, designs);
         const fromId = job.refitFrom.designId ?? null;
         const { available } = refittable(fleet, fromId, job.classKey as ShipClassId, lookup, []);
-        const k = Math.max(0, Math.min(job.count, available));
+        // A non-finite count converts nothing and is refunded in full.
+        const want = Math.min(job.count, available);
+        const k = Number.isFinite(want) ? Math.max(0, Math.floor(want)) : 0;
         const before = fleet.basePower ?? 0;
         applyRefit(fleet, {
             fromDesignId: fromId,
@@ -168,15 +181,7 @@ export class RecruitmentService {
         }, k);
 
         const short = job.count - k;
-        if (short > 0 && job.paidPerUnit) {
-            const reserves = world.economy?.factions?.get?.(job.factionId)?.reserves as Record<string, number> | undefined;
-            if (reserves) {
-                for (const [key, amt] of Object.entries(job.paidPerUnit)) {
-                    if (reserves[key] === undefined) continue;
-                    reserves[key] = (reserves[key] ?? 0) + amt * short;
-                }
-            }
-        }
+        refund(short);
         const delta = Math.round((fleet.basePower ?? 0) - before);
         console.log(`[Refit] ${k}x ${job.refitFrom.designName ?? 'unregistered hulls'} -> ${job.designName ?? job.designId} in ${fleet.name}${short > 0 ? ` (${short} no longer aboard, refunded)` : ''}`);
         if (k > 0) {
@@ -222,9 +227,9 @@ export class RecruitmentService {
                     if (job.unitProfile) {
                         fleet.designProfile = addProfile(fleet.designProfile, job.unitProfile, job.count);
                     }
-                    if (job.designId) {
+                    if (isBookKey(job.designId)) {
                         if (!fleet.designCounts) fleet.designCounts = {};
-                        fleet.designCounts[job.designId] = (fleet.designCounts[job.designId] || 0) + job.count;
+                        fleet.designCounts[job.designId] = (Number(fleet.designCounts[job.designId]) || 0) + job.count;
                     }
                     // Lane speed: the fleet's design bonus is a ship-weighted
                     // average, and the composition above already counts the

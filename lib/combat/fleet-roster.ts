@@ -45,17 +45,27 @@ export interface FleetRoster {
     orphanIds: string[];
 }
 
+/**
+ * A design id usable as a key in the books. Payloads are attacker JSON, and
+ * `counts['constructor']` reads a function off Object.prototype while
+ * `counts['__proto__'] = n` writes nothing at all, so such ids are never
+ * counted, never refitted from and never refitted to.
+ */
+export function isBookKey(id: unknown): id is string {
+    return typeof id === 'string' && id.length > 0 && !(id in Object.prototype);
+}
+
 export function rosterByHull(fleet: FleetBooks, lookup: DesignLookup): FleetRoster {
     const comp = normalizeComposition(fleet.composition ?? {});
-    const hulls: Record<string, HullRoster> = {};
+    const hulls: Record<string, HullRoster> = Object.create(null);
     const ensure = (hullId: string): HullRoster =>
-        hulls[hullId] ?? (hulls[hullId] = { total: Math.max(0, Math.floor(comp[hullId] ?? 0)), byDesign: {}, known: 0, unregistered: 0, inconsistent: false });
+        hulls[hullId] ?? (hulls[hullId] = { total: Math.max(0, Math.floor(comp[hullId] ?? 0)), byDesign: Object.create(null), known: 0, unregistered: 0, inconsistent: false });
     for (const key of Object.keys(comp)) if (getHull(key)) ensure(key);
 
     const orphanIds: string[] = [];
     for (const [designId, raw] of Object.entries(fleet.designCounts ?? {})) {
         const n = Math.max(0, Math.floor(Number(raw) || 0));
-        if (n <= 0) continue;
+        if (n <= 0 || !isBookKey(designId)) continue;
         const design = lookup(designId);
         if (!design) { orphanIds.push(designId); continue; }
         const hull = ensure(design.hullId);
@@ -82,6 +92,10 @@ export interface RefitReservation {
  * Ships of `fromDesignId` (null = unregistered hulls of `hullId`) that can be
  * sent to the yard now: what the books hold, less what open refit jobs on this
  * fleet have already taken from the same source.
+ *
+ * A hull whose books over-claim offers nothing from ANY source. Clamping each
+ * pattern to the hull total on its own let {A:5, B:5} on five hulls take ten
+ * refits; callers that can repair the books run `reconcileBooks` first.
  */
 export function refittable(
     fleet: FleetBooks,
@@ -92,9 +106,10 @@ export function refittable(
 ): { available: number; reserved: number } {
     const roster = rosterByHull(fleet, lookup);
     const hull = roster.hulls[hullId];
-    const held = !hull ? 0
+    const held = !hull || hull.inconsistent ? 0
         : fromDesignId === null ? hull.unregistered
-        : Math.min(hull.byDesign[fromDesignId] ?? 0, hull.total);
+        : !isBookKey(fromDesignId) ? 0
+        : Math.min(Number(hull.byDesign[fromDesignId]) || 0, hull.total);
     let reserved = 0;
     for (const job of jobs) {
         if (job.kind !== 'refit' || !fleet.id || job.targetFormationId !== fleet.id) continue;
@@ -121,8 +136,10 @@ const PROFILE_KEYS: (keyof DesignProfile)[] = ['energy', 'kinetic', 'explosive',
  * the same crews, different modules.
  */
 export function applyRefit(fleet: FleetBooks, delta: RefitDelta, k: number): void {
-    const n = Math.max(0, Math.floor(k));
-    if (n <= 0) return;
+    const n = Math.floor(k);
+    // `!(n > 0)` rather than `n <= 0`: NaN must not get through to basePower.
+    if (!(n > 0) || !isBookKey(delta.toDesignId)) return;
+    if (delta.fromDesignId !== null && !isBookKey(delta.fromDesignId)) return;
 
     fleet.basePower = Math.max(1, (fleet.basePower ?? 0) + n * (delta.to.power - delta.from.power));
 
@@ -143,6 +160,63 @@ export function applyRefit(fleet: FleetBooks, delta: RefitDelta, k: number): voi
     const ships = shipCountOf(fleet.composition ?? {});
     if (ships > 0) {
         fleet.designSpeedBonus = Math.max(0, (fleet.designSpeedBonus ?? 0) + n * (delta.to.speedMult - delta.from.speedMult) / ships);
+    }
+}
+
+/**
+ * Shrink over-claiming books to the ships that exist. For every hull whose
+ * designs sum above the composition, each design keeps its share of the hull
+ * total (largest remainder, ties to the earlier entry). Claims only ever go
+ * DOWN, so this can never turn a fitted ship into an unregistered one; orphan
+ * ids are left alone because nothing says which hull they were.
+ *
+ * Old saves need it: the pre-refit split rounded every design on its own, so
+ * two detached corvettes could leave with four designs on the books.
+ * Returns true when the books changed.
+ */
+export function reconcileBooks(fleet: FleetBooks, lookup: DesignLookup): boolean {
+    const roster = rosterByHull(fleet, lookup);
+    let changed = false;
+    const counts: Record<string, number> = { ...(fleet.designCounts ?? {}) };
+    for (const hull of Object.values(roster.hulls)) {
+        if (!hull.inconsistent || hull.known <= 0) continue;
+        const entries = Object.entries(hull.byDesign);
+        const quotas = entries.map(([, c]) => (c * hull.total) / hull.known);
+        const alloc = quotas.map(q => Math.floor(q));
+        let left = hull.total - alloc.reduce((a, b) => a + b, 0);
+        const order = quotas.map((q, i) => ({ i, r: q - Math.floor(q) })).sort((a, b) => b.r - a.r || a.i - b.i);
+        for (const { i } of order) {
+            if (left <= 0) break;
+            alloc[i] += 1; left -= 1;
+        }
+        entries.forEach(([designId], i) => {
+            if (alloc[i] > 0) counts[designId] = alloc[i]; else delete counts[designId];
+        });
+        changed = true;
+    }
+    if (changed) fleet.designCounts = counts;
+    return changed;
+}
+
+/**
+ * Fold an absorbed fleet's books into the fleet that takes its ships.
+ * Composition and power are the caller's business; this moves what refit
+ * reads (designCounts) and the design signature that travels with it.
+ */
+export function mergeBooks(target: FleetBooks, source: FleetBooks): void {
+    if (source.designCounts) {
+        const counts: Record<string, number> = { ...(target.designCounts ?? {}) };
+        for (const [designId, raw] of Object.entries(source.designCounts)) {
+            const n = Math.max(0, Math.floor(Number(raw) || 0));
+            if (n <= 0 || !isBookKey(designId)) continue;
+            counts[designId] = (Number(counts[designId]) || 0) + n;
+        }
+        target.designCounts = counts;
+    }
+    if (source.designProfile || target.designProfile) {
+        const profile = { ...emptyProfile(), ...(target.designProfile ?? {}) };
+        for (const key of PROFILE_KEYS) profile[key] = Math.max(0, profile[key] ?? 0) + Math.max(0, source.designProfile?.[key] ?? 0);
+        target.designProfile = profile;
     }
 }
 

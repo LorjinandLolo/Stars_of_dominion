@@ -48,7 +48,7 @@ import {
     unlockedTechSet,
     type RecruitSpec,
 } from '../lib/combat/ship-design-service';
-import { refittable, rosterByHull, splitRoster } from '../lib/combat/fleet-roster';
+import { mergeBooks, reconcileBooks, refittable, rosterByHull, splitRoster } from '../lib/combat/fleet-roster';
 import { isSystemContested } from '../lib/combat/war-status';
 import {
     addProfile as addDesignProfile,
@@ -58,6 +58,7 @@ import {
     normalizeUnitKey,
     resolveDesign as resolveShipDesign,
     quoteRefit,
+    REFIT_MAX_PER_ORDER,
 } from '../lib/combat/ship-registry';
 import { checkShipyardGate } from '../lib/combat/shipyard-gate';
 import {
@@ -4162,7 +4163,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 return;
             }
             const n = Math.floor(Number(payload.count));
-            if (!(n >= 1 && n <= 50)) { recordOrderFailure(world, factionId, actionId, 'Refit between 1 and 50 ships per order.'); return; }
+            if (!(n >= 1 && n <= REFIT_MAX_PER_ORDER)) { recordOrderFailure(world, factionId, actionId, `Refit between 1 and ${REFIT_MAX_PER_ORDER} ships per order.`); return; }
 
             // The target goes through the same resolver as a recruit: registry,
             // ownership, tech gates and the brownout cap.
@@ -4193,14 +4194,21 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             );
             if (!refitGate.ok) { recordOrderFailure(world, factionId, actionId, refitGate.reason); return; }
 
+            // Books that claim more fitted ships than the fleet has (old saves:
+            // the pre-refit split rounded each design on its own) are shrunk to
+            // the hulls that exist before anything is priced from them. Claims
+            // only go down, so this never makes a fitted ship "unregistered".
+            if (reconcileBooks(fleet, lookup)) {
+                console.log(`[Order] Reconciled the design books of ${fleet.name || fleet.id} to its composition before refit.`);
+            }
             const roster = rosterByHull(fleet, lookup);
-            if (fromId === null && (roster.orphanIds.length > 0 || Object.values(roster.hulls).some(h => h.inconsistent))) {
+            if (roster.hulls[quote.hullId]?.inconsistent || (fromId === null && roster.orphanIds.length > 0)) {
                 recordOrderFailure(world, factionId, actionId, "This fleet's records do not account for every fit aboard; unregistered hulls cannot be told apart.");
                 return;
             }
             const fromName = fromDesign?.name ?? `unregistered ${quote.hullId}`;
             const { available, reserved } = refittable(fleet, fromId, quote.hullId, lookup, world.combat?.recruitmentJobs ?? []);
-            if (n > available) {
+            if (!Number.isFinite(available) || n > available) {
                 recordOrderFailure(world, factionId, actionId,
                     `Only ${available} ${fromName} ${available === 1 ? 'is' : 'are'} free in this fleet${reserved ? ` (${reserved} more already in refit)` : ''}.`);
                 return;
@@ -4448,14 +4456,87 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 const survivor = world.movement.fleets.get(existing[0]);
                 const pooledBasePower = existing.reduce(
                     (sum, fid) => sum + (Number(world.movement.fleets.get(fid)?.basePower) || 0), 0);
-                survivor.composition = { ...side.composition };
+
+                // The absorbed fleets merge into the survivor exactly as
+                // MIL_MERGE_FLEETS would: books, crews, lane speed, carried
+                // armies and open yard jobs. This used to rewrite composition
+                // and power only, so the absorbed ships showed up as
+                // "unregistered hulls" (refit then sold them their own modules
+                // again) and a paid refit on an absorbed fleet was lost.
+                survivor.composition = normalizeComposition(survivor.composition);
+                for (const fid of existing.slice(1)) {
+                    const absorbed = world.movement.fleets.get(fid);
+                    if (!absorbed) continue;
+                    const absorbedComp = normalizeComposition(absorbed.composition);
+                    const absorbedShips = shipCountOf(absorbedComp);
+                    survivor.designSpeedBonus = blendSpeedBonus(
+                        survivor.designSpeedBonus, shipCountOf(survivor.composition),
+                        absorbed.designSpeedBonus, absorbedShips);
+                    for (const [type, count] of Object.entries(absorbedComp)) {
+                        (survivor.composition as any)[type] = ((survivor.composition as any)[type] || 0) + (count as number);
+                    }
+                    survivor.experience = blendExperience(survivor.experience, survivor.basePower ?? 0, absorbed.experience, absorbed.basePower ?? 0);
+                    survivor.basePower = (survivor.basePower ?? 0) + (absorbed.basePower ?? 0);
+                    mergeBooks(survivor, absorbed);
+                    if (absorbed.transportedArmyIds?.length) {
+                        survivor.transportedArmyIds = [...(survivor.transportedArmyIds || []), ...absorbed.transportedArmyIds];
+                        for (const armyId of absorbed.transportedArmyIds) {
+                            const army = world.movement.armies?.get(armyId);
+                            if (army) army.transportFleetId = survivor.id;
+                        }
+                    }
+                    for (const job of (world.combat?.recruitmentJobs || [])) {
+                        if ((job as any).targetFormationId === fid) (job as any).targetFormationId = survivor.id;
+                    }
+                }
+
+                // Survivors can never outnumber what is actually here: a
+                // fleet that jumped out mid-battle took its ships with it.
+                const pooledComp: Record<string, number> = { ...(survivor.composition as any) };
+                const pooledShips = shipCountOf(pooledComp);
+                const surviving: Record<string, number> = {};
+                for (const [rawType, count] of Object.entries(side.composition)) {
+                    const type = normalizeUnitKey(rawType);
+                    const n = pooledShips > 0 ? Math.min(count as number, pooledComp[type] ?? 0) : (count as number);
+                    if (n > 0) surviving[type] = (surviving[type] ?? 0) + n;
+                }
+
+                // The losses leave the books the way a detachment would
+                // (splitRoster): each hull's dead come off that hull's own
+                // designs, and power by what those ships were rated, so losing
+                // corvettes no longer costs what losing battleships does.
+                const lost: Record<string, number> = {};
+                for (const [type, have] of Object.entries(pooledComp)) {
+                    const gone = (Number(have) || 0) - (surviving[type] ?? 0);
+                    if (gone > 0) lost[type] = gone;
+                }
+                const lostShips = shipCountOf(lost);
+                if (pooledShips > 0 && lostShips >= pooledShips) {
+                    // Nothing that is here survived the clamp.
+                    for (const fid of existing) world.movement.fleets.delete(fid);
+                    bumpMetric(world, survivor.factionId, DEED_FLEETS_LOST);
+                    bumpMetric(world, opponentId, DEED_FLEETS_DESTROYED);
+                    return;
+                }
+                if (pooledShips > 0 && lostShips > 0) {
+                    const ownDesigns = factionDesigns(world, survivor.factionId);
+                    const books = splitRoster(
+                        { ...survivor, basePower: pooledBasePower },
+                        lost,
+                        (id: string) => resolveShipDesign(id, survivor.factionId, ownDesigns));
+                    if (survivor.designCounts) survivor.designCounts = books.keptCounts;
+                    if (survivor.designProfile && books.keptProfile) survivor.designProfile = books.keptProfile;
+                    survivor.basePower = Math.max(1, pooledBasePower - books.movedPower);
+                } else if (pooledShips === 0) {
+                    // Shipless fleets fought as synthesized craft: scale the
+                    // rating by the share of them that came back.
+                    const survivingCount = shipCountOf(surviving);
+                    const preCount = pre?.shipCount ?? 0;
+                    const ratio = preCount > 0 ? Math.min(1, survivingCount / preCount) : 1;
+                    survivor.basePower = Math.max(1, Math.round((pooledBasePower || pre?.totalBasePower || 100) * ratio));
+                }
+                survivor.composition = pooledShips > 0 ? surviving : { ...side.composition };
                 survivor.strength = side.strength;
-                // Keep strategic auto-resolve power (basePower × strength)
-                // consistent with the ships that actually survived.
-                const survivingCount = Object.values(side.composition).reduce((a: number, b: any) => a + b, 0);
-                const preCount = pre?.shipCount ?? 0;
-                const ratio = preCount > 0 ? Math.min(1, survivingCount / preCount) : 1;
-                survivor.basePower = Math.max(1, Math.round((pooledBasePower || pre?.totalBasePower || 100) * ratio));
                 for (const fid of existing.slice(1)) world.movement.fleets.delete(fid);
             };
             applySideResult(playerFleetIds, playerResult, lock.preBattle?.player, enemyFactionId);
@@ -4581,6 +4662,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.warn(`[Order] SPLIT rejected: cannot detach ALL ships — merge or rename instead.`);
                 return;
             }
+            // A fleet WITH ships must name the ships that leave. The 50/50
+            // branch used to halve designCounts while every hull stayed put,
+            // which turned fitted ships into "unregistered" ones that refit
+            // then sold their own modules a second time.
+            if (movedCount === 0 && totalShips > 0) {
+                recordOrderFailure(world, factionId, actionId, 'Choose the ships to detach.');
+                return;
+            }
             // Ships in the yard's hands are reserved by count, not by hull
             // number: a split underneath an open refit could take them away.
             const shipsInRefit = (world.combat?.recruitmentJobs ?? [])
@@ -4614,23 +4703,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 if (src.designCounts) { detachedCounts = split.movedCounts; src.designCounts = split.keptCounts; }
                 if (src.designProfile) { detachedProfile = split.movedProfile; src.designProfile = split.keptProfile; }
             } else {
-                // No roster to split: halve the rating and everything with it.
+                // A shipless shell (legacy fleets are power only): halve the
+                // rating. The books never move without ships, so whatever
+                // designCounts and signature it has stay with the source.
+                if (srcPower < 2) {
+                    recordOrderFailure(world, factionId, actionId, 'Nothing left in that fleet to detach.');
+                    return;
+                }
                 newPower = Math.max(1, Math.round(srcPower / 2));
-                if (src.designProfile) {
-                    detachedProfile = scaleDesignProfile(src.designProfile, 0.5);
-                    src.designProfile = scaleDesignProfile(src.designProfile, 0.5);
-                }
-                if (src.designCounts) {
-                    detachedCounts = {};
-                    const kept: Record<string, number> = {};
-                    for (const [designId, n] of Object.entries(src.designCounts)) {
-                        const total = Number(n) || 0;
-                        const take = Math.floor(total / 2);
-                        if (take > 0) detachedCounts[designId] = take;
-                        if (total - take > 0) kept[designId] = total - take;
-                    }
-                    src.designCounts = kept;
-                }
             }
             src.basePower = Math.max(1, srcPower - newPower);
 

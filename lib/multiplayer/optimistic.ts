@@ -13,8 +13,15 @@
 // pending entry is pruned and the overlay disappears naturally.
 
 import type { PendingOrder } from '@/lib/store/ui-store';
-import { splitRoster } from '@/lib/combat/fleet-roster';
-import { DEFAULT_DESIGNS } from '@/lib/combat/ship-registry';
+import { mergeBooks, splitRoster } from '@/lib/combat/fleet-roster';
+import { DEFAULT_DESIGNS, resolveDesign } from '@/lib/combat/ship-registry';
+import { useUIStore } from '@/lib/store/ui-store';
+
+/** Standard patterns plus the player's own, as the worker resolves them. */
+function designLookup(factionId: string) {
+    const own = useUIStore.getState().shipDesigns ?? [];
+    return (id: string) => resolveDesign(id, factionId, own) ?? DEFAULT_DESIGNS.find(d => d.id === id);
+}
 
 /** Marker set on any entity produced/modified by an overlay so components can
  *  render it as "syncing" (e.g. dashed movement line, ghosted queue item). */
@@ -99,6 +106,11 @@ function overlayMergeFleets(lists: OverlayLists, order: PendingOrder): OverlayLi
     for (const [type, count] of Object.entries(src.composition || {})) {
         mergedComposition[type] = (mergedComposition[type] || 0) + (Number(count) || 0);
     }
+    // The books merge with the ships, as the worker does: the refit panel
+    // reads designCounts, and absorbed ships without them would show up as
+    // unregistered hulls until the next sync.
+    const books = { designCounts: tgt.designCounts, designProfile: tgt.designProfile };
+    mergeBooks(books, src);
     return {
         ...lists,
         fleets: lists.fleets
@@ -106,6 +118,8 @@ function overlayMergeFleets(lists: OverlayLists, order: PendingOrder): OverlayLi
             .map((f: any) => f.id !== targetFleetId ? f : {
                 ...f,
                 composition: mergedComposition,
+                ...(books.designCounts ? { designCounts: books.designCounts } : {}),
+                ...(books.designProfile ? { designProfile: books.designProfile } : {}),
                 basePower: (f.basePower ?? 0) + (src.basePower ?? 0),
                 transportedArmyIds: [...(f.transportedArmyIds || []), ...(src.transportedArmyIds || [])],
                 [OPTIMISTIC_FLAG]: true,
@@ -130,14 +144,17 @@ function overlaySplitFleet(lists: OverlayLists, order: PendingOrder): OverlayLis
         if (take > 0) { moved[type] = take; movedCount += take; }
     }
     if (movedCount > 0 && movedCount >= totalShips) return lists; // server will reject
+    if (movedCount === 0 && totalShips > 0) return lists; // a fleet with ships must name the ships that leave
+    // The worker refuses a split under an open refit.
+    if ((useUIStore.getState().recruitmentJobs as any[] ?? []).some(j => j.kind === 'refit' && j.targetFormationId === fleetId)) return lists;
 
     // Mirror the worker's split (lib/combat/fleet-roster.ts splitRoster): power
-    // leaves by what the moved hulls are rated, not by the ship ratio. The
-    // ghost only knows the standard patterns, so a fleet of own designs is
-    // approximated by hull weight until the next sync corrects it.
+    // leaves by what the moved hulls are rated, not by the ship ratio, and the
+    // design books leave with the ships.
     const srcPower = src.basePower ?? 100;
-    const newPower = movedCount > 0
-        ? Math.max(1, splitRoster(src, moved, (id: string) => DEFAULT_DESIGNS.find(d => d.id === id)).movedPower)
+    const split = movedCount > 0 ? splitRoster(src, moved, designLookup(src.factionId)) : null;
+    const newPower = split
+        ? Math.max(1, split.movedPower)
         : Math.max(1, Math.round(srcPower / 2));
     for (const [type, count] of Object.entries(moved)) {
         srcComp[type] -= count;
@@ -151,6 +168,8 @@ function overlaySplitFleet(lists: OverlayLists, order: PendingOrder): OverlayLis
                 ...f,
                 composition: srcComp,
                 basePower: Math.max(1, srcPower - newPower),
+                ...(split && src.designCounts ? { designCounts: split.keptCounts } : {}),
+                ...(split && src.designProfile && split.keptProfile ? { designProfile: split.keptProfile } : {}),
                 [OPTIMISTIC_FLAG]: true,
             }),
             {
@@ -164,6 +183,8 @@ function overlaySplitFleet(lists: OverlayLists, order: PendingOrder): OverlayLis
                 orders: [],
                 composition: moved,
                 basePower: newPower,
+                ...(split && src.designCounts ? { designCounts: split.movedCounts } : {}),
+                ...(split && src.designProfile && split.movedProfile ? { designProfile: split.movedProfile } : {}),
                 strength: src.strength ?? 1,
                 transportedArmyIds: [],
                 [OPTIMISTIC_FLAG]: true,

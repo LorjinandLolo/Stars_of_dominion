@@ -21,6 +21,9 @@ export default function FleetCommandBar() {
     const planets = useUIStore(s => s.planets);
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const selectedFleetId = useUIStore(s => s.selectedFleetId);
+    const recruitmentJobs = useUIStore(s => s.recruitmentJobs);
+    /** The worker refuses to split a fleet with ships in the yard's hands (open refit). */
+    const inRefit = (fleetId: string) => (recruitmentJobs as any[]).some(j => j.kind === 'refit' && j.targetFormationId === fleetId);
     const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
     const setSelectedSystem = useUIStore(s => s.setSelectedSystem);
     const setSelectedPlanet = useUIStore(s => s.setSelectedPlanet);
@@ -246,8 +249,9 @@ export default function FleetCommandBar() {
                                                 {!inTransit && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); openSplit(fleet); }}
-                                                        className={`${splitFleetId === fleet.id ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300'}`}
-                                                        title="Split this fleet — detach ships into a new fleet"
+                                                        disabled={inRefit(fleet.id)}
+                                                        className={`disabled:opacity-40 disabled:cursor-not-allowed ${splitFleetId === fleet.id ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300'}`}
+                                                        title={inRefit(fleet.id) ? 'Refit in progress: ships are with the yard' : 'Split this fleet — detach ships into a new fleet'}
                                                     >
                                                         <Scissors size={11} />
                                                     </button>
