@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
 import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
@@ -57,6 +58,11 @@ const PENDING_CONFIRM_LAG_MS = 8000;
 const POLL_INTERVAL_MS = 4000;
 // The underworld only moves on strategic ticks, so it does not need the fast lane.
 const PIRACY_POLL_INTERVAL_MS = 15000;
+// A fetch that never settles (laptop slept mid-request) left pollInFlight set
+// forever and sync stopped without a word. Every request is abandoned after
+// this long; the first full load gets more, it carries the whole world.
+const POLL_TIMEOUT_MS = 20_000;
+const FULL_SYNC_TIMEOUT_MS = 60_000;
 
 // Cabinet seat labels. Mirrors PORTFOLIO_LABEL in lib/government/cabinet-service,
 // which is worker-side (fs registries) and cannot be imported on the client.
@@ -88,6 +94,8 @@ export function useGameSync() {
     const shardCacheRef = useRef<Map<string, any>>(new Map());
     const mappedShardCacheRef = useRef<Map<string, any>>(new Map());
     const updatePendingRef = useRef(false);
+    /** A store rebuild was skipped because the tab was hidden; run it on return. */
+    const rebuildOwedRef = useRef(false);
 
     const workerRef = useRef<Worker | null>(null);
     const pendingRequestsRef = useRef<Map<number, { resolve: (val: any) => void; reject: (err: any) => void }>>(new Map());
@@ -175,6 +183,13 @@ export function useGameSync() {
             updateStoreFromWorld();
             updatePendingRef.current = false;
         };
+        // Hidden: nobody sees the store, and a rebuild costs 50-76 ms of main
+        // thread. The world ref stays current; the rebuild runs on return.
+        if (!isPageVisible()) {
+            updatePendingRef.current = false;
+            rebuildOwedRef.current = true;
+            return;
+        }
         requestAnimationFrame(run);
         setTimeout(run, 250);
     };
@@ -971,7 +986,10 @@ export function useGameSync() {
             const params = withSince
                 ? `?sessionSince=${encodeURIComponent(sessionSince)}&shardsSince=${encodeURIComponent(shardsSince)}`
                 : '';
-            const res = await fetch(`/api/game/sync${params}`, { cache: 'no-store' });
+            const res = await fetch(`/api/game/sync${params}`, {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(withSince ? POLL_TIMEOUT_MS : FULL_SYNC_TIMEOUT_MS),
+            });
             if (!res.ok) {
                 // An expired better-auth session is not a network problem: a
                 // weeks-long season WILL outlive sessions, and showing
@@ -1000,8 +1018,9 @@ export function useGameSync() {
          * anything genuinely secret has to come through an authenticated route.
          */
         const fetchPiracy = async () => {
+            if (!isPageVisible()) return;   // caught up on return, see onShown
             try {
-                const res = await fetch('/api/game/piracy');
+                const res = await fetch('/api/game/piracy', { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
                 if (!res.ok) return;   // 401/403 simply means nothing to show yet
                 const data = await res.json();
                 useUIStore.getState().updatePiracy({
@@ -1060,6 +1079,11 @@ export function useGameSync() {
 
         const poll = async () => {
             if (pollInFlight || cancelled) return;
+            // A hidden tab does not poll. The game is meant to sit in a
+            // background tab all day, and every 4 s poll there parsed a
+            // megabyte snapshot for nobody. The since-filters make the
+            // catch-up on return a single request.
+            if (!isPageVisible()) return;
             pollInFlight = true;
             try {
                 const data = await fetchSync(true);
@@ -1107,8 +1131,23 @@ export function useGameSync() {
             initSync();
         }
 
+        // Back in view: catch up now instead of waiting out the interval, and
+        // run the store rebuild that was skipped while hidden.
+        const stopWatching = onPageVisibilityChange((visible) => {
+            if (!visible || cancelled) return;
+            if (rebuildOwedRef.current) {
+                rebuildOwedRef.current = false;
+                throttledUpdate();
+            }
+            if (pollTimer) {
+                void poll();
+                void fetchPiracy();
+            }
+        });
+
         return () => {
             cancelled = true;
+            stopWatching();
             if (pollTimer) clearInterval(pollTimer);
             if (piracyTimer) clearInterval(piracyTimer);
             if (retryTimeout) clearTimeout(retryTimeout);

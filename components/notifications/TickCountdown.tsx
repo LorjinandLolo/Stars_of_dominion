@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Clock, RefreshCw } from 'lucide-react';
+import { useVisibleInterval } from '@/hooks/usePageVisible';
 import { getMsUntilNextTick, formatCountdown, getNextStrategicTick } from '@/lib/time/time-helpers';
 
 interface TickInfo {
@@ -33,14 +34,7 @@ export default function TickCountdown() {
     }, []);
 
     // Live countdown (updates every second)
-    useEffect(() => {
-        const update = () => {
-            setMsLeft(getMsUntilNextTick());
-        };
-        update();
-        const id = setInterval(update, 1000);
-        return () => clearInterval(id);
-    }, []);
+    useVisibleInterval(() => setMsLeft(getMsUntilNextTick()), 1000);
 
     const urgency = msLeft === null
         ? 'text-slate-300'

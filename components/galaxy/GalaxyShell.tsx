@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { useVisibleInterval } from '@/hooks/usePageVisible';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
 import OverlayPicker from './OverlayPicker';
@@ -304,11 +305,9 @@ export default function GalaxyShell() {
 
     // ── Movement-order feedback ───────────────────────────────────────────────
     // 1Hz clock so ETA countdowns tick between the ~5s authoritative snapshots.
+    // Stopped while the tab is hidden: it re-renders the whole map.
     const [nowMs, setNowMs] = useState(() => Date.now());
-    useEffect(() => {
-        const t = setInterval(() => setNowMs(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, []);
+    useVisibleInterval(() => setNowMs(Date.now()), 1000);
     // When a fresh snapshot lands, restart the countdown baseline.
     // Null until the first snapshot effect runs: the clock is read in the
     // effect, not during render, so re-renders stay pure.

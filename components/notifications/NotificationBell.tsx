@@ -3,10 +3,14 @@
 // Stars of Dominion — Notification Bell Icon with Badge + Urgent Pulse
 
 import React, { useEffect } from 'react';
+import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { Bell } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 
 const POLL_INTERVAL_MS = 30_000; // 30s
+// Hidden, the bell is the one thing still worth asking about (the tab title
+// carries the unread count), but at a fifth of the rate.
+const HIDDEN_POLL_EVERY = 5;
 
 export default function NotificationBell({ factionId }: { factionId?: string }) {
     const { unreadCount, addNotifications, toggleFeed, feedOpen } = useNotificationStore();
@@ -18,9 +22,13 @@ export default function NotificationBell({ factionId }: { factionId?: string }) 
     useEffect(() => {
         if (!factionId) return;
 
+        let skipped = 0;
         const poll = async () => {
+            if (!isPageVisible() && ++skipped < HIDDEN_POLL_EVERY) return;
+            skipped = 0;
             try {
-                const res = await fetch(`/api/notifications?factionId=${encodeURIComponent(factionId)}&drain=true`);
+                // The server takes the faction from the session, never from the URL.
+                const res = await fetch('/api/notifications', { signal: AbortSignal.timeout(15_000) });
                 if (!res.ok) return;
                 const data = await res.json();
                 if (Array.isArray(data.notifications) && data.notifications.length > 0) {
@@ -33,8 +41,16 @@ export default function NotificationBell({ factionId }: { factionId?: string }) 
 
         poll();
         const id = setInterval(poll, POLL_INTERVAL_MS);
-        return () => clearInterval(id);
+        const stopWatching = onPageVisibilityChange((visible) => { if (visible) { skipped = 0; void poll(); } });
+        return () => { clearInterval(id); stopWatching(); };
     }, [factionId, addNotifications]);
+
+    // A background tab says so in its title: "(3) Stars of Dominion".
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const base = document.title.replace(/^\(\d+\+?\)\s*/, '');
+        document.title = unreadCount > 0 ? `(${unreadCount > 99 ? '99+' : unreadCount}) ${base}` : base;
+    }, [unreadCount]);
 
     return (
         <button

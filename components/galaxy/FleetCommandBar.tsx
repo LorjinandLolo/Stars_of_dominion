@@ -10,6 +10,7 @@
 
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { useVisibleInterval } from '@/hooks/usePageVisible';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatFleetEta } from '@/lib/movement/eta';
@@ -34,10 +35,7 @@ export default function FleetCommandBar() {
 
     // 1Hz clock so transit ETAs count down between ~5s authoritative snapshots.
     const [nowMs, setNowMs] = React.useState(() => Date.now());
-    React.useEffect(() => {
-        const t = setInterval(() => setNowMs(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, []);
+    useVisibleInterval(() => setNowMs(Date.now()), 1000);
     const fleetsReceivedAt = React.useRef(Date.now());
     React.useEffect(() => { fleetsReceivedAt.current = Date.now(); }, [fleets]);
     const etaElapsedMs = nowMs - fleetsReceivedAt.current;
