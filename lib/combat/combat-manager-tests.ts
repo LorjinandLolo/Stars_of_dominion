@@ -451,6 +451,106 @@ console.log('\n14. Review 2026-09-19: fort cap, rout window, small fleets, mid-b
     check('so another lost round cannot read as having kept more', after.defender.hp / after.defender.maxHp < fracBefore, `${fracBefore} -> ${after.defender.hp / after.defender.maxHp}`);
 }
 
+console.log('\n15. Battle-flow review 2026-09-19');
+{
+    const C = 'faction-aurelian';
+    const noRout = { moraleDrift: 0, retreatThreshold: 0, supplyLevel: 1 };
+    const war = (x: string, y: string) => world.rivalries.set(`rivalry-${x}-${y}`, { id: `rivalry-${x}-${y}`, aFactionId: x, bFactionId: y, escalationLevel: 7, recentEvents: [] } as any);
+    const peace = (x: string, y: string) => world.rivalries.delete(`rivalry-${x}-${y}`);
+
+    // Three-way war: the first pair kills a fleet, the second must not fight its ghost.
+    reset(); war(A, C); war(B, C);
+    resetChronicleBuffer();
+    world.movement.fleets.set('a', mkFleet('a', A, 30, { strength: 0.3, composition: { corvette: 2 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 5000, { composition: { cruiser: 50 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('c', mkFleet('c', C, 40, { composition: { corvette: 3 }, doctrine: noRout, arrivedAtSeconds: 500, originSystemId: null }));
+    drainNotifications(C);
+    for (let i = 0; i < 4 && world.movement.fleets.has('a'); i++) cycle();
+    const phantom = [...world.activeCombats.values()].some(s => [s.attacker.factionId, s.defender.factionId].includes(A) && [s.attacker.factionId, s.defender.factionId].includes(C) && s.outcome?.reason === 'destroyed');
+    check('a fleet killed by one enemy does not lose a phantom battle to another the same pass', !world.movement.fleets.has('a') && !phantom && !drainNotifications(C).some(n => /VICTORY/.test(n.title)));
+    peace(A, C); peace(B, C);
+
+    // The owner of the forts defends, however late its reinforcements arrived.
+    reset();
+    const keep: any = {
+        id: 'planet-roles-test', name: 'Keep', ownerId: B, systemId: SYS,
+        infrastructureLevel: 2, specialization: null, stability: 90, tiles: [],
+        orbital: { slots: [{ slotId: 'k0', structureId: 'orbital_defense_network', state: 'active', integrity: 100 }], buildQueue: [] },
+    };
+    world.construction.planets.set(keep.id, keep);
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    const sided = cycle();
+    check('the side with armed planets here defends even as the later arrival', sided?.defender.factionId === B && (sided?.defender.fortification?.defensePower ?? 0) > 0, `${sided?.attacker.factionId} attacks`);
+    keep.ownerId = A;
+    cycle();
+    const afterCapture = [...world.activeCombats.values()][0];
+    check('a planet captured mid-battle stops fighting for its old owner', (afterCapture?.defender.fortification?.defensePower ?? 0) === 0 && (afterCapture?.defender.fortification?.planetIds.length ?? 0) === 0);
+    world.construction.planets.delete(keep.id);
+
+    // Peace mid-battle closes the battle instead of leaking it.
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    cycle(); cycle();
+    (world.rivalries.get(`rivalry-${A}-${B}`) as any).escalationLevel = 3;
+    const truce = cycle();
+    check('a ceasefire closes the open battle with no winner', truce?.outcome?.reason === 'ceasefire' && truce.outcome.winnerId === null, truce?.outcome?.reason);
+    cycle();
+    check('and the state is gone the pass after', world.activeCombats.size === 0);
+
+    // A fleet action stays in orbit for all six rounds.
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    let sawGround = false; let passes = 0; let last: CombatState | undefined;
+    while (passes < 12) { last = cycle(); passes++; if (last?.phase === 'ground' || last?.orbitalWinnerId) sawGround = true; if (last?.outcome) break; }
+    check('a fleet action never flips to the ground phase', !sawGround && last?.outcome?.reason === 'rounds' && passes === 6, `${passes} passes, ${last?.outcome?.reason}`);
+
+    // A withdrawal that goes nowhere is not a withdrawal.
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 5000, { composition: { cruiser: 50 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 200, { composition: { corvette: 16 }, arrivedAtSeconds: 100, originSystemId: 'ghost-system' }));
+    const stuck = untilOutcome();
+    check('a fleet whose way home is not on the map fights on instead of "routing" in place', stuck?.outcome?.reason === 'destroyed' && !world.movement.fleets.has('b'), stuck?.outcome?.reason);
+
+    // One runner on the WINNING side does not turn a wipe-out into a rout.
+    reset();
+    world.movement.fleets.set('a', mkFleet('a', A, 300, { composition: { cruiser: 3 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('a2', mkFleet('a2', A, 100, { strength: 0.551, composition: { corvette: 8 }, arrivedAtSeconds: 900, doctrine: { moraleDrift: 0, retreatThreshold: 0.55, supplyLevel: 1 } }));
+    world.movement.fleets.set('b', mkFleet('b', B, 60, { strength: 0.3, composition: { corvette: 4 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    const wiped = untilOutcome();
+    check('the reason follows the side that lost the field', wiped?.outcome?.winnerId === A && wiped.outcome.reason === 'destroyed', wiped?.outcome?.reason);
+
+    // An Infernoid killed in PURSUIT detonates after the normal sweep has run.
+    reset();
+    const econB: any = world.economy.factions.get(B);
+    const civBefore = econB?.civilizationId;
+    if (econB) econB.civilizationId = 'civ-infernoid';
+    world.movement.fleets.set('a', mkFleet('a', A, 300, { strength: 0.43, composition: { cruiser: 3 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 2000, { strength: 0.35, composition: { cruiser: 20 }, arrivedAtSeconds: 100 }));
+    const opened = cycle();                       // round one: b holds (0.34 > 0.3)
+    if (opened) { opened.attacker.selectedDirective = 'pursue' as any; opened.attacker.currentDirective = 'pursue' as any; }
+    (world.movement.fleets.get('b') as any).strength = 0.10;   // next volley breaks it; pursuit then kills it
+    cycle();
+    const zombie: any = world.movement.fleets.get('a');
+    check('the pursuit kill detonated', !world.movement.fleets.has('b') && (opened?.tally?.[B]?.fleetsLost ?? 0) === 1, JSON.stringify(opened?.tally));
+    check('a fleet burned to nothing by that detonation is removed and counted, not left at strength 0', !zombie && (opened?.tally?.[A]?.fleetsLost ?? 0) === 1, `a.strength=${zombie?.strength} ${JSON.stringify(opened?.tally?.[A])}`);
+    if (econB) econB.civilizationId = civBefore;
+
+    // Reinforcements raise the base the report divides by.
+    reset();
+    drainNotifications(B);
+    world.movement.fleets.set('a', mkFleet('a', A, 1000, { composition: { cruiser: 10 }, doctrine: noRout, arrivedAtSeconds: 900 }));
+    world.movement.fleets.set('b', mkFleet('b', B, 20, { composition: { corvette: 2 }, doctrine: noRout, arrivedAtSeconds: 100 }));
+    cycle();
+    world.movement.fleets.set('b2', mkFleet('b2', B, 1500, { composition: { cruiser: 15 }, doctrine: noRout, arrivedAtSeconds: 950 }));
+    const reinforced = untilOutcome();
+    const tallyB = reinforced?.tally?.[B];
+    check('the loss share counts everything the side brought', !!tallyB && (tallyB.powerAtStart ?? 0) >= 1500 && tallyB.powerLost / (tallyB.powerAtStart as number) < 0.6, JSON.stringify(tallyB));
+    check('so a reinforced side is not told it lost 100%', !drainNotifications(B).some(n => /Lost 100%/.test(n.body)));
+}
+
 world.rivalries.delete(`rivalry-${A}-${B}`);
 world.movement.fleets.clear();
 world.activeCombats.clear();

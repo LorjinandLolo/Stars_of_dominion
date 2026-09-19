@@ -430,6 +430,47 @@ refit sell them their own modules again at about a third of build price.
   designer's retire button honours the in-service lock; split is disabled
   under an open refit; the optimistic split and merge carry the books.
 
+## Battle-flow review (2026-09-19)
+
+A second review, of the round sequence itself (three angles, a skeptic per
+finding): fifteen findings, all reproduced, ten distinct defects.
+
+- **Live fleets only.** Every faction pair in a system was handed the same
+  pre-pass array. In a three-way war the first pair could destroy a fleet or
+  send it home and the second pair then fought the stale object: a routed
+  fleet was killed on its way out, a dead one "lost" a phantom battle that
+  paid the third faction a victory, XP and a chronicle event.
+  `isLiveCombatant` (the live record, holding, strength above 0) filters both
+  sides in `handleEngagement`, the sweep and the Fireblood blast.
+- **The fear-aura grace was a four-hour shield.** `withdrawFleetHome` stamped
+  `routedUntilSeconds` on EVERY withdrawal and the guard returned "somebody
+  ran" for the whole side, Kaer'Ruun or not: one routed fleet made every
+  friendly fleet beside it unattackable, and unable to attack. The stamp is
+  set by the Fear Aura only, skips only the flagged fleets' fear roll, and
+  the engagement goes ahead.
+- **Second reap.** A pursuit kill inside `routSide` can detonate (Infernoid)
+  after the destroyed-fleet sweep ran; the victim stayed in the world at
+  strength 0, uncounted, and dock repair could revive it. The sweep runs
+  again after the rout step, on live records only.
+- **The side with armed planets defends.** Battles re-open every six rounds,
+  and an owner reinforced in the meantime became "the later arrival": cast
+  as attacker, its own forts dropped out. A planet that changes owner
+  mid-battle leaves the fort.
+- **Ceasefire.** Peace mid-battle left the state unresolved forever (battle
+  music included) and resumed it mid-round if war returned. The sweep closes
+  it: reason `ceasefire`, no winner.
+- **A withdrawal that goes nowhere is not one.** `issueMoveOrder` hands the
+  fleet back unchanged when there is no route; that counted as a rout and
+  the fleet never moved. It fights on.
+- **Reason follows the loser.** One runner on the winning side made a side
+  wiped to the last hull read "broke off and withdrew".
+- **Loss share counts reinforcements.** `powerAtStart` grows when a fleet is
+  first seen; a winner that kept 71% of a reinforced force was told it had
+  lost 100%.
+- **Fleet actions stay in orbit.** `advanceRound` flipped them to phase
+  `ground` after round three: the side behind was starved at the siege rate
+  and fought the last round at half power.
+
 ## Not done / next
 
 - `components/panels/MilitaryPanel.tsx` is imported by nothing (the dock opens

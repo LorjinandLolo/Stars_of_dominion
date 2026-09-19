@@ -518,6 +518,9 @@ function applySupplyDecay(state: CombatState, report: CombatRoundReport, roundIn
 
 // ─── 6. Phase/Round Advance ───────────────────────────────────────────────────
 
+/** Rounds in a fleet action: the same six a siege runs (three orbital, three ground). */
+const FLEET_ACTION_ROUNDS = 6;
+
 export function advanceRound(state: CombatState) {
     if (state.resolved) return;
 
@@ -528,6 +531,18 @@ export function advanceRound(state: CombatState) {
     if (state.isSkirmish && !state.target?.fleetAction) {
         // Skirmish ends immediately after 1 round.
         state.resolved = true;
+        return;
+    }
+
+    // Ships fight ships for all six rounds. Without this a fleet action
+    // flipped to phase 'ground' after round three and named an "orbital
+    // winner": the side behind was starved at the siege rate (0.20 supply a
+    // round), fell under the supply cliff and fought the last round at half
+    // power, and the UI showed a space battle as GROUND.
+    if (state.target?.fleetAction) {
+        state.elapsedRounds = (state.elapsedRounds ?? 0) + 1;
+        state.round++;
+        if (state.elapsedRounds >= FLEET_ACTION_ROUNDS) state.resolved = true;
         return;
     }
 

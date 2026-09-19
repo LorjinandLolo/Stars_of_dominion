@@ -330,8 +330,18 @@ console.log('\n[8b] Fear Aura');
     setup(KR, OTHER, 50);
     const f0: any = world.movement.fleets.get('f-prey');
     f0.routedUntilSeconds = world.nowSeconds + 3600;
+    f0.destinationSystemId = f0.originSystemId ?? 'elsewhere';
     processSectorCombats(world);
     check('a fleet already running is not engaged', world.activeCombats.size === 0);
+
+    // The grace only spares it another fear roll. A flagged fleet that is
+    // HOLDING (it came home, or was ordered back) fights like any other: the
+    // flag used to make its whole side unattackable for four hours.
+    setup(KR, OTHER, 50);
+    const f1: any = world.movement.fleets.get('f-prey');
+    f1.routedUntilSeconds = world.nowSeconds + 3600;
+    processSectorCombats(world);
+    check('a flagged fleet that is holding is engaged, not shielded', world.activeCombats.size > 0 && !(world.movement.fleets.get('f-prey') as any)?.destinationSystemId);
 
     // A near-equal fleet stands and fights.
     setup(KR, OTHER, 900);

@@ -129,10 +129,24 @@ function sweepStaleCombats(world: GameWorldState, systemsWithFleets: Map<string,
             if ((state.outcome?.endedAtSeconds ?? -Infinity) < world.nowSeconds) world.activeCombats.delete(id);
             continue;
         }
-        const here = systemsWithFleets.get(state.target.systemId) ?? [];
+        // Live records only: the grouping was taken before this pass's
+        // battles, and a fleet destroyed or sent home since is not "here".
+        const here = (systemsWithFleets.get(state.target.systemId) ?? []).filter(f => isLiveCombatant(world, f));
         const attackerFleets = here.filter(f => f.factionId === state.attacker.factionId);
         const defenderFleets = here.filter(f => f.factionId === state.defender.factionId);
-        if (attackerFleets.length && defenderFleets.length) continue;
+        if (attackerFleets.length && defenderFleets.length) {
+            // Peace (or any drop below war) mid-battle: handleEngagement is no
+            // longer reached for the pair, so the state sat unresolved forever,
+            // battle music and all, and resumed mid-round if war came back.
+            // A pair under a tactical lock is the client sim's, not ours.
+            const lock = world.tacticalLocks?.[state.target.systemId];
+            const locked = !!lock && [lock.factionId, lock.enemyFactionId].includes(state.attacker.factionId)
+                && [lock.factionId, lock.enemyFactionId].includes(state.defender.factionId);
+            if (!locked && !factionsAtWar(world, state.attacker.factionId, state.defender.factionId)) {
+                finishBattle(world, state, 'ceasefire', null, attackerFleets, defenderFleets);
+            }
+            continue;
+        }
 
         const winnerId = attackerFleets.length ? state.attacker.factionId
             : defenderFleets.length ? state.defender.factionId
@@ -153,8 +167,15 @@ function handleEngagement(
     const combatId = `combat-${systemId}-${factionA}-${factionB}`;
     let state = world.activeCombats.get(combatId);
 
-    const fleetsA = allFleetsInSystem.filter(f => f.factionId === factionA);
-    const fleetsB = allFleetsInSystem.filter(f => f.factionId === factionB);
+    // Every faction pair in the system is handed the same pre-pass array. In a
+    // three-way war the first pair can destroy a fleet or send it home, and
+    // the second pair then fought the stale object: a routed fleet was killed
+    // on its way out, a dead one "lost" a phantom battle that paid the third
+    // faction a victory, XP and a chronicle event.
+    const fleetsA = allFleetsInSystem.filter(f => f.factionId === factionA && isLiveCombatant(world, f));
+    const fleetsB = allFleetsInSystem.filter(f => f.factionId === factionB && isLiveCombatant(world, f));
+    // An open state whose side is gone is closed by sweepStaleCombats.
+    if (!fleetsA.length || !fleetsB.length) return;
 
     if (!state) {
         // Roles: whoever arrived last is attacking; the side that was already
@@ -162,14 +183,23 @@ function handleEngagement(
         // stance default and the tie on orbital control. Faction A used to be
         // the attacker purely by iteration order.
         const owner = world.movement.systems.get(systemId)?.ownerFactionId ?? null;
-        const roles = pickRoles(fleetsA, fleetsB, owner);
+        // The side whose armed planets are here defends, whatever the arrival
+        // stamps say. Battles re-open every six rounds, and an owner who had
+        // been reinforced in the meantime became "the later arrival": it was
+        // cast as attacker and its own forts dropped out of the fight.
+        const fortA = fortificationFor(world, factionA, systemId);
+        const fortB = fortificationFor(world, factionB, systemId);
+        const byArrival = pickRoles(fleetsA, fleetsB, owner);
+        const roles = !!fortA === !!fortB ? byArrival
+            : fortA ? { attackerFleets: fleetsB, defenderFleets: fleetsA, swapped: true }
+            : { attackerFleets: fleetsA, defenderFleets: fleetsB, swapped: false };
         const attackerId = roles.swapped ? factionB : factionA;
         const defenderId = roles.swapped ? factionA : factionB;
 
         // The defender's armed planets in the system fight with it. Planets
         // and stations used to sit out fleet battles entirely; only the
         // blockade math read orbital_defense_power.
-        const fortification = fortificationFor(world, defenderId, systemId);
+        const fortification = roles.swapped ? fortA : fortB;
 
         const attacker = createCombatant(attackerId, roles.attackerFleets, 'attacker', world);
         const defender = createCombatant(defenderId, roles.defenderFleets, 'defender', world, fortification);
@@ -195,8 +225,6 @@ function handleEngagement(
             attacker,
             defender
         );
-        ensureTally(state, attackerId).powerAtStart = powerOf(roles.attackerFleets);
-        ensureTally(state, defenderId).powerAtStart = powerOf(roles.defenderFleets);
 
         // Ambush from the asteroid belt: the tick stamped the victim when a
         // belt-lurker sprang on it. The lurker opens with full momentum and
@@ -270,6 +298,16 @@ function handleEngagement(
     // One scale: the pools are re-derived from the fleets (and the fort) that
     // stand right now, so hp / maxHp is the real fraction of the committed
     // force and a reinforcement joins the pool as well as the roster.
+    // What each side has brought so far, for the report's "lost N%": counted
+    // when a fleet is first seen, so a reinforcement raises the base as well
+    // as the losses. It used to be fixed at round one, and a winner that kept
+    // 71% of a reinforced force was told it had lost 100%.
+    for (const [side, fleets] of [[state.attacker, fleetsAtk], [state.defender, fleetsDef]] as const) {
+        const tally = ensureTally(state, side.factionId);
+        for (const f of fleets) {
+            if (side.committed?.[f.id] === undefined) tally.powerAtStart = (tally.powerAtStart ?? 0) + powerOf([f]);
+        }
+    }
     syncPool(state.attacker, fleetsAtk);
     syncPool(state.defender, fleetsDef);
 
@@ -305,22 +343,32 @@ function handleEngagement(
         // to zero in the same pass. Otherwise a wiped fleet lingered in-system
         // with a hostile faction and a fresh no-op combat was re-initiated
         // against it every tick ("zombie" engagements).
-        let again = true;
-        while (again) {
-            again = false;
-            for (const fleet of [...fleetsAtk, ...fleetsDef]) {
-                if (fleet.strength > 0 || !world.movement.fleets.has(fleet.id)) continue;
-                const onAttack = fleet.factionId === state.attacker.factionId;
-                destroyFleet(world, state, fleet, onAttack ? state.defender.factionId : state.attacker.factionId, onAttack ? fleetsDef : fleetsAtk);
-                again = true;
+        const reapDestroyed = () => {
+            let again = true;
+            while (again) {
+                again = false;
+                for (const fleet of [...fleetsAtk, ...fleetsDef]) {
+                    // The live record only: a fleet that withdrew is a NEW
+                    // object under the same id, and must not be deleted
+                    // through its stale one.
+                    if (fleet.strength > 0 || world.movement.fleets.get(fleet.id) !== fleet) continue;
+                    const onAttack = fleet.factionId === state.attacker.factionId;
+                    destroyFleet(world, state, fleet, onAttack ? state.defender.factionId : state.attacker.factionId, onAttack ? fleetsDef : fleetsAtk);
+                    again = true;
+                }
             }
-        }
+        };
+        reapDestroyed();
 
         // Rout: fleets past their doctrine's retreatThreshold, or a whole side
         // that fought this round under `withdraw`, break off and run for home.
         const withdrawn = new Set<string>();
         routSide(world, state, fleetsAtk, state.attacker, state.defender, fleetsDef, withdrawn);
         routSide(world, state, fleetsDef, state.defender, state.attacker, fleetsAtk, withdrawn);
+        // A pursuit kill can detonate (Infernoid Fireblood) and take an enemy
+        // to zero AFTER the sweep above: that fleet stayed in the world at
+        // strength 0, uncounted, selectable, and dock repair could revive it.
+        reapDestroyed();
 
         const standingOf = (fleets: Fleet[]) =>
             fleets.filter(f => world.movement.fleets.has(f.id) && f.strength > 0 && !withdrawn.has(f.id));
@@ -343,7 +391,12 @@ function handleEngagement(
             const winnerId = attackerStands ? state.attacker.factionId
                 : defenderStands ? state.defender.factionId
                 : null;
-            finishBattle(world, state, withdrawn.size ? 'rout' : 'destroyed', winnerId, fleetsAtk, fleetsDef);
+            // 'rout' only if the side that lost the field ran. One runner on
+            // the WINNING side used to make a side wiped to the last hull read
+            // as "broke off and withdrew".
+            const losers = attackerStands ? [fleetsDef] : defenderStands ? [fleetsAtk] : [fleetsAtk, fleetsDef];
+            const loserRan = losers.some(side => side.some(f => withdrawn.has(f.id)));
+            finishBattle(world, state, loserRan ? 'rout' : 'destroyed', winnerId, fleetsAtk, fleetsDef);
         } else {
             advanceRound(state);
             if (state.resolved) {
@@ -386,14 +439,18 @@ function refreshFortification(world: GameWorldState, side: CombatantState) {
     if (!side.fortification) return;
     let defensePower = 0;
     let shieldStrength = 0;
+    const planetIds: string[] = [];
     for (const id of side.fortification.planetIds) {
         const planet = world.construction?.planets?.get(id) as any;
-        if (!planet) continue;
+        // Captured, seceded or ceded since the battle opened: it no longer
+        // fights for this side, and the new owner's structures take no fire.
+        if (!planet || planet.ownerId !== side.factionId) continue;
         const ratings = computeOrbitalRatings(planet, world.nowSeconds);
         defensePower += ratings.defensePower;
         shieldStrength += ratings.shieldStrength;
+        planetIds.push(id);
     }
-    side.fortification = { ...side.fortification, defensePower, shieldStrength };
+    side.fortification = { ...side.fortification, defensePower, shieldStrength, planetIds };
 }
 
 /**
@@ -402,6 +459,11 @@ function refreshFortification(world: GameWorldState, side: CombatantState) {
  * bombardment uses, so shields soak, integrity drops and a slot can be
  * destroyed outright.
  */
+/** The live record of a fleet that is holding here and can still fight. */
+function isLiveCombatant(world: GameWorldState, fleet: Fleet): boolean {
+    return world.movement.fleets.get(fleet.id) === fleet && !fleet.destinationSystemId && (fleet.strength ?? 1) > 0;
+}
+
 function applyDamageToSide(world: GameWorldState, state: CombatState, side: CombatantState, fleets: Fleet[], damage: number): number {
     const fort = side.fortification;
     if (!fort || fort.defensePower <= 0 || damage <= 0) {
@@ -483,8 +545,12 @@ function destroyFleet(world: GameWorldState, state: CombatState, fleet: Fleet, k
     if (isInfernoid(world, fleet.factionId)) {
         const blast = (fleet.basePower || 0) * FIREBLOOD_FLEET_COEFF * config.constants.hpPerPower;
         if (blast > 0) {
-            const victimId = enemyFleets[0]?.factionId;
-            const burned = applyDamageToFleets(enemyFleets, blast);
+            // Only fleets still here burn. The arrays a round works from
+            // keep the stale object of a fleet that has already withdrawn, and
+            // the blast used to land on it: power tallied that nobody lost.
+            const targets = enemyFleets.filter(f => isLiveCombatant(world, f));
+            const victimId = targets[0]?.factionId;
+            const burned = applyDamageToFleets(targets, blast);
             if (victimId) ensureTally(state, victimId).powerLost += burned;
             recordDetonation(world, fleet.factionId);
             console.log(`[Infernoid] ${fleet.id} detonates — ${blast.toFixed(0)} damage answered in fire.`);
@@ -553,8 +619,10 @@ export function withdrawFleetHome(world: GameWorldState, fleet: Fleet): boolean 
     if (!target || target === fleet.currentSystemId) return false;
     try {
         const updated = issueMoveOrder(fleet, target, 'hyperlane', world.movement);
-        // Keeps the Fear Aura from re-rolling a fleet that is already leaving.
-        (updated as any).routedUntilSeconds = world.nowSeconds + FEAR_ROUT_GRACE_SECONDS;
+        // No route (a target that is not on the map, no lane, no deep-space
+        // hop) hands the fleet back unchanged. That used to count as a
+        // withdrawal: the battle closed as a rout and the fleet never moved.
+        if (updated === fleet || !updated.destinationSystemId) return false;
         world.movement.fleets.set(updated.id, updated);
         return true;
     } catch (e) {
@@ -673,6 +741,7 @@ function reportBattle(world: GameWorldState, state: CombatState, reason: BattleE
         destroyed: 'One side was destroyed to the last hull',
         annihilation: 'One side was annihilated',
         withdrawal: 'One side left the system',
+        ceasefire: 'The war ended and the guns fell silent',
     };
     const stamp = new Date(world.nowSeconds * 1000).toISOString();
     for (const [me, them, mine, theirs] of [
@@ -766,13 +835,22 @@ function applyFearAura(
         predator: string, predatorPower: number,
         prey: string, preyPower: number, preyFleets: Fleet[],
     ): boolean => {
-        // Already running — leave it alone until it has had time to get clear.
-        if (preyFleets.some(f => ((f as any).routedUntilSeconds ?? 0) > world.nowSeconds)) return true;
+        // A fleet that already broke from fear is not rolled again until it
+        // has had time to get clear. Only THOSE fleets are skipped, and the
+        // engagement goes ahead: this used to return "somebody ran" for the
+        // whole side, and since every rout and retreat carried the stamp, one
+        // routed fleet made every friendly fleet beside it unattackable (and
+        // unable to attack) for four hours.
+        const fresh = preyFleets.filter(f => ((f as any).routedUntilSeconds ?? 0) <= world.nowSeconds);
+        if (!fresh.length) return false;
         if (!shouldRoutFromFear(world, predator, predatorPower, prey, preyPower, combatId, rng)) return false;
 
         let moved = 0;
-        for (const fleet of preyFleets) {
-            if (withdrawFleetHome(world, fleet)) moved += 1;
+        for (const fleet of fresh) {
+            if (!withdrawFleetHome(world, fleet)) continue;
+            moved += 1;
+            const leaving = world.movement.fleets.get(fleet.id) as any;
+            if (leaving) leaving.routedUntilSeconds = world.nowSeconds + FEAR_ROUT_GRACE_SECONDS;
         }
         if (!moved) return false;   // nowhere to run — it has to fight after all
 

@@ -207,7 +207,7 @@ export interface CombatState {
      */
     outcome?: {
         winnerId: string | null;
-        reason: 'rounds' | 'rout' | 'destroyed' | 'annihilation' | 'withdrawal';
+        reason: 'rounds' | 'rout' | 'destroyed' | 'annihilation' | 'withdrawal' | 'ceasefire';
         endedAtSeconds: number;
     };
 }
