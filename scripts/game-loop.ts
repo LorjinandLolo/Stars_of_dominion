@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { pathToFileURL } from 'node:url';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard, serializePiracyState, applyPiracySnapshot } from '../lib/persistence/save-service';
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
@@ -1483,7 +1484,7 @@ function resolveOrderTargetFaction(world: any, actionId: string, payload: any): 
     return undefined;
 }
 
-function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
+export function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
     console.log(`[Order] Validating ${actionId} for ${factionId}`);
 
     // Technology gate runs FIRST — ahead of the treasury and political-capital
@@ -6101,15 +6102,25 @@ async function main() {
     setInterval(runGameTick, POLL_INTERVAL_MS);
 }
 
-// On shutdown, expire the lease so a replacement worker can start immediately.
-for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-        console.log(`\n[Tick Worker] ${sig} received — releasing lease...`);
-        releaseLease().finally(() => process.exit(0));
+// Only when this file IS the process. Importing it — which is the only way to
+// drive an order handler without an HTTP round trip, and some orders cannot be
+// reached any other way (a tactical battle needs two hostile fleets in one
+// system, and the two dev factions start 39 jumps apart) — used to start a
+// second worker, fail to take the lease and exit(1) out from under the caller.
+const RUNNING_AS_WORKER = !!process.argv[1]
+    && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (RUNNING_AS_WORKER) {
+    // On shutdown, expire the lease so a replacement worker can start immediately.
+    for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(sig, () => {
+            console.log(`\n[Tick Worker] ${sig} received — releasing lease...`);
+            releaseLease().finally(() => process.exit(0));
+        });
+    }
+
+    main().catch((e) => {
+        console.error('[Tick Worker] Startup failed:', e.message);
+        process.exit(1);
     });
 }
-
-main().catch((e) => {
-    console.error('[Tick Worker] Startup failed:', e.message);
-    process.exit(1);
-});
