@@ -16,6 +16,16 @@ import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatFleetEta } from '@/lib/movement/eta';
 import { Anchor, ChevronDown, ChevronUp, GitMerge, Navigation, Rocket, Scissors, Swords, Undo2, Users, X } from 'lucide-react';
 
+/** Owns its own 1 Hz clock, so a ticking ETA re-renders one span, not the roster. */
+function TransitEta({ etaSeconds, receivedAt }: {
+    etaSeconds: number | null | undefined;
+    receivedAt: number | null;
+}) {
+    const [nowMs, setNowMs] = React.useState(() => Date.now());
+    useVisibleInterval(() => setNowMs(Date.now()), 1000);
+    return <>{formatFleetEta(etaSeconds, receivedAt === null ? 0 : nowMs - receivedAt) ?? '—'}</>;
+}
+
 export default function FleetCommandBar() {
     const fleets = useUIStore(s => s.fleets);
     const systems = useUIStore(s => s.systems);
@@ -33,12 +43,12 @@ export default function FleetCommandBar() {
     const [collapsed, setCollapsed] = React.useState(false);
     const activeCombats = useUIStore(s => s.activeCombats);
 
-    // 1Hz clock so transit ETAs count down between ~5s authoritative snapshots.
-    const [nowMs, setNowMs] = React.useState(() => Date.now());
-    useVisibleInterval(() => setNowMs(Date.now()), 1000);
-    const fleetsReceivedAt = React.useRef(Date.now());
-    React.useEffect(() => { fleetsReceivedAt.current = Date.now(); }, [fleets]);
-    const etaElapsedMs = nowMs - fleetsReceivedAt.current;
+    // The countdown baseline; the 1 Hz clock itself lives in <TransitEta>.
+    // State, not a ref: with no per-second render out here, a ref's new value
+    // would never reach the leaf and the countdown would drift a snapshot
+    // behind for good.
+    const [fleetsReceivedAt, setFleetsReceivedAt] = React.useState<number | null>(null);
+    React.useEffect(() => { setFleetsReceivedAt(Date.now()); }, [fleets]);
 
     // ── Drag & drop fleet merging ──
     const [draggingId, setDraggingId] = React.useState<string | null>(null);
@@ -269,7 +279,7 @@ export default function FleetCommandBar() {
                                             <span className={`flex items-center gap-1 text-[9px] ${inTransit ? 'text-sky-400' : 'text-slate-500'}`}>
                                                 {inTransit ? <Navigation size={8} /> : <Anchor size={8} />}
                                                 {inTransit
-                                                    ? `→ ${sysName(fleet.destinationSystemId)} · ETA ${formatFleetEta(fleet.etaSeconds, etaElapsedMs) ?? '—'}`
+                                                    ? <>{`→ ${sysName(fleet.destinationSystemId)} · ETA `}<TransitEta etaSeconds={fleet.etaSeconds} receivedAt={fleetsReceivedAt} /></>
                                                     : fleet.stance === 'belt'
                                                         ? `lurking in the belt · ${sysName(fleet.currentSystemId)}`
                                                         : fleet.orbitingPlanetId

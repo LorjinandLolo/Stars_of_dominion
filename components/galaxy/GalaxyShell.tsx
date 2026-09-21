@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { useVisibleInterval } from '@/hooks/usePageVisible';
+import { usePageVisible, useVisibleInterval } from '@/hooks/usePageVisible';
+import { categoryForTab } from '@/components/shell/dockConfig';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
 import OverlayPicker from './OverlayPicker';
@@ -90,6 +91,39 @@ const EMPTY_HINTS: ReadonlyMap<string, string> = new Map();
  */
 const OVERLAY_CLOCK_QUANTUM_SECONDS = 300;
 
+/**
+ * A fleet's ETA countdown, and the only thing on the map that needs to know
+ * the time of day. It owns its clock, so a tick re-renders one <text> instead
+ * of the whole galaxy: the shell used to hold a 1 Hz `nowMs` for this alone,
+ * which re-ran 1089 lanes, up to 567 system nodes and the five HUD panels
+ * GalaxyShell renders, once a second, forever. Mounted only for fleets
+ * actually in transit, so an idle empire runs no timer at all.
+ */
+function FleetEtaLabel({ etaSeconds, receivedAt, paused, selected }: {
+    etaSeconds: number | null | undefined;
+    receivedAt: number | null;
+    paused: boolean;
+    selected: boolean;
+}) {
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useVisibleInterval(() => { if (!paused) setNowMs(Date.now()); }, 1000);
+    const eta = formatFleetEta(etaSeconds, receivedAt === null ? 0 : nowMs - receivedAt);
+    if (!eta) return null;
+    return (
+        <text
+            y={-9}
+            textAnchor="middle"
+            fontSize={4.5}
+            fontFamily="monospace"
+            fill={selected ? '#c7d2fe' : '#94a3b8'}
+            style={{ paintOrder: 'stroke', stroke: '#020617', strokeWidth: 0.7 }}
+            pointerEvents="none"
+        >
+            {eta}
+        </text>
+    );
+}
+
 export default function GalaxyShell() {
     const systems = useUIStore(s => s.systems);
     const regions = useUIStore(s => s.regions);
@@ -122,6 +156,26 @@ export default function GalaxyShell() {
     const contestedSystemIds = useUIStore(s => s.contestedSystemIds);
     const forwardBases = useUIStore(s => s.forwardBases);
     const diplomacyState = useUIStore(s => s.diplomacyState);
+
+    // The galaxy is never unmounted — GameShell keeps it rendered underneath
+    // every full-screen layer — so the map went on animating behind an opaque
+    // panel, and because that panel is backdrop-blurred, every frame the
+    // invisible map moved forced a full-viewport re-blur. `frozen` is the one
+    // switch for both that and a hidden tab: it pauses ~700-1200 infinite CSS
+    // animations and stops the per-fleet ETA clocks.
+    const activeTab = useUIStore(s => s.activeTab);
+    const floatedTabs = useUIStore(s => s.floatedTabs);
+    const surfacePlanetId = useUIStore(s => s.surfacePlanetId);
+    const tacticalBattle = useUIStore(s => s.tacticalBattle);
+    const pageVisible = usePageVisible();
+    // categoryForTab is null exactly for the tabs GameShell has no panel for,
+    // so this is the same set as its PANEL_MAP; a floated tab is a window, not
+    // a cover. The system view, the planet surface and a tactical battle each
+    // paint over the map as well.
+    const covered =
+        (!!categoryForTab(activeTab) && !(activeTab in floatedTabs))
+        || !!systemViewId || !!surfacePlanetId || !!tacticalBattle;
+    const frozen = covered || !pageVisible;
 
     // Friend/foe relationship of every other faction toward the player, derived from
     // rivalries (war = hostile) and mutual-defense treaties (ally).
@@ -304,16 +358,13 @@ export default function GalaxyShell() {
     }, [setSelectedSystem]);
 
     // ── Movement-order feedback ───────────────────────────────────────────────
-    // 1Hz clock so ETA countdowns tick between the ~5s authoritative snapshots.
-    // Stopped while the tab is hidden: it re-renders the whole map.
-    const [nowMs, setNowMs] = useState(() => Date.now());
-    useVisibleInterval(() => setNowMs(Date.now()), 1000);
-    // When a fresh snapshot lands, restart the countdown baseline.
+    // When a fresh snapshot lands, restart the countdown baseline. The clock
+    // itself lives in FleetEtaLabel, one per fleet in transit — holding it here
+    // re-rendered the entire map every second.
     // Null until the first snapshot effect runs: the clock is read in the
     // effect, not during render, so re-renders stay pure.
     const [fleetsReceivedAt, setFleetsReceivedAt] = useState<number | null>(null);
     useEffect(() => { setFleetsReceivedAt(Date.now()); }, [fleets]);
-    const etaElapsedMs = fleetsReceivedAt === null ? 0 : nowMs - fleetsReceivedAt;
 
     // EaW-style order confirmation ping at the target system.
     const [orderPings, setOrderPings] = useState<Array<{ key: number; x: number; y: number }>>([]);
@@ -381,7 +432,7 @@ export default function GalaxyShell() {
 
     return (
         <div
-            className="relative w-full h-full overflow-hidden bg-slate-950 select-none nebula-bg"
+            className={`relative w-full h-full overflow-hidden bg-slate-950 select-none nebula-bg${frozen ? ' gx-frozen' : ''}`}
             style={{ cursor: dragging ? 'grabbing' : targetingMode ? 'crosshair' : 'grab' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -731,23 +782,14 @@ export default function GalaxyShell() {
                                     />
                                 </g>
                                 {/* ETA countdown — rides with the ship, ticks every second */}
-                                {!fleet.currentSystemId && (isMine || isSelected) && (() => {
-                                    const eta = formatFleetEta(fleet.etaSeconds, etaElapsedMs);
-                                    if (!eta) return null;
-                                    return (
-                                        <text
-                                            y={-9}
-                                            textAnchor="middle"
-                                            fontSize={4.5}
-                                            fontFamily="monospace"
-                                            fill={isSelected ? '#c7d2fe' : '#94a3b8'}
-                                            style={{ paintOrder: 'stroke', stroke: '#020617', strokeWidth: 0.7 }}
-                                            pointerEvents="none"
-                                        >
-                                            {eta}
-                                        </text>
-                                    );
-                                })()}
+                                {!fleet.currentSystemId && (isMine || isSelected) && (
+                                    <FleetEtaLabel
+                                        etaSeconds={fleet.etaSeconds}
+                                        receivedAt={fleetsReceivedAt}
+                                        paused={frozen}
+                                        selected={isSelected}
+                                    />
+                                )}
                                 </g>
                             </g>
                         );
@@ -866,6 +908,15 @@ export default function GalaxyShell() {
                     .gx-pulse-ring, .gx-select-ring, .gx-select-ring2, .gx-lane-flow,
                     .gx-galaxy-pulse, .gx-nebula-1, .gx-nebula-2 { animation: none; }
                 }
+                /* One switch for the whole map: nothing in this subtree animates
+                   while it is hidden or covered. A paused animation leaves the
+                   browser's active set entirely — no style recalc, no paint, no
+                   compositor tick, and nothing for the panel's backdrop-blur to
+                   re-blur. animation-play-state does not inherit, hence the
+                   descendant selector; !important covers the Tailwind
+                   animate-* utilities, whose layer order is not guaranteed
+                   against this block. Time-based, so nothing jumps on resume. */
+                .gx-frozen, .gx-frozen * { animation-play-state: paused !important; }
             `}</style>
 
             <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.15] mix-blend-overlay">
