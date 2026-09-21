@@ -41,21 +41,38 @@ export async function GET(req: NextRequest) {
         const sessionSince = req.nextUrl.searchParams.get('sessionSince');
         const shardsSince = req.nextUrl.searchParams.get('shardsSince');
 
-        const [session, shards] = await Promise.all([
-            prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID } }),
+        const [sessionMeta, shards] = await Promise.all([
+            // The timestamp only. The snapshot column is over a megabyte, the
+            // worker rewrites this row at most every ~30 s and only when
+            // something changed, and every tab polls every 4 s — so most polls
+            // used to drag that megabyte out of Postgres and drop it unread.
+            prisma.multiplayerSession.findUnique({
+                where: { id: SESSION_DOC_ID },
+                select: { updatedAt: true },
+            }),
             prisma.gameFactionShard.findMany(
                 shardsSince ? { where: { updatedAt: { gt: new Date(shardsSince) } } } : undefined
             ),
         ]);
 
-        if (!session) {
+        if (!sessionMeta) {
             return NextResponse.json(
                 { error: 'No game session found. Start the worker (npm run worker) after seeding.' },
                 { status: 404 }
             );
         }
 
-        const sessionChanged = !sessionSince || session.updatedAt > new Date(sessionSince);
+        const sessionChanged = !sessionSince || sessionMeta.updatedAt > new Date(sessionSince);
+
+        // Only now, and only when it actually moved, read the big column.
+        // updatedAt comes back with it, so the stamp the client keeps as its
+        // next `sessionSince` always belongs to the snapshot it was sent.
+        const session = sessionChanged
+            ? await prisma.multiplayerSession.findUnique({
+                where: { id: SESSION_DOC_ID },
+                select: { snapshot: true, updatedAt: true },
+            })
+            : null;
 
         // The caller's own shard carries their fog map (`visibility`) and fleet
         // positions — the ViewerContext every RIVAL shard's fleet list is
@@ -71,13 +88,13 @@ export async function GET(req: NextRequest) {
         }
 
         return NextResponse.json({
-            session: sessionChanged
+            session: session
                 ? {
                       snapshot: session.snapshot,
                       updatedAt: session.updatedAt.toISOString(),
                   }
                 : null,
-            sessionUpdatedAt: session.updatedAt.toISOString(),
+            sessionUpdatedAt: (session?.updatedAt ?? sessionMeta.updatedAt).toISOString(),
             factions: shards.map(s => ({
                 id: s.id,
                 data: projectShardForCaller(s.data, !!factionId && s.factionId === factionId, viewer),

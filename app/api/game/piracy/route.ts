@@ -19,6 +19,42 @@ import { buildPirateDashboard, buildPirateView } from '@/lib/piracy/pirate-view'
 const SESSION_DOC_ID = 'default-session';
 const PIRACY_DOC_ID = 'default-session-piracy';
 
+// One deserialize, shared by every caller.
+//
+// deserializeWorld over the ~1.2 MB snapshot ran once per REQUEST — every 15 s
+// per open tab — and built a world that is identical for all of them. Only
+// buildPirateView and buildPirateDashboard below are per-faction, so this is
+// keyed on the two rows' timestamps and NOT on the faction. The promise is
+// cached rather than the world, so simultaneous misses still deserialize once.
+//
+// This holds only while the request path stays read-only: anything here that
+// mutates `world` mutates it for every other caller. Project, never write.
+let worldKey = '';
+let worldBuild: Promise<any> | null = null;
+
+async function pirateWorld(key: string): Promise<any> {
+    if (worldBuild && worldKey === key) return worldBuild;
+    const build = (async () => {
+        const [sessionDoc, piracyDoc] = await Promise.all([
+            prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID }, select: { snapshot: true } }),
+            prisma.multiplayerSession.findUnique({ where: { id: PIRACY_DOC_ID }, select: { snapshot: true } }),
+        ]);
+        if (!sessionDoc) throw new Error('No game session found.');
+        // The shared snapshot is scrubbed of pirate state; the authoritative
+        // copy lives in its own row that nothing else serves.
+        const world = deserializeWorld(sessionDoc.snapshot);
+        applyPiracySnapshot(world, piracyDoc?.snapshot);
+        return world;
+    })();
+    worldKey = key;
+    worldBuild = build;
+    // A failed build must not be remembered as the state of that key.
+    build.catch(() => {
+        if (worldBuild === build) { worldBuild = null; worldKey = ''; }
+    });
+    return build;
+}
+
 export async function GET(req: NextRequest) {
     try {
         // Identity comes from the session cookie, never from a query parameter —
@@ -34,18 +70,19 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'No faction claimed.' }, { status: 403 });
         }
 
-        const [sessionDoc, piracyDoc] = await Promise.all([
-            prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID } }),
-            prisma.multiplayerSession.findUnique({ where: { id: PIRACY_DOC_ID } }),
+        const [sessionMeta, piracyMeta] = await Promise.all([
+            prisma.multiplayerSession.findUnique({ where: { id: SESSION_DOC_ID }, select: { updatedAt: true } }),
+            prisma.multiplayerSession.findUnique({ where: { id: PIRACY_DOC_ID }, select: { updatedAt: true } }),
         ]);
-        if (!sessionDoc) {
+        if (!sessionMeta) {
             return NextResponse.json({ error: 'No game session found.' }, { status: 404 });
         }
 
-        // The shared snapshot is scrubbed of pirate state; the authoritative
-        // copy lives in its own row that nothing else serves.
-        const world = deserializeWorld(sessionDoc.snapshot);
-        applyPiracySnapshot(world, piracyDoc?.snapshot);
+        // Both rows key the cache: the pirate aggregate is saved to its own
+        // row, so a pirate-only write has to invalidate as well.
+        const world = await pirateWorld(
+            `${sessionMeta.updatedAt.getTime()}:${piracyMeta?.updatedAt.getTime() ?? 0}`
+        );
 
         const played = [...world.piracy.organizations.values()]
             .find(org => org.playerFactionId === profile.factionId);
@@ -54,7 +91,7 @@ export async function GET(req: NextRequest) {
             factionId: profile.factionId,
             view: buildPirateView(world, profile.factionId),
             dashboard: played ? buildPirateDashboard(world, played.id) : null,
-            updatedAt: sessionDoc.updatedAt.toISOString(),
+            updatedAt: sessionMeta.updatedAt.toISOString(),
         });
     } catch (err: any) {
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
