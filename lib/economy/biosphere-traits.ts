@@ -99,6 +99,16 @@ export const BIOSPHERE_TRAIT_MODIFIERS: Record<string, ResourceBundle> = {
     'contested':            { military: +25, credits: -10, luxury: -15 },
     'dead-world':           { metals: +20, rare: +20, food: -30 },
     'research-station':     { research: +30, food: -10 },
+
+    // ── Seeded Planet Role Tags ────────────────────────────────────────────────
+    // Assigned by initialization-service to starting-kit planets. Unlike the
+    // narrative system tags above, these feed planetBaseRates directly every
+    // second, so they are scaled to the per-second baseRates (0.05–0.8) rather
+    // than the +10..+40 narrative magnitudes.
+    'homeworld':            { food: +0.3, energy: +0.3, metals: +0.2, credits: +0.5 },
+    'settled_core':         { food: +0.2, cultural: +0.1 },
+    'established_colony':   { food: +0.1, metals: +0.1 },
+    'sector_capital':       { credits: +0.3, cultural: +0.1 },
 };
 
 /**
