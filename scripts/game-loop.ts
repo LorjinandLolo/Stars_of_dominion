@@ -385,16 +385,17 @@ function recalculateSystemControl(world: any) {
  * Check & deduct an action's cost from the faction's LIVE economy reserves —
  * the same numbers the player's resource bar shows. Resources the economy
  * doesn't track yet (influence, manpower, intel...) are free for now.
- * Returns false (and skips the order) if an enforced resource is short.
+ * Returns the list of charges actually deducted (so they can be refunded if
+ * the order later fails validation), or null if an enforced resource is short.
  */
-function chargeOrderCost(world: any, factionId: string, actionId: string): boolean {
+function chargeOrderCost(world: any, factionId: string, actionId: string): Array<[string, number]> | null {
     const def = (ACTION_DEFINITIONS as any)[actionId];
     const cost = def?.cost;
-    if (!cost || Object.keys(cost).length === 0) return true;
+    if (!cost || Object.keys(cost).length === 0) return [];
 
     const econFaction = world.economy?.factions?.get?.(factionId);
     const reserves = econFaction?.reserves;
-    if (!reserves) return true; // no economy record — don't block gameplay
+    if (!reserves) return []; // no economy record — don't block gameplay
 
     const charges: Array<[string, number]> = [];
     for (const [res, amt] of Object.entries(cost)) {
@@ -402,41 +403,60 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
         if (reserves[key] === undefined) continue; // untracked resource → free
         if ((reserves[key] ?? 0) < (amt as number)) {
             console.warn(`[Order] ${factionId} cannot afford ${actionId}: needs ${amt} ${res}, has ${Math.floor(reserves[key] ?? 0)}`);
-            return false;
+            return null;
         }
         charges.push([key, amt as number]);
     }
     charges.forEach(([key, amt]) => { reserves[key] = (reserves[key] ?? 0) - amt; });
-    return true;
+    return charges;
+}
+
+/** Return previously charged resources when an order fails validation. */
+function refundOrderCost(world: any, factionId: string, charges: Array<[string, number]>) {
+    const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
+    if (!reserves) return;
+    charges.forEach(([key, amt]) => { reserves[key] = (reserves[key] ?? 0) + amt; });
+}
+
+function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
+    console.log(`[Order] Validating ${actionId} for ${factionId}`);
+
+    // Affordability gate — deducts from the live economy on success.
+    const charges = chargeOrderCost(world, factionId, actionId);
+    if (charges === null) return;
+
+    // If the handler rejects the order (ownership/validation failure, no-op),
+    // give the money back — previously the cost was kept and nothing happened.
+    if (!applyOrder(world, actionId, payload, factionId) && charges.length > 0) {
+        refundOrderCost(world, factionId, charges);
+        console.warn(`[Order] ${actionId} for ${factionId} rejected — cost refunded.`);
+    }
 }
 
 /**
  * Maps database orders to in-memory world state mutations.
  * includes server-side validation to ensure players only control their own assets.
+ * Returns true if the order took effect, false if it was rejected/skipped
+ * (the caller refunds the action cost on false).
  */
-function executeOrder(world: any, actionId: string, payload: any, factionId: string) {
-    console.log(`[Order] Validating ${actionId} for ${factionId}`);
-
-    // Affordability gate — deducts from the live economy on success.
-    if (!chargeOrderCost(world, factionId, actionId)) return;
-
+function applyOrder(world: any, actionId: string, payload: any, factionId: string): boolean {
     switch (actionId) {
         case 'MIL_MOVE_FLEET': {
             const fleet = world.movement.fleets.get(payload.fleetId);
-            if (!fleet) return;
+            if (!fleet) return false;
             if (fleet.factionId !== factionId) {
                 console.error(`[Security] Unauthorized MOVE from ${factionId} on fleet ${payload.fleetId} (Owner: ${fleet.factionId})`);
-                return;
+                return false;
             }
 
             // Dedupe: already heading there, or already parked there — no-op.
             if (fleet.destinationSystemId === payload.destinationId) {
                 console.log(`[Order] Fleet ${payload.fleetId} already en route to ${payload.destinationId} — duplicate order skipped.`);
-                return;
+                return false;
             }
             if (!fleet.destinationSystemId && fleet.currentSystemId === payload.destinationId) {
                 console.log(`[Order] Fleet ${payload.fleetId} is already at ${payload.destinationId} — order skipped.`);
-                return;
+                return false;
             }
 
             if (!fleet.currentSystemId && Array.isArray(fleet.plannedPath) && fleet.plannedPath.length >= 2) {
@@ -462,6 +482,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                         activeLayer: fleet.activeLayer,
                     });
                     console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId} (via ${hopTo}).`);
+                    return true;
                 } else if (hopTo === payload.destinationId) {
                     // New target IS the next waypoint — just truncate the route there.
                     world.movement.fleets.set(payload.fleetId, {
@@ -470,8 +491,9 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                         plannedPath: [hopFrom, hopTo],
                     });
                     console.log(`[Order] Fleet ${payload.fleetId} route truncated at ${hopTo}.`);
+                    return true;
                 }
-                return;
+                return false; // no route to the new target — nothing changed
             }
 
             const updated = issueMoveOrder(fleet, payload.destinationId, 'hyperlane', world.movement);
@@ -484,8 +506,8 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             const planet = world.construction.planets.get(payload.planetId);
             const fleet = world.movement.fleets.get(payload.fleetId);
             
-            if (!planet || !fleet || fleet.factionId !== factionId) return;
-            if (planet.ownerId === factionId) return; // Already owner
+            if (!planet || !fleet || fleet.factionId !== factionId) return false;
+            if (planet.ownerId === factionId) return false; // Already owner
 
             // Phase 16: Initialize or Reinforce Ground Siege
             if (!planet.siege) {
@@ -551,40 +573,44 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 planet.siege.attackerState.unitComposition.INFANTRY += fleet.basePower * 5;
                 planet.siege.attackerState.totalLandedTroops += fleet.basePower * 5;
                 console.log(`[Tick Worker] SIEGE REINFORCED on ${planet.name} by ${factionId}`);
+            } else {
+                // Another faction's siege is in progress — order does nothing.
+                return false;
             }
             break;
         }
 
         case 'MIL_SET_GROUND_TACTIC': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (planet && planet.siege) {
-                if (planet.siege.attackerEmpireId === factionId) {
-                    planet.siege.attackerState.activeAttackerTactic = payload.tacticId as TacticalStanceId;
-                } else if (planet.siege.defenderEmpireId === factionId) {
-                    planet.siege.defenderState.activeDefenderTactic = payload.tacticId as TacticalStanceId;
-                }
+            if (!planet || !planet.siege) return false;
+            if (planet.siege.attackerEmpireId === factionId) {
+                planet.siege.attackerState.activeAttackerTactic = payload.tacticId as TacticalStanceId;
+            } else if (planet.siege.defenderEmpireId === factionId) {
+                planet.siege.defenderState.activeDefenderTactic = payload.tacticId as TacticalStanceId;
+            } else {
+                return false; // not a participant in this siege
             }
             break;
         }
 
         case 'MIL_SET_GROUND_PREDICTION': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (planet && planet.siege) {
-                if (planet.siege.attackerEmpireId === factionId) {
-                    planet.siege.attackerState.attackerPrediction = payload.tacticId as TacticalStanceId;
-                } else if (planet.siege.defenderEmpireId === factionId) {
-                    planet.siege.defenderState.defenderPrediction = payload.tacticId as TacticalStanceId;
-                }
+            if (!planet || !planet.siege) return false;
+            if (planet.siege.attackerEmpireId === factionId) {
+                planet.siege.attackerState.attackerPrediction = payload.tacticId as TacticalStanceId;
+            } else if (planet.siege.defenderEmpireId === factionId) {
+                planet.siege.defenderState.defenderPrediction = payload.tacticId as TacticalStanceId;
+            } else {
+                return false; // not a participant in this siege
             }
             break;
         }
 
         case 'MIL_LEAVE_SIEGE': {
              const planet = world.construction.planets.get(payload.planetId);
-             if (planet && planet.siege && planet.siege.attackerEmpireId === factionId) {
-                 console.log(`[Tick Worker] Siege of ${planet.name} ABANDONED by ${factionId}`);
-                 planet.siege = null;
-             }
+             if (!planet || !planet.siege || planet.siege.attackerEmpireId !== factionId) return false;
+             console.log(`[Tick Worker] Siege of ${planet.name} ABANDONED by ${factionId}`);
+             planet.siege = null;
              break;
         }
 
@@ -592,10 +618,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // Merged handler (there used to be a second, unreachable duplicate case
             // below). Works with or without an active siege.
             const planet = world.construction.planets.get(payload.targetId || payload.planetId);
-            if (!planet) return;
+            if (!planet) return false;
             if (planet.ownerId === factionId) {
                 console.warn(`[Security] ${factionId} tried to bombard their own planet ${planet.name}`);
-                return;
+                return false;
             }
             // General orbital bombardment: batter stability, stoke unrest.
             planet.stability = Math.max(0, (planet.stability || 60) - 10);
@@ -624,19 +650,19 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // (embark → move fleet → disembark).
             const army = world.movement.armies?.get(payload.armyId);
             const target = world.construction.planets.get(payload.targetPlanetId);
-            if (!army || !target) return;
+            if (!army || !target) return false;
             if (army.factionId !== factionId) {
                 console.error(`[Security] Unauthorized MOVE_ARMY from ${factionId} on army ${payload.armyId} (Owner: ${army.factionId})`);
-                return;
+                return false;
             }
             if (army.transportFleetId) {
                 console.warn(`[Order] Army ${payload.armyId} is embarked on a fleet — disembark it first.`);
-                return;
+                return false;
             }
             const currentPlanet = army.currentPlanetId ? world.construction.planets.get(army.currentPlanetId) : null;
             if (currentPlanet && currentPlanet.systemId !== target.systemId) {
                 console.warn(`[Order] Army ${payload.armyId} cannot cross systems on foot — embark it on a fleet.`);
-                return;
+                return false;
             }
             army.currentPlanetId = payload.targetPlanetId;
             army.currentSystemId = target.systemId;
@@ -648,39 +674,37 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // payload: { armyId, fleetId }
             const army = world.movement.armies.get(payload.armyId);
             const fleet = world.movement.fleets.get(payload.fleetId);
-            if (army && fleet && army.factionId === factionId && fleet.factionId === factionId) {
-                army.transportFleetId = fleet.id;
-                army.currentPlanetId = null;
-                if (!fleet.transportedArmyIds) fleet.transportedArmyIds = [];
-                if (!fleet.transportedArmyIds.includes(army.id)) {
-                    fleet.transportedArmyIds.push(army.id);
-                }
-                console.log(`[Order] Faction ${factionId} embarked army ${payload.armyId} onto fleet ${payload.fleetId}`);
+            if (!army || !fleet || army.factionId !== factionId || fleet.factionId !== factionId) return false;
+            army.transportFleetId = fleet.id;
+            army.currentPlanetId = null;
+            if (!fleet.transportedArmyIds) fleet.transportedArmyIds = [];
+            if (!fleet.transportedArmyIds.includes(army.id)) {
+                fleet.transportedArmyIds.push(army.id);
             }
+            console.log(`[Order] Faction ${factionId} embarked army ${payload.armyId} onto fleet ${payload.fleetId}`);
             break;
         }
 
         case 'MIL_DISEMBARK_ARMY': {
             // payload: { armyId, planetId }
             const army = world.movement.armies.get(payload.armyId);
-            if (army && army.factionId === factionId && army.transportFleetId) {
-                const fleet = world.movement.fleets.get(army.transportFleetId);
-                if (fleet) {
-                    fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
-                }
-                army.transportFleetId = null;
-                army.currentPlanetId = payload.planetId;
-                console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
+            if (!army || army.factionId !== factionId || !army.transportFleetId) return false;
+            const fleet = world.movement.fleets.get(army.transportFleetId);
+            if (fleet) {
+                fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
             }
+            army.transportFleetId = null;
+            army.currentPlanetId = payload.planetId;
+            console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
             break;
         }
         
         case 'PLANET_CONSTRUCT_BUILDING': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet) return;
+            if (!planet) return false;
             if (planet.ownerId !== factionId) {
                 console.error(`[Security] Unauthorized BUILD from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
-                return;
+                return false;
             }
             planet.buildQueue.push({
                 id: `build-${Date.now()}`,
@@ -710,16 +734,15 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'TECH_START_RESEARCH': {
             const techState = world.tech.get(factionId);
-            if (techState) {
-                try {
-                    const emptySlot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null);
-                    if (emptySlot) {
-                        const newState = TechEngine.assignResearch(techState, emptySlot.slotId, payload.techId, world.nowSeconds);
-                        world.tech.set(factionId, newState);
-                    }
-                } catch (e: any) {
-                    console.error(`[Tick Worker] Tech start failed:`, e.message);
-                }
+            if (!techState) return false;
+            try {
+                const emptySlot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null);
+                if (!emptySlot) return false;
+                const newState = TechEngine.assignResearch(techState, emptySlot.slotId, payload.techId, world.nowSeconds);
+                world.tech.set(factionId, newState);
+            } catch (e: any) {
+                console.error(`[Tick Worker] Tech start failed:`, e.message);
+                return false;
             }
             break;
         }
@@ -729,6 +752,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 applyPolicyEffect(factionId, payload.policyId, world);
             } catch (e: any) {
                 console.error(`[Tick Worker] Policy enact failed:`, e.message);
+                return false;
             }
             break;
         }
@@ -778,26 +802,32 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'DIP_OFFER_PEACE': {
              const rivalryId = `rivalry-${factionId}-${payload.targetFactionId}`;
              const rivalry = world.rivalries.get(rivalryId);
-             if (rivalry) {
-                  rivalry.rivalryScore = 50;
-                  rivalry.escalationLevel = calculateEscalationLevel(50);
-                  rivalry.detenteActive = true;
-             }
+             if (!rivalry) return false;
+             rivalry.rivalryScore = 50;
+             rivalry.escalationLevel = calculateEscalationLevel(50);
+             rivalry.detenteActive = true;
              break;
         }
 
         case 'LEADER_RECRUIT': {
+              // recruitLeader silently no-ops when the leader isn't in the pool
+              // (already recruited by someone else) — check before paying.
+              const inPool = world.leadership?.recruitmentPool?.some((l: any) => l.id === payload.leaderId);
+              if (!inPool) {
+                  console.warn(`[Order] LEADER_RECRUIT rejected: leader ${payload.leaderId} not in recruitment pool.`);
+                  return false;
+              }
               LeadershipService.recruitLeader(world, payload.leaderId, factionId);
               break;
         }
 
         case 'LEADER_ASSIGN': {
               const leader = world.leadership.leaders.get(payload.leaderId);
-              if (leader && leader.factionId === factionId) {
-                  LeadershipService.assignLeader(world, payload.leaderId, payload.assignmentId);
-              } else {
+              if (!leader || leader.factionId !== factionId) {
                   console.error(`[Security] Unauthorized LEADER_ASSIGN from ${factionId} on leader belonging to ${leader?.factionId}`);
+                  return false;
               }
+              LeadershipService.assignLeader(world, payload.leaderId, payload.assignmentId);
               break;
         }
 
@@ -829,16 +859,15 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'ESP_ASSIGN_AGENT': {
             const agent = world.espionage.agents.get(payload.agentId);
-            if (agent && agent.ownerFactionId === factionId) {
-                deployAgent(agent, payload.systemId, payload.domain, world);
-                console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
-            }
+            if (!agent || agent.ownerFactionId !== factionId) return false;
+            deployAgent(agent, payload.systemId, payload.domain, world);
+            console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
             break;
         }
 
         case 'PLANET_RECRUIT_UNITS': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet) return;
+            if (!planet) return false;
             
             // Military facility check (Simplified requirement for Phase 16).
             // Basic troops (INFANTRY, MILITIA) can always be raised — fresh
@@ -853,7 +882,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
             if (!hasMilitaryFacility && !BASIC_UNITS.includes(payload.unitType)) {
                 console.warn(`[Order] ${factionId} needs a barracks/foundry on ${payload.planetId} to recruit ${payload.unitType} — order skipped.`);
-                return;
+                return false;
             }
 
             const job = RecruitmentService.createJob(
@@ -898,40 +927,33 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'ESP_INCITE_UNREST': {
              const planet = world.construction.planets.get(payload.targetPlanetId);
-             if (planet) {
-                 planet.unrest = Math.min(100, (planet.unrest || 0) + 20);
-                 console.log(`[Order] Faction ${factionId} incited unrest on ${planet.name}`);
-             }
+             if (!planet) return false;
+             planet.unrest = Math.min(100, (planet.unrest || 0) + 20);
+             console.log(`[Order] Faction ${factionId} incited unrest on ${planet.name}`);
              break;
         }
 
         case 'PRESS_SUPPRESS_STORY': {
-            if (world.press) {
-                const pub = world.press.publishedStories.find((p: any) => p.storyId === payload.storyId);
-                if (pub) {
-                    pub.viralFactor = Math.max(0, pub.viralFactor - 0.5); // Suppress propagation speed
-                    console.log(`[Tick Worker] Suppressed Story ${payload.storyId} by ${factionId}`);
-                }
-            }
+            const pub = world.press?.publishedStories.find((p: any) => p.storyId === payload.storyId);
+            if (!pub) return false;
+            pub.viralFactor = Math.max(0, pub.viralFactor - 0.5); // Suppress propagation speed
+            console.log(`[Tick Worker] Suppressed Story ${payload.storyId} by ${factionId}`);
             break;
         }
 
         case 'PRESS_INFLUENCE_NARRATIVE': {
-            if (world.press) {
-                const pub = world.press.publishedStories.find((p: any) => p.storyId === payload.storyId);
-                if (pub) {
-                    pub.viralFactor = Math.min(2.0, pub.viralFactor + 0.5); // Accelerate propagation
-                    console.log(`[Tick Worker] Influenced Narrative ${payload.storyId} by ${factionId}`);
-                }
-            }
+            const pub = world.press?.publishedStories.find((p: any) => p.storyId === payload.storyId);
+            if (!pub) return false;
+            pub.viralFactor = Math.min(2.0, pub.viralFactor + 0.5); // Accelerate propagation
+            console.log(`[Tick Worker] Influenced Narrative ${payload.storyId} by ${factionId}`);
             break;
         }
 
         case 'MIL_BUILD_FLEET': {
             // payload: { planetId, systemId }
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet || planet.ownerId !== factionId) return;
-            
+            if (!planet || planet.ownerId !== factionId) return false;
+
             const fleetId = `fleet-${factionId}-${Date.now()}`;
             const newFleet = {
                 id: fleetId,
@@ -975,7 +997,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'MIL_CREATE_ARMY': {
             const planet = world.construction.planets.get(payload.planetId);
-            if (!planet || planet.ownerId !== factionId) return;
+            if (!planet || planet.ownerId !== factionId) return false;
 
             const armyId = `army-${factionId}-${Date.now()}`;
             if (!world.movement.armies) world.movement.armies = new Map();
@@ -1027,7 +1049,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // payload: { attackerFleetId, defenderFleetId }
             const attacker = world.movement.fleets.get(payload.attackerFleetId);
             const defender = world.movement.fleets.get(payload.defenderFleetId);
-            if (!attacker || !defender || attacker.factionId !== factionId) return;
+            if (!attacker || !defender || attacker.factionId !== factionId) return false;
 
             // Attacking a fleet IS an act of war. Setting the rivalry to war level
             // makes the combat-manager start (and keep advancing) the engagement
@@ -1060,18 +1082,18 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // payload: { sourceFleetId, targetFleetId } — source is absorbed into target.
             const src = world.movement.fleets.get(payload.sourceFleetId);
             const tgt = world.movement.fleets.get(payload.targetFleetId);
-            if (!src || !tgt || src.id === tgt.id) return;
+            if (!src || !tgt || src.id === tgt.id) return false;
             if (src.factionId !== factionId || tgt.factionId !== factionId) {
                 console.error(`[Security] ${factionId} tried to merge fleets they don't own.`);
-                return;
+                return false;
             }
             if (!src.currentSystemId || src.currentSystemId !== tgt.currentSystemId) {
                 console.warn(`[Order] MERGE rejected: fleets must be holding in the same system.`);
-                return;
+                return false;
             }
             if (src.destinationSystemId || tgt.destinationSystemId) {
                 console.warn(`[Order] MERGE rejected: fleets in transit cannot merge.`);
-                return;
+                return false;
             }
 
             // Combine ship compositions
@@ -1112,14 +1134,14 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // Detaches ships into a NEW fleet in the same system. With no
             // composition (or a shipless fleet), splits base power 50/50.
             const src = world.movement.fleets.get(payload.fleetId);
-            if (!src) return;
+            if (!src) return false;
             if (src.factionId !== factionId) {
                 console.error(`[Security] ${factionId} tried to split a fleet they don't own.`);
-                return;
+                return false;
             }
             if (!src.currentSystemId || src.destinationSystemId) {
                 console.warn(`[Order] SPLIT rejected: fleet must be holding in a system.`);
-                return;
+                return false;
             }
 
             if (!src.composition) src.composition = {};
@@ -1134,7 +1156,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             }
             if (movedCount > 0 && movedCount >= totalShips) {
                 console.warn(`[Order] SPLIT rejected: cannot detach ALL ships — merge or rename instead.`);
-                return;
+                return false;
             }
 
             const srcPower = src.basePower ?? 100;
@@ -1175,10 +1197,10 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // Disengage: break off the battle and send this faction's fleets in
             // the contested system home to lick their wounds.
             const combat = world.activeCombats.get(payload.combatId);
-            if (!combat) return;
+            if (!combat) return false;
             if (combat.attacker.factionId !== factionId && combat.defender.factionId !== factionId) {
                 console.error(`[Security] ${factionId} tried to retreat from a battle they're not in.`);
-                return;
+                return false;
             }
             const battleSystemId = combat.location?.systemId;
             const homeSystemId = world.economy.factions.get(factionId)?.capitalSystemId;
@@ -1197,22 +1219,25 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'MIL_COMBAT_STANCE': {
             const combat = world.activeCombats.get(payload.combatId);
-            if (!combat) return;
+            if (!combat) return false;
             if (combat.attacker.factionId === factionId) {
                 combat.attacker.selectedStance = payload.stance;
                 combat.attacker.selectedPrediction = payload.prediction;
             } else if (combat.defender.factionId === factionId) {
                 combat.defender.selectedStance = payload.stance;
                 combat.defender.selectedPrediction = payload.prediction;
+            } else {
+                return false; // not a participant in this battle
             }
             break;
         }
 
         case 'MIL_COMBAT_DIRECTIVE': {
             const combat = world.activeCombats.get(payload.combatId);
-            if (!combat) return;
+            if (!combat) return false;
             if (combat.attacker.factionId === factionId) combat.attacker.selectedStance = payload.stance;
             else if (combat.defender.factionId === factionId) combat.defender.selectedStance = payload.stance;
+            else return false; // not a participant in this battle
             break;
         }
 
@@ -1301,17 +1326,17 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                  console.log(`[Order] Faction ${factionId} established Trade Route to ${payload.targetFactionId}`);
              } catch (e: any) {
                  console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
+                 return false;
              }
              break;
         }
 
         case 'MIL_ESTABLISH_GARRISON': {
              const planet = world.construction.planets.get(payload.targetId);
-             if (planet && planet.ownerId === factionId) {
-                 planet.stability = Math.min(100, (planet.stability || 60) + 15);
-                 planet.unrest = Math.max(0, (planet.unrest || 0) - 10);
-                 console.log(`[Order] Faction ${factionId} established Garrison on ${planet.name}`);
-             }
+             if (!planet || planet.ownerId !== factionId) return false;
+             planet.stability = Math.min(100, (planet.stability || 60) + 15);
+             planet.unrest = Math.max(0, (planet.unrest || 0) - 10);
+             console.log(`[Order] Faction ${factionId} established Garrison on ${planet.name}`);
              break;
         }
 
@@ -1361,13 +1386,13 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
 
         case 'PLANET_CLAIM': {
              const planet = world.construction.planets.get(payload.planetId);
-             if (!planet) return;
+             if (!planet) return false;
              // Only unowned/neutral planets can be claimed outright — owned worlds
              // must be taken by invasion. (Previously any faction could steal any
              // planet with a single order.)
              if (planet.ownerId && planet.ownerId !== 'faction-neutral' && planet.ownerId !== '') {
                  console.warn(`[Security] ${factionId} tried to claim ${planet.name}, already owned by ${planet.ownerId}`);
-                 return;
+                 return false;
              }
              planet.ownerId = factionId;
              console.log(`[Order] Faction ${factionId} claimed planet ${planet.name}`);
@@ -1392,6 +1417,7 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
                 console.log(`[Tick Worker] Established Trade Route from ${payload.startSystemId} to ${payload.endSystemId}`);
             } catch (e: any) {
                 console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
+                return false;
             }
             break;
         }
@@ -1399,50 +1425,45 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
         case 'AIR_LAUNCH_SORTIE': {
             const { parentBaseId, targetId, missionType, numInterceptors, numBombers } = payload;
             const parent = world.movement.fleets.get(parentBaseId); // To support planets we'd check economy.planets
-            if (parent && parent.factionId === factionId) {
-                // Validate they have enough planes
-                const comp = parent.composition || {};
-                const availableInts = comp['interceptor'] || 0;
-                const availableBombers = comp['bomber'] || 0;
+            if (!parent || parent.factionId !== factionId) return false;
 
-                if (availableInts >= numInterceptors && availableBombers >= numBombers) {
-                    // Deduct
-                    if (numInterceptors > 0) comp['interceptor'] = availableInts - numInterceptors;
-                    if (numBombers > 0) comp['bomber'] = availableBombers - numBombers;
+            // Validate they have enough planes
+            const comp = parent.composition || {};
+            const availableInts = comp['interceptor'] || 0;
+            const availableBombers = comp['bomber'] || 0;
+            if (availableInts < numInterceptors || availableBombers < numBombers) return false;
 
-                    // Spawn sortie
-                    const sortieId = `sortie-${Date.now()}`;
-                    world.movement.sorties.set(sortieId, {
-                        id: sortieId,
-                        factionId,
-                        parentBaseId,
-                        missionType,
-                        composition: { interceptor: numInterceptors, bomber: numBombers },
-                        originSystemId: parent.destinationSystemId || '', 
-                        targetId,
-                        status: 'outbound',
-                        maxRadius: payload.maxRadius || 2, // Default 2 jump limit
-                        currentSystemId: parent.destinationSystemId || '',
-                        launchedAt: world.nowSeconds
-                    });
-                    console.log(`[Tick Worker] Launched Air Sortie ${sortieId} from ${parentBaseId} to execute ${missionType}`);
-                }
-            }
+            // Deduct
+            if (numInterceptors > 0) comp['interceptor'] = availableInts - numInterceptors;
+            if (numBombers > 0) comp['bomber'] = availableBombers - numBombers;
+
+            // Spawn sortie
+            const sortieId = `sortie-${Date.now()}`;
+            world.movement.sorties.set(sortieId, {
+                id: sortieId,
+                factionId,
+                parentBaseId,
+                missionType,
+                composition: { interceptor: numInterceptors, bomber: numBombers },
+                originSystemId: parent.destinationSystemId || '',
+                targetId,
+                status: 'outbound',
+                maxRadius: payload.maxRadius || 2, // Default 2 jump limit
+                currentSystemId: parent.destinationSystemId || '',
+                launchedAt: world.nowSeconds
+            });
+            console.log(`[Tick Worker] Launched Air Sortie ${sortieId} from ${parentBaseId} to execute ${missionType}`);
             break;
         }
 
         case 'INFRA_UPGRADE': {
             // payload: { planetId, serviceId }
             const planet = world.economy.planets.get(payload.planetId);
-            if (planet && planet.factionId === factionId) {
-                if (planet.services) {
-                    const svc = planet.services[payload.serviceId];
-                    if (svc) {
-                        svc.level += 1;
-                        console.log(`[Tick Worker] Upgraded ${svc.serviceId} on planet ${payload.planetId} to level ${svc.level}.`);
-                    }
-                }
-            }
+            if (!planet || planet.factionId !== factionId) return false;
+            const svc = planet.services?.[payload.serviceId];
+            if (!svc) return false;
+            svc.level += 1;
+            console.log(`[Tick Worker] Upgraded ${svc.serviceId} on planet ${payload.planetId} to level ${svc.level}.`);
             break;
         }
 
@@ -1459,22 +1480,21 @@ function executeOrder(world: any, actionId: string, payload: any, factionId: str
             // copies, and renaming only one made the new name show in some panels
             // but not on the map.
             const econPlanet = world.economy.planets.get(payload.planetId);
-            if (econPlanet && econPlanet.factionId === factionId) {
-                econPlanet.name = payload.newName;
-            }
+            const econOwned = !!econPlanet && econPlanet.factionId === factionId;
+            if (econOwned) econPlanet.name = payload.newName;
             const conPlanet = world.construction.planets.get(payload.planetId);
-            if (conPlanet && conPlanet.ownerId === factionId) {
-                conPlanet.name = payload.newName;
-            }
-            if (econPlanet || conPlanet) {
-                console.log(`[Tick Worker] Faction ${factionId} renamed planet ${payload.planetId} to ${payload.newName}`);
-            }
+            const conOwned = !!conPlanet && conPlanet.ownerId === factionId;
+            if (conOwned) conPlanet.name = payload.newName;
+            if (!econOwned && !conOwned) return false;
+            console.log(`[Tick Worker] Faction ${factionId} renamed planet ${payload.planetId} to ${payload.newName}`);
             break;
         }
 
         default:
             console.warn(`[Tick Worker] No worker-side handler for action: ${actionId}`);
+            return false;
     }
+    return true;
 }
 
 /**
