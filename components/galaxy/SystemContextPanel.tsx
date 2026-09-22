@@ -796,7 +796,7 @@ function SystemForcesPanel({
 }
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export default function SystemContextPanel() {
+function SystemContextPanel() {
     const {
         selectedSystemId,
         systems,
@@ -1548,3 +1548,9 @@ export default function SystemContextPanel() {
         </div>
     );
 }
+
+// Memoized: GalaxyShell re-renders on every mousemove of a map drag (pan
+// drives the SVG viewBox and the frustum cull), and this panel takes no
+// props, so without memo it re-rendered with it ~70 times per short drag
+// for nothing. It still updates normally from its own store subscriptions.
+export default React.memo(SystemContextPanel);

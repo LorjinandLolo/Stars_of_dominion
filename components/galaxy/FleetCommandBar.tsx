@@ -26,7 +26,7 @@ function TransitEta({ etaSeconds, receivedAt }: {
     return <>{formatFleetEta(etaSeconds, receivedAt === null ? 0 : nowMs - receivedAt) ?? '—'}</>;
 }
 
-export default function FleetCommandBar() {
+function FleetCommandBar() {
     const fleets = useUIStore(s => s.fleets);
     const systems = useUIStore(s => s.systems);
     const planets = useUIStore(s => s.planets);
@@ -412,3 +412,9 @@ export default function FleetCommandBar() {
         </div>
     );
 }
+
+// Memoized: GalaxyShell re-renders on every mousemove of a map drag (pan
+// drives the SVG viewBox and the frustum cull), and this panel takes no
+// props, so without memo it re-rendered with it ~70 times per short drag
+// for nothing. It still updates normally from its own store subscriptions.
+export default React.memo(FleetCommandBar);

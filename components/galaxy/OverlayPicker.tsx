@@ -95,7 +95,7 @@ interface OverlayPickerProps {
     result: OverlayResult | null;
 }
 
-export default function OverlayPicker({ result }: OverlayPickerProps) {
+function OverlayPicker({ result }: OverlayPickerProps) {
     const activeOverlay = useUIStore(s => s.activeOverlay);
     const setActiveOverlay = useUIStore(s => s.setActiveOverlay);
     const activeTab = useUIStore(s => s.activeTab);
@@ -348,3 +348,9 @@ export default function OverlayPicker({ result }: OverlayPickerProps) {
         </div>
     );
 }
+
+// Memoized: GalaxyShell re-renders on every mousemove of a map drag (pan
+// drives the SVG viewBox and the frustum cull), and this panel takes no
+// props, so without memo it re-rendered with it ~70 times per short drag
+// for nothing. It still updates normally from its own store subscriptions.
+export default React.memo(OverlayPicker);
