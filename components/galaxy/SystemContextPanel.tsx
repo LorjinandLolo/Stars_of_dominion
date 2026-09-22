@@ -860,8 +860,10 @@ function SystemContextPanel() {
     const statusColor = (v: number) =>
         v < 33 ? '#22c55e' : v < 66 ? '#f59e0b' : '#ef4444';
 
+    // Percentages (+40 = +40%), so "no effect" is 0 — it was compared against
+    // 1.0, which meant a tag worth exactly +1% vanished and every 0 showed up.
     const modifiers = calculateBiosphereModifiers(system.tags);
-    const hasActiveModifiers = Object.values(modifiers).some(m => m !== 1.0 && m !== undefined);
+    const hasActiveModifiers = Object.values(modifiers).some(m => m !== undefined && m !== 0);
 
     // Game rule: an empty fleet (no ships, no Admiral) cannot move — hide the
     // JUMP TO SYSTEM affordance and point the player at recruitment instead.
@@ -1318,8 +1320,8 @@ function SystemContextPanel() {
                                     <div className="grid grid-cols-2 gap-2">
                                         {(['metals', 'chemicals', 'energy', 'food', 'rare'] as ResourceId[]).map(res => {
                                             const mod = modifiers[res];
-                                            if (mod === undefined || mod === 1.0) return null;
-                                            const isPositive = mod > 1.0;
+                                            if (mod === undefined || mod === 0) return null;
+                                            const isPositive = mod > 0;
                                             return (
                                                 <div key={res} className="flex justify-between items-center text-[10px] bg-slate-800/50 px-2 py-1.5 rounded border border-slate-700/50">
                                                     <span className="text-slate-400 capitalize">{res.replace('_', ' ')}</span>

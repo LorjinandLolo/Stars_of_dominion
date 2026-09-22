@@ -3,13 +3,17 @@ import { ResourceBundle } from './economy-types';
 
 /**
  * Maps narrative SWN World Tags to gameplay economic base rate modifiers.
- * These act as fixed flat bonuses/penalties to a planet's static resource output.
- * 
+ *
+ * Values are PERCENTAGES: +40 means +40% of that resource's base rate, applied
+ * multiplicatively in planetBaseRates and shown as "+40%" in SystemContextPanel.
+ * They are NOT flat per-second additions. Base rates are 0.05-0.8/sec (see
+ * economy.production.baseRates), so adding +40 flat to food made one tagged
+ * world out-produce an untagged one roughly 68 to 1.
+ *
  * Design philosophy:
  *   - Specialized worlds get strong boosts in their niche but suffer trade-offs elsewhere.
  *   - Tags represent environmental/societal realities — e.g. grasslands improve food,
  *     prison planets boost military but harm happiness (instability side-effects handled elsewhere).
- *   - Values are per-second flat additions to base rate bundles.
  */
 export const BIOSPHERE_TRAIT_MODIFIERS: Record<string, ResourceBundle> = {
 
@@ -99,6 +103,15 @@ export const BIOSPHERE_TRAIT_MODIFIERS: Record<string, ResourceBundle> = {
     'contested':            { military: +25, credits: -10, luxury: -15 },
     'dead-world':           { metals: +20, rare: +20, food: -30 },
     'research-station':     { research: +30, food: -10 },
+
+    // ── Seeded planet roles ───────────────────────────────────────────────────
+    // Written onto the starting kit by initialization-service. Modest on
+    // purpose: every faction starts with them, so they set the baseline
+    // rather than reward anything.
+    'homeworld':            { food: +20, energy: +20, metals: +10, credits: +25 },
+    'settled_core':         { food: +10, cultural: +10 },
+    'established_colony':   { food: +10, metals: +10 },
+    'sector_capital':       { credits: +20, cultural: +10 },
 };
 
 /**
