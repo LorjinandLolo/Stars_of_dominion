@@ -391,15 +391,28 @@ export function useGameSync() {
             ? allCrises.filter((c: any) => c.factionId === playerFactionId)
             : [];
         // Phase 6.5: breakaway states are public facts — a new flag on the map.
-        const breakaways = allCrises
-            .filter((c: any) => c.rebelFactionId && (world as any).economy?.factions?.has?.(c.rebelFactionId))
+        // A rebel faction is named after the REGION it seceded in, so a second
+        // revolt in the same region reuses the same faction id. Keyed by crisis,
+        // that listed one breakaway state twice (duplicate React keys, and the
+        // row rendered twice). One row per state, showing its latest revolt.
+        const latestByRebel = new Map<string, any>();
+        for (const c of allCrises) {
+            if (!c.rebelFactionId || !(world as any).economy?.factions?.has?.(c.rebelFactionId)) continue;
+            const prev = latestByRebel.get(c.rebelFactionId);
+            if (!prev || (c.openedAtSeconds ?? 0) >= (prev.openedAtSeconds ?? 0)) latestByRebel.set(c.rebelFactionId, c);
+        }
+        // Ours to reconquer if ANY of its revolts was against us, not just the last.
+        const ourRebelIds = new Set(
+            allCrises.filter((c: any) => c.rebelFactionId && c.factionId === playerFactionId)
+                .map((c: any) => c.rebelFactionId));
+        const breakaways = [...latestByRebel.values()]
             .map((c: any) => {
                 const rebelGov = (world as any).government?.get?.(c.rebelFactionId);
                 return {
                     factionId: c.rebelFactionId,
                     name: (world as any).economy.factions.get(c.rebelFactionId)?.name ?? c.rebelFactionId,
                     parentFactionId: c.factionId,
-                    isOurRebel: c.factionId === playerFactionId,
+                    isOurRebel: ourRebelIds.has(c.rebelFactionId),
                     worlds: [...((world as any).construction?.planets?.values?.() ?? [])]
                         .filter((p: any) => p.ownerId === c.rebelFactionId).length,
                     legitimacy: rebelGov?.legitimacy ?? 0,
