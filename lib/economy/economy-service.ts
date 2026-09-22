@@ -67,11 +67,13 @@ function planetBaseRates(planet: PlanetProduction): ResourceBundle {
         result[key] = v * mult;
     }
 
-    // 2. Add flat narrative Biosphere modifiers computed from SWN world tags
-    const biosphereBonus = calculateBiosphereModifiers(planet.tags || []);
-    for (const [k, v] of Object.entries(biosphereBonus)) {
+    // 2. Apply narrative Biosphere modifiers computed from SWN world tags.
+    //    Table values are percentages (+40 = +40%), not flat per-second adds —
+    //    base rates are 0.05–0.8/sec, so flat adds would dwarf them.
+    const biospherePercent = calculateBiosphereModifiers(planet.tags || []);
+    for (const [k, v] of Object.entries(biospherePercent)) {
         const key = k as keyof ResourceBundle;
-        result[key] = Math.max(0, (result[key] ?? 0) + (v ?? 0)); // Prevent negative gross total production
+        result[key] = Math.max(0, (result[key] ?? 0) * (1 + (v ?? 0) / 100)); // Prevent negative gross total production
     }
 
     return result;

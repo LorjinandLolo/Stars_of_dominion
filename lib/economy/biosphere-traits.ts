@@ -3,13 +3,16 @@ import { ResourceBundle } from './economy-types';
 
 /**
  * Maps narrative SWN World Tags to gameplay economic base rate modifiers.
- * These act as fixed flat bonuses/penalties to a planet's static resource output.
- * 
+ * Values are PERCENTAGES: +40 means +40% to that resource's base production
+ * rate (applied multiplicatively in planetBaseRates, displayed as "+40%" in
+ * SystemContextPanel). They are NOT flat per-second additions — base rates are
+ * on the order of 0.05–0.8/sec, so flat adds at this scale would inflate
+ * production ~50x.
+ *
  * Design philosophy:
  *   - Specialized worlds get strong boosts in their niche but suffer trade-offs elsewhere.
  *   - Tags represent environmental/societal realities — e.g. grasslands improve food,
  *     prison planets boost military but harm happiness (instability side-effects handled elsewhere).
- *   - Values are per-second flat additions to base rate bundles.
  */
 export const BIOSPHERE_TRAIT_MODIFIERS: Record<string, ResourceBundle> = {
 
