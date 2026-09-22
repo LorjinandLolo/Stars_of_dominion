@@ -365,6 +365,22 @@ export default function GalaxyShell() {
 
     const viewBoxObj = useMemo(() => viewBoxFor(pan, zoom), [viewBoxFor, pan, zoom]);
 
+    /**
+     * SVG units per screen pixel, as the map is actually drawn right now.
+     * The drag used to assume a flat `2 / zoom`, which is not a conversion at
+     * all: the viewBox is ~5300 units wide in an element ~820px wide, so the
+     * map crawled at about a third of the cursor.
+     * preserveAspectRatio is "meet", so the scale is uniform and set by
+     * whichever axis has to fit.
+     */
+    const unitsPerPixel = useCallback(() => {
+        const el = svgRef.current;
+        const vb = viewBoxFor(panRef.current, zoom);
+        const rect = el?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return 2 / zoom;
+        return Math.max(vb.w / rect.width, vb.h / rect.height);
+    }, [viewBoxFor, zoom]);
+
     /** Point the camera without re-rendering: the viewBox and the parallax layer. */
     const paintCamera = useCallback(() => {
         const vb = viewBoxFor(panRef.current, zoom);
@@ -461,8 +477,9 @@ export default function GalaxyShell() {
     };
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!dragging) return;
-        const dx = (e.clientX - lastMouse.current.x) * (2 / zoom);
-        const dy = (e.clientY - lastMouse.current.y) * (2 / zoom);
+        const scale = unitsPerPixel();
+        const dx = (e.clientX - lastMouse.current.x) * scale;
+        const dy = (e.clientY - lastMouse.current.y) * scale;
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) hasMoved.current = true;
         panRef.current = { x: panRef.current.x - dx, y: panRef.current.y - dy };
         lastMouse.current = { x: e.clientX, y: e.clientY };
