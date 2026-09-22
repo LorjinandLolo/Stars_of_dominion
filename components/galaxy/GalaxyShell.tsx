@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { usePageVisible, useVisibleInterval } from '@/hooks/usePageVisible';
 import { categoryForTab } from '@/components/shell/dockConfig';
@@ -28,6 +28,19 @@ import {
 
 const HEX_SIZE = 18;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
+
+/**
+ * How far beyond the viewport the map still draws. Dragging moves the camera
+ * without re-rendering (see panRef below), so this doubles as the slack that
+ * keeps content on screen while the cull is out of date.
+ */
+const CULL_BUFFER = HEX_WIDTH * 6;
+/**
+ * Camera drift that forces a re-cull mid-drag. Must stay well under
+ * CULL_BUFFER, or a long drag would reach the edge of what is drawn and
+ * systems would pop in late.
+ */
+const PAN_COMMIT_THRESHOLD = HEX_WIDTH * 4;
 const HEX_HEIGHT = 2 * HEX_SIZE;
 
 /** Convert axial hex coords to pixel center (pointy-top) */
@@ -304,11 +317,25 @@ export default function GalaxyShell() {
     const svgMaxX = hexToPixel(maxQ + pad, maxR + pad).x;
     const svgMaxY = hexToPixel(maxQ + pad, maxR + pad).y;
 
+    // `pan` is the camera the map was last RENDERED at; `panRef` is where the
+    // camera actually is. A drag moves the ref every mousemove and repaints by
+    // setting the viewBox directly, so React is not involved per frame. State
+    // catches up once the drift reaches PAN_COMMIT_THRESHOLD (so the cull stays
+    // honest) and again on mouseup.
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [dragging, setDragging] = useState(false);
     const hasMoved = useRef(false);
     const lastMouse = useRef({ x: 0, y: 0 });
+    const panRef = useRef({ x: 0, y: 0 });
+    /**
+     * The camera the last setPan was issued for. A ref, because `pan` state is
+     * stale inside the drag handler until React commits — measuring drift
+     * against it made every move past the threshold commit again.
+     */
+    const committedPanRef = useRef({ x: 0, y: 0 });
+    const svgRef = useRef<SVGSVGElement | null>(null);
+    const parallaxRef = useRef<HTMLDivElement | null>(null);
 
     const focusTarget = useUIStore(s => s.focusTarget);
     const setFocusTarget = useUIStore(s => s.setFocusTarget);
@@ -316,29 +343,48 @@ export default function GalaxyShell() {
     useEffect(() => {
         if (focusTarget) {
             const px = hexToPixel(focusTarget.x, focusTarget.y);
-            setPan({ 
-                x: px.x - (svgMinX + (svgMaxX - svgMinX) / 2), 
-                y: px.y - (svgMinY + (svgMaxY - svgMinY) / 2) 
-            });
+            const next = {
+                x: px.x - (svgMinX + (svgMaxX - svgMinX) / 2),
+                y: px.y - (svgMinY + (svgMaxY - svgMinY) / 2),
+            };
+            panRef.current = next;
+            committedPanRef.current = next;
+            setPan(next);
             if (focusTarget.zoom) setZoom(focusTarget.zoom);
             setFocusTarget(null);
         }
     }, [focusTarget, setFocusTarget, svgMinX, svgMaxX, svgMinY, svgMaxY]);
 
-    const viewBoxObj = useMemo(() => {
-        const w = (svgMaxX - svgMinX) / zoom;
-        const h = (svgMaxY - svgMinY) / zoom;
-        const cx = svgMinX + (svgMaxX - svgMinX) / 2 + pan.x;
-        const cy = svgMinY + (svgMaxY - svgMinY) / 2 + pan.y;
+    const viewBoxFor = useCallback((camera: { x: number; y: number }, z: number) => {
+        const w = (svgMaxX - svgMinX) / z;
+        const h = (svgMaxY - svgMinY) / z;
+        const cx = svgMinX + (svgMaxX - svgMinX) / 2 + camera.x;
+        const cy = svgMinY + (svgMaxY - svgMinY) / 2 + camera.y;
         return { x: cx - w / 2, y: cy - h / 2, w, h };
-    }, [pan, zoom, svgMinX, svgMaxX, svgMinY, svgMaxY]);
+    }, [svgMinX, svgMaxX, svgMinY, svgMaxY]);
+
+    const viewBoxObj = useMemo(() => viewBoxFor(pan, zoom), [viewBoxFor, pan, zoom]);
+
+    /** Point the camera without re-rendering: the viewBox and the parallax layer. */
+    const paintCamera = useCallback(() => {
+        const vb = viewBoxFor(panRef.current, zoom);
+        svgRef.current?.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
+        if (parallaxRef.current) {
+            parallaxRef.current.style.transform =
+                "translate3d(" + (-panRef.current.x * 0.03) + "px, " + (-panRef.current.y * 0.03) + "px, 0)";
+        }
+    }, [viewBoxFor, zoom]);
+
+    // A render mid-drag (a sync landing, say) writes the RENDERED camera back
+    // into the DOM. Put the live one back, or the map jumps under the cursor.
+    useLayoutEffect(() => { if (dragging) paintCamera(); });
 
     const dynamicVb = `${viewBoxObj.x} ${viewBoxObj.y} ${viewBoxObj.w} ${viewBoxObj.h}`;
 
     // ─── FRUSTUM CULLING ──────────────────────────────────────────────────────
     const visibleSystems = useMemo(() => {
         const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-        const buffer = HEX_WIDTH * 2;
+        const buffer = CULL_BUFFER;
         return systems.filter((sys: any) => {
             const px = hexToPixel(sys.q, sys.r);
             return (
@@ -418,8 +464,25 @@ export default function GalaxyShell() {
         const dx = (e.clientX - lastMouse.current.x) * (2 / zoom);
         const dy = (e.clientY - lastMouse.current.y) * (2 / zoom);
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) hasMoved.current = true;
-        setPan((p) => ({ x: p.x - dx, y: p.y - dy }));
+        panRef.current = { x: panRef.current.x - dx, y: panRef.current.y - dy };
         lastMouse.current = { x: e.clientX, y: e.clientY };
+        paintCamera();
+        // Re-cull once the camera has drifted far enough that the edge of what
+        // is drawn is coming into view.
+        if (Math.abs(panRef.current.x - committedPanRef.current.x) > PAN_COMMIT_THRESHOLD
+            || Math.abs(panRef.current.y - committedPanRef.current.y) > PAN_COMMIT_THRESHOLD) {
+            committedPanRef.current = { ...panRef.current };
+            setPan({ ...panRef.current });
+        }
+    };
+
+    /** End of a drag: render at wherever the camera actually ended up. */
+    const endDrag = () => {
+        setDragging(false);
+        if (panRef.current.x !== committedPanRef.current.x || panRef.current.y !== committedPanRef.current.y) {
+            committedPanRef.current = { ...panRef.current };
+            setPan({ ...panRef.current });
+        }
     };
 
     const playerFaction = factions[playerState.factionId || ''];
@@ -436,8 +499,8 @@ export default function GalaxyShell() {
             style={{ cursor: dragging ? 'grabbing' : targetingMode ? 'crosshair' : 'grab' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
-            onMouseUp={() => setDragging(false)}
-            onMouseLeave={() => setDragging(false)}
+            onMouseUp={endDrag}
+            onMouseLeave={endDrag}
             onWheel={handleWheel}
         >
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_#0f172a_0%,_#020617_80%)]" />
@@ -445,6 +508,7 @@ export default function GalaxyShell() {
             {/* Deep-space background: faint nebulae, star clouds and a distant starfield.
                 Translated slightly against the camera pan for a parallax depth effect. */}
             <div
+                ref={parallaxRef}
                 className="absolute inset-0 pointer-events-none gx-parallax"
                 style={{ transform: `translate3d(${-pan.x * 0.03}px, ${-pan.y * 0.03}px, 0)` }}
             >
@@ -455,7 +519,7 @@ export default function GalaxyShell() {
 
             <SimulationTimer />
 
-            <svg viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
+            <svg ref={svgRef} viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
                 <defs>
                     <filter id="hex-glow" x="-20%" y="-20%" width="140%" height="140%">
                         <feGaussianBlur stdDeviation="2" result="blur" />
@@ -525,7 +589,7 @@ export default function GalaxyShell() {
                     inside one faction's territory flow brighter. */}
                 {lanes.map((ln: any) => {
                     const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-                    const buffer = HEX_WIDTH * 3;
+                    const buffer = CULL_BUFFER;
                     const aIn = ln.ax >= vx - buffer && ln.ax <= vx + vw + buffer && ln.ay >= vy - buffer && ln.ay <= vy + vh + buffer;
                     const bIn = ln.bx >= vx - buffer && ln.bx <= vx + vw + buffer && ln.by >= vy - buffer && ln.by <= vy + vh + buffer;
                     if (!aIn && !bIn) return null;
@@ -555,7 +619,7 @@ export default function GalaxyShell() {
                     if (!sys) return null;
                     const px = hexToPixel(sys.q, sys.r);
                     const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-                    const buffer = HEX_WIDTH * 2;
+                    const buffer = CULL_BUFFER;
                     const isVisible = (
                         px.x >= vx - buffer &&
                         px.x <= vx + vw + buffer &&
@@ -614,7 +678,7 @@ export default function GalaxyShell() {
                     if (!sys) return null;
                     const p = hexToPixel(sys.q, sys.r);
                     const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-                    const buffer = HEX_WIDTH * 2;
+                    const buffer = CULL_BUFFER;
                     if (!(p.x >= vx - buffer && p.x <= vx + vw + buffer && p.y >= vy - buffer && p.y <= vy + vh + buffer)) return null;
                     const color = factionColor(base.factionId);
                     const supply = typeof base.supply === 'number' ? base.supply : 1;
@@ -645,7 +709,7 @@ export default function GalaxyShell() {
                     };
                     const inView = (px: { x: number; y: number }) => {
                         const { x: vx, y: vy, w: vw, h: vh } = viewBoxObj;
-                        const buffer = HEX_WIDTH * 2;
+                        const buffer = CULL_BUFFER;
                         return px.x >= vx - buffer && px.x <= vx + vw + buffer &&
                                px.y >= vy - buffer && px.y <= vy + vh + buffer;
                     };
