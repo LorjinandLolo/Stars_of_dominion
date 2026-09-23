@@ -231,11 +231,22 @@ function runPiracy(world: GameWorldState, factionId: string, _delta: number, rep
     if (!piracy?.protectionContracts) return;
     const now = world.nowSeconds;
 
-    for (const contract of [...piracy.protectionContracts.values()]) {
+    const existing = [...piracy.protectionContracts.values()];
+    for (const contract of existing) {
         if (contract.payerKind !== 'faction' || contract.payerId !== factionId) continue;
         if (contract.breachedAtSeconds) continue;
         const endsIn = Number(contract.expiresAtSeconds ?? 0) - now;
         if (endsIn > RENEW_WINDOW_SECONDS || endsIn < 0) continue;
+
+        // Only once. The expiring contract stays in the map until it lapses, so
+        // without this the staff would sign a fresh contract with the same band
+        // every tick for the last six hours of the old one.
+        const alreadyRenewed = existing.some((other: any) =>
+            other !== contract
+            && other.payerId === factionId
+            && other.organizationId === contract.organizationId
+            && Number(other.expiresAtSeconds ?? 0) > Number(contract.expiresAtSeconds ?? 0));
+        if (alreadyRenewed) continue;
 
         const org = piracy.organizations?.get?.(contract.organizationId);
         if (!org) continue;
