@@ -26,6 +26,7 @@ import { getGovernment, spendPoliticalCapital } from './government-service';
 import { getGovernor } from './governor-service';
 import { getPlanetCohesion } from './cohesion-service';
 import { recordPoliticalEvent } from './ideology-drift';
+import { isDelegated } from '@/lib/delegation/delegation-service';
 import * as chronicle from '@/lib/narrative/chronicle';
 
 /** Cohesion at or below which a world will join a movement to leave. */
@@ -588,7 +589,13 @@ function escalate(world: GameWorldState, crisis: SecessionCrisis): void {
         : 'negotiations failed — the region governs itself in all but name';
 
     if (gov) {
-        gov.legitimacy = clamp100(gov.legitimacy - 12);
+        // The legitimacy hit is for a capital that said nothing. A delegated
+        // government conceded what a caretaker may concede (money, resources,
+        // the draft) and stopped there; the region still leaves, but the player
+        // is not deposed for being away (Item 2 of the casual-play spec).
+        if (!isDelegated(world as any, crisis.factionId, 'government')) {
+            gov.legitimacy = clamp100(gov.legitimacy - 12);
+        }
         gov.history.push({ timestamp: world.nowSeconds, event: `${crisis.name}: ${crisis.outcome}.` });
     }
 

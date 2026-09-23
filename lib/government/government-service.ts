@@ -15,6 +15,14 @@ import { seedFromString } from '@/lib/leadership/leader-generator';
 import { getGovernmentModifiers } from './modifiers';
 import { getHeadOfState } from './succession-service';
 import { emptyLegacyState } from './legacy-service';
+import { isDelegated } from '@/lib/delegation/delegation-service';
+
+/**
+ * How far a delegated government's legitimacy can fall. Above the coup-risk
+ * threshold (40) on purpose: the officer corps reads a legitimacy below 40 as
+ * an invitation, and an absent player must not be deposed for being absent.
+ */
+const DELEGATED_LEGITIMACY_FLOOR = 40;
 
 const MAX_HISTORY = 50;
 
@@ -181,7 +189,17 @@ export function tickGovernments(world: GameWorldState, deltaSeconds: number): vo
         // Legitimacy follows approval slowly and asymmetrically: a government
         // bleeds the right to rule faster than it earns it back.
         if (gov.approval < 30) {
-            gov.legitimacy = clamp100(gov.legitimacy - 4 * days);
+            // ...unless the institutions are being held together by staff the
+            // player delegated to. Legitimacy still falls, but it stops at a
+            // floor instead of reaching zero, because zero legitimacy is what
+            // feeds coup pressure and ends in a junta. An absent player's
+            // empire stalls; it does not get taken from them (Item 2 of the
+            // casual-play spec). The floor is not a gain: a delegated
+            // government above it still slides down to it.
+            const floor = isDelegated(world as any, gov.factionId, 'government')
+                ? DELEGATED_LEGITIMACY_FLOOR
+                : 0;
+            gov.legitimacy = clamp100(Math.max(floor, gov.legitimacy - 4 * days));
         } else if (gov.approval > 60) {
             gov.legitimacy = clamp100(gov.legitimacy + 1.5 * days);
         }

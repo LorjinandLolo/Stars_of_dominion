@@ -15,6 +15,7 @@
 
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { InfluenceBloc } from '@/lib/movement/types';
+import { isDelegated } from '@/lib/delegation/delegation-service';
 import {
     DEBATE_CATALOG,
     debateTitle,
@@ -225,20 +226,44 @@ export function tickDebates(world: GameWorldState): void {
             const spec = DEBATE_CATALOG[question.kind];
             if (!spec) { posture.openQuestions = open.filter(q => q !== question); continue; }
 
-            // AI: answer promptly and by consensus.
-            const isAi = !claimed.includes(factionId);
-            if (isAi && now >= question.openedAtSeconds + TICK_SECONDS) {
+            // AI empires answer promptly and by consensus — and so does a human
+            // empire whose government is delegated. Same branch on purpose:
+            // "my cabinet handled it" and "an AI handled it" are the same
+            // politics, and a second code path would drift from this one.
+            const answeredByStaff = !claimed.includes(factionId)
+                || isDelegated(world as any, factionId, 'government');
+            if (answeredByStaff && now >= question.openedAtSeconds + TICK_SECONDS) {
                 const forecasts = forecastResolutions(question, posture.blocs, {
                     warFatigue: (world as any).shared?.warFatigue ?? 0,
                     rivalryScore: 20,
                     publicTrust: safeTrust(world, factionId),
                 });
-                const best = forecasts.slice().sort((a, b) => b.total - a.total)[0];
-                if (best) { resolveDebate(world, factionId, question.id, best.resolutionId); continue; }
+                // Best answer the chamber can actually pay for. Ranking by
+                // support alone picked resolutions the treasury could not
+                // afford: resolveDebate refused them, nothing was logged, and
+                // the question sat there until the deadline punished it.
+                const capital = govOf(world, factionId)?.politicalCapital ?? 0;
+                const ranked = forecasts.slice().sort((a, b) => b.total - a.total);
+                const costOf = (resolutionId: string) =>
+                    spec.resolutions.find(r => r.id === resolutionId)?.politicalCapitalCost ?? 0;
+                const best = ranked.find(f => costOf(f.resolutionId) <= capital)
+                    ?? ranked.slice().sort((a, b) => costOf(a.resolutionId) - costOf(b.resolutionId))[0];
+                if (best && costOf(best.resolutionId) <= capital) {
+                    resolveDebate(world, factionId, question.id, best.resolutionId);
+                    continue;
+                }
             }
 
             // Deadline: the question dies in committee, and everyone noticed.
             if (now >= question.deadlineAtSeconds) {
+                // Unless the chamber was never waiting on an absent player: a
+                // delegated government answered, or tried to. Inaction is only
+                // punished when the player kept the lever (Item 2 of the
+                // casual-play spec). Close it quietly.
+                if (claimed.includes(factionId) && isDelegated(world as any, factionId, 'government')) {
+                    posture.openQuestions = (posture.openQuestions as PoliticalQuestion[]).filter(q => q.id !== question.id);
+                    continue;
+                }
                 const invested = (posture.blocs as InfluenceBloc[])
                     .map(b => ({ b, weight: Math.max(...spec.resolutions.map(r => Math.abs(r.stances[b.id] ?? 0))) }))
                     .filter(x => x.weight > 0)

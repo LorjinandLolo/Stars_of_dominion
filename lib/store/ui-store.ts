@@ -30,6 +30,7 @@ import type {
     RecruitmentJob,
 } from '@/types/ui-state';
 import type { Fleet, Army, FactionVisibility } from '@/lib/movement/types';
+import type { DelegationState } from '@/lib/delegation/delegation-types';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -249,6 +250,14 @@ export interface UIStore {
     // ── Global Time ──
     nowSeconds: number;
     setNowSeconds: (now: number) => void;
+
+    // ── Delegation ──
+    /**
+     * Which systems the player has left to their advisors, from their own
+     * shard. Null = no record, which means everything is delegated
+     * (lib/delegation/delegation-service.ts).
+     */
+    delegation: DelegationState | null;
 
     // ── Visibility ──
     factionVisibility: FactionVisibility | null;
@@ -591,6 +600,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Global Time ──
     nowSeconds: 0,
     setNowSeconds: (nowSeconds) => set({ nowSeconds }),
+
+    // ── Delegation ──
+    delegation: null,
 
     // ── Visibility ──
     factionVisibility: null,

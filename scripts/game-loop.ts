@@ -40,6 +40,7 @@ import { fireNotification } from '../lib/time/notification-hooks';
 import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
+import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -2691,6 +2692,20 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 break;
             }
             console.log(`[Order] ${factionId} answered defiance ${payload.eventId} with ${payload.response}: ${result.outcome}`);
+            break;
+        }
+
+        case 'GOV_SET_DELEGATION': {
+            // payload: { system, enabled } — hand a system to the advisors, or
+            // take it back. Free and instant: a player must always be able to
+            // leave, and to come back and find the levers still theirs.
+            if (!isDelegatedSystem(payload?.system)) {
+                recordOrderFailure(world, factionId, actionId, `Unknown system "${payload?.system}".`);
+                break;
+            }
+            const enabled = payload?.enabled !== false;
+            setDelegation(world, factionId, payload.system, enabled);
+            console.log(`[Order] ${factionId} ${enabled ? 'delegated' : 'took back'} ${payload.system}`);
             break;
         }
 

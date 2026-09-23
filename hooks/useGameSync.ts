@@ -890,6 +890,12 @@ export function useGameSync() {
                     endsAt: (world as any).activeSeason.endsAt,
                 }
                 : null,
+            // Which systems the player has left to their advisors. Absent
+            // record = everything delegated, which is what the Advisors card
+            // renders for a player who has never touched it.
+            delegation: activeFactionId
+                ? ((world as any).delegation?.get?.(activeFactionId) ?? null)
+                : null,
             // Latched by step20 each strategic tick; drives the defeat overlay.
             playerDefeatStatus: activeFactionId
                 ? ((world as any).titles?.defeatStatuses?.get?.(activeFactionId) ?? null)
@@ -979,6 +985,10 @@ export function useGameSync() {
             }
             if (mappedShard.espionageBoard) {
                 mappedShard.espionageBoard.forEach((o: any) => world.espionage.boardOpportunities.set(o.id, o));
+            }
+            if (mappedShard.delegation) {
+                if (!world.delegation) world.delegation = new Map();
+                world.delegation.set(mappedShard.factionId, mappedShard.delegation);
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };

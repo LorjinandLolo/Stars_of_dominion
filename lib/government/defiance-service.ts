@@ -21,6 +21,7 @@ import { pushWorldStory } from '@/lib/press-system/integration';
 import { getGovernment, spendPoliticalCapital } from './government-service';
 import { getGovernor, replaceGovernor } from './governor-service';
 import { getPlanetCohesion } from './cohesion-service';
+import { isDelegated } from '@/lib/delegation/delegation-service';
 import { recordPoliticalEvent } from './ideology-drift';
 
 /** Cohesion at or below which a world will start refusing the centre. */
@@ -417,20 +418,35 @@ function applyIgnored(world: GameWorldState, event: DefianceEvent): void {
     const governor = getGovernor(world, event.planetId);
     const gov = getGovernment(world, event.factionId);
 
-    if (record) record.cohesion = clamp100(record.cohesion - 15);
-    if (planet) planet.unrest = clamp100((planet.unrest ?? 0) + 15);
-    if (governor) governor.loyalty = clamp100(governor.loyalty - 20);
-    if (gov) {
-        gov.legitimacy = clamp100(gov.legitimacy - 3);
+    // A delegated government was never silent: its staff answered, or could not
+    // afford to. The crisis still closes unresolved — the world got nothing —
+    // but the capital is not punished for a player's absence (Item 2 of the
+    // casual-play spec). Take the lever back and silence costs again.
+    const staffed = isDelegated(world as any, event.factionId, 'government');
+
+    if (!staffed) {
+        if (record) record.cohesion = clamp100(record.cohesion - 15);
+        if (planet) planet.unrest = clamp100((planet.unrest ?? 0) + 15);
+        if (governor) governor.loyalty = clamp100(governor.loyalty - 20);
+        if (gov) {
+            gov.legitimacy = clamp100(gov.legitimacy - 3);
+            gov.history.push({
+                timestamp: world.nowSeconds,
+                event: `${event.planetName} was left unanswered — the refusal stands.`,
+            });
+        }
+    } else if (gov) {
         gov.history.push({
             timestamp: world.nowSeconds,
-            event: `${event.planetName} was left unanswered — the refusal stands.`,
+            event: `${event.planetName} was handled by the ministry — no concession, no reprisal.`,
         });
     }
 
     event.status = 'ignored';
     event.resolution = 'ignore';
-    event.outcome = 'left unanswered — the refusal stands and the world governs itself on the point';
+    event.outcome = staffed
+        ? 'the ministry stalled it — the world keeps asking, and keeps waiting'
+        : 'left unanswered — the refusal stands and the world governs itself on the point';
     event.resolvedAtSeconds = world.nowSeconds;
 
     try {

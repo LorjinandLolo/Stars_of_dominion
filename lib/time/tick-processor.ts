@@ -79,6 +79,7 @@ import { isButhari } from '../factions/civ-ids';
 import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-service';
 import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
+import { runDelegatedSystems } from '../delegation/delegation-runner';
 
 
 
@@ -279,6 +280,7 @@ export async function runStrategicTick(
     step17_reputationDecay(world, TICK_DELTA_SECONDS);
     step18_leadershipXP(world);
     step19_strategicAI(world);
+    step19b_delegatedSystems(world);
     step20_titlesAndSeasons(world);
 
 
@@ -554,6 +556,22 @@ function step19_strategicAI(world: ReturnType<typeof getGameWorldState>) {
         }
     } catch (e) {
         console.error('[TickProcessor] step19_strategicAI failed:', e);
+    }
+}
+
+/**
+ * The other side of the AI gate: a HUMAN faction's delegated systems, run by
+ * the same services with the conservative choice. Runs after the AI turn so the
+ * world it reads is the finished one (lib/delegation/delegation-runner.ts).
+ */
+function step19b_delegatedSystems(world: ReturnType<typeof getGameWorldState>) {
+    try {
+        const done = runDelegatedSystems(world as any, TICK_DELTA_SECONDS);
+        for (const entry of done) {
+            console.log(`[Delegation] ${entry.factionId}/${entry.system}: ${entry.action}`);
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step19b_delegatedSystems failed:', e);
     }
 }
 

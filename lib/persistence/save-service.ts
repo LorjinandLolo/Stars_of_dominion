@@ -287,6 +287,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
             .filter(r => r.ownerFactionId === factionId),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
+        // Which systems this player has left to their advisors. Their setting,
+        // so it rides their own shard; absent record = everything delegated
+        // (lib/delegation/delegation-service.ts states that rule once).
+        delegation: world.delegation?.get(factionId) ?? null,
         // Ship designs are the owner's alone. They ride the shard (not the
         // shared snapshot) and the public projection in shard-privacy.ts is an
         // allow-list, so rivals never see them on the wire.
@@ -360,6 +364,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.espionageBoard) {
         shard.espionageBoard.forEach((o: any) => world.espionage.boardOpportunities.set(o.id, o));
     }
+    if (shard.delegation) {
+        if (!world.delegation) world.delegation = new Map();
+        world.delegation.set(shard.factionId, shard.delegation);
+    }
     if (shard.recruitmentJobs) {
         if (!world.combat) world.combat = { recruitmentJobs: [] };
         // Merge - unique by ID
@@ -412,6 +420,10 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.operations.clear();
     cloned.espionage.reports.clear();
     cloned.espionage.boardOpportunities.clear();
+    // A player's delegation settings are theirs: the shard carries them (and
+    // the worker restores every shard on boot), so the shared snapshot every
+    // client polls does not need to say who is letting their cabinet drive.
+    if (cloned.delegation instanceof Map) cloned.delegation.clear();
 
     // Pirate state never rides in the shared snapshot. Every mechanic that
     // matters here is a mechanic about asymmetric information — hidden bases,

@@ -758,6 +758,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { crisisId: "id" },
     cost: {}
   },
+  // Handing a system to your advisors, or taking it back. Free, and reversible
+  // in one click: the whole point is that a player can leave.
+  GOV_SET_DELEGATION: {
+    id: "GOV_SET_DELEGATION",
+    category: "internal",
+    params: { system: "string", enabled: "boolean" },
+    cost: {}
+  },
   // Phase 6.5: taking a public side in someone else's collapse.
   DIP_RECOGNIZE_BREAKAWAY: {
     id: "DIP_RECOGNIZE_BREAKAWAY",

@@ -17,6 +17,7 @@ import {
 } from '@/app/actions/politics';
 import type { PolicyOption } from '@/types/ui-state';
 import { formatPercent } from '@/lib/ui/format';
+import AdvisorsCard from '@/components/government/AdvisorsCard';
 
 const CATEGORY_ICON: Record<string, React.ReactNode> = {
     military: <ShieldCheck size={14} />,
@@ -230,6 +231,9 @@ export default function GovernmentPanel() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Who runs what while the player is away */}
+                <AdvisorsCard />
+
                 {/* Administration + political standing */}
                 <div className="space-y-3">
                     <div className="bg-slate-900/60 border rounded-lg p-4 space-y-4" style={{ borderColor: politicsState?.crisisConditionMet ? '#ef4444' : '#f59e0b44' }}>

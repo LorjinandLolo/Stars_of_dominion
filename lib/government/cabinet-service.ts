@@ -15,6 +15,14 @@ import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
 import { refillRecruitmentPool } from './succession-service';
 import { isFactionAtWar } from './cohesion-service';
+import { isDelegated } from '@/lib/delegation/delegation-service';
+
+/**
+ * A delegated cabinet's loyalty floor. Above the coup-risk trigger for a
+ * disloyal Defence Minister (35), so an absent player's own ministers do not
+ * become the reason they are deposed.
+ */
+const DELEGATED_LOYALTY_FLOOR = 40;
 
 /** Loyalty below this and a minister walks (or is walked out). */
 const RESIGNATION_LOYALTY = 15;
@@ -229,7 +237,18 @@ export function tickCabinets(world: GameWorldState, deltaSeconds: number): void 
             // Loyalty tracks the government's standing; the ambitious sour fastest.
             const drive = (minister.ambitionDrive ?? 50) / 100;
             const standing = (gov.approval - 45) / 45;
-            minister.loyalty = clamp100(minister.loyalty + (standing * (1.5 - drive) * 2) * days);
+            const drift = (standing * (1.5 - drive) * 2) * days;
+            // A delegated cabinet is a cabinet that is being ASKED — its own
+            // ministers are running the empire. They still sour as standing
+            // falls, but not past the point where the Defence Minister starts
+            // counting friends in the general staff (Item 2 of the casual-play
+            // spec). Take government back and the old slide returns.
+            const floor = isDelegated(world as any, gov.factionId, 'government')
+                ? DELEGATED_LOYALTY_FLOOR
+                : 0;
+            minister.loyalty = clamp100(
+                drift < 0 ? Math.max(floor, minister.loyalty + drift) : minister.loyalty + drift,
+            );
 
             // Corruption creeps upward unless someone is watching.
             const creep = (drive * 0.6 - oversight * 1.2) * days;

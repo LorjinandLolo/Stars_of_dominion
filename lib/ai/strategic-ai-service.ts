@@ -72,7 +72,9 @@ export class StrategicAIService {
      * whole season. Picks the lowest-tier tech the engine will accept,
      * deterministically (sorted by tier, then id).
      */
-    private static manageResearch(factionId: string, world: GameWorldState): void {
+    // Public because a human faction's delegated research council runs exactly
+    // this (lib/delegation/delegation-runner.ts) — one picker, not two.
+    static manageResearch(factionId: string, world: GameWorldState): void {
         let techState = world.tech.get(factionId);
         if (!techState) {
             // Same lazy init the player path uses (app/actions/tech.ts) — no

@@ -22,6 +22,7 @@ import type { PlanetCohesion } from './government/cohesion-types';
 import type { DefianceEvent } from './government/defiance-types';
 import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
+import type { DelegationState } from './delegation/delegation-types';
 import type { FactionReputation } from './reputation/types';
 import type { FactionTraitState } from './factions/faction-traits-types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
@@ -224,6 +225,14 @@ export interface GameWorldState {
     secessionCrises: Map<string, SecessionCrisis>;
     doctrines: Map<string, EmpireDoctrines>;
     reputation: Map<string, FactionReputation>;
+
+    /**
+     * Which systems each human faction has left to its advisors, keyed by
+     * faction id. Absent entry = everything delegated (lib/delegation), which
+     * is what a player who never opens the Advisors card gets. Rides the
+     * owner's shard, not the shared snapshot: it is their setting, not news.
+     */
+    delegation?: Map<string, DelegationState>;
 
     /**
      * Per-faction bespoke mechanics — the Bloodmoon ceasefire, capacola surges,

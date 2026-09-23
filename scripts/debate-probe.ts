@@ -20,6 +20,7 @@ import {
 } from '../lib/politics/debate-service';
 import { registerActOfWar, breakTreaty } from '../lib/diplomacy/offer-service';
 import { pendingCount, resetChronicleBuffer } from '../lib/narrative/chronicle';
+import { setDelegation } from '../lib/delegation/delegation-service';
 
 const US = 'faction-leopantheri';
 const AGGRESSOR = 'faction-kaerruun';
@@ -39,6 +40,11 @@ ensureGovernments(world);
 world.nowSeconds = 9_000_000;
 // The player claims US; every other empire is AI.
 world.claimedFactionIds = [US];
+// This probe tests the lever in the PLAYER's hand: questions that sit, fester
+// and eventually die in committee. A claimed faction delegates its government
+// by default now (lib/delegation), and a delegated chamber answers its own
+// questions — which is the subject of tmp/test-delegation.ts, not this file.
+setDelegation(world, US, 'government', false);
 
 const posture = () => world.movement.empirePostures.get(US);
 const gov = () => world.government.get(US);
