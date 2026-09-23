@@ -113,6 +113,10 @@ model PlayerProfile {
   factionId   String   @unique
   displayName String?
   createdAt   DateTime @default(now())
+  // When this player last closed the daily brief. The brief covers real time
+  // since that moment, not since the last poll — a player who was away for
+  // three days should be told about three days.
+  briefSeenAt DateTime?
 
   @@map("player_profiles")
 }

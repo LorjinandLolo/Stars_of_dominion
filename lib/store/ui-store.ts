@@ -278,6 +278,11 @@ export interface UIStore {
     activeManualSectionId: string;
     setActiveManualSection: (id: string) => void;
 
+    // ── Daily brief ──
+    /** The brief is open. It opens itself once per sign-in when it has news. */
+    briefOpen: boolean;
+    setBriefOpen: (open: boolean) => void;
+
     // ── Multiplayer Mode ──
     isMultiplayer: boolean;
     setIsMultiplayer: (val: boolean) => void;
@@ -636,6 +641,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setShowManual: (show) => set({ showManual: show }),
     activeManualSectionId: 'intro',
     setActiveManualSection: (id) => set({ activeManualSectionId: id }),
+
+    // ── Daily brief ──
+    briefOpen: false,
+    setBriefOpen: (open) => set({ briefOpen: open }),
 
     // ── Multiplayer Mode ──
     isMultiplayer: false,

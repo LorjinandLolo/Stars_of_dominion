@@ -10,6 +10,19 @@ export const TICK_INTERVAL_HOURS = 6;
 /** The fixed UTC hours at which strategic ticks fire: 00:00, 06:00, 12:00, 18:00 */
 export const TICK_HOURS_UTC = [0, 6, 12, 18] as const;
 
+/**
+ * How fast the galaxy runs against the wall clock. The worker advances 75 sim
+ * seconds every 5 real seconds (scripts/game-loop.ts), so a 6-hour strategic
+ * tick lands every 24 real minutes. Anything that shows a player how long they
+ * have — deadlines, countdowns, the daily brief — divides by this.
+ */
+export const SIM_SECONDS_PER_REAL_SECOND = 15;
+
+/** Sim seconds to real seconds, for anything a player has to react to. */
+export function simSecondsToReal(simSeconds: number): number {
+    return simSeconds / SIM_SECONDS_PER_REAL_SECOND;
+}
+
 // ─── Crisis Durations (hours) ──────────────────────────────────────────────────
 
 export const CRISIS_DURATION_HOURS: Record<CrisisType, number> = {

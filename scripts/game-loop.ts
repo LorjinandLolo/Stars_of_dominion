@@ -952,11 +952,20 @@ async function runGameTick() {
             // notification text into empire names (and the player holding one).
             const heldBy: Record<string, string> = (world as any).factionPlayerNames ?? {};
             const labels: Record<string, { name: string; player?: string }> = {};
+            const names: Record<string, string> = {};
             for (const [id, rec] of world.economy.factions) {
                 const name = (rec as any)?.name;
-                if (name) labels[id] = { name, player: heldBy[id] };
+                if (name) {
+                    labels[id] = { name, player: heldBy[id] };
+                    names[id] = name;
+                }
             }
             registerFactionLabels(labels);
+            // Empire names are public (the lobby prints them) and the shared
+            // snapshot drops economy.factions on save, so anything server-side
+            // that has only the snapshot — the daily brief — has no other way to
+            // turn an id into a name. Ride along here.
+            (world as any).factionNames = names;
 
             const pendingNotes = drainNotifications();
             for (const note of pendingNotes) {

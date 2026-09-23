@@ -19,6 +19,7 @@ import {
     TrendingDown,
     AlertTriangle,
     CalendarDays,
+    Newspaper,
 } from 'lucide-react';
 import { Resource } from '@/lib/trade-system/types';
 import { CivilizationIdentity } from '../civilization/CivilizationIdentity';
@@ -184,6 +185,18 @@ export default function TopNav() {
                 {/* Transmissions + tutorial. Both components existed but were
                     only mounted in the orphaned legacy Navbar — meaning no
                     player had a notification bell or the guided tour at all. */}
+                {/* The brief is the readable version of the bell: what happened,
+                    what is waiting, one thing worth doing. */}
+                <button
+                    id="daily-brief-button"
+                    onClick={() => useUIStore.getState().setBriefOpen(true)}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 transition-colors"
+                    title="Open today's brief"
+                >
+                    <Newspaper size={15} />
+                    <span className="hidden xl:inline text-[9px] font-display tracking-[0.18em]">BRIEF</span>
+                </button>
+
                 <NotificationBell factionId={playerFactionId ?? undefined} />
                 <MusicControl />
                 <TutorialLauncher />
