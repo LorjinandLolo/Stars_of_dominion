@@ -15,6 +15,7 @@
 // already had them, and age out.
 
 import type { GameNotification } from './time-types';
+import { humanizeNotification } from './notification-names';
 
 // ─── In-Memory Notification Queue ────────────────────────────────────────────
 
@@ -88,7 +89,7 @@ export function drainNotifications(factionId?: string): GameNotification[] {
     if (!factionId) {
         _notificationQueue.length = 0;
         _broadcasts.clear();
-        return matching;
+        return matching.map(humanizeNotification);
     }
 
     const consumed = new Set<string>();
@@ -101,7 +102,9 @@ export function drainNotifications(factionId?: string): GameNotification[] {
             if (consumed.has(_notificationQueue[i].id)) _notificationQueue.splice(i, 1);
         }
     }
-    return matching;
+    // Raw ids are readable to the code that wrote them and to nobody else.
+    // One rewrite here covers all 46 fireNotification call sites.
+    return matching.map(humanizeNotification);
 }
 
 /**
@@ -110,7 +113,7 @@ export function drainNotifications(factionId?: string): GameNotification[] {
  */
 export function peekNotifications(factionId?: string): GameNotification[] {
     prune();
-    return pendingFor(factionId);
+    return pendingFor(factionId).map(humanizeNotification);
 }
 
 /**

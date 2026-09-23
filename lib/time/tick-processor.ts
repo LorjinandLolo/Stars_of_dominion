@@ -288,19 +288,8 @@ export async function runStrategicTick(
     await expireAllStaleCrises(now);
 
 
-    // Post-tick notification
-    await fireNotification({
-        id: `tick-${tickIndex}-${Date.now()}`,
-        factionId: 'all',
-        category: 'system',
-        priority: 'low',
-        title: 'Strategic Cycle Complete',
-        body: `Cycle #${tickIndex} resolved. Resources, construction, and research updated.`,
-        createdAt: now.toISOString(),
-        read: false,
-        linkToTab: 'economy',
-        payload: { tickIndex },
-    });
+    // No post-tick notification: a note every 24 real minutes buried the ones
+    // that actually need the player. The tick counter in TopNav is the signal.
 
     console.log(`[TickProcessor] Tick #${tickIndex} complete.`);
 }

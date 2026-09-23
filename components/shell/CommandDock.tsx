@@ -16,7 +16,6 @@ export default function CommandDock() {
     const setShowManual = useUIStore(s => s.setShowManual);
     const playerState = useUIStore(s => s.playerState);
     const councilState = useUIStore(s => s.councilState);
-    const crisisWindows = useUIStore(s => s.crisisWindows);
     const setFocusTarget = useUIStore(s => s.setFocusTarget);
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const factions = useUIStore(s => s.factions);
@@ -26,7 +25,8 @@ export default function CommandDock() {
     const showShadow = isShadowTabVisible(playerState, piracyState);
     const showCouncil = isCouncilTabVisible(councilState);
     const activeCategory = categoryForTab(activeTab);
-    const activeCrises = crisisWindows.filter(w => w.phase !== 'warning');
+    // No crisis badge on GALAXY: `crisisWindows` is never written by
+    // useGameSync, so the count was permanently zero.
     const systemViewId = useUIStore(s => s.systemViewId);
 
     const handleSystem = () => {
@@ -86,7 +86,7 @@ export default function CommandDock() {
     };
 
     return (
-        <div className="relative z-50 flex items-stretch justify-between h-16 bg-slate-950/95 backdrop-blur-xl border-t border-slate-700/60 select-none shadow-[0_-8px_32px_rgba(0,0,0,0.6)]">
+        <div id="command-dock" className="relative z-50 flex items-stretch justify-between h-16 bg-slate-950/95 backdrop-blur-xl border-t border-slate-700/60 select-none shadow-[0_-8px_32px_rgba(0,0,0,0.6)]">
             {/* Top edge glow */}
             <div className="absolute -top-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-sky-500/40 to-transparent pointer-events-none" />
 
@@ -110,12 +110,6 @@ export default function CommandDock() {
                 </div>
                 {activeTab === 'galaxy' && (
                     <span className="absolute top-0 left-0 right-0 h-[2px] bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]" />
-                )}
-                {activeCrises.length > 0 && (
-                    <span className="absolute top-2 right-2 flex items-center gap-1 text-[8px] font-mono text-red-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.9)]" />
-                        {activeCrises.length}
-                    </span>
                 )}
             </button>
 
@@ -145,6 +139,7 @@ export default function CommandDock() {
                     return (
                         <button
                             key={cat.id}
+                            id={`dock-cat-${cat.id}`}
                             onClick={() => handleCategory(cat)}
                             className={[
                                 'relative flex flex-col items-center justify-center gap-1 px-3 lg:px-5 min-w-[52px] lg:min-w-[92px] transition-all duration-200 group',

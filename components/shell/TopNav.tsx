@@ -56,7 +56,6 @@ function ResourceChip({ icon, label, value, rate, className = '' }: ResourceChip
 export default function TopNav() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const factions = useUIStore(s => s.factions);
-    const crisisWindows = useUIStore(s => s.crisisWindows);
     const councilState = useUIStore(s => s.councilState);
     const nowSeconds = useUIStore(s => s.nowSeconds);
 
@@ -65,7 +64,8 @@ export default function TopNav() {
     const production = (faction as any)?.production || {};
     const stability = (faction as any)?.stability || 0;
 
-    const activeCrises = crisisWindows.filter(w => w.phase !== 'warning');
+    // No crisis chip here: `crisisWindows` is never written by useGameSync, so
+    // the count was permanently zero. It comes back when the worker reports one.
     const emergency = councilState.emergencySession && councilState.status !== 'absent';
     const seasonInfo = useUIStore(s => s.seasonInfo);
 
@@ -141,7 +141,7 @@ export default function TopNav() {
 
                 {/* Season clock — the real thing when the worker reports one */}
                 {seasonInfo ? (
-                    <div className="flex items-center gap-2" title={`Season ${seasonInfo.seasonNumber}: ${seasonInfo.name} — ${seasonInfo.phase === 'announced' ? 'starts' : 'ends'} in ~${seasonCountdown} (real time)`}>
+                    <div id="season-clock" className="flex items-center gap-2" title={`Season ${seasonInfo.seasonNumber}: ${seasonInfo.name} — ${seasonInfo.phase === 'announced' ? 'starts' : 'ends'} in ~${seasonCountdown} (real time)`}>
                         <CalendarDays size={13} className="text-slate-500" />
                         <div className="flex flex-col leading-none">
                             <span className="text-[10px] font-display font-bold tracking-widest text-slate-200 uppercase whitespace-nowrap">
@@ -153,7 +153,7 @@ export default function TopNav() {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-2" title="Galactic calendar">
+                    <div id="season-clock" className="flex items-center gap-2" title="Galactic calendar">
                         <CalendarDays size={13} className="text-slate-500" />
                         <div className="flex flex-col leading-none">
                             <span className="text-[11px] font-mono font-bold text-slate-200">
@@ -167,22 +167,14 @@ export default function TopNav() {
                 )}
 
                 {/* Alerts */}
-                {(activeCrises.length > 0 || emergency) && (
+                {emergency && (
                     <>
                         <div className="h-6 w-px bg-slate-800/60" />
                         <div className="flex items-center gap-2">
-                            {emergency && (
-                                <span className="flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 border border-red-500/40 text-[8px] font-display tracking-widest text-red-400 animate-pulse">
-                                    <AlertTriangle size={10} />
-                                    <span className="hidden xl:inline">EMERGENCY</span>
-                                </span>
-                            )}
-                            {activeCrises.length > 0 && (
-                                <span className="flex items-center gap-1 px-2 py-1 rounded-sm bg-amber-500/10 border border-amber-500/40 text-[8px] font-display tracking-widest text-amber-400">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                    {activeCrises.length} <span className="hidden xl:inline">CRISES</span>
-                                </span>
-                            )}
+                            <span className="flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 border border-red-500/40 text-[8px] font-display tracking-widest text-red-400 animate-pulse">
+                                <AlertTriangle size={10} />
+                                <span className="hidden xl:inline">EMERGENCY</span>
+                            </span>
                         </div>
                     </>
                 )}

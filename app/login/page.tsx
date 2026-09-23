@@ -29,7 +29,6 @@ export default function LoginPage() {
 
             <div className="relative z-10 w-full flex flex-col items-center px-4">
                 <div className="mb-8 text-center">
-                    <div className="text-blue-500 font-bold text-xs tracking-[0.5em] uppercase mb-2 animate-pulse">Neural Link Required</div>
                     <h1 className="text-6xl font-black text-white tracking-tight leading-none italic" style={{ fontFamily: "'Orbitron', sans-serif" }}>
                         STARS OF <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">DOMINION</span>
                     </h1>

@@ -6,12 +6,18 @@ import React from 'react';
 import { X, Check, CheckCheck, Trash2 } from 'lucide-react';
 import { useNotificationStore, PRIORITY_COLORS, CATEGORY_ICONS } from '@/lib/notifications/notification-store';
 import { useUIStore } from '@/lib/store/ui-store';
+import { humanizeNotification } from '@/lib/time/notification-names';
 import type { NavTab } from '@/types/ui-state';
 
 export default function NotificationFeed() {
-    const { notifications, feedOpen, setFeedOpen, markRead, markAllRead, dismiss, clearAll } =
+    const { notifications: stored, feedOpen, setFeedOpen, markRead, markAllRead, dismiss, clearAll } =
         useNotificationStore();
     const setActiveTab = useUIStore(s => s.setActiveTab);
+
+    // Last stop before a player reads it. Notes saved to this browser before
+    // the rewrite landed still carry raw `faction-*` ids; the labels are
+    // registered from the synced snapshot, so render them by name.
+    const notifications = React.useMemo(() => stored.map(humanizeNotification), [stored]);
 
     if (!feedOpen) return null;
 

@@ -138,7 +138,7 @@ export default function LoginForm() {
                     )}
 
                     <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Secure Email</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Email</label>
                         <input
                             type="email"
                             value={email}
@@ -150,7 +150,7 @@ export default function LoginForm() {
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Vortex Key</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Password</label>
                         <input
                             type="password"
                             value={password}

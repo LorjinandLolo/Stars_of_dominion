@@ -536,7 +536,7 @@ export default function GalaxyShell() {
 
             <SimulationTimer />
 
-            <svg ref={svgRef} viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
+            <svg id="galaxy-map-canvas" ref={svgRef} viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
                 <defs>
                     <filter id="hex-glow" x="-20%" y="-20%" width="140%" height="140%">
                         <feGaussianBlur stdDeviation="2" result="blur" />

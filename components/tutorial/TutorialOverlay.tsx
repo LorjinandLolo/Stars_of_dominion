@@ -72,10 +72,9 @@ export default function TutorialOverlay() {
     return (
         <div className="fixed inset-0 z-[9999] pointer-events-none">
             {/* Dark overlay */}
-            <div
-                className="absolute inset-0 bg-black/70 backdrop-blur-[1px] pointer-events-auto"
-                onClick={skip}
-            />
+            {/* Swallows clicks on the page behind, but does NOT skip: a stray
+                click used to throw away the whole tutorial. Only Skip skips. */}
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[1px] pointer-events-auto" />
 
             {/* Spotlight cutout */}
             {rect && (

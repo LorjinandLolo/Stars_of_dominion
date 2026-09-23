@@ -9,6 +9,18 @@ import type { GameNotification, NotificationCategory, NotificationPriority } fro
 
 export type { GameNotification };
 
+/**
+ * The worker used to fire a note every strategic cycle. It stopped, but the
+ * ones already on the faction record (and in this store's persisted state)
+ * keep re-delivering until they age out — so drop them on the way in. A bell
+ * whose last twenty entries are "Cycle #82913 resolved" hides the one that
+ * actually needs the player.
+ */
+const isCycleNotice = (n: GameNotification) =>
+    n.category === 'system' && /^strategic cycle complete$/i.test(n.title.trim());
+
+const withoutCycleNotices = (ns: GameNotification[]) => ns.filter(n => !isCycleNotice(n));
+
 export interface NotificationStore {
     notifications: GameNotification[];
     unreadCount: number;
@@ -36,6 +48,7 @@ export const useNotificationStore = create<NotificationStore>()(
 
             addNotification: (n) =>
                 set((state) => {
+                    if (isCycleNotice(n)) return state;
                     // Prevent duplicates
                     if (state.notifications.some(x => x.id === n.id)) return state;
                     const updated = [n, ...state.notifications].slice(0, 200); // cap at 200
@@ -48,7 +61,7 @@ export const useNotificationStore = create<NotificationStore>()(
             addNotifications: (ns) =>
                 set((state) => {
                     const existingIds = new Set(state.notifications.map(x => x.id));
-                    const newOnes = ns.filter(n => !existingIds.has(n.id));
+                    const newOnes = withoutCycleNotices(ns).filter(n => !existingIds.has(n.id));
                     if (!newOnes.length) return state;
                     const updated = [...newOnes, ...state.notifications].slice(0, 200);
                     return {
@@ -86,6 +99,16 @@ export const useNotificationStore = create<NotificationStore>()(
             partialize: (state) => ({
                 notifications: state.notifications.slice(0, 50), // only persist recent 50
             }),
+            // Feeds saved before cycle notices stopped are cleaned on load.
+            merge: (persisted, current) => {
+                const saved = (persisted as Partial<NotificationStore>)?.notifications ?? [];
+                const notifications = withoutCycleNotices(saved);
+                return {
+                    ...current,
+                    notifications,
+                    unreadCount: notifications.filter(n => !n.read).length,
+                };
+            },
         }
     )
 );

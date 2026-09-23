@@ -6,6 +6,7 @@ import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionage
 import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
+import { registerFactionLabels, humanizeNotification } from '@/lib/time/notification-names';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
@@ -348,9 +349,21 @@ export function useGameSync() {
             // Worker-fired notifications (season endings, eliminations, anomaly
             // discoveries, refunds) ride the faction record the same way — the
             // worker keeps the last 100 on the record, the store dedupes by id.
+            // Second line of defence on faction ids: the worker rewrites them
+            // as it drains, but notes buffered before that landed — and the
+            // ones this browser saved earlier — would still reach the bell as
+            // `faction-leopantheri`. The names are right here in the snapshot,
+            // so register them every sync; the feed renders through them.
+            const labels: Record<string, { name: string }> = {};
+            for (const [id, rec] of Object.entries(factionMap)) {
+                const name = (rec as any)?.name;
+                if (name) labels[id] = { name };
+            }
+            registerFactionLabels(labels);
+
             const workerNotes = factionMap[playerFactionId]?.pendingNotifications;
             if (Array.isArray(workerNotes) && workerNotes.length > 0) {
-                useNotificationStore.getState().addNotifications(workerNotes);
+                useNotificationStore.getState().addNotifications(workerNotes.map(humanizeNotification));
             }
         }
 

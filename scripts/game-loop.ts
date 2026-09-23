@@ -39,6 +39,7 @@ import { hasAsteroidBelt, findBeltAmbusher, ambushedFleet } from '../lib/movemen
 import { fireNotification } from '../lib/time/notification-hooks';
 import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
+import { registerFactionLabels } from '../lib/time/notification-names';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -742,8 +743,16 @@ async function runGameTick() {
             // human-claimed so it never answers on a player's behalf. Fresh
             // query each strategic tick (cheap: one small table, every ~24min).
             try {
-                const claims = await prisma.playerProfile.findMany({ select: { factionId: true } });
+                const claims = await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } });
                 (world as any).claimedFactionIds = claims.map(c => c.factionId).filter(Boolean);
+
+                // Same pass feeds the notification rewriter below: who holds
+                // which empire, so a note can say "played by <name>".
+                const heldBy: Record<string, string> = {};
+                for (const c of claims) {
+                    if (c.factionId && c.displayName) heldBy[c.factionId] = c.displayName;
+                }
+                (world as any).factionPlayerNames = heldBy;
             } catch {
                 // Table unreadable — keep the previous list rather than letting
                 // the AI speak for humans.
@@ -939,6 +948,16 @@ async function runGameTick() {
         // copied to every faction — the old queue deleted them on first drain,
         // so at most one of the 14 players would ever have seen a season close.
         try {
+            // Names first, so the drain below can rewrite `faction-*` ids in
+            // notification text into empire names (and the player holding one).
+            const heldBy: Record<string, string> = (world as any).factionPlayerNames ?? {};
+            const labels: Record<string, { name: string; player?: string }> = {};
+            for (const [id, rec] of world.economy.factions) {
+                const name = (rec as any)?.name;
+                if (name) labels[id] = { name, player: heldBy[id] };
+            }
+            registerFactionLabels(labels);
+
             const pendingNotes = drainNotifications();
             for (const note of pendingNotes) {
                 const targets = note.factionId === 'all'
