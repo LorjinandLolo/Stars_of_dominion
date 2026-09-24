@@ -27,8 +27,19 @@ export function delegationFor(world: WorldLike, factionId: string): DelegationSt
     return { ...defaultDelegation(), ...stored };
 }
 
-/** Is this system currently run by the advisors? */
+/**
+ * Is this system currently run by a HUMAN player's advisors?
+ *
+ * Only a claimed faction has advisors in this sense. An AI empire has no
+ * delegation record either, and without this check the all-delegated default
+ * reached it too — silently switching off every inaction penalty the gates in
+ * government, cabinet, defiance and secession consult, for the whole AI galaxy.
+ * An unknown claim list (worker could not read it) means nobody is human, the
+ * same fail-safe convention as isAIRunFaction.
+ */
 export function isDelegated(world: WorldLike, factionId: string, system: DelegatedSystem): boolean {
+    const claimed = (world as any)?.claimedFactionIds;
+    if (!Array.isArray(claimed) || !claimed.includes(factionId)) return false;
     return delegationFor(world, factionId)[system] === true;
 }
 
