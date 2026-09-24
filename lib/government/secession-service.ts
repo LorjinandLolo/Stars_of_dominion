@@ -12,6 +12,7 @@
 // the rebels are when it does.
 
 import type { GameWorldState } from '@/lib/game-world-state';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { SecessionCrisis, SecessionDemandId } from './secession-types';
 import { SECESSION_DEMANDS, SECESSION_SETTLE_THRESHOLD, secessionDemand } from './secession-types';
 import {
@@ -35,8 +36,8 @@ const SECESSION_COHESION_THRESHOLD = 20;
 const REGION_RADIUS = 12;
 /** A movement needs company — one angry world is a defiance problem, not a crisis. */
 const MIN_REGION_WORLDS = 2;
-/** How long the region will keep asking (10 sim days). */
-const CRISIS_WINDOW_SECONDS = 10 * 86400;
+/** How long the region will keep asking: at least one Galactic Day (10 sim days was 16 real hours). */
+const CRISIS_WINDOW_SECONDS = atLeastAGalacticDay(10 * 86400);
 /** Political capital to answer with force. */
 export const SUPPRESS_SECESSION_COST = 40;
 /** Settled crises kept for the record. */

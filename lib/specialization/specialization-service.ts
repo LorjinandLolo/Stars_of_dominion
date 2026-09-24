@@ -20,6 +20,7 @@ import type {
     SpecializationId,
     SpecializationDefinition,
 } from './specialization-types';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 // Effect reading lives in specialization-effects.ts so the systems a
 // specialization modifies can import it without depending on this module's
@@ -148,8 +149,8 @@ export function canDeclareSpecialization(
         return { allowed: false, reason: `${planet.name} is already a ${def.name}` };
     }
     if (current && now < current.lockedUntilSeconds) {
-        const hours = Math.ceil((current.lockedUntilSeconds - now) / 3600);
-        return { allowed: false, reason: `Retooling too recently — locked for another ${hours}h` };
+        // Sim hours printed as hours ran out fifteen times faster than they read.
+        return { allowed: false, reason: `Retooling too recently — locked for another ${formatSimDurationAsReal(current.lockedUntilSeconds - now)}` };
     }
 
     const qualification = checkQualification(planet, def.id);

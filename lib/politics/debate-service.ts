@@ -16,6 +16,7 @@
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { InfluenceBloc } from '@/lib/movement/types';
 import { isDelegated } from '@/lib/delegation/delegation-service';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import {
     DEBATE_CATALOG,
     debateTitle,
@@ -88,7 +89,9 @@ export function openDebate(
         id: `debate-${factionId}-${kind}-${now}`,
         kind,
         openedAtSeconds: now,
-        deadlineAtSeconds: now + spec.deadlineTicks * TICK_SECONDS,
+        // The catalog's 20-32 ticks is 8-13 real hours; a chamber waits at
+        // least one Galactic Day for a player who checks in once a day.
+        deadlineAtSeconds: now + atLeastAGalacticDay(spec.deadlineTicks * TICK_SECONDS),
         facts,
         aggressorFactionId,
         status: 'open',

@@ -5,6 +5,7 @@
  */
 
 import type { GameWorldState } from '../game-world-state';
+import { atLeastAGalacticDay } from '../time/time-config';
 import type { BoardOpportunity } from './espionage-types';
 import { OPPORTUNITY_TEMPLATES, type OpportunityTemplate } from './opportunity-templates';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
@@ -85,7 +86,10 @@ function spawnForFaction(ownerFactionId: string, world: GameWorldState): BoardOp
         cost: { ...template.cost },
         reward: { ...template.reward },
         createdAt: now,
-        expiresAt: now + ttlHours * 3600,
+        // Templates roll 12-36 sim-hours — under three real hours. A board entry
+        // is something the player is asked to act on, so it waits a Galactic
+        // Day. The board is capped (MAX_ACTIVE_PER_FACTION), so it cannot pile up.
+        expiresAt: now + atLeastAGalacticDay(ttlHours * 3600),
         status: 'available',
     };
 

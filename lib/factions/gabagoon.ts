@@ -33,6 +33,7 @@ import { NEUTRAL_DISTRICT_TRAITS } from './faction-traits-types';
 import { CIV_GABAGOON, isGabagoon } from './civ-ids';
 import { stimulantPhase, doseWindows } from './stimulant';
 import { bumpMetric } from '../tech/history-ledger';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 export const GABAGOON_CIV_ID = CIV_GABAGOON;
 
@@ -130,8 +131,8 @@ export function capacolaSurge(world: GameWorldState, factionId: string, requeste
     if (phase === 'surging') return { ok: false, reason: 'They are already shimmering with oily power.' };
     if (phase === 'crashing') {
         const st = gabagoonState(world, factionId)!;
-        const ticks = Math.ceil((st.crashEndsAtSeconds - (world.nowSeconds ?? 0)) / TICK_SECONDS);
-        return { ok: false, reason: `Still coming down — ${ticks} turn(s) of grumpiness left.` };
+        const left = formatSimDurationAsReal(st.crashEndsAtSeconds - (world.nowSeconds ?? 0));
+        return { ok: false, reason: `Still coming down — ${left} of grumpiness left.` };
     }
 
     const faction: any = (world as any).economy?.factions?.get(factionId);

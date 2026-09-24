@@ -9,6 +9,7 @@
  */
 
 import type { GameWorldState } from '../../game-world-state';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { CharteredCompany } from './company-types';
 import type { CorporateWorldState } from './company-registry';
 import type {
@@ -32,8 +33,12 @@ import {
 
 /** Base sim-seconds between lobbying attempts, before personality scaling. */
 export const DEMAND_INTERVAL_SECONDS = 4 * 86_400;
-/** How long a demand sits on the desk before it lapses. */
-export const DEMAND_WINDOW_SECONDS = 3 * 86_400;
+/**
+ * How long a demand sits on the desk before it lapses — at least one Galactic
+ * Day (3 sim days was under five real hours). One pending demand per company
+ * (maybeIssueDemand), so a window longer than the interval cannot stack.
+ */
+export const DEMAND_WINDOW_SECONDS = atLeastAGalacticDay(3 * 86_400);
 /** Refusals in a row before a powerful company starts acting on its own. */
 export const HOSTILE_REFUSAL_STREAK = 3;
 

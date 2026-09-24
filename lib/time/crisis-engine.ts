@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { CrisisEvent, CrisisType, CrisisResponseOption, CrisisAutoResolvePolicy } from './time-types';
 import {
     CRISIS_DURATION_HOURS, CRISIS_SEVERITY, CRISIS_RESPONSES,
-    crisisDurationMultiplier
+    crisisDurationMultiplier, GALACTIC_DAY_REAL_HOURS,
 } from './time-config';
 import { getCrisisExpiry, isExpired } from './time-helpers';
 import { selectAutoResponse, calculateCrisisOutcome } from './auto-resolve';
@@ -36,7 +36,9 @@ export interface CreateCrisisParams {
 export function createCrisis(params: CreateCrisisParams): CrisisEvent {
     const now = params.nowOverride ?? new Date();
     const baseDuration = CRISIS_DURATION_HOURS[params.crisisType] ?? 12;
-    const duration = baseDuration * crisisDurationMultiplier;
+    // Real (wall-clock) hours. Never shorter than a Galactic Day: the defender
+    // is a person who may be asleep, and silence here auto-resolves by doctrine.
+    const duration = Math.max(GALACTIC_DAY_REAL_HOURS, baseDuration * crisisDurationMultiplier);
 
     const crisis: CrisisEvent = {
         id: `crisis-${uuidv4()}`,

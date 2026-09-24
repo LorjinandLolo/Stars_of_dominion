@@ -23,6 +23,24 @@ export function simSecondsToReal(simSeconds: number): number {
     return simSeconds / SIM_SECONDS_PER_REAL_SECOND;
 }
 
+/**
+ * The Galactic Day: 24 REAL hours, the only unit a player is shown for
+ * anything they must react to. Every window that waits on a human — an offer,
+ * an ultimatum, a debate, a crisis — stays open at least this long, so a
+ * player who checks in once a day never finds that the decision was made for
+ * them while they slept. The sim does not slow down; its deadlines stretch.
+ */
+export const GALACTIC_DAY_REAL_SECONDS = 24 * 3600;
+/** The same day on the sim clock: 1,296,000 s = 15 sim days at 15x. */
+export const GALACTIC_DAY_SIM_SECONDS = GALACTIC_DAY_REAL_SECONDS * SIM_SECONDS_PER_REAL_SECOND;
+/** The same day in real hours, for services that count wall-clock hours. */
+export const GALACTIC_DAY_REAL_HOURS = 24;
+
+/** A reaction window, never shorter than one Galactic Day (sim seconds). */
+export function atLeastAGalacticDay(simSeconds: number): number {
+    return Math.max(simSeconds, GALACTIC_DAY_SIM_SECONDS);
+}
+
 // ─── Crisis Durations (hours) ──────────────────────────────────────────────────
 
 export const CRISIS_DURATION_HOURS: Record<CrisisType, number> = {

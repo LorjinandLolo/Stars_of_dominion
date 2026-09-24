@@ -6,6 +6,7 @@
 // sim-clock seconds (world.nowSeconds), never wall-clock.
 
 import type { TreatyType } from '@/lib/politics/cold-war-types';
+import { GALACTIC_DAY_SIM_SECONDS } from '@/lib/time/time-config';
 
 export type DiplomaticOfferStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'withdrawn';
 
@@ -220,8 +221,12 @@ export interface SanctionRecord {
 
 // ─── Tuning ──────────────────────────────────────────────────────────────────
 
-/** Pending offers auto-expire after 48 sim-hours (~3.2h real at 15x). */
-export const OFFER_TTL_SECONDS = 48 * 3600;
+/**
+ * Pending offers stay answerable for one Galactic Day (24 real hours). They
+ * used to lapse after 48 sim-hours — 3.2 real hours — so a player who checked
+ * in each morning never saw an offer that arrived overnight.
+ */
+export const OFFER_TTL_SECONDS = GALACTIC_DAY_SIM_SECONDS;
 
 /** After an offer resolves, same (from, to, kind) is locked for 12 sim-hours. */
 export const OFFER_COOLDOWN_SECONDS = 12 * 3600;
@@ -229,8 +234,8 @@ export const OFFER_COOLDOWN_SECONDS = 12 * 3600;
 /** Cap on per-pair relation memory. */
 export const MAX_RELATION_EVENTS = 20;
 
-/** Gambit response window: 24 sim-hours, then doctrine auto-resolve. */
-export const GAMBIT_TTL_SECONDS = 24 * 3600;
+/** Gambit response window: one Galactic Day, then doctrine auto-resolve (was 24 sim-hours = 1.6 real). */
+export const GAMBIT_TTL_SECONDS = GALACTIC_DAY_SIM_SECONDS;
 
 /** After a gambit resolves, same (initiator, target) locked for 24 sim-hours. */
 export const GAMBIT_COOLDOWN_SECONDS = 24 * 3600;
@@ -241,15 +246,19 @@ export const GAMBIT_RETENTION_SECONDS = 7 * 24 * 3600;
 /** Mandates last 72 sim-hours. */
 export const MANDATE_DURATION_SECONDS = 72 * 3600;
 
-/** Promise duration bounds (sim-hours → seconds). */
-export const PROMISE_MIN_DURATION_SECONDS = 6 * 3600;
-export const PROMISE_MAX_DURATION_SECONDS = 168 * 3600;
+/**
+ * Promise duration bounds. A promise shorter than a Galactic Day can be made
+ * and broken while the other player sleeps; a week of real time is the most a
+ * daily-cadence galaxy can meaningfully hold anyone to.
+ */
+export const PROMISE_MIN_DURATION_SECONDS = GALACTIC_DAY_SIM_SECONDS;
+export const PROMISE_MAX_DURATION_SECONDS = 7 * GALACTIC_DAY_SIM_SECONDS;
 
 /** Judged promises linger 7 sim-days as a record, then prune. */
 export const PROMISE_RETENTION_SECONDS = 7 * 24 * 3600;
 
-/** Intervention windows stay open 24 sim-hours. */
-export const INTERVENTION_WINDOW_SECONDS = 24 * 3600;
+/** Intervention windows stay open one Galactic Day (was 24 sim-hours = 1.6 real). */
+export const INTERVENTION_WINDOW_SECONDS = GALACTIC_DAY_SIM_SECONDS;
 
 /** Closed windows linger 3 sim-days for the record. */
 export const INTERVENTION_RETENTION_SECONDS = 3 * 24 * 3600;

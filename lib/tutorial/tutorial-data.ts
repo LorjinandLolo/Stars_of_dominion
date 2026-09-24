@@ -110,7 +110,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'diplomacy',
         title: 'Diplomacy & Statecraft',
-        body: 'The Diplomacy panel lets you propose treaties, trade pacts, tribute demands, and war declarations. Sent offers expire after 48 hours if unanswered. Check "Incoming Offers" for pending offers from rivals.',
+        body: 'The Diplomacy panel lets you propose treaties, trade pacts, tribute demands, and war declarations. Anything waiting on an answer — an offer, an ultimatum, a debate — stays open for at least a full day of real time, so checking in once a day is enough. Check "Incoming Offers" for pending offers from rivals.',
         targetElementId: 'dock-cat-diplomacy',
         category: 'diplomacy',
         requiredTab: 'diplomacy',
@@ -138,7 +138,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'crisis-response',
         title: 'Crisis Windows',
-        body: 'When you are attacked — by sabotage, blockade, or coup attempt — a timed Crisis Window opens. You have 6–24 hours to choose a response: Escalate, Fortify, Deceive, Negotiate, or Sacrifice. If you go offline, your empire\'s doctrine auto-responds.',
+        body: 'When you are attacked — by sabotage, blockade, or coup attempt — a timed Crisis Window opens. You have at least a full day of real time to choose a response: Escalate, Fortify, Deceive, Negotiate, or Sacrifice. If you go offline, your empire\'s doctrine auto-responds.',
         targetElementId: null,
         category: 'crisis',
     },

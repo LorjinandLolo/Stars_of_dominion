@@ -18,6 +18,7 @@ import {
 import type { PolicyOption } from '@/types/ui-state';
 import { formatPercent } from '@/lib/ui/format';
 import AdvisorsCard from '@/components/government/AdvisorsCard';
+import { formatGalacticDeadline, isUrgentDeadline } from '@/lib/time/galactic-time';
 
 const CATEGORY_ICON: Record<string, React.ReactNode> = {
     military: <ShieldCheck size={14} />,
@@ -399,13 +400,13 @@ export default function GovernmentPanel() {
                         </div>
                         <div className="space-y-3">
                             {gov!.secession.map(crisis => {
-                                const daysLeft = Math.max(0, (crisis.deadlineSeconds - nowSeconds) / 86400);
+                                const spent = crisis.deadlineSeconds <= nowSeconds;
                                 return (
                                     <div key={crisis.id} className="bg-red-950/30 border border-red-500/40 rounded-lg p-3">
                                         <div className="flex justify-between items-start gap-2">
                                             <div className="font-display text-xs text-red-300 uppercase tracking-wider">{crisis.name}</div>
                                             <span className="text-[9px] font-mono text-amber-400 shrink-0">
-                                                {daysLeft < 0.05 ? 'PATIENCE SPENT' : `${daysLeft.toFixed(1)}d`}
+                                                {spent ? 'PATIENCE SPENT' : `until ${formatGalacticDeadline(crisis.deadlineSeconds, nowSeconds)}`}
                                             </span>
                                         </div>
 
@@ -518,7 +519,7 @@ export default function GovernmentPanel() {
                         </div>
                         <div className="space-y-3">
                             {gov!.defiance.map(crisis => {
-                                const daysLeft = Math.max(0, (crisis.expiresAtSeconds - nowSeconds) / 86400);
+                                const closing = crisis.expiresAtSeconds <= nowSeconds;
                                 return (
                                     <div key={crisis.id} className="bg-red-950/20 border border-red-500/30 rounded-lg p-3">
                                         <div className="flex justify-between items-start gap-2">
@@ -529,7 +530,7 @@ export default function GovernmentPanel() {
                                                 <div className="text-xs text-slate-200 mt-0.5">{crisis.title}</div>
                                             </div>
                                             <span className="text-[9px] font-mono text-amber-400 shrink-0">
-                                                {daysLeft < 0.05 ? 'CLOSING' : `${daysLeft.toFixed(1)}d LEFT`}
+                                                {closing ? 'CLOSING' : `answer by ${formatGalacticDeadline(crisis.expiresAtSeconds, nowSeconds)}`}
                                             </span>
                                         </div>
 
@@ -862,8 +863,8 @@ export default function GovernmentPanel() {
                                 <div key={q.id} className="bg-slate-900/40 border border-amber-500/20 rounded p-3">
                                     <div className="flex items-baseline justify-between gap-3">
                                         <div className="text-[12px] font-semibold text-slate-100">{q.title}</div>
-                                        <div className={`text-[9px] font-mono shrink-0 ${q.ticksLeft <= 4 ? 'text-rose-400 animate-pulse' : 'text-slate-500'}`}>
-                                            {q.ticksLeft} turns before it festers into nothing
+                                        <div className={`text-[9px] font-mono shrink-0 ${isUrgentDeadline(q.deadlineAtSeconds, nowSeconds) ? 'text-rose-400 animate-pulse' : 'text-slate-500'}`}>
+                                            dies in committee {formatGalacticDeadline(q.deadlineAtSeconds, nowSeconds)}
                                         </div>
                                     </div>
                                     {q.spec && (

@@ -27,6 +27,7 @@ import { ensureDiplomacyState, getOrCreateRivalry, shiftRivalry, isAtWar } from 
 import type { DiplomacyResult } from './offer-service';
 import { pushWorldStory } from '@/lib/press-system/integration';
 import { StorySource, StoryTruth } from '@/lib/press-system/types';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 const ok = (message: string): DiplomacyResult => ({ success: true, message });
 const fail = (message: string): DiplomacyResult => ({ success: false, message });
@@ -163,8 +164,7 @@ export function launchGambit(world: GameWorldState, initiatorId: string, params:
     const cooldownKey = `gambit|${initiatorId}|${targetId}`;
     const lockedUntil = dip.cooldowns.get(cooldownKey) ?? 0;
     if (world.nowSeconds < lockedUntil) {
-        const hours = Math.ceil((lockedUntil - world.nowSeconds) / 3600);
-        return fail(`Their court will not entertain another gambit yet (~${hours}h).`);
+        return fail(`Their court will not entertain another gambit yet (${formatSimDurationAsReal(lockedUntil - world.nowSeconds)}).`);
     }
 
     // Spend leverage to raise the stakes (§12): must actually hold the points.

@@ -18,6 +18,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import type { NavTab } from '@/types/ui-state';
 import type { BriefAction, BriefDecision, DailyBrief as DailyBriefData } from '@/lib/brief/brief-types';
+import { formatRealAgo, formatRealDeadline } from '@/lib/time/galactic-time';
 
 /** Real seconds left, counted down from when the brief was built. */
 function secondsLeft(brief: DailyBriefData, decision: BriefDecision): number | null {
@@ -26,24 +27,19 @@ function secondsLeft(brief: DailyBriefData, decision: BriefDecision): number | n
     return decision.deadline.realSecondsLeft - elapsed;
 }
 
+/** "closes today at 18:40" / "closes tomorrow at 09:15" / "closes in 3 days". */
 function countdown(seconds: number | null): string {
     if (seconds === null) return '';
-    if (seconds <= 0) return 'expired';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 1) return 'under a minute left';
-    if (minutes < 60) return `${minutes}m left`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return minutes % 60 ? `${hours}h ${minutes % 60}m left` : `${hours}h left`;
-    const days = Math.floor(hours / 24);
-    return days === 1 ? '1 day left' : `${days} days left`;
+    const label = formatRealDeadline(seconds);
+    return label === 'expired' ? 'expired' : `closes ${label}`;
 }
 
+/** "today, 14:05" / "yesterday" / "3 days ago" — the player's calendar, never cycles. */
 function whenLine(at: string): string {
-    const delta = (Date.now() - Date.parse(at)) / 1000;
-    if (delta < 3600) return `${Math.max(1, Math.floor(delta / 60))}m ago`;
-    if (delta < 86_400) return `${Math.floor(delta / 3600)}h ago`;
-    const days = Math.floor(delta / 86_400);
-    return days === 1 ? 'yesterday' : `${days} days ago`;
+    const words = formatRealAgo(at);
+    if (words !== 'today') return words;
+    const clock = new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `today, ${clock}`;
 }
 
 const TONE_CLASS: Record<BriefAction['tone'], string> = {

@@ -19,6 +19,11 @@ import { MessageSquare } from 'lucide-react';
 import ContactSwitcher from './diplomacy/ContactSwitcher';
 import ContactRail from './diplomacy/ContactRail';
 import { buildContacts, ESCALATION_LABELS } from './diplomacy/contact-model';
+import { GALACTIC_DAY_SIM_SECONDS } from '@/lib/time/time-config';
+import { formatGalacticDeadline } from '@/lib/time/galactic-time';
+
+/** One Galactic Day in the sim hours DIP_MAKE_PROMISE carries. */
+const GALACTIC_DAY_SIM_HOURS = GALACTIC_DAY_SIM_SECONDS / 3600;
 
 const BAND_COLORS: Record<string, string> = {
     mandate: 'text-emerald-400',
@@ -120,7 +125,10 @@ const TREATY_TYPES: { type: TreatyType, label: string, icon: any }[] = [
 ];
 
 export default function DiplomacyPanel() {
-    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy, espionageState, planets, factions } = useUIStore();
+    const { playerState, diplomacyState, politicsState, empireIdentity, updateDiplomacy, espionageState, planets, factions, nowSeconds } = useUIStore();
+    // Every window here is on the sim clock; players read it in their own days.
+    const deadline = (atSimSeconds: number) => formatGalacticDeadline(atSimSeconds, nowSeconds);
+    const nameOf = (factionId: string) => (factions as any)?.[factionId]?.name ?? factionId.replace('faction-', '');
     const [activeTab, setActiveTab] = useState<'intel' | 'statecraft' | 'economy' | 'intrigue'>('statecraft');
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     const [showDiscourse, setShowDiscourse] = useState(false);
@@ -130,7 +138,7 @@ export default function DiplomacyPanel() {
     const [gambitLeverage, setGambitLeverage] = useState<number>(0);
     const [promiseKind, setPromiseKind] = useState<'deliver_credits' | 'non_aggression'>('non_aggression');
     const [promiseAmount, setPromiseAmount] = useState<number>(500);
-    const [promiseDuration, setPromiseDuration] = useState<number>(48);
+    const [promiseDuration, setPromiseDuration] = useState<number>(GALACTIC_DAY_SIM_HOURS);
     const [mercRetainer] = useState<number>(250);
     const [mercTermTicks] = useState<number>(30);
 
@@ -345,10 +353,12 @@ export default function DiplomacyPanel() {
                                             <div key={w.id} className="p-5 rounded-2xl border border-orange-500/20 bg-orange-500/5 flex items-center justify-between">
                                                 <div>
                                                     <span className="text-xs font-bold text-white uppercase tracking-widest block">
-                                                        {w.aggressorId.replace('faction-', '')} attacks {w.defenderId.replace('faction-', '')}
+                                                        {nameOf(w.aggressorId)} attacks {nameOf(w.defenderId)}
                                                     </span>
                                                     <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
-                                                        {myStance ? `Position taken: ${myStance}` : 'The galaxy is watching — take a stand or stay silent'}
+                                                        {myStance
+                                                            ? `Position taken: ${myStance}`
+                                                            : `The galaxy is watching — take a stand before ${deadline(w.closesAtSeconds)}`}
                                                     </span>
                                                 </div>
                                                 {!myStance && (
@@ -396,6 +406,7 @@ export default function DiplomacyPanel() {
                                                     </span>
                                                     <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
                                                         {incoming ? `Proposed by ${selectedFaction.name}` : 'Awaiting their response'}
+                                                        {' · expires '}{deadline(offer.expiresAtSeconds)}
                                                     </span>
                                                 </div>
                                                 <div className="flex gap-3">
@@ -462,8 +473,8 @@ export default function DiplomacyPanel() {
                                                         <span className="text-xs font-bold text-white uppercase tracking-widest block">{describeGambit(g)}</span>
                                                         <span className="text-[9px] text-slate-500 uppercase tracking-tighter">
                                                             {incoming
-                                                                ? `Issued by ${selectedFaction.name} — respond or your doctrine decides for you`
-                                                                : 'Awaiting their move — your prediction is sealed'}
+                                                                ? `Issued by ${selectedFaction.name} — answer by ${deadline(g.respondBySeconds)} or your doctrine decides for you`
+                                                                : `Awaiting their move until ${deadline(g.respondBySeconds)} — your prediction is sealed`}
                                                         </span>
                                                     </div>
                                                     {!incoming && g.prediction && (
@@ -638,10 +649,13 @@ export default function DiplomacyPanel() {
                                                 onChange={e => setPromiseDuration(Number(e.target.value))}
                                                 className="bg-black/60 border border-white/10 rounded-lg px-2 py-2 text-[10px] font-mono text-slate-200"
                                             >
-                                                <option value={24}>24h</option>
-                                                <option value={48}>48h</option>
-                                                <option value={72}>72h</option>
-                                                <option value={168}>7d</option>
+                                                {/* Real days. The order still carries sim hours
+                                                    (one Galactic Day = 360 of them at 15x). */}
+                                                {[1, 2, 3, 7].map(days => (
+                                                    <option key={days} value={days * GALACTIC_DAY_SIM_HOURS}>
+                                                        {days === 1 ? '1 day' : `${days} days`}
+                                                    </option>
+                                                ))}
                                             </select>
                                             <button
                                                 onClick={() => handleAction('promise', dispatchOrder({

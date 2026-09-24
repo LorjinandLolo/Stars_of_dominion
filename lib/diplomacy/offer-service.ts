@@ -36,6 +36,7 @@ import {
     OFFER_COOLDOWN_SECONDS,
     MAX_RELATION_EVENTS,
 } from './diplomacy-types';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 export interface DiplomacyResult {
     success: boolean;
@@ -307,8 +308,8 @@ export function createOffer(world: GameWorldState, fromFactionId: string, params
     const cooldownKey = `${fromFactionId}|${toFactionId}|${kind}${kind === 'treaty' ? `:${params.treatyType}` : ''}`;
     const lockedUntil = dip.cooldowns.get(cooldownKey) ?? 0;
     if (world.nowSeconds < lockedUntil) {
-        const hours = Math.ceil((lockedUntil - world.nowSeconds) / 3600);
-        return fail(`Their court refuses to reopen this matter yet (~${hours}h).`);
+        // Sim hours read as real ones ran out fifteen times faster than promised.
+        return fail(`Their court refuses to reopen this matter yet (${formatSimDurationAsReal(lockedUntil - world.nowSeconds)}).`);
     }
 
     const offer: DiplomaticOffer = {

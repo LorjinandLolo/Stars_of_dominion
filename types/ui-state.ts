@@ -559,6 +559,8 @@ export interface PoliticsState {
         kind: string;
         title: string;
         ticksLeft: number;
+        /** Absolute sim-clock deadline; panels format it with lib/time/galactic-time. */
+        deadlineAtSeconds: number;
         facts: Record<string, string>;
         spec: {
             prompt: string;

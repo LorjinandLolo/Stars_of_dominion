@@ -10,6 +10,7 @@
 // corridor's traffic, and a hostage forces a great power to talk to a gang.
 
 import type { GameWorldState } from '../game-world-state';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { Fleet } from '../movement/types';
 import { RNG, seedFromString } from '../trade-system/rng';
 import {
@@ -110,7 +111,8 @@ const CAPTURED_HULL_STRENGTH = 0.45;
 
 /** Ransom, as a multiple of the raid's credit value. */
 const RANSOM_MULTIPLIER = 6;
-const HOSTAGE_WINDOW_SECONDS = 72 * 3600;
+/** Ransom must be answerable by a player who checks in once a day (72 sim-hours was under five real). */
+const HOSTAGE_WINDOW_SECONDS = atLeastAGalacticDay(72 * 3600);
 
 /** Share of the treasury a band puts somewhere safe when it has storage. */
 const BANKED_SHARE = 0.2;

@@ -18,6 +18,7 @@ import type { FactionTraitState, KaerruunTraitState } from './faction-traits-typ
 import { emptyKaerruunTraitState } from './faction-traits-types';
 import { isAtWar } from '../diplomacy/offer-service';
 import { bumpMetric, getMetric } from '../tech/history-ledger';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 /** The civilization this module belongs to. Factions are matched on this. */
 export const KAERRUUN_CIV_ID = 'civ-kaerruun';
@@ -121,10 +122,10 @@ export function checkCeasefireGate(world: GameWorldState, factionId: string, act
     if (!verb) return { allowed: true };
     if (!isInBloodmoonCeasefire(world, factionId)) return { allowed: true };
 
-    const ticks = Math.ceil(bloodmoonSecondsRemaining(world, factionId) / TICK_SECONDS);
+    const left = formatSimDurationAsReal(bloodmoonSecondsRemaining(world, factionId));
     return {
         allowed: false,
-        reason: `The Bloodmoon is observed — no Kaer'Ruun may ${verb} for another ${ticks} turn(s).`,
+        reason: `The Bloodmoon is observed — no Kaer'Ruun may ${verb} for another ${left}.`,
     };
 }
 

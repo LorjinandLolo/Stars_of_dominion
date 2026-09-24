@@ -26,6 +26,7 @@ import { isButhari } from './civ-ids';
 import { bumpMetric } from '../tech/history-ledger';
 import { issueMoveOrder } from '../movement/movement-service';
 import { applyOrbitalDamage } from '../orbital/orbital-service';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 const TICK_SECONDS = 6 * 60 * 60;
 
@@ -146,10 +147,9 @@ export function checkCouncilGate(world: GameWorldState, factionId: string, champ
     }
     const remaining = cooldownRemaining(world, factionId, championId);
     if (remaining > 0) {
-        const ticks = Math.ceil(remaining / TICK_SECONDS);
         return {
             allowed: false,
-            reason: `${COUNCIL[championId].name} is still in seclusion — ${ticks} turn(s) remain.`,
+            reason: `${COUNCIL[championId].name} is still in seclusion — ${formatSimDurationAsReal(remaining)} remain.`,
         };
     }
     return { allowed: true };

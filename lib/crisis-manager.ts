@@ -1,13 +1,15 @@
 import { prisma, withDocAliases } from '@/lib/db';
 import { CrisisType, resolveLogic } from './crisis-shared';
+import { GALACTIC_DAY_REAL_HOURS } from './time/time-config';
 
 /**
- * Hours the defender has to respond before the crisis auto-expires.
+ * Real hours the defender has to respond before the crisis auto-expires: one
+ * Galactic Day, so a player who checks in once a day always gets to answer.
  * Override with CRISIS_RESPONSE_HOURS (e.g. 0.03 ≈ 2 minutes for local testing).
  */
 const CRISIS_RESPONSE_HOURS = Number(process.env.CRISIS_RESPONSE_HOURS) > 0
     ? Number(process.env.CRISIS_RESPONSE_HOURS)
-    : 12;
+    : GALACTIC_DAY_REAL_HOURS;
 
 // --- Actions ---
 

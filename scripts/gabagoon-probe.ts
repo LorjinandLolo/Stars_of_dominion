@@ -285,8 +285,15 @@ console.log('\n[8] Persistence and layering');
 
     const imports = [...code('lib/factions/gabagoon.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
     check('gabagoon.ts imports only leaves', imports.every(i =>
-        ['../game-world-state', './faction-traits-types', './civ-ids', './stimulant', '../tech/history-ledger'].includes(i)),
+        ['../game-world-state', './faction-traits-types', './civ-ids', './stimulant', '../tech/history-ledger',
+         // The player clock (Item 3): pure formatting over time-config constants.
+         '@/lib/time/galactic-time'].includes(i)),
         imports.join(', '));
+    // ...and it has to stay a leaf for that to hold.
+    const clock = [...code('lib/time/galactic-time.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
+    check('galactic-time imports only time-config', clock.every(i => i === './time-config'), clock.join(', '));
+    const config = [...code('lib/time/time-config.ts').matchAll(/^import (type )?.*from '([^']+)'/gm)];
+    check('and time-config imports types only', config.every(m => m[1] === 'type '), config.map(m => m[0]).join(' | '));
     const st = [...code('lib/factions/stimulant.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
     check('stimulant.ts imports nothing at all — two factions depend on it', st.length === 0, st.join(', '));
 

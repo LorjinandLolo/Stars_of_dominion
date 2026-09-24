@@ -10,6 +10,7 @@
  */
 
 import type { GameWorldState } from '../../game-world-state';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { CharteredCompany } from './company-types';
 import type { CorporateWorldState } from './company-registry';
 import type {
@@ -31,9 +32,12 @@ import {
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 export const CRISIS_INTERVAL_SECONDS = 5 * 86_400;
-export const CRISIS_WINDOW_SECONDS = 3 * 86_400;
+// Answer windows are at least one Galactic Day (24 real hours); 3-4 sim days
+// was under five real hours. One pending item per company (maybeSpawnCrisis,
+// maybeProposeMegaproject), so a window longer than the interval cannot stack.
+export const CRISIS_WINDOW_SECONDS = atLeastAGalacticDay(3 * 86_400);
 export const PROPOSAL_INTERVAL_SECONDS = 8 * 86_400;
-export const PROPOSAL_WINDOW_SECONDS = 4 * 86_400;
+export const PROPOSAL_WINDOW_SECONDS = atLeastAGalacticDay(4 * 86_400);
 
 // ─── Crises ──────────────────────────────────────────────────────────────────
 

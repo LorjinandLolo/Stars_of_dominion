@@ -14,24 +14,23 @@ import {
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
+import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 
 type TabType = 'board' | 'operations' | 'reports' | 'agents' | 'recruitment';
 
 /** Countdown label from sim-clock seconds. */
 function expiryCountdown(nowSeconds: number, expiresAt: number): string {
-    const hours = (expiresAt - nowSeconds) / 3600;
-    if (hours <= 0) return 'Expired';
-    if (hours < 1) return `${Math.max(1, Math.floor(hours * 60))}m left`;
-    if (hours < 24) return `${Math.floor(hours)}h left`;
-    return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h left`;
+    // Board deadlines are sim-clock; this used to print sim hours ("11H LEFT")
+    // that ran out fifteen times faster than they read. Real calendar words now.
+    if (expiresAt <= nowSeconds) return 'Expired';
+    return `Until ${formatGalacticDeadline(expiresAt, nowSeconds)}`;
 }
 
-/** Report age label from sim-clock seconds. */
+/** Report age from sim-clock seconds, in the player's days ("today", "yesterday"). */
 function reportAge(nowSeconds: number, createdAt: number): string {
-    const hours = Math.max(0, (nowSeconds - createdAt) / 3600);
-    if (hours < 1) return 'Fresh';
-    if (hours < 24) return `${Math.floor(hours)}h old`;
-    return `${Math.floor(hours / 24)}d old`;
+    const realSecondsAgo = Math.max(0, -realSecondsUntil(createdAt, nowSeconds));
+    if (realSecondsAgo < 3600) return 'Fresh';
+    return formatRealAgo(new Date(Date.now() - realSecondsAgo * 1000));
 }
 
 export default function IntelligencePanel() {

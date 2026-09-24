@@ -11,6 +11,7 @@
 // that got it there.
 
 import type { GameWorldState } from '@/lib/game-world-state';
+import { atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { DefianceEvent, DefianceKind, DefianceResponse } from './defiance-types';
 import { defianceOption } from './defiance-types';
 import { RNG } from '@/lib/trade-system/rng';
@@ -37,8 +38,8 @@ const DEFIANCE_PRESSURE_PER_DAY = 40;
 const DEFIANCE_PRESSURE_THRESHOLD = 100;
 /** Pressure shed per sim day once the world climbs back above the threshold. */
 const DEFIANCE_PRESSURE_DECAY_PER_DAY = 25;
-/** How long the government has to answer (5 sim days). */
-const DEFIANCE_WINDOW_SECONDS = 5 * 86400;
+/** How long the government has to answer: at least one Galactic Day (5 sim days was 8 real hours). */
+const DEFIANCE_WINDOW_SECONDS = atLeastAGalacticDay(5 * 86400);
 /** Most open events one empire can face at once — a crisis, not a spreadsheet. */
 const MAX_OPEN_EVENTS_PER_FACTION = 4;
 /** Decided events kept for the record. */

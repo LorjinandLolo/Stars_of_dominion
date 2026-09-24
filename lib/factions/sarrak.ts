@@ -68,6 +68,7 @@ export const BIOME_DRY_PENALTY = 0.10;
  * regenerate a different 64-district board.
  */
 import { isSurging, isCrashing, doseWindows } from './stimulant';
+import { formatSimDurationAsReal } from '@/lib/time/galactic-time';
 
 const WET_TERRAIN = new Set(['jungle', 'forest', 'toxic']);
 const DRY_TERRAIN = new Set(['plains', 'desert', 'frozen', 'urban']);
@@ -142,10 +143,10 @@ export function checkSerumGate(world: GameWorldState, factionId: string, actionI
     }
     if (isWithdrawing(world, factionId)) {
         const st = stateOf(world, factionId)!;
-        const ticks = Math.ceil((st.withdrawalEndsAtSeconds - (world.nowSeconds ?? 0)) / TICK_SECONDS);
+        const left = formatSimDurationAsReal(st.withdrawalEndsAtSeconds - (world.nowSeconds ?? 0));
         return {
             allowed: false,
-            reason: `The legions are still coming down — ${ticks} turn(s) until they can be blessed again.`,
+            reason: `The legions are still coming down — ${left} until they can be blessed again.`,
         };
     }
     return { allowed: true };

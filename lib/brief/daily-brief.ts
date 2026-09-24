@@ -14,6 +14,7 @@
 
 import { TICK_INTERVAL_HOURS, SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import type { GameNotification } from '@/lib/time/time-types';
+import { formatRealDeadline } from '@/lib/time/galactic-time';
 import type {
     BriefAction,
     BriefDeadline,
@@ -380,7 +381,7 @@ function diplomaticOffers(input: BriefInput, nowSeconds: number): BriefDecision[
         kind: 'diplomacy' as const,
         title: `${factionName(input.world, offer.fromFactionId)} proposes ${humanKind(offer.kind)}`,
         detail: offerTerms(offer),
-        deadline: deadlineFrom(offer.expiresAtSeconds, nowSeconds),
+        deadline: deadlineFrom(offer.expiresAtSeconds, nowSeconds, input.now),
         actions: [
             { label: 'Accept', tone: 'accept', actionId: 'DIP_RESPOND_OFFER', payload: { offerId: offer.id, response: 'accept' } },
             { label: 'Reject', tone: 'decline', actionId: 'DIP_RESPOND_OFFER', payload: { offerId: offer.id, response: 'reject' } },
@@ -427,7 +428,7 @@ function gambits(input: BriefInput, nowSeconds: number): BriefDecision[] {
             detail: gambit.demandCredits
                 ? `They demand § ${Math.round(Number(gambit.demandCredits))}. Unanswered, your doctrine answers for you.`
                 : 'Unanswered, your doctrine answers for you.',
-            deadline: deadlineFrom(gambit.respondBySeconds, nowSeconds),
+            deadline: deadlineFrom(gambit.respondBySeconds, nowSeconds, input.now),
             actions: options.map(o => ({
                 label: o.label,
                 tone: o.tone,
@@ -452,7 +453,7 @@ function interventions(input: BriefInput, nowSeconds: number): BriefDecision[] {
         kind: 'diplomacy' as const,
         title: `${factionName(input.world, window.aggressorId)} is at war with ${factionName(input.world, window.defenderId)}`,
         detail: 'The galaxy is waiting to hear where you stand.',
-        deadline: deadlineFrom(window.closesAtSeconds, nowSeconds),
+        deadline: deadlineFrom(window.closesAtSeconds, nowSeconds, input.now),
         actions: [
             { label: 'Condemn', tone: 'decline', actionId: 'DIP_INTERVENE', payload: { windowId: window.id, stance: 'condemn' } },
             { label: 'Endorse', tone: 'accept', actionId: 'DIP_INTERVENE', payload: { windowId: window.id, stance: 'endorse' } },
@@ -476,7 +477,7 @@ function debates(input: BriefInput, nowSeconds: number): BriefDecision[] {
         kind: 'debate' as const,
         title: debateHeadline(question),
         detail: 'Your parliament is waiting on a line. Three answers, none of them free.',
-        deadline: deadlineFrom(question.deadlineAtSeconds, nowSeconds),
+        deadline: deadlineFrom(question.deadlineAtSeconds, nowSeconds, input.now),
         actions: [{ label: 'Open', tone: 'open', openTab: 'government' }],
     }));
 }
@@ -491,7 +492,7 @@ function defianceEvents(input: BriefInput, nowSeconds: number): BriefDecision[] 
         kind: 'debate' as const,
         title: event.title ?? `${event.planetName ?? 'A world'} refuses`,
         detail: event.demand ?? 'Left unanswered, the refusal stands.',
-        deadline: deadlineFrom(event.expiresAtSeconds, nowSeconds),
+        deadline: deadlineFrom(event.expiresAtSeconds, nowSeconds, input.now),
         actions: [{ label: 'Answer', tone: 'open', openTab: 'government' }],
     }));
 }
@@ -506,7 +507,7 @@ function secessionCrises(input: BriefInput, nowSeconds: number): BriefDecision[]
         kind: 'secession' as const,
         title: crisis.name ?? 'Worlds demand independence',
         detail: `${crisis.planetIds?.length ?? 0} worlds, ${Math.round(Number(crisis.independenceSupport ?? 0))}% for leaving.`,
-        deadline: deadlineFrom(crisis.deadlineSeconds, nowSeconds),
+        deadline: deadlineFrom(crisis.deadlineSeconds, nowSeconds, input.now),
         actions: [{ label: 'Open', tone: 'open', openTab: 'government' }],
     }));
 }
@@ -521,7 +522,7 @@ function corporateDemands(input: BriefInput, nowSeconds: number): BriefDecision[
         kind: 'corporate' as const,
         title: `${companyName(input.world, demand.companyId)}: ${humanKind(demand.type)}`,
         detail: demand.text ?? demand.concession ?? 'A corporate demand is waiting on your answer.',
-        deadline: deadlineFrom(demand.expiresAt, nowSeconds),
+        deadline: deadlineFrom(demand.expiresAt, nowSeconds, input.now),
         actions: [
             { label: 'Accept', tone: 'accept', actionId: 'CORP_RESPOND_DEMAND', payload: { demandId: demand.id, response: 'accept' } },
             { label: 'Refuse', tone: 'decline', actionId: 'CORP_RESPOND_DEMAND', payload: { demandId: demand.id, response: 'reject' } },
@@ -540,7 +541,7 @@ function corporateCrises(input: BriefInput, nowSeconds: number): BriefDecision[]
         kind: 'corporate' as const,
         title: crisis.headline ?? 'A corporate crisis',
         detail: crisis.description ?? 'The state has to answer for this one.',
-        deadline: deadlineFrom(crisis.expiresAt, nowSeconds),
+        deadline: deadlineFrom(crisis.expiresAt, nowSeconds, input.now),
         actions: (crisis.options ?? []).slice(0, 2).map((option: any) => ({
             label: option.label ?? option.title ?? 'Choose',
             tone: 'accept' as const,
@@ -560,7 +561,7 @@ function intelBoard(input: BriefInput, nowSeconds: number): BriefDecision[] {
         kind: 'crisis' as const,
         title: entry.title ?? (entry.kind === 'threat' ? 'Threat' : 'Opportunity'),
         detail: entry.description ?? '',
-        deadline: deadlineFrom(entry.expiresAt, nowSeconds),
+        deadline: deadlineFrom(entry.expiresAt, nowSeconds, input.now),
         actions: [
             { label: entry.kind === 'threat' ? 'Act on it' : 'Seize it', tone: 'accept', actionId: 'ESP_SEIZE_OPPORTUNITY', payload: { opportunityId: entry.id } },
             { label: 'Open', tone: 'open', openTab: 'intelligence' },
@@ -626,25 +627,21 @@ function capitalize(text: string): string {
     return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-/** A sim-clock deadline, rendered in the real minutes a player actually has. */
-export function deadlineFrom(atSimSeconds: unknown, nowSeconds: number): BriefDeadline | undefined {
+/**
+ * A sim-clock deadline in the player's own calendar ("today at 18:40",
+ * "tomorrow at 09:15", "in 3 days"). Built server-side with the server's
+ * clock; the client re-renders it from realSecondsLeft in the viewer's zone.
+ */
+export function deadlineFrom(atSimSeconds: unknown, nowSeconds: number, now?: Date): BriefDeadline | undefined {
     const at = Number(atSimSeconds);
     if (!Number.isFinite(at) || at <= 0) return undefined;
     const realSecondsLeft = (at - nowSeconds) / SIM_SECONDS_PER_REAL_SECOND;
-    return { atSimSeconds: at, realSecondsLeft, label: realTimeLabel(realSecondsLeft) };
+    return { atSimSeconds: at, realSecondsLeft, label: realTimeLabel(realSecondsLeft, now) };
 }
 
-export function realTimeLabel(realSecondsLeft: number): string {
-    if (!Number.isFinite(realSecondsLeft)) return 'no deadline';
-    if (realSecondsLeft <= 0) return 'expired';
-    const minutes = Math.floor(realSecondsLeft / 60);
-    if (minutes < 1) return 'under a minute left';
-    if (minutes < 60) return `${minutes}m left`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    if (hours < 24) return rest ? `${hours}h ${rest}m left` : `${hours}h left`;
-    const days = Math.floor(hours / 24);
-    return days === 1 ? '1 day left' : `${days} days left`;
+/** The one formatter (lib/time/galactic-time), kept under its old name for callers. */
+export function realTimeLabel(realSecondsLeft: number, now?: Date): string {
+    return formatRealDeadline(realSecondsLeft, { now });
 }
 
 /** Real seconds until the next strategic tick. */
