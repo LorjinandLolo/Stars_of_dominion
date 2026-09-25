@@ -7,6 +7,7 @@ import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import { registerFactionLabels, humanizeNotification } from '@/lib/time/notification-names';
+import { currentGoal } from '@/lib/goals/first-week-goals';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
@@ -896,6 +897,12 @@ export function useGameSync() {
             delegation: activeFactionId
                 ? ((world as any).delegation?.get?.(activeFactionId) ?? null)
                 : null,
+            // The goal the player is on, resolved against this world so its deep
+            // link points at a real system. Null once all five are done, and
+            // null until the worker has written a record (goals are per human).
+            firstWeekGoal: activeFactionId && (world as any).firstWeekGoals?.has?.(activeFactionId)
+                ? currentGoal(world as any, activeFactionId)
+                : null,
             // Latched by step20 each strategic tick; drives the defeat overlay.
             playerDefeatStatus: activeFactionId
                 ? ((world as any).titles?.defeatStatuses?.get?.(activeFactionId) ?? null)
@@ -989,6 +996,10 @@ export function useGameSync() {
             if (mappedShard.delegation) {
                 if (!world.delegation) world.delegation = new Map();
                 world.delegation.set(mappedShard.factionId, mappedShard.delegation);
+            }
+            if (mappedShard.firstWeekGoals) {
+                if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
+                world.firstWeekGoals.set(mappedShard.factionId, mappedShard.firstWeekGoals);
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };

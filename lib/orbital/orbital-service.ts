@@ -9,6 +9,8 @@
 import type { Planet as ConstructionPlanet } from '../construction/construction-types';
 import type { GameWorldState } from '../game-world-state';
 import { ORBITAL_STRUCTURE_BY_ID } from '../../data/orbital-structures';
+import { bumpMetric } from '../tech/history-ledger';
+import { DEED_SHIPYARDS_BUILT } from '../tech/deed-metrics';
 import { specializationMultiplier } from '../specialization/specialization-effects';
 import {
     BASE_ORBITAL_SLOTS,
@@ -534,7 +536,18 @@ export function tickOrbitalGlobal(world: GameWorldState, deltaSeconds: number): 
         // Only pay the slot-sync and repair cost for worlds that actually have a
         // layer or are building one.
         if (!planet.orbital && (planet.infrastructureLevel ?? 1) < 2) continue;
-        processOrbitalQueue(planet, now);
+        const finished = processOrbitalQueue(planet, now);
+        // The deed ledger counts shipyards an empire BUILT (first-week goal 4
+        // reads it), so it is bumped here, where one comes online, and nowhere
+        // else — an inherited or captured yard is not a deed.
+        if (finished.length && planet.ownerId) {
+            for (const slotId of finished) {
+                const structureId = planet.orbital?.slots.find(s => s.slotId === slotId)?.structureId;
+                if (structureId && ORBITAL_STRUCTURE_BY_ID[structureId]?.category === 'shipyard') {
+                    bumpMetric(world, planet.ownerId, DEED_SHIPYARDS_BUILT);
+                }
+            }
+        }
         repairOrbital(planet, deltaSeconds);
     }
 }

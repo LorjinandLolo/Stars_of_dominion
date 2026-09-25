@@ -19,6 +19,8 @@ import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import type { NavTab } from '@/types/ui-state';
 import type { BriefAction, BriefDecision, DailyBrief as DailyBriefData } from '@/lib/brief/brief-types';
 import { formatRealAgo, formatRealDeadline } from '@/lib/time/galactic-time';
+import { followGoalLink } from '@/lib/goals/follow-goal-link';
+import { useTutorialStore } from '@/lib/tutorial/tutorial-store';
 
 /** Real seconds left, counted down from when the brief was built. */
 function secondsLeft(brief: DailyBriefData, decision: BriefDecision): number | null {
@@ -58,6 +60,8 @@ export default function DailyBrief() {
     const [loading, setLoading] = React.useState(false);
     const [answered, setAnswered] = React.useState<Record<string, string>>({});
     const autoOpenedRef = React.useRef(false);
+    const tutorialActive = useTutorialStore(s => s.isActive);
+    const tutorialEverStarted = useTutorialStore(s => s.hasEverStarted);
     // Re-render once a minute so the countdowns stay honest.
     const [, setPulse] = React.useState(0);
 
@@ -83,9 +87,13 @@ export default function DailyBrief() {
 
     React.useEffect(() => {
         if (!brief || autoOpenedRef.current) return;
+        // A first-time player gets the three-step tour first (it auto-starts
+        // 1.5 s after login and ends by pointing at the BRIEF button); the
+        // brief waits for it instead of opening underneath it.
+        if (tutorialActive || !tutorialEverStarted) return;
         autoOpenedRef.current = true;
         if (!brief.empty) setBriefOpen(true);
-    }, [brief, setBriefOpen]);
+    }, [brief, setBriefOpen, tutorialActive, tutorialEverStarted]);
 
     React.useEffect(() => {
         if (!briefOpen) return;
@@ -100,6 +108,11 @@ export default function DailyBrief() {
     }, [briefOpen]);
 
     const runAction = async (key: string, action: BriefAction) => {
+        if (action.deepLink) {
+            followGoalLink(action.deepLink);
+            setBriefOpen(false);
+            return;
+        }
         if (action.openTab) {
             setActiveTab(action.openTab as NavTab);
             setBriefOpen(false);
@@ -243,10 +256,19 @@ export default function DailyBrief() {
                         {brief.suggestion && (
                             <section>
                                 <h3 className="text-[10px] font-display uppercase tracking-[0.2em] text-slate-500 mb-3">
-                                    One thing worth doing
+                                    {brief.suggestion.goal
+                                        ? `First-week goal ${brief.suggestion.goal.number} of ${brief.suggestion.goal.total}`
+                                        : 'One thing worth doing'}
                                 </h3>
                                 <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-4">
-                                    <p className="text-sm font-semibold text-white mb-1">{brief.suggestion.title}</p>
+                                    <div className="flex items-baseline justify-between gap-3 mb-1">
+                                        <p className="text-sm font-semibold text-white">{brief.suggestion.title}</p>
+                                        {brief.suggestion.goal && brief.suggestion.goal.target > 1 && (
+                                            <span className="text-[10px] font-mono text-sky-300 whitespace-nowrap">
+                                                {brief.suggestion.goal.progress}/{brief.suggestion.goal.target}
+                                            </span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-slate-400 leading-relaxed mb-3">{brief.suggestion.detail}</p>
                                     {answered['suggestion'] ? (
                                         <p className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">

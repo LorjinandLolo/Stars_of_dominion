@@ -32,6 +32,12 @@ export const DEED_OPS_LAUNCHED = 'esp.opsLaunched';
 export const DEED_OPS_DETECTED_AGAINST_US = 'esp.opsDetectedAgainstUs';
 /** Pre-existing: lib/politics/debate-service.ts DEBATES_RESOLVED_METRIC (that module is not a leaf, so the literal lives here too). */
 export const DEED_DEBATES_SETTLED = 'pol.debatesResolved';
+/** Warships delivered by a completed recruitment job (lib/combat/recruitment-service), by hull count. */
+export const DEED_SHIPS_COMMISSIONED = 'mil.shipsCommissioned';
+/** Orbital shipyards finished (lib/orbital/orbital-service tickOrbitalGlobal). Built, not inherited. */
+export const DEED_SHIPYARDS_BUILT = 'mil.shipyardsBuilt';
+/** Envoys sent (DIP_SEND_ENVOY in the worker). */
+export const DEED_ENVOYS_SENT = 'dip.envoysSent';
 
 export interface DeedDef {
     metric: string;
@@ -44,6 +50,7 @@ export const DEED_DEFS: readonly DeedDef[] = [
     { metric: DEED_SYSTEMS_SURVEYED, label: 'Systems charted' },
     { metric: DEED_COLONIES_FOUNDED, label: 'Worlds settled' },
     { metric: DEED_TREATIES_SIGNED, label: 'Treaties signed' },
+    { metric: DEED_ENVOYS_SENT, label: 'Envoys sent' },
     { metric: DEED_WARS_DECLARED, label: 'Wars declared' },
     { metric: DEED_WARS_DECLARED_ON_US, label: 'Wars declared on us' },
     { metric: DEED_FLEETS_DESTROYED, label: 'Enemy fleets destroyed' },
@@ -53,4 +60,6 @@ export const DEED_DEFS: readonly DeedDef[] = [
     { metric: DEED_OPS_LAUNCHED, label: 'Covert operations launched' },
     { metric: DEED_OPS_DETECTED_AGAINST_US, label: 'Enemy operations detected' },
     { metric: DEED_DEBATES_SETTLED, label: 'Debates settled' },
+    { metric: DEED_SHIPS_COMMISSIONED, label: 'Warships commissioned' },
+    { metric: DEED_SHIPYARDS_BUILT, label: 'Spaceyards raised in orbit' },
 ];

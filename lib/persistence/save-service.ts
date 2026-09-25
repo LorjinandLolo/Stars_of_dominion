@@ -291,6 +291,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // so it rides their own shard; absent record = everything delegated
         // (lib/delegation/delegation-service.ts states that rule once).
         delegation: world.delegation?.get(factionId) ?? null,
+        // Where this player is in the first-week goals. Theirs, like the above.
+        firstWeekGoals: world.firstWeekGoals?.get(factionId) ?? null,
         // Ship designs are the owner's alone. They ride the shard (not the
         // shared snapshot) and the public projection in shard-privacy.ts is an
         // allow-list, so rivals never see them on the wire.
@@ -368,6 +370,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.delegation) world.delegation = new Map();
         world.delegation.set(shard.factionId, shard.delegation);
     }
+    if (shard.firstWeekGoals) {
+        if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
+        world.firstWeekGoals.set(shard.factionId, shard.firstWeekGoals);
+    }
     if (shard.recruitmentJobs) {
         if (!world.combat) world.combat = { recruitmentJobs: [] };
         // Merge - unique by ID
@@ -424,6 +430,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.
     if (cloned.delegation instanceof Map) cloned.delegation.clear();
+    if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
 
     // Pirate state never rides in the shared snapshot. Every mechanic that
     // matters here is a mechanic about asymmetric information — hidden bases,

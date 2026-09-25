@@ -28,6 +28,13 @@ export interface BriefAction {
     payload?: Record<string, unknown>;
     /** Panel to open instead, for answers the brief cannot make inline. */
     openTab?: string;
+    /** A first-week goal's deep link: a panel plus the planet or system it is about. */
+    deepLink?: {
+        tab: string;
+        constructionPlanetId?: string;
+        selectSystemId?: string;
+        label: string;
+    };
 }
 
 /** How long is left, in the units a player thinks in. */
@@ -64,6 +71,8 @@ export interface BriefSuggestion {
     title: string;
     detail: string;
     action: BriefAction;
+    /** Present when the suggestion is a first-week goal: "Goal 2 of 5", 1/3 done. */
+    goal?: { number: number; total: number; progress: number; target: number };
 }
 
 export interface DailyBrief {

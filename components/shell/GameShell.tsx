@@ -107,6 +107,7 @@ const DevToolbox = dynamic(() => import('@/components/debug/DevToolbox'), { ssr:
 const DefeatOverlay = dynamic(() => import('@/components/defeat/DefeatOverlay'), { ssr: false });
 const NotificationFeed = dynamic(() => import('@/components/notifications/NotificationFeed'), { ssr: false });
 const DailyBrief = dynamic(() => import('@/components/brief/DailyBrief'), { ssr: false });
+const GoalCard = dynamic(() => import('@/components/goals/GoalCard'), { ssr: false });
 const TutorialOverlay = dynamic(() => import('@/components/tutorial/TutorialOverlay'), { ssr: false });
 const MusicPlayer = dynamic(() => import('@/components/audio/MusicPlayer'), { ssr: false });
 
@@ -330,6 +331,9 @@ export default function GameShell() {
 
             {/* ── Daily brief (opens itself on sign-in when it has news) ─────────── */}
             <DailyBrief />
+
+            {/* ── First-week goal, over the open map ──────────────────────────── */}
+            <GoalCard />
 
             {/* ── Notification feed (opens from the TopNav bell) ────────────────── */}
             <NotificationFeed />

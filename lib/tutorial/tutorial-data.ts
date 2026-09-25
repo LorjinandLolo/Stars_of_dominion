@@ -1,161 +1,38 @@
 // lib/tutorial/tutorial-data.ts
-// Stars of Dominion — All 15 Tutorial Steps
-// Each step maps to a real DOM element ID in the existing UI.
+// Stars of Dominion — the three-step tour.
+//
+// It used to be eighteen steps through every system in the game, which is a
+// manual read aloud. A new player needs three things: where the galaxy is,
+// where the controls are, and where to look each day. What to DO next is the
+// first-week goal card's job (lib/goals/first-week-goals.ts), and everything
+// else lives in the guidebook (GUIDE on the dock) for players who want depth.
+//
+// Each step spotlights a real element: galaxy-map-canvas (GalaxyShell),
+// command-dock (CommandDock), daily-brief-button (TopNav).
 
 import type { TutorialStep } from './tutorial-types';
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
-    // ── Navigation ──────────────────────────────────────────────────────────
-    {
-        id: 'welcome',
-        title: 'Welcome, Commander',
-        body: 'Stars of Dominion is a real-time asynchronous grand strategy. The galaxy resolves a strategic cycle every 24 minutes, and your empire keeps running while you are away — production, construction and research continue whether or not you are watching. Diplomacy, espionage and crises unfold continuously. This tutorial walks you through the major systems.',
-        targetElementId: null,
-        category: 'navigation',
-    },
-    {
-        id: 'navbar',
-        title: 'The Command Dock',
-        body: 'The bar along the bottom is your navigation. GALAXY returns to the map, SYSTEM drops into the selected star system, and each category between them — Empire, Economy, Research, Military, Intelligence, Diplomacy, Press — opens its workspace upward while the galaxy stays visible behind it. GUIDE on the right opens the guidebook. Click the lit category again to collapse back to the map.',
-        targetElementId: 'command-dock',
-        category: 'navigation',
-    },
-    {
-        id: 'tick-countdown',
-        title: 'The Strategic Cycle',
-        body: 'The clock here shows the season and the galactic date. A strategic cycle resolves every 24 minutes of real time — production, construction, research and trade all process then. You do not have to be here for it.',
-        targetElementId: 'season-clock',
-        category: 'time',
-    },
-    {
-        id: 'notification-bell',
-        title: 'Transmissions',
-        body: 'The bell shows incoming alerts: crises requiring your response, research completions, diplomatic offers, and enemy movements. Urgent events pulse red. Check them before your next tick!',
-        targetElementId: 'notification-bell',
-        category: 'navigation',
-    },
-
-    // ── Galaxy ───────────────────────────────────────────────────────────────
     {
         id: 'galaxy-map',
-        title: 'The Galaxy Map',
-        body: 'This is your primary strategic view. Star systems are your territories and potential conquests. Colored borders show faction ownership. Click any system to see its details: planets, defenses, and trade value.',
+        title: 'This Is Your Galaxy',
+        body: 'Every star is a system; your empire starts from a single world. Drag to move, scroll to zoom, click a system to see what you can do there. The galaxy resolves a cycle every 24 minutes and keeps running while you are away.',
         targetElementId: 'galaxy-map-canvas',
         category: 'galaxy',
         requiredTab: 'galaxy',
     },
-
-    // ── Explore & Expand — the core loop ────────────────────────────────────
     {
-        id: 'one-world-start',
-        title: 'One World Is All You Get',
-        body: 'Your empire begins with a single capital. The other worlds in your home system are unowned and waiting to be settled — and beyond them, hundreds of unexplored systems. Everything else must be surveyed, settled, or taken.',
-        targetElementId: null,
-        category: 'galaxy',
-        requiredTab: 'galaxy',
+        id: 'command-dock',
+        title: 'The Command Dock',
+        body: 'Everything you run is down here: your empire, economy, research, military, intelligence and diplomacy. Open one and it rises over the map; click it again to go back. GUIDE on the right explains any system in depth.',
+        targetElementId: 'command-dock',
+        category: 'navigation',
     },
     {
-        id: 'galaxy-overlay',
-        title: 'Map Overlays: One Question Each',
-        body: 'Four overlays, one question each. Charted — what you know, what the next relay ping costs from your nearest shipyard, and where your fleets can scan right now. Relations — who holds what, and whether they are with you, against you, or sliding toward war. Settle — where your next world is and whether you can afford it. Stability — which of the systems you can see inside are about to break. Press 1–4 (0 or Esc clears), or open the OVERLAY pill in the top-left of the map.',
-        targetElementId: 'galaxy-overlay-controls',
-        category: 'galaxy',
-        requiredTab: 'galaxy',
-    },
-    {
-        id: 'build-a-fleet',
-        title: 'Commission a Fleet',
-        body: 'Select your capital, open its UNITS panel, and commission a fleet from the Space tab. A fleet is your eyes: scans and surveys of other systems require one in the system or one hyperlane away. Ships are laid down by the shipyard in the fleet\'s system: your capital\'s Orbital Shipyard lays corvettes and destroyers; cruisers need an Advanced Spaceyard (or a Fleet Drydock) and battleships a Capital Spaceyard in orbit.',
-        targetElementId: null,
-        category: 'galaxy',
-        requiredTab: 'galaxy',
-    },
-    {
-        id: 'survey-and-colonize',
-        title: 'Survey, Then Settle',
-        body: 'Click an unexplored system and PING it, then SCAN, then SURVEY — each reveals more, and a survey charts the system\'s planets (and sometimes an anomaly). Unowned worlds marked UNSETTLED can then be settled for 20,000 credits, 1,000 metals and 1,000 food. Your home system\'s spare worlds are the cheapest place to start.',
-        targetElementId: null,
-        category: 'galaxy',
-        requiredTab: 'galaxy',
-    },
-
-    // ── Economy ──────────────────────────────────────────────────────────────
-    {
-        id: 'economy-panel',
-        title: 'Your Economy',
-        body: 'The Economy panel shows your resource stockpiles, production rates, and upkeep costs. Credits, Metals, Chemicals, and Food all accumulate each strategic tick. Building the right structures drives your growth.',
-        targetElementId: 'dock-cat-economy',
-        category: 'economy',
-        requiredTab: 'economy',
-    },
-    {
-        id: 'construction',
-        title: 'Building & Construction',
-        body: 'Click any planet from the galaxy map to open its build panel. Construct industrial facilities, research labs, defense installations, and more. Each building takes one or more strategic cycles to complete.',
-        targetElementId: null,
-        category: 'economy',
-    },
-
-    // ── Research ─────────────────────────────────────────────────────────────
-    {
-        id: 'tech-tree',
-        title: 'The Tech Tree',
-        body: 'Navigate to the Tech panel to research new technologies. Each faction has a unique research path. Technologies unlock new buildings, ship designs, espionage operations, and diplomatic options. Allocate your science points wisely.',
-        targetElementId: 'dock-cat-research',
-        category: 'research',
-        requiredTab: 'tech',
-    },
-
-    // ── Diplomacy ────────────────────────────────────────────────────────────
-    {
-        id: 'diplomacy',
-        title: 'Diplomacy & Statecraft',
-        body: 'The Diplomacy panel lets you propose treaties, trade pacts, tribute demands, and war declarations. Anything waiting on an answer — an offer, an ultimatum, a debate — stays open for at least a full day of real time, so checking in once a day is enough. Check "Incoming Offers" for pending offers from rivals.',
-        targetElementId: 'dock-cat-diplomacy',
-        category: 'diplomacy',
-        requiredTab: 'diplomacy',
-    },
-    {
-        id: 'rivalries',
-        title: 'Rivalries & Escalation',
-        body: 'Each pair of factions has a Rivalry Score (0–100) and Escalation Level (0–7). Sending envoys reduces rivalry; proxy wars and sanctions increase it. Direct war breaks out at Escalation Level 7. Détente can slow this descent.',
-        targetElementId: null,
-        category: 'diplomacy',
-        requiredTab: 'diplomacy',
-    },
-
-    // ── Espionage ────────────────────────────────────────────────────────────
-    {
-        id: 'intelligence',
-        title: 'Intelligence Operations',
-        body: 'The Intelligence panel manages your spy agents and active operations. Each agent can be deployed to a rival system for sabotage, surveillance, counterintel, or propaganda. Operations resolve over real time — some immediately, others trigger crisis windows.',
-        targetElementId: 'dock-cat-intelligence',
-        category: 'espionage',
-        requiredTab: 'intelligence',
-    },
-
-    // ── Crisis Response ───────────────────────────────────────────────────────
-    {
-        id: 'crisis-response',
-        title: 'Crisis Windows',
-        body: 'When you are attacked — by sabotage, blockade, or coup attempt — a timed Crisis Window opens. You have at least a full day of real time to choose a response: Escalate, Fortify, Deceive, Negotiate, or Sacrifice. If you go offline, your empire\'s doctrine auto-responds.',
-        targetElementId: null,
-        category: 'crisis',
-    },
-    {
-        id: 'attacker-prediction',
-        title: 'Prediction Mechanic',
-        body: 'When launching a hostile action, you can predict how your target will respond. If your prediction matches their actual choice, you gain a 35% bonus to your attack effect. Wrong predictions give the defender a defensive boost. This rewards reading your opponents.',
-        targetElementId: null,
-        category: 'crisis',
-    },
-
-    // ── Victory ───────────────────────────────────────────────────────────────
-    {
-        id: 'victory',
-        title: 'The Season & Your Legacy',
-        body: 'The galaxy plays in seasons — the first is called The Beginning. When a season closes, every empire is ranked by prestige: territory, economy, technology, and the titles you earned along the way. Fallen empires are ranked too. Play for the standing you want history to record.',
-        targetElementId: null,
-        category: 'victory',
+        id: 'daily-brief',
+        title: 'Check In Once a Day',
+        body: 'Your daily brief lives here: what happened while you were away, what is waiting on your answer, and the one thing worth doing next. Anything that needs you stays open for at least a full day. Your first goal is already on the map, bottom left.',
+        targetElementId: 'daily-brief-button',
+        category: 'time',
     },
 ];

@@ -23,6 +23,7 @@ import type { DefianceEvent } from './government/defiance-types';
 import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
+import type { GoalState } from './goals/first-week-goals';
 import type { FactionReputation } from './reputation/types';
 import type { FactionTraitState } from './factions/faction-traits-types';
 import type { RecruitmentJob } from './combat/siege/siege-types';
@@ -233,6 +234,13 @@ export interface GameWorldState {
      * owner's shard, not the shared snapshot: it is their setting, not news.
      */
     delegation?: Map<string, DelegationState>;
+
+    /**
+     * Each human faction's place in the five first-week goals
+     * (lib/goals/first-week-goals.ts), keyed by faction id. Advanced by the
+     * worker from the deed ledger; rides the owner's shard.
+     */
+    firstWeekGoals?: Map<string, GoalState>;
 
     /**
      * Per-faction bespoke mechanics — the Bloodmoon ceasefire, capacola surges,

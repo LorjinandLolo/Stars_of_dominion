@@ -15,6 +15,7 @@
 import { TICK_INTERVAL_HOURS, SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import type { GameNotification } from '@/lib/time/time-types';
 import { formatRealDeadline } from '@/lib/time/galactic-time';
+import { currentGoal } from '@/lib/goals/first-week-goals';
 import type {
     BriefAction,
     BriefDeadline,
@@ -309,12 +310,26 @@ function mergeRepeats(decisions: BriefDecision[]): BriefDecision[] {
 // ─── The one suggested move ───────────────────────────────────────────────────
 
 /**
- * Item 4 replaces this with the first-week goal list. Until then: a fleet, then
- * charts, then a world.
+ * The player's current first-week goal (lib/goals/first-week-goals.ts). Once
+ * all five are done, or for a faction the worker keeps no goal record for: a
+ * fleet, then charts, then a world.
  */
 export function pickSuggestion(input: BriefInput): BriefSuggestion | null {
     const world = input.world ?? {};
     const factionId = input.factionId;
+
+    // The first-week goal, when the player is on one (Item 4). The fallback
+    // rules below only speak once all five are done.
+    const goal = world?.firstWeekGoals?.has?.(factionId) ? currentGoal(world, factionId) : null;
+    if (goal) {
+        return {
+            id: `goal-${goal.goal.id}`,
+            title: goal.goal.title,
+            detail: goal.goal.hint,
+            action: { label: goal.deepLink.label, tone: 'open', deepLink: goal.deepLink },
+            goal: { number: goal.number, total: goal.total, progress: goal.progress, target: goal.goal.target },
+        };
+    }
 
     const fleets = mapValues(world.movement?.fleets).filter((f: any) => f?.factionId === factionId);
     if (fleets.length === 0) {

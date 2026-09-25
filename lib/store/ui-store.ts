@@ -31,6 +31,7 @@ import type {
 } from '@/types/ui-state';
 import type { Fleet, Army, FactionVisibility } from '@/lib/movement/types';
 import type { DelegationState } from '@/lib/delegation/delegation-types';
+import type { CurrentGoal } from '@/lib/goals/first-week-goals';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -258,6 +259,10 @@ export interface UIStore {
      * (lib/delegation/delegation-service.ts).
      */
     delegation: DelegationState | null;
+
+    // ── First-week goals ──
+    /** The goal the player is on, with progress and deep link. Null when done or not a player. */
+    firstWeekGoal: CurrentGoal | null;
 
     // ── Visibility ──
     factionVisibility: FactionVisibility | null;
@@ -603,6 +608,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Delegation ──
     delegation: null,
+
+    // ── First-week goals ──
+    firstWeekGoal: null,
 
     // ── Visibility ──
     factionVisibility: null,

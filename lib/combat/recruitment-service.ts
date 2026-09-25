@@ -16,6 +16,8 @@ import { resolveDesign } from './ship-registry';
 import { factionDesigns } from './ship-design-service';
 import { applyRefit, isBookKey, refittable } from './fleet-roster';
 import { fireNotification } from '../time/notification-hooks';
+import { bumpMetric } from '../tech/history-ledger';
+import { DEED_SHIPS_COMMISSIONED } from '../tech/deed-metrics';
 
 /** Fields a job may carry beyond the siege-types base shape. */
 export interface RecruitmentJobExtras {
@@ -239,6 +241,7 @@ export class RecruitmentService {
                             fleet.designSpeedBonus, shipCountOf(fleet.composition) - job.count,
                             job.unitSpeedMult, job.count);
                     }
+                    bumpMetric(world, job.factionId ?? fleet.factionId, DEED_SHIPS_COMMISSIONED, job.count);
                     console.log(`[Recruitment] Completed ${job.count}x ${job.designName ?? job.unitType} for Fleet ${fleet.name}`);
                 }
             } else {

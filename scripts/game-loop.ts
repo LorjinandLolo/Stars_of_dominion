@@ -11,7 +11,7 @@ import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
 import { bumpMetric } from '../lib/tech/history-ledger';
-import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST } from '../lib/tech/deed-metrics';
+import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST, DEED_ENVOYS_SENT } from '../lib/tech/deed-metrics';
 import { registry as techRegistryForOrders } from '../lib/tech/engine';
 import {
     addBlueprint,
@@ -41,6 +41,7 @@ import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
+import { tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -738,11 +739,15 @@ async function runGameTick() {
         const lastTickWindow = Math.floor(oldNow / (6 * 3600));
 
         const strategicFired = currentTickWindow > lastTickWindow;
-        if (strategicFired) {
-            console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
-            // Diplomacy Phase 6: tell the diplomatic AI which factions are
-            // human-claimed so it never answers on a player's behalf. Fresh
-            // query each strategic tick (cheap: one small table, every ~24min).
+        // Who is human. The diplomatic AI must never answer for a player, the
+        // advisors (lib/delegation) and first-week goals only exist for players,
+        // so the list has to be there from the first cycle after boot and pick
+        // up a new claim within a minute — not wait up to 24 minutes for the
+        // next strategic tick. One small table, read once a minute.
+        const claimsStale = strategicFired
+            || !Array.isArray((world as any).claimedFactionIds)
+            || tickCounter % 12 === 1;
+        if (claimsStale) {
             try {
                 const claims = await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } });
                 (world as any).claimedFactionIds = claims.map(c => c.factionId).filter(Boolean);
@@ -758,6 +763,10 @@ async function runGameTick() {
                 // Table unreadable — keep the previous list rather than letting
                 // the AI speak for humans.
             }
+        }
+
+        if (strategicFired) {
+            console.log(`[Tick Worker] STRATEGIC TICK TRIGGERED (#${currentTickWindow})`);
             // CRITICAL: pass `world` — without it the tick processor mutates the
             // worker's local singleton, and every strategic-tick result (economy,
             // research, population...) was thrown away instead of saved/synced.
@@ -938,6 +947,29 @@ async function runGameTick() {
         // 4. Seeding & Administrative recalculations ────────────────────────
         processSieges(world);
         recalculateSystemControl(world);
+
+        // First-week goals (Item 4 of the casual-play spec): read each human
+        // player's deed ledger and move them to their next goal. Every cycle,
+        // so completing one in the UI shows the next on the following sync.
+        // Before the notification drain below, so the "done" note goes out now.
+        try {
+            for (const advance of tickFirstWeekGoals(world)) {
+                const next = advance.next;
+                fireNotification({
+                    id: `goal-${advance.factionId}-${advance.completed.id}`,
+                    factionId: advance.factionId,
+                    category: 'system',
+                    priority: 'normal',
+                    title: `Goal complete: ${advance.completed.title}`,
+                    body: next ? `Next: ${next.title}. ${next.hint}` : 'All five first-week goals are done. The galaxy is yours to shape.',
+                    createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                    read: false,
+                });
+                console.log(`[Goals] ${advance.factionId} completed ${advance.completed.id}${next ? ` → ${next.id}` : ' (all done)'}`);
+            }
+        } catch (e: any) {
+            console.error('[Tick Worker] first-week goals failed:', e.message);
+        }
 
         // Deliver notifications. fireNotification pushes to an in-memory queue
         // in THIS process, but /api/notifications drains the Next.js server's
@@ -2840,8 +2872,17 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         }
 
         case 'DIP_SEND_ENVOY': {
-             shiftRivalry(world, factionId, payload.targetFactionId, -15, 'envoy_received');
-             console.log(`[Order] Faction ${factionId} sent Envoy to ${payload.targetFactionId}`);
+             // An envoy to nobody, or to yourself, used to be charged and then
+             // "sent" — and now it would also count toward a first-week goal.
+             const target = payload?.targetFactionId;
+             if (!target || target === factionId || !world.economy.factions.has(target)) {
+                 refundOrderCost(world, factionId, actionId);
+                 recordOrderFailure(world, factionId, actionId, 'There is no court there to receive an envoy.');
+                 break;
+             }
+             shiftRivalry(world, factionId, target, -15, 'envoy_received');
+             bumpMetric(world, factionId, DEED_ENVOYS_SENT);
+             console.log(`[Order] Faction ${factionId} sent Envoy to ${target}`);
              break;
         }
 
