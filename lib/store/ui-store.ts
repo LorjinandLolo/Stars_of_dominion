@@ -31,7 +31,8 @@ import type {
 } from '@/types/ui-state';
 import type { Fleet, Army, FactionVisibility } from '@/lib/movement/types';
 import type { DelegationState } from '@/lib/delegation/delegation-types';
-import type { CurrentGoal } from '@/lib/goals/first-week-goals';
+import type { CurrentGoal, GoalId } from '@/lib/goals/first-week-goals';
+import type { UiPrefs } from '@/lib/player/ui-prefs';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -263,6 +264,13 @@ export interface UIStore {
     // ── First-week goals ──
     /** The goal the player is on, with progress and deep link. Null when done or not a player. */
     firstWeekGoal: CurrentGoal | null;
+    /** Goals already met, in order. Null until the worker has written a record. Drives the dock. */
+    goalsCompleted: GoalId[] | null;
+
+    // ── Interface preferences (PlayerProfile.uiPrefs) ──
+    /** Null until loaded from /api/player/prefs. */
+    uiPrefs: UiPrefs | null;
+    setUiPrefs: (prefs: UiPrefs | null) => void;
 
     // ── Visibility ──
     factionVisibility: FactionVisibility | null;
@@ -611,6 +619,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── First-week goals ──
     firstWeekGoal: null,
+    goalsCompleted: null,
+
+    // ── Interface preferences ──
+    uiPrefs: null,
+    setUiPrefs: (prefs) => set({ uiPrefs: prefs }),
 
     // ── Visibility ──
     factionVisibility: null,

@@ -12,6 +12,7 @@ import React from 'react';
 import { Target, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { followGoalLink } from '@/lib/goals/follow-goal-link';
+import { unlocksForGoal } from '@/lib/goals/dock-unlocks';
 
 const COLLAPSE_KEY = 'sod-goal-card-collapsed';
 
@@ -29,6 +30,7 @@ export default function GoalCard() {
     // The selected-system panel and the build panel both occupy the left edge
     // the card sits on; while either is open it IS where the goal gets done.
     const systemPanelOpen = useUIStore(s => !!(s.selectedSystemId || s.systemViewId || s.constructionPlanetId));
+    const showEverything = useUIStore(s => s.uiPrefs?.showEverything ?? true);
     const [collapsed, setCollapsed] = React.useState(false);
 
     React.useEffect(() => { setCollapsed(readCollapsed()); }, []);
@@ -37,6 +39,8 @@ export default function GoalCard() {
     if (!current || activeTab !== 'galaxy' || briefOpen || systemPanelOpen) return null;
 
     const { goal, number, total, progress, deepLink } = current;
+    // What finishing it adds to the dock — shown only while it is still locked.
+    const unlocks = showEverything ? [] : unlocksForGoal(goal.id);
     const toggle = () => {
         setCollapsed(prev => {
             writeCollapsed(!prev);
@@ -82,6 +86,11 @@ export default function GoalCard() {
                             ))}
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">{goal.hint}</p>
+                        {unlocks.length > 0 && (
+                            <p className="text-[10px] font-mono text-amber-300/90">
+                                Unlocks {unlocks.map(u => u.label).join(' + ')}
+                            </p>
+                        )}
                         <button
                             onClick={() => followGoalLink(deepLink)}
                             className="w-full min-h-[40px] px-3 py-2 rounded-lg border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"

@@ -6,7 +6,8 @@
 
 import React from 'react';
 import { useUIStore, isShadowTabVisible, isCouncilTabVisible } from '@/lib/store/ui-store';
-import { categoryForTab } from './dockConfig';
+import { categoryForTab, isTabShown } from './dockConfig';
+import { useDockContext } from '@/lib/player/use-ui-prefs';
 import { X, Maximize2 } from 'lucide-react';
 
 interface CommandWorkspaceProps {
@@ -25,6 +26,8 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
     const piracyState = useUIStore(s => s.piracyState);
     const showShadow = isShadowTabVisible(playerState, piracyState);
     const showCouncil = isCouncilTabVisible(councilState);
+    // Sub-tabs follow the same progressive rule as the dock (Item 5).
+    const dockCtx = useDockContext();
 
     // Esc returns command to the galaxy. `defaultPrevented` is the layering
     // convention: a modal (capture phase) or another layer that already
@@ -43,8 +46,9 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
     if (!category) return null;
 
     const tabs = category.tabs.filter(t =>
-        t.conditional === 'shadow' ? showShadow :
-        t.conditional === 'council' ? showCouncil : true
+        (t.conditional === 'shadow' ? showShadow :
+        t.conditional === 'council' ? showCouncil : true)
+        && isTabShown(t, dockCtx, activeTab)
     );
     // Full height of the play area (the resource bar above stays visible).
     // The old 58%/72% drawer left the galaxy peeking out behind every panel,

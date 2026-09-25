@@ -117,6 +117,11 @@ model PlayerProfile {
   // since that moment, not since the last poll — a player who was away for
   // three days should be told about three days.
   briefSeenAt DateTime?
+  // Interface preferences, JSON: { showEverything, legacy, opened[] } — see
+  // lib/player/ui-prefs.ts. Null for a new account (progressive dock, Item 5);
+  // accounts that existed before the dock had tiers were migrated to
+  // showEverything so nothing changed for them.
+  uiPrefs     String?
 
   @@map("player_profiles")
 }

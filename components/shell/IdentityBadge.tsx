@@ -13,6 +13,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { authService } from '@/lib/auth-service';
 import { factionColor } from '@/components/galaxy/starVisuals';
 import { ChevronDown, LogOut, UserCircle2 } from 'lucide-react';
+import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 export default function IdentityBadge() {
     const router = useRouter();
@@ -20,6 +21,8 @@ export default function IdentityBadge() {
     const factions = useUIStore(s => s.factions);
     const [user, setUser] = useState<{ email: string; name: string } | null>(null);
     const [open, setOpen] = useState(false);
+    // Until preferences load, the box shows what the dock shows: everything.
+    const showEverything = useUIStore(s => s.uiPrefs?.showEverything ?? true);
 
     useEffect(() => {
         authService.getCurrentUser().then(u => {
@@ -85,6 +88,23 @@ export default function IdentityBadge() {
                             <span className="text-[10px] font-bold text-slate-300 uppercase">{factionName}</span>
                         </div>
                     </div>
+                    {/* Progressive dock (Item 5): new players grow into the full
+                        dock through the first-week goals; this skips ahead. */}
+                    <label className="py-2 border-b border-slate-800 flex items-start justify-between gap-2 cursor-pointer">
+                        <span className="min-w-0">
+                            <span className="block text-[10px] font-bold text-slate-300">Show everything</span>
+                            <span className="block text-[9px] text-slate-500 leading-snug">
+                                Every dock panel now, instead of as your first goals unlock them.
+                            </span>
+                        </span>
+                        <input
+                            id="show-everything-toggle"
+                            type="checkbox"
+                            className="mt-0.5 accent-sky-500 w-4 h-4 shrink-0"
+                            checked={showEverything}
+                            onChange={e => { void patchUiPrefs({ showEverything: e.target.checked }); }}
+                        />
+                    </label>
                     <button
                         onClick={handleSwitch}
                         className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-[9px] font-bold tracking-widest text-slate-300 uppercase transition-all"

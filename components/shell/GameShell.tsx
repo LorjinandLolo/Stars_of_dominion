@@ -108,6 +108,7 @@ const DefeatOverlay = dynamic(() => import('@/components/defeat/DefeatOverlay'),
 const NotificationFeed = dynamic(() => import('@/components/notifications/NotificationFeed'), { ssr: false });
 const DailyBrief = dynamic(() => import('@/components/brief/DailyBrief'), { ssr: false });
 const GoalCard = dynamic(() => import('@/components/goals/GoalCard'), { ssr: false });
+const UnlockPrompt = dynamic(() => import('@/components/goals/UnlockPrompt'), { ssr: false });
 const TutorialOverlay = dynamic(() => import('@/components/tutorial/TutorialOverlay'), { ssr: false });
 const MusicPlayer = dynamic(() => import('@/components/audio/MusicPlayer'), { ssr: false });
 
@@ -334,6 +335,9 @@ export default function GameShell() {
 
             {/* ── First-week goal, over the open map ──────────────────────────── */}
             <GoalCard />
+
+            {/* ── First opening of a newly unlocked panel: take it back? ─────── */}
+            <UnlockPrompt />
 
             {/* ── Notification feed (opens from the TopNav bell) ────────────────── */}
             <NotificationFeed />

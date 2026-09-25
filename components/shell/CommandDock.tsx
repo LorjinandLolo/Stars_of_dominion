@@ -7,8 +7,10 @@
 
 import React from 'react';
 import { useUIStore, isShadowTabVisible, isCouncilTabVisible } from '@/lib/store/ui-store';
-import { DOCK_CATEGORIES, categoryForTab, type DockCategory } from './dockConfig';
+import { DOCK_CATEGORIES, categoryForTab, isCategoryShown, isTabShown, lockedDockItems, type DockCategory } from './dockConfig';
 import { Globe2, Orbit, BookOpen, AlertTriangle } from 'lucide-react';
+import { useDockContext, useLoadUiPrefs } from '@/lib/player/use-ui-prefs';
+import LockedDockHint from './LockedDockHint';
 
 export default function CommandDock() {
     const activeTab = useUIStore(s => s.activeTab);
@@ -51,10 +53,18 @@ export default function CommandDock() {
         if (activeCategory) lastTabRef.current[activeCategory.id] = activeTab;
     }, [activeTab, activeCategory]);
 
+    // Progressive dock (casual-play spec, Item 5): advanced categories and tabs
+    // appear as first-week goals are met, or all at once with "Show everything".
+    useLoadUiPrefs();
+    const dockCtx = useDockContext();
+    const shownCategories = DOCK_CATEGORIES.filter(cat => isCategoryShown(cat, dockCtx, activeTab));
+    const locked = lockedDockItems(dockCtx);
+
     const visibleTabs = (cat: DockCategory) =>
         cat.tabs.filter(t =>
-            t.conditional === 'shadow' ? showShadow :
-            t.conditional === 'council' ? showCouncil : true
+            (t.conditional === 'shadow' ? showShadow :
+            t.conditional === 'council' ? showCouncil : true)
+            && isTabShown(t, dockCtx, activeTab)
         );
 
     const handleCategory = (cat: DockCategory) => {
@@ -133,7 +143,7 @@ export default function CommandDock() {
 
             {/* ── Category buttons ────────────────────────────────────────── */}
             <div className="flex flex-1 items-stretch justify-center">
-                {DOCK_CATEGORIES.map(cat => {
+                {shownCategories.map(cat => {
                     const isActive = activeCategory?.id === cat.id;
                     const emergency = cat.id === 'empire' && councilState.emergencySession && councilState.status !== 'absent';
                     return (
@@ -176,6 +186,8 @@ export default function CommandDock() {
                         </button>
                     );
                 })}
+                {/* What is still to come, and the switch to show it all now. */}
+                {locked.length > 0 && <LockedDockHint locked={locked} />}
             </div>
 
             {/* ── Guide ───────────────────────────────────────────────────── */}

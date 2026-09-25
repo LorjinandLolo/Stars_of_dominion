@@ -24,7 +24,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'command-dock',
         title: 'The Command Dock',
-        body: 'Everything you run is down here: your empire, economy, research, military, intelligence and diplomacy. Open one and it rises over the map; click it again to go back. GUIDE on the right explains any system in depth.',
+        body: 'Everything you run is down here. Open a panel and it rises over the map; click it again to go back. More panels unlock as you complete your first goals — until then your advisors run them for you. GUIDE on the right explains any system in depth.',
         targetElementId: 'command-dock',
         category: 'navigation',
     },

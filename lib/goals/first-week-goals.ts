@@ -151,6 +151,12 @@ export function tickFirstWeekGoals(world: WorldLike): GoalAdvance[] {
     return advances;
 }
 
+/** Goals this faction has met, in order — the ones before its current index. */
+export function completedGoals(world: WorldLike, factionId: string): GoalId[] {
+    const state = goalStateOf(world, factionId);
+    return FIRST_WEEK_GOALS.slice(0, Math.max(0, state.index)).map(g => g.id);
+}
+
 export interface CurrentGoal {
     goal: GoalDef;
     /** 1-based, for "Goal 2 of 5". */

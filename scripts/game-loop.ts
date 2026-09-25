@@ -42,6 +42,7 @@ import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
 import { tickFirstWeekGoals } from '../lib/goals/first-week-goals';
+import { unlocksForGoal } from '../lib/goals/dock-unlocks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -955,13 +956,16 @@ async function runGameTick() {
         try {
             for (const advance of tickFirstWeekGoals(world)) {
                 const next = advance.next;
+                // What this goal opened on the dock (Item 5), said once, here.
+                const unlocked = unlocksForGoal(advance.completed.id).map(u => u.label);
+                const unlockLine = unlocked.length ? `Unlocked: ${unlocked.join(' and ')}. ` : '';
                 fireNotification({
                     id: `goal-${advance.factionId}-${advance.completed.id}`,
                     factionId: advance.factionId,
                     category: 'system',
                     priority: 'normal',
                     title: `Goal complete: ${advance.completed.title}`,
-                    body: next ? `Next: ${next.title}. ${next.hint}` : 'All five first-week goals are done. The galaxy is yours to shape.',
+                    body: unlockLine + (next ? `Next: ${next.title}. ${next.hint}` : 'All five first-week goals are done. The galaxy is yours to shape.'),
                     createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                     read: false,
                 });

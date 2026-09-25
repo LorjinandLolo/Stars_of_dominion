@@ -7,7 +7,7 @@ import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import { registerFactionLabels, humanizeNotification } from '@/lib/time/notification-names';
-import { currentGoal } from '@/lib/goals/first-week-goals';
+import { currentGoal, completedGoals } from '@/lib/goals/first-week-goals';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
@@ -902,6 +902,10 @@ export function useGameSync() {
             // null until the worker has written a record (goals are per human).
             firstWeekGoal: activeFactionId && (world as any).firstWeekGoals?.has?.(activeFactionId)
                 ? currentGoal(world as any, activeFactionId)
+                : null,
+            // Goals met so far, which is what unlocks the advanced dock.
+            goalsCompleted: activeFactionId && (world as any).firstWeekGoals?.has?.(activeFactionId)
+                ? completedGoals(world as any, activeFactionId)
                 : null,
             // Latched by step20 each strategic tick; drives the defeat overlay.
             playerDefeatStatus: activeFactionId
