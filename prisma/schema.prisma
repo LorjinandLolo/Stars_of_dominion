@@ -126,6 +126,29 @@ model PlayerProfile {
   @@map("player_profiles")
 }
 
+// A friend link (/join?code=...), casual-play spec Item 6a. Single use: the
+// friend who registers with it (when INVITE_REQUIRED=true) or claims through it
+// becomes `usedBy`, and their claim lands on the free empire nearest the
+// inviter's capital. See lib/invites/.
+model Invite {
+  id               String    @id @default(cuid())
+  code             String    @unique
+  /// better-auth user id of the player who made the link.
+  createdBy        String
+  /// The inviter's faction when the link was made — where "next to" is measured from.
+  inviterFactionId String
+  /// better-auth user id of the friend it was spent on. Null until used.
+  usedBy           String?
+  usedAt           DateTime?
+  /// The faction the friend claimed through it.
+  claimedFactionId String?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+
+  @@index([createdBy])
+  @@map("invites")
+}
+
 model GameSave {
   id         String   @id @default(cuid())
   saveName   String

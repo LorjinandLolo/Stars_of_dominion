@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
+import { claimThroughInvite } from '@/lib/invites/invite-service';
+import { normaliseInviteCode } from '@/lib/invites/invite-rules';
 
 /** Player-facing name, sanitized: no control chars, bounded length. It is
  *  rendered into every other player's lobby verbatim. */
@@ -25,6 +27,19 @@ export async function POST(req: NextRequest) {
         if (!userId) {
             return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
         }
+
+        // Claiming through a friend's link (Item 6a): the server picks the
+        // free empire nearest the inviter's capital. The client does not name
+        // a faction — it could not know which one is nearest, and must not be
+        // able to pick a different one while spending the invite.
+        if (body?.inviteCode !== undefined) {
+            const code = normaliseInviteCode(body.inviteCode);
+            if (!code) return NextResponse.json({ error: 'That invite code does not exist.' }, { status: 404 });
+            const result = await claimThroughInvite(code, userId, displayName || session?.user?.name || 'Commander');
+            if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+            return NextResponse.json({ success: true, ...result.value });
+        }
+
         if (!factionId) {
             return NextResponse.json({ error: 'Missing factionId' }, { status: 400 });
         }

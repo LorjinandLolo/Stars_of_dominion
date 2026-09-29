@@ -31,9 +31,17 @@ export const authService = {
         if (error) throw new Error(error.message ?? 'Login failed.');
     },
 
-    async register(email: string, pass: string, name: string) {
-        // Signs the new account in automatically on success.
-        const { error } = await authClient.signUp.email({ email, password: pass, name });
+    async register(email: string, pass: string, name: string, inviteCode?: string | null) {
+        // Signs the new account in automatically on success. A friend link's
+        // code rides a header the server's sign-up hook reads (lib/auth.ts):
+        // required when INVITE_REQUIRED=true, reserved for the new player
+        // either way.
+        const { error } = await authClient.signUp.email({
+            email,
+            password: pass,
+            name,
+            ...(inviteCode ? { fetchOptions: { headers: { 'x-invite-code': inviteCode } } } : {}),
+        });
         if (error) throw new Error(error.message ?? 'Registration failed.');
     },
 

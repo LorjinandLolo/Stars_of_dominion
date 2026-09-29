@@ -5,6 +5,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 import BootScreen from '@/components/auth/BootScreen';
+import InvitePanel from '@/components/lobby/InvitePanel';
 
 interface LobbyFaction {
     id: string;
@@ -31,7 +32,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     // Set the moment the claim is accepted: the lobby is replaced by the boot
     // checklist ("faction registered — loading galaxy") until the game route
     // mounts and GameShell's own boot screen takes over.
-    const [entering, setEntering] = useState<{ name: string; accent: string; registered: boolean } | null>(null);
+    const [entering, setEntering] = useState<{ name: string; accent: string; registered: boolean; neighbour?: string } | null>(null);
 
     const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -188,9 +189,11 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             <BootScreen
                 visible
                 title={entering.registered ? 'Faction registered' : 'Registering faction'}
-                subtitle={entering.registered
-                    ? `${entering.name} answers to you. Loading the galaxy…`
-                    : `Filing your claim on ${entering.name} with the server…`}
+                subtitle={entering.neighbour
+                    ? `You start next to ${entering.neighbour}. ${entering.name} answers to you.`
+                    : entering.registered
+                        ? `${entering.name} answers to you. Loading the galaxy…`
+                        : `Filing your claim on ${entering.name} with the server…`}
                 accent={entering.accent}
                 steps={[
                     { label: 'Identity verified', state: 'done', detail: currentUser?.email ?? currentUser?.name },
@@ -249,6 +252,27 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                         : 'Select the empire you will lead to galactic supremacy.'}
                 </p>
                 <div className="text-slate-600 text-[10px] mt-4 uppercase tracking-[0.2em]">Total Factions: {factions.length} | Available: {factions.length - Object.keys(takenFactions).length}</div>
+
+                {/* Friend links (Item 6a): make one, or take the seat one offers. */}
+                {currentUser && (
+                    <InvitePanel
+                        hasClaim={!!currentUserHasClaim}
+                        displayName={currentUser.name}
+                        onClaimed={(result) => {
+                            const picked = factions.find(f => f.id === result.factionId);
+                            localStorage.setItem('selectedFactionId', result.factionId);
+                            setPlayerFactionId(result.factionId);
+                            setEntering({
+                                name: result.empireName,
+                                accent: picked?.accentColor ?? '#38bdf8',
+                                registered: true,
+                                neighbour: `${result.inviterName} (${result.inviterEmpire})`,
+                            });
+                            // Long enough to read "You start next to …" before the galaxy loads.
+                            setTimeout(() => router.push('/'), 2500);
+                        }}
+                    />
+                )}
 
                 {/* Signed-in identity — the #1 source of "why can't I enter?" confusion
                     is being logged into a different account than expected. */}

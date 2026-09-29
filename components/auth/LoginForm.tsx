@@ -4,10 +4,19 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 import BootScreen from './BootScreen';
+import { pendingInvite, rememberInvite } from '@/lib/invites/pending-invite';
 
 export default function LoginForm() {
     const router = useRouter();
     const [isLogin, setIsLogin] = useState(true);
+    // A friend link's code (Item 6a): carried from /join, sent on registration.
+    const [inviteCode, setInviteCode] = useState('');
+    React.useEffect(() => {
+        const pending = pendingInvite();
+        if (pending) setInviteCode(pending);
+        // /join sends new players here ready to register.
+        if (new URLSearchParams(window.location.search).get('mode') === 'register') setIsLogin(false);
+    }, []);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -39,7 +48,9 @@ export default function LoginForm() {
                 await authService.login(email, password);
             } else {
                 // Registers AND signs in on success.
-                await authService.register(email, password, name);
+                const code = inviteCode.trim();
+                if (code) rememberInvite(code);
+                await authService.register(email, password, name, code || null);
             }
             setEntering({ who: email, verified: true });
             router.push('/lobby');
@@ -133,6 +144,21 @@ export default function LoginForm() {
                                 required={!isLogin}
                                 className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
                                 placeholder="Your callsign..."
+                            />
+                        </div>
+                    )}
+
+                    {!isLogin && (
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Invite code</label>
+                            <input
+                                id="invite-code"
+                                type="text"
+                                value={inviteCode}
+                                onChange={(e) => setInviteCode(e.target.value)}
+                                autoCapitalize="characters"
+                                className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                                placeholder="From a friend's link, if you have one"
                             />
                         </div>
                     )}

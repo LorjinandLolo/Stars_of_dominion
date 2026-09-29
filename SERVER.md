@@ -361,16 +361,22 @@ same env rules as above. Needs the static IP / DHCP reservation first.
   someone who picked wrong: `curl -X POST https://<origin>/api/lobby/admin/reset
   -H 'Content-Type: application/json'
   -d '{"secret":"<GAME_ADMIN_SECRET>","factionId":"faction-..."}'`
-- Registration is open: anyone with the URL can make an account and claim a
-  faction. Share the URL privately, watch the lobby fill, and reset anything
-  that shouldn't be there. (An invite code is on the roadmap.)
+- Registration is open by default: anyone with the URL can make an account and
+  claim a faction. To close it, set `INVITE_REQUIRED=true` in `.env` and
+  restart web: new accounts then need a live invite code, checked by the
+  server's sign-up endpoint itself. Invites come from the lobby — any player
+  with an empire presses **Invite a friend** and sends the `/join?code=…`
+  link. A link is good for one friend for seven days, and that friend starts
+  on the free empire nearest the sender's capital. Existing accounts are
+  unaffected; turn the gate on after the first player has claimed, or nobody
+  can make the first link.
 - Do not run the dev-duel seeding script (see 1.6).
 
 ## 7. Later roadmap (in sensible order)
 
 1. **Static IP / DHCP reservation** for the server in the Ziggo router — so the
    LAN IP in `TRUSTED_ORIGINS` never changes.
-2. **Invite-gated registration** — closes the open-registration caveat in 6.3.
+2. ~~**Invite-gated registration**~~ — done: `INVITE_REQUIRED=true` (see 6.3).
 3. **Monitoring (Grafana/Prometheus)** — nice to have, after backups.
 4. **Redis** — not until the code actually uses it. Nothing in the app speaks
    Redis today; adding the container now would do nothing.
