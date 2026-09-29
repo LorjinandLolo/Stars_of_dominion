@@ -225,6 +225,11 @@ export default function DailyBrief() {
                                                         </span>
                                                     )}
                                                 </div>
+                                                {decision.counterparts && decision.counterparts.length > 0 && (
+                                                    <p className="decision-counterparts text-[10px] font-mono text-slate-500 mb-1.5">
+                                                        {decision.counterparts.join('  vs  ')}
+                                                    </p>
+                                                )}
                                                 {decision.detail && (
                                                     <p className="text-xs text-slate-400 leading-relaxed mb-3">{decision.detail}</p>
                                                 )}

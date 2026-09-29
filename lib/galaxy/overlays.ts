@@ -274,7 +274,7 @@ export interface OverlayInput {
     nowSeconds?: number;
 }
 
-export interface OverlayLegendRow { label: string; color: string; count: number; stance?: Stance; focusSystemId?: string }
+export interface OverlayLegendRow { label: string; color: string; count: number; stance?: Stance; focusSystemId?: string; /** Set on per-faction rows (relations), so the legend can say who plays it. */ factionId?: string }
 
 export interface OverlayResult {
     /** systemId → style; systems with nothing to say are ABSENT */
@@ -685,7 +685,7 @@ function computeRelations(ctx: Ctx): OverlayResult {
     const rows: OverlayLegendRow[] = [...perFaction.entries()].map(([id, count]) => {
         const stance: Stance = id === me ? 'mine' : (stances[id] ?? 'neutral');
         const f = input.factions[id];
-        return { label: f?.name ?? id, color: STANCE_COLOR[stance], count, stance, focusSystemId: f?.capitalSystemId };
+        return { label: f?.name ?? id, color: STANCE_COLOR[stance], count, stance, focusSystemId: f?.capitalSystemId, factionId: id };
     }).sort((a, b) =>
         STANCE_ORDER[a.stance!] - STANCE_ORDER[b.stance!] || b.count - a.count || a.label.localeCompare(b.label));
 

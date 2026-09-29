@@ -63,6 +63,12 @@ export interface BriefDecision {
     detail: string;
     deadline?: BriefDeadline;
     actions: BriefAction[];
+    /**
+     * The other empires involved, each as "<Empire> · played by <name>" or
+     * "<Empire> · AI" (Item 6b): an offer from a friend reads differently
+     * from an offer from the machine.
+     */
+    counterparts?: string[];
 }
 
 /** The one thing worth doing today. */

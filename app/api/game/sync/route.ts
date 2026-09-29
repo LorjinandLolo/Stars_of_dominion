@@ -87,7 +87,20 @@ export async function GET(req: NextRequest) {
             viewer = viewerContextFromOwnShard(ownRow?.data);
         }
 
+        // Who plays which empire (Item 6b): factionId → the display name its
+        // player chose in the lobby, which the lobby roster already shows to
+        // every signed-in player. Nothing else about the account — no user id,
+        // no email — and only for claimed empires; absent means AI. Read from
+        // the claims table each poll (a handful of rows), so it is right even
+        // while the worker is down.
+        const claims = await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } });
+        const humanPlayers: Record<string, string> = {};
+        for (const claim of claims) {
+            if (claim.factionId) humanPlayers[claim.factionId] = claim.displayName || 'Commander';
+        }
+
         return NextResponse.json({
+            humanPlayers,
             session: session
                 ? {
                       snapshot: session.snapshot,

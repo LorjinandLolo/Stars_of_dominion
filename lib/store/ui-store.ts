@@ -33,6 +33,7 @@ import type { Fleet, Army, FactionVisibility } from '@/lib/movement/types';
 import type { DelegationState } from '@/lib/delegation/delegation-types';
 import type { CurrentGoal, GoalId } from '@/lib/goals/first-week-goals';
 import type { UiPrefs } from '@/lib/player/ui-prefs';
+import type { HumanPlayers } from '@/lib/players/player-label';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -266,6 +267,10 @@ export interface UIStore {
     firstWeekGoal: CurrentGoal | null;
     /** Goals already met, in order. Null until the worker has written a record. Drives the dock. */
     goalsCompleted: GoalId[] | null;
+
+    // ── Who plays which empire (Item 6b) ──
+    /** factionId → claimant's lobby display name. Absent = AI. Null until the first sync. */
+    humanPlayers: HumanPlayers | null;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──
     /** Null until loaded from /api/player/prefs. */
@@ -620,6 +625,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── First-week goals ──
     firstWeekGoal: null,
     goalsCompleted: null,
+
+    // ── Who plays which empire ──
+    humanPlayers: null,
 
     // ── Interface preferences ──
     uiPrefs: null,

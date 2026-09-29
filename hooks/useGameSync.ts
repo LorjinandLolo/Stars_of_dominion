@@ -1054,7 +1054,16 @@ export function useGameSync() {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body?.error || `Sync failed (${res.status})`);
             }
-            return res.json();
+            const data = await res.json();
+            // Who plays which empire (Item 6b). Sent on every poll, full and
+            // delta alike; only write when it changed so the store stays quiet.
+            if (data?.humanPlayers) {
+                const prev = useUIStore.getState().humanPlayers;
+                if (JSON.stringify(prev) !== JSON.stringify(data.humanPlayers)) {
+                    useUIStore.setState({ humanPlayers: data.humanPlayers });
+                }
+            }
+            return data;
         };
 
         const bumpShardsSince = (rows: Array<{ updatedAt: string }>) => {

@@ -20,6 +20,7 @@ import {
     type OverlayResult,
 } from '@/lib/galaxy/overlays';
 import { Radar, Flag, Sprout, HeartPulse, Layers, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { empireWithPlayer, isHumanEmpire, playedByLabel } from '@/lib/players/player-label';
 
 const ICONS = { Radar, Flag, Sprout, HeartPulse } as const;
 
@@ -99,6 +100,7 @@ function OverlayPicker({ result }: OverlayPickerProps) {
     const activeOverlay = useUIStore(s => s.activeOverlay);
     const setActiveOverlay = useUIStore(s => s.setActiveOverlay);
     const activeTab = useUIStore(s => s.activeTab);
+    const humanPlayers = useUIStore(s => s.humanPlayers);
     const systems = useUIStore(s => s.systems);
     const factionVisibility = useUIStore(s => s.factionVisibility);
     const playerFactionId = useUIStore(s => s.playerFactionId);
@@ -326,11 +328,20 @@ function OverlayPicker({ result }: OverlayPickerProps) {
                                     type="button"
                                     onClick={() => focusSystem(row.focusSystemId)}
                                     disabled={!row.focusSystemId}
-                                    title={row.focusSystemId ? 'Focus this faction\'s capital' : undefined}
+                                    title={[
+                                        row.factionId ? empireWithPlayer(row.label, row.factionId, humanPlayers) : row.label,
+                                        row.focusSystemId ? 'click to focus its capital' : '',
+                                    ].filter(Boolean).join(' — ')}
                                     className="flex items-center gap-1.5 text-slate-300 hover:text-white disabled:cursor-default"
                                 >
                                     <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: row.color }} />
                                     <span>{row.label}</span>
+                                    {/* Who plays it (Item 6b): a person, or the AI. */}
+                                    {row.factionId && row.stance !== 'mine' && (
+                                        <span className={isHumanEmpire(row.factionId, humanPlayers) ? 'text-emerald-300' : 'text-slate-500'}>
+                                            · {playedByLabel(row.factionId, humanPlayers)}
+                                        </span>
+                                    )}
                                     <span className="text-slate-500">· {row.stance}</span>
                                     <span className="font-mono text-slate-400">· {row.count} {row.count === 1 ? 'system' : 'systems'}</span>
                                 </button>

@@ -5,6 +5,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { Users, Shield, Target, Globe, BookOpen, Fingerprint, Send, Skull, Heart, Activity, Flame, Zap } from 'lucide-react';
 import { sendEnvoyAction, declareWarAction, offerPeaceAction } from '@/app/actions/politics';
 import { sponsorProxyAction } from '@/app/actions/proxy';
+import { isHumanEmpire, playedByLabel } from '@/lib/players/player-label';
 
 const FACTIONS = [
     {
@@ -62,6 +63,7 @@ const ESCALATION_LABELS = [
 
 export default function DossierPanel() {
     const { playerState, diplomacyState, updateDiplomacy } = useUIStore();
+    const humanPlayers = useUIStore(s => s.humanPlayers);
     const [isFunding, setIsFunding] = React.useState<string | null>(null);
     const [selectedFactionId, setSelectedFactionId] = React.useState(FACTIONS[0].id);
     const selectedFaction = FACTIONS.find(f => f.id === selectedFactionId) || FACTIONS[0];
@@ -141,6 +143,13 @@ export default function DossierPanel() {
                             style={{ backgroundColor: `${faction.color}22` }}
                         >
                             <Shield className="w-6 h-6" style={{ color: faction.color }} />
+                            {/* A person plays this one: small green dot, so the list reads at a glance. */}
+                            {isHumanEmpire(faction.id, humanPlayers) && (
+                                <span
+                                    className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-950"
+                                    title={playedByLabel(faction.id, humanPlayers)}
+                                />
+                            )}
                             {selectedFactionId === faction.id && (
                                 <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-amber-500 rounded-full" />
                             )}
@@ -155,7 +164,18 @@ export default function DossierPanel() {
                         <div>
                             <div className="flex items-center gap-4 mb-2">
                                 <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/10" />
-                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em]">{selectedFaction.id}</span>
+                                {/* Who is behind it (Item 6b) — a person or the AI.
+                                    This used to print the raw faction id. */}
+                                <span
+                                    id="dossier-played-by"
+                                    className={`text-[10px] font-mono uppercase tracking-[0.2em] px-2 py-0.5 rounded border ${
+                                        isHumanEmpire(selectedFaction.id, humanPlayers)
+                                            ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+                                            : 'text-slate-500 border-slate-700/60'
+                                    }`}
+                                >
+                                    {selectedFaction.id === playerState.factionId ? 'you' : playedByLabel(selectedFaction.id, humanPlayers)}
+                                </span>
                                 <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/10" />
                             </div>
                             <h2 className="text-3xl font-display text-center uppercase tracking-widest text-white drop-shadow-md">

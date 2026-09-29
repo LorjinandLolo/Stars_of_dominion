@@ -99,6 +99,12 @@ export async function GET(req: NextRequest) {
             headlines: articleRows as unknown as BriefHeadlineRow[],
             lastSeenAt,
             now,
+            // Who plays which empire (Item 6b), from the claims table: the
+            // lobby's own public roster, display names only.
+            players: Object.fromEntries(
+                (await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } }))
+                    .map(p => [p.factionId, p.displayName || 'Commander']),
+            ),
         });
 
         return NextResponse.json({ brief }, { status: 200 });

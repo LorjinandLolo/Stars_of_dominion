@@ -16,6 +16,7 @@ import { TICK_INTERVAL_HOURS, SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/tim
 import type { GameNotification } from '@/lib/time/time-types';
 import { formatRealDeadline } from '@/lib/time/galactic-time';
 import { currentGoal } from '@/lib/goals/first-week-goals';
+import { empireWithPlayer, type HumanPlayers } from '@/lib/players/player-label';
 import type {
     BriefAction,
     BriefDeadline,
@@ -65,6 +66,8 @@ export interface BriefInput {
     headlines?: BriefHeadlineRow[];
     /** When this player last closed a brief. Null on their first. */
     lastSeenAt?: Date | string | null;
+    /** factionId → claimant display name, for "played by" (Item 6b). Absent = AI. */
+    players?: HumanPlayers;
     /** Real clock. Injected so tests are not wall-clock dependent. */
     now?: Date;
 }
@@ -395,6 +398,7 @@ function diplomaticOffers(input: BriefInput, nowSeconds: number): BriefDecision[
         id: `offer-${offer.id}`,
         kind: 'diplomacy' as const,
         title: `${factionName(input.world, offer.fromFactionId)} proposes ${humanKind(offer.kind)}`,
+        counterparts: [counterpart(input, offer.fromFactionId)],
         detail: offerTerms(offer),
         deadline: deadlineFrom(offer.expiresAtSeconds, nowSeconds, input.now),
         actions: [
@@ -440,6 +444,7 @@ function gambits(input: BriefInput, nowSeconds: number): BriefDecision[] {
             id: `gambit-${gambit.id}`,
             kind: 'gambit' as const,
             title: `${from}: ${humanKind(gambit.kind)}`,
+            counterparts: [counterpart(input, gambit.initiatorId)],
             detail: gambit.demandCredits
                 ? `They demand § ${Math.round(Number(gambit.demandCredits))}. Unanswered, your doctrine answers for you.`
                 : 'Unanswered, your doctrine answers for you.',
@@ -467,6 +472,7 @@ function interventions(input: BriefInput, nowSeconds: number): BriefDecision[] {
         id: `intervention-${window.id}`,
         kind: 'diplomacy' as const,
         title: `${factionName(input.world, window.aggressorId)} is at war with ${factionName(input.world, window.defenderId)}`,
+        counterparts: [counterpart(input, window.aggressorId), counterpart(input, window.defenderId)],
         detail: 'The galaxy is waiting to hear where you stand.',
         deadline: deadlineFrom(window.closesAtSeconds, nowSeconds, input.now),
         actions: [
@@ -599,6 +605,11 @@ function factionName(world: any, factionId: string | undefined): string {
     if (fromMap) return fromMap;
     const rec = world?.economy?.factions?.get?.(factionId) ?? world?.economy?.factions?.[factionId];
     return rec?.name ?? factionId;
+}
+
+/** "<Empire> · played by <name>" or "<Empire> · AI", for a decision's other side. */
+function counterpart(input: BriefInput, factionId: string): string {
+    return empireWithPlayer(factionName(input.world, factionId), factionId, input.players);
 }
 
 function companyName(world: any, companyId: string | undefined): string {
