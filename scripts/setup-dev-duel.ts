@@ -28,6 +28,9 @@ const PLAYERS = [
     { email: 'dev2@stars.com', name: 'Dev Commander 2', factionId: 'faction-vektori',  factionName: 'Vektori Technocracy' },
 ];
 const PASSWORD = process.env.DEV_DUEL_PASSWORD || 'password123';
+// What the cheat sheet prints. A password set through the environment is a
+// server's, and container logs are not the place to repeat it.
+const PASSWORD_SHOWN = process.env.DEV_DUEL_PASSWORD ? '(the DEV_DUEL_PASSWORD you set)' : PASSWORD;
 
 // This script is a DEV convenience: known accounts, a password that lives in
 // the repo, and two of the fourteen playable factions pre-claimed. On a server
@@ -110,11 +113,11 @@ async function main() {
     console.log('    Terminal 2:  npm run worker        (the game engine — REQUIRED)');
     console.log('');
     console.log('  PLAYER 1 (you):     http://localhost:3000/login');
-    console.log(`    email: ${PLAYERS[0].email}   password: ${PASSWORD}`);
+    console.log(`    email: ${PLAYERS[0].email}   password: ${PASSWORD_SHOWN}`);
     console.log(`    → pick "${PLAYERS[0].factionName}" in the lobby`);
     console.log('');
     console.log('  PLAYER 2 (friend):  http://<YOUR-IP>:3000/login');
-    console.log(`    email: ${PLAYERS[1].email}   password: ${PASSWORD}`);
+    console.log(`    email: ${PLAYERS[1].email}   password: ${PASSWORD_SHOWN}`);
     console.log(`    → pick "${PLAYERS[1].factionName}" in the lobby`);
     console.log('');
     console.log('  Full instructions (finding your IP, playing over the');

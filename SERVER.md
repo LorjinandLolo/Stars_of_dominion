@@ -51,74 +51,89 @@ cp .env.server.example .env
 nano .env
 ```
 
-Fill in:
+Four settings are required. The stack refuses to start until all four are
+filled in, and says which one is missing:
 
-- `POSTGRES_PASSWORD` — generate with `openssl rand -hex 16`
-- `BETTER_AUTH_SECRET` — generate with `openssl rand -hex 32`
-- `BETTER_AUTH_URL` — `http://<server-ip>:3000` (the address players type in
-  their browser; find the server IP with `ip -4 addr show`)
-- `LLM_PROVIDER` — leave as `template` unless you want live Gemini AI factions,
-  in which case set `gemini` and paste your `GOOGLE_API_KEY`
-- `NARRATOR_LLM` — who writes the gazette. Leave `template` for now; see §6.
+| Variable | What it is | Make one with |
+|---|---|---|
+| `POSTGRES_PASSWORD` | the database password (read once, when the database is first created) | `openssl rand -hex 16` |
+| `BETTER_AUTH_SECRET` | signs every login session; at least 32 characters | `openssl rand -hex 32` |
+| `BETTER_AUTH_URL` | the address players type, scheme and port included, e.g. `http://192.168.2.3:3000` | `ip -4 addr show` for the IP |
+| `GAME_ADMIN_SECRET` | lets you free a faction seat (see 6.3) | `openssl rand -hex 16` |
+
+Everything else has a working default. The ones worth knowing:
+`TRUSTED_ORIGINS` (every other address the game is reached on, needed for
+remote play, see 6), `INVITE_REQUIRED` (see 6.3), `NARRATOR_LLM` (who writes
+the gazette, `template` by default, see 5) and `DEV_DUEL_PASSWORD` (see 1.5).
 
 Do not reuse the dev secrets from your Windows machine's `.env.local` — those
 have been sitting in plain text on a dev box; generate fresh ones.
 
-### 1.4 Build and start
+### 1.4 Start everything: one command
 
 ```bash
-docker compose -f compose.prod.yaml up -d --build
+docker compose -f compose.prod.yaml up -d
 ```
 
-First build downloads the base image, installs npm dependencies, and runs
-`next build` — expect 5–15 minutes on the laptop. Watch progress with
-`docker compose -f compose.prod.yaml logs -f` if you're curious.
+That is the whole setup. In order, it:
 
-### 1.5 Create the database schema
+1. builds the image (first time only: 5–15 minutes on the laptop, it runs
+   `next build`),
+2. starts Postgres and waits until it is healthy,
+3. runs the one-shot `setup` container (`scripts/server-bootstrap.ts`):
+   checks the four settings, applies the database migrations, and — only if
+   the database is empty — seeds the galaxy (`scripts/push-init-state.ts`),
+4. then starts the web app, the worker (under its restart wrapper,
+   `scripts/worker-forever.js`) and the narrator.
+
+If a setting is missing, compose stops before anything starts:
+
+```
+required variable BETTER_AUTH_SECRET is missing a value: is not set - make one with openssl rand -hex 32 ...
+```
+
+If one is still the example value (`CHANGE_ME`), or too short, the `setup`
+container stops with a list of everything that is wrong and nothing else
+starts. Read it with:
 
 ```bash
-docker compose -f compose.prod.yaml run --rm app npx prisma migrate deploy
+docker compose -f compose.prod.yaml logs setup
 ```
 
-`migrate deploy` applies the committed migrations exactly as-is (unlike
-`migrate dev`, which is for authoring new migrations on the dev machine).
+Running the same command again on a live server is safe: `setup` only applies
+new migrations. It never reseeds a galaxy that exists or touches accounts.
 
-### 1.6 Seed the universe
+### 1.5 Dev accounts (test machines only)
+
+With `DEV_DUEL_PASSWORD` set in `.env`, the first start also creates
+`dev1@stars.com` and `dev2@stars.com` with that password, holding Aurelian and
+Vektori. Only on the first start, only into an empty database; the password
+is never printed in the logs.
+
+> **Leave `DEV_DUEL_PASSWORD` empty on a server friends play on.** The dev
+> accounts take two of the fourteen empires. If they were ever created, free
+> the seats with the admin reset endpoint (6.3) and delete or change the
+> accounts.
+
+### 1.6 Verify
 
 ```bash
-docker compose -f compose.prod.yaml run --rm app npx tsx scripts/push-init-state.ts
+docker compose -f compose.prod.yaml ps -a
 ```
-
-This pushes the world snapshot (systems, planets, factions). Real players then
-register through the UI and claim factions in the lobby.
-
-> **Do NOT run `scripts/setup-dev-duel.ts` on a server friends will play on.**
-> It creates `dev1@stars.com` / `dev2@stars.com` with a password that is
-> committed to this repository, and pre-claims Aurelian + Vektori — two of the
-> fourteen playable factions. It is a dev-machine convenience only. If it was
-> ever run, delete the claims with the admin reset endpoint (below) and change
-> or remove the accounts.
-
-### 1.7 Verify
-
-```bash
-docker compose -f compose.prod.yaml ps
-```
-
-All four services should be `Up` (postgres `healthy`):
 
 | Container | What it does | Game dies without it? |
 |---|---|---|
 | `stardom-postgres` | every persistent thing | yes |
+| `stardom-setup` | one-shot setup; shows `Exited (0)` when it worked | nothing starts until it has |
 | `stardom-app` | the UI and its API routes | yes |
 | `stardom-worker` | the game loop — advances the universe | yes, silently: the UI works, nothing ever changes |
 | `stardom-narrator` | writes the gazette from the chronicle | no, the galaxy just has no newspaper |
 
-Then from any device on the LAN, open `http://<server-ip>:3000`, register, and
-check that the tick counter advances (proves the worker is alive). The gazette
-lives under COMMS → PRESS, and the archive of everything ever written under
-COMMS → ARCHIVE. Both are empty until something historic happens — a war, a
-capture, a coup — which is correct, not a fault.
+Then from any device on the LAN, open `http://<server-ip>:3000/login`,
+register (or sign in as DEV 1 on a test machine), claim an empire, and check
+that the tick counter advances (proves the worker is alive). The gazette lives
+under COMMS → PRESS and publicly at `/gazette`. Both are empty until something
+historic happens — a war, a capture, a coup — which is correct, not a fault.
 
 ## 2. Day-to-day operations
 
@@ -128,6 +143,7 @@ All commands from `~/servers/stardom/Stars_of_dominion`.
 |---|---|
 | Status | `docker compose -f compose.prod.yaml ps` |
 | App logs | `docker compose -f compose.prod.yaml logs -f app` |
+| Setup log (why nothing started) | `docker compose -f compose.prod.yaml logs setup` |
 | Worker logs | `docker compose -f compose.prod.yaml logs -f worker` |
 | Narrator logs | `docker compose -f compose.prod.yaml logs -f narrator` |
 | Restart everything | `docker compose -f compose.prod.yaml restart` |
@@ -141,13 +157,14 @@ bash scripts/deploy-server.sh            # pull, rebuild, migrate, verify
 bash scripts/deploy-server.sh --backup   # same, with a pg_dump first
 ```
 
-The script is the three commands below plus a health wait and a version
-fingerprint (`/api/music` answers 200 only on code from 2026-09-06 on):
+The script is the two commands below plus a health wait and a version
+fingerprint (`/api/music` answers 200 only on code from 2026-09-06 on).
+Migrations need no command of their own any more: the `setup` container
+applies them on every `up`, before the app starts.
 
 ```bash
 git pull --ff-only
 docker compose -f compose.prod.yaml up -d --build
-docker compose -f compose.prod.yaml run --rm app npx prisma migrate deploy
 ```
 
 Rebuild is incremental (npm install layer is cached unless package.json
@@ -370,7 +387,7 @@ same env rules as above. Needs the static IP / DHCP reservation first.
   on the free empire nearest the sender's capital. Existing accounts are
   unaffected; turn the gate on after the first player has claimed, or nobody
   can make the first link.
-- Do not run the dev-duel seeding script (see 1.6).
+- Leave `DEV_DUEL_PASSWORD` empty (see 1.5).
 
 ## 7. Later roadmap (in sensible order)
 

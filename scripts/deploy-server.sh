@@ -8,9 +8,10 @@
 # What it does, in order:
 #   1. optional backup (scripts/backup-db.sh)
 #   2. git pull --ff-only (refuses to deploy a diverged tree)
-#   3. docker compose -f compose.prod.yaml up -d --build
-#   4. prisma migrate deploy (applies committed migrations, never authors new ones)
-#   5. waits for the app to answer, then prints the running version fingerprint
+#   3. docker compose -f compose.prod.yaml up -d --build — which also runs the
+#      one-shot `setup` container first: prisma migrate deploy (committed
+#      migrations only), and on an empty database the first seed
+#   4. waits for the app to answer, then prints the running version fingerprint
 #
 # Players see a short interruption while the app container swaps. The worker
 # hands its lease over cleanly (init + 30s grace in compose.prod.yaml).
@@ -31,11 +32,12 @@ git pull --ff-only origin main
 SHA="$(git rev-parse --short HEAD)"
 echo "    at $SHA"
 
-echo "==> build + restart"
-$COMPOSE up -d --build
-
-echo "==> migrations"
-$COMPOSE run --rm app npx prisma migrate deploy
+echo "==> build + restart (setup applies migrations before the app starts)"
+if ! $COMPOSE up -d --build; then
+    echo "up failed. If setup stopped it, the reason is here:" >&2
+    $COMPOSE logs --tail 40 setup >&2 || true
+    exit 1
+fi
 
 echo "==> waiting for the app"
 for i in $(seq 1 60); do

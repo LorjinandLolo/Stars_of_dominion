@@ -1,6 +1,14 @@
-# Production stack for the home server. Run from a clone of this repo:
-#   docker compose -f compose.prod.yaml up -d --build
-# Reads secrets from a .env file next to this compose file (see .env.server.example).
+# Production stack for the home server. On a clean machine, from a clone of
+# this repo with a filled-in .env next to this file (cp .env.server.example .env):
+#
+#   docker compose -f compose.prod.yaml up -d
+#
+# builds the image, starts Postgres, runs the one-shot `setup` service
+# (migrations; on an empty database also the galaxy, and DEV 1/DEV 2 when
+# DEV_DUEL_PASSWORD is set), then starts the web app, the worker and the
+# narrator. Re-running it on a live server only applies new migrations.
+# Four variables are required and have no default; compose stops before
+# starting anything if one is missing. See SERVER.md section 1.
 name: stardom
 
 # Every container logs to json-file with a cap. Without this the worker's
@@ -19,9 +27,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-stars}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?is not set - make one with openssl rand -hex 16 and put it in .env (SERVER.md 1.3)}
+      POSTGRES_DB: ${POSTGRES_DB:-stars_dominion}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -29,42 +37,44 @@ services:
       # without exposing Postgres to the LAN.
       - "127.0.0.1:5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stars} -d ${POSTGRES_DB:-stars_dominion}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
-  app:
+  # One-shot: checks the .env, waits for Postgres, applies migrations, seeds
+  # an EMPTY database. The three long-running services wait for it to exit 0,
+  # so a missing setting or a failed migration stops the stack here, with the
+  # reason in `docker compose -f compose.prod.yaml logs setup`.
+  setup:
     build: .
     image: stardom-app
-    container_name: stardom-app
-    restart: unless-stopped
+    container_name: stardom-setup
+    restart: "no"
     logging: *default-logging
-    # PID 1 is `npx` with no init — without one, docker's SIGTERM can fail to
-    # reach the node process and every redeploy waits out the 10s kill grace.
     init: true
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      # The soundtrack lives in the checkout, not the image: drop tracks into
-      # public/music/<mood>/ on the server (or commit them), then
-      # `docker compose -f compose.prod.yaml restart app` — Next lists public/
-      # once at startup. See public/music/README.md.
-      - ./public/music:/app/public/music:ro
     environment: &app-env
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-stars}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stars_dominion}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?is not set - make one with openssl rand -hex 32 and put it in .env (SERVER.md 1.3)}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?is not set - the address players open, e.g. http://192.168.2.3:3000 (SERVER.md 1.3)}
       # Comma-separated additional origins better-auth will accept sign-ins
       # from. REQUIRED for remote play: friends reach the game via the tunnel
       # or public origin, and better-auth 403s any origin it does not trust —
       # a mismatch silently breaks registration/login for everyone remote.
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
-      # Admin secret for /api/lobby/admin/reset. No default here on purpose —
-      # the code's fallback is a string committed to this repo.
-      GAME_ADMIN_SECRET: ${GAME_ADMIN_SECRET}
+      # Admin secret for /api/lobby/admin/reset — how the host frees a seat.
+      GAME_ADMIN_SECRET: ${GAME_ADMIN_SECRET:?is not set - make one with openssl rand -hex 16 and put it in .env (SERVER.md 1.3)}
+      # true = new accounts need a friend's invite code (SERVER.md 6.3). Compose
+      # passes only the variables listed here, so without this line the gate
+      # could never be switched on from .env.
+      INVITE_REQUIRED: ${INVITE_REQUIRED:-}
+      # Only read by setup, and only on an empty database: creates DEV 1/DEV 2
+      # with this password. Leave unset on a server friends play on.
+      DEV_DUEL_PASSWORD: ${DEV_DUEL_PASSWORD:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-template}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
@@ -78,13 +88,37 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
       OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-120000}
+    command: ["npx", "tsx", "scripts/server-bootstrap.ts"]
+
+  app:
+    image: stardom-app
+    # Built by the setup service above — never pulled.
+    pull_policy: never
+    container_name: stardom-app
+    restart: unless-stopped
+    logging: *default-logging
+    # PID 1 is `npx` with no init — without one, docker's SIGTERM can fail to
+    # reach the node process and every redeploy waits out the 10s kill grace.
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    volumes:
+      # The soundtrack lives in the checkout, not the image: drop tracks into
+      # public/music/<mood>/ on the server (or commit them), then
+      # `docker compose -f compose.prod.yaml restart app` — Next lists public/
+      # once at startup. See public/music/README.md.
+      - ./public/music:/app/public/music:ro
+    environment: *app-env
     ports:
       - "3000:3000"
 
   # Game loop — the game does not advance without it.
   worker:
     image: stardom-app
-    # Image is produced locally by the app service's build — never pull it.
+    # Image is produced locally by the setup service's build — never pull it.
     pull_policy: never
     container_name: stardom-worker
     restart: unless-stopped
@@ -99,8 +133,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      setup:
+        condition: service_completed_successfully
     environment: *app-env
-    command: ["npx", "tsx", "scripts/game-loop.ts"]
+    # The restart wrapper: a worker whose hang watchdog trips is back in 5s
+    # without waiting on a container restart; the wrapper waits for a
+    # stopping worker to release its lease before it exits itself.
+    command: ["node", "scripts/worker-forever.js"]
 
   # Narrator — turns chronicle events into gazette articles. Optional: the game
   # runs without it, the galaxy just has no newspaper. Writes prose only, never
@@ -115,6 +154,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      setup:
+        condition: service_completed_successfully
     environment: *app-env
     # Lets OLLAMA_BASE_URL=http://host.docker.internal:11434 reach a daemon
     # running on the server itself. Harmless when NARRATOR_LLM=template.
