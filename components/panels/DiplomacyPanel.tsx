@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { 
     Users, Shield, Target, Globe, BookOpen, Fingerprint, 
@@ -16,6 +16,7 @@ import { computeActionSupport, SUPPORT_BAND_LABELS, DiplomaticActionKind } from 
 import { ReputationSignal } from '@/lib/integration/types';
 import DiscourseTerminal from '../politics/DiscourseTerminal';
 import { MessageSquare } from 'lucide-react';
+import MessageBox from '../messages/MessageBox';
 import ContactSwitcher from './diplomacy/ContactSwitcher';
 import ContactRail from './diplomacy/ContactRail';
 import { buildContacts, ESCALATION_LABELS } from './diplomacy/contact-model';
@@ -166,7 +167,18 @@ export default function DiplomacyPanel() {
         setSwapKey(k => k + 1);
         setSelectedFactionId(id);
     };
-    
+
+    // A "Reply" in the daily brief asks for a contact by id: open on them,
+    // once, as soon as the contact list has them.
+    const diplomacyFocusId = useUIStore(s => s.diplomacyFocusId);
+    const setDiplomacyFocusId = useUIStore(s => s.setDiplomacyFocusId);
+    useEffect(() => {
+        if (!diplomacyFocusId) return;
+        if (!liveFactions.some(f => f.id === diplomacyFocusId)) return;
+        setSelectedFactionId(diplomacyFocusId);
+        setDiplomacyFocusId(null);
+    }, [diplomacyFocusId, liveFactions, setDiplomacyFocusId]);
+
     if (!selectedFaction) {
         return (
             <div className="flex flex-col h-full items-center justify-center text-slate-500 bg-slate-950/80 backdrop-blur-xl">
@@ -338,6 +350,13 @@ export default function DiplomacyPanel() {
                                 Speak with {selectedFaction.empireName}
                             </button>
                         </div>
+
+                        {/* A note to the friend who plays them. Nothing for an AI empire. */}
+                        <MessageBox
+                            contactId={selectedFaction.id}
+                            contactName={selectedFaction.empireName}
+                            accent={selectedFaction.color}
+                        />
 
                         {activeTab === 'statecraft' ? (
                             <div className="space-y-10">

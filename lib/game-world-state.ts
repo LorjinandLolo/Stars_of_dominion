@@ -23,6 +23,7 @@ import type { DefianceEvent } from './government/defiance-types';
 import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
+import type { EmpireMessageView } from './messages/message-rules';
 import type { GoalState } from './goals/first-week-goals';
 import type { FactionReputation } from './reputation/types';
 import type { FactionTraitState } from './factions/faction-traits-types';
@@ -241,6 +242,15 @@ export interface GameWorldState {
      * worker from the deed ledger; rides the owner's shard.
      */
     firstWeekGoals?: Map<string, GoalState>;
+
+    /**
+     * Each human empire's own correspondence (lib/messages), keyed by faction
+     * id: what it sent and what it received this week. The `EmpireMessage`
+     * table is the truth; the worker copies it in every cycle so it rides the
+     * owner's shard. Never the shared snapshot — a message is between two
+     * players.
+     */
+    empireMessages?: Map<string, EmpireMessageView[]>;
 
     /**
      * Per-faction bespoke mechanics — the Bloodmoon ceasefire, capacola surges,

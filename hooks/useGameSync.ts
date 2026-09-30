@@ -8,6 +8,7 @@ import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
 import { registerFactionLabels, humanizeNotification } from '@/lib/time/notification-names';
 import { currentGoal, completedGoals } from '@/lib/goals/first-week-goals';
+import type { EmpireMessageView } from '@/lib/messages/message-rules';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Region, RegionStatus, MarketTicker, CompanySnapshot } from '@/types/ui-state';
 // Pure module (types only) — safe on the client, unlike the fs-backed services.
@@ -907,6 +908,18 @@ export function useGameSync() {
             goalsCompleted: activeFactionId && (world as any).firstWeekGoals?.has?.(activeFactionId)
                 ? completedGoals(world as any, activeFactionId)
                 : null,
+            // Messages to and from other players, from the player's own shard.
+            // One just sent stays in the list until the worker echoes it back,
+            // so the thread does not blink between send and sync.
+            messages: (() => {
+                const fromWorld: EmpireMessageView[] = activeFactionId
+                    ? ((world as any).empireMessages?.get?.(activeFactionId) ?? [])
+                    : [];
+                const known = new Set(fromWorld.map(m => m.id));
+                const sentLocally = useUIStore.getState().messages
+                    .filter(m => m.fromFactionId === activeFactionId && !known.has(m.id));
+                return [...fromWorld, ...sentLocally];
+            })(),
             // Latched by step20 each strategic tick; drives the defeat overlay.
             playerDefeatStatus: activeFactionId
                 ? ((world as any).titles?.defeatStatuses?.get?.(activeFactionId) ?? null)
@@ -1004,6 +1017,12 @@ export function useGameSync() {
             if (mappedShard.firstWeekGoals) {
                 if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
                 world.firstWeekGoals.set(mappedShard.factionId, mappedShard.firstWeekGoals);
+            }
+            // Only the caller's own shard carries any (the public projection
+            // of a rival's shard is an allow-list without them).
+            if (Array.isArray(mappedShard.messages)) {
+                if (!world.empireMessages) world.empireMessages = new Map();
+                world.empireMessages.set(mappedShard.factionId, mappedShard.messages);
             }
             if (mappedShard.recruitmentJobs) {
                 if (!world.combat) world.combat = { recruitmentJobs: [] };

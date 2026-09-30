@@ -71,6 +71,18 @@ export interface BriefDecision {
     counterparts?: string[];
 }
 
+/** A message another player sent this empire since the last brief (Item 6c). */
+export interface BriefMessage {
+    id: string;
+    fromFactionId: string;
+    /** "<Empire> · played by <name>". */
+    from: string;
+    /** Plain text as the sender typed it. Render as text, never as markup. */
+    body: string;
+    /** ISO timestamp, real clock. */
+    at: string;
+}
+
 /** The one thing worth doing today. */
 export interface BriefSuggestion {
     id: string;
@@ -89,6 +101,8 @@ export interface DailyBrief {
     nowSeconds: number;
     /** The window this brief covers, real clock. Null on a player's first one. */
     since: string | null;
+    /** What other players wrote to this empire in that window, newest first. */
+    messages: BriefMessage[];
     happened: BriefLine[];
     decisions: BriefDecision[];
     suggestion: BriefSuggestion | null;

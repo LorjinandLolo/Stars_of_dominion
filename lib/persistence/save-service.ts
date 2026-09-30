@@ -293,6 +293,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         delegation: world.delegation?.get(factionId) ?? null,
         // Where this player is in the first-week goals. Theirs, like the above.
         firstWeekGoals: world.firstWeekGoals?.get(factionId) ?? null,
+        // Messages to and from other players (lib/messages). Only this
+        // empire's own; the public projection in shard-privacy.ts is an
+        // allow-list, so a rival's poll never carries them.
+        messages: world.empireMessages?.get(factionId) ?? null,
         // Ship designs are the owner's alone. They ride the shard (not the
         // shared snapshot) and the public projection in shard-privacy.ts is an
         // allow-list, so rivals never see them on the wire.
@@ -374,6 +378,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
         world.firstWeekGoals.set(shard.factionId, shard.firstWeekGoals);
     }
+    if (Array.isArray(shard.messages)) {
+        if (!world.empireMessages) world.empireMessages = new Map();
+        world.empireMessages.set(shard.factionId, shard.messages);
+    }
     if (shard.recruitmentJobs) {
         if (!world.combat) world.combat = { recruitmentJobs: [] };
         // Merge - unique by ID
@@ -431,6 +439,9 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // client polls does not need to say who is letting their cabinet drive.
     if (cloned.delegation instanceof Map) cloned.delegation.clear();
     if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
+    // Messages between two players are read by those two players. The shared
+    // snapshot goes to every client, so it carries none of them.
+    if (cloned.empireMessages instanceof Map) cloned.empireMessages.clear();
 
     // Pirate state never rides in the shared snapshot. Every mechanic that
     // matters here is a mechanic about asymmetric information — hidden bases,

@@ -260,6 +260,8 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 // Imported dynamically-after-dotenv would be cleaner, but lib/db reads
 // DATABASE_URL lazily on first query, so a static import is safe here.
 import { prisma } from '../lib/db';
+import { loadRecentMessages } from '../lib/messages/message-service';
+import { groupMessagesByFaction } from '../lib/messages/message-rules';
 import { ensurePiracyState, playedOrganization } from '../lib/piracy/organization-service';
 import { establishBase } from '../lib/piracy/base-service';
 import { canLegitimize, legitimize } from '../lib/piracy/succession-service';
@@ -764,6 +766,19 @@ async function runGameTick() {
                 // Table unreadable — keep the previous list rather than letting
                 // the AI speak for humans.
             }
+        }
+
+        // Messages between players (lib/messages). The table is the truth and
+        // /api/messages writes it; the worker only sorts each empire's own
+        // correspondence into `world.empireMessages`, which extractFactionShard
+        // puts in that empire's shard and cleanWorldForSave keeps out of the
+        // shared snapshot. Read every cycle (one small indexed query), so a
+        // message reaches its reader within a poll or two of being sent.
+        try {
+            world.empireMessages = groupMessagesByFaction(await loadRecentMessages());
+        } catch (e: any) {
+            // Unreadable this cycle: keep what the shards already say.
+            console.warn('[Tick Worker] message load failed:', e.message);
         }
 
         if (strategicFired) {

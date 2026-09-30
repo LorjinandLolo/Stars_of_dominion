@@ -34,6 +34,7 @@ import type { DelegationState } from '@/lib/delegation/delegation-types';
 import type { CurrentGoal, GoalId } from '@/lib/goals/first-week-goals';
 import type { UiPrefs } from '@/lib/player/ui-prefs';
 import type { HumanPlayers } from '@/lib/players/player-label';
+import type { EmpireMessageView } from '@/lib/messages/message-rules';
 import type { Faction } from '@/lib/trade-system/types';
 import { 
     defaultCouncilState, 
@@ -271,6 +272,15 @@ export interface UIStore {
     // ── Who plays which empire (Item 6b) ──
     /** factionId → claimant's lobby display name. Absent = AI. Null until the first sync. */
     humanPlayers: HumanPlayers | null;
+
+    // ── Messages between players (Item 6c) ──
+    /** The player's own correspondence, sent and received, from their shard. */
+    messages: EmpireMessageView[];
+    /** A message this client just sent, shown until the worker echoes it back. */
+    addSentMessage: (message: EmpireMessageView) => void;
+    /** The contact DIPLOMACY should open on (a "Reply" in the brief). Cleared once used. */
+    diplomacyFocusId: string | null;
+    setDiplomacyFocusId: (factionId: string | null) => void;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──
     /** Null until loaded from /api/player/prefs. */
@@ -628,6 +638,14 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Who plays which empire ──
     humanPlayers: null,
+
+    // ── Messages between players ──
+    messages: [],
+    addSentMessage: (message) => set((state) => (
+        state.messages.some(m => m.id === message.id) ? {} : { messages: [...state.messages, message] }
+    )),
+    diplomacyFocusId: null,
+    setDiplomacyFocusId: (factionId) => set({ diplomacyFocusId: factionId }),
 
     // ── Interface preferences ──
     uiPrefs: null,

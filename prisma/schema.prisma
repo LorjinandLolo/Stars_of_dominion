@@ -149,6 +149,28 @@ model Invite {
   @@map("invites")
 }
 
+// One plain-text note from one player's empire to another's (casual-play spec
+// Item 6c). At most one per sender, recipient and Galactic Day: the unique
+// index below IS the rate limit, so two tabs racing cannot both win. 280
+// characters, no markup. The worker copies each empire's recent messages into
+// its private shard; nothing here ever rides the shared snapshot. See
+// lib/messages/.
+model EmpireMessage {
+  id            String   @id @default(cuid())
+  fromFactionId String
+  toFactionId   String
+  /// better-auth user id of the claimant who wrote it. Never sent to a client.
+  senderUserId  String
+  body          String
+  /// Galactic Day it was sent on: real days since the Unix epoch, UTC.
+  galacticDay   Int
+  createdAt     DateTime @default(now())
+
+  @@unique([fromFactionId, toFactionId, galacticDay])
+  @@index([createdAt])
+  @@map("empire_messages")
+}
+
 model GameSave {
   id         String   @id @default(cuid())
   saveName   String

@@ -55,6 +55,7 @@ export default function DailyBrief() {
     const setBriefOpen = useUIStore(s => s.setBriefOpen);
     const setActiveTab = useUIStore(s => s.setActiveTab);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    const setDiplomacyFocusId = useUIStore(s => s.setDiplomacyFocusId);
 
     const [brief, setBrief] = React.useState<DailyBriefData | null>(null);
     const [loading, setLoading] = React.useState(false);
@@ -130,6 +131,13 @@ export default function DailyBrief() {
         }
     };
 
+    /** Open DIPLOMACY on the empire that wrote, where the message box is. */
+    const replyTo = (factionId: string) => {
+        setDiplomacyFocusId(factionId);
+        setActiveTab('diplomacy' as NavTab);
+        setBriefOpen(false);
+    };
+
     const close = async () => {
         setBriefOpen(false);
         try {
@@ -176,6 +184,35 @@ export default function DailyBrief() {
 
                 {brief && (
                     <div className="px-6 py-5 space-y-7">
+                        {/* ── Messages from other players ───────────────── */}
+                        {(brief.messages?.length ?? 0) > 0 && (
+                            <section id="brief-messages">
+                                <h3 className="text-[10px] font-display uppercase tracking-[0.2em] text-slate-500 mb-3">
+                                    Messages ({brief.messages.length})
+                                </h3>
+                                <div className="space-y-3">
+                                    {brief.messages.map(message => (
+                                        <div key={message.id} className="brief-message rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-4">
+                                            <div className="flex items-start justify-between gap-3 mb-1.5">
+                                                <p className="text-[10px] font-mono text-emerald-300/90">{message.from}</p>
+                                                <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap">{whenLine(message.at)}</span>
+                                            </div>
+                                            {/* A text node: whatever was typed is shown as typed. */}
+                                            <p className="text-sm text-slate-100 leading-relaxed whitespace-pre-wrap break-words mb-3">
+                                                {message.body}
+                                            </p>
+                                            <button
+                                                onClick={() => replyTo(message.fromFactionId)}
+                                                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${TONE_CLASS.open}`}
+                                            >
+                                                Reply
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
                         {/* ── What happened ─────────────────────────────── */}
                         {brief.happened.length > 0 && (
                             <section>

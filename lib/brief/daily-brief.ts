@@ -22,6 +22,7 @@ import type {
     BriefDeadline,
     BriefDecision,
     BriefLine,
+    BriefMessage,
     BriefSuggestion,
     DailyBrief,
 } from './brief-types';
@@ -84,6 +85,7 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
     const lastSeen = toDate(input.lastSeenAt);
     const since = lastSeen ?? new Date(now.getTime() - DEFAULT_WINDOW_MS);
 
+    const messages = collectMessages(input, since, now);
     const happened = collectHappened(input, since, now);
     const decisions = collectDecisions(input, nowSeconds, now);
     const suggestion = pickSuggestion(input);
@@ -93,12 +95,44 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
         generatedAt: now.toISOString(),
         nowSeconds,
         since: lastSeen ? lastSeen.toISOString() : null,
+        messages,
         happened,
         decisions,
         suggestion,
         nextTickInSeconds: realSecondsToNextTick(nowSeconds),
-        empty: happened.length === 0 && decisions.length === 0,
+        empty: messages.length === 0 && happened.length === 0 && decisions.length === 0,
     };
+}
+
+// ─── Messages from other players ──────────────────────────────────────────────
+
+const MAX_MESSAGES = 5;
+
+/**
+ * What other players wrote to this empire since the last brief, newest first.
+ * Read from the faction's own shard (`world.empireMessages`, which the worker
+ * fills from the EmpireMessage table) — the player's own sent messages and
+ * anything already seen are left to the DIPLOMACY panel.
+ */
+export function collectMessages(input: BriefInput, since: Date, now: Date): BriefMessage[] {
+    const own = input.world?.empireMessages?.get?.(input.factionId)
+        ?? input.world?.empireMessages?.[input.factionId]
+        ?? [];
+    const out: BriefMessage[] = [];
+    for (const message of Array.isArray(own) ? own : []) {
+        if (message?.toFactionId !== input.factionId) continue;
+        const at = toDate(message.sentAt);
+        if (!at || at < since || at > now) continue;
+        out.push({
+            id: String(message.id),
+            fromFactionId: String(message.fromFactionId),
+            from: counterpart(input, message.fromFactionId),
+            body: String(message.body ?? ''),
+            at: at.toISOString(),
+        });
+    }
+    out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    return out.slice(0, MAX_MESSAGES);
 }
 
 // ─── What happened ────────────────────────────────────────────────────────────
