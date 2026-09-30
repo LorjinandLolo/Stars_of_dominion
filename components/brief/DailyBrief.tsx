@@ -45,6 +45,9 @@ function whenLine(at: string): string {
     return `today, ${clock}`;
 }
 
+/** Every button that answers something: 40 px tall, a thumb's width apart. */
+const ACTION_BUTTON = 'min-h-[40px] px-4 rounded-lg border text-xs font-semibold transition-colors';
+
 const TONE_CLASS: Record<BriefAction['tone'], string> = {
     accept: 'bg-emerald-600/80 hover:bg-emerald-500/80 text-white border-emerald-400/30',
     decline: 'bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border-slate-600/40',
@@ -191,13 +194,13 @@ export default function DailyBrief() {
     const nextTickMinutes = brief ? Math.max(1, Math.round(brief.nextTickInSeconds / 60)) : null;
 
     return (
-        <div className="fixed inset-0 z-[9000] flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto py-10 px-4">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-700/60 bg-slate-950/95 shadow-2xl shadow-black/60">
+        <div id="daily-brief" className="fixed inset-0 z-[9000] flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto overflow-x-hidden py-3 px-2 sm:py-10 sm:px-4">
+            <div className="w-full max-w-2xl min-w-0 rounded-2xl border border-slate-700/60 bg-slate-950/95 shadow-2xl shadow-black/60">
                 {/* Header */}
-                <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-slate-800/80">
-                    <div>
+                <div className="flex items-start justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-800/80">
+                    <div className="min-w-0">
                         <p className="text-[10px] font-display uppercase tracking-[0.25em] text-sky-400 mb-1">Daily brief</p>
-                        <h2 className="text-2xl font-display uppercase tracking-wider text-white leading-tight">
+                        <h2 className="text-lg sm:text-2xl font-display uppercase tracking-wider text-white leading-tight">
                             {brief?.empty ? 'Nothing needs you today' : 'While you were away'}
                         </h2>
                         {nextTickMinutes !== null && (
@@ -214,7 +217,9 @@ export default function DailyBrief() {
                                 title="Copy a card for your friends: the season, the day and a headline about your empire"
                                 className="flex items-center gap-2 min-h-[40px] px-3 rounded-lg border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 text-xs font-bold transition-colors whitespace-nowrap"
                             >
-                                <Share2 size={14} /> Share today
+                                <Share2 size={14} />
+                                <span className="sm:hidden">Share</span>
+                                <span className="hidden sm:inline">Share today</span>
                             </button>
                         )}
                         <button
@@ -229,7 +234,7 @@ export default function DailyBrief() {
 
                 {/* What "Share today" copied — public gazette material only. */}
                 {shared && (
-                    <div id="share-card" className="mx-6 mt-5 rounded-xl border border-slate-700/60 bg-slate-900/60 p-4">
+                    <div id="share-card" className="mx-4 sm:mx-6 mt-5 rounded-xl border border-slate-700/60 bg-slate-900/60 p-4">
                         <p className="text-[10px] font-mono text-emerald-400 mb-2 flex items-center gap-1.5">
                             <Check size={12} />
                             {shared.copied ? 'Copied. Paste it anywhere.' : 'Select and copy:'}
@@ -245,7 +250,7 @@ export default function DailyBrief() {
                 )}
 
                 {brief && (
-                    <div className="px-6 py-5 space-y-7">
+                    <div className="px-4 sm:px-6 py-5 space-y-7">
                         {/* ── Messages from other players ───────────────── */}
                         {(brief.messages?.length ?? 0) > 0 && (
                             <section id="brief-messages">
@@ -270,7 +275,7 @@ export default function DailyBrief() {
                                             )}
                                             <button
                                                 onClick={() => replyTo(message.fromFactionId)}
-                                                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${TONE_CLASS.open}`}
+                                                className={`${ACTION_BUTTON} ${TONE_CLASS.open}`}
                                             >
                                                 Reply
                                             </button>
@@ -321,8 +326,8 @@ export default function DailyBrief() {
                                                     urgent ? 'border-red-500/40 bg-red-950/20' : 'border-slate-700/60 bg-slate-900/60'
                                                 }`}
                                             >
-                                                <div className="flex items-start justify-between gap-3 mb-1.5">
-                                                    <p className="text-sm font-semibold text-white leading-snug">{decision.title}</p>
+                                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-3 mb-1.5">
+                                                    <p className="text-sm font-semibold text-white leading-snug break-words min-w-0">{decision.title}</p>
                                                     {left !== null && (
                                                         <span className={`text-[10px] font-mono whitespace-nowrap ${urgent ? 'text-red-400' : 'text-slate-500'}`}>
                                                             {countdown(left)}
@@ -347,7 +352,7 @@ export default function DailyBrief() {
                                                             <button
                                                                 key={`${decision.id}-${i}`}
                                                                 onClick={() => runAction(decision.id, action)}
-                                                                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${TONE_CLASS[action.tone]}`}
+                                                                className={`${ACTION_BUTTON} ${TONE_CLASS[action.tone]}`}
                                                             >
                                                                 {action.label}
                                                             </button>
@@ -386,7 +391,7 @@ export default function DailyBrief() {
                                     ) : (
                                         <button
                                             onClick={() => runAction('suggestion', brief.suggestion!.action)}
-                                            className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${TONE_CLASS[brief.suggestion.action.tone]}`}
+                                            className={`${ACTION_BUTTON} ${TONE_CLASS[brief.suggestion.action.tone]}`}
                                         >
                                             {brief.suggestion.action.label}
                                         </button>
@@ -405,13 +410,13 @@ export default function DailyBrief() {
                 )}
 
                 {/* Footer */}
-                <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-800/80">
-                    <p className="text-[10px] text-slate-600 font-mono">
+                <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-t border-slate-800/80">
+                    <p className="text-[10px] text-slate-600 font-mono min-w-0">
                         {brief?.since ? `Since ${new Date(brief.since).toLocaleString()}` : 'Your first brief'}
                     </p>
                     <button
                         onClick={close}
-                        className="flex items-center gap-2 min-h-[40px] px-4 rounded-lg bg-sky-600/80 hover:bg-sky-500/80 text-white text-xs font-bold transition-colors"
+                        className="flex items-center gap-2 min-h-[40px] px-4 shrink-0 rounded-lg bg-sky-600/80 hover:bg-sky-500/80 text-white text-xs font-bold transition-colors"
                     >
                         Done <ArrowRight size={14} />
                     </button>

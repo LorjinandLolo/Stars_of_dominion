@@ -68,7 +68,8 @@ function SimulationTimer() {
     const progress = ((nowSeconds % 10) / 10) * 100;
     
     return (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40 glass-panel px-6 py-2 rounded-full flex items-center gap-6 border-b-2 border-b-sky-500/50 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+        // Wide screens only: on a phone it sat on top of the overlay picker.
+        <div className="hidden md:flex absolute top-6 left-1/2 -translate-x-1/2 z-40 glass-panel px-6 py-2 rounded-full items-center gap-6 border-b-2 border-b-sky-500/50 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
             <div className="flex flex-col">
                 <span className="text-[8px] text-sky-500/60 uppercase tracking-[0.2em] font-display">Authoritative Clock</span>
                 <span className="text-sm font-mono text-white flex items-center gap-2">

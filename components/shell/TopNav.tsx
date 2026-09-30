@@ -100,7 +100,7 @@ export default function TopNav() {
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
 
             {/* ── Left: brand + civilization ──────────────────────────────── */}
-            <div className="flex items-center gap-3 px-4 min-w-0">
+            <div className="flex items-center gap-3 px-3 md:px-4 min-w-0">
                 <div className="w-6 h-6 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-slate-950 font-black text-xs font-display flex-shrink-0">
                     S
                 </div>
@@ -113,7 +113,9 @@ export default function TopNav() {
             </div>
 
             {/* ── Center: the empire's ledger ─────────────────────────────── */}
-            <div className="flex items-stretch flex-1 justify-center max-w-fit mx-auto min-w-0 overflow-hidden">
+            {/* Not on a phone (casual-play Item 8): at 375 px the bar has room
+                for the brief, the bell and who you are, and those come first. */}
+            <div className="hidden md:flex items-stretch flex-1 justify-center max-w-fit mx-auto min-w-0 overflow-hidden">
                 <ResourceChip icon={<Coins size={13} className="text-amber-400" />} label="Credits" {...res(Resource.CREDITS)} />
                 <ResourceChip icon={<Hammer size={13} className="text-slate-400" />} label="Metals" {...res(Resource.METALS)} />
                 <ResourceChip icon={<FlaskConical size={13} className="text-emerald-400" />} label="Chemicals" {...res(Resource.CHEMICALS)} />
@@ -123,7 +125,7 @@ export default function TopNav() {
             </div>
 
             {/* ── Right: stability, date, alerts, identity ────────────────── */}
-            <div className="flex items-center gap-3 px-4 flex-shrink-0">
+            <div className="flex items-center justify-end gap-2 md:gap-3 px-3 md:px-4 min-w-0 flex-1 md:flex-none md:flex-shrink-0">
                 {/* Stability */}
                 <div className="hidden lg:flex flex-col items-end leading-none" title="Empire stability">
                     <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mb-1">Stability</span>
@@ -138,14 +140,14 @@ export default function TopNav() {
                     </div>
                 </div>
 
-                <div className="h-6 w-px bg-slate-800/60" />
+                <div className="hidden md:block h-6 w-px bg-slate-800/60" />
 
                 {/* Season clock — the real thing when the worker reports one */}
                 {seasonInfo ? (
-                    <div id="season-clock" className="flex items-center gap-2" title={`Season ${seasonInfo.seasonNumber}: ${seasonInfo.name} — ${seasonInfo.phase === 'announced' ? 'starts' : 'ends'} in ~${seasonCountdown} (real time)`}>
-                        <CalendarDays size={13} className="text-slate-500" />
-                        <div className="flex flex-col leading-none">
-                            <span className="text-[10px] font-display font-bold tracking-widest text-slate-200 uppercase whitespace-nowrap">
+                    <div id="season-clock" className="flex items-center gap-2 min-w-0" title={`Season ${seasonInfo.seasonNumber}: ${seasonInfo.name} — ${seasonInfo.phase === 'announced' ? 'starts' : 'ends'} in ~${seasonCountdown} (real time)`}>
+                        <CalendarDays size={13} className="text-slate-500 shrink-0" />
+                        <div className="flex flex-col leading-none min-w-0">
+                            <span className="text-[10px] font-display font-bold tracking-widest text-slate-200 uppercase whitespace-nowrap truncate">
                                 {seasonInfo.name}
                             </span>
                             <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mt-0.5">
@@ -180,28 +182,32 @@ export default function TopNav() {
                     </>
                 )}
 
-                <div className="h-6 w-px bg-slate-800/60" />
+                <div className="hidden md:block h-6 w-px bg-slate-800/60" />
 
                 {/* Transmissions + tutorial. Both components existed but were
                     only mounted in the orphaned legacy Navbar — meaning no
                     player had a notification bell or the guided tour at all. */}
                 {/* The brief is the readable version of the bell: what happened,
-                    what is waiting, one thing worth doing. */}
+                    what is waiting, one thing worth doing. On a phone it is the
+                    main way in, so it carries its label there. */}
                 <button
                     id="daily-brief-button"
                     onClick={() => useUIStore.getState().setBriefOpen(true)}
-                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 transition-colors"
+                    className="flex items-center justify-center gap-1.5 min-h-[40px] min-w-[40px] px-2 rounded-lg text-sky-300 md:text-slate-400 border border-sky-500/30 md:border-transparent hover:text-sky-300 hover:bg-sky-500/10 transition-colors"
                     title="Open today's brief"
                 >
                     <Newspaper size={15} />
-                    <span className="hidden xl:inline text-[9px] font-display tracking-[0.18em]">BRIEF</span>
+                    <span className="inline md:hidden xl:inline text-[9px] font-display tracking-[0.18em]">BRIEF</span>
                 </button>
 
                 <NotificationBell factionId={playerFactionId ?? undefined} />
-                <MusicControl />
-                <TutorialLauncher />
+                {/* Music and the tour launcher wait for a wider screen. */}
+                <div className="hidden md:contents">
+                    <MusicControl />
+                    <TutorialLauncher />
+                </div>
 
-                <div className="h-6 w-px bg-slate-800/60" />
+                <div className="hidden md:block h-6 w-px bg-slate-800/60" />
                 <IdentityBadge />
             </div>
         </nav>

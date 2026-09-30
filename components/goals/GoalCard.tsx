@@ -49,11 +49,12 @@ export default function GoalCard() {
     };
 
     return (
-        <div id="goal-card" className="fixed left-4 bottom-20 z-40 w-[20rem] max-w-[calc(100vw-2rem)]">
+        // Phone: full width above the dock. Wider: a 20rem card in the corner.
+        <div id="goal-card" className="fixed left-2 right-2 sm:left-4 sm:right-auto bottom-[4.5rem] sm:bottom-20 z-40 sm:w-[20rem]">
             <div className="rounded-xl border border-sky-500/30 bg-slate-950/90 backdrop-blur-md shadow-xl shadow-black/50">
                 <button
                     onClick={toggle}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
+                    className="w-full min-h-[40px] flex items-center justify-between gap-2 px-3 py-2 text-left"
                     title={collapsed ? 'Show this goal' : 'Tuck it away'}
                 >
                     <span className="flex items-center gap-2 min-w-0">

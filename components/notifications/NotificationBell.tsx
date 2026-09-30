@@ -57,7 +57,7 @@ export default function NotificationBell({ factionId }: { factionId?: string }) 
             onClick={toggleFeed}
             id="notification-bell"
             title="Notifications"
-            className={`relative flex items-center justify-center w-9 h-9 rounded-xl border transition-all duration-300 ${
+            className={`relative flex items-center justify-center w-10 h-10 shrink-0 rounded-xl border transition-all duration-300 ${
                 feedOpen
                     ? 'bg-blue-500/20 border-blue-500/40 text-blue-400'
                     : 'bg-white/5 border-white/10 hover:border-white/30 text-slate-400 hover:text-white'

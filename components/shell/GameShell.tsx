@@ -11,6 +11,7 @@ import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 import TopNav from '@/components/shell/TopNav';
+import SmallScreenNote from '@/components/shell/SmallScreenNote';
 import GalaxyShell from '@/components/galaxy/GalaxyShell';
 import Modal from '@/components/ui/Modal';
 import dynamic from 'next/dynamic';
@@ -246,9 +247,14 @@ export default function GameShell() {
     const activePanel = isFloated ? null : PANEL_MAP[activeTab as keyof typeof PANEL_MAP];
 
     return (
-        <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950 text-slate-200">
+        // h-dvh: on a phone 100vh is taller than what is visible while the
+        // browser's address bar shows, which pushed the Command Dock off-screen.
+        <div className="flex flex-col w-screen h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-slate-950 text-slate-200">
             {/* ── Top information strip (resources · date · alerts) ─────────────── */}
             <TopNav />
+
+            {/* Phones only: the map and depth panels are built for a wide screen. */}
+            <SmallScreenNote />
 
             {/* ── Main area ──────────────────────────────────────────────────────── */}
             <div className="flex flex-1 overflow-hidden relative">

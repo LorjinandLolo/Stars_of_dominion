@@ -116,10 +116,10 @@ export default function MessageBox({ contactId, contactName, accent = '#38bdf8' 
     return (
         <section
             id="message-box"
-            className="rounded-2xl border bg-slate-900/60 p-5 space-y-4"
+            className="rounded-2xl border bg-slate-900/60 p-3 sm:p-5 space-y-4"
             style={{ borderColor: `${accent}40` }}
         >
-            <div className="flex items-baseline justify-between gap-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <h3 className="text-[11px] font-display uppercase tracking-[0.2em] text-slate-300">
                     Messages with {playerName}
                 </h3>
@@ -164,7 +164,7 @@ export default function MessageBox({ contactId, contactName, accent = '#38bdf8' 
                     }}
                     rows={2}
                     placeholder={`Write to ${playerName}…`}
-                    className="w-full rounded-xl border border-slate-700/60 bg-black/40 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-sky-500/60 resize-none"
+                    className="w-full rounded-xl border border-slate-700/60 bg-black/40 px-3 py-2 text-base sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-sky-500/60 resize-none"
                 />
                 <div className="flex items-center justify-between gap-3">
                     <span className={`text-[10px] font-mono ${over ? 'text-red-400' : 'text-slate-500'}`}>

@@ -61,7 +61,7 @@ export default function ContactSwitcher({
     return (
         <div
             ref={rootRef}
-            className="relative rounded-2xl border p-5 transition-colors duration-500"
+            className="relative rounded-2xl border p-3 sm:p-5 transition-colors duration-500"
             style={{
                 borderColor: `${color}59`,
                 background: `linear-gradient(120deg, ${color}1f 0%, ${color}08 45%, rgba(2,6,23,0.4) 100%)`,
@@ -79,14 +79,14 @@ export default function ContactSwitcher({
                     <NavArrow dir="prev" color={color} disabled={contacts.length < 2} onClick={() => step(-1)} />
                     <NavArrow dir="next" color={color} disabled={contacts.length < 2} onClick={() => step(1)} />
                     <span
-                        className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-display font-bold tracking-[0.25em] uppercase"
+                        className="ml-1 sm:ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-display font-bold tracking-[0.2em] sm:tracking-[0.25em] uppercase whitespace-nowrap"
                         style={{ color, background: `${color}26`, border: `1px solid ${color}8c`, boxShadow: `0 0 12px ${color}40` }}
                     >
                         <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
                         Active Contact
                     </span>
                 </div>
-                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em]">
+                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em] whitespace-nowrap">
                     {index + 1} / {contacts.length}
                 </span>
             </div>
@@ -94,20 +94,20 @@ export default function ContactSwitcher({
             {/* Rows 2–3 re-mount per contact so the name visibly changes. */}
             <div key={contact.id} className="animate-contact-swap-fade">
             {/* Row 2: emblem · big name (opens list) · relation */}
-            <div className="mt-4 flex items-center gap-4 min-w-0">
-                <ContactEmblem contact={contact} size={56} active />
+            <div className="mt-4 flex items-center gap-3 sm:gap-4 min-w-0">
+                <span className="shrink-0"><ContactEmblem contact={contact} size={56} active /></span>
                 <div className="min-w-0 flex-1">
                     <button
                         type="button"
                         aria-haspopup="listbox"
                         aria-expanded={open}
                         onClick={() => setOpen(o => !o)}
-                        className="group flex items-center gap-3 max-w-full text-left rounded-lg -mx-2 px-2 py-1 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2"
+                        className="group flex items-center gap-2 sm:gap-3 max-w-full min-h-[40px] text-left rounded-lg -mx-2 px-2 py-1 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2"
                         style={{ ['--tw-ring-color' as any]: `${color}80` }}
                         title="Choose another empire"
                     >
                         <span
-                            className="text-3xl lg:text-4xl font-display font-bold uppercase tracking-[0.06em] leading-none break-words"
+                            className="min-w-0 text-lg sm:text-3xl lg:text-4xl font-display font-bold uppercase tracking-[0.06em] leading-tight sm:leading-none [overflow-wrap:anywhere]"
                             style={{ color, textShadow: `0 0 18px ${color}66, 0 2px 0 rgba(0,0,0,0.5)` }}
                         >
                             {contact.empireName}
@@ -176,7 +176,7 @@ export default function ContactSwitcher({
                                 value={query}
                                 onChange={e => setQuery(e.target.value)}
                                 placeholder="Search empire, steward, lineage, relation…"
-                                className="flex-1 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none"
+                                className="flex-1 min-w-0 min-h-[40px] bg-transparent text-base sm:text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none"
                             />
                             <span className="text-[9px] font-mono text-slate-600">{filtered.length}</span>
                         </div>
@@ -227,7 +227,7 @@ function NavArrow({ dir, color, disabled, onClick }: { dir: 'prev' | 'next'; col
             disabled={disabled}
             aria-label={dir === 'prev' ? 'Previous empire' : 'Next empire'}
             title={dir === 'prev' ? 'Previous empire (←)' : 'Next empire (→)'}
-            className="w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"
+            className="w-10 h-10 rounded-lg border flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100"
             style={{ borderColor: `${color}66`, background: `${color}14`, color }}
         >
             <Icon className="w-4 h-4" />

@@ -104,7 +104,7 @@ export default function CommandDock() {
             <button
                 onClick={handleGalaxy}
                 className={[
-                    'relative flex items-center gap-2.5 px-6 border-r border-slate-800/60 transition-all duration-200 group',
+                    'relative flex items-center justify-center gap-2.5 px-4 md:px-6 min-w-[52px] shrink-0 border-r border-slate-800/60 transition-all duration-200 group',
                     activeTab === 'galaxy'
                         ? 'text-sky-300 bg-sky-500/10'
                         : 'text-slate-400 hover:text-sky-300 hover:bg-sky-500/5',
@@ -127,7 +127,7 @@ export default function CommandDock() {
             <button
                 onClick={handleSystem}
                 className={[
-                    'relative flex items-center gap-2.5 px-5 border-r border-slate-800/60 transition-all duration-200 group',
+                    'relative flex items-center justify-center gap-2.5 px-4 md:px-5 min-w-[52px] shrink-0 border-r border-slate-800/60 transition-all duration-200 group',
                     systemViewId
                         ? 'text-indigo-300 bg-indigo-500/10'
                         : 'text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/5',
@@ -142,7 +142,9 @@ export default function CommandDock() {
             </button>
 
             {/* ── Category buttons ────────────────────────────────────────── */}
-            <div className="flex flex-1 items-stretch justify-center">
+            {/* On a phone a full dock is wider than the screen: the row scrolls
+                sideways inside the dock instead of pushing the page wide. */}
+            <div className="dock-categories flex flex-1 min-w-0 items-stretch justify-start md:justify-center overflow-x-auto md:overflow-visible">
                 {shownCategories.map(cat => {
                     const isActive = activeCategory?.id === cat.id;
                     const emergency = cat.id === 'empire' && councilState.emergencySession && councilState.status !== 'absent';
@@ -152,7 +154,7 @@ export default function CommandDock() {
                             id={`dock-cat-${cat.id}`}
                             onClick={() => handleCategory(cat)}
                             className={[
-                                'relative flex flex-col items-center justify-center gap-1 px-3 lg:px-5 min-w-[52px] lg:min-w-[92px] transition-all duration-200 group',
+                                'relative flex flex-col items-center justify-center gap-1 px-3 lg:px-5 min-w-[52px] lg:min-w-[92px] shrink-0 transition-all duration-200 group',
                                 isActive ? 'text-white' : 'text-slate-400 hover:text-slate-100',
                             ].join(' ')}
                             style={isActive ? { backgroundColor: `${cat.accent}14` } : undefined}
@@ -193,12 +195,18 @@ export default function CommandDock() {
             {/* ── Guide ───────────────────────────────────────────────────── */}
             <button
                 onClick={() => setShowManual(true)}
-                className="flex items-center gap-2 px-6 border-l border-slate-800/60 text-slate-400 hover:text-amber-300 hover:bg-amber-500/5 transition-all duration-200 group"
+                className="flex items-center justify-center gap-2 px-4 md:px-6 min-w-[52px] shrink-0 border-l border-slate-800/60 text-slate-400 hover:text-amber-300 hover:bg-amber-500/5 transition-all duration-200 group"
                 title="Open the guidebook"
             >
                 <BookOpen size={18} className="group-hover:scale-110 transition-transform duration-200" />
                 <span className="text-[10px] font-display tracking-[0.2em] hidden lg:inline">GUIDE</span>
             </button>
+
+            {/* The sideways scroll is a gesture, not a widget: no scrollbar. */}
+            <style jsx>{`
+                .dock-categories { scrollbar-width: none; }
+                .dock-categories::-webkit-scrollbar { display: none; }
+            `}</style>
         </div>
     );
 }

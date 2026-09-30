@@ -96,7 +96,7 @@ export default function LoginForm() {
     }
 
     return (
-        <div className="w-full max-w-md p-8 rounded-2xl border border-slate-700/50 bg-slate-900/80 backdrop-blur-xl shadow-2xl relative overflow-hidden group">
+        <div className="w-full max-w-md p-5 sm:p-8 rounded-2xl border border-slate-700/50 bg-slate-900/80 backdrop-blur-xl shadow-2xl relative overflow-hidden group">
             {/* Animated background glow */}
             <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-700" />
             <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all duration-700" />
@@ -122,7 +122,7 @@ export default function LoginForm() {
                             <button
                                 type="button"
                                 onClick={() => router.push('/lobby')}
-                                className="flex-1 py-2 bg-emerald-600/80 hover:bg-emerald-500/80 text-white text-xs font-bold rounded-lg transition-all"
+                                className="flex-1 min-h-[40px] py-2 bg-emerald-600/80 hover:bg-emerald-500/80 text-white text-xs font-bold rounded-lg transition-all"
                             >
                                 Continue as this account →
                             </button>
@@ -213,7 +213,7 @@ export default function LoginForm() {
                 <div className="mt-6 text-center">
                     <button
                         onClick={() => setIsLogin(!isLogin)}
-                        className="text-slate-400 hover:text-white text-sm transition-colors"
+                        className="inline-flex items-center min-h-[40px] px-2 text-slate-400 hover:text-white text-sm transition-colors"
                     >
                         {isLogin ? "Don't have an ID? Register now." : "Already have an ID? Signal back."}
                     </button>
@@ -227,7 +227,7 @@ export default function LoginForm() {
                                 type="button"
                                 disabled={loading}
                                 onClick={() => quickLogin('dev1@stars.com')}
-                                className="flex-1 py-2 rounded-lg border border-amber-600/40 bg-amber-900/20 hover:bg-amber-800/30 text-amber-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
+                                className="flex-1 min-h-[40px] py-2 rounded-lg border border-amber-600/40 bg-amber-900/20 hover:bg-amber-800/30 text-amber-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
                             >
                                 DEV 1 · Aurelian
                             </button>
@@ -235,7 +235,7 @@ export default function LoginForm() {
                                 type="button"
                                 disabled={loading}
                                 onClick={() => quickLogin('dev2@stars.com')}
-                                className="flex-1 py-2 rounded-lg border border-sky-600/40 bg-sky-900/20 hover:bg-sky-800/30 text-sky-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
+                                className="flex-1 min-h-[40px] py-2 rounded-lg border border-sky-600/40 bg-sky-900/20 hover:bg-sky-800/30 text-sky-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
                             >
                                 DEV 2 · Vektori
                             </button>

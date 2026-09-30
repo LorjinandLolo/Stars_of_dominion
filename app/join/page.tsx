@@ -41,8 +41,8 @@ export default function JoinPage() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center px-4 py-10">
-            <div className="w-full max-w-md rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6 sm:p-8 shadow-2xl space-y-5">
+        <div className="h-screen supports-[height:100dvh]:h-dvh overflow-y-auto bg-slate-950 text-slate-200 flex px-4 py-10">
+            <div className="m-auto w-full max-w-md rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6 sm:p-8 shadow-2xl space-y-5">
                 <div className="text-center">
                     <p className="text-[10px] font-bold tracking-[0.35em] uppercase text-sky-400">Stars of Dominion</p>
                     <h1 className="mt-2 text-2xl font-black text-white tracking-tight">

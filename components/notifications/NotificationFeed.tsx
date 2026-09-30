@@ -43,7 +43,7 @@ export default function NotificationFeed() {
             />
 
             {/* Feed Panel */}
-            <div className="fixed top-14 right-4 z-50 w-96 max-h-[80vh] flex flex-col rounded-2xl border border-white/10 bg-slate-950/95 backdrop-blur-2xl shadow-2xl shadow-black/50 animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="fixed top-14 right-2 sm:right-4 z-50 w-96 max-w-[calc(100vw-1rem)] max-h-[80vh] flex flex-col rounded-2xl border border-white/10 bg-slate-950/95 backdrop-blur-2xl shadow-2xl shadow-black/50 animate-in slide-in-from-top-4 fade-in duration-300">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
                     <div>
@@ -54,20 +54,21 @@ export default function NotificationFeed() {
                         <button
                             onClick={markAllRead}
                             title="Mark all read"
-                            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
                         >
                             <CheckCheck className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={clearAll}
                             title="Clear all"
-                            className="p-1.5 rounded-lg hover:bg-red-950/40 text-slate-400 hover:text-red-400 transition-colors"
+                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-red-950/40 text-slate-400 hover:text-red-400 transition-colors"
                         >
                             <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={() => setFeedOpen(false)}
-                            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                            title="Close"
+                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
                         >
                             <X className="w-3.5 h-3.5" />
                         </button>

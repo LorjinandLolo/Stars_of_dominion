@@ -30,7 +30,7 @@ export default function LockedDockHint({ locked }: { locked: DockUnlock[] }) {
     }, [open]);
 
     return (
-        <div ref={ref} className="relative flex items-stretch">
+        <div ref={ref} className="md:relative flex items-stretch shrink-0">
             <button
                 id="dock-locked-hint"
                 onClick={() => setOpen(o => !o)}
@@ -41,8 +41,13 @@ export default function LockedDockHint({ locked }: { locked: DockUnlock[] }) {
                 <span className="hidden lg:block text-[9px] font-display tracking-[0.18em]">+{locked.length}</span>
             </button>
 
+            {/* On a phone the dock's category row scrolls sideways, and a
+                scroller clips anything positioned inside it — so there the
+                list is pinned above the dock, full width, instead of hanging
+                off the button. 4.5rem clears the 4rem dock either way the
+                browser resolves `fixed` under the dock's backdrop filter. */}
             {open && (
-                <div className="absolute bottom-full mb-2 right-0 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-700/70 bg-slate-950/95 backdrop-blur-xl shadow-2xl shadow-black/60 p-3 space-y-3">
+                <div className="fixed bottom-[4.5rem] inset-x-2 md:absolute md:bottom-full md:inset-x-auto md:mb-2 md:right-0 md:w-72 rounded-xl border border-slate-700/70 bg-slate-950/95 backdrop-blur-xl shadow-2xl shadow-black/60 p-3 space-y-3">
                     <div>
                         <p className="text-[10px] font-display tracking-[0.2em] uppercase text-slate-400">More as you play</p>
                         <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">

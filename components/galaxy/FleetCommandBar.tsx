@@ -168,7 +168,10 @@ function FleetCommandBar() {
     const selectedFleetCanMove = !selectedFleet || isFleetOperational(selectedFleet);
 
     return (
-        <div className="absolute right-3 bottom-16 z-30 w-64 pointer-events-auto">
+        // Wide screens only (casual-play Item 8): at phone width this bar and
+        // the goal card want the same corner, and moving fleets around the map
+        // is a larger-screen job anyway.
+        <div className="hidden md:block absolute right-3 bottom-16 z-30 w-64 pointer-events-auto">
             <div className="rounded-xl border border-indigo-700/40 bg-slate-950/90 backdrop-blur-md shadow-2xl overflow-hidden">
                 {/* Header */}
                 <button

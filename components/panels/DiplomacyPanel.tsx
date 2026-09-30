@@ -177,6 +177,13 @@ export default function DiplomacyPanel() {
         if (!liveFactions.some(f => f.id === diplomacyFocusId)) return;
         setSelectedFactionId(diplomacyFocusId);
         setDiplomacyFocusId(null);
+        // The player came to answer a message: put the message box on screen
+        // (on a phone it sits below the contact card) once it has rendered.
+        // Not cleared on cleanup: clearing the focus id above re-runs this
+        // effect at once, and that must not cancel the scroll.
+        setTimeout(() => {
+            document.getElementById('message-box')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 150);
     }, [diplomacyFocusId, liveFactions, setDiplomacyFocusId]);
 
     if (!selectedFaction) {
@@ -249,9 +256,11 @@ export default function DiplomacyPanel() {
             <div className="absolute inset-0 scanline-overlay pointer-events-none opacity-[0.03]" />
 
             {/* Header */}
-            <div className="p-8 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 via-transparent to-rose-500/10">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+            {/* On a phone the title block goes and the four tabs scroll
+                sideways: the contact and the message box need the height. */}
+            <div className="p-2 md:p-8 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 via-transparent to-rose-500/10">
+                <div className="flex items-center justify-between gap-4 min-w-0">
+                    <div className="hidden md:flex items-center gap-4">
                         <div className="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]">
                             <Handshake className="w-7 h-7 text-indigo-400" />
                         </div>
@@ -261,12 +270,12 @@ export default function DiplomacyPanel() {
                         </div>
                     </div>
                     
-                    <div className="flex bg-black/60 p-1.5 rounded-xl border border-white/10 shadow-inner">
+                    <div className="diplomacy-tabs flex min-w-0 max-w-full overflow-x-auto [scrollbar-width:none] bg-black/60 p-1 md:p-1.5 rounded-xl border border-white/10 shadow-inner">
                         {(['statecraft', 'economy', 'intrigue', 'intel'] as const).map(tab => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`px-6 py-2 rounded-lg text-[10px] font-display tracking-widest transition-all duration-300 ${
+                                className={`px-4 md:px-6 min-h-[40px] md:min-h-0 md:py-2 shrink-0 rounded-lg text-[10px] font-display tracking-widest transition-all duration-300 ${
                                     activeTab === tab 
                                         ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]' 
                                         : 'text-slate-500 hover:text-slate-300'
@@ -281,34 +290,51 @@ export default function DiplomacyPanel() {
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Main Action Area */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10 bg-[url('/grid-dark.svg')] bg-repeat">
-                    <div className="max-w-5xl mx-auto space-y-8">
+                <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-3 md:p-10 bg-[url('/grid-dark.svg')] bg-repeat">
+                    {/* A column whose order changes with the screen: on a phone
+                        the message box comes straight after the contact, ahead
+                        of the fourteen-chip rail; wider, the rail stays under
+                        the switcher it belongs to. */}
+                    <div className="max-w-5xl mx-auto flex flex-col gap-6 md:gap-8 min-w-0">
 
                         {/* Who am I talking to — arrows, dropdown, labelled facts */}
-                        <ContactSwitcher
-                            contacts={liveFactions}
-                            selectedId={selectedFaction.id}
-                            onSelect={selectContact}
-                        />
+                        <div className="order-1 min-w-0">
+                            <ContactSwitcher
+                                contacts={liveFactions}
+                                selectedId={selectedFaction.id}
+                                onSelect={selectContact}
+                            />
+                        </div>
 
                         {/* Every other empire, one click away */}
-                        <ContactRail
-                            contacts={liveFactions}
-                            selectedId={selectedFaction.id}
-                            onSelect={(id) => selectContact(id, 'jump')}
-                        />
+                        <div className="order-3 md:order-2 min-w-0 empty:hidden">
+                            <ContactRail
+                                contacts={liveFactions}
+                                selectedId={selectedFaction.id}
+                                onSelect={(id) => selectContact(id, 'jump')}
+                            />
+                        </div>
+
+                        {/* A note to the friend who plays them. Nothing for an AI empire. */}
+                        <div className="order-2 md:order-3 min-w-0 empty:hidden">
+                            <MessageBox
+                                contactId={selectedFaction.id}
+                                contactName={selectedFaction.empireName}
+                                accent={selectedFaction.color}
+                            />
+                        </div>
 
                         {/* The dossier slides in from the side you moved toward. */}
                         <div
                             key={swapKey}
-                            className={`space-y-12 ${
+                            className={`order-4 min-w-0 space-y-12 ${
                                 swapDir === 'next' ? 'animate-contact-swap-right'
                                 : swapDir === 'prev' ? 'animate-contact-swap-left'
                                 : 'animate-contact-swap-fade'
                             }`}
                         >
                         {/* Tension + direct line */}
-                        <div className="flex items-stretch justify-between gap-4 border-b pb-8" style={{ borderColor: `${selectedFaction.color}33` }}>
+                        <div className="flex flex-col sm:flex-row sm:items-stretch sm:justify-between gap-4 border-b pb-8" style={{ borderColor: `${selectedFaction.color}33` }}>
                             <div className="glass-panel px-5 py-4 rounded-2xl border-white/10 group cursor-help transition-all hover:bg-white/5 flex items-center gap-6">
                                 <div>
                                     <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Tension Index</span>
@@ -339,7 +365,7 @@ export default function DiplomacyPanel() {
 
                             <button
                                 onClick={() => setShowDiscourse(true)}
-                                className="self-center px-6 py-3 text-white rounded-xl text-[10px] font-display tracking-[0.2em] uppercase flex items-center gap-2 shadow-lg transition-all hover:scale-105 active:scale-95"
+                                className="sm:self-center min-h-[40px] px-6 py-3 text-white rounded-xl text-[10px] font-display tracking-[0.2em] uppercase flex items-center justify-center gap-2 shadow-lg transition-all hover:scale-105 active:scale-95"
                                 style={{
                                     background: `linear-gradient(135deg, ${selectedFaction.color}cc, ${selectedFaction.color}80)`,
                                     boxShadow: `0 8px 24px ${selectedFaction.color}33`,
@@ -350,13 +376,6 @@ export default function DiplomacyPanel() {
                                 Speak with {selectedFaction.empireName}
                             </button>
                         </div>
-
-                        {/* A note to the friend who plays them. Nothing for an AI empire. */}
-                        <MessageBox
-                            contactId={selectedFaction.id}
-                            contactName={selectedFaction.empireName}
-                            accent={selectedFaction.color}
-                        />
 
                         {activeTab === 'statecraft' ? (
                             <div className="space-y-10">
@@ -1038,7 +1057,7 @@ export default function DiplomacyPanel() {
             </div>
 
             {/* Footer / Status Bar */}
-            <div className="p-4 bg-black/40 border-t border-white/5 flex items-center justify-between px-10">
+            <div className="hidden md:flex p-4 bg-black/40 border-t border-white/5 items-center justify-between px-10">
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />

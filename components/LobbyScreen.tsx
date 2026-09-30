@@ -131,7 +131,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                     <button
                         onClick={handleConfirm}
                         disabled={(!selectedId || confirming) && !currentUserHasClaim}
-                        className="px-12 py-4 rounded-lg font-bold text-lg transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="w-full max-w-sm md:w-auto md:max-w-none px-6 md:px-12 py-4 rounded-lg font-bold text-base md:text-lg transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
                         style={{
                             background: selectedId
                                 ? `linear-gradient(135deg, ${selected!.accentColor}, ${selected!.color})`
@@ -169,7 +169,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                                         alert('Could not reach the server.');
                                     }
                                 }}
-                                className="text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
+                                className="inline-flex items-center min-h-[40px] px-2 text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
                             >
                                 picked wrong? release my claim
                             </button>
@@ -206,8 +206,11 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     }
 
     return (
+        // Phone (casual-play Item 8): the page scrolls as one column, one card
+        // per row, and the confirm button rides the bottom edge. Wider: the
+        // old centred layout with its own card scroller.
         <div
-            className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
+            className="h-screen supports-[height:100dvh]:h-dvh overflow-y-auto overflow-x-hidden flex flex-col items-center relative pt-16 md:pt-0"
             style={{
                 background: 'radial-gradient(ellipse at center, #0a0f1e 0%, #020409 100%)',
                 fontFamily: "'Inter', sans-serif",
@@ -235,18 +238,23 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                     await authService.logout();
                     router.push('/login');
                 }}
-                className="fixed top-4 right-6 z-50 text-slate-400 hover:text-white text-xs uppercase tracking-widest px-4 py-2 border border-slate-700 hover:border-slate-500 rounded-full bg-slate-950/80 backdrop-blur transition-all"
+                className="fixed top-3 right-3 md:top-4 md:right-6 z-50 min-h-[40px] text-slate-400 hover:text-white text-xs uppercase tracking-widest px-4 py-2 border border-slate-700 hover:border-slate-500 rounded-full bg-slate-950/80 backdrop-blur transition-all"
             >
                 Sign Out
             </button>
 
+            {/* Centred when it fits, scrollable from the top when it does not:
+                two growing spacers instead of justify-center, which would push
+                the top of a tall lobby out of reach of the scroller. */}
+            <div className="flex-1 shrink-0 min-h-0" aria-hidden />
+
             {/* Header */}
-            <div className="relative z-10 text-center mb-12">
+            <div className="relative z-10 text-center mb-8 md:mb-12 px-4 w-full">
                 <div className="text-slate-500 text-xs tracking-[0.4em] uppercase mb-3">Stars of Dominion</div>
-                <h1 className="text-5xl font-bold text-white mb-3" style={{ letterSpacing: '-0.02em' }}>
+                <h1 className="text-3xl md:text-5xl font-bold text-white mb-3" style={{ letterSpacing: '-0.02em' }}>
                     {currentUserHasClaim ? 'Faction Locked' : 'Choose Your Faction'}
                 </h1>
-                <p className="text-slate-400 text-lg">
+                <p className="text-slate-400 text-base md:text-lg">
                     {currentUserHasClaim 
                         ? `You have committed to leading the ${selected?.name}.` 
                         : 'Select the empire you will lead to galactic supremacy.'}
@@ -277,9 +285,9 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                 {/* Signed-in identity — the #1 source of "why can't I enter?" confusion
                     is being logged into a different account than expected. */}
                 {currentUser && (
-                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-slate-700/60 bg-slate-900/60">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="text-[11px] text-slate-400">
+                    <div className="mt-4 inline-flex items-center gap-2 max-w-full px-4 py-1.5 rounded-full border border-slate-700/60 bg-slate-900/60">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                        <span className="text-[11px] text-slate-400 min-w-0 break-words">
                             Signed in as <span className="text-slate-200 font-semibold">{currentUser.email}</span>
                             {currentUser.name ? <span className="text-slate-500"> ({currentUser.name})</span> : null}
                         </span>
@@ -296,8 +304,8 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             </div>
 
             {/* Faction Cards - Scrollable area */}
-            <div className="relative z-10 max-w-5xl w-full px-6 mb-10 overflow-y-auto max-h-[65vh] custom-scrollbar pr-2">
-                <div className="grid grid-cols-2 gap-5">
+            <div className="relative z-10 max-w-5xl w-full px-4 md:px-6 mb-6 md:mb-10 md:overflow-y-auto md:max-h-[65vh] custom-scrollbar md:pr-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
                 {factions
                     .map(faction => {
                         const isSelected = selectedId === faction.id;
@@ -314,7 +322,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                                 onClick={() => handleSelect(faction.id)}
                                 onMouseEnter={() => setHoveredId(faction.id)}
                                 onMouseLeave={() => setHoveredId(null)}
-                                className={`text-left rounded-xl p-6 border transition-all duration-300 relative overflow-hidden group ${(currentUserHasClaim && !isOwnedByMe) || isOwnedByOthers ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                className={`text-left rounded-xl p-4 md:p-6 border transition-all duration-300 relative overflow-hidden group ${(currentUserHasClaim && !isOwnedByMe) || isOwnedByOthers ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                                 style={{
                                     background: isOwnedByMe
                                         ? `linear-gradient(135deg, ${faction.color}90, ${faction.color}40)`
@@ -348,7 +356,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
 
                                     {/* Ownership Label */}
                                     {isOwnedByOthers && (
-                                        <div className="absolute top-4 right-4 px-3 py-1 bg-red-500/20 border border-red-500/40 rounded-full text-[10px] font-bold text-red-400 z-20 uppercase tracking-widest">
+                                        <div className="inline-block mb-3 md:mb-0 md:absolute md:top-4 md:right-4 px-3 py-1 bg-red-500/20 border border-red-500/40 rounded-full text-[10px] font-bold text-red-400 z-20 uppercase tracking-widest">
                                             Claimed by {claimData.displayName}
                                         </div>
                                     )}
@@ -409,8 +417,16 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             </div>
 
             {/* Confirm button — a fresh choice confirms under the cards; a locked
-                player already has theirs in the header. */}
-            {!currentUserHasClaim && confirmBlock}
+                player already has theirs in the header. On a phone the cards
+                are one long column, so the button stays pinned to the bottom
+                edge instead of waiting fourteen cards down. */}
+            {!currentUserHasClaim && (
+                <div className="sticky bottom-0 z-20 w-full px-4 pt-6 pb-4 bg-gradient-to-t from-[#020409] via-[#020409]/95 to-transparent md:static md:p-0 md:bg-none">
+                    {confirmBlock}
+                </div>
+            )}
+            {/* Bottom half of the centring (see the spacer above the header). */}
+            <div className="flex-1 shrink-0 min-h-0" aria-hidden />
         </div>
     );
 }

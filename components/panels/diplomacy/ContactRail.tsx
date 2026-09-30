@@ -7,6 +7,9 @@
 // dim until hovered, so the eye lands on the one that is on screen.
 
 import React from 'react';
+import { User } from 'lucide-react';
+import { useUIStore } from '@/lib/store/ui-store';
+import { isHumanEmpire } from '@/lib/players/player-label';
 import ContactEmblem from './ContactEmblem';
 import { RelationPill } from './ContactSwitcher';
 import type { Contact } from './contact-model';
@@ -14,6 +17,7 @@ import type { Contact } from './contact-model';
 export default function ContactRail({
     contacts, selectedId, onSelect,
 }: { contacts: Contact[]; selectedId: string; onSelect: (id: string) => void }) {
+    const humanPlayers = useUIStore(s => s.humanPlayers);
     if (contacts.length < 2) return null;
     return (
         <div className="space-y-2">
@@ -25,6 +29,7 @@ export default function ContactRail({
             <div className="flex flex-wrap gap-2">
                 {contacts.map(c => {
                     const active = c.id === selectedId;
+                    const human = isHumanEmpire(c.id, humanPlayers);
                     return (
                         <div key={c.id} className="relative group">
                             <button
@@ -32,7 +37,8 @@ export default function ContactRail({
                                 onClick={() => onSelect(c.id)}
                                 aria-pressed={active}
                                 aria-label={`${c.empireName}${c.stewardName ? ` (${c.stewardName})` : ''}, ${c.relationLabel.toLowerCase()}`}
-                                className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-xl border transition-all duration-300 ${
+                                title={human ? `Played by ${humanPlayers![c.id]} — you can write to them` : undefined}
+                                className={`flex items-center gap-2 min-h-[40px] pl-1.5 pr-3 py-1.5 rounded-xl border transition-all duration-300 ${
                                     active ? 'scale-[1.03]' : 'opacity-60 hover:opacity-100 hover:scale-[1.02] bg-white/[0.03] border-white/10 hover:border-white/25'
                                 }`}
                                 style={active ? {
@@ -48,6 +54,8 @@ export default function ContactRail({
                                 >
                                     {c.empireName}
                                 </span>
+                                {/* A person plays this one: it can be written to. */}
+                                {human && <User className="contact-human w-3 h-3 shrink-0 text-emerald-400" aria-label="Played by a person" />}
                                 <span
                                     className="w-2 h-2 rounded-full shrink-0"
                                     style={{ background: c.relationColor, boxShadow: `0 0 6px ${c.relationColor}` }}

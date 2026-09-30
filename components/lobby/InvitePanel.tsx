@@ -135,7 +135,7 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                             readOnly
                             value={link}
                             onFocus={e => e.currentTarget.select()}
-                            className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-200"
+                            className="flex-1 min-w-0 min-h-[40px] px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-200"
                         />
                         <button
                             onClick={copy}

@@ -43,7 +43,7 @@ export default function PublicGazette({ season, factionNames, articles, factionI
         .filter(id => !roster.includes(id) && factionNames[id]);
 
     return (
-        <main id="public-gazette" className="min-h-screen bg-slate-950 text-slate-200">
+        <main id="public-gazette" className="h-screen supports-[height:100dvh]:h-dvh overflow-y-auto overflow-x-hidden bg-slate-950 text-slate-200">
             <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
                 <header className="border-b border-slate-700/60 pb-6 mb-6">
                     <p className="text-[10px] font-display uppercase tracking-[0.3em] text-sky-400 mb-2">

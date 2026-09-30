@@ -18,6 +18,10 @@ body {
   background: var(--color-deep-space);
   color: #f1f5f9;
   font-family: var(--font-body), system-ui, sans-serif;
+  /* The game shell is one screen that never scrolls. A page that has to
+     scroll (login, join, lobby, the public gazette) is its own scroller:
+     a full-height root with overflow-y-auto. The document itself never
+     does, so a finger cannot drag it either. */
   overflow: hidden;
 }
 

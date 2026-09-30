@@ -7,7 +7,7 @@
 // WHICH ACCOUNT am I signed into, and WHICH FACTION am I playing?
 // Lives in the top nav; hover for details and a proper account switch.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUIStore } from '@/lib/store/ui-store';
 import { authService } from '@/lib/auth-service';
@@ -36,6 +36,18 @@ export default function IdentityBadge() {
         : 'No faction';
     const color = playerFactionId ? factionColor(playerFactionId) : '#64748b';
 
+    // Hover opens it for a mouse; a touch screen toggles on tap instead.
+    const rootRef = useRef<HTMLDivElement>(null);
+    const canHover = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+    useEffect(() => {
+        if (!open) return;
+        const close = (e: PointerEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        window.addEventListener('pointerdown', close);
+        return () => window.removeEventListener('pointerdown', close);
+    }, [open]);
+
     const handleSwitch = async () => {
         await authService.logout();
         router.push('/login');
@@ -43,12 +55,18 @@ export default function IdentityBadge() {
 
     return (
         <div
-            className="relative"
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
+            ref={rootRef}
+            className="relative shrink-0"
+            onMouseEnter={() => { if (canHover()) setOpen(true); }}
+            onMouseLeave={() => { if (canHover()) setOpen(false); }}
         >
             <button
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border bg-slate-900/80 hover:bg-slate-900 transition-all"
+                id="identity-badge"
+                // A finger has no hover: on a touch screen the badge opens and
+                // closes on tap (and closes on a tap anywhere else).
+                onClick={() => { if (!canHover()) setOpen(o => !o); }}
+                title="Your account and empire"
+                className="flex items-center gap-2.5 min-h-[40px] px-3 rounded-lg border bg-slate-900/80 hover:bg-slate-900 transition-all"
                 style={{
                     borderColor: `${color}80`,
                     boxShadow: `0 0 10px ${color}30, inset 0 0 12px ${color}10`,
@@ -58,7 +76,8 @@ export default function IdentityBadge() {
                     className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30"
                     style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
                 />
-                <span className="flex flex-col items-start leading-tight">
+                {/* The names need room; on a phone the dot and the menu carry them. */}
+                <span className="hidden md:flex flex-col items-start leading-tight">
                     <span
                         className="text-[11px] font-display font-bold tracking-wider uppercase max-w-[150px] truncate"
                         style={{ color, textShadow: `0 0 8px ${color}60` }}
@@ -73,7 +92,7 @@ export default function IdentityBadge() {
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full mt-1 w-60 rounded-lg border border-slate-700/80 bg-slate-950/98 backdrop-blur-xl shadow-2xl p-3 z-[80]">
+                <div className="absolute right-0 top-full mt-1 w-60 max-w-[calc(100vw-1rem)] rounded-lg border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl shadow-2xl p-3 z-[80]">
                     <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
                         <UserCircle2 size={16} className="text-slate-500 flex-shrink-0" />
                         <div className="min-w-0">
@@ -90,7 +109,7 @@ export default function IdentityBadge() {
                     </div>
                     {/* Progressive dock (Item 5): new players grow into the full
                         dock through the first-week goals; this skips ahead. */}
-                    <label className="py-2 border-b border-slate-800 flex items-start justify-between gap-2 cursor-pointer">
+                    <label className="py-2 min-h-[40px] border-b border-slate-800 flex items-start justify-between gap-2 cursor-pointer">
                         <span className="min-w-0">
                             <span className="block text-[10px] font-bold text-slate-300">Show everything</span>
                             <span className="block text-[9px] text-slate-500 leading-snug">
@@ -107,7 +126,7 @@ export default function IdentityBadge() {
                     </label>
                     <button
                         onClick={handleSwitch}
-                        className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-[9px] font-bold tracking-widest text-slate-300 uppercase transition-all"
+                        className="mt-2 w-full min-h-[40px] flex items-center justify-center gap-1.5 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-[9px] font-bold tracking-widest text-slate-300 uppercase transition-all"
                     >
                         <LogOut size={10} />
                         Sign out / switch account

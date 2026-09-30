@@ -66,19 +66,21 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
             }}
         >
             {/* ── Workspace header: category identity + sub-tabs + controls ── */}
-            <div className="flex items-center justify-between px-4 h-11 border-b border-slate-800/60 bg-slate-900/40 flex-shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                    <span style={{ color: category.accent }}>{category.icon}</span>
+            {/* On a phone: the sub-tabs scroll sideways, the category name and
+                the detach button (there is nowhere to float a window) go. */}
+            <div className="flex items-center justify-between gap-2 px-2 md:px-4 h-12 md:h-11 border-b border-slate-800/60 bg-slate-900/40 flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="shrink-0 pl-1 md:pl-0" style={{ color: category.accent }}>{category.icon}</span>
                     <span
-                        className="text-[11px] font-display tracking-[0.25em] whitespace-nowrap"
+                        className="hidden md:inline text-[11px] font-display tracking-[0.25em] whitespace-nowrap"
                         style={{ color: category.accent }}
                     >
                         {category.label}
                     </span>
-                    <div className="h-5 w-px bg-slate-800 mx-1" />
+                    <div className="hidden md:block h-5 w-px bg-slate-800 mx-1" />
 
                     {/* Sub-tabs: flat segmented row — no nested menus, ever */}
-                    <div className="flex items-center gap-1">
+                    <div className="workspace-tabs flex items-center gap-1 min-w-0 overflow-x-auto md:overflow-visible">
                         {tabs.map(t => {
                             const isActive = activeTab === t.tab;
                             return (
@@ -86,7 +88,7 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
                                     key={t.tab}
                                     onClick={() => setActiveTab(t.tab)}
                                     className={[
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-display tracking-[0.12em] transition-all duration-150',
+                                        'flex items-center gap-1.5 px-3 min-h-[40px] md:min-h-0 md:py-1.5 shrink-0 whitespace-nowrap rounded-sm text-[10px] font-display tracking-[0.12em] transition-all duration-150',
                                         isActive
                                             ? 'text-slate-950'
                                             : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60',
@@ -104,14 +106,14 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
                 <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                         onClick={() => toggleFloatTab(activeTab)}
-                        className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                        className="hidden md:block p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors"
                         title="Detach into a floating window"
                     >
                         <Maximize2 size={13} />
                     </button>
                     <button
                         onClick={() => setActiveTab('galaxy')}
-                        className="p-2 text-slate-500 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                        className="min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 md:p-2 flex items-center justify-center text-slate-500 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
                         title="Close (Esc)"
                     >
                         <X size={15} />
@@ -129,6 +131,8 @@ export default function CommandWorkspace({ children }: CommandWorkspaceProps) {
                     from { transform: translateY(24px); opacity: 0; }
                     to   { transform: translateY(0);    opacity: 1; }
                 }
+                .workspace-tabs { scrollbar-width: none; }
+                .workspace-tabs::-webkit-scrollbar { display: none; }
             `}</style>
         </div>
     );

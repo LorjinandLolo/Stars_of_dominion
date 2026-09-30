@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export default function LoginPage() {
     return (
         <div 
-            className="min-h-screen flex items-center justify-center relative overflow-hidden bg-slate-950"
+            className="h-screen supports-[height:100dvh]:h-dvh overflow-y-auto overflow-x-hidden flex relative bg-slate-950 py-8"
             style={{
                 background: 'radial-gradient(circle at center, #0a0f1e 0%, #020409 100%)',
                 fontFamily: "'Rajdhani', sans-serif"
@@ -27,16 +27,16 @@ export default function LoginPage() {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none" />
             <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-indigo-900/10 rounded-full blur-[100px] pointer-events-none" />
 
-            <div className="relative z-10 w-full flex flex-col items-center px-4">
+            <div className="relative z-10 w-full flex flex-col items-center px-4 my-auto">
                 <div className="mb-8 text-center">
-                    <h1 className="text-6xl font-black text-white tracking-tight leading-none italic" style={{ fontFamily: "'Orbitron', sans-serif" }}>
-                        STARS OF <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">DOMINION</span>
+                    <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-none italic" style={{ fontFamily: "'Orbitron', sans-serif" }}>
+                        STARS OF <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 pr-2">DOMINION</span>
                     </h1>
                 </div>
                 
                 <LoginForm />
 
-                <div className="mt-12 flex items-center gap-8 text-slate-600 font-medium tracking-widest text-[10px] uppercase">
+                <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-slate-600 font-medium tracking-widest text-[10px] uppercase">
                     <span className="hover:text-slate-400 cursor-help transition-colors text-blue-900/40">v0.1.0-alpha</span>
                     <span className="w-1 h-1 bg-slate-800 rounded-full" />
                     <span className="hover:text-slate-400 cursor-help transition-colors text-blue-900/40">Secure Sector 7G</span>
