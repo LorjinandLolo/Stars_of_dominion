@@ -154,6 +154,15 @@ Acceptance: fresh VM, one command, `/login` reachable, DEV 1 can claim and see a
 
 Do not implement in the same session as anything else. Produce `docs/multi-galaxy/README.md` covering: a `galaxyId` on world snapshot, faction shards, orders, sessions, claims, chronicle and narrative tables; one worker per galaxy versus one worker multiplexing; how `default-session` hardcodes are found and removed; migration path for the existing single galaxy; what the lobby becomes (pick or create a galaxy, invite friends into it). List every file that hardcodes the singleton. Stop after the document.
 
+### Item 10 design decisions (agreed 2026-10-01)
+
+1. **Who creates a galaxy:** a Server Master — a paying client/customer. The owner creates galaxies free.
+2. **Size:** up to 15 human players per galaxy, 30 empires in all (the rest AI).
+3. **One account may play in several galaxies at once.**
+4. **One season clock for every galaxy** (the Fortnite model): seasons start and end together everywhere; a galaxy created mid-season joins the season in progress.
+5. **The public gazette is per galaxy.**
+6. **Hosting model:** open — decided after the options in the document.
+
 ## Order
 
 0, 1, 2, 3 in that order; they are the Wordle promise. Then 4, 5. Then 6a to 6d. Then 8 and 9. Item 7 and item 10 after a design conversation.
