@@ -161,7 +161,7 @@ Do not implement in the same session as anything else. Produce `docs/multi-galax
 3. **One account may play in several galaxies at once.**
 4. **One season clock for every galaxy** (the Fortnite model): seasons start and end together everywhere; a galaxy created mid-season joins the season in progress.
 5. **The public gazette is per galaxy.**
-6. **Hosting model:** open — decided after the options in the document.
+6. **Hosting model: a worker pool, one galaxy per worker process** (option A, agreed 2026-10-01). Workers take a lease on any galaxy nobody is running; capacity is `--scale worker=N`. Server Masters are paying customers whose galaxy runs on the owner's machines with admin powers inside it (not on their own hardware); their galaxies carry no ads. The design document must include the scaling path beyond a few hundred galaxies, where several galaxies per process becomes necessary.
 
 ## Order
 
