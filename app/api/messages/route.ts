@@ -1,7 +1,8 @@
 // app/api/messages/route.ts
 // Stars of Dominion — send a message to another player's empire (Item 6c).
 //
-// POST { toFactionId, body }   one per recipient per Galactic Day, 280 chars.
+// POST { toFactionId, body }   280 chars, plain text; a short cooldown per
+//                              recipient (429 with `nextAt`) is the only limit.
 //
 // The sender is the session's claimant, from the better-auth cookie. A body
 // may name `fromFactionId`, and if it names anything but the caller's own

@@ -201,6 +201,11 @@ export default function DailyBrief() {
                                             <p className="text-sm text-slate-100 leading-relaxed whitespace-pre-wrap break-words mb-3">
                                                 {message.body}
                                             </p>
+                                            {message.earlier > 0 && (
+                                                <p className="text-[10px] font-mono text-slate-500 -mt-2 mb-3">
+                                                    and {message.earlier} earlier message{message.earlier === 1 ? '' : 's'}
+                                                </p>
+                                            )}
                                             <button
                                                 onClick={() => replyTo(message.fromFactionId)}
                                                 className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${TONE_CLASS.open}`}

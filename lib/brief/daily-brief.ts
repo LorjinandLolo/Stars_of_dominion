@@ -106,33 +106,41 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
 
 // ─── Messages from other players ──────────────────────────────────────────────
 
-const MAX_MESSAGES = 5;
+const MAX_MESSAGE_SENDERS = 5;
 
 /**
- * What other players wrote to this empire since the last brief, newest first.
- * Read from the faction's own shard (`world.empireMessages`, which the worker
- * fills from the EmpireMessage table) — the player's own sent messages and
- * anything already seen are left to the DIPLOMACY panel.
+ * What other players wrote to this empire since the last brief: one entry per
+ * sender — their latest message and a count of the ones before it — newest
+ * first. A conversation is as long as it needs to be; the brief says who wrote
+ * and what they said last, and DIPLOMACY holds the thread. Read from the
+ * faction's own shard (`world.empireMessages`, which the worker fills from the
+ * EmpireMessage table).
  */
 export function collectMessages(input: BriefInput, since: Date, now: Date): BriefMessage[] {
     const own = input.world?.empireMessages?.get?.(input.factionId)
         ?? input.world?.empireMessages?.[input.factionId]
         ?? [];
-    const out: BriefMessage[] = [];
+    const latestBySender = new Map<string, BriefMessage>();
     for (const message of Array.isArray(own) ? own : []) {
         if (message?.toFactionId !== input.factionId) continue;
         const at = toDate(message.sentAt);
         if (!at || at < since || at > now) continue;
-        out.push({
+        const sender = String(message.fromFactionId);
+        const seen = latestBySender.get(sender);
+        const entry: BriefMessage = {
             id: String(message.id),
-            fromFactionId: String(message.fromFactionId),
-            from: counterpart(input, message.fromFactionId),
+            fromFactionId: sender,
+            from: counterpart(input, sender),
             body: String(message.body ?? ''),
             at: at.toISOString(),
-        });
+            earlier: seen ? seen.earlier + 1 : 0,
+        };
+        if (!seen || Date.parse(entry.at) >= Date.parse(seen.at)) latestBySender.set(sender, entry);
+        else latestBySender.set(sender, { ...seen, earlier: seen.earlier + 1 });
     }
-    out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-    return out.slice(0, MAX_MESSAGES);
+    return [...latestBySender.values()]
+        .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+        .slice(0, MAX_MESSAGE_SENDERS);
 }
 
 // ─── What happened ────────────────────────────────────────────────────────────

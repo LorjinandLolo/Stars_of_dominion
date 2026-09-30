@@ -112,7 +112,7 @@ Split into four sessions.
 
 **6b. Human badge.** Sync exposes, for every claimed faction, the claimant's `displayName` (public, already shown in lobby). Dossier panel, relations overlay tooltip, and the brief show "<Empire> · played by <name>". AI factions show "AI".
 
-**6c. Messages.** One free-text message per faction pair per Galactic Day, 280 characters, stored in a new `EmpireMessage` table, delivered via the private shard, shown in the brief and the DIPLOMACY panel next to the contact. Sender identity is the session user; server rejects anything not from the claimant. No markdown, escape on render.
+**6c. Messages.** *(Amended 2026-09-30: the one-per-Galactic-Day limit was dropped; a 15-second cooldown per sender and recipient is the only limit.)* Free-text messages between player-run empires, 280 characters, stored in a new `EmpireMessage` table, delivered via the private shard, shown in the brief and the DIPLOMACY panel next to the contact. Sender identity is the session user; server rejects anything not from the claimant. No markdown, escape on render.
 
 **6d. Public gazette and share card.** Route `app/gazette/page.tsx` (no auth) rendering the last N days of `NarrativeArticle` with the season name, plus `/gazette/[factionId]` for one empire's headlines. A "Share today" button in the brief copies a plain-text card: season name, day, one headline about the player's empire, link to the public gazette. No fleet positions or anything fog-protected in the card.
 

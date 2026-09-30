@@ -71,7 +71,10 @@ export interface BriefDecision {
     counterparts?: string[];
 }
 
-/** A message another player sent this empire since the last brief (Item 6c). */
+/**
+ * What another player wrote to this empire since the last brief (Item 6c):
+ * one entry per sender — their latest message, and how many came before it.
+ */
 export interface BriefMessage {
     id: string;
     fromFactionId: string;
@@ -81,6 +84,8 @@ export interface BriefMessage {
     body: string;
     /** ISO timestamp, real clock. */
     at: string;
+    /** Earlier messages from the same sender in this window. 0 when this is the only one. */
+    earlier: number;
 }
 
 /** The one thing worth doing today. */
@@ -101,7 +106,7 @@ export interface DailyBrief {
     nowSeconds: number;
     /** The window this brief covers, real clock. Null on a player's first one. */
     since: string | null;
-    /** What other players wrote to this empire in that window, newest first. */
+    /** What other players wrote to this empire in that window: one entry per sender, newest first. */
     messages: BriefMessage[];
     happened: BriefLine[];
     decisions: BriefDecision[];

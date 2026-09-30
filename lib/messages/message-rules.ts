@@ -1,24 +1,26 @@
 // lib/messages/message-rules.ts
 // Stars of Dominion — messages between players' empires (casual-play Item 6c).
 //
-// One plain-text note per sender, per recipient, per Galactic Day; 280
-// characters. Everything here is pure: the send route, the worker, the brief,
-// the panel and the probe all read the same rules, and none of them needs a
-// database to be tested (lib/messages/message-service.ts does the writing).
+// Plain text, 280 characters, as many as the conversation needs. The spec's
+// one-per-Galactic-Day limit was dropped on 2026-09-30: among friends it only
+// stretched "truce?" / "deal" over three days. What is left is a short
+// cooldown per sender and recipient, there to stop a flood, not a talk.
+//
+// Everything here is pure: the send route, the worker, the brief, the panel
+// and the probe all read the same rules, and none of them needs a database to
+// be tested (lib/messages/message-service.ts does the writing).
 //
 // A message is text a stranger typed. It is stored as typed, minus characters
 // that have no business in a line of text, and rendered as a text node — never
 // as markup. There is no formatting language to get wrong.
 
-import { GALACTIC_DAY_REAL_SECONDS } from '@/lib/time/time-config';
-
 export const MESSAGE_MAX_CHARS = 280;
+/** Seconds one sender waits before writing to the same empire again. */
+export const MESSAGE_COOLDOWN_SECONDS = 15;
 /** How far back an empire's shard carries its correspondence. */
 export const MESSAGE_KEEP_DAYS = 7;
-/** Most messages (sent and received together) one shard carries. */
-export const MESSAGES_PER_FACTION = 60;
-
-const DAY_MS = GALACTIC_DAY_REAL_SECONDS * 1000;
+/** Most messages (both directions) a shard carries per conversation. */
+export const MESSAGES_PER_THREAD = 20;
 
 /** A message as both ends see it. The sender's account id is never part of it. */
 export interface EmpireMessageView {
@@ -28,22 +30,6 @@ export interface EmpireMessageView {
     body: string;
     /** ISO timestamp, real clock. */
     sentAt: string;
-    galacticDay: number;
-}
-
-/**
- * Which Galactic Day a real instant falls on. A Galactic Day is 24 real hours
- * (lib/time/time-config.ts); the count runs on the real clock so it keeps
- * turning while the worker is down, and rolls over at the same moment for
- * everyone (00:00 UTC), whenever each of them last wrote.
- */
-export function galacticDayIndex(at: Date = new Date()): number {
-    return Math.floor(at.getTime() / DAY_MS);
-}
-
-/** The instant the day after `at` begins — when the next message may go out. */
-export function nextGalacticDayStart(at: Date = new Date()): Date {
-    return new Date((galacticDayIndex(at) + 1) * DAY_MS);
 }
 
 /**
@@ -56,7 +42,7 @@ export function cleanMessageBody(raw: unknown): string {
     if (typeof raw !== 'string') return '';
     return raw
         .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
-        .replace(/[‎‏‪-‮⁦-⁩﻿]/g, '')
+        .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -66,19 +52,31 @@ export function messageLength(body: string): number {
     return Array.from(body).length;
 }
 
+/**
+ * When a sender whose last message to this empire went out at `lastSentAt`
+ * may write to it again. Null = now.
+ */
+export function cooldownEndsAt(lastSentAt: Date | string | null | undefined, now: Date = new Date()): Date | null {
+    if (!lastSentAt) return null;
+    const last = lastSentAt instanceof Date ? lastSentAt : new Date(lastSentAt);
+    if (Number.isNaN(last.getTime())) return null;
+    const ends = new Date(last.getTime() + MESSAGE_COOLDOWN_SECONDS * 1000);
+    return ends.getTime() > now.getTime() ? ends : null;
+}
+
 export type MessageRefusal =
     | 'empty'
     | 'too_long'
     | 'self'
     | 'not_a_player'
-    | 'already_sent_today';
+    | 'too_soon';
 
 export const MESSAGE_REFUSALS: Record<MessageRefusal, string> = {
     empty: 'Write something first.',
     too_long: `A message is at most ${MESSAGE_MAX_CHARS} characters.`,
     self: 'You cannot write to your own empire.',
     not_a_player: 'That empire is run by the AI. Only an empire played by a person can read a message.',
-    already_sent_today: 'You have already written to them today. One message per empire per day.',
+    too_soon: 'You only just wrote to them. Give it a few seconds.',
 };
 
 export interface MessageCheck {
@@ -88,8 +86,9 @@ export interface MessageCheck {
     body: string;
     /** Empires with a human claimant. */
     humanFactionIds: Iterable<string>;
-    /** Whether this sender already wrote to this recipient on this Galactic Day. */
-    sentToday: boolean;
+    /** When this sender last wrote to this recipient, if ever. */
+    lastSentAt?: Date | string | null;
+    now?: Date;
 }
 
 /** Null when the message may be sent. */
@@ -98,7 +97,7 @@ export function checkMessage(check: MessageCheck): MessageRefusal | null {
     if (messageLength(check.body) > MESSAGE_MAX_CHARS) return 'too_long';
     if (!check.toFactionId || check.toFactionId === check.fromFactionId) return 'self';
     if (!new Set(check.humanFactionIds).has(check.toFactionId)) return 'not_a_player';
-    if (check.sentToday) return 'already_sent_today';
+    if (cooldownEndsAt(check.lastSentAt, check.now)) return 'too_soon';
     return null;
 }
 
@@ -129,29 +128,43 @@ export function writeWindow(
     other: string,
     now: Date = new Date(),
 ): { allowed: boolean; nextAt: Date | null } {
-    const today = galacticDayIndex(now);
-    const sent = (messages ?? []).some(m => m.fromFactionId === me && m.toFactionId === other && m.galacticDay === today);
-    return sent ? { allowed: false, nextAt: nextGalacticDayStart(now) } : { allowed: true, nextAt: null };
+    let last = '';
+    for (const m of messages ?? []) {
+        if (m.fromFactionId === me && m.toFactionId === other && m.sentAt > last) last = m.sentAt;
+    }
+    const nextAt = cooldownEndsAt(last || null, now);
+    return { allowed: !nextAt, nextAt };
 }
 
 /**
  * Each empire's own correspondence — what it sent and what it received, oldest
- * first, capped — keyed by faction id. This is what the worker hands to
+ * first — keyed by faction id. This is what the worker hands to
  * extractFactionShard: an empire's shard carries its messages and nobody
- * else's.
+ * else's. Capped per conversation, so one busy thread cannot push a quieter
+ * friend's messages out of the shard.
  */
 export function groupMessagesByFaction(rows: readonly EmpireMessageView[]): Map<string, EmpireMessageView[]> {
-    const out = new Map<string, EmpireMessageView[]>();
+    const threads = new Map<string, Map<string, EmpireMessageView[]>>();
     const sorted = [...rows].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+    const file = (owner: string, other: string, row: EmpireMessageView) => {
+        const mine = threads.get(owner) ?? new Map<string, EmpireMessageView[]>();
+        const thread = mine.get(other) ?? [];
+        thread.push(row);
+        mine.set(other, thread);
+        threads.set(owner, mine);
+    };
     for (const row of sorted) {
-        for (const factionId of new Set([row.fromFactionId, row.toFactionId])) {
-            const list = out.get(factionId) ?? [];
-            list.push(row);
-            out.set(factionId, list);
-        }
+        if (row.fromFactionId === row.toFactionId) continue;
+        file(row.fromFactionId, row.toFactionId, row);
+        file(row.toFactionId, row.fromFactionId, row);
     }
-    for (const [factionId, list] of out) {
-        if (list.length > MESSAGES_PER_FACTION) out.set(factionId, list.slice(-MESSAGES_PER_FACTION));
+
+    const out = new Map<string, EmpireMessageView[]>();
+    for (const [owner, mine] of threads) {
+        const kept: EmpireMessageView[] = [];
+        for (const thread of mine.values()) kept.push(...thread.slice(-MESSAGES_PER_THREAD));
+        kept.sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+        out.set(owner, kept);
     }
     return out;
 }
