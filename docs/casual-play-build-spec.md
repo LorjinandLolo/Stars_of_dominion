@@ -128,6 +128,16 @@ Design first, then build.
 
 Acceptance: probe creates a breakaway, claims it as DEV 2, issues an order, and asserts ownership, fog, and AI gating all hold; `sync-privacy-probe.ts` passes.
 
+### Item 7 design decisions (agreed 2026-09-30)
+
+1. **No breakaway to claim: the game makes one.** A newcomer never waits on luck. The world raises a breakaway for them, told as a large underground movement that has been organising for years and now declares itself.
+2. **A small state with money.** 1–3 worlds and a weak fleet, but a treasury for mercenaries. Private banks and charter companies court it: a new state has weak regulations and is still a sovereign state, so capital moves in looking for the loose rules. (Hooks: corporate system, mercenary contracts, Banking Clan.)
+3. **The old empire can reconquer — and has to pay attention.** No blanket protection. The story instead: the empire the new state broke from must fight to take it back *while* suppressing the other rebellions its weakness has encouraged. The secession is a pressure on the parent, not a free target.
+4. **Comeback perks only for eliminated players.** `lib/comeback/` applies to a player whose empire was destroyed and who takes a breakaway; a late joiner gets the state, not the perks.
+5. **No renaming; the press reports it.** The breakaway keeps its name. The gazette runs "a new hand takes the rebellion" when a player claims one.
+6. **Observer mode: yes,** for a player who declines (read-only shell, orders refused server-side, fog unchanged).
+7. **Invites put the friend near the host.** Invite links come from the host. Two options, to settle when building: the friend takes a rebel state next to the host's empire, or the friend starts *inside* the host's dominion and secedes after a while (a scripted secession). The first is the default unless the second proves simpler.
+
 ## Item 8: mobile layout for the casual path
 
 The brief, the goal card, the message box, the public gazette, and the lobby must work at 375 px wide. The galaxy map and depth panels may stay desktop-only with a "best on a larger screen" note. Use the existing Tailwind breakpoints; no new framework.
