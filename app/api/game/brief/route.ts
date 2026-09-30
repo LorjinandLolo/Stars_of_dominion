@@ -15,6 +15,8 @@ import { prisma } from '@/lib/db';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { deserializeWorld, injectFactionShard } from '@/lib/persistence/save-service';
 import { buildDailyBrief, type BriefChronicleRow, type BriefHeadlineRow } from '@/lib/brief/daily-brief';
+import { buildShareCard, seasonLine } from '@/lib/gazette/public-gazette';
+import { loadPublicArticles } from '@/lib/gazette/gazette-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,7 +109,23 @@ export async function GET(req: NextRequest) {
             ),
         });
 
-        return NextResponse.json({ brief }, { status: 200 });
+        // "Share today" (Item 6d): a card built ONLY from what the public
+        // gazette prints — the season, the empire's name, and the newest
+        // published headline the press connects with it. Deliberately not
+        // taken from the brief above, which knows things the galaxy does not.
+        let share = null;
+        try {
+            share = buildShareCard({
+                factionId,
+                empireName: (world as any).factionNames?.[factionId] ?? faction?.name ?? factionId,
+                season: seasonLine(world as any),
+                articles: await loadPublicArticles(),
+            });
+        } catch (e) {
+            console.warn('[API/game/brief] share card failed:', e);
+        }
+
+        return NextResponse.json({ brief, share }, { status: 200 });
     } catch (err: any) {
         console.error('[API/game/brief] Failed to build brief:', err);
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });

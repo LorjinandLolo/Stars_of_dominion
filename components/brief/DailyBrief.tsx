@@ -13,7 +13,8 @@
 // decides what counts as news.
 
 import React from 'react';
-import { X, ArrowRight, Clock, Check } from 'lucide-react';
+import { X, ArrowRight, Clock, Check, Share2 } from 'lucide-react';
+import { shareCardText, type ShareCard } from '@/lib/gazette/public-gazette';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import type { NavTab } from '@/types/ui-state';
@@ -60,6 +61,9 @@ export default function DailyBrief() {
     const [brief, setBrief] = React.useState<DailyBriefData | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [answered, setAnswered] = React.useState<Record<string, string>>({});
+    // "Share today": the public card the server built, and the text last copied.
+    const [share, setShare] = React.useState<ShareCard | null>(null);
+    const [shared, setShared] = React.useState<{ text: string; copied: boolean } | null>(null);
     const autoOpenedRef = React.useRef(false);
     const tutorialActive = useTutorialStore(s => s.isActive);
     const tutorialEverStarted = useTutorialStore(s => s.hasEverStarted);
@@ -72,6 +76,7 @@ export default function DailyBrief() {
             const res = await fetch('/api/game/brief', { cache: 'no-store' });
             const data = await res.json();
             if (data?.brief) setBrief(data.brief as DailyBriefData);
+            setShare((data?.share as ShareCard | null) ?? null);
         } catch (e) {
             console.warn('[DailyBrief] could not load the brief:', e);
         } finally {
@@ -138,7 +143,41 @@ export default function DailyBrief() {
         setBriefOpen(false);
     };
 
+    /**
+     * Copy the public card: season, day, one published headline about the
+     * player's empire, and a link to its page in the open gazette. The text is
+     * shown as well, so a browser that refuses the clipboard still leaves
+     * something to select.
+     */
+    const shareToday = async () => {
+        if (!share) return;
+        const text = shareCardText(share, window.location.origin);
+        let copied = false;
+        try {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+        } catch {
+            // navigator.clipboard only exists on https and localhost; a LAN
+            // playtest over plain http lands here. The old way still works.
+            try {
+                const area = document.createElement('textarea');
+                area.value = text;
+                area.setAttribute('readonly', '');
+                area.style.position = 'fixed';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
+                copied = document.execCommand('copy');
+                document.body.removeChild(area);
+            } catch {
+                copied = false;
+            }
+        }
+        setShared({ text, copied });
+    };
+
     const close = async () => {
+        setShared(null);
         setBriefOpen(false);
         try {
             await fetch('/api/game/brief', { method: 'POST' });
@@ -167,14 +206,37 @@ export default function DailyBrief() {
                             </p>
                         )}
                     </div>
-                    <button
-                        onClick={close}
-                        className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/60 transition-colors"
-                        title="Close the brief"
-                    >
-                        <X size={18} />
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {share && (
+                            <button
+                                id="share-today"
+                                onClick={shareToday}
+                                title="Copy a card for your friends: the season, the day and a headline about your empire"
+                                className="flex items-center gap-2 min-h-[40px] px-3 rounded-lg border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 text-xs font-bold transition-colors whitespace-nowrap"
+                            >
+                                <Share2 size={14} /> Share today
+                            </button>
+                        )}
+                        <button
+                            onClick={close}
+                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/60 transition-colors"
+                            title="Close the brief"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
                 </div>
+
+                {/* What "Share today" copied — public gazette material only. */}
+                {shared && (
+                    <div id="share-card" className="mx-6 mt-5 rounded-xl border border-slate-700/60 bg-slate-900/60 p-4">
+                        <p className="text-[10px] font-mono text-emerald-400 mb-2 flex items-center gap-1.5">
+                            <Check size={12} />
+                            {shared.copied ? 'Copied. Paste it anywhere.' : 'Select and copy:'}
+                        </p>
+                        <pre className="text-xs text-slate-200 whitespace-pre-wrap break-words font-sans select-all">{shared.text}</pre>
+                    </div>
+                )}
 
                 {loading && !brief && (
                     <div className="px-6 py-10 text-center text-xs font-mono text-slate-500 animate-pulse">
@@ -349,7 +411,7 @@ export default function DailyBrief() {
                     </p>
                     <button
                         onClick={close}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600/80 hover:bg-sky-500/80 text-white text-xs font-bold transition-colors"
+                        className="flex items-center gap-2 min-h-[40px] px-4 rounded-lg bg-sky-600/80 hover:bg-sky-500/80 text-white text-xs font-bold transition-colors"
                     >
                         Done <ArrowRight size={14} />
                     </button>
