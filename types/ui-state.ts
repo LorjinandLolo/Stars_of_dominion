@@ -676,6 +676,37 @@ export interface CompanySnapshot {
     nationalized: boolean;
     charterRevocationPending: boolean;
     hasGoneRogue: boolean;
+    /**
+     * Real seconds (as of the last sync) until a rogue company breaks away from
+     * its founder. Null when no clock is running.
+     */
+    rogueBreakInRealSeconds: number | null;
+    /** Length of each grant, in Galactic Days. */
+    termDays: number;
+    /** Real seconds until the charter expires; null for state property. */
+    charterExpiresInRealSeconds: number | null;
+    /** Share of the founder's chamber held on the company's behalf. */
+    senateSeats: number;
+    /** The board answers to its shareholders: several charter powers are gone. */
+    boardIndependent: boolean;
+    /** A standing state supply contract is running. */
+    contractActive: boolean;
+    /** Whether the company is currently rendering the state its mission's service. */
+    servesTheState: boolean;
+    /** What it last did for the state, in a sentence. */
+    lastServiceSummary: string | null;
+    /** Works currently raided or occupied. */
+    disruptedAssetCount: number;
+    /** Credits the founding state owes the company, and what it would still lend. */
+    stateLoan: number;
+    creditLine: number;
+    /**
+     * For a viewer who commands this board from abroad: real seconds until the
+     * charter can be moved to their flag (0 = now). Null when they cannot.
+     */
+    reflagInRealSeconds: number | null;
+    /** Political capital that move would cost. */
+    reflagCost: number;
     /** Newest-first log of what the company decided on its own. */
     recentActions: CorporateActionRecord[];
 }
@@ -716,8 +747,39 @@ export interface CorporateState {
     hostPolicies: CorporateHostPolicy[];
     /** Live commercial rivalries anywhere in the galaxy. */
     rivalries: CorporateRivalrySnapshot[];
+    /** Charters of this government's that are up for renewal. */
+    renewals: CharterRenewalSnapshot[];
+    /** Systems with corporate works in them, for the Commerce map overlay. */
+    sites: CorporateSite[];
     /** Credits remitted to this government by its charters, all time. */
     stateRemittanceTotal: number;
+}
+
+/** A charter on the government's desk for renewal, priced for the buttons. */
+export interface CharterRenewalSnapshot {
+    id: string;
+    companyId: string;
+    /** The board's request, in its own words. */
+    askText: string;
+    askKind: 'none' | 'profit_share' | 'right' | 'territory';
+    deadlineRealSeconds: number;
+    asWrittenCost: number;
+    stateTermsCost: number;
+    /** The board cannot be dictated to (greater_autonomy concession). */
+    boardIndependent: boolean;
+}
+
+/** Corporate works in one system, as the viewing player may know them. */
+export interface CorporateSite {
+    systemId: string;
+    /** Works of companies this player chartered. */
+    mine: number;
+    /** Works of everyone else's companies. */
+    foreign: number;
+    /** Of all of those, how many are raided or occupied. */
+    disrupted: number;
+    /** Hover line: which companies, how many works. */
+    label: string;
 }
 
 // ─── Press & Viral News ──────────────────────────────────────────────────────

@@ -80,6 +80,11 @@ import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-
 import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
 import { runDelegatedSystems } from '../delegation/delegation-runner';
+import { tickRogueCompanies } from '../economy/corporate/rogue-service';
+import { tickMissionServices } from '../economy/corporate/mission-services';
+import { tickAssetRaids } from '../economy/corporate/asset-raids';
+import { tickCharterRenewals } from '../economy/corporate/charter-renewal';
+import { tickBoardControl } from '../economy/corporate/foreign-control';
 
 
 
@@ -114,6 +119,11 @@ export async function runStrategicTick(
 
     // 1 & 2: Planetary production + upkeep + construction (bundled in economy service)
     step1_economy(world, TICK_DELTA_SECONDS);
+
+    // 1b: Charter companies serve the state that chartered them — each mission
+    // in kind, from the works it has standing. Before construction and research
+    // so a hurried ship order or an advanced programme can complete this tick.
+    try { tickMissionServices(world); } catch (e) { console.error('[TickProcessor] tickMissionServices failed:', e); }
 
     // 3: Construction progress (separate pass — checks build queues by wall-clock time)
     step3_construction(world);
@@ -195,6 +205,22 @@ export async function runStrategicTick(
     // 9f-8: Stage 3 of the collapse ladder — collapsed worlds refuse the centre,
     // and crises the government never answered close against it.
     try { tickDefiance(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickDefiance failed:', e); }
+    // 9f-8b: Charter companies past the rogue line. Opens the founder's clock,
+    // and for any whose clock ran out carries out the break — colonies into a
+    // secession crisis, squadrons into a corsair band, the charter to a patron.
+    // Before tickSecession so a crisis opened here is live in the same tick.
+    try {
+        for (const broke of tickRogueCompanies(world)) {
+            console.log(`[Corporate] ${broke.companyName} broke from ${broke.founderId}: ${broke.worldsSeceding} world(s), ${broke.fleetsDefected} squadron(s), patron ${broke.patronId ?? 'none'}`);
+        }
+    } catch (e) { console.error('[TickProcessor] tickRogueCompanies failed:', e); }
+    // 9f-8c: Charters coming up for renewal reach the desk; unanswered ones
+    // renew on the board's terms. After the rogue pass, which may have removed
+    // a company from the table altogether.
+    try { tickCharterRenewals(world); } catch (e) { console.error('[TickProcessor] tickCharterRenewals failed:', e); }
+    // 9f-8d: Who commands each company board, and since when — a foreign
+    // majority starts the clock on moving the charter abroad.
+    try { tickBoardControl(world); } catch (e) { console.error('[TickProcessor] tickBoardControl failed:', e); }
     // 9f-9: Stage 4 — worlds past defiance combine into regions asking to leave,
     // and regions that ran out of patience stop asking.
     try { tickSecession(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickSecession failed:', e); }
@@ -273,6 +299,13 @@ export async function runStrategicTick(
     try { tickInformants(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickInformants failed:', e); }
     try { tickBounties(world); } catch (e) { console.error('[TickProcessor] tickBounties failed:', e); }
     try { step12_pirateTacticalAI(world); } catch (e) { console.error('[TickProcessor] step12_pirateTacticalAI failed:', e); }
+    // 12b: Corporate works within reach of a pirate band are raided; those
+    // under an enemy fleet are occupied. After the bands have moved.
+    try {
+        for (const raid of tickAssetRaids(world)) {
+            console.log(`[Corporate] ${raid.kind} on ${raid.companyId} at ${raid.systemId} by ${raid.by} (${Math.round(raid.loot)}cr)`);
+        }
+    } catch (e) { console.error('[TickProcessor] tickAssetRaids failed:', e); }
     try { step14_empireFleetRepair(world); } catch (e) { console.error('[TickProcessor] step14_empireFleetRepair failed:', e); }
     // step15 (legacy intelligence system) merged into step8_intelligence.
     try { tickForwardBases(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickForwardBases failed:', e); }

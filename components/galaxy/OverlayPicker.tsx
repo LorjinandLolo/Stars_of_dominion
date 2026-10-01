@@ -19,10 +19,10 @@ import {
     type OverlayLegendEntry,
     type OverlayResult,
 } from '@/lib/galaxy/overlays';
-import { Radar, Flag, Sprout, HeartPulse, Layers, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Radar, Flag, Sprout, HeartPulse, Building2, Layers, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { empireWithPlayer, isHumanEmpire, playedByLabel } from '@/lib/players/player-label';
 
-const ICONS = { Radar, Flag, Sprout, HeartPulse } as const;
+const ICONS = { Radar, Flag, Sprout, HeartPulse, Building2 } as const;
 
 /** Remembered overlay ('none' when the player switched everything off). */
 const OVERLAY_KEY = 'sod.galaxyOverlay';
@@ -160,7 +160,7 @@ function OverlayPicker({ result }: OverlayPickerProps) {
             const digit = Number(e.key);
             if (digit === 0) { if (current) select(null); return; }
             const def = OVERLAY_DEFS[digit - 1];
-            if (!def) return; // 5 and 6 are reserved
+            if (!def) return; // 6 is reserved
             select(def.id === current ? null : def.id);
         };
         document.addEventListener('keydown', onKey);
@@ -273,7 +273,7 @@ function OverlayPicker({ result }: OverlayPickerProps) {
                         );
                     })}
                     <div className="px-3 py-1.5 text-[10px] text-slate-500 border-t border-slate-800">
-                        1–4 switch · same key, 0 or Esc clears
+                        1–5 switch · same key, 0 or Esc clears
                     </div>
                 </div>
             )}

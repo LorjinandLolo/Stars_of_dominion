@@ -29,6 +29,7 @@ import { answerDefiance } from '@/lib/government/defiance-service';
 import { grantConcession } from '@/lib/government/secession-service';
 import { resolveDemand } from '@/lib/economy/corporate/corporate-politics';
 import { resolveCorporateCrisis } from '@/lib/economy/corporate/corporate-events';
+import { resolveRenewal } from '@/lib/economy/corporate/charter-renewal';
 import { SECESSION_DEMANDS, type SecessionDemandId } from '@/lib/government/secession-types';
 import { counterCampaign, CampaignConfig } from '@/lib/press-system/campaigns';
 import { signProtectionContract } from '@/lib/piracy/protection-service';
@@ -173,6 +174,8 @@ function runCorporate(world: GameWorldState, factionId: string, _delta: number, 
         }
     }
 
+    runRenewals(world, factionId, reports);
+
     for (const crisis of corpState.crises?.values?.() ?? []) {
         if (crisis.factionId !== factionId || crisis.status !== 'pending') continue;
         // Cheapest lawful answer: least credits, then least political capital.
@@ -185,6 +188,25 @@ function runCorporate(world: GameWorldState, factionId: string, _delta: number, 
                 reports.push({ factionId, system: 'corporate', action: `settled ${crisis.type} with ${option.id}` });
                 break;
             }
+        }
+    }
+}
+
+/**
+ * Charters up for renewal. Staff renew the paper as it stands when the capital
+ * can pay for that, and otherwise let it renew on the board's terms — which is
+ * what silence would have done anyway. They never dictate terms and never let a
+ * charter lapse: both are decisions with a season-long shadow.
+ */
+function runRenewals(world: GameWorldState, factionId: string, reports: DelegationReport[]): void {
+    const corpState: any = (world as any).corporate;
+    for (const renewal of [...(corpState?.renewals?.values?.() ?? [])]) {
+        if (renewal.factionId !== factionId || renewal.status !== 'pending') continue;
+        for (const response of ['as_written', 'company_terms'] as const) {
+            const result = resolveRenewal(world, renewal.id, response);
+            if (!result.ok) continue;
+            reports.push({ factionId, system: 'corporate', action: `renewed ${renewal.companyId} (${response})` });
+            break;
         }
     }
 }

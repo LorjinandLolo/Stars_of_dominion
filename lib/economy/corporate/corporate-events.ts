@@ -11,6 +11,7 @@
 
 import type { GameWorldState } from '../../game-world-state';
 import { atLeastAGalacticDay } from '@/lib/time/time-config';
+import * as chronicle from '../../narrative/chronicle';
 import type { CharteredCompany } from './company-types';
 import type { CorporateWorldState } from './company-registry';
 import type {
@@ -143,6 +144,62 @@ export function maybeSpawnCrisis(
         crisisId: crisis.id, type: def.type, headline: def.headline,
     }, nowSeconds);
     return crisis;
+}
+
+/**
+ * Somebody printed the real accounts. The target's largest company that is not
+ * already in crisis gets a fraud inquiry on its government's desk and a run on
+ * its stock. Called by the intelligence board (lib/espionage/ops-board-service).
+ * Returns the company hit, or null if there was nothing to leak.
+ */
+export function leakCompanyBooks(world: GameWorldState, targetFactionId: string): CharteredCompany | null {
+    const corp = world.corporate as CorporateWorldState | undefined;
+    if (!corp?.companies) return null;
+    const inCrisis = new Set(
+        [...corp.crises.values()].filter(c => c.status === 'pending').map(c => c.companyId)
+    );
+    const company = [...corp.companies.values()]
+        .filter(c => c.foundingFactionId === targetFactionId && !c.nationalized && !inCrisis.has(c.id))
+        .sort((a, b) => (b.influence ?? 0) - (a.influence ?? 0) || a.id.localeCompare(b.id))[0];
+    const def = CRISIS_DEFS.find(d => d.type === 'accounting_fraud');
+    if (!company || !def) return null;
+
+    const now = world.nowSeconds;
+    const crisis: CorporateCrisis = {
+        id: `ccri-${company.id}-leak-${now}`,
+        companyId: company.id,
+        factionId: company.foundingFactionId,
+        type: def.type,
+        headline: def.headline,
+        description: def.description,
+        issuedAt: now,
+        expiresAt: now + CRISIS_WINDOW_SECONDS,
+        options: def.options,
+        status: 'pending',
+    };
+    corp.crises.set(crisis.id, crisis);
+    company.lastCrisisAt = now;
+    company.sharePricePrev = company.sharePrice;
+    company.sharePrice = Math.max(0.01, company.sharePrice * 0.85);
+    company.corruptionIndex = Math.min(100, company.corruptionIndex + 5);
+
+    pushCompanyEvent(corp.eventLog, company, 'crisis_opened', {
+        crisisId: crisis.id, type: def.type, headline: def.headline, leaked: true,
+    }, now);
+    // The galaxy sees the scandal. It does not see who mailed the ledgers.
+    chronicle.record(world, {
+        type: 'corporate_crisis',
+        actorIds: [company.foundingFactionId],
+        location: company.headquartersSystemId,
+        facts: {
+            companyName: company.charter.fullName,
+            crisisType: def.type,
+            headline: def.headline,
+            description: def.description,
+        },
+        importanceOverride: 44,
+    });
+    return company;
 }
 
 /** The government picks an option. Costs are charged before effects land. */
@@ -418,5 +475,16 @@ export function tickMegaprojects(
         pushCompanyEvent(corpState.eventLog, company, 'megaproject_completed', {
             proposalId: proposal.id, name: proposal.name, benefit: def.benefit,
         }, nowSeconds);
+        chronicle.record(world, {
+            type: 'megaproject_completed',
+            actorIds: [proposal.factionId],
+            location: company.headquartersSystemId,
+            facts: {
+                companyName: company.charter.fullName,
+                projectName: proposal.name,
+                benefit: def.benefit,
+                cost: proposal.totalCost,
+            },
+        });
     }
 }

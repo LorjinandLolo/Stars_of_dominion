@@ -38,9 +38,9 @@ import config from '../movement/movement-config.json';
 
 // ─── Ids and defs ─────────────────────────────────────────────────────────────
 
-export type OverlayId = 'charted' | 'relations' | 'settle' | 'stability';
-/** Also the hotkey order: digit 1 is Charted, digit 4 is Stability. */
-export const OVERLAY_IDS: readonly OverlayId[] = ['charted', 'relations', 'settle', 'stability'];
+export type OverlayId = 'charted' | 'relations' | 'settle' | 'stability' | 'commerce';
+/** Also the hotkey order: digit 1 is Charted, digit 5 is Commerce. */
+export const OVERLAY_IDS: readonly OverlayId[] = ['charted', 'relations', 'settle', 'stability', 'commerce'];
 
 export function isOverlayId(v: unknown): v is OverlayId {
     return typeof v === 'string' && (OVERLAY_IDS as readonly string[]).includes(v);
@@ -73,8 +73,8 @@ export interface OverlayDef {
     id: OverlayId;
     label: string;
     /** lucide-react export names */
-    icon: 'Radar' | 'Flag' | 'Sprout' | 'HeartPulse';
-    hotkey: '1' | '2' | '3' | '4';
+    icon: 'Radar' | 'Flag' | 'Sprout' | 'HeartPulse' | 'Building2';
+    hotkey: '1' | '2' | '3' | '4' | '5';
     question: string;
     legend: readonly OverlayLegendEntry[];
     /** Settle → 'show ping costs' → 'charted' */
@@ -173,6 +173,15 @@ const STABILITY_LEGEND: readonly OverlayLegendEntry[] = [
     { key: 'unread', label: 'No reading — scan with a fleet within one jump', fill: 'none', fillOpacity: 0, stroke: C.none, strokeOpacity: 0, isAction: true },
 ];
 
+const COMMERCE = '#eab308';
+const COMMERCE_FOREIGN = '#f97316';
+const COMMERCE_LEGEND: readonly OverlayLegendEntry[] = [
+    { key: 'mine', label: 'Your companies\' works', fill: COMMERCE, fillOpacity: 0.32, stroke: COMMERCE, strokeOpacity: 0.85, badge: 'filled' },
+    { key: 'foreign', label: 'Foreign company works', fill: COMMERCE_FOREIGN, fillOpacity: 0.22, stroke: COMMERCE_FOREIGN, strokeOpacity: 0.7, dash: '3 2', badge: 'hollow' },
+    { key: 'disrupted', label: 'Raided or occupied', fill: 'none', fillOpacity: 0, stroke: C.danger, strokeOpacity: 0.9, strokeWidth: 1.6, pulse: true },
+    { key: 'guarded', label: 'Your fleet on station', fill: 'none', fillOpacity: 0, stroke: MINE, strokeOpacity: 0.9, strokeWidth: 1.4 },
+];
+
 export const OVERLAY_DEFS: readonly OverlayDef[] = [
     {
         id: 'charted',
@@ -206,6 +215,14 @@ export const OVERLAY_DEFS: readonly OverlayDef[] = [
         hotkey: '4',
         question: 'Which of the systems I can see inside are about to break?',
         legend: STABILITY_LEGEND,
+    },
+    {
+        id: 'commerce',
+        label: 'Commerce',
+        icon: 'Building2',
+        hotkey: '5',
+        question: 'Where have the chartered companies built, and which of their works are being raided?',
+        legend: COMMERCE_LEGEND,
     },
 ];
 
@@ -270,6 +287,8 @@ export interface OverlayInput {
     playerFactionId: string | null;
     /** piracyState.view?.influence */
     piracyInfluence?: Record<string, number>;
+    /** corporateState.sites — every company's works, by system. Gated in computeCommerce. */
+    corporateSites?: Array<{ systemId: string; mine: number; foreign: number; disrupted: number }>;
     /** sim clock; staleness only */
     nowSeconds?: number;
 }
@@ -851,6 +870,61 @@ function computeStability(ctx: Ctx): OverlayResult {
     return { styles: ctx.styles, coverage: { withData, total: input.systems.length }, counts: ctx.counts, footer, empty };
 }
 
+/**
+ * Commerce: where chartered companies have built. FOG: a company you chartered
+ * reports to you, so its works show wherever they are. Somebody else's works
+ * are contents of a system, and show only inside your own borders or in a
+ * system you have scanned — `foreign` and `disrupted` are never read before
+ * that gate.
+ */
+function computeCommerce(ctx: Ctx): OverlayResult {
+    const { input, me } = ctx;
+    const guarded = new Set<string>();
+    for (const f of input.fleets) if (me && f.factionId === me && f.currentSystemId) guarded.add(f.currentSystemId);
+
+    let withData = 0;
+    let mineWorks = 0;
+    let foreignWorks = 0;
+    for (const site of input.corporateSites ?? []) {
+        const sys = ctx.byId.get(site.systemId);
+        if (!sys) continue;
+        const stage = stageOf(input, sys);
+        const mayReadContents = (!!me && sys.ownerId === me) || isKnownStage(stage);
+        const hasMine = site.mine > 0;
+        if (!hasMine && !mayReadContents) continue;
+
+        const foreign = mayReadContents ? site.foreign : 0;
+        if (!hasMine && foreign === 0) continue;
+
+        const style: OverlaySystemStyle = hasMine
+            ? { fill: COMMERCE, fillOpacity: 0.32, stroke: COMMERCE, strokeOpacity: 0.85, badge: { count: site.mine, color: COMMERCE, hollow: false }, bucket: 'mine' }
+            : { fill: COMMERCE_FOREIGN, fillOpacity: 0.22, stroke: COMMERCE_FOREIGN, strokeOpacity: 0.7, dash: '3 2', badge: { count: foreign, color: COMMERCE_FOREIGN, hollow: true }, bucket: 'foreign' };
+        bump(ctx, style.bucket);
+        mineWorks += site.mine;
+        foreignWorks += foreign;
+        withData++;
+
+        // A system with only foreign works we may not read never reaches here,
+        // so the disruption count is safe to use.
+        if ((hasMine || mayReadContents) && site.disrupted > 0) {
+            style.stroke = C.danger; style.strokeOpacity = 0.9; style.strokeWidth = 1.6; style.pulse = true;
+            delete style.dash;
+            bump(ctx, 'disrupted');
+        } else if (hasMine && guarded.has(sys.id)) {
+            style.stroke = MINE; style.strokeOpacity = 0.9; style.strokeWidth = 1.4;
+            bump(ctx, 'guarded');
+        }
+        ctx.styles.set(sys.id, style);
+    }
+
+    const c = ctx.counts;
+    const footer = `${mineWorks} works of your companies in ${c.mine} systems · ${foreignWorks} foreign works in view · ${c.disrupted} systems raided or occupied · ${c.guarded} guarded by your fleets`;
+    const empty = withData === 0
+        ? 'No company works in view — charter a company (Economy → Corporate) and it will build its own'
+        : null;
+    return { styles: ctx.styles, coverage: { withData, total: input.systems.length }, counts: ctx.counts, footer, empty };
+}
+
 export function computeOverlayStyles(overlayId: OverlayId, input: OverlayInput): OverlayResult {
     const ctx = makeCtx(overlayId, input);
     switch (overlayId) {
@@ -858,5 +932,6 @@ export function computeOverlayStyles(overlayId: OverlayId, input: OverlayInput):
         case 'relations': return computeRelations(ctx);
         case 'settle': return computeSettle(ctx);
         case 'stability': return computeStability(ctx);
+        case 'commerce': return computeCommerce(ctx);
     }
 }

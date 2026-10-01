@@ -30,6 +30,7 @@ import type {
     CorporateDemand,
     CorporateCrisis,
     MegaprojectProposal,
+    CharterRenewalSnapshot,
     CorporateMission,
     CorporateRight,
     CorporateStanding,
@@ -42,7 +43,9 @@ import {
     RIGHTS_BY_CATEGORY,
     PERSONALITY_DEFS,
 } from '@/lib/economy/corporate/charter-catalog';
-import { priceCharter, validateCharter, MIN_FOUNDING_CAPITAL } from '@/lib/economy/corporate/charter-service';
+import { priceCharter, validateCharter, MIN_FOUNDING_CAPITAL, MIN_STATE_STAKE_PERCENT } from '@/lib/economy/corporate/charter-service';
+import { CHARTER_TERM_OPTIONS, DEFAULT_CHARTER_TERM_DAYS } from '@/lib/economy/corporate/charter-types';
+import { formatRealDeadline } from '@/lib/time/galactic-time';
 import {
     foundCharterAction,
     respondToDemandAction,
@@ -59,6 +62,9 @@ import {
     subsidizeCompanyAction,
     commandPrivateersAction,
     taxColoniesAction,
+    respondToRenewalAction,
+    reflagCharterAction,
+    borrowFromCompanyAction,
 } from '@/app/actions/company';
 
 // ─── Shared presentation ──────────────────────────────────────────────────────
@@ -195,11 +201,15 @@ function FoundCharterDialog({ onClose, playerFactionId, capitalSystemId, availab
     const [rights, setRights] = useState<CorporateRight[]>(['build_infrastructure', 'collect_fees']);
     const [ownership, setOwnership] = useState({ ...DEFAULT_OWNERSHIP });
     const [profitShare, setProfitShare] = useState(0.15);
+    const [termDays, setTermDays] = useState(DEFAULT_CHARTER_TERM_DAYS);
     const [foundingCapital, setFoundingCapital] = useState(60_000);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const terms = useMemo(() => ({ mission, territory, rights, ownership, profitShareToState: profitShare }), [mission, territory, rights, ownership, profitShare]);
+    const terms = useMemo(
+        () => ({ mission, territory, rights, ownership, profitShareToState: profitShare, termDays }),
+        [mission, territory, rights, ownership, profitShare, termDays],
+    );
     const price = useMemo(() => priceCharter(terms, foundingCapital), [terms, foundingCapital]);
     const validation = useMemo(() => validateCharter(terms, name, foundingCapital), [terms, name, foundingCapital]);
 
@@ -271,6 +281,10 @@ function FoundCharterDialog({ onClose, playerFactionId, capitalSystemId, availab
                             ))}
                         </div>
                         <p className="text-[10px] text-slate-500 italic">{MISSION_DEFS[mission].description}</p>
+                        <p className="text-[10px] text-emerald-400/80">
+                            <span className="font-display uppercase tracking-widest text-[9px] text-emerald-500">For the state · </span>
+                            {MISSION_DEFS[mission].service}
+                        </p>
                     </div>
 
                     {/* Territory */}
@@ -299,6 +313,9 @@ function FoundCharterDialog({ onClose, playerFactionId, capitalSystemId, availab
                             Clause III — Ownership
                             <span className={`ml-2 font-mono ${Math.abs(ownershipTotal - 100) < 0.01 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                 {ownershipTotal}%
+                            </span>
+                            <span className="ml-2 text-slate-600 normal-case tracking-normal italic">
+                                The state must hold at least {MIN_STATE_STAKE_PERCENT}%.
                             </span>
                         </label>
                         <div className="space-y-2">
@@ -362,6 +379,35 @@ function FoundCharterDialog({ onClose, playerFactionId, capitalSystemId, availab
                                 </div>
                             </div>
                         ))}
+                    </div>
+
+                    {/* Term */}
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-display text-slate-500 block uppercase tracking-widest">Clause V — Term of the grant</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {CHARTER_TERM_OPTIONS.map((days, i) => (
+                                <button
+                                    key={days}
+                                    onClick={() => setTermDays(days)}
+                                    className={`p-2 rounded-lg border text-left transition-all ${termDays === days
+                                        ? 'bg-emerald-950/30 border-emerald-500/60'
+                                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'}`}
+                                >
+                                    <div className={`text-[10px] font-display uppercase ${termDays === days ? 'text-emerald-300' : 'text-slate-400'}`}>
+                                        {days} Galactic Days
+                                    </div>
+                                    <div className="text-[9px] text-slate-600 mt-0.5">
+                                        {i === 0 ? 'Back at the table often; the board resents it'
+                                            : i === CHARTER_TERM_OPTIONS.length - 1 ? 'Security for the board; a long wait for you'
+                                                : 'The usual grant'}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[10px] text-slate-500 italic">
+                            A day before the term runs out the board returns with what its weight lets it ask for.
+                            Renewal is the one time you can tighten a charter without seizing the company.
+                        </p>
                     </div>
 
                     {/* Capital + profit share */}
@@ -437,6 +483,7 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
     const [busy, setBusy] = useState<string | null>(null);
     const [shareBlock, setShareBlock] = useState(10_000);
     const [subsidy, setSubsidy] = useState(20_000);
+    const [loan, setLoan] = useState(20_000);
     const [profitShare, setProfitShare] = useState(Math.round((c.profitShareToState ?? 0) * 100));
     const isFounder = c.foundingFactionId === playerFactionId;
     const standing = STANDING_STYLE[c.standing] ?? STANDING_STYLE.instrument;
@@ -480,18 +527,69 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
                     <Chip>{TERRITORY_DEFS[c.territory]?.name}</Chip>
                     <Chip tone="amber">{personality?.name ?? c.personality}</Chip>
                     <Chip tone={c.militaryTier >= 4 ? 'rose' : 'slate'}>Tier {c.militaryTier} · {c.militaryLabel}</Chip>
+                    {c.boardIndependent && <Chip tone="rose">Independent board</Chip>}
+                    {c.senateSeats > 0 && <Chip tone="violet">{c.senateSeats} seats in the chamber</Chip>}
+                    {c.contractActive && <Chip tone="emerald">State contract</Chip>}
                 </div>
+                {c.charterExpiresInRealSeconds !== null && (
+                    <p className="text-[10px] text-slate-400 mt-2">
+                        Charter granted for {c.termDays} Galactic Days — expires {formatRealDeadline(c.charterExpiresInRealSeconds)}.
+                    </p>
+                )}
                 {personality && (
                     <p className="text-[10px] text-slate-500 italic mt-2">&ldquo;{personality.creed}&rdquo;</p>
                 )}
             </div>
+
+            {/* The founder's clock on a rogue company */}
+            {isFounder && c.rogueBreakInRealSeconds !== null && (
+                <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/40">
+                    <div className="text-[10px] font-display tracking-widest uppercase text-rose-400">
+                        Breaks away {formatRealDeadline(c.rogueBreakInRealSeconds)}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                        This company no longer recognises its charter. Nationalise it, or bring its autonomy
+                        back under 80 with subsidies or a controlling stake. If the clock runs out it leaves
+                        with what the charter let it hold: the colonies it governs, and either the charter
+                        itself — if a foreign power will have it — or its armed squadrons, as corsairs.
+                    </p>
+                </div>
+            )}
+
+            {/* What it does for the state */}
+            <div className={`p-3 rounded-xl border ${c.servesTheState ? 'bg-emerald-950/10 border-emerald-500/20' : 'bg-slate-900 border-slate-800'}`}>
+                <div className={`text-[10px] font-display tracking-widest uppercase ${c.servesTheState ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {c.servesTheState ? 'Serving the state' : 'Rendering no service'}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">{MISSION_DEFS[c.mission]?.service}</p>
+                {c.lastServiceSummary && c.servesTheState && (
+                    <p className="text-[10px] text-slate-300 mt-1">{c.lastServiceSummary}</p>
+                )}
+                {!c.servesTheState && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                        A company serves while it is loyal (40% or better) and still recognises its charter.
+                    </p>
+                )}
+            </div>
+
+            {c.disruptedAssetCount > 0 && (
+                <div className="p-3 rounded-xl bg-orange-950/20 border border-orange-500/40">
+                    <div className="text-[10px] font-display tracking-widest uppercase text-orange-400">
+                        {c.disruptedAssetCount} of its works raided or occupied
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                        They earn nothing and serve nobody until they recover. A fleet on station, security forces or
+                        defence platforms in the charter all make raids harder. The Commerce map overlay (5) shows where.
+                    </p>
+                </div>
+            )}
 
             {/* Vitals */}
             <div className="grid grid-cols-2 gap-3">
                 {[
                     { label: 'TREASURY', val: `${(c.treasury / 1000).toFixed(1)}K cr`, icon: <Coins size={12} />, color: 'text-amber-400' },
                     { label: 'NET ASSETS', val: `${(c.netAssetValue / 1000).toFixed(1)}K cr`, icon: <Briefcase size={12} />, color: 'text-emerald-400' },
-                    { label: 'HOLDINGS', val: `${c.assetCount} (+${c.assetIncomePerTick}/tick)`, icon: <Hammer size={12} />, color: 'text-sky-400' },
+                    { label: 'HOLDINGS', val: `${c.assetCount} (+${c.assetIncomePerTick}/tick)${c.disruptedAssetCount > 0 ? ` · ${c.disruptedAssetCount} dark` : ''}`, icon: <Hammer size={12} />, color: 'text-sky-400' },
                     { label: 'TO THE STATE', val: `${(c.stateRemittanceTotal / 1000).toFixed(1)}K cr`, icon: <Landmark size={12} />, color: 'text-violet-400' },
                     { label: 'PRIVATE FLEET', val: `${c.privateFleetSize}/100`, icon: <Shield size={12} />, color: 'text-rose-400' },
                     { label: 'DEBT', val: `${(c.debt / 1000).toFixed(1)}K cr`, icon: <Scale size={12} />, color: c.debt > 0 ? 'text-orange-400' : 'text-slate-500' },
@@ -600,6 +698,22 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
                 >
                     <Flame size={12} /> Hostile takeover — bid for control
                 </button>
+                {!isFounder && c.reflagInRealSeconds !== null && (
+                    <div className="space-y-1">
+                        <button
+                            onClick={() => run('reflag', () => reflagCharterAction(playerFactionId, c.id))}
+                            disabled={busy === 'reflag' || c.reflagInRealSeconds > 0}
+                            className="w-full px-3 py-2 rounded bg-amber-950/30 border border-amber-500/50 text-amber-300 text-[10px] font-display tracking-widest uppercase hover:bg-amber-950/50 disabled:opacity-40"
+                        >
+                            Move the charter to your flag ({c.reflagCost} PC)
+                        </button>
+                        <p className="text-[9px] text-slate-500">
+                            {c.reflagInRealSeconds > 0
+                                ? `You command this board. The charter can be moved ${formatRealDeadline(c.reflagInRealSeconds)} — its founder has until then to buy you out or nationalise.`
+                                : 'You command this board. The company, its works and its remittance become yours.'}
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* Sovereign actions — founder only */}
@@ -639,6 +753,30 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
                             Pay
                         </button>
                     </div>
+
+                    {c.mission === 'banking' && (
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <div className="w-40 text-[10px] text-slate-400 uppercase">Borrow from the bank</div>
+                                <input
+                                    type="number" min={0} step={5000} value={loan}
+                                    onChange={e => setLoan(Math.max(0, Number(e.target.value) || 0))}
+                                    className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs font-mono text-slate-200 outline-none focus:border-amber-500/50"
+                                />
+                                <button
+                                    onClick={() => run('borrow', () => borrowFromCompanyAction(playerFactionId, c.id, loan))}
+                                    disabled={busy === 'borrow' || c.creditLine <= 0 || loan <= 0 || loan > c.creditLine}
+                                    className="px-2.5 py-1 rounded bg-amber-950/30 border border-amber-600/40 text-[10px] text-amber-300 hover:bg-amber-950/50 disabled:opacity-40"
+                                >
+                                    Draw
+                                </button>
+                            </div>
+                            <p className="text-[9px] text-slate-500">
+                                {c.creditLine.toLocaleString()}cr on offer at 10% interest, repaid 2% a tick.
+                                {c.stateLoan > 0 ? ` You owe ${c.stateLoan.toLocaleString()}cr — and a bank you owe has a louder voice.` : ''}
+                            </p>
+                        </div>
+                    )}
 
                     {ungranted.length > 0 && (
                         <div className="space-y-1.5">
@@ -871,6 +1009,77 @@ function MegaprojectCard({ p, companyName, playerFactionId, onError }: {
     );
 }
 
+function RenewalCard({ r, companyName, playerFactionId, onError }: {
+    r: CharterRenewalSnapshot; companyName: string; playerFactionId: string; onError: (m: string | null) => void;
+}) {
+    const [busy, setBusy] = useState<string | null>(null);
+    const run = async (response: 'company_terms' | 'as_written' | 'state_terms' | 'lapse') => {
+        setBusy(response);
+        onError(null);
+        const res = await respondToRenewalAction(playerFactionId, r.id, response);
+        setBusy(null);
+        if (!res.success) onError(res.error ?? 'Response refused.');
+    };
+    const asks = r.askKind !== 'none';
+    const options: Array<{ id: 'company_terms' | 'as_written' | 'state_terms' | 'lapse'; label: string; cost: string; blurb: string; tone: string; disabled?: boolean }> = [
+        {
+            id: 'company_terms', label: asks ? 'Grant it' : 'Renew', cost: '',
+            blurb: asks ? 'Renew with what the board asked for. Loyalty rises; so does its independence.' : 'Renew the charter as it stands.',
+            tone: 'bg-emerald-950/30 border-emerald-600/40 text-emerald-300 hover:bg-emerald-950/50',
+        },
+        ...(asks ? [{
+            id: 'as_written' as const, label: 'Renew as written', cost: `${r.asWrittenCost} PC`,
+            blurb: 'Renew unchanged over the board\'s objection. It will remember.',
+            tone: 'bg-sky-950/30 border-sky-600/40 text-sky-300 hover:bg-sky-950/50',
+        }] : []),
+        {
+            id: 'state_terms', label: 'Dictate terms', cost: `${r.stateTermsCost} PC`,
+            blurb: r.boardIndependent
+                ? 'The board answers to its shareholders now. It will not be dictated to.'
+                : 'Five more points of profit to the state and a shorter leash. Loyalty falls hard.',
+            tone: 'bg-amber-950/30 border-amber-600/40 text-amber-300 hover:bg-amber-950/50',
+            disabled: r.boardIndependent,
+        },
+        {
+            id: 'lapse', label: 'Let it lapse', cost: '',
+            blurb: 'Wind the company up and pay out its shareholders — unless it is strong and bitter enough to refuse.',
+            tone: 'bg-rose-950/30 border-rose-600/40 text-rose-300 hover:bg-rose-950/50',
+        },
+    ];
+    return (
+        <div className="rounded-lg border border-emerald-700/40 bg-emerald-950/10 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+                <Scale size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                    <div className="text-[10px] font-display uppercase tracking-widest text-emerald-400">{companyName}</div>
+                    <div className="text-sm font-display text-slate-100 uppercase mt-0.5">Charter up for renewal</div>
+                    <p className="text-sm text-slate-200 italic mt-1">&ldquo;{r.askText}&rdquo;</p>
+                </div>
+                <div className="ml-auto shrink-0 text-right text-[9px] uppercase text-slate-500">
+                    expires<br /><span className="font-mono text-emerald-400">{formatRealDeadline(r.deadlineRealSeconds)}</span>
+                </div>
+            </div>
+            <div className="space-y-1.5">
+                {options.map(o => (
+                    <button
+                        key={o.id}
+                        onClick={() => run(o.id)}
+                        disabled={!!busy || o.disabled}
+                        className={`w-full text-left px-3 py-2 rounded border transition-all disabled:opacity-40 ${o.tone}`}
+                    >
+                        <div className="flex justify-between items-baseline gap-2">
+                            <span className="text-[11px] font-display uppercase tracking-wider">{o.label}</span>
+                            <span className="text-[9px] font-mono text-slate-400 shrink-0">{o.cost}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{o.blurb}</div>
+                    </button>
+                ))}
+            </div>
+            <p className="text-[9px] text-slate-600">Left unanswered, the charter renews on the board&rsquo;s terms.</p>
+        </div>
+    );
+}
+
 // ─── Foreign operations ───────────────────────────────────────────────────────
 
 function ForeignCompanyRow({ c, playerFactionId, stance, onError }: {
@@ -942,7 +1151,7 @@ export default function CorporateLedgerPanel() {
     }, [factionRecord]);
 
     const companyName = (id: string) => companies.find(c => c.id === id)?.fullName ?? id;
-    const inboxCount = corporateState.demands.length + corporateState.crises.length
+    const inboxCount = corporateState.demands.length + corporateState.crises.length + corporateState.renewals.length
         + corporateState.megaprojects.filter(p => p.status === 'proposed' || p.status === 'delayed').length;
     const foreign = companies.filter(c => corporateState.foreignCompanyIds.includes(c.id));
     const stanceFor = (companyId: string) =>
@@ -1078,6 +1287,16 @@ export default function CorporateLedgerPanel() {
                                 <div className="text-[10px] font-display uppercase tracking-widest text-rose-400">Crises</div>
                                 {corporateState.crises.map(c => (
                                     <CrisisCard key={c.id} c={c} companyName={companyName(c.companyId)}
+                                        playerFactionId={playerFactionId} onError={setError} />
+                                ))}
+                            </div>
+                        )}
+
+                        {corporateState.renewals.length > 0 && (
+                            <div className="space-y-3">
+                                <div className="text-[10px] font-display uppercase tracking-widest text-emerald-400">Renewals</div>
+                                {corporateState.renewals.map(r => (
+                                    <RenewalCard key={r.id} r={r} companyName={companyName(r.companyId)}
                                         playerFactionId={playerFactionId} onError={setError} />
                                 ))}
                             </div>

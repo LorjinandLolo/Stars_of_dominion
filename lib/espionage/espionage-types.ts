@@ -137,7 +137,8 @@ export type OpportunityReward =
     | { type: 'credits'; amount: number }
     | { type: 'report'; domain: 'military' | 'political' | 'scientific' } // instant intel report on target
     | { type: 'counterIntel'; amount: number }        // own counterIntelStrength
-    | { type: 'instability'; amount: number };        // target capital system instability
+    | { type: 'instability'; amount: number }         // target capital system instability
+    | { type: 'corporateScandal' };                   // opens a fraud crisis at the target's largest company
 
 export type OpportunityKind = 'opportunity' | 'threat';
 

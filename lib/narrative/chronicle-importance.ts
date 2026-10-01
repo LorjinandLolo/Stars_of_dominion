@@ -55,6 +55,16 @@ const BASE_IMPORTANCE: Record<ChronicleEventType, number> = {
     trade_route_lost: 24,
     economic_crisis: 56,
     blockade_started: 46,
+    // Charter corporations. Founding one is local news; losing control of one
+    // is the story the charter was always going to end in.
+    charter_granted: 28,
+    charter_revoked: 46,
+    company_nationalized: 58,
+    company_went_rogue: 70,
+    company_broke_away: 80,
+    company_acquired: 36,
+    corporate_crisis: 32,
+    megaproject_completed: 48,
     // Piracy
     pirate_raid: 22,
     pirate_state_recognized: 76,

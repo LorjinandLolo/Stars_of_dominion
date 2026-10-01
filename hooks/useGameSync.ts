@@ -38,6 +38,14 @@ function toDefianceSnapshot(event: any) {
 // Charter Corporation read-model. Pure arithmetic over the company record, so
 // the client derives the same standing/tier/cap-table the worker does.
 import {
+    ROGUE_GRACE_SECONDS,
+    asWrittenCost,
+    creditLineAvailable,
+    isAssetActive,
+    reflagCost,
+    reflagReadyAt,
+    servesTheState,
+    stateTermsCost,
     boardControl,
     marketCap,
     militaryTier,
@@ -45,6 +53,7 @@ import {
     ownershipBreakdown,
 } from '@/lib/economy/corporate/charter-service';
 import { SHARE_CLASSES } from '@/lib/economy/corporate/charter-types';
+import { realSecondsUntil } from '@/lib/time/galactic-time';
 
 /** Shares sitting in the tradable float (the non-empire holder classes). */
 function availableFloat(company: any): number {
@@ -733,6 +742,30 @@ export function useGameSync() {
                     nationalized: !!c.nationalized,
                     charterRevocationPending: !!c.charterRevocationPending,
                     hasGoneRogue: !!c.hasGoneRogue,
+                    // The founder's clock: only while a rogue episode is open
+                    // and the company has not already broken away in it.
+                    rogueBreakInRealSeconds: c.hasGoneRogue && typeof c.rogueSince === 'number' && (c.rogueBrokeAt ?? -1) < c.rogueSince
+                        ? realSecondsUntil(c.rogueSince + ROGUE_GRACE_SECONDS, world.nowSeconds ?? 0)
+                        : null,
+                    termDays: c.charterTermDays ?? 5,
+                    charterExpiresInRealSeconds: !c.nationalized && typeof c.charterExpiresAt === 'number'
+                        ? realSecondsUntil(c.charterExpiresAt, world.nowSeconds ?? 0)
+                        : null,
+                    senateSeats: Math.round(c.senateSeats ?? 0),
+                    boardIndependent: !!c.boardIndependent,
+                    contractActive: (c.contractUntil ?? 0) > (world.nowSeconds ?? 0),
+                    servesTheState: servesTheState(c),
+                    lastServiceSummary: c.lastService?.summary ?? null,
+                    disruptedAssetCount: assets.filter((a: any) => !isAssetActive(a, world.nowSeconds ?? 0)).length,
+                    stateLoan: Math.round(c.stateLoan ?? 0),
+                    creditLine: creditLineAvailable(c),
+                    reflagInRealSeconds: (() => {
+                        const readyAt = playerFactionId ? reflagReadyAt(c, playerFactionId) : null;
+                        return readyAt === null || c.nationalized
+                            ? null
+                            : Math.max(0, realSecondsUntil(readyAt, world.nowSeconds ?? 0));
+                    })(),
+                    reflagCost: reflagCost(c),
                     recentActions: [...(c.growthLog ?? [])].reverse().slice(0, 8),
                 } as CompanySnapshot;
             })
@@ -745,6 +778,27 @@ export function useGameSync() {
             }, 0)
             : 0;
         const asArray = <T,>(m: any): T[] => (m?.values ? Array.from(m.values() as Iterable<T>) : []);
+        // Where the works are. Every company's holdings are aggregated here;
+        // the Commerce overlay applies the fog gate (lib/galaxy/overlays.ts).
+        const siteBySystem = new Map<string, { mine: number; foreign: number; disrupted: number; names: Map<string, number> }>();
+        for (const c of (corpWorld?.companies?.values?.() ?? []) as Iterable<any>) {
+            for (const a of c.assets ?? []) {
+                let site = siteBySystem.get(a.systemId);
+                if (!site) { site = { mine: 0, foreign: 0, disrupted: 0, names: new Map() }; siteBySystem.set(a.systemId, site); }
+                if (c.foundingFactionId === playerFactionId) site.mine++; else site.foreign++;
+                if (!isAssetActive(a, world.nowSeconds ?? 0)) site.disrupted++;
+                const name = c.charter?.baseName ?? c.id;
+                site.names.set(name, (site.names.get(name) ?? 0) + 1);
+            }
+        }
+        const corporateSites = [...siteBySystem.entries()].map(([systemId, site]) => ({
+            systemId,
+            mine: site.mine,
+            foreign: site.foreign,
+            disrupted: site.disrupted,
+            label: [...site.names.entries()].map(([name, n]) => `${name}: ${n} ${n === 1 ? 'work' : 'works'}`).join(' · ')
+                + (site.disrupted > 0 ? ` · ${site.disrupted} raided or occupied` : ''),
+        }));
         const corporateState = {
             companies: companySnapshots,
             markets: marketTickers,
@@ -767,6 +821,23 @@ export function useGameSync() {
                 .map(c => c.id),
             hostPolicies: asArray<any>(corpWorld?.hostPolicies)
                 .filter(p => !playerFactionId || p.factionId === playerFactionId),
+            renewals: asArray<any>(corpWorld?.renewals)
+                .filter(r => r.status === 'pending' && (!playerFactionId || r.factionId === playerFactionId))
+                .sort((a, b) => a.expiresAt - b.expiresAt)
+                .map(r => {
+                    const company = corpWorld.companies.get(r.companyId);
+                    return {
+                        id: r.id,
+                        companyId: r.companyId,
+                        askText: r.ask?.text ?? '',
+                        askKind: r.ask?.kind ?? 'none',
+                        deadlineRealSeconds: realSecondsUntil(r.expiresAt, world.nowSeconds ?? 0),
+                        asWrittenCost: company ? asWrittenCost(company, r.ask) : 0,
+                        stateTermsCost: company ? stateTermsCost(company) : 0,
+                        boardIndependent: !!company?.boardIndependent,
+                    };
+                }),
+            sites: corporateSites,
             rivalries: asArray<any>(corpWorld?.rivalries).map(r => ({
                 id: r.id,
                 companyAId: r.companyAId,

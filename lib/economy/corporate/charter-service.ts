@@ -10,6 +10,7 @@ import type { CharteredCompany, FactionCorporateState, CompanyEvent } from './co
 import { CharterPower, Resource } from './company-types';
 import {
     type CharterTerms,
+    type CorporateAsset,
     type CorporateMission,
     type CorporatePersonality,
     type CorporateRight,
@@ -17,8 +18,11 @@ import {
     type MilitaryTier,
     type OperatingTerritory,
     type OwnershipPlan,
+    type RenewalAsk,
     MILITARY_TIERS,
     SHARE_CLASSES,
+    CHARTER_TERM_OPTIONS,
+    DEFAULT_CHARTER_TERM_DAYS,
 } from './charter-types';
 import {
     MISSION_DEFS,
@@ -27,6 +31,7 @@ import {
     PERSONALITY_DEFS,
 } from './charter-catalog';
 import { techIdsHaveFlag } from '../../tech/flags';
+import { GALACTIC_DAY_SIM_SECONDS, atLeastAGalacticDay } from '../../time/time-config';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -34,10 +39,22 @@ export const INITIAL_SHARES = 1_000_000;
 export const INITIAL_SHARE_PRICE = 10;
 /** Smallest capital subscription that will float a charter. */
 export const MIN_FOUNDING_CAPITAL = 20_000;
+/**
+ * Smallest stake the founding government may hold. A charter the state owns
+ * none of cost it no credits at all — every penny came from investors — which
+ * made founding a company free. The crown's share is the price of the seal.
+ */
+export const MIN_STATE_STAKE_PERCENT = 10;
 /** Technology gate for chartering — tier-1 trade tech. */
 export const CHARTER_TECH_ID = 'eco_t1_2';
 /** Government approval required before a charter may be granted. */
 export const MIN_LEGITIMACY_TO_CHARTER = 25;
+/**
+ * How long the founder has to answer a rogue company before it breaks away
+ * (rogue-service.ts). Lives here, not there, because the client shows the
+ * countdown and must not import the worker-side service.
+ */
+export const ROGUE_GRACE_SECONDS = atLeastAGalacticDay(3 * 86_400);
 
 const GROWTH_LOG_CAP = 30;
 
@@ -124,6 +141,12 @@ export function validateCharter(
     if (Math.abs(total - 100) > 0.01) return `Ownership must total 100% (currently ${total}%).`;
     if ([o.government, o.privateInvestors, o.foreignInvestors, o.publicShares].some(v => v < 0)) {
         return 'Ownership shares cannot be negative.';
+    }
+    if (o.government < MIN_STATE_STAKE_PERCENT) {
+        return `The state must subscribe at least ${MIN_STATE_STAKE_PERCENT}% of its own charter.`;
+    }
+    if (terms.termDays !== undefined && !CHARTER_TERM_OPTIONS.includes(terms.termDays)) {
+        return `A charter is granted for ${CHARTER_TERM_OPTIONS.join(', ')} Galactic Days.`;
     }
     if (foundingCapital < MIN_FOUNDING_CAPITAL) {
         return `Founding capital must be at least ${MIN_FOUNDING_CAPITAL.toLocaleString()} credits.`;
@@ -219,6 +242,7 @@ export function charterCorporation(
     // consumer (toll collection, colony unrest, the old UI) keeps working.
     const powers = derivePowersFromRights(terms.rights);
     const personality = deriveInitialPersonality(terms.mission, terms.ownership, terms.rights, id);
+    const termDays = terms.termDays ?? DEFAULT_CHARTER_TERM_DAYS;
 
     // Shares are split by the ownership plan. Real empires hold their stake
     // under their faction id; the other classes hold theirs under synthetic
@@ -271,7 +295,11 @@ export function charterCorporation(
         profitShareToState: terms.profitShareToState,
         stateRemittanceTotal: 0,
         influence: 0,
-        loyalty: Math.round(55 + terms.ownership.government * 0.35),
+        // A long grant is security for the board; a short one is a leash.
+        loyalty: Math.round(55 + terms.ownership.government * 0.35 + termLoyaltyBonus(termDays)),
+        charterTermDays: termDays,
+        charterExpiresAt: nowSeconds + termDays * GALACTIC_DAY_SIM_SECONDS,
+        renewalCount: 0,
         refusedDemands: 0,
         grantedDemands: 0,
         standing: 'instrument',
@@ -361,6 +389,13 @@ export function ensureCharterFields(company: CharteredCompany, nowSeconds: numbe
     if (typeof company.megaprojectIncome !== 'number') company.megaprojectIncome = 0;
     if (typeof company.stateMegaprojectIncome !== 'number') company.stateMegaprojectIncome = 0;
     if (typeof company.nationalized !== 'boolean') company.nationalized = false;
+    // Charters written before terms existed were perpetual; they now run a
+    // standard term from the moment the snapshot is first loaded.
+    if (typeof company.charterTermDays !== 'number') company.charterTermDays = DEFAULT_CHARTER_TERM_DAYS;
+    if (typeof company.charterExpiresAt !== 'number') {
+        company.charterExpiresAt = nowSeconds + company.charterTermDays * GALACTIC_DAY_SIM_SECONDS;
+    }
+    if (typeof company.renewalCount !== 'number') company.renewalCount = 0;
 
     company.influence = computeInfluence(company);
     company.standing = computeStanding(company);
@@ -393,9 +428,13 @@ export function computeInfluence(company: CharteredCompany): number {
     const military = Math.min(10, militaryTier(company).tier * 2);
     // The charter itself confers standing.
     const chartered = Math.min(10, rights.reduce((s, r) => s + (RIGHT_DEFS[r]?.influenceWeight ?? 0), 0) * 0.09);
+    // A government in debt to a company listens to it, and a company with
+    // seats in the chamber does not need to be listened to — it votes.
+    const creditor = Math.min(15, (company.stateLoan ?? 0) / 10_000);
+    const seated = Math.min(10, (company.senateSeats ?? 0) * 0.6);
 
     return Math.round(Math.max(0, Math.min(100,
-        employment + fiscal + infra + trade + shareholders + military + chartered
+        employment + fiscal + infra + trade + shareholders + military + chartered + creditor + seated
     )));
 }
 
@@ -410,6 +449,74 @@ export function computeStanding(company: CharteredCompany): CorporateStanding {
     if (influence >= 45 || autonomy >= 55) return 'power';
     if (influence >= 20) return 'partner';
     return 'instrument';
+}
+
+/** Loyalty a company starts with for the length of its grant. */
+export function termLoyaltyBonus(termDays: number): number {
+    if (termDays <= CHARTER_TERM_OPTIONS[0]) return -6;
+    if (termDays >= CHARTER_TERM_OPTIONS[CHARTER_TERM_OPTIONS.length - 1]) return 6;
+    return 0;
+}
+
+/** Whether an asset is working: not raided, not occupied. */
+export function isAssetActive(asset: CorporateAsset, nowSeconds: number): boolean {
+    return !(asset.disruptedUntil && asset.disruptedUntil > nowSeconds);
+}
+
+/** The company's working assets. */
+export function activeAssets(company: CharteredCompany, nowSeconds: number): CorporateAsset[] {
+    return (company.assets ?? []).filter(a => isAssetActive(a, nowSeconds));
+}
+
+/**
+ * Whether the company is in a condition to serve the state that chartered it:
+ * not rogue, not revoked, and loyal enough to bother. A nationalised company
+ * always serves.
+ */
+export function servesTheState(company: CharteredCompany): boolean {
+    if (company.hasGoneRogue || company.charterRevocationPending) return false;
+    return company.nationalized === true || (company.loyalty ?? 50) >= 40;
+}
+
+// ─── Prices the ledger shows ─────────────────────────────────────────────────
+// These live here, not in the worker-side services that charge them, because
+// the client prints them on buttons and must not import those services.
+
+/** Most a bank will lend the state, whatever its vault holds. */
+export const CREDIT_LINE_CAP = 150_000;
+/** Share of its own treasury a bank will put at the state's disposal. */
+export const CREDIT_LINE_TREASURY_SHARE = 0.5;
+
+/** Credits a banking company would still lend the state today. */
+export function creditLineAvailable(company: CharteredCompany): number {
+    if (company.mission !== 'banking' || !servesTheState(company)) return 0;
+    const line = Math.min(CREDIT_LINE_CAP, company.treasury * CREDIT_LINE_TREASURY_SHARE);
+    return Math.max(0, Math.floor(line - (company.stateLoan ?? 0)));
+}
+
+/** Political capital to renew a charter unchanged over the board's objection. */
+export function asWrittenCost(company: CharteredCompany, ask: RenewalAsk): number {
+    return ask.kind === 'none' ? 0 : 5 + Math.round((company.influence ?? 0) * 0.15);
+}
+
+/** Political capital to dictate tighter terms at renewal. */
+export function stateTermsCost(company: CharteredCompany): number {
+    return 15 + Math.round((company.influence ?? 0) * 0.3);
+}
+
+/** How long a foreign majority must hold before the charter can be moved. */
+export const REFLAG_HOLD_SECONDS = GALACTIC_DAY_SIM_SECONDS;
+
+/** Political capital to take a company under a new flag. */
+export function reflagCost(company: CharteredCompany): number {
+    return 30 + Math.round((company.influence ?? 0) * 0.3);
+}
+
+/** Sim-seconds at which `factionId` may reflag this company, or null if it cannot. */
+export function reflagReadyAt(company: CharteredCompany, factionId: string): number | null {
+    const held = company.boardControl;
+    if (!held || held.holderId !== factionId || factionId === company.foundingFactionId) return null;
+    return held.since + REFLAG_HOLD_SECONDS;
 }
 
 /** Highest private-military rung the granted rights allow. */

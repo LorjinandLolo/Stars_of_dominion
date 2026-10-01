@@ -17,6 +17,7 @@ import { Resource } from '../trade-system/types';
 import { startConstruction } from '../construction/construction-service';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { TechEngine, registry } from '../tech/engine';
+import { runCharterAI } from './charter-ai';
 
 /**
  * How an empire is playing right now. The default AI assumes a going concern
@@ -63,6 +64,21 @@ export class StrategicAIService {
         this.manageConstruction(factionId, world, stance);
         this.manageResearch(factionId, world);
         this.manageEspionage(factionId, world, stance);
+        this.manageCharters(factionId, world, stance);
+    }
+
+    /**
+     * Charter companies: answer what its own companies have put on the desk,
+     * and grant a charter when the empire is in a position to (charter-ai.ts).
+     */
+    private static manageCharters(factionId: string, world: GameWorldState, stance: AIStance): void {
+        try {
+            for (const action of runCharterAI(world, factionId, stance)) {
+                console.log(`[AI] ${factionId} corporate: ${action}`);
+            }
+        } catch (e) {
+            console.error(`[AI] ${factionId} corporate turn failed:`, e);
+        }
     }
 
     /**

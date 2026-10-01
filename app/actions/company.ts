@@ -6,7 +6,7 @@
 
 import { revalidatePath } from 'next/cache';
 import type { ActionResult } from '@/lib/actions/types';
-import type { CharterTerms, CorporateRight, HostPolicyStance } from '@/lib/economy/corporate/charter-types';
+import type { CharterTerms, CorporateRight, HostPolicyStance, RenewalResponse } from '@/lib/economy/corporate/charter-types';
 import { executePlayerAction } from './registry-handler';
 
 /**
@@ -183,8 +183,28 @@ export async function foundCharterAction(
         rights: terms.rights,
         ownership: terms.ownership,
         profitShareToState: terms.profitShareToState,
+        termDays: terms.termDays,
         foundingCapital,
     });
+}
+
+/** Answer a charter that has come up for renewal. */
+export async function respondToRenewalAction(
+    factionId: string,
+    renewalId: string,
+    response: RenewalResponse
+): Promise<ActionResult> {
+    return corporateOrder('CORP_RESPOND_RENEWAL', factionId, renewalId, { renewalId, response });
+}
+
+/** Move a company whose board you command to your own flag. */
+export async function reflagCharterAction(factionId: string, companyId: string): Promise<ActionResult> {
+    return corporateOrder('CORP_REFLAG', factionId, companyId, { companyId });
+}
+
+/** Draw on the credit line of a banking company you chartered. */
+export async function borrowFromCompanyAction(factionId: string, companyId: string, amount: number): Promise<ActionResult> {
+    return corporateOrder('CORP_BORROW', factionId, companyId, { companyId, amount });
 }
 
 /** Answer a company's lobbying: accept, reject or negotiate. */

@@ -44,6 +44,14 @@ function underAttack({ world, ownerFactionId }: OpportunitySpawnContext): boolea
     return false;
 }
 
+/** True when the target has a company whose books could be leaked. */
+function targetHasCompany({ world, targetFactionId }: OpportunitySpawnContext): boolean {
+    for (const company of world.corporate?.companies?.values?.() ?? []) {
+        if (company.foundingFactionId === targetFactionId && !company.nationalized) return true;
+    }
+    return false;
+}
+
 export const OPPORTUNITY_TEMPLATES: OpportunityTemplate[] = [
     // ─── Opportunities (windows into rival empires) ──────────────────────────
     {
@@ -130,6 +138,19 @@ export const OPPORTUNITY_TEMPLATES: OpportunityTemplate[] = [
         cost: { credits: 1000 },
         reward: { type: 'instability', amount: 15 },
         minStage: 'embedded_network',
+    },
+
+    {
+        id: 'leak_company_books',
+        kind: 'opportunity',
+        title: 'A Company\'s Real Ledgers',
+        description: 'A clerk inside one of {target}\'s chartered companies will hand over the unpublished accounts. Printed, they would start a run on its stock and put a fraud inquiry on the ministry\'s desk.',
+        weight: 2,
+        ttlHoursMin: 12, ttlHoursMax: 30,
+        cost: { credits: 2500, intelPoints: 25 },
+        reward: { type: 'corporateScandal' },
+        minStage: 'recon_cell',
+        requires: targetHasCompany,
     },
 
     // ─── Threats (fires on your own board — respond or absorb the risk) ─────

@@ -308,6 +308,131 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
                 tone: 'neutral',
             };
 
+        // ── Charter corporations ─────────────────────────────────────────────
+        // The actor is the chartering government; the company is a fact.
+
+        case 'charter_granted': {
+            const company = str(e, 'companyName', 'a new company');
+            return {
+                headline: `${actor} charters ${company}`,
+                body: `${actor} has granted a charter to ${company}, licensed for ${term(e, 'mission', 'trade')} in ${term(e, 'territory', 'domestic')} space with ${num(e, 'rights') ?? 'several'} enumerated rights. The government keeps ${num(e, 'stateStake') ?? 'a'}% of the stock. ${pick([
+                    'Charters are written by governments and read, later, by boards.',
+                    'The ministry describes the company as an instrument of policy. Most of them start that way.',
+                    'Subscription was reported as orderly.',
+                ], e.id)}`,
+                tone: 'neutral',
+            };
+        }
+
+        case 'charter_revoked': {
+            const company = str(e, 'companyName', 'a chartered company');
+            if (e.facts.lapsed === true) {
+                return {
+                    headline: `${actor} lets the charter of ${company} lapse`,
+                    body: `${actor} has declined to renew the charter of ${company}. The company has been wound up and its shareholders paid what the works fetched. It is the quiet way to end a company, available only to a government that acts before the company is strong enough to object.`,
+                    tone: 'neutral',
+                };
+            }
+            return {
+                headline: `${actor} revokes the charter of ${company}`,
+                body: `${hedge}${actor} has withdrawn the charter of ${company}. The company's works do not vanish with its licence, and neither do the people who were running them; what the state has cancelled is the paper.`,
+                tone: 'grave',
+            };
+        }
+
+        case 'company_nationalized': {
+            const company = str(e, 'companyName', 'a chartered company');
+            const paid = num(e, 'compensation');
+            return {
+                headline: `${actor} nationalises ${company}`,
+                body: `${hedge}${actor} has taken ${company} into state ownership${
+                    paid && paid > 0 ? `, paying out ${paid.toLocaleString()} credits to the outside shareholders` : ''
+                }.${e.facts.wasRogue === true ? ' The company had already repudiated its charter; the seizure ends that argument by ending the company.' : ''} ${pick([
+                    'Investors in every other charter the government has written will have noticed.',
+                    'The board has been dismissed and the ledgers moved to the ministry.',
+                    'It is the cleanest way to win an argument with a company, and the most expensive.',
+                ], e.id)}`,
+                tone: 'grave',
+            };
+        }
+
+        case 'company_went_rogue': {
+            const company = str(e, 'companyName', 'A chartered company');
+            return {
+                headline: `${company} repudiates its charter from ${actor}`,
+                body: `${company} has stopped remitting to ${actor} and no longer answers to the ministry that created it. It holds ${num(e, 'assets') ?? 'a number of'} works across ${num(e, 'systems') ?? 'several'} systems${
+                    e.facts.armed === true ? ' and keeps its own ships' : ''
+                }. The government has a short time to bring it to heel before the board decides what it is instead.`,
+                tone: 'alarmed',
+            };
+        }
+
+        case 'company_broke_away': {
+            const company = str(e, 'companyName', 'A chartered company');
+            const worlds = num(e, 'worldsSeceding') ?? 0;
+            const fleets = num(e, 'fleetsDefected') ?? 0;
+            const patron = e.targetNames[0];
+            const parts: string[] = [];
+            if (worlds > 0) parts.push(`${worlds} company ${worlds === 1 ? 'world has' : 'worlds have'} declared for the board rather than the capital`);
+            if (fleets > 0) parts.push(`${fleets} of its armed ${fleets === 1 ? 'squadron has' : 'squadrons have'} gone raiding under a new flag`);
+            if (patron) parts.push(`the charter itself has been placed under the protection of ${patron}`);
+            // Bought out through the share register: no revolt, just a majority.
+            if (e.facts.byTakeover === true && patron) {
+                return {
+                    headline: `${patron} buys ${company} out from under ${actor}`,
+                    body: `${patron} has moved the charter of ${company} to its own government, having first bought a majority of its stock. No law was broken: the shares were for sale. What ${actor} wrote into that charter, and built with it, now remits to a foreign treasury.`,
+                    tone: 'grave',
+                };
+            }
+            return {
+                headline: patron
+                    ? `${company} defects from ${actor} to ${patron}`
+                    : worlds > 0
+                        ? `${company} takes ${worlds} ${worlds === 1 ? 'world' : 'worlds'} out of ${actor}`
+                        : `${company} breaks with ${actor}`,
+                body: `The break between ${actor} and ${company} is now complete: ${
+                    parts.length ? list(parts) : 'its capital has left the jurisdiction and its officers with it'
+                }. Every clause that made this possible was written, and paid for, by the government it has just been used against.`,
+                tone: 'grave',
+            };
+        }
+
+        case 'company_acquired': {
+            const bought = str(e, 'companyName', 'a rival');
+            const buyer = str(e, 'buyerName', 'a larger company');
+            const price = num(e, 'price');
+            const crossBorder = e.targetNames.length > 0 && e.targetNames[0] !== e.actorNames[0];
+            return {
+                headline: `${buyer} buys out ${bought}`,
+                body: `${buyer} has acquired ${bought}${price ? ` for ${price.toLocaleString()} credits` : ''}, taking its works, its monopolies and its debts.${
+                    crossBorder ? ` The purchase moves a company chartered by ${target} into the hands of one chartered by ${actor}.` : ''
+                } ${pick([
+                    'The galaxy has one fewer company and one larger one.',
+                    'Nobody planned a market of three or four very large firms. It is simply where this leads.',
+                ], e.id)}`,
+                tone: 'neutral',
+            };
+        }
+
+        case 'corporate_crisis': {
+            const company = str(e, 'companyName', 'a chartered company');
+            return {
+                headline: `${str(e, 'headline', 'Trouble at a chartered company')} — ${company}`,
+                body: `${str(e, 'description', `${company} is in difficulty.`)} The matter now sits with ${actor}, which wrote the charter and owns the consequences.`,
+                tone: 'alarmed',
+            };
+        }
+
+        case 'megaproject_completed': {
+            const company = str(e, 'companyName', 'a chartered company');
+            const project = str(e, 'projectName', 'a major work');
+            return {
+                headline: `${project} completed by ${company}`,
+                body: `${company} has finished the ${project}, underwritten in part by ${actor}. ${str(e, 'benefit')} It is built on corporate paper and answers to a board.`.replace(/\s+/g, ' '),
+                tone: 'neutral',
+            };
+        }
+
         default:
             return {
                 headline: `${actor}: ${e.type.replace(/_/g, ' ')} reported${where ? ` at ${where}` : ''}`,

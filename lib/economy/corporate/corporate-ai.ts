@@ -13,6 +13,7 @@
  */
 
 import type { GameWorldState } from '../../game-world-state';
+import * as chronicle from '../../narrative/chronicle';
 import type { CharteredCompany, CompanyEvent } from './company-types';
 import type { CorporateWorldState } from './company-registry';
 import type {
@@ -21,7 +22,7 @@ import type {
     CorporateAssetType,
     CorporateRivalry,
 } from './charter-types';
-import { ASSET_DEFS, RIGHT_DEFS } from './charter-catalog';
+import { ASSET_DEFS, MAX_WORKS_PER_SYSTEM, RIGHT_DEFS } from './charter-catalog';
 import type { PirateOrganization } from '../../piracy/piracy-types';
 import { activeOrganizations } from '../../piracy/organization-service';
 import {
@@ -103,6 +104,19 @@ function hasTreatyWith(world: GameWorldState, a: string, b: string): boolean {
     return false;
 }
 
+/** How many works the company already has standing in a system. */
+function worksIn(company: CharteredCompany, systemId: string): number {
+    return (company.assets ?? []).filter(a => a.systemId === systemId).length;
+}
+
+/** A system the company already operates in that can still take another work. */
+function systemWithRoom(company: CharteredCompany): string | null {
+    const present = company.presenceSystemIds?.length
+        ? company.presenceSystemIds
+        : [company.headquartersSystemId];
+    return present.find(id => worksIn(company, id) < MAX_WORKS_PER_SYSTEM) ?? null;
+}
+
 // ─── Individual growth actions ───────────────────────────────────────────────
 
 /** Asset types this company is chartered and equipped to build, cheapest first. */
@@ -136,11 +150,13 @@ function buildAsset(
     const cost = Math.round(def.cost * costMultiplier);
 
     // Site it in a new system if the charter still has reach, otherwise deepen
-    // an existing holding.
+    // an existing holding that still has room. A company whose every system is
+    // full has finished building; it does something else with the cycle.
     const candidates = candidateSystems(company, world, corpState);
     const systemId = candidates.length > 0
         ? candidates[Math.floor(roll() * candidates.length)]
-        : (company.presenceSystemIds ?? [company.headquartersSystemId])[0];
+        : systemWithRoom(company);
+    if (!systemId) return false;
 
     const asset: CorporateAsset = {
         id: `casset-${company.id}-${nowSeconds}-${Math.floor(roll() * 100000)}`,
@@ -355,15 +371,19 @@ function fundResearch(company: CharteredCompany, world: GameWorldState, nowSecon
             timestamp: nowSeconds,
         });
     } else {
-        (company.assets ??= []).push({
-            id: `casset-${company.id}-patent-${nowSeconds}`,
-            type: 'research_lab',
-            systemId: company.headquartersSystemId,
-            value: cost,
-            incomePerTick: 260,
-            upkeepPerTick: 40,
-            builtAt: nowSeconds,
-        });
+        // The patents become a licensing office at the seat of business, while
+        // there is room for one; after that the money simply buys secrets.
+        if (worksIn(company, company.headquartersSystemId) < MAX_WORKS_PER_SYSTEM) {
+            (company.assets ??= []).push({
+                id: `casset-${company.id}-patent-${nowSeconds}`,
+                type: 'research_lab',
+                systemId: company.headquartersSystemId,
+                value: cost,
+                incomePerTick: 260,
+                upkeepPerTick: 40,
+                builtAt: nowSeconds,
+            });
+        }
         logCorporateAction(company, {
             type: 'funded_research',
             summary: 'Funded proprietary research. The patents were not filed with the ministry.',
@@ -570,6 +590,20 @@ export function acquireCompany(
         acquiredName: target.charter.fullName,
         price,
     }, nowSeconds);
+    // A cross-border buy-out is one empire's company swallowing another's, so
+    // the two governments are the actor and the target; a domestic one is not
+    // an act between powers and names only the one.
+    chronicle.record(world, {
+        type: 'company_acquired',
+        actorIds: [buyer.foundingFactionId],
+        targetIds: target.foundingFactionId !== buyer.foundingFactionId ? [target.foundingFactionId] : [],
+        location: target.headquartersSystemId,
+        facts: {
+            companyName: target.charter.fullName,
+            buyerName: buyer.charter.fullName,
+            price,
+        },
+    });
     return true;
 }
 
@@ -625,6 +659,10 @@ export function runGrowthCycle(
 
     // Prune what the company cannot legally or practically do this cycle.
     if (buildableAssets(company).length === 0) delete weights.built_asset;
+    // Nowhere left to build: no reach for a new system and no room in the old.
+    else if (candidateSystems(company, world, corpState).length === 0 && !systemWithRoom(company)) {
+        delete weights.built_asset;
+    }
     if (company.activeTradeRouteIds.length === 0) delete weights.opened_route;
     if (company.privateFleetSize >= maxFleetSize(company)) delete weights.expanded_fleet;
     if (company.corporateColonies.length === 0) delete weights.improved_colony;

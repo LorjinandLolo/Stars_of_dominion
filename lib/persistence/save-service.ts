@@ -164,6 +164,7 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!(corp.megaprojects instanceof Map)) corp.megaprojects = new Map();
     if (!(corp.hostPolicies instanceof Map)) corp.hostPolicies = new Map();
     if (!(corp.rivalries instanceof Map)) corp.rivalries = new Map();
+    if (!(corp.renewals instanceof Map)) corp.renewals = new Map();
 
     // Government & Leadership Phase 0: per-faction political state. Snapshots
     // written before it existed get an empty map; ensureGovernments fills it.

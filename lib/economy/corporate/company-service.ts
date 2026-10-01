@@ -172,11 +172,17 @@ export function issueDividends(
 ): void {
     if (company.pendingProfit <= 0) return;
 
-    const totalPayout = company.pendingProfit * DIVIDEND_PAYOUT_RATIO;
+    // Profit is banked in the treasury as it is earned (tickCompanyLogistics,
+    // the registry's asset pass), so a dividend comes OUT of the treasury and
+    // what is retained is simply what is left behind. This used to add the
+    // retained share to the treasury a second time and pay the dividend from
+    // nowhere, so every credit a company made was counted twice.
+    const totalPayout = Math.min(
+        company.pendingProfit * DIVIDEND_PAYOUT_RATIO,
+        Math.max(0, company.treasury)
+    );
     const retainedEarnings = company.pendingProfit - totalPayout;
-
-    // Retain a portion in treasury
-    company.treasury += retainedEarnings;
+    company.treasury -= totalPayout;
 
     // Distribute to shareholders proportionally
     const totalShares = company.sharesOutstanding;

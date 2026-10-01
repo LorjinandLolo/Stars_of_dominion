@@ -15,6 +15,7 @@
 import { TICK_INTERVAL_HOURS, SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import type { GameNotification } from '@/lib/time/time-types';
 import { formatRealDeadline } from '@/lib/time/galactic-time';
+import { ROGUE_GRACE_SECONDS } from '@/lib/economy/corporate/charter-service';
 import { currentGoal } from '@/lib/goals/first-week-goals';
 import { empireWithPlayer, type HumanPlayers } from '@/lib/players/player-label';
 import type {
@@ -272,6 +273,14 @@ export function describeChronicleRow(row: BriefChronicleRow, factionId: string):
         case 'trade_route_lost': return `A trade route to ${target} was lost.`;
         case 'economic_crisis': return `An economic crisis struck ${actor}.`;
         case 'blockade_started': return `${actor} blockaded ${target}.`;
+        case 'charter_granted': return `${actor} chartered ${facts.companyName ?? 'a company'}.`;
+        case 'charter_revoked': return `${actor} revoked the charter of ${facts.companyName ?? 'a company'}.`;
+        case 'company_nationalized': return `${actor} nationalised ${facts.companyName ?? 'a company'}.`;
+        case 'company_went_rogue': return `${facts.companyName ?? 'A company'} repudiated its charter from ${actor}.`;
+        case 'company_broke_away': return `${facts.companyName ?? 'A company'} broke with ${actor}.`;
+        case 'company_acquired': return `${facts.buyerName ?? 'A company'} bought out ${facts.companyName ?? 'a rival'}.`;
+        case 'corporate_crisis': return `${facts.companyName ?? 'A company'} of ${actor}: ${String(facts.headline ?? 'a crisis').toLowerCase()}.`;
+        case 'megaproject_completed': return `${facts.companyName ?? 'A company'} completed the ${facts.projectName ?? 'works'} for ${actor}.`;
         case 'pirate_raid': return `Pirates raided${where}.`;
         case 'pirate_state_recognized': return `A pirate state was recognised${where}.`;
         case 'empire_eliminated': return `${target} was eliminated.`;
@@ -294,6 +303,8 @@ export function collectDecisions(input: BriefInput, nowSeconds: number, _now: Da
         ...secessionCrises(input, nowSeconds),
         ...corporateDemands(input, nowSeconds),
         ...corporateCrises(input, nowSeconds),
+        ...rogueCompanies(input, nowSeconds),
+        ...charterRenewals(input, nowSeconds),
         ...intelBoard(input, nowSeconds),
     ];
 
@@ -614,6 +625,44 @@ function corporateCrises(input: BriefInput, nowSeconds: number): BriefDecision[]
     }));
 }
 
+/** A charter about to expire. Renewing as the board asks is the one-click answer. */
+function charterRenewals(input: BriefInput, nowSeconds: number): BriefDecision[] {
+    const list = mapValues(input.world?.corporate?.renewals)
+        .filter((r: any) => r?.factionId === input.factionId && r?.status === 'pending');
+
+    return list.map((renewal: any) => ({
+        id: `renewal-${renewal.id}`,
+        kind: 'corporate' as const,
+        title: `${companyName(input.world, renewal.companyId)}: charter up for renewal`,
+        detail: `${renewal.ask?.text ?? 'The board asks for its charter back.'} Unanswered, it renews on the board's terms.`,
+        deadline: deadlineFrom(renewal.expiresAt, nowSeconds, input.now),
+        actions: [
+            { label: 'Renew', tone: 'accept' as const, actionId: 'CORP_RESPOND_RENEWAL', payload: { renewalId: renewal.id, response: 'company_terms' } },
+            { label: 'Open', tone: 'open' as const, openTab: 'corporate' },
+        ],
+    }));
+}
+
+/** A rogue company on its founder's clock: seize it, or lose what it holds. */
+function rogueCompanies(input: BriefInput, nowSeconds: number): BriefDecision[] {
+    const list = mapValues(input.world?.corporate?.companies).filter((c: any) =>
+        c?.foundingFactionId === input.factionId
+        && c?.hasGoneRogue && !c?.nationalized
+        && typeof c?.rogueSince === 'number'
+        && (c?.rogueBrokeAt ?? -1) < c.rogueSince);
+
+    return list.map((company: any) => ({
+        id: `rogue-${company.id}-${company.rogueSince}`,
+        kind: 'corporate' as const,
+        title: `${company.charter?.fullName ?? 'A company'} has gone rogue`,
+        detail: 'It no longer recognises its charter. Unanswered, it leaves with its colonies, its ships, or the charter itself.',
+        deadline: deadlineFrom(company.rogueSince + ROGUE_GRACE_SECONDS, nowSeconds, input.now),
+        // Seizing a company costs compensation and political capital the
+        // brief cannot show; that decision is made in the ledger.
+        actions: [{ label: 'Open', tone: 'open' as const, openTab: 'corporate' }],
+    }));
+}
+
 /** The intelligence board: threats lapse into damage, opportunities into nothing. */
 function intelBoard(input: BriefInput, nowSeconds: number): BriefDecision[] {
     const list = mapValues(input.world?.espionage?.boardOpportunities)
@@ -657,7 +706,7 @@ function counterpart(input: BriefInput, factionId: string): string {
 function companyName(world: any, companyId: string | undefined): string {
     if (!companyId) return 'A company';
     const rec = world?.corporate?.companies?.get?.(companyId) ?? world?.corporate?.companies?.[companyId];
-    return rec?.name ?? 'A company';
+    return rec?.charter?.fullName ?? rec?.name ?? 'A company';
 }
 
 /** The terms in one line, per offer kind. */

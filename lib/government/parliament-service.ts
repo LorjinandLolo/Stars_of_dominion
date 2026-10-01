@@ -57,12 +57,45 @@ export function computeParties(world: GameWorldState, factionId: string): Party[
     const blocs = posture?.blocs ?? [];
     if (blocs.length === 0) return [];
 
+    // Chartered companies that were conceded representation sit as parties of
+    // their own, and the interest groups share what is left of the chamber.
+    const corporate = corporateParties(world, factionId);
+    const corporateSeats = corporate.reduce((s, p) => s + p.seats, 0);
+
     const total = blocs.reduce((s, b) => s + b.influence, 0) || 1;
-    return blocs.map(bloc => ({
-        id: bloc.id,
-        name: bloc.name,
-        seats: (bloc.influence / total) * 100,
-        stance: Math.max(-1, Math.min(1, (bloc.satisfaction - 50) / 50)),
+    return [
+        ...blocs.map(bloc => ({
+            id: bloc.id,
+            name: bloc.name,
+            seats: (bloc.influence / total) * (100 - corporateSeats),
+            stance: Math.max(-1, Math.min(1, (bloc.satisfaction - 50) / 50)),
+        })),
+        ...corporate,
+    ];
+}
+
+/** Most of the chamber every company together may hold. */
+const MAX_CORPORATE_SEATS = 30;
+
+/**
+ * Seats held on behalf of chartered companies (the senate_representation
+ * concession). A company's party has no ideology: it votes with the government
+ * exactly as far as the company is loyal to it, which makes a seated company
+ * that has turned on the state a standing bloc against every bill.
+ */
+function corporateParties(world: GameWorldState, factionId: string): Party[] {
+    const companies = [...(world.corporate?.companies?.values?.() ?? [])]
+        .filter(c => c.foundingFactionId === factionId && (c.senateSeats ?? 0) > 0 && !c.nationalized)
+        .sort((a, b) => a.id.localeCompare(b.id));
+    if (companies.length === 0) return [];
+
+    const asked = companies.reduce((s, c) => s + (c.senateSeats ?? 0), 0);
+    const scale = asked > MAX_CORPORATE_SEATS ? MAX_CORPORATE_SEATS / asked : 1;
+    return companies.map(company => ({
+        id: `corp:${company.id}`,
+        name: `${company.charter.baseName} Interest`,
+        seats: (company.senateSeats ?? 0) * scale,
+        stance: company.hasGoneRogue ? -1 : Math.max(-1, Math.min(1, ((company.loyalty ?? 50) - 50) / 50)),
     }));
 }
 

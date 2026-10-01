@@ -149,6 +149,16 @@ export interface CorporateAsset {
     /** Upkeep credits per strategic tick. */
     upkeepPerTick: number;
     builtAt: number;
+    /**
+     * Sim-seconds until which the works are out of action — raided by pirates
+     * or occupied by an enemy fleet (asset-raids.ts). Earns nothing and renders
+     * no service to the state until then; upkeep is still owed.
+     */
+    disruptedUntil?: number;
+    /** Who did it: a pirate organization id or a faction id. */
+    disruptedBy?: string;
+    /** Colony seeds only: the world this settlement actually founded. */
+    settledPlanetId?: string;
 }
 
 // ─── Autonomous behaviour log ────────────────────────────────────────────────
@@ -367,4 +377,48 @@ export interface CharterTerms {
     ownership: OwnershipPlan;
     /** Share of profit returned to the founding government, 0–1. */
     profitShareToState: number;
+    /** Length of the grant in Galactic Days. Defaults to DEFAULT_CHARTER_TERM_DAYS. */
+    termDays?: number;
+}
+
+// ─── Charter term & renewal ──────────────────────────────────────────────────
+
+/**
+ * A charter is granted for a term, in Galactic Days (real days). A short term
+ * brings the company back to the table often, which the state likes and the
+ * investors do not; a long one is security for the board and a long wait for
+ * the ministry.
+ */
+export const CHARTER_TERM_OPTIONS: readonly number[] = [3, 5, 8];
+export const DEFAULT_CHARTER_TERM_DAYS = 5;
+
+/** What the company wants written into the renewed charter. */
+export type RenewalAskKind = 'none' | 'profit_share' | 'right' | 'territory';
+
+export interface RenewalAsk {
+    kind: RenewalAskKind;
+    /** Set when kind === 'right'. */
+    right?: CorporateRight;
+    /** The board's own words. */
+    text: string;
+}
+
+/**
+ * `company_terms` — renew and grant what the board asked for.
+ * `as_written`    — renew unchanged; costs capital if the board wanted more.
+ * `state_terms`   — renew with a larger state share and a shorter leash.
+ * `lapse`         — do not renew: the company is wound up, or refuses to be.
+ */
+export type RenewalResponse = 'company_terms' | 'as_written' | 'state_terms' | 'lapse';
+
+export interface CharterRenewal {
+    id: string;
+    companyId: string;
+    factionId: string;
+    issuedAt: number;
+    /** The charter's expiry. Unanswered by then, it renews on the company's terms. */
+    expiresAt: number;
+    ask: RenewalAsk;
+    status: 'pending' | 'renewed' | 'lapsed';
+    resolvedAs?: RenewalResponse;
 }

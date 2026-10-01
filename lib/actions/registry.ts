@@ -552,6 +552,9 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
       baseName: "string", headquartersSystemId: "id", mission: "string",
       territory: "string", rights: "object", ownership: "object",
       profitShareToState: "number", foundingCapital: "number",
+      // termDays is read by the handler but deliberately not listed: every
+      // key here is REQUIRED by the order queue, and the term is optional
+      // (it defaults to the standard grant).
     },
     cost: {}
   },
@@ -638,6 +641,24 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     category: "economic",
     params: { companyId: "id", amount: "number" },
     cost: {} // dynamic: the subsidy is charged in the handler
+  },
+  CORP_RESPOND_RENEWAL: {
+    id: "CORP_RESPOND_RENEWAL",
+    category: "internal",
+    params: { renewalId: "id", response: "string" },
+    cost: {}
+  },
+  CORP_REFLAG: {
+    id: "CORP_REFLAG",
+    category: "economic",
+    params: { companyId: "id" },
+    cost: {} // political capital, priced per company in the handler
+  },
+  CORP_BORROW: {
+    id: "CORP_BORROW",
+    category: "economic",
+    params: { companyId: "id", amount: "number" },
+    cost: {}
   },
 
   // --- Economic / Development Actions ---

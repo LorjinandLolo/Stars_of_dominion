@@ -190,21 +190,19 @@ import {
     charterNewCompany,
     getOrCreateFactionState,
     ensureCorporateState,
-    registerCompany,
 } from '../lib/economy/corporate/company-registry';
 import { issueNewShares, grantMonopolyRight, commandPrivateers, collectCorporateTax } from '../lib/economy/corporate/company-service';
 import { CharterPower } from '../lib/economy/corporate/company-types';
 import {
-    charterCorporation,
-    priceCharter,
-    validateCharter,
     derivePowersFromRights,
     computeInfluence,
     computeStanding,
-    MIN_LEGITIMACY_TO_CHARTER,
-    CHARTER_TECH_ID,
 } from '../lib/economy/corporate/charter-service';
-import type { CharterTerms, CorporateRight } from '../lib/economy/corporate/charter-types';
+import type { CharterTerms, CorporateRight, RenewalResponse } from '../lib/economy/corporate/charter-types';
+import { resolveRenewal } from '../lib/economy/corporate/charter-renewal';
+import { reflagCharter } from '../lib/economy/corporate/foreign-control';
+import { drawStateLoan } from '../lib/economy/corporate/mission-services';
+import { grantCharter, nationalizeCompany } from '../lib/economy/corporate/charter-orders';
 import { RIGHT_DEFS } from '../lib/economy/corporate/charter-catalog';
 import { resolveDemand, setHostPolicy, type DemandResponse } from '../lib/economy/corporate/corporate-politics';
 import {
@@ -217,7 +215,6 @@ import {
     sellShares,
     hostileTakeover,
     mergeCompanies,
-    afterOwnershipChange,
 } from '../lib/economy/corporate/shareholder-service';
 import { advanceSorties } from '../lib/combat/air-mission-service';
 import { LOGISTICS_PRIORITIES } from '../lib/logistics/distribution-types';
@@ -1508,19 +1505,6 @@ function recordOrderFailure(world: any, factionId: string, actionId: string, rea
         at: new Date(world.nowSeconds * 1000).toISOString(),
     };
     console.warn(`[Order] ${factionId} order ${actionId} failed: ${reason}`);
-}
-
-/**
- * Remove a company from a faction's corporate portfolio. charterCorporation
- * registers the new charter on the founder's portfolio as part of building it,
- * so an order that builds a company and then cannot pay for it has to undo that
- * bookkeeping before bailing out.
- */
-function unwindPortfolioEntry(corp: any, factionId: string, companyId: string): void {
-    const state = corp?.factionStates?.get?.(factionId);
-    if (!state) return;
-    delete state.companySharesOwned[companyId];
-    state.charteredCompanyIds = (state.charteredCompanyIds ?? []).filter((id: string) => id !== companyId);
 }
 
 /**
@@ -5242,87 +5226,24 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         case 'CORP_FOUND_CHARTER': {
              // payload: { baseName, headquartersSystemId, mission, territory,
              //            rights[], ownership{}, profitShareToState, foundingCapital }
-             const corp = ensureCorporateState(world);
+             // grantCharter is the one implementation — AI governments charter
+             // through it too (lib/ai/charter-ai.ts).
              const terms: CharterTerms = {
                  mission: payload.mission ?? 'trade',
                  territory: payload.territory ?? 'domestic',
                  rights: Array.isArray(payload.rights) ? payload.rights : [],
                  ownership: payload.ownership ?? { government: 100, privateInvestors: 0, foreignInvestors: 0, publicShares: 0 },
                  profitShareToState: Number(payload.profitShareToState ?? 0.15),
+                 termDays: payload.termDays === undefined ? undefined : Number(payload.termDays),
              };
-             const capital = Math.floor(Number(payload.foundingCapital) || 0);
-
-             const invalid = validateCharter(terms, payload.baseName ?? '', capital);
-             if (invalid) { recordOrderFailure(world, factionId, actionId, invalid); break; }
-
-             const gov = getGovernment(world, factionId);
-             if (gov && gov.legitimacy < MIN_LEGITIMACY_TO_CHARTER) {
-                 recordOrderFailure(world, factionId, actionId, 'The government lacks the standing to grant a charter.');
-                 break;
-             }
-
-             const unlocked = new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? []);
-             if (!hasTechFlag(world, factionId, 'ENABLE_CORPORATE_CHARTERS')) {
-                 recordOrderFailure(world, factionId, actionId,
-                     'Chartering requires the "Trade Route Initialization" technology.');
-                 break;
-             }
-
-             // Build the company FIRST, then charge for it. Nothing else can
-             // throw once the charter validates and the tech gate is clear, so
-             // the state never pays for a charter that fails to exist.
-             let company;
-             try {
-                 company = charterCorporation(
-                     {
-                         baseName: payload.baseName,
-                         foundingFactionId: factionId,
-                         headquartersSystemId: payload.headquartersSystemId,
-                         terms,
-                         foundingCapital: capital,
-                         nowSeconds: world.nowSeconds,
-                         unlockedTechIds: unlocked,
-                     },
-                     getOrCreateFactionState(corp, factionId)
-                 );
-             } catch (e: any) {
-                 recordOrderFailure(world, factionId, actionId, e.message ?? 'Charter failed.');
-                 break;
-             }
-
-             const price = priceCharter(terms, capital);
-             // The state subscribes its own share of the founding capital; the
-             // rest is raised from investors and arrives as company treasury.
-             const reserves = world.economy.factions.get(factionId)?.reserves;
-             if (!reserves || (reserves['CREDITS'] ?? 0) < price.stateCapital) {
-                 recordOrderFailure(world, factionId, actionId,
-                     `The treasury must subscribe ${price.stateCapital.toLocaleString()} credits for its ${terms.ownership.government}% stake.`);
-                 // charterCorporation registered the company on the faction's
-                 // portfolio; undo that since the charter is not being granted.
-                 unwindPortfolioEntry(corp, factionId, company.id);
-                 break;
-             }
-             if (!spendPoliticalCapital(world, factionId, price.politicalCapital, `granting the ${payload.baseName} charter`)) {
-                 recordOrderFailure(world, factionId, actionId,
-                     `Granting a charter on these terms costs ${price.politicalCapital} political capital.`);
-                 unwindPortfolioEntry(corp, factionId, company.id);
-                 break;
-             }
-             reserves['CREDITS'] -= price.stateCapital;
-
-             registerCompany(corp, company);
-             corp.eventLog.push({
-                 type: 'chartered',
-                 companyId: company.id,
-                 payload: {
-                     name: company.charter.fullName,
-                     mission: terms.mission,
-                     territory: terms.territory,
-                     rights: terms.rights,
-                     personality: company.personality,
-                 },
-                 timestamp: world.nowSeconds,
+             const result = grantCharter(world, factionId, {
+                 baseName: payload.baseName ?? '',
+                 headquartersSystemId: payload.headquartersSystemId,
+                 terms,
+                 foundingCapital: payload.foundingCapital,
              });
+             if (!result.ok) { recordOrderFailure(world, factionId, actionId, result.error); break; }
+             const company = result.company;
              console.log(`[Order] Faction ${factionId} chartered "${company.charter.fullName}" — ${terms.mission}/${terms.territory}, ${terms.rights.length} rights, personality ${company.personality}`);
              break;
         }
@@ -5425,57 +5346,9 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         case 'CORP_NATIONALIZE': {
              // The state seizes the company outright. Expensive in political
              // capital and in every relationship the company was part of.
-             const corp = ensureCorporateState(world);
-             const company = corp.companies.get(payload.companyId);
-             if (!company) { recordOrderFailure(world, factionId, actionId, 'Company not found.'); break; }
-             if (company.foundingFactionId !== factionId) {
-                 recordOrderFailure(world, factionId, actionId, 'Only the chartering government can nationalise a company.');
-                 break;
-             }
-             if (company.nationalized) { recordOrderFailure(world, factionId, actionId, 'That company is already in state hands.'); break; }
-
-             // Price the buy-out and check affordability BEFORE any money or
-             // stock moves — a half-executed seizure would pay holders out of a
-             // treasury that could not cover them.
-             const outsideHolders = Object.entries(company.shareholders)
-                 .filter(([holderId, shares]) => holderId !== factionId && (shares as number) > 0);
-             const compensation = outsideHolders.reduce((sum, [, shares]) => sum + (shares as number) * company.sharePrice, 0);
-             const reserves = world.economy.factions.get(factionId)?.reserves;
-             if (!reserves || (reserves['CREDITS'] ?? 0) < compensation) {
-                 recordOrderFailure(world, factionId, actionId,
-                     `Compensating shareholders requires ${Math.ceil(compensation).toLocaleString()} credits.`);
-                 break;
-             }
-             const cost = 40 + Math.round((company.influence ?? 0) * 0.5);
-             if (!spendPoliticalCapital(world, factionId, cost, `nationalising ${company.charter.fullName}`)) {
-                 recordOrderFailure(world, factionId, actionId, `Nationalisation costs ${cost} political capital.`);
-                 break;
-             }
-             reserves['CREDITS'] -= compensation;
-             for (const [holderId, shares] of outsideHolders) {
-                 const holderReserves = world.economy.factions.get(holderId)?.reserves;
-                 if (holderReserves) holderReserves['CREDITS'] = (holderReserves['CREDITS'] ?? 0) + (shares as number) * company.sharePrice;
-                 const st = corp.factionStates.get(holderId);
-                 if (st) delete st.companySharesOwned[company.id];
-             }
-             company.shareholders = { [factionId]: company.sharesOutstanding };
-             getOrCreateFactionState(corp, factionId).companySharesOwned[company.id] = company.sharesOutstanding;
-             company.nationalized = true;
-             company.autonomyLevel = 0;
-             company.hasGoneRogue = false;
-             company.loyalty = 100;
-             company.profitShareToState = 0.6;
-             afterOwnershipChange(corp, company, world.nowSeconds);
-             corp.eventLog.push({
-                 type: 'nationalized',
-                 companyId: company.id,
-                 payload: { compensation: Math.round(compensation), politicalCapital: cost },
-                 timestamp: world.nowSeconds,
-             });
-             // Seizing private property is never free politically.
-             const govN = getGovernment(world, factionId);
-             if (govN) govN.approval = Math.max(0, govN.approval - 6);
-             console.log(`[Order] Faction ${factionId} nationalised ${company.charter.fullName} for ${Math.round(compensation)}cr`);
+             const result = nationalizeCompany(world, factionId, payload.companyId);
+             if (!result.ok) { recordOrderFailure(world, factionId, actionId, result.error); break; }
+             console.log(`[Order] Faction ${factionId} nationalised ${result.company.charter.fullName}`);
              break;
         }
 
@@ -5501,6 +5374,12 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                  payload: { reason: 'Revoked by the chartering government', politicalCapital: revokeCost },
                  timestamp: world.nowSeconds,
              });
+             chronicle.record(world, {
+                 type: 'charter_revoked',
+                 actorIds: [factionId],
+                 location: company.headquartersSystemId,
+                 facts: { companyName: company.charter.fullName, wasRogue: Boolean(company.hasGoneRogue) },
+             });
              console.log(`[Order] Faction ${factionId} revoked the charter of ${company.charter.fullName}`);
              break;
         }
@@ -5520,6 +5399,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
              const granting = actionId === 'CORP_GRANT_RIGHT';
              const has = (company.rights ?? []).includes(right);
+             if (!granting && company.boardIndependent) {
+                 recordOrderFailure(world, factionId, actionId, 'The board no longer answers to the ministry; rights it holds cannot be struck out.');
+                 break;
+             }
              if (granting && has) { recordOrderFailure(world, factionId, actionId, 'The charter already grants that right.'); break; }
              if (!granting && !has) { recordOrderFailure(world, factionId, actionId, 'The charter does not grant that right.'); break; }
 
@@ -5553,6 +5436,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
              const previous = company.profitShareToState ?? 0.15;
              const delta = next - previous;
              // Raising the state's cut is a tax rise on a political actor.
+             if (delta > 0 && company.boardIndependent) {
+                 recordOrderFailure(world, factionId, actionId, 'The board no longer answers to the ministry; the state cannot raise its own share.');
+                 break;
+             }
              if (delta > 0) {
                  const cost = Math.ceil(delta * 100);
                  if (!spendPoliticalCapital(world, factionId, cost, `raising the state share in ${company.charter.baseName}`)) {
@@ -5588,6 +5475,41 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
              company.autonomyLevel = Math.max(0, company.autonomyLevel - Math.min(6, amount / 12_000));
              company.standing = computeStanding(company);
              console.log(`[Order] Faction ${factionId} subsidised ${company.charter.fullName} with ${amount}cr`);
+             break;
+        }
+
+        case 'CORP_RESPOND_RENEWAL': {
+             const corp = ensureCorporateState(world);
+             const renewal = corp.renewals.get(payload.renewalId);
+             if (!renewal) { recordOrderFailure(world, factionId, actionId, 'That renewal is no longer on the table.'); break; }
+             if (renewal.factionId !== factionId) {
+                 recordOrderFailure(world, factionId, actionId, 'That charter is not yours to renew.');
+                 break;
+             }
+             const response = payload.response as RenewalResponse;
+             if (!['company_terms', 'as_written', 'state_terms', 'lapse'].includes(response)) {
+                 recordOrderFailure(world, factionId, actionId, 'Unknown response.');
+                 break;
+             }
+             const result = resolveRenewal(world, payload.renewalId, response);
+             if (!result.ok) { recordOrderFailure(world, factionId, actionId, result.error); break; }
+             console.log(`[Order] Faction ${factionId} answered renewal ${payload.renewalId} with ${response}: ${result.outcome}`);
+             break;
+        }
+
+        case 'CORP_REFLAG': {
+             // A foreign majority holder moves the charter to its own flag.
+             const result = reflagCharter(world, factionId, payload.companyId);
+             if (!result.ok) { recordOrderFailure(world, factionId, actionId, result.error); break; }
+             console.log(`[Order] Faction ${factionId} reflagged ${result.company.charter.fullName}`);
+             break;
+        }
+
+        case 'CORP_BORROW': {
+             // The state draws on a banking company it chartered.
+             const result = drawStateLoan(world, factionId, payload.companyId, Number(payload.amount) || 0);
+             if (!result.ok) { recordOrderFailure(world, factionId, actionId, result.error); break; }
+             console.log(`[Order] Faction ${factionId} borrowed ${result.amount}cr from ${payload.companyId} (owes ${Math.round(result.owed)})`);
              break;
         }
 

@@ -149,6 +149,7 @@ export default function GalaxyShell() {
     const shipyardSystemIds = useUIStore(s => s.shipyardSystemIds);
     const explorationOrders = useUIStore(s => s.explorationOrders);
     const piracyInfluence = useUIStore(s => s.piracyState.view?.influence);
+    const corporateSites = useUIStore(s => s.corporateState.sites);
     const nowSecondsTick = useUIStore(s => Math.floor(s.nowSeconds / OVERLAY_CLOCK_QUANTUM_SECONDS) * OVERLAY_CLOCK_QUANTUM_SECONDS);
     const selectedSystemId = useUIStore(s => s.selectedSystemId);
     const setSelectedSystem = useUIStore(s => s.setSelectedSystem);
@@ -236,15 +237,25 @@ export default function GalaxyShell() {
             contestedSystemIds,
             playerFactionId,
             piracyInfluence,
+            corporateSites,
             nowSeconds: nowSecondsTick,
         };
         return computeOverlayStyles(activeOverlay, input);
     }, [activeOverlay, systems, factionVisibility, fleets, planets, factions, diplomacyState, shipyardSystemIds,
-        explorationOrders, systemCohesion, contestedSystemIds, playerFactionId, piracyInfluence, nowSecondsTick]);
+        explorationOrders, systemCohesion, contestedSystemIds, playerFactionId, piracyInfluence, corporateSites, nowSecondsTick]);
 
     // Hover line for uncharted hexes under Charted: the same price the SYSTEM
     // tab's PING button prints and the worker charges, from public geometry.
     const overlayHints = useMemo<ReadonlyMap<string, string>>(() => {
+        // Commerce: name the companies behind each painted hex. Only hexes the
+        // overlay actually painted get a line, so the fog gate holds here too.
+        if (activeOverlay === 'commerce') {
+            const out = new Map<string, string>();
+            for (const site of corporateSites ?? []) {
+                if (overlayResult?.styles.has(site.systemId)) out.set(site.systemId, site.label);
+            }
+            return out;
+        }
         if (activeOverlay !== 'charted') return EMPTY_HINTS;
         const capital = playerFactionId ? (factions as any)[playerFactionId]?.capitalSystemId : undefined;
         const anchors = pingAnchorsFor(shipyardSystemIds, capital);
@@ -258,7 +269,7 @@ export default function GalaxyShell() {
             out.set(sys.id, chartedPingHint(q, q.anchorSystemId ? systemMap.get(q.anchorSystemId)?.name : null));
         }
         return out;
-    }, [activeOverlay, systems, systemMap, factionVisibility, factions, shipyardSystemIds, playerFactionId]);
+    }, [activeOverlay, systems, systemMap, factionVisibility, factions, shipyardSystemIds, playerFactionId, corporateSites, overlayResult]);
 
     // Which systems are faction capitals (for cinematic treatment).
     const capitalSet = useMemo(() => {

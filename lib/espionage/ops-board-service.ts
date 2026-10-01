@@ -11,6 +11,7 @@ import { OPPORTUNITY_TEMPLATES, type OpportunityTemplate } from './opportunity-t
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { stageForInfiltration, meetsStage } from './network-stages';
 import { generateImmediateReport } from './intel-reports';
+import { leakCompanyBooks } from '../economy/corporate/corporate-events';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -203,5 +204,8 @@ function applyReward(entry: BoardOpportunity, world: GameWorldState): void {
             if (sys) sys.instability = Math.min(100, sys.instability + reward.amount);
             break;
         }
+        case 'corporateScandal':
+            leakCompanyBooks(world, entry.targetFactionId);
+            break;
     }
 }

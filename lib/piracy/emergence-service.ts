@@ -150,7 +150,7 @@ export function determineOrigin(
 
 // ─── Step 11c — emergence ────────────────────────────────────────────────────
 
-function createRaiderFleet(sys: SystemNode, world: GameWorldState, rng: RNG): Fleet {
+export function createRaiderFleet(sys: SystemNode, world: GameWorldState, rng: RNG): Fleet {
     return {
         id: `pirate-raider-${sys.id}-${world.nowSeconds}`,
         name: 'Pirate Raider',

@@ -109,6 +109,8 @@ export const defaultCorporateState: CorporateState = {
     foreignCompanyIds: [],
     hostPolicies: [],
     rivalries: [],
+    renewals: [],
+    sites: [],
     stateRemittanceTotal: 0,
 };
 

@@ -9,7 +9,7 @@
  */
 
 import type { GameWorldState } from '../../game-world-state';
-import { atLeastAGalacticDay } from '@/lib/time/time-config';
+import { GALACTIC_DAY_SIM_SECONDS, atLeastAGalacticDay } from '@/lib/time/time-config';
 import type { CharteredCompany } from './company-types';
 import type { CorporateWorldState } from './company-registry';
 import type {
@@ -23,6 +23,7 @@ import {
     TERRITORY_LADDER,
     computeInfluence,
     computeStanding,
+    maxFleetSize,
     personalityOf,
     pushCompanyEvent,
     seededRandom,
@@ -39,6 +40,8 @@ export const DEMAND_INTERVAL_SECONDS = 4 * 86_400;
  * (maybeIssueDemand), so a window longer than the interval cannot stack.
  */
 export const DEMAND_WINDOW_SECONDS = atLeastAGalacticDay(3 * 86_400);
+/** How long a standing state supply contract runs: two Galactic Days. */
+export const STATE_CONTRACT_SIM_SECONDS = 2 * GALACTIC_DAY_SIM_SECONDS;
 /** Refusals in a row before a powerful company starts acting on its own. */
 export const HOSTILE_REFUSAL_STREAK = 3;
 
@@ -193,13 +196,13 @@ export function resolveDemand(
         gov.politicalCapital -= cost;
         applyCompanyEffects(company, halve(def.onAccept));
         applyStateEffects(world, demand.factionId, halve(def.stateOnAccept));
-        applyCharterConcession(company, demand.type, 0.5);
+        applyCharterConcession(company, demand.type, 0.5, nowSeconds);
         company.loyalty = Math.min(100, (company.loyalty ?? 50) + 3);
         demand.status = 'negotiated';
     } else if (response === 'accept') {
         applyCompanyEffects(company, def.onAccept);
         applyStateEffects(world, demand.factionId, def.stateOnAccept);
-        applyCharterConcession(company, demand.type, 1);
+        applyCharterConcession(company, demand.type, 1, nowSeconds);
         company.grantedDemands = (company.grantedDemands ?? 0) + 1;
         company.refusedDemands = 0;
         demand.status = 'accepted';
@@ -238,8 +241,24 @@ function halve<T extends Record<string, number | undefined>>(effects: T): T {
  * "accept too much and you have built a state inside your state" is actually
  * implemented.
  */
-function applyCharterConcession(company: CharteredCompany, type: CorporateDemandType, scale: number): void {
+function applyCharterConcession(company: CharteredCompany, type: CorporateDemandType, scale: number, nowSeconds: number): void {
     switch (type) {
+        case 'military_spending':
+            // The escort programme the treasury paid for actually sails.
+            company.privateFleetSize = Math.min(
+                Math.max(maxFleetSize(company), company.privateFleetSize),
+                company.privateFleetSize + Math.round(10 * scale)
+            );
+            break;
+        case 'state_contract':
+            // A standing contract: the company serves the state harder while
+            // it runs (mission-services.ts).
+            company.contractUntil = Math.max(company.contractUntil ?? 0, nowSeconds)
+                + STATE_CONTRACT_SIM_SECONDS * scale;
+            break;
+        case 'greater_autonomy':
+            if (scale >= 1) company.boardIndependent = true;
+            break;
         case 'lower_taxes':
             company.profitShareToState = Math.max(0, (company.profitShareToState ?? 0.15) - 0.05 * scale);
             break;
@@ -261,7 +280,9 @@ function applyCharterConcession(company: CharteredCompany, type: CorporateDemand
             }
             break;
         case 'deregulation':
-            if (scale >= 1) (company.rights ??= []).push('purchase_land');
+            if (scale >= 1 && !(company.rights ?? []).includes('purchase_land')) {
+                (company.rights ??= []).push('purchase_land');
+            }
             break;
         case 'territorial_administration':
             if (scale >= 1 && !(company.rights ?? []).includes('administer_territories')) {
@@ -277,6 +298,12 @@ function applyCharterConcession(company: CharteredCompany, type: CorporateDemand
             if (scale >= 1 && !(company.rights ?? []).includes('negotiate_agreements')) {
                 (company.rights ??= []).push('negotiate_agreements');
             }
+            // Real seats in the founder's chamber (parliament-service.ts reads
+            // them). A negotiated settlement seats a token delegation.
+            company.senateSeats = Math.max(
+                company.senateSeats ?? 0,
+                scale >= 1 ? Math.min(18, 8 + Math.round((company.influence ?? 0) / 10)) : 4
+            );
             break;
         default:
             break;

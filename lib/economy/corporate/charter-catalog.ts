@@ -35,6 +35,11 @@ export interface MissionDef {
     expansionCostMultiplier: number;
     /** Personalities this mission tends to produce. */
     personalityBias: CorporatePersonality[];
+    /**
+     * What the company does for the state that chartered it, while it is loyal
+     * enough to bother (mission-services.ts). Player-facing.
+     */
+    service: string;
 }
 
 export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
@@ -46,6 +51,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.15,
         expansionCostMultiplier: 0.9,
         personalityBias: ['profit_driven', 'corrupt', 'expansionist'],
+        service: 'Delivers metals to the state stockpile from every working outpost.',
     },
     colonization: {
         id: 'colonization',
@@ -55,6 +61,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 0.85,
         expansionCostMultiplier: 1.35,
         personalityBias: ['expansionist', 'humanitarian', 'state_loyalist'],
+        service: 'Founds real colonies for the empire on surveyed free worlds, at its own expense.',
     },
     trade: {
         id: 'trade',
@@ -64,6 +71,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.25,
         expansionCostMultiplier: 1.0,
         personalityBias: ['profit_driven', 'monopolist'],
+        service: 'Every working trade station earns the government political capital.',
     },
     banking: {
         id: 'banking',
@@ -73,6 +81,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.4,
         expansionCostMultiplier: 1.2,
         personalityBias: ['conservative', 'profit_driven', 'monopolist'],
+        service: 'Extends the treasury a line of credit, and holds the paper.',
     },
     logistics: {
         id: 'logistics',
@@ -82,6 +91,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.1,
         expansionCostMultiplier: 0.85,
         personalityBias: ['expansionist', 'monopolist', 'conservative'],
+        service: 'State fleets repair faster wherever the company keeps depots.',
     },
     shipbuilding: {
         id: 'shipbuilding',
@@ -91,6 +101,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.05,
         expansionCostMultiplier: 1.25,
         personalityBias: ['militarist', 'innovative', 'profit_driven'],
+        service: 'Every working private yard shortens the state build queue.',
     },
     research: {
         id: 'research',
@@ -100,6 +111,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 0.95,
         expansionCostMultiplier: 1.15,
         personalityBias: ['innovative', 'conservative'],
+        service: 'Every working laboratory adds to the state research programme.',
     },
     extraction: {
         id: 'extraction',
@@ -109,6 +121,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.3,
         expansionCostMultiplier: 1.05,
         personalityBias: ['corrupt', 'profit_driven', 'militarist'],
+        service: 'Delivers rares and chemicals to the state stockpile from every working outpost.',
     },
 };
 
@@ -376,6 +389,15 @@ export const ASSET_DEFS: Record<CorporateAssetType, AssetDef> = {
     defence_platform: { type: 'defence_platform', name: 'Defence Platform', cost: 25_000, incomePerTick: 90, upkeepPerTick: 110, requiredRight: 'defensive_stations' },
 };
 
+/**
+ * Most works one company may stand in one system. The charter's territory
+ * decides how many systems a company reaches; this decides how much it can
+ * build once it is there. Without it a company deepened its holdings forever —
+ * a season-long soak ended with one company holding 135 works and a treasury
+ * larger than any empire's.
+ */
+export const MAX_WORKS_PER_SYSTEM = 4;
+
 // ─── Demand templates ────────────────────────────────────────────────────────
 
 export interface DemandDef {
@@ -432,7 +454,7 @@ export const DEMAND_DEFS: Record<CorporateDemandType, DemandDef> = {
     military_spending: {
         type: 'military_spending', minInfluence: 30, minAutonomy: 10, severity: 2,
         text: 'The lanes are unsafe. Increase naval appropriations — or licence ours.',
-        concession: 'The treasury underwrites the company\'s escort programme.',
+        concession: 'The treasury underwrites the company\'s escort programme: ten more escorts, at once.',
         threat: 'The company arms itself regardless and bills nobody.',
         onAccept: { loyalty: 10, treasury: 12_000 },
         onReject: { loyalty: -8, autonomy: 5 },
@@ -452,7 +474,7 @@ export const DEMAND_DEFS: Record<CorporateDemandType, DemandDef> = {
     state_contract: {
         type: 'state_contract', minInfluence: 20, minAutonomy: 0, severity: 1,
         text: 'Award us the standing supply contract for the fleet.',
-        concession: 'The treasury pays a retainer; the company\'s books improve.',
+        concession: 'The treasury pays a retainer; for two Galactic Days the company serves the state at half again its usual rate.',
         threat: 'The company prioritises foreign buyers at the next shortage.',
         onAccept: { loyalty: 12, treasury: 20_000, influence: 4 },
         onReject: { loyalty: -6 },
@@ -462,7 +484,7 @@ export const DEMAND_DEFS: Record<CorporateDemandType, DemandDef> = {
     greater_autonomy: {
         type: 'greater_autonomy', minInfluence: 55, minAutonomy: 45, severity: 3,
         text: 'We request greater autonomy in the conduct of our affairs.',
-        concession: 'The board answers to its shareholders, not the ministry.',
+        concession: 'The board answers to its shareholders: the state can no longer raise its share, strike out rights, or dictate renewal terms.',
         threat: 'The company begins acting without asking.',
         onAccept: { autonomy: 12, loyalty: 8, influence: 8 },
         onReject: { loyalty: -18, autonomy: 8 },
@@ -472,7 +494,7 @@ export const DEMAND_DEFS: Record<CorporateDemandType, DemandDef> = {
     senate_representation: {
         type: 'senate_representation', minInfluence: 65, minAutonomy: 50, severity: 3,
         text: 'We request representation in the Imperial Senate.',
-        concession: 'A commercial bloc sits in the chamber and votes its interests.',
+        concession: 'A commercial bloc takes seats in the chamber and votes as the company feels about you.',
         threat: 'The company funds whichever opposition will seat it.',
         onAccept: { autonomy: 10, loyalty: 12, influence: 14 },
         onReject: { loyalty: -20, autonomy: 10, influence: 4 },

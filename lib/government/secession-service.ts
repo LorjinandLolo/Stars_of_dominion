@@ -208,11 +208,16 @@ export function formSecessionCrises(world: GameWorldState): SecessionCrisis[] {
     return opened;
 }
 
-/** Open a crisis over a specific set of worlds. */
+/**
+ * Open a crisis over a specific set of worlds. `framing` lets a caller that
+ * knows who is really behind the movement say so — a chartered company taking
+ * its colonies with it is not led by the local governor.
+ */
 export function openCrisis(
     world: GameWorldState,
     factionId: string,
-    planetIds: string[]
+    planetIds: string[],
+    framing: { name?: string; leaderName?: string; causes?: string[] } = {}
 ): SecessionCrisis | undefined {
     if (!(world.secessionCrises instanceof Map)) world.secessionCrises = new Map();
     if (planetIds.length === 0) return undefined;
@@ -240,11 +245,11 @@ export function openCrisis(
     const crisis: SecessionCrisis = {
         id: `secession-${factionId}-${systemIds[0] ?? planetIds[0]}-${world.nowSeconds}`,
         factionId,
-        name: nameCrisis(world, planetIds),
+        name: framing.name ?? nameCrisis(world, planetIds),
         planetIds,
         systemIds,
-        leaderId: leader?.id,
-        leaderName: leader?.name,
+        leaderId: framing.leaderName ? undefined : leader?.id,
+        leaderName: framing.leaderName ?? leader?.name,
         openedAtSeconds: world.nowSeconds,
         deadlineSeconds: world.nowSeconds + CRISIS_WINDOW_SECONDS,
         independenceSupport: computeIndependenceSupport(world, planetIds),
@@ -252,7 +257,7 @@ export function openCrisis(
         militaryLoyalty: computeMilitaryLoyalty(world, factionId),
         demands: demandsFor(world, planetIds),
         granted: [],
-        causes: [...causes].slice(0, 4),
+        causes: [...(framing.causes ?? []), ...causes].slice(0, 4),
         status: 'open',
     };
 

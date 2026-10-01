@@ -20,7 +20,9 @@ import {
     tickCompanyLogistics,
 } from './company-service';
 import type {
+    CharterRenewal,
     CorporateCrisis,
+    CorporateCrisisType,
     CorporateDemand,
     CorporateHostPolicy,
     CorporateRivalry,
@@ -28,7 +30,9 @@ import type {
 } from './charter-types';
 import { TradeRoute } from '../../trade-system/types';
 import { GameWorldState } from '../../game-world-state';
+import * as chronicle from '../../narrative/chronicle';
 import {
+    activeAssets,
     computeInfluence,
     computeStanding,
     ensureCharterFields,
@@ -68,6 +72,8 @@ export interface CorporateWorldState {
     hostPolicies: Map<string, CorporateHostPolicy>;
     /** Standing commercial rivalries, keyed by the sorted company-id pair. */
     rivalries: Map<string, CorporateRivalry>;
+    /** Charters up for renewal, live and recently settled, keyed by renewal id. */
+    renewals: Map<string, CharterRenewal>;
 }
 
 export function createEmptyCorporateWorldState(): CorporateWorldState {
@@ -82,6 +88,7 @@ export function createEmptyCorporateWorldState(): CorporateWorldState {
         megaprojects: new Map(),
         hostPolicies: new Map(),
         rivalries: new Map(),
+        renewals: new Map(),
     };
 }
 
@@ -102,6 +109,7 @@ export function ensureCorporateState(world: GameWorldState): CorporateWorldState
     if (!(corp.megaprojects instanceof Map)) corp.megaprojects = new Map();
     if (!(corp.hostPolicies instanceof Map)) corp.hostPolicies = new Map();
     if (!(corp.rivalries instanceof Map)) corp.rivalries = new Map();
+    if (!(corp.renewals instanceof Map)) corp.renewals = new Map();
 
     for (const company of corp.companies.values()) {
         ensureCharterFields(company, world.nowSeconds);
@@ -172,7 +180,9 @@ const DEBT_SERVICE_RATE = 0.02;
  */
 function tickCompanyAssets(company: CharteredCompany, world: GameWorldState): number {
     const assets = company.assets ?? [];
-    const income = assets.reduce((s, a) => s + a.incomePerTick, 0) + (company.megaprojectIncome ?? 0);
+    // Raided or occupied works earn nothing; their upkeep is still owed.
+    const income = activeAssets(company, world.nowSeconds).reduce((s, a) => s + a.incomePerTick, 0)
+        + (company.megaprojectIncome ?? 0);
     const upkeep = assets.reduce((s, a) => s + a.upkeepPerTick, 0);
 
     // Debt is serviced before anything is called profit.
@@ -191,6 +201,18 @@ function tickCompanyAssets(company: CharteredCompany, world: GameWorldState): nu
     }
     return Math.max(0, net);
 }
+
+/**
+ * Crises the galaxy would notice. Everything else scores as ordinary business
+ * news (the chronicle's base score for `corporate_crisis`).
+ */
+const CRISIS_IMPORTANCE: Partial<Record<CorporateCrisisType, number>> = {
+    corporate_civil_war: 60,
+    bankruptcy: 46,
+    executive_assassination: 44,
+    accounting_fraud: 40,
+    foreign_acquisition: 40,
+};
 
 // ─── Master Tick ──────────────────────────────────────────────────────────────
 
@@ -280,7 +302,23 @@ export function tickAllCompanies(
         try { maybeIssueDemand(company, corpState, world, now); } catch (e) {
             console.error(`[Corporate] demand generation failed for ${company.id}:`, e);
         }
-        try { maybeSpawnCrisis(company, corpState, now); } catch (e) {
+        try {
+            const crisis = maybeSpawnCrisis(company, corpState, now);
+            if (crisis) {
+                chronicle.record(world, {
+                    type: 'corporate_crisis',
+                    actorIds: [crisis.factionId],
+                    location: company.headquartersSystemId,
+                    facts: {
+                        companyName: company.charter.fullName,
+                        crisisType: crisis.type,
+                        headline: crisis.headline,
+                        description: crisis.description,
+                    },
+                    importanceOverride: CRISIS_IMPORTANCE[crisis.type],
+                });
+            }
+        } catch (e) {
             console.error(`[Corporate] crisis generation failed for ${company.id}:`, e);
         }
         try { maybeProposeMegaproject(company, corpState, now); } catch (e) {

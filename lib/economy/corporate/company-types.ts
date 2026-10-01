@@ -118,6 +118,50 @@ export interface CharteredCompany {
 
     /** Latch: set once when autonomy crosses the rogue threshold. */
     hasGoneRogue?: boolean;
+    /**
+     * Sim-seconds at which the current rogue episode began. The founding
+     * government has ROGUE_GRACE_SECONDS from here to bring the company to heel
+     * before it breaks away (lib/economy/corporate/rogue-service.ts). Cleared
+     * when the company is brought back under control.
+     */
+    rogueSince?: number;
+    /** Sim-seconds of the last time this company broke away from a founder. */
+    rogueBrokeAt?: number;
+    /** The corsair band its armed squadrons became, if they left. */
+    pirateOrganizationId?: string;
+    /**
+     * Governments this company has already walked out on. It will not place
+     * itself under any of them again — without this a company that defected
+     * from A to B found A (still its largest shareholder) the best patron the
+     * next time it went rogue, and ping-ponged between the two all season.
+     */
+    formerFounderIds?: string[];
+    /** Sim-seconds at which the current grant runs out (charter-renewal.ts). */
+    charterExpiresAt?: number;
+    /** Length of each grant, in Galactic Days. */
+    charterTermDays?: number;
+    /** How many times the charter has been renewed. */
+    renewalCount?: number;
+    /**
+     * Share of the founder's chamber (0–100) a commercial bloc holds on this
+     * company's behalf. Granted by the senate_representation concession and read
+     * by the parliament service when it composes the parties.
+     */
+    senateSeats?: number;
+    /**
+     * Set by the greater_autonomy concession: the board answers to its
+     * shareholders, not the ministry. The state can no longer raise its profit
+     * share, strike rights out of the charter, or dictate renewal terms.
+     */
+    boardIndependent?: boolean;
+    /** Sim-seconds until which a standing state supply contract runs. */
+    contractUntil?: number;
+    /** Credits the founding state owes this company (banking missions). */
+    stateLoan?: number;
+    /** What the company last did for the state, for the ledger UI. */
+    lastService?: { summary: string; at: number };
+    /** Which holder has commanded a board majority, and since when. */
+    boardControl?: { holderId: string; since: number };
     /** Share price before the last adjustment (for UI tickers). */
     sharePricePrev?: number;
 
@@ -218,6 +262,12 @@ export type CompanyEventType =
     | 'fleet_expanded'
     | 'colony_acquired'
     | 'went_rogue'
+    | 'broke_away'
+    | 'asset_raided'
+    | 'charter_renewed'
+    | 'charter_lapsed'
+    | 'reflagged'
+    | 'loan_drawn'
     | 'share_issued'
     | 'governance_expanded'
     // ── Charter Corporation layer ──

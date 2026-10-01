@@ -47,6 +47,16 @@ export type ChronicleEventType =
     | 'trade_route_lost'
     | 'economic_crisis'
     | 'blockade_started'
+    // Charter corporations — the actor is the chartering government; the
+    // company's own name travels in `facts.companyName`.
+    | 'charter_granted'
+    | 'charter_revoked'
+    | 'company_nationalized'
+    | 'company_went_rogue'
+    | 'company_broke_away'
+    | 'company_acquired'
+    | 'corporate_crisis'
+    | 'megaproject_completed'
     // Piracy
     | 'pirate_raid'
     | 'pirate_state_recognized'
