@@ -16,56 +16,19 @@
 // The control run is what makes the numbers readable: compare open secession
 // crises, pirate fleets and treasuries with and without companies in the world.
 
-import { getGameWorldState } from '../lib/game-world-state-singleton';
-import { runStrategicTick } from '../lib/time/tick-processor';
-import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
-import { initRegistries } from '../lib/politics/registry';
-import { ensureDiplomacyState } from '../lib/diplomacy/offer-service';
-import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
-import { ensurePressState } from '../lib/press-system/integration';
-import { ensureGovernments } from '../lib/government/government-service';
-import { ensureHeadsOfState } from '../lib/government/succession-service';
-import { ensureCabinets } from '../lib/government/cabinet-service';
-import { ensureGovernors } from '../lib/government/governor-service';
-import { ensureCohesion } from '../lib/government/cohesion-service';
-import { ensureFactionTraits } from '../lib/factions/traits-service';
-import { ensurePlanetDemographics } from '../lib/galaxy/population-composition';
-import { ensureLaneGraph } from '../lib/movement/lane-graph';
-import { advanceFleet } from '../lib/movement/movement-service';
-import { ensureCorporateState } from '../lib/economy/corporate/company-registry';
-import { CHARTER_TECH_ID, seededRandom } from '../lib/economy/corporate/charter-service';
+import {
+    SEASON_TICKS, bootSoakWorld, empireIds, quietConsole, seedSimulation, stepSoak,
+} from './soak-harness';
+import { CHARTER_TECH_ID } from '../lib/economy/corporate/charter-service';
 import { TechEngine, applyUnlock, registry } from '../lib/tech/engine';
 import '../lib/tech/techData';
-import { drainBuffer, resetChronicleBuffer } from '../lib/narrative/chronicle';
+import { drainBuffer } from '../lib/narrative/chronicle';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
-
-const TICK = 6 * 3600;
-const SEASON_TICKS = 1260;
-/** Fleet movement lives inline in the worker; this is its stand-in. */
-const MOVE_SUBSTEPS = 12;
 
 const ticks = Math.max(1, Number(process.argv[2]) || SEASON_TICKS);
 const chartersOn = process.argv[3] !== 'off';
 
-// ── Quiet the simulation, but keep everything it complains about ────────────
-const realLog = console.log;
-const realWarn = console.warn;
 const realError = console.error;
-const complaints = new Map<string, number>();
-const note = (args: unknown[]) => {
-    const line = args.map(a => (a instanceof Error ? `${a.message}` : String(a))).join(' ');
-    // Collapse ids and numbers so one fault repeated all season is one line.
-    const key = line.replace(/[0-9a-f]{12,}/g, '#').replace(/\d+/g, 'N').slice(0, 200);
-    complaints.set(key, (complaints.get(key) ?? 0) + 1);
-};
-/** What the AI governments and the companies did, as the worker would log it. */
-const corporateLog: string[] = [];
-console.log = (...args: unknown[]) => {
-    const line = args.map(String).join(' ');
-    if ((line.startsWith('[AI]') && line.includes(' corporate: ')) || line.startsWith('[Corporate]')) corporateLog.push(line);
-};
-console.warn = () => {};
-console.error = (...args: unknown[]) => note(args);
 
 function tally<T extends string>(values: T[]): Record<string, number> {
     const out: Record<string, number> = {};
@@ -106,27 +69,6 @@ function reading(world: any) {
     };
 }
 
-/**
- * System ownership is derived from planet ownership by the worker every cycle
- * (recalculateSystemControl in scripts/game-loop.ts, which cannot be imported
- * without starting a worker). Company expansion, AI expansion and piracy all
- * read it, so the soak derives it the same way.
- */
-function recalculateSystemControl(world: any): void {
-    const owners = new Map<string, Set<string>>();
-    for (const planet of world.construction.planets.values()) {
-        if (!planet.ownerId || planet.ownerId === 'faction-neutral') continue;
-        const set = owners.get(planet.systemId) ?? new Set<string>();
-        set.add(planet.ownerId);
-        owners.set(planet.systemId, set);
-    }
-    for (const [sysId, system] of world.movement.systems as Map<string, any>) {
-        const set = owners.get(sysId);
-        system.ownerFactionId = set && set.size === 1 ? [...set][0] : undefined;
-        system.isContested = !!set && set.size > 1;
-    }
-}
-
 function finiteEverywhere(world: any): string[] {
     const bad: string[] = [];
     for (const c of world.corporate.companies.values() as Iterable<any>) {
@@ -149,39 +91,17 @@ function finiteEverywhere(world: any): string[] {
 }
 
 async function main() {
-    // Parts of the simulation still roll Math.random (share-price noise, AI
-    // espionage, unrest notices). Seeding it removes most of the run-to-run
-    // noise. Not all of it: a few systems read the wall clock (survey and scan
-    // timers, ids), so two runs of one seed agree on the shape of a season —
-    // how many companies, whether anything threw — not on every event.
-    Math.random = seededRandom(`charter-soak:${process.argv[4] ?? 'a'}`);
+    // Seeded, quiet, booted the way the worker boots, and nobody human: every
+    // empire is played by the AI (scripts/soak-harness.ts).
+    seedSimulation(process.argv[4] ?? 'a');
+    // Keep what the AI governments and the companies did, as the worker logs it.
+    const quiet = quietConsole(line =>
+        (line.startsWith('[AI]') && line.includes(' corporate: ')) || line.startsWith('[Corporate]'));
+    const corporateLog = quiet.logLines;
+    const complaints = quiet.complaints;
+    let world = bootSoakWorld();
 
-    initRegistries();
-    let world = getGameWorldState() as any;
-
-    // The same bootstrap the worker runs after loading a snapshot.
-    if (!world.activeCombats) world.activeCombats = new Map();
-    if (!world.rivalries) world.rivalries = new Map();
-    if (!(world.secessionCrises instanceof Map)) world.secessionCrises = new Map();
-    ensureDiplomacyState(world);
-    ensureEmpirePostures(world);
-    ensurePressState(world);
-    ensureGovernments(world);
-    ensureHeadsOfState(world);
-    ensureCabinets(world);
-    ensureGovernors(world);
-    ensureCohesion(world);
-    ensureCorporateState(world);
-    ensureFactionTraits(world);
-    ensurePlanetDemographics(world);
-    ensureLaneGraph(world.movement.systems);
-    if (!world.nowSeconds || world.nowSeconds <= 0) world.nowSeconds = 1_000_000;
-    resetChronicleBuffer();
-
-    // Nobody is human: every empire is played by the AI.
-    world.claimedFactionIds = [];
-
-    const empires = [...world.economy.factions.keys()].filter((id: string) => id !== 'faction-pirates' && id !== 'faction-neutral');
+    const empires = empireIds(world);
     if (chartersOn) {
         for (const id of empires) {
             const state = world.tech.get(id) ?? TechEngine.initPlayerState(id);
@@ -206,25 +126,11 @@ async function main() {
     let unexplained = 0;
 
     for (let i = 1; i <= ticks; i++) {
-        const now = world.nowSeconds + TICK;
-
-        // Fleets in transit advance between strategic ticks in the worker.
-        for (let s = 0; s < MOVE_SUBSTEPS; s++) {
-            for (const [fleetId, fleet] of world.movement.fleets as Map<string, any>) {
-                if (!fleet.destinationSystemId) continue;
-                world.movement.fleets.set(fleetId, advanceFleet(fleet, TICK / MOVE_SUBSTEPS, world.movement));
-            }
-        }
-
-        recalculateSystemControl(world);
-
-        await runStrategicTick(new Date(now * 1000), i, world);
-
-        // The worker round-trips the world through JSON after every strategic
-        // tick. Anything the charter layer keeps that does not survive that is
-        // a bug no in-memory test can see.
-        const blob = serializeWorld(world);
-        world = deserializeWorld(blob);
+        // One tick as the worker experiences it, JSON round trip included:
+        // anything the charter layer keeps that does not survive that is a bug
+        // no in-memory test can see.
+        const step = await stepSoak(world, i);
+        world = step.world;
 
         const rows = drainBuffer().rows;
         for (const row of rows) events[row.type] = (events[row.type] ?? 0) + 1;
@@ -248,12 +154,12 @@ async function main() {
         if (firstCharterTick < 0 && count > 0) firstCharterTick = i;
 
         if (i % Math.max(1, Math.floor(ticks / 6)) === 0 || i === ticks) {
-            checkpoints.push({ tick: i, ...reading(world), snapshotKb: Math.round(blob.length / 1024) });
+            checkpoints.push({ tick: i, ...reading(world), snapshotKb: Math.round(step.bytes / 1024) });
         }
     }
     const seconds = (Date.now() - started) / 1000;
 
-    console.log = realLog; console.warn = realWarn; console.error = realError;
+    quiet.restore();
 
     console.log(`\nCharter soak — ${ticks} strategic ticks (${(ticks * 24 / 60 / 24).toFixed(1)} real days of play), charters ${chartersOn ? 'ON' : 'OFF (control)'}, ${empires.length} AI empires`);
     console.log(`  ${seconds.toFixed(1)}s wall, ${(seconds / ticks * 1000).toFixed(0)} ms per tick`);
@@ -320,7 +226,6 @@ async function main() {
 }
 
 main().catch(e => {
-    console.log = realLog;
     realError('THREW:', e);
     process.exit(1);
 });

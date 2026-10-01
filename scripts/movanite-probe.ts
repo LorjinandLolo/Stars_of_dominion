@@ -203,7 +203,23 @@ console.log('\n[4] Overpopulation');
         `${light.unrest.toFixed(2)} -> ${heavy.unrest.toFixed(2)}`);
     check('a world within capacity is untroubled', overpopulationFor(world, MOV, 1000, 900)!.unrest === 0);
     check('the helper is a no-op for everyone else', overpopulationFor(world, OTHER, 1000, 1300) === null);
-    check('overcrowding unrest is a real per-tick number', OVERPOP_UNREST_PER_DECILE > 0);
+    check('overcrowding holds unrest at a real level', OVERPOP_UNREST_PER_DECILE > 0);
+
+    // The regression guard for the Movanites themselves. Their numbers always
+    // reach the ceiling, so whatever the overflow costs is what every Movanite
+    // world pays for ever: it has to be a cost a world can live with. A season
+    // at the ceiling, on a contented and on a merely ordinary world.
+    for (const happiness of [100, 60]) {
+        const crowded = mk(MOV);
+        crowded.happiness = happiness;
+        const crowdedWorld: any = { nowSeconds: world.nowSeconds, construction: { planets: new Map([[crowded.id, crowded]]) }, economy: world.economy };
+        for (let i = 0; i < 1260; i++) PopulationService.tickPopulation(crowdedWorld, 6 * 3600);
+        const level = overpopulationFor(world, MOV, crowded.popCapacity, crowded.population)!.unrest;
+        check(`a world at its ceiling for a whole season settles at the crowding level (happiness ${happiness})`,
+            Math.abs(crowded.unrest - level) < 0.01, `unrest ${crowded.unrest.toFixed(1)}, level ${level.toFixed(1)}`);
+        check('  — which is below the line where unrest starts eating stability',
+            crowded.unrest < 30 && crowded.stability === 80, `unrest ${crowded.unrest.toFixed(1)}, stability ${crowded.stability}`);
+    }
 }
 
 // ── 5. Speed & Swarming ─────────────────────────────────────────────────────

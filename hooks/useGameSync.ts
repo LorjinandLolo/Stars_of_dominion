@@ -895,7 +895,13 @@ export function useGameSync() {
                 ? Array.from(espWorld.operations.values()).filter(op => op.actorFactionId === playerFactionId)
                 : Array.from(espWorld.operations.values()),
             candidates: useUIStore.getState().espionageState.candidates,
-            exposureRisk: Math.round((world.shared?.espionagePressure ?? 0) * 100),
+            // Pressure on the player's own empire, as the worker last measured
+            // it. The galaxy-wide scalar is only the fallback for snapshots
+            // written before governments carried their own reading.
+            exposureRisk: Math.round((
+                (playerFactionId ? (world as any).government?.get?.(playerFactionId)?.covertPressure : undefined)
+                ?? world.shared?.espionagePressure ?? 0
+            ) * 100),
             intel: playerFactionId ? (espWorld.factionIntel.get(playerFactionId) ?? null) : null,
             reports: (playerFactionId
                 ? Array.from(espWorld.reports.values()).filter(r => r.ownerFactionId === playerFactionId)

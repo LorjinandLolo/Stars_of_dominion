@@ -213,6 +213,9 @@ function updateEscalation(regionId: string, esp: EspionageWorldState, now: numbe
 
 // ─── Tick operations ──────────────────────────────────────────────────────────
 
+/** How fast the galaxy-wide pressure scalar fades once nothing is feeding it. */
+const AMBIENT_PRESSURE_DECAY_PER_HOUR = 0.01;
+
 /**
  * Advance all pending/active operations. Resolve those whose completesAt has passed.
  * Applies escalation tension and instability side-effects.
@@ -233,19 +236,15 @@ export function tickOperations(
         }
     }
 
-    // Accumulate passive espionage pressure from active operations in each region
-    const activePressure = new Map<string, number>();
-    for (const op of world.espionage.operations.values()) {
-        if (op.status !== 'active') continue;
-        const existing = activePressure.get(op.targetRegionId) ?? 0;
-        activePressure.set(op.targetRegionId, existing + op.investmentLevel * 0.05 * hours);
-    }
-
-    // Write global espionage pressure to shared state
-    let totalPressure = 0;
-    for (const v of activePressure.values()) totalPressure += v;
+    // The galaxy-wide pressure scalar only DECAYS here. It used to gain
+    // investment × 0.05 per hour for every live operation anywhere, against a
+    // decay of 0.01 per hour — so a single operation outran the decay, the
+    // scalar sat at 1 for the whole season, and bloc drift charged that
+    // maximum to every empire in the galaxy. What an operation does to the
+    // empire it is aimed at is now read per target (lib/espionage/pressure.ts);
+    // this scalar is left to galaxy-wide causes (scarcity, a hegemon's rise).
     world.shared.espionagePressure = clampShared(
-        world.shared.espionagePressure + totalPressure - 0.01 * hours // slow passive decay
+        world.shared.espionagePressure - AMBIENT_PRESSURE_DECAY_PER_HOUR * hours
     );
 
     // Resolve completed operations

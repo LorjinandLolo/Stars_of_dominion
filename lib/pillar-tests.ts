@@ -12,7 +12,7 @@ import type { CouncilState } from '@/types/ui-state';
 import type { SimulationState as PressSimulationState } from './press-system/types';
 import { createEmptyCorporateWorldState } from './economy/corporate/company-registry';
 import { tickEconomy, tickCommodityDistribution, tickCollapseState } from './economy/economy-service';
-import { tickBlocDrift, getBlocReport, isCrisisCondition, applyPolicyEffect } from './politics/politics-service';
+import { tickBlocDrift, computeBlocOutlook, getBlocReport, isCrisisCondition, applyPolicyEffect } from './politics/politics-service';
 import { launchOperation, tickOperations, resolveAttribution, computeAttributionProbability, getEspionagePressure } from './espionage/espionage-service';
 import { scheduleNextSeason, activateSeason, tickSeasonModifiers, endSeason, getActiveModifiers } from './seasons/season-service';
 import { emptyTitleState } from './titles/title-service';
@@ -412,11 +412,18 @@ console.log('\nPillar 5 — Internal Politics');
 
 test('tickBlocDrift reduces trade bloc under low commodity access', () => {
     const world = makeWorld();
+    const posture = world.movement.empirePostures.get('factionA')!;
+    const tradeBloc = posture.blocs.find(b => b.id === 'trade')!;
+    // Against a control, not against the fixture's starting value: a bloc that
+    // starts above its target falls on any tick, scarcity or no scarcity.
+    const plenty = computeBlocOutlook(tradeBloc, posture, world, 'factionA').target;
     world.shared.commodityAccess = 0.2; // very low
-    const tradeBloc = world.movement.empirePostures.get('factionA')!.blocs.find(b => b.id === 'trade')!;
-    const initial = tradeBloc.satisfaction;
+    const scarce = computeBlocOutlook(tradeBloc, posture, world, 'factionA');
+    expectTrue(scarce.drivers.some(d => d.id === 'scarcity' && d.points < 0), 'scarcity should be a named driver');
+    expectTrue(scarce.target < plenty, 'scarcity should lower what the trade bloc settles at');
+    tradeBloc.satisfaction = plenty;
     tickBlocDrift('factionA', world, 3600);
-    expectTrue(tradeBloc.satisfaction < initial, 'trade bloc should lose satisfaction under scarcity');
+    expectTrue(tradeBloc.satisfaction < plenty, 'trade bloc should lose satisfaction under scarcity');
 });
 
 test('getBlocReport returns correct structure', () => {
@@ -658,10 +665,19 @@ test('high instability in frontier claims hurts frontier bloc', () => {
         systemId: 'sys-alpha', factionId: 'factionA', phase: 'claim',
         presenceScore: 10, phaseStartedAt: new Date().toISOString(), claimAgeDays: 2,
     });
-    const frontierBloc = world.movement.empirePostures.get('factionA')!.blocs.find(b => b.id === 'frontier')!;
-    const initial = frontierBloc.satisfaction;
+    const posture = world.movement.empirePostures.get('factionA')!;
+    const frontierBloc = posture.blocs.find(b => b.id === 'frontier')!;
+    const troubled = computeBlocOutlook(frontierBloc, posture, world, 'factionA');
+    expectTrue(troubled.drivers.some(d => d.id === 'frontier_unrest' && d.points < 0), 'frontier unrest should be a named driver');
+    // Start the bloc where it would settle with a calm frontier, so only the
+    // unrest can move it.
+    sys.instability = 0;
+    const calm = computeBlocOutlook(frontierBloc, posture, world, 'factionA').target;
+    sys.instability = 90;
+    expectTrue(troubled.target < calm, 'unrest should lower what the frontier bloc settles at');
+    frontierBloc.satisfaction = calm;
     tickBlocDrift('factionA', world, 3600 * 6); // 6 hours
-    expectTrue(frontierBloc.satisfaction < initial, 'frontier bloc should drift down with high-instability claims');
+    expectTrue(frontierBloc.satisfaction < calm, 'frontier bloc should drift down with high-instability claims');
 });
 
 // ─── Results ──────────────────────────────────────────────────────────────────

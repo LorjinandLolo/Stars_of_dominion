@@ -6,7 +6,7 @@ import assert from 'assert';
 import { getGameWorldState } from '../lib/game-world-state-singleton';
 import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
 import { initRegistries, blocRegistry } from '../lib/politics/registry';
-import { tickBlocDrift } from '../lib/politics/politics-service';
+import { tickBlocDrift, computeBlocOutlook } from '../lib/politics/politics-service';
 import { computeActionSupport } from '../lib/politics/support-service';
 import {
     ensureGovernments,
@@ -55,11 +55,21 @@ function main() {
     // ── Generic drift moves the new blocs ────────────────────────────────────
     const workers = migrated.blocs.find(b => b.id === 'workers')!;
     assert.ok(workers.ideologyAffinity, 'bloc definition data not copied onto the bloc');
+    // Against a control: start the bloc where it settles in good times, so only
+    // the shortages and the war can move it. (War fatigue is per-faction once a
+    // government exists; the galaxy-wide value is the fallback before that.)
+    const calm = computeBlocOutlook(workers, migrated, world, factionId).target;
     world.shared.commodityAccess = 0.2;   // shortages
     world.shared.warFatigue = 80;          // and a long war
+    const govForWar = getGovernment(world, factionId);
+    if (govForWar) govForWar.warFatigue = 80;
+    const hard = computeBlocOutlook(workers, migrated, world, factionId);
+    assert.ok(hard.target < calm, `shortages and war should lower what the workers settle at (${calm.toFixed(1)} -> ${hard.target.toFixed(1)})`);
+    assert.ok(hard.drivers.some(d => d.points < 0 && /signal:(commodityAccess|warFatigue)/.test(d.id)), 'no shortage or war driver on the workers');
+    workers.satisfaction = calm;
     const before = workers.satisfaction;
     tickBlocDrift(factionId, world, TICK * 4);
-    console.log(`[4] workers satisfaction under scarcity + war fatigue: ${before} -> ${workers.satisfaction.toFixed(2)}`);
+    console.log(`[4] workers satisfaction under scarcity + war fatigue: ${before.toFixed(2)} -> ${workers.satisfaction.toFixed(2)}`);
     assert.ok(workers.satisfaction < before, 'workers should sour under scarcity and war fatigue');
 
     // ── Support meter accounts for the new blocs ─────────────────────────────

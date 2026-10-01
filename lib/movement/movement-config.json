@@ -323,12 +323,23 @@
         }
     },
     "politics": {
-        "blocDriftSources": {
-            "warDurationDriftPerDay": 1.2,
-            "commodityScarcityDriftPerHour": 0.8,
-            "frontierInstabilityDriftPerHour": 0.5,
-            "goodEconomicPerformanceRecoveryPerHour": 0.3,
-            "policyAlignmentRecoveryBonus": 0.4
+        "blocDrift": {
+            "baseline": 50,
+            "responseHours": 120,
+            "signalBaseline": 0.7,
+            "ideologyPoints": 40,
+            "signalPoints": 40,
+            "espionagePoints": 15,
+            "warExhaustionPoints": 30,
+            "scarcityPoints": 40,
+            "tradeCongestionPoints": 20,
+            "boomPoints": 8,
+            "embargoPoints": 12,
+            "embargoCostPoints": 6,
+            "embargoMaxPoints": 40,
+            "frontierInstabilityPoints": 25,
+            "frontierScarcityPoints": 10,
+            "scienceEconomyPoints": 5
         },
         "policyFlexReduction": {
             "highInfluenceThreshold": 65,

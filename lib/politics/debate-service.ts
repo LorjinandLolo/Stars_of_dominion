@@ -16,7 +16,7 @@
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { InfluenceBloc } from '@/lib/movement/types';
 import { isDelegated } from '@/lib/delegation/delegation-service';
-import { atLeastAGalacticDay } from '@/lib/time/time-config';
+import { atLeastAGalacticDay, GALACTIC_DAY_SIM_SECONDS } from '@/lib/time/time-config';
 import {
     DEBATE_CATALOG,
     debateTitle,
@@ -40,6 +40,11 @@ const SATISFACTION_SWING = 7;
 const FESTER_BLEED = 0.35;
 /** What ignoring a question outright costs the government. */
 const IGNORED_LEGITIMACY_LOSS = 4;
+/**
+ * How long the chamber considers a question settled: the same question about
+ * the same aggressor is not put to it again inside one Galactic Day.
+ */
+const REOPEN_COOLDOWN_SECONDS = GALACTIC_DAY_SIM_SECONDS;
 
 export const DEBATES_OPENED_METRIC = 'pol.debatesOpened';
 export const DEBATES_RESOLVED_METRIC = 'pol.debatesResolved';
@@ -85,6 +90,16 @@ export function openDebate(
     if (open.some(q => q.kind === kind && q.aggressorFactionId === aggressorFactionId)) return null;
 
     const now = world.nowSeconds ?? 0;
+    // ...and not again the moment it closes. A chamber that has just answered
+    // "what do we do about their spies" does not reconvene for the next agent
+    // caught the following morning: it is the same affair. Without this, an
+    // empire whose government answers promptly (every AI, every delegated
+    // cabinet) reopened the question on the very next exposure — the most
+    // spied-on empire held 130 votes on it in 300 ticks, each one moving
+    // satisfaction, influence and legitimacy the same way, until the losing
+    // blocs were at zero and the winners owned the chamber.
+    const settledAt = settledQuestionsOf(posture)[questionKey(kind, aggressorFactionId)];
+    if (typeof settledAt === 'number' && now - settledAt < REOPEN_COOLDOWN_SECONDS) return null;
     const question: PoliticalQuestion = {
         id: `debate-${factionId}-${kind}-${now}`,
         kind,
@@ -100,6 +115,27 @@ export function openDebate(
     bumpMetric(world as any, factionId, DEBATES_OPENED_METRIC, 1);
     console.log(`[Politics] ${factionId}: debate opens — ${debateTitle(question)}`);
     return question;
+}
+
+function questionKey(kind: string, aggressorFactionId?: string): string {
+    return `${kind}|${aggressorFactionId ?? ''}`;
+}
+
+/** When each (question, aggressor) was last closed. Rides the posture, like the questions. */
+function settledQuestionsOf(posture: any): Record<string, number> {
+    if (!posture.settledQuestions || typeof posture.settledQuestions !== 'object') posture.settledQuestions = {};
+    return posture.settledQuestions;
+}
+
+/** Note that a question has left the table, however it left. */
+function markSettled(world: GameWorldState, posture: any, question: PoliticalQuestion): void {
+    const settled = settledQuestionsOf(posture);
+    const now = world.nowSeconds ?? 0;
+    settled[questionKey(question.kind, question.aggressorFactionId)] = now;
+    // Keep the record from growing for ever: anything past its cooldown is moot.
+    for (const [key, at] of Object.entries(settled)) {
+        if (now - at >= REOPEN_COOLDOWN_SECONDS) delete settled[key];
+    }
 }
 
 export function openQuestionsOf(world: GameWorldState, factionId: string): PoliticalQuestion[] {
@@ -158,11 +194,22 @@ export function resolveDebate(
     // reshapes every future support roll.
     const winners = (posture.blocs as InfluenceBloc[]).filter(b => (resolution.stances[b.id] ?? 0) > 0);
     const losers = (posture.blocs as InfluenceBloc[]).filter(b => (resolution.stances[b.id] ?? 0) < 0);
+    //
+    // The winners gain what the losers actually give up, and a loser cannot
+    // give up what it no longer has: nothing is taken below the floor. The
+    // stake used to be credited to the winners in full whatever the losers had
+    // left, so a question asked over and over and answered the same way kept
+    // inflating the same blocs after the others had hit the floor — and
+    // renormalising then squeezed every NEUTRAL bloc down to the floor too.
     if (winners.length && losers.length) {
-        const gain = INFLUENCE_STAKE / winners.length;
-        const loss = INFLUENCE_STAKE / losers.length;
-        for (const b of winners) b.influence += gain;
-        for (const b of losers) b.influence -= loss;
+        const asked = INFLUENCE_STAKE / losers.length;
+        let taken = 0;
+        for (const b of losers) {
+            const given = Math.min(asked, Math.max(0, b.influence - INFLUENCE_FLOOR));
+            b.influence -= given;
+            taken += given;
+        }
+        for (const b of winners) b.influence += taken / winners.length;
         normalizeInfluence(posture.blocs);
     }
 
@@ -176,6 +223,7 @@ export function resolveDebate(
     }
 
     posture.openQuestions = open.filter(q => q.id !== questionId);
+    markSettled(world, posture, question);
     bumpMetric(world as any, factionId, DEBATES_RESOLVED_METRIC, 1);
 
     // The record. council_vote is a declared chronicle type with no emitter
@@ -265,6 +313,7 @@ export function tickDebates(world: GameWorldState): void {
                 // casual-play spec). Close it quietly.
                 if (claimed.includes(factionId) && isDelegated(world as any, factionId, 'government')) {
                     posture.openQuestions = (posture.openQuestions as PoliticalQuestion[]).filter(q => q.id !== question.id);
+                    markSettled(world, posture, question);
                     continue;
                 }
                 const invested = (posture.blocs as InfluenceBloc[])
@@ -282,6 +331,7 @@ export function tickDebates(world: GameWorldState): void {
                 if (gov) gov.legitimacy = clamp100((gov.legitimacy ?? 50) - IGNORED_LEGITIMACY_LOSS);
 
                 posture.openQuestions = (posture.openQuestions as PoliticalQuestion[]).filter(q => q.id !== question.id);
+                markSettled(world, posture, question);
                 bumpMetric(world as any, factionId, DEBATES_IGNORED_METRIC, 1);
                 recordChronicle(world, {
                     type: 'council_vote',

@@ -16,6 +16,7 @@ import { getGovernmentModifiers } from './modifiers';
 import { getHeadOfState } from './succession-service';
 import { emptyLegacyState } from './legacy-service';
 import { isDelegated } from '@/lib/delegation/delegation-service';
+import { espionagePressureOn } from '@/lib/espionage/pressure';
 
 /**
  * How far a delegated government's legitimacy can fall. Above the coup-risk
@@ -31,6 +32,15 @@ const APPROVAL_BLOC_WEIGHT = 0.7;
 const APPROVAL_TRUST_WEIGHT = 0.3;
 /** How far the head of state's personal standing moves approval (±10 points). */
 const LEADER_POPULARITY_WEIGHT = 0.2;
+
+/** Approval at or above which a government is tolerated: it stops losing ground. */
+const TOLERATED_APPROVAL = 40;
+/** The legitimacy a merely tolerated government drifts back up to, and no higher. */
+export const WORKING_MANDATE = 50;
+const MANDATE_RECOVERY_PER_DAY = 0.5;
+/** Public trust heals toward this in ordinary times, and no higher. */
+export const NEUTRAL_TRUST = 50;
+const TRUST_RECOVERY_PER_DAY = 0.4;
 
 /** Political capital accrual, per in-game day, before modifiers. */
 const PC_BASE_PER_DAY = 5;
@@ -81,6 +91,19 @@ export function recomputeApproval(world: GameWorldState, factionId: string): num
     const leaderPull = leader ? ((leader.popularity ?? 50) - 50) * LEADER_POPULARITY_WEIGHT : 0;
 
     return clamp100(blocSat * APPROVAL_BLOC_WEIGHT + trust * APPROVAL_TRUST_WEIGHT + policyApproval + leaderPull);
+}
+
+/**
+ * What the public makes of the government's RECORD, 0–100: approval with the
+ * press cycle's trust taken out and rescaled. This — not approval — is what the
+ * coverage responds to, because approval already contains the coverage.
+ */
+export function governmentRecord(world: GameWorldState, factionId: string): number {
+    const blocSat = weightedBlocSatisfaction(world, factionId);
+    const policyApproval = getGovernmentModifiers(world, factionId).approval;
+    const leader = getHeadOfState(world, factionId);
+    const leaderPull = leader ? ((leader.popularity ?? 50) - 50) * LEADER_POPULARITY_WEIGHT : 0;
+    return clamp100((blocSat * APPROVAL_BLOC_WEIGHT + policyApproval + leaderPull) / APPROVAL_BLOC_WEIGHT);
 }
 
 function pushHistory(gov: GovernmentState, timestamp: number, event: string): void {
@@ -202,6 +225,15 @@ export function tickGovernments(world: GameWorldState, deltaSeconds: number): vo
             gov.legitimacy = clamp100(Math.max(floor, gov.legitimacy - 4 * days));
         } else if (gov.approval > 60) {
             gov.legitimacy = clamp100(gov.legitimacy + 1.5 * days);
+        } else if (gov.approval >= TOLERATED_APPROVAL && gov.legitimacy < WORKING_MANDATE) {
+            // A government the public merely tolerates still governs, and one
+            // that keeps governing slowly regains a working mandate. Without
+            // this the band between 30 and 60 approval was a ratchet: every
+            // lost debate, scandal and succession took legitimacy that nothing
+            // short of 60% approval could ever return, and a government knocked
+            // to zero stayed there for the rest of the season. It recovers to a
+            // working mandate only — a strong one still has to be earned.
+            gov.legitimacy = Math.min(WORKING_MANDATE, gov.legitimacy + MANDATE_RECOVERY_PER_DAY * days);
         }
         // Constitutional policies push legitimacy on their own account.
         if (policyMods.legitimacy_drift !== 0) {
@@ -218,6 +250,10 @@ export function tickGovernments(world: GameWorldState, deltaSeconds: number): vo
         gov.politicalCapitalCap = capacityFor(gov.executivePower);
         gov.politicalCapital = Math.max(0, Math.min(gov.politicalCapitalCap, gov.politicalCapital + perDay * days));
 
+        // What the counter-intelligence desk can feel, if not see: how hard
+        // foreign services are working on this empire right now.
+        gov.covertPressure = espionagePressureOn(world, gov.factionId);
+
         // stability and warFatigue are NOT touched here. Since Phase 6.1 they
         // are per-faction and authoritative, written by tickCohesion from this
         // empire's own worlds and its own wars — not mirrored from the
@@ -226,10 +262,32 @@ export function tickGovernments(world: GameWorldState, deltaSeconds: number): vo
         // The press cycle feeds approval (recomputeApproval reads publicTrust);
         // this is the return leg — a government the public backs earns the
         // benefit of the doubt in coverage, and a hated one stops getting it.
-        // Rates are small so the two do not run away with each other.
+        //
+        // It is keyed on the government's RECORD, not on approval. Approval is
+        // 30% trust, so keying the drain on approval made it feed itself: a
+        // government knocked under 30 by something temporary lost trust, which
+        // held approval under 30, which went on costing trust until trust was
+        // zero — and with trust at zero, approval could not get back over the
+        // line unless the blocs alone carried it there. The same government had
+        // two resting places, and one bad month chose the lower one for good.
+        // Keyed on the record there is one: trust follows what the government
+        // is actually doing, and recovers when that does.
         try {
-            if (gov.approval > 70) adjustPublicTrust(world, gov.factionId, 0.5 * days);
-            else if (gov.approval < 30) adjustPublicTrust(world, gov.factionId, -0.8 * days);
+            const record = governmentRecord(world, gov.factionId);
+            if (record > 70) adjustPublicTrust(world, gov.factionId, 0.5 * days);
+            else if (record < 30) adjustPublicTrust(world, gov.factionId, -0.8 * days);
+            else {
+                // Scandals fade. Almost everything that touches trust lowers it
+                // (exposed operations, broken promises, hostile campaigns), and
+                // the only way back up was approval above 70 — which trust is
+                // itself 30% of. So damaged trust never healed. In ordinary
+                // times it now drifts back up to neutral, and no further:
+                // trust above neutral is earned, not waited for.
+                const trust = getPublicTrust(world, gov.factionId);
+                if (trust < NEUTRAL_TRUST) {
+                    adjustPublicTrust(world, gov.factionId, Math.min(NEUTRAL_TRUST - trust, TRUST_RECOVERY_PER_DAY * days));
+                }
+            }
 
             // Deep corruption eventually surfaces as a scandal.
             if (gov.corruption > 60) {

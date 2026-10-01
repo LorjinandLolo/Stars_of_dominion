@@ -10,6 +10,10 @@ import {
 } from './types';
 import { PressConfig } from './config';
 import { RNG } from './utils';
+import { isCirculating } from './propagation';
+
+/** Press ticks a government has to answer a crisis before silence answers for it. */
+export const CRISIS_WINDOW_TICKS = 24;
 
 const REACTION_COST = 3;           // narrative influence per foreign stance
 const REACTION_SEVERITY_DELTA = 10;
@@ -35,22 +39,28 @@ export function checkCrises(
             // Check if already in crisis to avoid spam?
             if (empire.activeCrises.size > 0) continue;
 
-            // Find a trigger story (highest viral factor targeting this empire)
+            // Find a trigger story (highest viral factor targeting this empire).
+            // It has to be one people are still talking about, and one that has
+            // not already put this government in front of the cameras: the same
+            // story used to raise a fresh crisis the tick after the last one
+            // closed, for as long as pressure stayed above the line.
             const triggers = activeStories.filter(p => {
                 const s = storyDetails.get(p.storyId);
-                return s && s.targetEmpireId === empId;
+                return s && s.targetEmpireId === empId && !s.raisedCrisis && isCirculating(p);
             });
 
             if (triggers.length > 0) {
                 // Pick highest impact
                 triggers.sort((a, b) => b.viralFactor - a.viralFactor);
                 const trigger = triggers[0];
+                const story = storyDetails.get(trigger.storyId);
+                if (story) story.raisedCrisis = true;
 
                 newCrises.push({
                     id: `CRISIS_${tick}_${empId}`,
                     storyId: trigger.storyId,
                     targetEmpireId: empId,
-                    deadlineTick: tick + 24, // 24 hour deadline
+                    deadlineTick: tick + CRISIS_WINDOW_TICKS,
                     severity: empire.informationPressure,
                     resolved: false
                 });
@@ -115,16 +125,46 @@ export function applyPredictionPayouts(
     return winners;
 }
 
+/**
+ * Commit a government's answer to a media crisis: apply what the choice does
+ * to the empire, close the crisis, and pay out any rival who called it. The one
+ * path for a player's order, a press office answering on someone's behalf, and
+ * a deadline running out. Returns null when there is nothing to answer.
+ */
+export function answerCrisis(
+    state: SimulationState,
+    crisis: MediaCrisis,
+    choice: CrisisChoice
+): { outcome: string; winners: string[] } | null {
+    if (crisis.resolved) return null;
+    const empire = state.empires.get(crisis.targetEmpireId);
+    if (!empire) return null;
+
+    const story = state.activeStories.get(crisis.storyId);
+    const result = resolveCrisis(crisis, choice, empire, story);
+    Object.assign(empire, result.empireDelta);
+    crisis.resolved = true;
+    crisis.choiceMade = choice;
+    crisis.outcome = result.outcome;
+
+    // Flooding the cycle buys time, not closure: the story is still out there
+    // and can bring the cameras back.
+    if (choice === CrisisChoice.DISTRACT && story) story.raisedCrisis = false;
+
+    // Phase 3 of the crisis mini-game: rivals who called this exact response
+    // release their pre-positioned evidence for extra damage.
+    const winners = applyPredictionPayouts(crisis, choice, state.empires);
+    if (winners.length > 0) {
+        crisis.outcome += ` Rival networks anticipated the response (${winners.join(', ')}).`;
+    }
+    return { outcome: crisis.outcome, winners };
+}
+
 /** Unanswered crises past deadline resolve as IGNORE — silence is read as confession. */
 export function expireCrises(state: SimulationState, tick: number): void {
     for (const crisis of state.crises.values()) {
         if (crisis.resolved || tick <= crisis.deadlineTick) continue;
-        const empire = state.empires.get(crisis.targetEmpireId);
-        if (empire) {
-            const result = resolveCrisis(crisis, CrisisChoice.IGNORE, empire);
-            Object.assign(empire, result.empireDelta);
-            applyPredictionPayouts(crisis, CrisisChoice.IGNORE, state.empires);
-        }
+        answerCrisis(state, crisis, CrisisChoice.IGNORE);
         crisis.resolved = true;
         crisis.choiceMade = CrisisChoice.IGNORE;
         crisis.outcome = 'Deadline passed — official silence read as confession.';

@@ -125,9 +125,10 @@ export function tickSanctions(world: GameWorldState): void {
             const drain = Math.floor((targetReserves.CREDITS ?? 0) * TARGET_DRAIN_RATE * weight);
             targetReserves.CREDITS = Math.max(0, (targetReserves.CREDITS ?? 0) - drain);
         }
-        // Target's merchants suffer under embargo.
-        const targetBloc = (world.movement.empirePostures.get(targetId) as any)?.blocs?.find((b: any) => b.id === 'trade');
-        if (targetBloc) targetBloc.satisfaction = Math.max(0, targetBloc.satisfaction - 0.6 * weight);
+        // What an embargo does to the merchants on both sides is a driver of
+        // their satisfaction, read by the bloc model from the sanctions in
+        // force (lib/politics/politics-service.ts) — not a per-tick deduction
+        // here, which had no bottom and showed up nowhere.
 
         for (const record of records) {
             const imposerReserves = world.economy.factions.get(record.imposerId)?.reserves;
@@ -135,8 +136,6 @@ export function tickSanctions(world: GameWorldState): void {
                 const selfCost = Math.floor((imposerReserves.CREDITS ?? 0) * IMPOSER_DRAIN_RATE);
                 imposerReserves.CREDITS = Math.max(0, (imposerReserves.CREDITS ?? 0) - selfCost);
             }
-            const imposerBloc = (world.movement.empirePostures.get(record.imposerId) as any)?.blocs?.find((b: any) => b.id === 'trade');
-            if (imposerBloc) imposerBloc.satisfaction = Math.max(0, imposerBloc.satisfaction - 0.3);
         }
     }
 }

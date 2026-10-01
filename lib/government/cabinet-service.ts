@@ -16,6 +16,7 @@ import { getGovernment } from './government-service';
 import { refillRecruitmentPool } from './succession-service';
 import { isFactionAtWar } from './cohesion-service';
 import { isDelegated } from '@/lib/delegation/delegation-service';
+import { espionagePressureOn } from '@/lib/espionage/pressure';
 
 /**
  * A delegated cabinet's loyalty floor. Above the coup-risk trigger for a
@@ -331,7 +332,7 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
 
         switch (portfolio) {
             case 'defence':
-                if (shared.warFatigue > 60) {
+                if (gov.warFatigue > 60) {
                     advice = 'The fleet has been at readiness too long. Rotate crews or we lose them.';
                 } else if (atWar) {
                     advice = 'We are at war and still building at peacetime rates. Mobilise.';
@@ -360,7 +361,7 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
                 suggestedPolicyId = 'research_push';
                 break;
             case 'intelligence':
-                advice = shared.espionagePressure > 0.4
+                advice = espionagePressureOn(world, factionId) > 0.4
                     ? 'Foreign networks are operating inside our institutions. I need authority to sweep.'
                     : 'We are quiet, which is exactly when services get cut. Do not cut mine.';
                 break;

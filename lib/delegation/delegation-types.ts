@@ -56,7 +56,7 @@ export function noDelegation(): DelegationState {
 export const DELEGATION_LABELS: Record<DelegatedSystem, { title: string; detail: string }> = {
     government: {
         title: 'Cabinet',
-        detail: 'Your ministers settle open debates the way they advise, answer defiance, and keep the officer corps from reading your silence as weakness.',
+        detail: 'Your ministers settle open debates the way they advise, answer defiance, dismiss a colleague whose corruption is about to become a scandal, and keep the officer corps from reading your silence as weakness.',
     },
     corporate: {
         title: 'Board liaison',
@@ -64,7 +64,7 @@ export const DELEGATION_LABELS: Record<DelegatedSystem, { title: string; detail:
     },
     press: {
         title: 'Press office',
-        detail: 'Hostile campaigns are answered with the cheapest response rather than left to run.',
+        detail: 'Journalists get cooperation before a dig becomes a scandal, a media crisis is answered before its deadline, and hostile campaigns are countered rather than left to run.',
     },
     piracy: {
         title: 'Patrol command',

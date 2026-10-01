@@ -122,6 +122,7 @@ import { ensureCabinets, appointMinister, dismissMinister, APPOINT_MINISTER_COST
 import { ensureGovernors, appointGovernor, APPOINT_GOVERNOR_COST } from '../lib/government/governor-service';
 import { lobbyParty, decreePolicy } from '../lib/government/parliament-service';
 import { ensureCohesion } from '../lib/government/cohesion-service';
+import { repairApprovalCollapse } from '../lib/government/approval-repair';
 import { answerDefiance } from '../lib/government/defiance-service';
 import { grantConcession, suppressSecession } from '../lib/government/secession-service';
 import { recognizeBreakaway, guaranteeBreakaway } from '../lib/government/foreign-interference-service';
@@ -131,7 +132,7 @@ import { imposeSanctions, liftSanctions } from '../lib/diplomacy/sanctions-servi
 import { makePromise, fulfillPromise } from '../lib/diplomacy/promise-service';
 import { intervene, plantRumor } from '../lib/diplomacy/intervention-service';
 import { ensurePressState, pushWorldStory } from '../lib/press-system/integration';
-import { resolveCrisis, reactToCrisis, applyPredictionPayouts } from '../lib/press-system/crisis';
+import { answerCrisis, reactToCrisis } from '../lib/press-system/crisis';
 import { CrisisChoice, StorySource, StoryTruth, CampaignObjective } from '../lib/press-system/types';
 import {
     CampaignConfig,
@@ -466,6 +467,16 @@ async function loadWorld(): Promise<GameWorldState> {
     // Cohesion records for every owned world. Runs after governors — governor
     // loyalty is one of the drivers it reads.
     try { ensureCohesion(world); } catch (e) { console.error('[Tick Worker] Cohesion bootstrap failed:', e); }
+    // One-off: a galaxy that ran under the approval collapse gets the stocks
+    // the bug destroyed put back (lib/government/approval-repair.ts). After the
+    // bootstraps above — it reads postures, press, governments and cohesion —
+    // and a no-op on every load after the first, and on a healthy galaxy.
+    try {
+        const repair = repairApprovalCollapse(world);
+        if (repair.applied) {
+            for (const line of repair.lines) console.log(`[Tick Worker] Approval repair: ${line}`);
+        }
+    } catch (e) { console.error('[Tick Worker] Approval repair failed:', e); }
     // Charter Corporations: the political ledgers plus per-company backfill for
     // snapshots written before companies had charters, personalities or a board.
     try { ensureCorporateState(world); } catch (e) { console.error('[Tick Worker] Corporate bootstrap failed:', e); }
@@ -3604,18 +3615,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, 'Press state missing for your empire.');
                 return;
             }
-            const story = press.activeStories.get(crisis.storyId);
-            const result = resolveCrisis(crisis, payload.choice, empire, story);
-            Object.assign(empire, result.empireDelta);
-            crisis.resolved = true;
-            crisis.choiceMade = payload.choice;
-            crisis.outcome = result.outcome;
-            // Phase 3 of the crisis mini-game: rivals who called this exact
-            // response release their pre-positioned evidence for extra damage.
-            const winners = applyPredictionPayouts(crisis, payload.choice, press.empires);
-            if (winners.length > 0) {
-                crisis.outcome += ` Rival networks anticipated the response (${winners.join(', ')}).`;
-            }
+            // One path for an order, a press office and an expired deadline
+            // (lib/press-system/crisis.ts#answerCrisis): the choice's effects,
+            // the close, and the payout to any rival who called the response.
+            answerCrisis(press, crisis, payload.choice);
             console.log(`[Tick Worker] Crisis ${crisis.id} resolved by ${factionId} via ${payload.choice}: ${crisis.outcome}`);
             break;
         }

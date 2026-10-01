@@ -83,9 +83,12 @@ export function assessCoupRisk(world: GameWorldState, factionId: string): CoupRi
         drivers.push(`${defiantWorlds} world(s) in open unrest`);
     }
 
-    if (world.shared.warFatigue > 65) {
-        trend += (world.shared.warFatigue - 65) / 35;
-        drivers.push(`War exhaustion at ${Math.round(world.shared.warFatigue)}`);
+    // This empire's own exhaustion (per-faction since Phase 6.1), not the
+    // galaxy-wide scalar — somebody else's long war is not a reason to march
+    // on your own capital.
+    if (gov.warFatigue > 65) {
+        trend += (gov.warFatigue - 65) / 35;
+        drivers.push(`War exhaustion at ${Math.round(gov.warFatigue)}`);
     }
 
     // Civilian institutions are what keep soldiers in barracks.

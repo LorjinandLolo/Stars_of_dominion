@@ -16,6 +16,7 @@ import {
     StoryTruth,
 } from './types';
 import { RNG } from './utils';
+import { PressConfig } from './config';
 
 const STAGE_ORDER: InvestigationStage[] = [
     InvestigationStage.RUMOUR,
@@ -87,9 +88,12 @@ export function tickInvestigations(state: SimulationState, tick: number, rng: RN
         if (isSuppressing(state, empireId)) chance += InvestigationConfig.suppressionSpawnBonus;
 
         // A well-documented story circulating about you invites deeper digging.
+        // ...while it is still news. A story stays in the pool for as long as
+        // the feed shows it, which can be far longer than anyone cares.
         const seedStory = Array.from(state.activeStories.values()).find(s =>
             s.targetEmpireId === empireId &&
-            s.evidenceStrength >= InvestigationConfig.storyEvidenceThreshold);
+            s.evidenceStrength >= InvestigationConfig.storyEvidenceThreshold &&
+            tick - s.tickCreated <= PressConfig.stories.shelfLifeTicks);
         if (seedStory) chance += 0.02;
 
         if (!rng.check(chance)) continue;

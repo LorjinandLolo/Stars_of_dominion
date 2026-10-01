@@ -7,7 +7,7 @@ import { GameWorldState } from '../game-world-state';
 import { Planet } from './construction-types';
 import { eventBus } from '../movement/event-bus';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
-import { overpopulationFor, OVERPOP_UNREST_PER_DECILE } from '../factions/movanite';
+import { overpopulationFor, OVERPOP_UNREST_PER_DECILE, OVERPOP_UNREST_RISE_PER_TICK } from '../factions/movanite';
 
 export class PopulationService {
     /**
@@ -71,14 +71,16 @@ export class PopulationService {
             unrestDelta += 2 * hours; // Significant unrest from occupation
         }
         
-        // Overcrowding. Scaled per hour like every other term here, and computed
-        // from the population AFTER growth so it responds the same tick the
-        // world tips over rather than one behind.
+        // Overcrowding holds unrest UP at a level set by how crowded the world
+        // is; it does not pump it without limit (see OVERPOP_UNREST_PER_DECILE).
+        // Computed from the population AFTER growth so it responds the same
+        // tick the world tips over rather than one behind.
+        let crowdingLevel = 0;
         if (overpop && planet.population > planet.popCapacity) {
             const deciles = planet.popCapacity > 0
                 ? ((planet.population - planet.popCapacity) / planet.popCapacity) * 10
                 : 0;
-            unrestDelta += deciles * OVERPOP_UNREST_PER_DECILE * (hours / 6);
+            crowdingLevel = Math.min(100, deciles * OVERPOP_UNREST_PER_DECILE);
         }
 
         // Unrest decays naturally if happiness is high
@@ -93,7 +95,14 @@ export class PopulationService {
             unrestDelta *= computeInfrastructureEffects(planet).unrestRecovery;
         }
 
-        planet.unrest = Math.max(0, Math.min(100, planet.unrest + unrestDelta));
+        let unrest = planet.unrest + unrestDelta;
+        if (unrest < crowdingLevel) {
+            // Below what the crowding alone accounts for: it climbs toward that
+            // level, and a contented population cannot talk it back down.
+            const climbed = planet.unrest + OVERPOP_UNREST_RISE_PER_TICK * (hours / 6);
+            unrest = Math.min(crowdingLevel, Math.max(unrest, climbed));
+        }
+        planet.unrest = Math.max(0, Math.min(100, unrest));
 
         // 3. Stability Feedback
         // High unrest reduces stability

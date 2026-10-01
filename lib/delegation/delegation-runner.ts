@@ -23,15 +23,12 @@ import type { GameWorldState } from '@/lib/game-world-state';
 import { isDelegated } from './delegation-service';
 import { DELEGATED_SYSTEMS, type DelegatedSystem } from './delegation-types';
 
-import { answerDefiance } from '@/lib/government/defiance-service';
-
-
-import { grantConcession } from '@/lib/government/secession-service';
+import { answerGovernmentDesk } from '@/lib/government/caretaker';
 import { resolveDemand } from '@/lib/economy/corporate/corporate-politics';
 import { resolveCorporateCrisis } from '@/lib/economy/corporate/corporate-events';
 import { resolveRenewal } from '@/lib/economy/corporate/charter-renewal';
-import { SECESSION_DEMANDS, type SecessionDemandId } from '@/lib/government/secession-types';
 import { counterCampaign, CampaignConfig } from '@/lib/press-system/campaigns';
+import { runPressOffice } from '@/lib/press-system/press-office';
 import { signProtectionContract } from '@/lib/piracy/protection-service';
 import { setAutomationDoctrine, tickAutomation } from '@/lib/exploration/exploration-service';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
@@ -43,12 +40,6 @@ export interface DelegationReport {
     action: string;
 }
 
-/**
- * Concessions that change what the empire IS — a region governing itself, a
- * parliament of its own — are the player's to grant. Staff may only trade
- * money and manpower: tax relief, resource rights, exemption from the draft.
- */
-const CONSTITUTIONAL_DEMANDS = new Set<SecessionDemandId>(['autonomy', 'local_parliament']);
 /** One refusal short of a company going rogue, the staff stop refusing. */
 const ROGUE_STREAK_GUARD = 2;
 /** Renew a protection contract this long before it lapses (sim seconds). */
@@ -102,47 +93,13 @@ const RUNNERS: Record<DelegatedSystem, Runner> = {
  * delegated government counts as AI there); here the staff deal with worlds in
  * open defiance and regions asking to leave.
  *
- * Defiance: negotiate if the capital can pay for it, otherwise threaten, which
- * is cheaper and sometimes works. Never nothing — silence is what wounds.
- *
- * Secession: concede the cheapest thing the region actually asked for, one
- * concession per tick, and never a sovereignty demand. Giving away senate seats
- * or customs authority is a decision with a season-long shadow; a caretaker
- * does not make it.
+ * The answers themselves live in lib/government/caretaker.ts, because an AI
+ * government gives exactly the same ones.
  */
 function runGovernment(world: GameWorldState, factionId: string, _delta: number, reports: DelegationReport[]): void {
-    for (const event of world.defianceEvents?.values() ?? []) {
-        if (event.factionId !== factionId || event.status !== 'open') continue;
-        const negotiated = answerDefiance(world, factionId, event.id, 'negotiate');
-        if (negotiated.ok) {
-            reports.push({ factionId, system: 'government', action: `negotiated with ${event.planetName}` });
-            continue;
-        }
-        const threatened = answerDefiance(world, factionId, event.id, 'threaten');
-        if (threatened.ok) {
-            reports.push({ factionId, system: 'government', action: `demanded compliance from ${event.planetName}` });
-        }
+    for (const action of answerGovernmentDesk(world, factionId)) {
+        reports.push({ factionId, system: 'government', action });
     }
-
-    for (const crisis of world.secessionCrises?.values() ?? []) {
-        if (crisis.factionId !== factionId || crisis.status !== 'open') continue;
-        const asked = crisis.demands
-            .filter(id => !crisis.granted.includes(id) && !CONSTITUTIONAL_DEMANDS.has(id))
-            .map(id => ({ id, cost: secessionCost(id) }))
-            .sort((a, b) => a.cost - b.cost);
-        for (const demand of asked) {
-            const result = grantConcession(world, factionId, crisis.id, demand.id);
-            if (result.ok) {
-                reports.push({ factionId, system: 'government', action: `conceded ${demand.id} to ${crisis.name}` });
-                break; // One concession per tick; the region has to see it land.
-            }
-        }
-    }
-}
-
-/** Cheapest first: a caretaker spends the least political capital that answers. */
-function secessionCost(demandId: SecessionDemandId): number {
-    return SECESSION_DEMANDS.find(d => d.id === demandId)?.politicalCapital ?? Number.MAX_SAFE_INTEGER;
 }
 
 // ─── Corporate ────────────────────────────────────────────────────────────────
@@ -219,12 +176,18 @@ const SOVEREIGNTY_DEMAND_TYPES = new Set([
 // ─── Press ────────────────────────────────────────────────────────────────────
 
 /**
- * Answer hostile campaigns the empire can actually see — a campaign only
- * becomes visible once it has signalled — with the cheapest response there is.
+ * Answer what is on the press desk — inquiries and media crises, the same way
+ * an AI empire's office does (lib/press-system/press-office.ts) — and then
+ * hostile campaigns the empire can actually see. A campaign only becomes
+ * visible once it has signalled; it gets the cheapest response there is.
  * Counter-messaging costs influence and drags the campaign into the open; it
  * never starts one.
  */
 function runPress(world: GameWorldState, factionId: string, _delta: number, reports: DelegationReport[]): void {
+    for (const action of runPressOffice(world, factionId)) {
+        reports.push({ factionId, system: 'press', action });
+    }
+
     const press: any = (world as any).press;
     const empire = press?.empires?.get?.(factionId);
     if (!empire || !press?.campaigns) return;

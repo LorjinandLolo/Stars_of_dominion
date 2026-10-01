@@ -70,6 +70,15 @@ export interface Story {
     baseMagnitude: number; // 0-100 impact potential
     evidenceStrength: number; // 0-100. How well-documented the story is; gates DENY.
     tickCreated: number;
+    /**
+     * Outlets that have already run this story. An outlet runs a story once:
+     * without this record the only memory was the capped publication feed, so
+     * as soon as a publication fell off the end of it the same outlet ran the
+     * same story again, at full intensity, every tick, for ever.
+     */
+    carriedBy?: string[];
+    /** This story has already put its government in front of the cameras once. */
+    raisedCrisis?: boolean;
     // Metadata for procedural generation
     details?: any;
 }

@@ -16,6 +16,31 @@ export const PressConfig = {
         storyViralThreshold: 50, // Credibility * Magnitude > 50 to go viral
     },
 
+    // Information pressure is a stock with a leak: coverage fills it, and it
+    // drains by a share of itself every tick. A steady level of coverage
+    // therefore settles at heat / leak instead of climbing to the ceiling.
+    pressure: {
+        leakPerTick: 0.03,       // half-life ~23 ticks (under six sim days)
+        heatToPressure: 3,       // pressure per tick from one story at full intensity and full virality
+        maxHeatPerTick: 8,
+        silenceBelow: 0.5,       // under this the public has moved on
+    },
+
+    // The life of a story.
+    stories: {
+        shelfLifeTicks: 40,              // ten sim days; after that it is old news
+        rumourChancePerPressure: 0.001,  // per tick, per point of pressure: 10% at the ceiling
+        economicReportChance: 0.05,      // per tick, only above economicReportPressure
+        economicReportPressure: 60,
+    },
+
+    // What an audience returns to once the coverage dies down.
+    audience: {
+        restingStability: 70,
+        restingRadicalization: 5,
+        recoveryPerTick: 0.02,   // share of the gap closed each tick
+    },
+
     // Faction Behaviors
     behaviors: {
         [PressFactionType.STATE_MEDIA]: {
@@ -115,6 +140,8 @@ export const PressConfig = {
     propagation: {
         baseRadius: 5, // Light years or grid units? Assuming Grid distance.
         decayPerHop: 0.2, // 20% reduction per unit distance
-        tradeRouteBonus: 1.5 // Multiplier for spread along trade routes
+        tradeRouteBonus: 1.5, // Multiplier for spread along trade routes
+        hopAttenuation: 0.7, // a story arrives next door at most this loud, relative to where it came from
+        deadIntensity: 2 // below this nobody on that world is talking about it any more
     }
 };

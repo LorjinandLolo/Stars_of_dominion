@@ -53,6 +53,15 @@ function defaultBlocs(societyTags: string[]): InfluenceBloc[] {
     })));
 }
 
+/**
+ * The influence each bloc is seated with for a society of these tags, by bloc
+ * id — what a new empire's chamber looks like before any debate has moved it.
+ */
+export function seatedInfluence(societyTags: string[]): Map<string, number> {
+    initRegistries();
+    return new Map(defaultBlocs(societyTags).map(bloc => [bloc.id, bloc.influence]));
+}
+
 /** Scale influence shares to sum to 100 — the invariant the drift tick keeps. */
 function normalizeInfluence(blocs: InfluenceBloc[]): InfluenceBloc[] {
     const total = blocs.reduce((s, b) => s + b.influence, 0);

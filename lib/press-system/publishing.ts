@@ -50,6 +50,7 @@ export function processPublishing(
     for (const story of candidates) {
         for (const [factionId, faction] of pressFactions.entries()) {
             if (alreadyPublished.has(`${factionId}:${story.id}`)) continue;
+            if (story.carriedBy?.includes(factionId)) continue;
 
             // Check Cooldowns (simplified: faction can only stick to one story per tick?)
             // Or cooldown per topic? 
@@ -94,6 +95,8 @@ export function processPublishing(
 
                 const originPlanetId = pickEpicenter(story, planets, rng);
                 if (!originPlanetId) continue; // no audience anywhere — nothing to break the story to
+
+                (story.carriedBy ??= []).push(factionId);
 
                 published.push({
                     id: `PUB_${factionId}_${story.id}`,

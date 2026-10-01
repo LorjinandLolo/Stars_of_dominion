@@ -171,6 +171,20 @@ export function appointGovernor(
 }
 
 /**
+ * The level a poor governor's neglect stops at. Exactly the line below which a
+ * world's unrest starts to grow on its own (population-service), so a badly
+ * run world sits on the edge of trouble without being pushed over it.
+ */
+const GOVERNOR_DRAG_FLOOR = 50;
+
+/** Apply a governor's daily effect: gains are unbounded, losses stop at the floor. */
+function wornDownTo(current: number, delta: number, floor: number): number {
+    if (delta >= 0) return current + delta;
+    if (current <= floor) return current;
+    return Math.max(floor, current + delta);
+}
+
+/**
  * Governors work their worlds: competence steadies stability and happiness,
  * corruption drags them, and a disloyal governor lets unrest run.
  */
@@ -192,9 +206,21 @@ export function tickGovernors(world: GameWorldState, deltaSeconds: number): void
         const corruption = (governor.corruption ?? 0) / 100;          // 0..1
         const gov = getGovernment(world, planet.ownerId);
 
+        // A good governor steadies a world all the way up. A poor one wears it
+        // down — to restless, and no further. The drag used to have no bottom:
+        // any governor whose corruption outweighed their competence (nearly
+        // half of them, by the way they are rolled) took a fixed bite out of
+        // stability every day for the whole season. Around day 100 the capital
+        // crossed 50, unrest started compounding, and the empire was in open
+        // revolt by mid-season — on a roll made at world creation, with no
+        // warning sharper than a slowly falling number. Below the floor it is
+        // unrest that does the damage, not the governor.
+        const stability = planet.stability ?? 50;
         const stabilityDelta = (competence * 1.5 - corruption * 1.0) * days;
-        planet.stability = clamp100((planet.stability ?? 50) + stabilityDelta);
-        planet.happiness = clamp100((planet.happiness ?? 80) + (competence * 0.8 - corruption * 0.8) * days);
+        planet.stability = clamp100(wornDownTo(stability, stabilityDelta, GOVERNOR_DRAG_FLOOR));
+        const happiness = planet.happiness ?? 80;
+        const happinessDelta = (competence * 0.8 - corruption * 0.8) * days;
+        planet.happiness = clamp100(wornDownTo(happiness, happinessDelta, GOVERNOR_DRAG_FLOOR));
 
         // Loyalty erodes on neglected, unhappy worlds far from the capital.
         const neglect = planet.stability < 40 ? (40 - planet.stability) / 40 : 0;

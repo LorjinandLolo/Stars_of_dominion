@@ -208,11 +208,30 @@ export function movaniteDistrictTraits(
  */
 export const OVERPOP_CAPACITY_MULTIPLIER = 1.35;
 
-/** Unrest per tick per 10% of capacity exceeded. */
-export const OVERPOP_UNREST_PER_DECILE = 1.6;
+/**
+ * The unrest a crowded world SETTLES AT, per 10% of capacity exceeded.
+ *
+ * A level, not a rate. This was 1.6 points of unrest added every tick per
+ * decile, and Movanite numbers always grow to the ceiling (nothing ever slows
+ * them), so every Movanite world took +5.6 unrest a tick for ever against a
+ * best-case decay of 3.6. The homeworld reached unrest 100 and stability 0
+ * inside ten sim days and the whole empire seceded from itself by day 36 —
+ * with a player in the chair or without one, because there was nothing a
+ * player could do about it in time.
+ *
+ * At the ceiling (3.5 deciles over) a world now rests at 24.5 unrest: an eighth
+ * of its output gone, and only a few points short of the line (30) where unrest
+ * starts eating stability. That is the bite — the Movanites live permanently
+ * close to the edge, and anything else that stirs a world tips it over sooner
+ * than it would anyone else's.
+ */
+export const OVERPOP_UNREST_PER_DECILE = 7;
+
+/** How fast a crowded world's unrest climbs to that level, per strategic tick. */
+export const OVERPOP_UNREST_RISE_PER_TICK = 2;
 
 /**
- * The population ceiling for one world, and the unrest the overflow generates.
+ * The population ceiling for one world, and the unrest the overflow holds it at.
  *
  * Returns null for every other civilization so the caller keeps its original
  * Math.min path untouched.

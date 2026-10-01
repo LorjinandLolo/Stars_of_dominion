@@ -16,6 +16,7 @@ import { checkCrises, expireCrises } from './crisis';
 import { tickInvestigations } from './investigations';
 import { tickCampaigns } from './campaigns';
 import { RNG } from './utils';
+import { PressConfig } from './config';
 
 /**
  * Manually injects a story into the published pool at a specific epicenter.
@@ -105,6 +106,21 @@ export function tickPressSystem(
         return { ...pub, transmissionMap: nextTransmission };
     });
 
+    // Old news leaves the pool. Stories used to stay "active" until a hundred
+    // newer ones pushed them out, so every outlet kept finding them there to
+    // run again. One goes once it is past its shelf life and nothing still
+    // points at it: no publication in the feed, no open crisis, no live dig.
+    const referenced = new Set<string>();
+    for (const pub of updatedPublished) referenced.add(pub.storyId);
+    for (const crisis of state.crises.values()) if (!crisis.resolved) referenced.add(crisis.storyId);
+    for (const inv of (state.investigations ?? new Map()).values()) {
+        if (!inv.resolved && inv.storyId) referenced.add(inv.storyId);
+    }
+    for (const [storyId, story] of nextActiveStories.entries()) {
+        if (referenced.has(storyId)) continue;
+        if (tick - story.tickCreated > PressConfig.stories.shelfLifeTicks) nextActiveStories.delete(storyId);
+    }
+
     // Handle Counter-Narrative Decay
     const nextCounterNarratives = new Map<string, number>();
     for (const [sysId, strength] of state.counterNarratives.entries()) {
@@ -126,16 +142,40 @@ export function tickPressSystem(
         }
     }
 
-    // 5. Update Empires — circulating stories add pressure, quiet skies bleed it off.
+    // Audiences calm down. Coverage lowers a world's stability and raises its
+    // radicalisation, and nothing ever moved either back — so every audience in
+    // the galaxy ended at zero stability and full radicalisation and stayed
+    // there. Each now closes a share of the gap to its resting value per tick
+    // (and only ever toward it: a world calmer than the resting value is left
+    // alone).
+    const { restingStability, restingRadicalization, recoveryPerTick } = PressConfig.audience;
+    for (const [pid, p] of nextPlanets.entries()) {
+        const stability = p.stability < restingStability
+            ? p.stability + (restingStability - p.stability) * recoveryPerTick
+            : p.stability;
+        const radicalization = p.radicalization > restingRadicalization
+            ? p.radicalization - (p.radicalization - restingRadicalization) * recoveryPerTick
+            : p.radicalization;
+        if (stability !== p.stability || radicalization !== p.radicalization) {
+            nextPlanets.set(pid, { ...p, stability, radicalization });
+        }
+    }
+
+    // 5. Update Empires — circulating stories add pressure, and the public
+    // loses interest at a steady rate. Pressure used to fall only on a tick
+    // with NO coverage of the empire at all (and then by half a point), so any
+    // story anywhere held it up and it could only climb. Now it drains by a
+    // share of itself every tick: steady coverage settles at heat / leak, and
+    // the ceiling takes a real storm to reach. An open crisis is the exception
+    // — a government that has not answered yet does not get to wait it out.
+    const { leakPerTick, silenceBelow } = PressConfig.pressure;
     const nextEmpires = new Map(state.empires);
     for (const [eid, emp] of nextEmpires.entries()) {
         let pressure = emp.informationPressure;
         const heat = empirePressure.get(eid) ?? 0;
-        if (heat > 0) {
-            pressure = Math.min(100, pressure + heat);
-        } else if (emp.activeCrises.size === 0) {
-            pressure = Math.max(0, pressure - 0.5);
-        }
+        if (emp.activeCrises.size === 0) pressure *= (1 - leakPerTick);
+        pressure = Math.min(100, pressure + heat);
+        if (heat === 0 && pressure < silenceBelow) pressure = 0;
         // Narrative influence regenerates toward a soft ceiling. It has several
         // sinks (campaigns, counter-messaging, crisis stances, fabrication) and
         // had no source at all, so information warfare stalled permanently once

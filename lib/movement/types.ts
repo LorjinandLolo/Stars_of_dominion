@@ -506,6 +506,12 @@ export interface InfluenceBloc {
     /** Per-tick drift direction: positive = growing, negative = declining. */
     trend: number;
     /**
+     * 0–100. Where the bloc is heading: the satisfaction it would settle at if
+     * nothing changed (politics-service.ts#computeBlocOutlook). Written by the
+     * drift tick; absent until the first one.
+     */
+    target?: number;
+    /**
      * Copied from the bloc definition at bootstrap so the drift tick stays a
      * pure module (no fs-backed registry import on the client path).
      * Ideology axis → weight -1..1; positive = happier as the axis runs positive.
@@ -539,6 +545,8 @@ export interface EmpirePosture {
      * dependency on the politics layer.
      */
     openQuestions?: Array<Record<string, unknown>>;
+    /** When each "kind|aggressor" question last left the table (sim seconds); see debate-service. */
+    settledQuestions?: Record<string, number>;
 }
 
 // ─── Air Sorties (Naval Air Support) ───────────────────────────────────────────

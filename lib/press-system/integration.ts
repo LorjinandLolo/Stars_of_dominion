@@ -23,6 +23,8 @@ import {
     InvestigationStage,
 } from './types';
 import { tickPressSystem } from './simulation';
+import { isCirculating } from './propagation';
+import { PressConfig } from './config';
 import * as chronicle from '@/lib/narrative/chronicle';
 
 function ensureShape(world: GameWorldState): SimulationState {
@@ -112,10 +114,10 @@ export function ensurePressState(world: GameWorldState): SimulationState {
             press.planets.set(planetId, {
                 id: planetId,
                 ownerId,
-                stability: 70,
+                stability: PressConfig.audience.restingStability,
                 happiness: 60,
                 fear: 10,
-                radicalization: 5,
+                radicalization: PressConfig.audience.restingRadicalization,
                 position: { x: (sys as any).x ?? 0, y: (sys as any).y ?? 0 },
             });
         }
@@ -196,8 +198,44 @@ export function adjustPublicTrust(world: GameWorldState, factionId: string, delt
     empire.publicTrust = Math.max(0, Math.min(100, empire.publicTrust + delta));
 }
 
-const MAX_PUBLISHED = 50;
+/** Distinct stories the feed carries at once; the oldest give way to newer ones. */
+const MAX_FEED_STORIES = 50;
 const MAX_ACTIVE = 100;
+
+/**
+ * What stays in the feed after a press tick.
+ *
+ * The cap used to be fifty PUBLICATIONS. Every outlet that takes a story
+ * publishes its own copy — fifteen of them in a galaxy of fourteen empires —
+ * so the feed held about three stories, and a story was pushed out, still at
+ * full intensity, as soon as three newer ones broke anywhere in the galaxy.
+ * That went unnoticed while outlets re-ran evicted stories every tick; now
+ * that an outlet runs a story once, eviction is final, and the cap rather
+ * than the decay model was deciding how long news lasted.
+ *
+ * So: a publication leaves when nobody is talking about it any more; copies
+ * of one story breaking on the same world collapse to the loudest (the only
+ * one heat ever reads there — see propagateEffects); and the cap counts
+ * stories.
+ */
+function trimFeed(feed: SimulationState['publishedStories']): SimulationState['publishedStories'] {
+    const loudest = new Map<string, SimulationState['publishedStories'][number]>();
+    for (const publication of feed) {
+        if (!isCirculating(publication)) continue;
+        const key = `${publication.storyId}|${publication.originPlanetId}`;
+        const held = loudest.get(key);
+        if (!held || publication.viralFactor > held.viralFactor) loudest.set(key, publication);
+    }
+    // Map order is first-insertion order, so this is still oldest first.
+    let kept = [...loudest.values()];
+
+    const stories = [...new Set(kept.map(p => p.storyId))];
+    if (stories.length > MAX_FEED_STORIES) {
+        const newest = new Set(stories.slice(-MAX_FEED_STORIES));
+        kept = kept.filter(p => newest.has(p.storyId));
+    }
+    return kept;
+}
 
 /**
  * Record investigations that crossed into PUBLICATION or SCANDAL this tick.
@@ -261,9 +299,7 @@ export function tickPress(world: GameWorldState, tickIndex: number, dtHours = 6)
     recordInvestigationBreaks(world, newState, stagesBefore);
 
     // Cap unbounded pools before persisting into the world blob.
-    if (newState.publishedStories.length > MAX_PUBLISHED) {
-        newState.publishedStories = newState.publishedStories.slice(-MAX_PUBLISHED);
-    }
+    newState.publishedStories = trimFeed(newState.publishedStories);
     if (newState.activeStories.size > MAX_ACTIVE) {
         const excess = newState.activeStories.size - MAX_ACTIVE;
         const keys = [...newState.activeStories.keys()].slice(0, excess);

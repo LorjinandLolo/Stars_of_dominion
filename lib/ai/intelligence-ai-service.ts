@@ -47,6 +47,9 @@ export function processEmpireIntelligenceTurn(factionId: string, world: GameWorl
 
     // 3. Choose target and operation based on archetype
     for (const targetId of targets) {
+        // One live operation per target. A service with capacity to spare
+        // works its next rival rather than stacking everything on one capital.
+        if (hasLiveOperationAgainst(world, factionId, targetId)) continue;
         const opId = chooseOperationForArchetype(profile.archetype, factionId, targetId, world);
         if (opId) {
             // Target the victim's capital system so region-based mechanics
@@ -61,26 +64,65 @@ export function processEmpireIntelligenceTurn(factionId: string, world: GameWorl
     }
 }
 
+/** True while this empire already has an operation running against that one. */
+export function hasLiveOperationAgainst(world: GameWorldState, actorId: string, targetId: string): boolean {
+    for (const op of world.espionage.operations.values()) {
+        if (op.status === 'active' && op.actorFactionId === actorId && op.targetFactionId === targetId) return true;
+    }
+    return false;
+}
+
+/** Rivalry score at which another empire is worth an agent. */
+const RIVAL_TARGET_SCORE = 40;
+
+/**
+ * Who this empire would spy on, in the order it will try them.
+ *
+ * Rivals first, drawn at random in proportion to how much they are resented.
+ * Services follow the galaxy's actual quarrels — which means an empire
+ * everyone resents (the Infernoids, as the galaxy is seeded) is worked by
+ * every service at once, held to one live operation each by the caller. That
+ * is a pariah being treated as one; it is not the bug this replaced. The
+ * original read rivalries by splitting the
+ * map key on ':' — a separator no rivalry key contains (they are
+ * `rivalry-<a>-<b>`) — so no rivalry ever produced a target, and every AI fell
+ * through to the fallback below and took its FIRST entry: the same empire for
+ * all of them, whichever aggressive posture came first in map order. That one
+ * empire spent the season under thirty-odd concurrent operations while most
+ * of the others were never touched.
+ */
 function identifyPotentialTargets(factionId: string, world: GameWorldState): string[] {
-    const targets: string[] = [];
-    
-    // Check rivalries
-    for (const [key, rivalry] of world.rivalries) {
-        const [f1, f2] = key.split(':');
-        if (f1 === factionId) targets.push(f2);
-        else if (f2 === factionId) targets.push(f1);
+    const resentment = new Map<string, number>();
+    for (const rivalry of world.rivalries.values()) {
+        const other = rivalry.empireAId === factionId ? rivalry.empireBId
+            : rivalry.empireBId === factionId ? rivalry.empireAId
+                : null;
+        if (!other || other === factionId) continue;
+        if (!world.economy.factions.has(other)) continue;
+        resentment.set(other, Math.max(resentment.get(other) ?? 0, rivalry.rivalryScore ?? 0));
     }
 
-    // Add strong neighbors if not already there
-    // (Simplified: just use factions with high military power/aggressive posture)
-    for (const [fid, posture] of world.movement.empirePostures) {
-        if (fid !== factionId && !targets.includes(fid)) {
-            if (posture.current === 'Militarist' || posture.current === 'Expansionist') {
-                targets.push(fid);
-            }
+    const rivals = [...resentment.entries()].filter(([, score]) => score >= RIVAL_TARGET_SCORE);
+    const targets: string[] = [];
+    while (rivals.length > 0) {
+        const total = rivals.reduce((sum, [, score]) => sum + score, 0);
+        let roll = Math.random() * total;
+        let index = rivals.findIndex(([, score]) => (roll -= score) < 0);
+        if (index < 0) index = rivals.length - 1;
+        targets.push(rivals.splice(index, 1)[0][0]);
+    }
+
+    // With nobody resented enough, watch the empires built for war — in an
+    // order that differs per empire, for the same reason.
+    if (targets.length === 0) {
+        const aggressive = [...world.movement.empirePostures]
+            .filter(([fid, posture]) => fid !== factionId
+                && (posture.current === 'Militarist' || posture.current === 'Expansionist'))
+            .map(([fid]) => fid);
+        while (aggressive.length > 0) {
+            targets.push(aggressive.splice(Math.floor(Math.random() * aggressive.length), 1)[0]);
         }
     }
-
 
     return targets;
 }

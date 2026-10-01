@@ -32,6 +32,7 @@ import {
     signProtectionContract,
 } from '../../piracy/protection-service';
 import {
+    boardControl,
     computeInfluence,
     computeStanding,
     hasRight,
@@ -537,6 +538,7 @@ export function acquireCompany(
     world: GameWorldState,
     nowSeconds: number
 ): boolean {
+    if (blocksBuyOut(target, buyer)) return false;
     const price = Math.max(20_000, Math.round(netWorth(target) * 1.2));
     if (buyer.treasury < price) return false;
 
@@ -607,6 +609,29 @@ export function acquireCompany(
     return true;
 }
 
+/** Share of a company that lets its holder refuse a buy-out. */
+const BLOCKING_STAKE_PERCENT = 50;
+
+/**
+ * A buy-out needs the board. Whoever holds half the shares or more can refuse
+ * one, and a state does: its company is not sold out from under it. (The buyer's
+ * own founder holding the block is the one case that is not a refusal.)
+ *
+ * Without this the stake a state kept meant nothing here — any rival with the
+ * cash dissolved the charter and paid the state off. An AI government charters
+ * at exactly half ("the state keeps the board"), re-chartered every time it
+ * lost one, and lost it again within days: ninety buy-outs a season among
+ * fourteen companies. Selling the state's holding below half is now what makes
+ * a company takeable, which is the choice the ownership split was always
+ * supposed to be.
+ */
+export function blocksBuyOut(target: CharteredCompany, buyer: CharteredCompany): boolean {
+    const control = boardControl(target);
+    if (control.percent < BLOCKING_STAKE_PERCENT) return false;
+    if (control.holderId.startsWith('class:')) return false;
+    return control.holderId !== buyer.foundingFactionId;
+}
+
 /** Rough going-concern value, used to price acquisitions. */
 function netWorth(company: CharteredCompany): number {
     const assets = (company.assets ?? []).reduce((s, a) => s + a.value, 0);
@@ -621,6 +646,7 @@ function tryAcquireRival(
     nowSeconds: number
 ): boolean {
     const affordable = findRivals(company, corpState)
+        .filter(r => !blocksBuyOut(r, company))
         .filter(r => netWorth(r) * 1.2 <= company.treasury)
         .sort((a, b) => netWorth(b) - netWorth(a));
     if (affordable.length === 0) return false;

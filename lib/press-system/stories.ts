@@ -7,6 +7,7 @@ import {
     PlanetState
 } from './types';
 import { RNG } from './utils';
+import { PressConfig } from './config';
 
 export interface TriggerContext {
     espionageSuccess?: boolean;
@@ -56,11 +57,11 @@ export function generateStories(
     for (const [id, empire] of empires.entries()) {
         // High pressure increases chance of localized rumors
         const pressure = empire.informationPressure;
-        if (rng.check(pressure * 0.005)) { // e.g. 50 pressure -> 25% chance? No, 0.25%? 
-            // 0.005 * 100 = 0.5 (50% chance seems high per tick if tick is hourly)
-            // Let's assume tick is hourly. 0.001 * pressure = 10% at max pressure?
-            // Actually, let's keep it modest.
-
+        // Rumours feed on pressure, and rumours are themselves coverage, so
+        // this is a loop: its gain has to stay well under one. At 0.005 per
+        // point it did not — pressure bred rumours faster than they faded and
+        // every empire sat at the ceiling all season.
+        if (rng.check(pressure * PressConfig.stories.rumourChancePerPressure)) {
             stories.push({
                 id: `RUMOR_${generateId(rng)}`,
                 source: StorySource.RUMOR_MILL,
@@ -74,7 +75,7 @@ export function generateStories(
         }
 
         // Economic reports if pressure is high
-        if (pressure > 60 && rng.check(0.05)) {
+        if (pressure > PressConfig.stories.economicReportPressure && rng.check(PressConfig.stories.economicReportChance)) {
             stories.push({
                 id: `ECON_${generateId(rng)}`,
                 source: StorySource.ECONOMIC_DATA,

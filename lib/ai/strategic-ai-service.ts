@@ -18,6 +18,9 @@ import { startConstruction } from '../construction/construction-service';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { TechEngine, registry } from '../tech/engine';
 import { runCharterAI } from './charter-ai';
+import { hasLiveOperationAgainst } from './intelligence-ai-service';
+import { runPressOffice } from '@/lib/press-system/press-office';
+import { answerGovernmentDesk } from '../government/caretaker';
 
 /**
  * How an empire is playing right now. The default AI assumes a going concern
@@ -65,6 +68,41 @@ export class StrategicAIService {
         this.manageResearch(factionId, world);
         this.manageEspionage(factionId, world, stance);
         this.manageCharters(factionId, world, stance);
+        this.managePress(factionId, world);
+        this.manageUnrest(factionId, world);
+    }
+
+    /**
+     * Answer worlds in defiance and regions asking to leave, and keep the
+     * cabinet honest. An AI government never did any of it: a demand it could
+     * not answer expired as a refusal and the first defiant world took the
+     * empire down the whole ladder to civil war; a cabinet nobody policed
+     * reached the corruption where scandals start and stayed there
+     * (lib/government/caretaker.ts — the same answers a delegated human gets).
+     */
+    private static manageUnrest(factionId: string, world: GameWorldState): void {
+        try {
+            for (const action of answerGovernmentDesk(world, factionId)) {
+                console.log(`[AI] ${factionId} government: ${action}`);
+            }
+        } catch (e) {
+            console.error(`[AI] ${factionId} government turn failed:`, e);
+        }
+    }
+
+    /**
+     * Answer the press. Inquiries and media crises could only be answered by a
+     * player's order, so an AI empire let every dig run to a scandal and every
+     * crisis expire as a confession (lib/press-system/press-office.ts).
+     */
+    private static managePress(factionId: string, world: GameWorldState): void {
+        try {
+            for (const action of runPressOffice(world, factionId)) {
+                console.log(`[AI] ${factionId} press: ${action}`);
+            }
+        } catch (e) {
+            console.error(`[AI] ${factionId} press turn failed:`, e);
+        }
     }
 
     /**
@@ -309,36 +347,40 @@ export class StrategicAIService {
         const investment = stance === 'consolidating' ? 0.35 : 0.9;
         const chance = stance === 'consolidating' ? 0.1 : 0.25;
 
-        const rivalries = Array.from(world.rivalries.values()).filter(r => r.empireAId === factionId || r.empireBId === factionId);
+        // If tension is high, launch black ops — against ANY rival it is high
+        // with, not the first one in the list. Walking the rivalry map in order
+        // and stopping at the first hit sent every AI in the galaxy after the
+        // same empire (whichever sorts first), which then sat under saturated
+        // covert pressure all season while most others were never touched.
+        const hostile = Array.from(world.rivalries.values())
+            .filter(r => (r.empireAId === factionId || r.empireBId === factionId) && r.escalationLevel > 3)
+            // ...and one operation per rival at a time (either launch path).
+            .filter(r => !hasLiveOperationAgainst(world, factionId, r.empireAId === factionId ? r.empireBId : r.empireAId));
+        if (hostile.length === 0 || Math.random() >= chance) return;
+        const rival = hostile[Math.floor(Math.random() * hostile.length)];
+        const targetId = rival.empireAId === factionId ? rival.empireBId : rival.empireAId;
 
-        for (const rival of rivalries) {
-            // If tension is high, launch black ops
-            if (rival.escalationLevel > 3 && Math.random() < chance) {
-                const targetId = rival.empireAId === factionId ? rival.empireBId : rival.empireAId;
-                // Find a system the target actually holds. The original lookup
-                // asked the PLANET map for a SYSTEM id, which never matched, so
-                // AI espionage silently never fired at all. Planet ownership is
-                // the authoritative source; system.ownerFactionId is a derived
-                // field the worker recomputes, so it is only a fallback.
-                const targetPlanet = Array.from(world.construction.planets.values())
-                    .find(p => p.ownerId === targetId);
-                const targetSystemId = targetPlanet?.systemId
-                    ?? Array.from(world.movement.systems.values()).find(s => s.ownerFactionId === targetId)?.id;
-                const targetSystem = targetSystemId ? world.movement.systems.get(targetSystemId) : undefined;
+        // Find a system the target actually holds. The original lookup asked
+        // the PLANET map for a SYSTEM id, which never matched, so AI espionage
+        // silently never fired at all. Planet ownership is the authoritative
+        // source; system.ownerFactionId is a derived field the worker
+        // recomputes, so it is only a fallback.
+        const targetPlanet = Array.from(world.construction.planets.values())
+            .find(p => p.ownerId === targetId);
+        const targetSystemId = targetPlanet?.systemId
+            ?? Array.from(world.movement.systems.values()).find(s => s.ownerFactionId === targetId)?.id;
+        const targetSystem = targetSystemId ? world.movement.systems.get(targetSystemId) : undefined;
+        if (!targetSystem) return;
 
-                if (targetSystem) {
-                    launchOperation(
-                        factionId,
-                        targetId,
-                        targetSystem.id,
-                        'infrastructureSabotage', // AI defaults to sabotaging infra
-                        investment,
-                        0.4, // Medium risk
-                        world
-                    );
-                    return; // one operation per turn, whatever the stance
-                }
-            }
-        }
+        // One operation per turn, whatever the stance.
+        launchOperation(
+            factionId,
+            targetId,
+            targetSystem.id,
+            'infrastructureSabotage', // AI defaults to sabotaging infra
+            investment,
+            0.4, // Medium risk
+            world
+        );
     }
 }

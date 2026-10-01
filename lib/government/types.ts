@@ -160,6 +160,14 @@ export interface GovernmentState {
     corruption: number;
 
     /**
+     * 0–1. Covert pressure on THIS empire: live operations aimed at it plus the
+     * galaxy-wide ambient level (lib/espionage/pressure.ts). Written each tick
+     * so the client can show it — the operations themselves are other empires'
+     * secrets and never reach it. Absent on snapshots from before it existed.
+     */
+    covertPressure?: number;
+
+    /**
      * 0–100. Population-weighted aggregate of per-planet cohesion — whether the
      * civilization still accepts being one political order. NOT approval: a
      * disliked government can rule a cohesive empire, and a popular one can be
