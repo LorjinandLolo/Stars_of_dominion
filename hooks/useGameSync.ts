@@ -89,6 +89,7 @@ const PORTFOLIO_LABELS: Record<string, string> = {
 
 export function useGameSync() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    const observer = useUIStore(s => s.observer);
 
     // Mirror the lobby's faction pick into playerState the moment it lands.
     // Snapshot updates only run when a shard changed, so stamping it there
@@ -1097,6 +1098,10 @@ export function useGameSync() {
             }
             // Only the caller's own shard carries any (the public projection
             // of a rival's shard is an allow-list without them).
+            if (mappedShard.comeback) {
+                if (!(world.comeback instanceof Map)) world.comeback = new Map();
+                world.comeback.set(mappedShard.factionId, mappedShard.comeback);
+            }
             if (Array.isArray(mappedShard.messages)) {
                 if (!world.empireMessages) world.empireMessages = new Map();
                 world.empireMessages.set(mappedShard.factionId, mappedShard.messages);
@@ -1283,7 +1288,9 @@ export function useGameSync() {
             }
         };
 
-        if (playerFactionId) {
+        // An observer (Item 7) holds no faction but watches the same galaxy;
+        // the sync route serves it the public view of every empire.
+        if (playerFactionId || observer) {
             initSync();
         }
 
@@ -1308,7 +1315,7 @@ export function useGameSync() {
             if (piracyTimer) clearInterval(piracyTimer);
             if (retryTimeout) clearTimeout(retryTimeout);
         };
-    }, [playerFactionId, retryCount]);
+    }, [playerFactionId, observer, retryCount]);
 
     return { isLoading, error };
 }

@@ -259,6 +259,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 // DATABASE_URL lazily on first query, so a static import is safe here.
 import { prisma } from '../lib/db';
 import { loadRecentMessages } from '../lib/messages/message-service';
+import { handleLobbyOrder, LOBBY_TAKE_BREAKAWAY } from '../lib/breakaway/seat-service';
 import { groupMessagesByFaction } from '../lib/messages/message-rules';
 import { ensurePiracyState, playedOrganization } from '../lib/piracy/organization-service';
 import { establishBase } from '../lib/piracy/base-service';
@@ -635,6 +636,20 @@ async function runGameTick() {
             const orderBudgets = new Map<string, number>();
             const deferredByFaction = new Map<string, number>();
             for (const orderDoc of pendingOrders) {
+                // A seat in a breakaway state (casual-play Item 7). Written only
+                // by lib/breakaway/seat-service.ts, never by the player order
+                // path; handled here because it changes the world and writes the
+                // claim. Not retried: the lobby shows the outcome and can ask again.
+                if (orderDoc.actionId === LOBBY_TAKE_BREAKAWAY) {
+                    try {
+                        const outcome = await handleLobbyOrder(world, JSON.parse(orderDoc.payload));
+                        console.log(`[Tick Worker] Breakaway seat: ${outcome.message}`);
+                    } catch (e: any) {
+                        console.error('[Tick Worker] Breakaway seat failed:', e?.message ?? e);
+                    }
+                    await prisma.gameOrder.delete({ where: { id: orderDoc.id } }).catch(() => {});
+                    continue;
+                }
                 const fid = orderDoc.factionId;
                 if (!orderBudgets.has(fid)) orderBudgets.set(fid, orderBudget(world, fid));
                 const left = orderBudgets.get(fid)!;

@@ -41,7 +41,7 @@ export const COMEBACK_PATHS: Record<string, ComebackPath> = {
             {
                 id: 'shadow_strike',
                 name: 'Shadow Strike',
-                description: 'First strike from stealth deals 200% damage.',
+                description: 'An ambush sprung from an asteroid belt lands twice as hard: the victim opens the battle at half the organization it otherwise would.',
                 tier: 1,
                 effect_type: 'PASSIVE',
                 effect_config: { damage_mult: 2.0, condition: 'stealth' },
@@ -50,7 +50,7 @@ export const COMEBACK_PATHS: Record<string, ComebackPath> = {
             {
                 id: 'cell_network',
                 name: 'Cell Network',
-                description: 'Planets cannot be fully blockaded; 20% trade always gets through.',
+                description: 'A blockade never closes your trade entirely: at least 20% still gets through.',
                 tier: 2,
                 effect_type: 'PASSIVE',
                 effect_config: { blockade_pierce: 0.2 },

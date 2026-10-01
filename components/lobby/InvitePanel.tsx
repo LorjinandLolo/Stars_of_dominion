@@ -32,6 +32,8 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
     const [copied, setCopied] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    // A breakaway state is being raised next to the friend (no free empire left).
+    const [rising, setRising] = React.useState(false);
 
     // Arrived through a link? Read who sent it. A player who already leads an
     // empire cannot spend one, so the code is dropped rather than left waiting.
@@ -63,6 +65,29 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { setError(data.error ?? 'That did not go through.'); setBusy(false); return; }
             forgetInvite();
+            if (data?.pendingBreakaway) {
+                // Every empire was taken: a province next to the friend is
+                // rising for this player (Item 7). Wait for the worker to hand
+                // it over, then enter like any other claim.
+                setRising(true);
+                const started = Date.now();
+                const poll = async () => {
+                    const claim = await fetch('/api/lobby/claim', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+                    if (claim?.myFactionId) {
+                        onClaimed({ factionId: claim.myFactionId, empireName: 'your breakaway state', inviterName: data.inviterName, inviterEmpire: data.inviterEmpire });
+                        return;
+                    }
+                    if (Date.now() - started > 120_000) {
+                        setError('The galaxy did not answer in time. Is the game worker running? Try again in a minute.');
+                        setRising(false);
+                        setBusy(false);
+                        return;
+                    }
+                    setTimeout(poll, 3000);
+                };
+                poll();
+                return;
+            }
             onClaimed(data as InviteClaimResult);
         } catch {
             setError('Could not reach the server.');
@@ -106,7 +131,9 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                     disabled={busy}
                     className="mt-4 w-full min-h-[44px] rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold transition-colors"
                 >
-                    {busy ? 'Finding your seat…' : `Start next to ${pending.inviterName}`}
+                    {rising
+                        ? `Every empire is taken — a province next to ${pending.inviterName} is rising for you…`
+                        : busy ? 'Finding your seat…' : `Start next to ${pending.inviterName}`}
                 </button>
             </div>
         );

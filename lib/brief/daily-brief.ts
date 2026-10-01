@@ -267,6 +267,7 @@ export function describeChronicleRow(row: BriefChronicleRow, factionId: string):
         case 'coup_attempted': return `A coup was attempted in ${actor}.`;
         case 'government_changed': return `${actor} changed government.`;
         case 'secession_declared': return `${target} declared independence from ${actor}.`;
+        case 'breakaway_claimed': return `${actor} has a new leader.`;
         case 'civil_war_started': return `Civil war broke out in ${actor}.`;
         case 'defiance_event': return `Open defiance${where}.`;
         case 'trade_route_opened': return `A trade route opened between ${actor} and ${target}.`;

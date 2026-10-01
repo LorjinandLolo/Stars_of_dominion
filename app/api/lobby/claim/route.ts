@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { claimThroughInvite } from '@/lib/invites/invite-service';
 import { normaliseInviteCode } from '@/lib/invites/invite-rules';
+import { LOBBY_FACTIONS } from '@/data/factions/lobby-factions';
 
 /** Player-facing name, sanitized: no control chars, bounded length. It is
  *  rendered into every other player's lobby verbatim. */
@@ -37,11 +38,18 @@ export async function POST(req: NextRequest) {
             if (!code) return NextResponse.json({ error: 'That invite code does not exist.' }, { status: 404 });
             const result = await claimThroughInvite(code, userId, displayName || session?.user?.name || 'Commander');
             if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-            return NextResponse.json({ success: true, ...result.value });
+            return NextResponse.json({ success: true, ...result.value }, { status: result.value.pendingBreakaway ? 202 : 200 });
         }
 
         if (!factionId) {
             return NextResponse.json({ error: 'Missing factionId' }, { status: 400 });
+        }
+        // Only the fourteen lobby empires are claimed here. This route never
+        // checked, so any string was a claim — including a breakaway state,
+        // which must go through /api/lobby/breakaway (eligibility, the worker,
+        // the comeback rules).
+        if (!LOBBY_FACTIONS.some(f => f.id === factionId)) {
+            return NextResponse.json({ error: 'That is not an empire you can pick here.' }, { status: 400 });
         }
 
         // 1. Check if ANY user already claimed this faction

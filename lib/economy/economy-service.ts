@@ -36,6 +36,7 @@ import {
     importsBlocked,
     tradeThroughputUnderBlockade,
 } from '../logistics/blockade-service';
+import { blockadeThroughputFloor } from '@/lib/comeback/comeback-service';
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -581,10 +582,13 @@ export function tickTradeFlow(
             const toPlanet = [...ecoWorld.planets.values()].find(p => p.systemId === edge.toSystemId);
             // A cordon throttles what crosses it in both directions: nothing lifts
             // from a blockaded exporter, nothing lands on a blockaded importer.
-            const blockadeFactor = Math.min(
-                tradeThroughputUnderBlockade(fromPlanet),
-                tradeThroughputUnderBlockade(toPlanet)
+            // Cell Network (a comeback empire's perk, lib/comeback): its
+            // trade is never cut entirely — a floor under its own worlds' side.
+            const throughput = (p: typeof fromPlanet | undefined) => Math.max(
+                tradeThroughputUnderBlockade(p),
+                blockadeThroughputFloor(world, (p as any)?.factionId),
             );
+            const blockadeFactor = Math.min(throughput(fromPlanet), throughput(toPlanet));
             const drainRate = scaleBundles(fromPlanet.currentRates, 0.5 * eff * hubMult * blockadeFactor);
             edge.flowPerHour = drainRate;
             // Drain from stockpile (up to what's available)

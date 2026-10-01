@@ -253,6 +253,17 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
                 tone: 'grave',
             };
 
+        case 'breakaway_claimed': {
+            const rebel = str(e, 'rebelName', actor);
+            const parent = str(e, 'parentName', target);
+            const backers = str(e, 'backers', '');
+            return {
+                headline: `A new hand takes ${rebel}`,
+                body: `${rebel} has a new leader. The movement that broke from ${parent} with ${num(e, 'worlds') ?? 'a handful of'} world${num(e, 'worlds') === 1 ? '' : 's'} is no longer a cause in search of a captain${e.facts.comeback === true ? ' — and the captain it found has already lost an empire once, and learned from it' : ''}. ${backers ? `${backers} ${backers.includes(',') ? 'have' : 'has'} put money behind it, reportedly for the light rules a young state writes.` : 'Private capital is circling, as it does wherever the rules are still being written.'} In ${parent}, the question is no longer whether the rebellion survives the winter but which province is watching it most closely.`,
+                tone: 'alarmed',
+            };
+        }
+
         case 'civil_war_started':
             return {
                 headline: `THE EMPIRE SPLITS: ${str(e, 'rebelName', 'a breakaway state')} declares independence from ${target}`,

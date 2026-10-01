@@ -168,7 +168,9 @@ export default function GameShell() {
     // loading. Once it drops it never comes back for reconnects.
     const bootDoneRef = useRef(false);
     const galaxyReady = systems.length > 0;
-    const booting = !bootDoneRef.current && (!playerFactionId || !galaxyReady || syncLoading);
+    // Observer mode (Item 7): watching without an empire, so no faction to wait for.
+    const observer = useUIStore(s => s.observer);
+    const booting = !bootDoneRef.current && ((!playerFactionId && !observer) || !galaxyReady || syncLoading);
     if (!booting) bootDoneRef.current = true;
     const bootFactionName = playerFactionId
         ? (factions[playerFactionId]?.name ?? playerFactionId.replace(/^faction-/, '').replace(/[_-]/g, ' '))
@@ -205,6 +207,15 @@ export default function GameShell() {
             } catch { /* transient failure — resolved below */ }
 
             if (serverAnswered) {
+                // Asked to watch (lobby "Just watch the galaxy", ?watch=1): stay,
+                // read-only. The server refuses every order from an account
+                // with no claim, and the sync route serves it only the public
+                // projection of every empire, fogged as for anyone else.
+                if (new URLSearchParams(window.location.search).get('watch') === '1') {
+                    localStorage.removeItem('selectedFactionId');
+                    useUIStore.getState().setObserver(true);
+                    return;
+                }
                 // The server said this account has NO claim. A stale
                 // localStorage selection used to let the account enter the game
                 // as any UNCLAIMED faction anyway. No claim → the lobby, always.
@@ -255,6 +266,14 @@ export default function GameShell() {
 
             {/* Phones only: the map and depth panels are built for a wide screen. */}
             <SmallScreenNote />
+
+            {/* Watching without an empire (Item 7). */}
+            {observer && (
+                <div id="observer-banner" className="relative z-40 flex items-center justify-between gap-3 px-3 py-1 border-b border-amber-700/40 bg-amber-950/80 text-amber-100">
+                    <p className="text-[11px] leading-snug">You are watching. You hold no empire, so nothing here takes orders from you.</p>
+                    <a href="/lobby" className="shrink-0 min-h-[40px] inline-flex items-center px-3 rounded-lg border border-amber-500/40 text-[11px] font-bold hover:bg-amber-500/10">Join the galaxy</a>
+                </div>
+            )}
 
             {/* ── Main area ──────────────────────────────────────────────────────── */}
             <div className="flex flex-1 overflow-hidden relative">

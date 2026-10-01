@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
 import BootScreen from '@/components/auth/BootScreen';
 import InvitePanel from '@/components/lobby/InvitePanel';
+import BreakawayPanel from '@/components/lobby/BreakawayPanel';
 
 interface LobbyFaction {
     id: string;
@@ -118,6 +119,14 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
             setConfirming(false);
         }
     };
+
+    // A breakaway state was handed over by the worker: straight into the game.
+    const handleBreakawayTaken = React.useCallback((factionId: string) => {
+        localStorage.setItem('selectedFactionId', factionId);
+        setPlayerFactionId(factionId);
+        setEntering({ name: 'your breakaway state', accent: '#f59e0b', registered: true });
+        router.push('/');
+    }, [router, setPlayerFactionId]);
 
     const selected = factions.find(f => f.id === selectedId);
     const hovered = factions.find(f => f.id === hoveredId);
@@ -302,6 +311,9 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                     </p>
                 )}
             </div>
+
+            {/* Late joiners and fallen players: a breakaway state, or watch (Item 7). */}
+            {currentUser && <BreakawayPanel onTaken={handleBreakawayTaken} />}
 
             {/* Faction Cards - Scrollable area */}
             <div className="relative z-10 max-w-5xl w-full px-4 md:px-6 mb-6 md:mb-10 md:overflow-y-auto md:max-h-[65vh] custom-scrollbar md:pr-2">

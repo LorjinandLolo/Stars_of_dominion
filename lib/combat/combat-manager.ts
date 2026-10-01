@@ -21,6 +21,7 @@ import { phaseShieldBonus, precognitionBonus } from '../factions/nexulan';
 import { FIREBLOOD_FLEET_COEFF, isInfernoid, recordDetonation } from '../factions/infernoid';
 import { issueMoveOrder } from '../movement/movement-service';
 import { AMBUSH_FRESH_SECONDS, AMBUSH_ORGANIZATION_FACTOR } from '../movement/belts';
+import { ambushOrganizationBonus } from '../comeback/comeback-service';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { computeOrbitalRatings, applyOrbitalDamage } from '../orbital/orbital-service';
 import * as chronicle from '../narrative/chronicle';
@@ -236,12 +237,13 @@ function handleEngagement(
             world.nowSeconds - f.ambushedBy.atSeconds <= AMBUSH_FRESH_SECONDS);
         if (ambushOf(roles.defenderFleets, attackerId)) {
             state.momentum = 1;
-            state.defender.organization *= AMBUSH_ORGANIZATION_FACTOR;
+            // Shadow Strike (comeback perk) doubles the opening blow.
+            state.defender.organization *= AMBUSH_ORGANIZATION_FACTOR * ambushOrganizationBonus(world, attackerId);
             for (const f of roles.defenderFleets) f.ambushedBy = null;
             console.log(`[CombatManager] ${attackerId} ambushed ${defenderId} from the belt at ${systemId}`);
         } else if (ambushOf(roles.attackerFleets, defenderId)) {
             state.momentum = -1;
-            state.attacker.organization *= AMBUSH_ORGANIZATION_FACTOR;
+            state.attacker.organization *= AMBUSH_ORGANIZATION_FACTOR * ambushOrganizationBonus(world, defenderId);
             for (const f of roles.attackerFleets) f.ambushedBy = null;
             console.log(`[CombatManager] ${defenderId} ambushed ${attackerId} from the belt at ${systemId}`);
         }

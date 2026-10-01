@@ -41,6 +41,8 @@ export type ChronicleEventType =
     | 'government_changed'
     | 'secession_declared'
     | 'civil_war_started'
+    // A person takes the helm of a breakaway state (casual-play Item 7).
+    | 'breakaway_claimed'
     | 'defiance_event'
     // Economy
     | 'trade_route_opened'

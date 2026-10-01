@@ -24,6 +24,7 @@ import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
 import type { EmpireMessageView } from './messages/message-rules';
+import type { ComebackRecord } from './comeback/comeback-service';
 import type { GoalState } from './goals/first-week-goals';
 import type { FactionReputation } from './reputation/types';
 import type { FactionTraitState } from './factions/faction-traits-types';
@@ -251,6 +252,13 @@ export interface GameWorldState {
      * players.
      */
     empireMessages?: Map<string, EmpireMessageView[]>;
+
+    /**
+     * Comeback paths (lib/comeback/comeback-service.ts), keyed by the faction
+     * a fallen player now leads. Only a player whose own empire was destroyed
+     * has one (casual-play Item 7). Rides that empire's shard.
+     */
+    comeback?: Map<string, ComebackRecord>;
 
     /**
      * Per-faction bespoke mechanics — the Bloodmoon ceasefire, capacola surges,

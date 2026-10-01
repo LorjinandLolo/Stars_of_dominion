@@ -298,6 +298,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // empire's own; the public projection in shard-privacy.ts is an
         // allow-list, so a rival's poll never carries them.
         messages: world.empireMessages?.get(factionId) ?? null,
+        // A fallen player's comeback path (lib/comeback). Theirs alone.
+        comeback: world.comeback?.get(factionId) ?? null,
         // Ship designs are the owner's alone. They ride the shard (not the
         // shared snapshot) and the public projection in shard-privacy.ts is an
         // allow-list, so rivals never see them on the wire.
@@ -379,6 +381,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
         world.firstWeekGoals.set(shard.factionId, shard.firstWeekGoals);
     }
+    if (shard.comeback) {
+        if (!(world.comeback instanceof Map)) world.comeback = new Map();
+        world.comeback.set(shard.factionId, shard.comeback);
+    }
     if (Array.isArray(shard.messages)) {
         if (!world.empireMessages) world.empireMessages = new Map();
         world.empireMessages.set(shard.factionId, shard.messages);
@@ -443,6 +449,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // Messages between two players are read by those two players. The shared
     // snapshot goes to every client, so it carries none of them.
     if (cloned.empireMessages instanceof Map) cloned.empireMessages.clear();
+    if (cloned.comeback instanceof Map) cloned.comeback.clear();
 
     // Pirate state never rides in the shared snapshot. Every mechanic that
     // matters here is a mechanic about asymmetric information — hidden bases,

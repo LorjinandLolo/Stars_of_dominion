@@ -80,6 +80,7 @@ import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-
 import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
 import { runDelegatedSystems } from '../delegation/delegation-runner';
+import { tickComeback, perkName } from '../comeback/comeback-service';
 import { tickRogueCompanies } from '../economy/corporate/rogue-service';
 import { tickMissionServices } from '../economy/corporate/mission-services';
 import { tickAssetRaids } from '../economy/corporate/asset-raids';
@@ -314,6 +315,7 @@ export async function runStrategicTick(
     step18_leadershipXP(world);
     step19_strategicAI(world);
     step19b_delegatedSystems(world);
+    step19c_comeback(world);
     step20_titlesAndSeasons(world);
 
 
@@ -605,6 +607,26 @@ function step19b_delegatedSystems(world: ReturnType<typeof getGameWorldState>) {
         }
     } catch (e) {
         console.error('[TickProcessor] step19b_delegatedSystems failed:', e);
+    }
+}
+
+/**
+ * Comeback paths (casual-play Item 7): a fallen player's new state learns a
+ * little every strategic tick it survives; new perks are announced.
+ */
+function step19c_comeback(world: ReturnType<typeof getGameWorldState>) {
+    try {
+        for (const { factionId, perkIds } of tickComeback(world as any)) {
+            fireNotification({
+                id: `comeback-perk-${factionId}-${perkIds.join('-')}`,
+                factionId, category: 'military', priority: 'normal',
+                title: 'GUERRILLA DOCTRINE',
+                body: `Your people have learned to fight from nothing. Unlocked: ${perkIds.map(perkName).join(', ')}.`,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false,
+            } as any);
+        }
+    } catch (e) {
+        console.error('[TickProcessor] step19c_comeback failed:', e);
     }
 }
 

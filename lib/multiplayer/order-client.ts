@@ -42,6 +42,13 @@ export async function dispatchOrder(input: DispatchInput): Promise<DispatchResul
     const store = useUIStore.getState();
     const localId = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+    // An observer holds no empire (Item 7). The server would refuse the order
+    // anyway (no claim); refusing here keeps the HUD from showing a chip that
+    // can only fail.
+    if (store.observer || !store.playerFactionId) {
+        return { success: false, error: 'You are watching — observers cannot give orders.', localId };
+    }
+
     const pending: PendingOrder = {
         localId,
         orderId: null,

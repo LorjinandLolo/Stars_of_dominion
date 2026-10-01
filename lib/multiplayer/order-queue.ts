@@ -110,7 +110,7 @@ async function getSessionUserId(): Promise<string | null> {
  * play claims a faction like everyone else (scripts/setup-dev-duel.ts).
  * DB errors fail CLOSED: a rejected click retries; a hijacked empire doesn't.
  */
-async function verifyFactionOwnership(
+export async function verifyFactionOwnership(
     factionId: string,
     userId: string | null
 ): Promise<{ ok: boolean; error?: string }> {

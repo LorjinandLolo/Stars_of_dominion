@@ -280,6 +280,11 @@ export interface UIStore {
     addSentMessage: (message: EmpireMessageView) => void;
     /** The contact DIPLOMACY should open on (a "Reply" in the brief). Cleared once used. */
     diplomacyFocusId: string | null;
+
+    // ── Observer mode (casual-play Item 7) ──
+    /** Watching the galaxy without an empire: read-only, orders refused. */
+    observer: boolean;
+    setObserver: (observer: boolean) => void;
     setDiplomacyFocusId: (factionId: string | null) => void;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──
@@ -645,6 +650,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
         state.messages.some(m => m.id === message.id) ? {} : { messages: [...state.messages, message] }
     )),
     diplomacyFocusId: null,
+    observer: false,
+    setObserver: (observer) => set({ observer }),
     setDiplomacyFocusId: (factionId) => set({ diplomacyFocusId: factionId }),
 
     // ── Interface preferences ──

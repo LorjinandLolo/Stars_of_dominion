@@ -5,7 +5,7 @@
 // just saw a quiet galaxy and assumed the server was broken.
 
 import React from 'react';
-import { Skull, Eye } from 'lucide-react';
+import { Skull, Eye, Flame } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
 
 export default function DefeatOverlay() {
@@ -34,6 +34,16 @@ export default function DefeatOverlay() {
                     is over — but the galaxy&apos;s isn&apos;t. The chronicle will remember
                     what you built, and what took it from you.
                 </p>
+                {/* Item 7: a fallen player can lead a breakaway state, and brings
+                    the lessons of defeat with them (the comeback path). */}
+                <a
+                    id="defeat-take-breakaway"
+                    href="/lobby"
+                    className="w-full min-h-[44px] bg-amber-600/80 hover:bg-amber-500/80 rounded-lg font-display text-[11px] tracking-[0.25em] text-white uppercase flex items-center justify-center gap-2 transition-colors"
+                >
+                    <Flame size={14} />
+                    Lead a breakaway state
+                </a>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                     You can keep watching the season unfold as an observer. When the
                     season closes, every empire — fallen ones included — appears in the

@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/db';
 import { LOBBY_FACTIONS, lobbyFactionById } from '@/data/factions/lobby-factions';
+import { requestBreakawaySeat } from '@/lib/breakaway/seat-service';
 import { capitalSystemIdFor } from '@/lib/galaxy/faction-capitals';
 import {
     INVITE_REFUSALS,
@@ -134,6 +135,12 @@ export interface InviteClaim {
     inviterName: string;
     inviterEmpire: string;
     jumps: number | null;
+    /**
+     * Every empire was taken: a breakaway state is being raised next to the
+     * host instead (casual-play Item 7, decision 7). The worker writes the
+     * claim within a cycle; `factionId` is empty until then.
+     */
+    pendingBreakaway?: boolean;
 }
 
 /** Hyperlane graph from the live snapshot: the map a friend will actually play on. */
@@ -203,5 +210,21 @@ export async function claimThroughInvite(code: string, userId: string, displayNa
             },
         };
     }
-    return fail(409, 'Every empire is claimed for this season — there is no seat left next to your friend.');
+    // No free empire anywhere: a province next to the host rises for the
+    // friend instead (Item 7, decision 7).
+    const queued = await requestBreakawaySeat({
+        userId, displayName, nearFactionId: invite.inviterFactionId, inviteCode: code, viaInvite: true,
+    });
+    if (!queued.ok) return fail(409, queued.error);
+    return {
+        ok: true,
+        value: {
+            factionId: '',
+            empireName: 'a breakaway state',
+            inviterName,
+            inviterEmpire: empireName(invite.inviterFactionId),
+            jumps: null,
+            pendingBreakaway: true,
+        },
+    };
 }
