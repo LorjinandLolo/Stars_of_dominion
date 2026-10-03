@@ -11,6 +11,7 @@
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
 import type { PlayerActionId } from '@/lib/actions/types';
 import { prisma } from '@/lib/db';
+import { recordServerEvent } from '@/lib/telemetry/telemetry-store';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
@@ -179,6 +180,7 @@ export async function queueOrder(input: QueueOrderInput): Promise<QueueOrderResu
                 payload: JSON.stringify(payload ?? {}),
             },
         });
+        recordServerEvent('order_queued', { userId, factionId }, { actionId });
         return { success: true, orderId: doc.id };
     } catch (e: any) {
         console.error('[OrderQueue] Failed to queue order:', e);

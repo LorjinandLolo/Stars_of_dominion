@@ -76,6 +76,8 @@ services:
       # passes only the variables listed here, so without this line the gate
       # could never be switched on from .env.
       INVITE_REQUIRED: ${INVITE_REQUIRED:-}
+      # off = record nothing about how the game is played (lib/telemetry).
+      TELEMETRY: ${TELEMETRY:-}
       # Only read by setup, and only on an empty database: creates DEV 1/DEV 2
       # with this password. Leave unset on a server friends play on.
       DEV_DUEL_PASSWORD: ${DEV_DUEL_PASSWORD:-}

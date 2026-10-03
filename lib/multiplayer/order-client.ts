@@ -18,6 +18,7 @@
 
 import { useUIStore, type PendingOrder } from '@/lib/store/ui-store';
 import { applyPendingOrderOverlays, describeOrder } from '@/lib/multiplayer/optimistic';
+import { track } from '@/lib/telemetry/telemetry-client';
 
 export interface DispatchInput {
     actionId: string;
@@ -86,6 +87,7 @@ export async function dispatchOrder(input: DispatchInput): Promise<DispatchResul
 
         if (!res.ok || data?.error) {
             const error = data?.error || `Order rejected (${res.status})`;
+            track('order_refused', { actionId, error });
             useUIStore.getState().updatePendingOrder(localId, { status: 'failed', error });
             return { success: false, error, localId };
         }
@@ -97,6 +99,7 @@ export async function dispatchOrder(input: DispatchInput): Promise<DispatchResul
         return { success: true, orderId: data.orderId, localId };
     } catch (e: any) {
         const error = e?.message || 'Network error while sending order.';
+        track('order_refused', { actionId, error });
         useUIStore.getState().updatePendingOrder(localId, { status: 'failed', error });
         return { success: false, error, localId };
     }

@@ -139,6 +139,7 @@ const PANEL_MAP = {
 } as const;
 
 import CommandDock from '@/components/shell/CommandDock';
+import { startTelemetry } from '@/lib/telemetry/telemetry-client';
 import CommandWorkspace from '@/components/shell/CommandWorkspace';
 
 export default function GameShell() {
@@ -161,6 +162,10 @@ export default function GameShell() {
 
     // Sync global state via API polling
     const { isLoading: syncLoading, error: syncError } = useGameSync();
+
+    // How the game is played — panels, minutes, refused orders, errors
+    // (lib/telemetry). Best-effort; never visible to the player.
+    useEffect(() => startTelemetry(), []);
 
     // Boot checklist: stays up until the faction is known AND the first
     // snapshot has landed, so the player sees "faction registered" and the

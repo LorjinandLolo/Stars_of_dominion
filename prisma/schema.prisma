@@ -393,3 +393,23 @@ model Feud {
   @@unique([factionAId, factionBId])
   @@map("feuds")
 }
+
+// How the game is played: sessions, panels opened, orders given and refused,
+// errors players ran into. Never what anyone typed. Written best-effort by
+// /api/telemetry (browser), the order queue and the worker; read by
+// scripts/telemetry-report.ts. TELEMETRY=off in .env stops all writes.
+// See lib/telemetry/telemetry-rules.ts for what each kind carries.
+model TelemetryEvent {
+  id        String   @id @default(cuid())
+  // Null for events the worker records: it knows the empire, not the account.
+  userId    String?
+  factionId String?
+  kind      String
+  detail    String? // JSON, at most 400 characters
+  at        DateTime @default(now())
+
+  @@index([userId, at])
+  @@index([factionId, at])
+  @@index([kind, at])
+  @@map("telemetry_events")
+}

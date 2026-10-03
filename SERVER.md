@@ -343,6 +343,21 @@ Each published article logs a line. In the game, COMMS → PRESS is the front
 page and COMMS → ARCHIVE is everything ever written, filterable by news,
 exposés, obituaries and named eras.
 
+### 5.4 Telemetry: how the game is being played
+
+The game records sessions, minutes played (one heartbeat a minute while the
+game is on screen), which panels and overlays get opened, orders given,
+orders refused (and the reason), and errors players ran into. Never anything
+a player typed. Tell your players it does.
+
+```bash
+docker compose -f compose.prod.yaml exec app npx tsx scripts/telemetry-report.ts
+```
+
+Last 7 days by default; pass a number for another window (`... telemetry-report.ts 3`).
+Add `--prune 60` to delete rows older than 60 days. `TELEMETRY=off` in `.env`
+followed by `docker compose -f compose.prod.yaml up -d` stops all recording.
+
 ## 6. Remote play — required for the friends launch
 
 The season is played by ~14 friends who are NOT on the LAN. Two workable

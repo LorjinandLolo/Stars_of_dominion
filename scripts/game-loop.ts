@@ -7,6 +7,7 @@ import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import * as chronicle from '../lib/narrative/chronicle';
 import { flushChronicle } from '../lib/narrative/chronicle-flush';
+import { bufferWorkerEvent, flushWorkerTelemetry } from '../lib/telemetry/telemetry-store';
 import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
@@ -1111,6 +1112,8 @@ async function runGameTick() {
         // the chronicle is allowed to lag, never to lie. See
         // docs/narrative-system/README.md, Invariant 2.
         const eventsWritten = await flushChronicle();
+        // How players are getting on: orders the worker refused this cycle.
+        await flushWorkerTelemetry();
 
         // Idle ticks stay silent; log only when something actually happened.
         if (eventsWritten > 0) {
@@ -1531,6 +1534,7 @@ function recordOrderFailure(world: any, factionId: string, actionId: string, rea
         at: new Date(world.nowSeconds * 1000).toISOString(),
     };
     console.warn(`[Order] ${factionId} order ${actionId} failed: ${reason}`);
+    bufferWorkerEvent(world, 'order_failed', factionId, { actionId, reason });
 }
 
 /**
