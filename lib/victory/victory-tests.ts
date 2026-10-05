@@ -33,7 +33,13 @@ import {
     applyTerritoryDrift,
     evaluateAutonomousRegions,
     ensureVictoryState,
+    readEnlightenmentConditions,
+    buildEnlightenmentView,
+    tickVictory,
+    type VictoryEvent,
 } from './victory-service';
+import { drainBuffer, resetChronicleBuffer } from '../narrative/chronicle';
+import movementConfig from '../movement/movement-config.json';
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
 
@@ -216,17 +222,55 @@ function makeConquerorWorld(): GameWorldState {
     return world;
 }
 
-/** World where shared state is at Enlightenment qualification thresholds. */
-function makeEnlightenmentWorld(): GameWorldState {
-    const world = makeWorld(['factionA']);
-    world.shared.stability = 0.85;
-    world.shared.tradeEfficiency = 0.80;
-    world.shared.commodityAccess = 0.75;
-    world.shared.blocSatisfaction = 0.75;
-    world.shared.infraIntegrity = 0.80;
-    // All blocs: equal influence (25 each = 25%), high satisfaction
+function makeGovernment(factionId: string, approval = 72, legitimacy = 90, cohesion = 85): any {
+    return {
+        factionId, approval, legitimacy, cohesion,
+        politicalCapital: 10, politicalCapitalCap: 100,
+        legacy: { prestige: 0, completed: [], bonuses: {}, chronicle: [] },
+        history: [],
+    };
+}
+
+/** Give factionId `count` owned planets in the construction layer; the first holds a standing Great Archive. */
+function givePlanets(world: GameWorldState, factionId: string, count: number): void {
+    const w = world as any;
+    if (!w.construction) w.construction = { planets: new Map() };
+    for (let i = 0; i < count; i++) {
+        const tiles = i === 0
+            ? [{ tileId: `${factionId}-archive`, districtType: 'any', buildingId: 'great_archive', constructionState: 'active', constructionCompleteAt: null }]
+            : [];
+        w.construction.planets.set(`${factionId}-p${i}`, { id: `${factionId}-p${i}`, ownerId: factionId, systemId: 'sys-alpha', tiles, buildQueue: [] });
+    }
+}
+
+function archiveTile(world: GameWorldState, factionId: string): any {
+    return (world as any).construction.planets.get(`${factionId}-p0`).tiles[0];
+}
+
+/**
+ * World where factionA's OWN empire passes every Enlightenment condition. The
+ * galaxy-wide shared state is left at its defaults on purpose: since 2026-10
+ * qualification never reads it.
+ */
+function makeEnlightenmentWorld(factions: string[] = ['factionA']): GameWorldState {
+    const world = makeWorld(factions);
+    (world as any).government = new Map(factions.map(f => [f, makeGovernment(f)]));
+    for (const f of factions) givePlanets(world, f, 3);
+    // All blocs: equal influence (25 each = 25%), satisfaction 80
     return world;
 }
+
+/** Tick one faction `days` times, a sim day each, moving the clock with it. */
+function tickDays(world: GameWorldState, factionId: string, days: number, events: VictoryEvent[] = []): void {
+    for (let d = 0; d < days; d++) {
+        world.nowSeconds += DAY;
+        tickEnlightenmentProgress(factionId, world, DAY, events);
+    }
+}
+
+const DAY = 86400;
+const ENL = movementConfig.victory.enlightenment;
+const QUAL_DAYS = ENL.qualificationDurationDays;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONQUEST VICTORY
@@ -302,17 +346,91 @@ test('checkEnlightenmentQualification returns true when all metrics pass', () =>
     expectTrue(checkEnlightenmentQualification('factionA', world));
 });
 
-test('checkEnlightenmentQualification fails on low stability', () => {
+test('checkEnlightenmentQualification ignores the galaxy-wide shared state', () => {
+    // The old rule read world.shared, which sat at stability 0.00 for a whole
+    // soak season — nobody could ever qualify, and nobody could steer it.
     const world = makeEnlightenmentWorld();
-    world.shared.stability = 0.50; // below 0.80 threshold
+    world.shared.stability = 0;
+    world.shared.tradeEfficiency = 0;
+    world.shared.infraIntegrity = 0;
+    expectTrue(checkEnlightenmentQualification('factionA', world));
+});
+
+test('checkEnlightenmentQualification fails on low approval', () => {
+    const world = makeEnlightenmentWorld();
+    (world as any).government.get('factionA').approval = 59; // a delegated empire's best in the soak
     expectFalse(checkEnlightenmentQualification('factionA', world));
+});
+
+test('checkEnlightenmentQualification fails on low legitimacy', () => {
+    const world = makeEnlightenmentWorld();
+    (world as any).government.get('factionA').legitimacy = 60;
+    expectFalse(checkEnlightenmentQualification('factionA', world));
+});
+
+test('checkEnlightenmentQualification fails on low cohesion', () => {
+    const world = makeEnlightenmentWorld();
+    (world as any).government.get('factionA').cohesion = 60;
+    expectFalse(checkEnlightenmentQualification('factionA', world));
+});
+
+test('checkEnlightenmentQualification fails with too few worlds', () => {
+    const world = makeEnlightenmentWorld();
+    (world as any).construction.planets.delete('factionA-p0');
+    expectFalse(checkEnlightenmentQualification('factionA', world), 'two worlds is below the minimum of three');
+});
+
+test('checkEnlightenmentQualification fails with no government or no blocs', () => {
+    const noGov = makeEnlightenmentWorld();
+    (noGov as any).government.delete('factionA');
+    expectFalse(checkEnlightenmentQualification('factionA', noGov), 'no government');
+    const noBlocs = makeEnlightenmentWorld();
+    noBlocs.movement.empirePostures.get('factionA')!.blocs = [];
+    expectFalse(checkEnlightenmentQualification('factionA', noBlocs), 'no interest groups');
+});
+
+test('the Great Archive must be standing — not planned, building or ruined', () => {
+    const world = makeEnlightenmentWorld();
+    const tile = archiveTile(world, 'factionA');
+    for (const [state, label] of [['under_construction', 'building'], ['ruined', 'ruined']] as const) {
+        tile.constructionState = state;
+        const row = readEnlightenmentConditions('factionA', world).find(r => r.id === 'archive')!;
+        expectEq(row.state, label);
+        expectFalse(row.passing, `${label} archive must not pass`);
+    }
+    (world as any).construction.planets.get('factionA-p0').tiles = [];
+    expectFalse(checkEnlightenmentQualification('factionA', world), 'no archive');
+    // Someone else's Archive is not yours.
+    givePlanets(world, 'factionB', 1);
+    expectFalse(checkEnlightenmentQualification('factionA', world), "a rival's archive");
+});
+
+test('one empire qualifying does not qualify its neighbour', () => {
+    const world = makeEnlightenmentWorld(['factionA', 'factionB']);
+    (world as any).government.get('factionB').approval = 40;
+    expectTrue(checkEnlightenmentQualification('factionA', world));
+    expectFalse(checkEnlightenmentQualification('factionB', world));
+});
+
+test('readEnlightenmentConditions reports each reading against its target', () => {
+    const world = makeEnlightenmentWorld();
+    const rows = readEnlightenmentConditions('factionA', world);
+    const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+    expectEq(rows.length, 7);
+    expectEq(byId.archive.state, 'operational');
+    expectEq(byId.approval.value, 72);
+    expectEq(byId.approval.target, 65);
+    expectApprox(byId.blocBalance.value ?? -1, 0.25, 0.001);
+    expectEq(byId.blocBalance.bound, 'max');
+    expectEq(byId.worlds.value, 3);
+    expectTrue(rows.every(r => r.passing));
 });
 
 test('checkEnlightenmentQualification fails on bloc dominance', () => {
     const world = makeEnlightenmentWorld();
     const posture = world.movement.empirePostures.get('factionA')!;
     posture.blocs = [
-        makeBloc('military', 70, 80), // 70% dominance > 55% threshold
+        makeBloc('military', 70, 80), // 70% dominance > 40% threshold
         makeBloc('trade', 10, 80),
         makeBloc('frontier', 10, 80),
         makeBloc('science', 10, 80),
@@ -323,7 +441,7 @@ test('checkEnlightenmentQualification fails on bloc dominance', () => {
 test('checkEnlightenmentQualification fails on low bloc satisfaction', () => {
     const world = makeEnlightenmentWorld();
     const posture = world.movement.empirePostures.get('factionA')!;
-    posture.blocs[0].satisfaction = 20; // 20/100 = 0.20, below 0.45
+    posture.blocs[0].satisfaction = 20; // below 45
     expectFalse(checkEnlightenmentQualification('factionA', world), 'bloc satisfaction too low');
 });
 
@@ -338,7 +456,7 @@ test('tickEnlightenmentProgress starts qualifying when thresholds pass', () => {
 test('tickEnlightenmentProgress resets timer when thresholds fail mid-qualifying', () => {
     const world = makeEnlightenmentWorld();
     tickEnlightenmentProgress('factionA', world, 60); // starts qualifying
-    world.shared.stability = 0.30; // drops below threshold
+    (world as any).government.get('factionA').approval = 30; // drops below threshold
     tickEnlightenmentProgress('factionA', world, 60); // should reset
     const progress = ensureVictoryState(world).enlightenmentProgress.get('factionA');
     expectEq(progress?.phase ?? '', 'inactive', 'phase should reset to inactive');
@@ -353,50 +471,146 @@ test('startTranscendence sets transcending phase', () => {
     expectNotNull(progress.transcendenceStartedAt);
 });
 
-test('resolveEnlightenmentSuccess applies structural impact and legacy bonuses', () => {
+test('resolveEnlightenmentSuccess pays the reward into the government legacy', () => {
     const world = makeEnlightenmentWorld();
+    const gov = (world as any).government.get('factionA');
     startTranscendence('factionA', world);
     resolveEnlightenmentSuccess('factionA', world);
     const progress = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
     expectEq(progress.phase, 'complete');
-    expectNotNull(progress.structuralImpact, 'structural impact should be set');
-    expectTrue(Object.keys(progress.legacyBonuses).length > 0, 'legacy bonuses should be granted');
+    expectNotNull(progress.completedAt ?? null, 'completion time recorded');
+    // The keys getGovernmentModifiers reads — so the reward actually does something.
+    expectEq(gov.legacy.bonuses.approval, 3);
+    expectApprox(gov.legacy.bonuses.legitimacy_drift, 0.3, 0.0001);
+    expectEq(gov.legacy.prestige, 250);
+    expectEq(gov.legitimacy, 100, 'legitimacy +10, clamped');
+    expectEq(gov.politicalCapital, 50);
+    expectEq(progress.legacyBonuses.approval, 3, 'what was granted is recorded for the panel');
 });
 
-test('resolveEnlightenmentSuccess cultural pressure drains rival bloc satisfaction', () => {
+test('resolveEnlightenmentSuccess presses each rival\'s own blocs, never the winner\'s', () => {
     const world = makeEnlightenmentWorld();
-    // Add a rival
-    world.movement.empirePostures.set('factionB', makePosture('factionB'));
-    const initBloc = world.shared.blocSatisfaction;
+    world.movement.empirePostures.set('factionB', makePosture('factionB', 80));
+    world.movement.empirePostures.set('factionC', makePosture('factionC', 40));
     startTranscendence('factionA', world);
     resolveEnlightenmentSuccess('factionA', world);
-    expectTrue(world.shared.blocSatisfaction < initBloc, 'cultural pressure should reduce rival bloc satisfaction');
+    const sat = (f: string) => world.movement.empirePostures.get(f)!.blocs[0].satisfaction;
+    expectEq(sat('factionA'), 80, 'the winner is untouched');
+    expectApprox(sat('factionB'), 77, 0.001, 'a content rival loses 3');
+    expectApprox(sat('factionC'), 35.5, 0.001, 'a restless rival loses 4.5');
 });
 
-test('resolveEnlightenmentFailure resets phase to inactive', () => {
+test('a full run: qualify, transcend (announced), achieve', () => {
+    resetChronicleBuffer();
+    const world = makeEnlightenmentWorld();
+    const events: VictoryEvent[] = [];
+    tickEnlightenmentProgress('factionA', world, 6 * 3600, events); // inactive → qualifying
+    tickDays(world, 'factionA', QUAL_DAYS, events);
+    expectEq(events.map(e => e.kind).join(','), 'enlightenment_transcending');
+    tickDays(world, 'factionA', 14, events);
+    expectEq(events.length, 1, 'fourteen days of the window is not fifteen');
+    tickDays(world, 'factionA', 1, events);
+    expectEq(events.map(e => e.kind).join(','), 'enlightenment_transcending,enlightenment_achieved');
+    const types = drainBuffer().rows.map(r => r.type);
+    expectEq(types.join(','), 'enlightenment_transcending,enlightenment_achieved', 'both moments are in the chronicle');
+    // Complete is terminal.
+    tickEnlightenmentProgress('factionA', world, DAY, events);
+    expectEq(events.length, 2);
+});
+
+test('slipping while qualifying drains the bank instead of erasing it', () => {
+    const world = makeEnlightenmentWorld();
+    tickEnlightenmentProgress('factionA', world, 60); // → qualifying
+    tickDays(world, 'factionA', 10);
+    const gov = (world as any).government.get('factionA');
+    gov.approval = 50;
+    tickDays(world, 'factionA', 2); // drains 2 × 2 days
+    const p = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
+    expectEq(p.phase, 'qualifying', 'two bad days do not end the attempt');
+    expectApprox(p.qualificationSecondsAccumulated / DAY, 6, 0.001, 'ten banked, four drained');
+    expectTrue(!!p.failingNow, 'the panel can say it is slipping');
+    tickDays(world, 'factionA', 3); // drains the rest
+    expectEq(p.phase, 'inactive', 'an empty bank ends it');
+    expectEq(p.qualificationSecondsAccumulated, 0);
+});
+
+test('a short stumble during transcendence strains it, then eases off', () => {
+    const world = makeEnlightenmentWorld();
+    const events: VictoryEvent[] = [];
+    startTranscendence('factionA', world);
+    tickDays(world, 'factionA', 5, events);
+    const gov = (world as any).government.get('factionA');
+    gov.cohesion = 50;
+    tickDays(world, 'factionA', 2, events); // two of three grace days
+    const p = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
+    expectEq(p.phase, 'transcending', 'still inside the grace');
+    expectApprox(p.transcendenceSecondsAccumulated! / DAY, 5, 0.001, 'the window does not advance while failing');
+    expectApprox(buildEnlightenmentView(world, 'factionA').strain, 2 / 3, 0.001);
+    gov.cohesion = 85;
+    tickDays(world, 'factionA', 2, events);
+    expectEq(p.strainSeconds, 0, 'strain eases off while it holds');
+    expectEq(events.length, 0);
+});
+
+test('a broken transcendence is announced and keeps half the bank', () => {
+    resetChronicleBuffer();
+    const world = makeEnlightenmentWorld();
+    const events: VictoryEvent[] = [];
+    startTranscendence('factionA', world);
+    archiveTile(world, 'factionA').constructionState = 'ruined'; // a saboteur got through
+    tickDays(world, 'factionA', 3, events);
+    expectEq(events.map(e => e.kind).join(','), 'enlightenment_interrupted');
+    const p = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
+    expectEq(p.phase, 'qualifying');
+    expectApprox(p.qualificationSecondsAccumulated / DAY, QUAL_DAYS * ENL.interruptRetainFraction, 0.001, 'part of the bank kept');
+    expectTrue(p.transcendenceInterrupted);
+    expectTrue(drainBuffer().rows.some(r => r.type === 'enlightenment_interrupted'));
+});
+
+test('a window started before the bank existed is read from its start time', () => {
+    const world = makeEnlightenmentWorld();
+    startTranscendence('factionA', world);
+    const p = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
+    delete p.transcendenceSecondsAccumulated;
+    delete p.strainSeconds;
+    world.nowSeconds += 14 * DAY;
+    const events: VictoryEvent[] = [];
+    tickEnlightenmentProgress('factionA', world, DAY, events);
+    expectEq(events.map(e => e.kind).join(','), 'enlightenment_achieved', '14 days elapsed + this tick');
+});
+
+test('tickVictory reports every empire that completes on the same tick', () => {
+    const world = makeEnlightenmentWorld(['factionA', 'factionB']);
+    startTranscendence('factionA', world);
+    startTranscendence('factionB', world);
+    for (const id of ['factionA', 'factionB']) {
+        ensureVictoryState(world).enlightenmentProgress.get(id)!.transcendenceSecondsAccumulated = 14.5 * DAY;
+    }
+    const events = tickVictory(world, DAY).filter(e => e.kind === 'enlightenment_achieved');
+    expectEq(events.map(e => e.factionId).sort().join(','), 'factionA,factionB');
+});
+
+test('buildEnlightenmentView shows progress and names rivals', () => {
+    const world = makeEnlightenmentWorld(['factionA', 'factionB']);
+    tickEnlightenmentProgress('factionA', world, 15 * DAY); // starts qualifying, no time banked
+    tickEnlightenmentProgress('factionA', world, (QUAL_DAYS / 2) * DAY); // half the qualifying stage
+    startTranscendence('factionB', world);
+    const view = buildEnlightenmentView(world, 'factionA');
+    expectEq(view.phase, 'qualifying');
+    expectApprox(view.stageProgress, 0.5, 0.001);
+    expectNotNull(view.stageRemaining);
+    expectEq(view.rivalsTranscending.join(','), 'FactionB');
+    expectEq(view.conditions.length, 7);
+});
+
+test('resolveEnlightenmentFailure drops back to qualifying, not to nothing', () => {
     const world = makeEnlightenmentWorld();
     startTranscendence('factionA', world);
     resolveEnlightenmentFailure('factionA', world);
     const progress = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
-    expectEq(progress.phase, 'inactive');
+    expectEq(progress.phase, 'qualifying');
+    expectEq(progress.transcendenceStartedAt, null);
     expectTrue(progress.transcendenceInterrupted, 'interrupted flag should be set');
-});
-
-test('legacy bonuses are capped at permanentBonusCap', () => {
-    const world = makeEnlightenmentWorld();
-    // Apply success repeatedly
-    for (let i = 0; i < 10; i++) {
-        startTranscendence('factionA', world);
-        resolveEnlightenmentSuccess('factionA', world);
-        // Reset phase manually to allow re-test
-        const p = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
-        p.phase = 'inactive';
-    }
-    const progress = ensureVictoryState(world).enlightenmentProgress.get('factionA')!;
-    const cap = 5 / 100; // permanentBonusCap = 5 → 0.05
-    for (const [, val] of Object.entries(progress.legacyBonuses)) {
-        expectTrue(val <= cap + 0.001, `legacy bonus ${val} should not exceed cap ${cap}`);
-    }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

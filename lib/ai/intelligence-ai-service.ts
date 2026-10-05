@@ -8,6 +8,7 @@ import { launchCatalogOperation } from '../espionage/espionage-service';
 import { getOrCreateFactionIntel } from '../espionage/faction-intel';
 import { OPERATION_CATALOG_BY_ID } from '../espionage/operation-catalog';
 import { canLaunchCategory } from '../espionage/network-stages';
+import { empireBuildingState } from '../construction/construction-service';
 
 export type AIIntelligenceArchetype = 
   | "paranoid_security_state"
@@ -112,6 +113,16 @@ function identifyPotentialTargets(factionId: string, world: GameWorldState): str
         targets.push(rivals.splice(index, 1)[0][0]);
     }
 
+    // An empire in its announced transcendence window jumps the queue for
+    // every service, resented or not — letting a rival ascend is the one thing
+    // the whole galaxy agrees on (lib/victory, Enlightenment counterplay).
+    const transcending = [...(world.victoryState?.enlightenmentProgress?.values() ?? [])]
+        .filter(p => p.phase === 'transcending' && p.factionId !== factionId && world.economy.factions.has(p.factionId))
+        .map(p => p.factionId);
+    if (transcending.length > 0) {
+        return [...transcending, ...targets.filter(t => !transcending.includes(t))];
+    }
+
     // With nobody resented enough, watch the empires built for war — in an
     // order that differs per empire, for the same reason.
     if (targets.length === 0) {
@@ -136,6 +147,9 @@ const ARCHETYPE_PREFERENCES: Record<AIIntelligenceArchetype, string[]> = {
     shadow_empire: ["steal_research", "raid_trade_route", "infiltrate_government"],
 };
 
+/** What a service runs against an empire mid-transcendence, most-preferred first. */
+const TRANSCENDENCE_BREAKERS = ["sabotage_archive", "election_interference", "incite_rebellion", "fund_separatists"];
+
 function chooseOperationForArchetype(
     archetype: AIIntelligenceArchetype,
     attackerId: string,
@@ -144,12 +158,23 @@ function chooseOperationForArchetype(
 ): string | null {
     const infiltration = world.espionage.factionIntel.get(attackerId)?.infiltrationLevels[targetId] ?? 0;
 
+    // Against a transcending empire every archetype reaches for what breaks
+    // the attempt — the Archive, approval, cohesion — before its usual habits.
+    const transcending = world.victoryState?.enlightenmentProgress?.get?.(targetId)?.phase === 'transcending';
+    const preferences = [
+        ...(transcending ? TRANSCENDENCE_BREAKERS : []),
+        ...(ARCHETYPE_PREFERENCES[archetype] ?? ARCHETYPE_PREFERENCES.shadow_empire),
+    ];
+
     // Most-preferred op whose category the current network stage can support.
     // Low infiltration naturally degrades to intel gathering, which is also
     // how the network climbs toward the preferred ops.
-    for (const opId of ARCHETYPE_PREFERENCES[archetype] ?? ARCHETYPE_PREFERENCES.shadow_empire) {
+    for (const opId of preferences) {
         const def = OPERATION_CATALOG_BY_ID.get(opId);
         if (!def) continue;
+        // Nothing to burn: already ruined, or never built.
+        if (opId === 'sabotage_archive'
+            && empireBuildingState(world.construction.planets.values(), targetId, 'great_archive') !== 'operational') continue;
         if (canLaunchCategory(infiltration, def.category).allowed) return opId;
     }
     return null;

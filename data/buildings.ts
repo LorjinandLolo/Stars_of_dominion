@@ -139,6 +139,34 @@ export const BUILDINGS: BuildingDefinition[] = [
     upgradesFrom: 'research_lab',
   },
   {
+    // The Enlightenment victory's monument (lib/victory/victory-service.ts):
+    // an empire cannot transcend without one standing. A saboteur who ruins it
+    // (sabotage_archive) breaks the condition until PLANET_REPAIR_BUILDING
+    // brings it back, which takes half the build time.
+    id: 'great_archive',
+    name: 'Great Archive',
+    description: 'Every law, every census, every voice the empire has heard, kept where anyone may read them. One per empire; required for Enlightenment.',
+    category: 'research',
+    tier: 4,
+    allowedDistricts: ['research', 'civilian', 'any'],
+    // The gate is TIME, not money. Faction metals and chemicals barely grow
+    // over a season while credits pile into the millions (enlightenment soak,
+    // 2026-10-06), so a big bill either blocks everyone or nobody. This one
+    // takes two thirds of the metals an empire starts with — a real choice
+    // against a drydock — and then forty-five sim days (three real days) of
+    // building, before which qualifying cannot even begin.
+    infrastructureRequired: 2,
+    cost: { metals: 2000, chemicals: 1000, food: 0, manpower: 800, credits: 50000 },
+    upkeep: { energy: 20, credits: 60 },
+    buildTimeSeconds: 45 * 86400,
+    // A burned Archive has to come back inside a transcendence's grace
+    // (transcendenceGraceDays, 3) or one successful op ends any bid. Two days.
+    repairTimeSeconds: 2 * 86400,
+    effects: [{ type: 'research_output', value: 40 }],
+    tags: ['research', 'unique', 'monument'],
+    uniquePerEmpire: true,
+  },
+  {
     id: 'barracks',
     name: 'Barracks',
     description: 'Training and housing for planetary defense forces.',

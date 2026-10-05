@@ -158,7 +158,7 @@ export function selectPublisher(event: NarratableEvent, publishers: Publisher[])
 
     // Exposure and scandal: the implicated empire's own media is not breaking
     // this, and the pirate press will run it loudest.
-    const EMBARRASSING = ['operation_exposed', 'investigation_published', 'coup_attempted', 'government_changed', 'secession_declared', 'civil_war_started', 'company_went_rogue', 'company_broke_away'];
+    const EMBARRASSING = ['operation_exposed', 'investigation_published', 'coup_attempted', 'government_changed', 'secession_declared', 'civil_war_started', 'company_went_rogue', 'company_broke_away', 'enlightenment_interrupted'];
     if (EMBARRASSING.includes(event.type)) {
         // Prefer an independent; fall back to the pirate press.
         return wire ?? pirate ?? publishers[0];

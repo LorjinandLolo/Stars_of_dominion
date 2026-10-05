@@ -403,7 +403,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         type: 'bullet_list',
                         content: [
                             'CONQUEST: Control 60% of the strategic systems in the galaxy.',
-                            'ENLIGHTENMENT: Complete the final "Post-Singularity" research tier and build the Great Archive.',
+                            'ENLIGHTENMENT: Govern so well that nobody wants to leave: high approval, legitimacy and cohesion, no interest group dominant or neglected, at least three worlds, and a Great Archive standing (about three real days to build). Hold it for about three real days to begin Transcendence (slipping drains progress rather than erasing it), then one more day through a window the whole galaxy is told about, while every rival service works against you and may burn the Archive. Progress is on the SAGA tab.',
                             'ECONOMIC HEGEMONY: Control over 75% of total galactic trade volume.'
                         ]
                     }

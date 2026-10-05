@@ -326,7 +326,7 @@ function catalogSucceeded(outcome: CatalogOutcome): boolean {
     return outcome === 'critical_success' || outcome === 'success' || outcome === 'partial_success';
 }
 
-function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
+export function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
     const actorIntel = world.espionage.factionIntel.get(actorId);
     const targetIntel = world.espionage.factionIntel.get(targetId);
 
@@ -339,7 +339,13 @@ function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, 
     // Tradecraft researched by the actor.
     const techBonus = getTechModifier(world, actorId, 'esp_op_success_add');
 
-    const chance = def.baseSuccessChance + infiltrationBonus + techBonus - counterIntelPenalty - securityPenalty;
+    // An empire in its announced transcendence window is every service's
+    // target at once, and harder to keep sealed (lib/victory). Read inline:
+    // the victory layer imports half the simulation.
+    const transcending = world.victoryState?.enlightenmentProgress?.get?.(targetId)?.phase === 'transcending';
+    const transcendingBonus = transcending ? config.victory.enlightenment.transcendingOpSuccessBonus : 0;
+
+    const chance = def.baseSuccessChance + infiltrationBonus + techBonus + transcendingBonus - counterIntelPenalty - securityPenalty;
     return Math.max(0.05, Math.min(0.95, chance));
 }
 
@@ -557,9 +563,14 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
                 .filter(p => p.ownerId === op.targetFactionId)
                 .sort((a, b) =>
                     (a.systemId === op.targetRegionId ? 0 : 1) - (b.systemId === op.targetRegionId ? 0 : 1));
+            // An effect that names its building (sabotage_archive) hits that
+            // building or nothing — it never falls back to a random mine.
+            const named = effect.targetProperty;
             for (const planet of constrPlanets) {
-                const tile = planet.tiles.find(t => t.constructionState === 'active' && t.buildingId &&
-                    /shipyard|factory|plant|mine/.test(t.buildingId))
+                const tile = named
+                    ? planet.tiles.find(t => t.constructionState === 'active' && t.buildingId === named)
+                    : planet.tiles.find(t => t.constructionState === 'active' && t.buildingId &&
+                        /shipyard|factory|plant|mine/.test(t.buildingId))
                     ?? planet.tiles.find(t => t.constructionState === 'active' && t.buildingId);
                 if (tile) {
                     tile.constructionState = 'ruined';

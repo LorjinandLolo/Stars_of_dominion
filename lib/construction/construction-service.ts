@@ -73,6 +73,31 @@ export function canBuildOnTile(
   return { canBuild: true };
 }
 
+/**
+ * Where an empire stands with one building, across all its worlds:
+ * 'operational' beats 'building' beats 'ruined' beats 'none'. Enforces
+ * uniquePerEmpire in the build handler and feeds the Enlightenment condition.
+ */
+export function empireBuildingState(
+  planets: Iterable<Planet>,
+  factionId: string,
+  buildingId: string
+): 'operational' | 'building' | 'ruined' | 'none' {
+  let best: 'operational' | 'building' | 'ruined' | 'none' = 'none';
+  const rank = { none: 0, ruined: 1, building: 2, operational: 3 } as const;
+  for (const planet of planets) {
+    if (planet?.ownerId !== factionId) continue;
+    for (const tile of planet.tiles ?? []) {
+      if (tile.buildingId !== buildingId) continue;
+      const state = tile.constructionState === 'active' ? 'operational'
+        : tile.constructionState === 'under_construction' ? 'building'
+          : tile.constructionState === 'ruined' ? 'ruined' : 'none';
+      if (rank[state] > rank[best]) best = state;
+    }
+  }
+  return best;
+}
+
 // ── Build slots ───────────────────────────────────────────────────────────────
 // A world works on a few sites at once, not all of them. Every planet has two
 // slots; each Builder Outpost (construction_yard) adds one, up to five more.
@@ -321,7 +346,7 @@ export function repairBuilding(planet: Planet, tileId: string, now: number): boo
   const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
     * constructionLogisticsMultiplier(planet)
     * computeInfrastructureEffects(planet).constructionSpeed);
-  const repairTime = (buildingDef.buildTimeSeconds / 2) / buildSpeed;
+  const repairTime = (buildingDef.repairTimeSeconds ?? buildingDef.buildTimeSeconds / 2) / buildSpeed;
   tile.constructionState = 'under_construction';
   tile.constructionCompleteAt = now + repairTime;
 

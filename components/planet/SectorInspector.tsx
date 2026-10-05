@@ -44,6 +44,9 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
     const factions = useUIStore(s => s.factions);
     const nowSeconds = useUIStore(s => s.nowSeconds);
     const techState = useUIStore(s => s.techState);
+    // The Great Archive is the only uniquePerEmpire building; the Saga's
+    // Enlightenment view already knows where the empire's copy stands.
+    const archiveState = useUIStore(s => s.factionSaga?.enlightenment?.conditions.find(c => c.id === 'archive')?.state);
 
     const [catalogOpen, setCatalogOpen] = React.useState(false);
     React.useEffect(() => { setCatalogOpen(false); }, [sector.index]);
@@ -85,6 +88,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
         if (Array.isArray(def.tagRequirements) && def.tagRequirements.length > 0
             && !def.tagRequirements.every(t => (planet.tags ?? []).includes(t))) return `NEEDS ${def.tagRequirements.join(' + ').toUpperCase()}`;
         if (def.uniquePerPlanet && existingBuildingIds.has(def.id)) return 'UNIQUE — BUILT';
+        if (def.uniquePerEmpire && def.id === 'great_archive' && archiveState && archiveState !== 'none') return 'ONE PER EMPIRE — YOURS EXISTS';
         if (sector.terrain === 'ocean' && !/naval|port|harbor|fish/i.test(def.id)) return 'OCEAN';
         if (!canAfford(def)) return 'CANNOT AFFORD';
         return null;

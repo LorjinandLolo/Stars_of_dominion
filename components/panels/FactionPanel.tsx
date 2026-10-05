@@ -12,8 +12,9 @@
 
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { Flame, ScrollText, ShieldAlert, CircleDot, Sparkles, Fingerprint } from 'lucide-react';
+import { Flame, ScrollText, ShieldAlert, CircleDot, Sparkles, Fingerprint, Sun } from 'lucide-react';
 import type { SagaStatus, SagaEdge } from '@/lib/factions/saga';
+import type { EnlightenmentView, EnlightenmentCondition } from '@/lib/victory/victory-service';
 
 const TONE_STYLES: Record<SagaStatus['tone'], { dot: string; border: string; text: string }> = {
     active: { dot: 'bg-emerald-400', border: 'border-emerald-500/25', text: 'text-emerald-300' },
@@ -135,6 +136,8 @@ export default function FactionPanel() {
                 </div>
             )}
 
+            <EnlightenmentSection view={saga.enlightenment} />
+
             {/* ── The saga — lifetime ledger ──────────────────────────────── */}
             <div className="flex flex-col gap-1">
                 <SectionHeading icon={<ScrollText size={11} />}>The saga so far</SectionHeading>
@@ -156,6 +159,112 @@ export default function FactionPanel() {
             <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-700 mt-auto pt-2">
                 <Fingerprint size={9} /> {saga.civilizationId ?? 'unaligned'}
             </div>
+        </div>
+    );
+}
+
+const PHASE_COPY: Record<EnlightenmentView['phase'], { label: string; tone: string }> = {
+    inactive: { label: 'Not qualifying', tone: 'text-slate-400' },
+    qualifying: { label: 'Qualifying', tone: 'text-sky-300' },
+    transcending: { label: 'Transcending — the galaxy knows', tone: 'text-amber-300' },
+    complete: { label: 'Transcendence achieved', tone: 'text-emerald-300' },
+};
+
+const ARCHIVE_STATE_COPY: Record<NonNullable<EnlightenmentCondition['state']>, string> = {
+    operational: 'standing',
+    building: 'under construction',
+    ruined: 'ruined — repair it',
+    none: 'not built',
+};
+
+function formatCondition(value: number | null, unit: EnlightenmentCondition['unit']): string {
+    if (value === null) return '—';
+    return unit === 'percent' ? `${Math.round(value * 100)}%` : `${Math.round(value)}`;
+}
+
+function ConditionReading({ c }: { c: EnlightenmentCondition }) {
+    const tone = c.passing ? 'text-emerald-300' : 'text-rose-300';
+    if (c.unit === 'state') {
+        return <span className={tone}>{ARCHIVE_STATE_COPY[c.state ?? 'none']}</span>;
+    }
+    return (
+        <>
+            <span className={tone}>{formatCondition(c.value, c.unit)}</span>
+            <span className="text-slate-600"> {c.bound === 'min' ? '≥' : '≤'} {formatCondition(c.target, c.unit)}</span>
+        </>
+    );
+}
+
+function EnlightenmentSection({ view }: { view: EnlightenmentView }) {
+    const phase = PHASE_COPY[view.phase];
+    const passing = view.conditions.filter(c => c.passing).length;
+    const running = view.phase === 'qualifying' || view.phase === 'transcending';
+
+    return (
+        <div className="flex flex-col gap-1">
+            <SectionHeading icon={<Sun size={11} />}>Road to Enlightenment</SectionHeading>
+            <div className="rounded border border-slate-800/60 bg-slate-900/40 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                    <span className={`text-[11px] font-semibold uppercase tracking-wide ${phase.tone}`}>{phase.label}</span>
+                    <span className="text-[11px] font-mono text-slate-400">{passing} / {view.conditions.length} met</span>
+                </div>
+                {running && (
+                    <>
+                        <div className="h-1 mt-2 rounded bg-slate-800 overflow-hidden">
+                            <div
+                                className={`h-full ${view.phase === 'transcending' ? 'bg-amber-400' : 'bg-sky-400'}`}
+                                style={{ width: `${Math.round(view.stageProgress * 100)}%` }}
+                            />
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                            {view.stageRemaining} left if every condition holds.{' '}
+                            {view.phase === 'qualifying'
+                                ? `While any condition fails, the progress drains ${view.decayRate}× as fast as it grew.`
+                                : `While any condition fails the window stops and strain builds; ${view.graceLength} of it breaks the attempt.`}
+                        </div>
+                        {view.slipping && (
+                            <div className="text-[10px] text-rose-300 mt-1">
+                                {view.phase === 'qualifying' ? 'Slipping — a condition is failing and progress is draining.' : 'Faltering — a condition is failing.'}
+                            </div>
+                        )}
+                        {view.phase === 'transcending' && view.strain > 0 && (
+                            <div className="h-1 mt-1 rounded bg-slate-800 overflow-hidden" title="Strain: the attempt breaks when this fills">
+                                <div className="h-full bg-rose-500" style={{ width: `${Math.round(view.strain * 100)}%` }} />
+                            </div>
+                        )}
+                    </>
+                )}
+                {view.phase === 'inactive' && (
+                    <div className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                        Meet every condition at once and hold them for {view.qualificationLength}; then Transcendence begins, announced to the galaxy, and you must hold them {view.transcendenceLength} more while every rival service works against you.
+                    </div>
+                )}
+                {view.interrupted && view.phase !== 'complete' && (
+                    <div className="text-[10px] text-amber-300/80 mt-1">Your last Transcendence was broken; {view.retainPercent}% of the qualifying progress was kept.</div>
+                )}
+                {view.phase === 'complete' && Object.keys(view.granted).length > 0 && (
+                    <div className="text-[10px] text-slate-500 mt-1">
+                        Permanent: {Object.entries(view.granted).map(([k, v]) => `${k.replace(/_/g, ' ')} +${v}`).join(', ')}.
+                    </div>
+                )}
+            </div>
+            {view.phase !== 'complete' && view.conditions.map(c => (
+                <div key={c.id} className="flex items-center justify-between gap-3 px-3 py-1.5 rounded bg-slate-900/30 border border-slate-800/60">
+                    <span className="text-[11px] text-slate-300 flex items-center gap-2 min-w-0">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${c.passing ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                        <span className="truncate">{c.label}</span>
+                    </span>
+                    <span className="text-[11px] font-mono shrink-0">
+                        <ConditionReading c={c} />
+                    </span>
+                </div>
+            ))}
+            {(view.rivalsTranscending.length > 0 || view.rivalsComplete.length > 0) && (
+                <div className="text-[10px] text-slate-500 px-1 leading-relaxed">
+                    {view.rivalsTranscending.length > 0 && <div className="text-amber-300/90">Transcending now: {view.rivalsTranscending.join(', ')}</div>}
+                    {view.rivalsComplete.length > 0 && <div>Already transcended: {view.rivalsComplete.join(', ')}</div>}
+                </div>
+            )}
         </div>
     );
 }

@@ -178,6 +178,27 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     counterplayTags: ["hardened_infra"]
   },
   {
+    // The answer to an Enlightenment bid (lib/victory). A ruined Archive fails
+    // the condition until the owner repairs it, and a transcending empire only
+    // absorbs a few days of failing before the attempt breaks.
+    id: "sabotage_archive",
+    name: "Burn the Archive",
+    category: "sabotage",
+    description: "Set fire to a rival's Great Archive. Its Enlightenment stalls until the stacks are rebuilt.",
+    targetTypes: ["building", "planet"],
+    intelCost: 60,
+    creditsCost: 3000,
+    durationHoursMin: 24,
+    durationHoursMax: 48,
+    baseSuccessChance: 0.4,
+    baseExposureChance: 0.4,
+    risk: "high",
+    effects: [
+      { type: "disable_building", value: 1, targetProperty: "great_archive" }
+    ],
+    counterplayTags: ["hardened_infra", "engineering_corps"]
+  },
+  {
     id: "steal_research",
     name: "Technology Theft",
     category: "intel_gathering",

@@ -116,16 +116,30 @@ export interface EnlightenmentProgress {
     phase: EnlightenmentPhase;
     /** ISO timestamp when qualification timer started (null if not qualifying). */
     qualifyingStartedAt: string | null;
-    /** Accumulated qualification seconds. Resets on any threshold failure. */
+    /** Banked qualification seconds. Grows while passing, drains (faster) while failing. */
     qualificationSecondsAccumulated: number;
     /** ISO timestamp when transcendence window started. */
     transcendenceStartedAt: string | null;
+    /**
+     * Seconds of the transcendence window actually held. Only time passing
+     * every condition counts. Absent on snapshots from before 2026-10-06; the
+     * tick derives it from transcendenceStartedAt.
+     */
+    transcendenceSecondsAccumulated?: number;
+    /** Seconds of failing during transcendence, easing off while it holds. Grace runs out → broken. */
+    strainSeconds?: number;
+    /** Whether some condition failed on the last tick — shown as "slipping". */
+    failingNow?: boolean;
     /** Whether transcendence was interrupted (requires restart). */
     transcendenceInterrupted: boolean;
-    /** Structural impact granted on success. */
-    structuralImpact: string | null;
-    /** Legacy bonuses applied. Key = bonus type, value = magnitude. */
+    /**
+     * Permanent government modifiers granted on success (the same keys
+     * getGovernmentModifiers reads). The live copy is in the government's
+     * legacy; this records what Transcendence gave.
+     */
     legacyBonuses: Record<string, number>;
+    /** ISO timestamp of success. Absent until complete. */
+    completedAt?: string;
 }
 
 /**

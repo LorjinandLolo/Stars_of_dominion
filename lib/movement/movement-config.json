@@ -475,25 +475,31 @@
             "rebellionPressureThreshold": 0.75
         },
         "enlightenment": {
-            "qualificationDurationDays": 10,
-            "transcendenceWindowDays": 7,
+            "_comment": "Per-empire since 2026-10. Days are sim days (15x clock: 40+15 = ~3.7 real days, after the Great Archive's 45-day build). Thresholds set from a season soak (scripts/enlightenment-soak-probe.ts): a delegated empire tops out near approval 59, so 65 takes deliberate play; legitimacy and cohesion guard against an empire that is popular but coming apart. Earliest naive win lands near sim day 95 of 315.",
+            "qualificationDurationDays": 40,
+            "transcendenceWindowDays": 15,
+            "_softReset": "Failing while qualifying drains the bank at decayRate x; failing while transcending builds strain, which breaks the attempt at graceDays and leaves retainFraction of a full bank.",
+            "qualificationDecayRate": 2,
+            "transcendenceGraceDays": 3,
+            "interruptRetainFraction": 0.5,
             "thresholds": {
-                "stability": 0.80,
-                "tradeEfficiency": 0.75,
-                "commodityAccess": 0.70,
-                "blocSatisfaction": 0.70,
-                "infraIntegrity": 0.72,
-                "maxBlocDominance": 0.55,
-                "minBlocSatisfaction": 0.45
+                "approval": 65,
+                "legitimacy": 75,
+                "cohesion": 75,
+                "maxBlocDominance": 0.40,
+                "minBlocSatisfaction": 45,
+                "minWorlds": 3,
+                "requireArchive": true
             },
-            "culturalPressureDriftRate": 0.003,
-            "legacyBonusStabilityResistance": 0.05,
-            "legacyBonusBlocVolatilityReduction": 0.04,
-            "structuralImpactTypes": [
-                "stabilizedGateNexus",
-                "tradeEfficiencyBoostRegion",
-                "deepSpaceContractionSector"
-            ]
+            "_counterplay": "While an empire transcends, every rival's covert ops against it gain this much success chance, and AI services work it first.",
+            "transcendingOpSuccessBonus": 0.15,
+            "culturalPressurePoints": 3,
+            "reward": {
+                "prestige": 250,
+                "legitimacy": 10,
+                "politicalCapital": 40,
+                "bonus": { "approval": 3, "legitimacy_drift": 0.3 }
+            }
         },
         "postVictory": {
             "_comment": "48h transition phase after any victory type",

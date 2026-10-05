@@ -19,8 +19,17 @@ import type {
     VictoryType,
 } from '../seasons/season-types';
 import config from '../movement/movement-config.json';
+import * as chronicle from '../narrative/chronicle';
+import { prettifyFactionId } from '../narrative/naming';
+import { formatSimDurationAsReal } from '../time/galactic-time';
+import { empireBuildingState } from '../construction/construction-service';
 
 const cfg = config.victory;
+
+/** How long a transcending empire must stay whole, in real time ("1 day"); printed in notifications. */
+export function enlightenmentWindowLabel(): string {
+    return formatSimDurationAsReal(cfg.enlightenment.transcendenceWindowDays * 86400);
+}
 
 /** Lightweight structured event logger for the victory domain.
  *  Wire into the main EventBus union in a follow-up if needed. */
@@ -69,7 +78,6 @@ function ensureEnlightenmentProgress(factionId: string, world: GameWorldState): 
             qualificationSecondsAccumulated: 0,
             transcendenceStartedAt: null,
             transcendenceInterrupted: false,
-            structuralImpact: null,
             legacyBonuses: {},
         });
     }
@@ -233,51 +241,122 @@ export function tickConquestRebellionRisk(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Check if factionId currently passes all Enlightenment qualification thresholds.
- * Returns true only if ALL four categories pass simultaneously.
+ * One Enlightenment condition, read off the empire itself. The Saga panel
+ * renders these rows as they are, so the player sees exactly what the worker
+ * tests — there is no second copy of the rule anywhere.
+ */
+export interface EnlightenmentCondition {
+    id: 'approval' | 'legitimacy' | 'cohesion' | 'blocBalance' | 'blocContent' | 'worlds' | 'archive';
+    label: string;
+    /** Current reading; null when the empire has nothing to read (no government, no blocs). */
+    value: number | null;
+    target: number;
+    /** 'min' = value must reach target; 'max' = value must stay at or under it. */
+    bound: 'min' | 'max';
+    /** 'state' rows carry their reading in `state` instead of a number. */
+    unit: 'points' | 'percent' | 'count' | 'state';
+    passing: boolean;
+    /** For the Great Archive row: where the building stands. */
+    state?: 'operational' | 'building' | 'ruined' | 'none';
+}
+
+/** The monument every transcending empire must keep standing (data/buildings.ts). */
+export const ARCHIVE_BUILDING_ID = 'great_archive';
+
+function ownedWorldCount(world: GameWorldState, factionId: string): number {
+    let n = 0;
+    for (const planet of (world as any).construction?.planets?.values?.() ?? []) {
+        if (planet?.ownerId === factionId) n++;
+    }
+    return n;
+}
+
+/**
+ * Read every Enlightenment condition for factionId.
+ *
+ * Until 2026-10 qualification read world.shared — one stability, one trade
+ * efficiency, one infrastructure number for the whole galaxy. Every empire with
+ * balanced blocs therefore qualified on the same tick, a rival's sabotage moved
+ * your score as much as theirs, and no single empire could steer it. Everything
+ * here is the empire's own: its government's standing, its worlds' cohesion,
+ * its own interest groups.
+ */
+export function readEnlightenmentConditions(
+    factionId: string,
+    world: GameWorldState
+): EnlightenmentCondition[] {
+    const th = cfg.enlightenment.thresholds;
+    const gov = world.government?.get?.(factionId);
+    const blocs = world.movement.empirePostures.get(factionId)?.blocs ?? [];
+
+    const totalInfluence = blocs.reduce((sum, b) => sum + b.influence, 0);
+    const topShare = blocs.length > 0 && totalInfluence > 0
+        ? Math.max(...blocs.map(b => b.influence / totalInfluence))
+        : null;
+    const leastContent = blocs.length > 0 ? Math.min(...blocs.map(b => b.satisfaction)) : null;
+    const worlds = ownedWorldCount(world, factionId);
+
+    const min = (value: number | null, target: number) => value !== null && value >= target;
+    const rows: EnlightenmentCondition[] = [
+        { id: 'approval', label: 'Approval', value: gov ? gov.approval : null, target: th.approval, bound: 'min', unit: 'points', passing: min(gov ? gov.approval : null, th.approval) },
+        { id: 'legitimacy', label: 'Legitimacy', value: gov ? gov.legitimacy : null, target: th.legitimacy, bound: 'min', unit: 'points', passing: min(gov ? gov.legitimacy : null, th.legitimacy) },
+        { id: 'cohesion', label: 'Empire cohesion', value: gov ? gov.cohesion : null, target: th.cohesion, bound: 'min', unit: 'points', passing: min(gov ? gov.cohesion : null, th.cohesion) },
+        { id: 'blocBalance', label: 'Largest interest group', value: topShare, target: th.maxBlocDominance, bound: 'max', unit: 'percent', passing: topShare !== null && topShare <= th.maxBlocDominance },
+        { id: 'blocContent', label: 'Least content interest group', value: leastContent, target: th.minBlocSatisfaction, bound: 'min', unit: 'points', passing: min(leastContent, th.minBlocSatisfaction) },
+        { id: 'worlds', label: 'Worlds held', value: worlds, target: th.minWorlds, bound: 'min', unit: 'count', passing: worlds >= th.minWorlds },
+    ];
+    // The monument. Optional in config so a galaxy can switch it off; a
+    // standing (operational) Archive is what counts — one under construction
+    // or ruined by a saboteur does not.
+    if (th.requireArchive) {
+        const planets = (world as any).construction?.planets?.values?.() ?? [];
+        const state = empireBuildingState(planets, factionId, ARCHIVE_BUILDING_ID);
+        rows.push({ id: 'archive', label: 'Great Archive', value: null, target: 1, bound: 'min', unit: 'state', state, passing: state === 'operational' });
+    }
+    return rows;
+}
+
+/**
+ * Check if factionId currently passes every Enlightenment condition. An empire
+ * with no government or no interest groups cannot qualify — it has nothing for
+ * the conditions to read.
  */
 export function checkEnlightenmentQualification(
     factionId: string,
     world: GameWorldState
 ): boolean {
-    const th = cfg.enlightenment.thresholds;
-    const s = world.shared;
-
-    // Category 1 — Stability
-    if (s.stability < th.stability) return false;
-
-    // Category 2 — Bloc Balance: no bloc dominance, no critical bloc dissatisfaction
-    const posture = world.movement.empirePostures.get(factionId);
-    if (posture) {
-        const totalInfluence = posture.blocs.reduce((sum, b) => sum + b.influence, 0);
-        for (const bloc of posture.blocs) {
-            const dominance = totalInfluence > 0 ? bloc.influence / totalInfluence : 0;
-            if (dominance > th.maxBlocDominance) return false;
-            if (bloc.satisfaction / 100 < th.minBlocSatisfaction) return false;
-        }
-    }
-
-    // Category 3 — Economic Equilibrium
-    if (s.tradeEfficiency < th.tradeEfficiency) return false;
-    if (s.commodityAccess < th.commodityAccess) return false;
-    if (s.blocSatisfaction < th.blocSatisfaction) return false;
-
-    // Category 4 — Infrastructure Integrity
-    if (s.infraIntegrity < th.infraIntegrity) return false;
-
-    return true;
+    return readEnlightenmentConditions(factionId, world).every(c => c.passing);
 }
 
 /**
- * Advance the Enlightenment qualification timer for a faction.
- * - If passing thresholds: accumulate time; transition to 'transcending' when full.
- * - If failing: reset accumulated time, drop back to 'inactive'.
- * Called every sim tick for factions the server is tracking.
+ * What changed in the victory layer this tick. The tick processor turns these
+ * into notifications; the chronicle entries are recorded here, at the moment
+ * they happen.
+ */
+export type VictoryEvent =
+    | { kind: 'conquest'; factionId: string }
+    | { kind: 'enlightenment_transcending'; factionId: string }
+    | { kind: 'enlightenment_interrupted'; factionId: string }
+    | { kind: 'enlightenment_achieved'; factionId: string };
+
+/**
+ * Advance the Enlightenment clock for a faction. Called every strategic tick.
+ *
+ * - Qualifying: time passing every condition banks progress; time failing one
+ *   drains it, `qualificationDecayRate` times as fast. Only an empty bank drops
+ *   the empire to 'inactive'. (Until 2026-10 one failing tick zeroed it, so an
+ *   empire hovering on a threshold flickered in and out a thousand times a
+ *   season and never got anywhere.)
+ * - Transcending: passing advances the window; failing builds strain instead,
+ *   and strain eases off again while the empire holds. Strain reaching
+ *   `transcendenceGraceDays` breaks the attempt — announced — and drops the
+ *   empire back into qualifying with `interruptRetainFraction` of a full bank.
  */
 export function tickEnlightenmentProgress(
     factionId: string,
     world: GameWorldState,
-    deltaSeconds: number
+    deltaSeconds: number,
+    events: VictoryEvent[] = []
 ): void {
     const progress = ensureEnlightenmentProgress(factionId, world);
     if (progress.phase === 'complete') return;
@@ -285,7 +364,9 @@ export function tickEnlightenmentProgress(
     const ec = cfg.enlightenment;
     const qualDurationSeconds = ec.qualificationDurationDays * 86400;
     const transcendenceDurationSeconds = ec.transcendenceWindowDays * 86400;
+    const graceSeconds = ec.transcendenceGraceDays * 86400;
     const passing = checkEnlightenmentQualification(factionId, world);
+    progress.failingNow = !passing;
 
     if (progress.phase === 'inactive') {
         if (passing) {
@@ -299,37 +380,58 @@ export function tickEnlightenmentProgress(
 
     if (progress.phase === 'qualifying') {
         if (!passing) {
-            // Threshold failure — reset timer
-            progress.qualificationSecondsAccumulated = 0;
-            progress.qualifyingStartedAt = null;
-            progress.phase = 'inactive';
-            victoryEmit('enlightenmentQualificationReset', { factionId, reason: 'threshold failure' });
+            progress.qualificationSecondsAccumulated -= deltaSeconds * ec.qualificationDecayRate;
+            if (progress.qualificationSecondsAccumulated <= 0) {
+                progress.qualificationSecondsAccumulated = 0;
+                progress.qualifyingStartedAt = null;
+                progress.phase = 'inactive';
+                victoryEmit('enlightenmentQualificationReset', { factionId, reason: 'bank drained' });
+            }
             return;
         }
         progress.qualificationSecondsAccumulated += deltaSeconds;
         if (progress.qualificationSecondsAccumulated >= qualDurationSeconds) {
             startTranscendence(factionId, world, progress);
+            events.push({ kind: 'enlightenment_transcending', factionId });
         }
         return;
     }
 
     if (progress.phase === 'transcending') {
+        // Snapshots from before the window was banked carry only its start.
+        if (typeof progress.transcendenceSecondsAccumulated !== 'number') {
+            const started = progress.transcendenceStartedAt ? fromISO(progress.transcendenceStartedAt) : world.nowSeconds;
+            progress.transcendenceSecondsAccumulated = Math.max(0, world.nowSeconds - started);
+        }
+        progress.strainSeconds = progress.strainSeconds ?? 0;
+
         if (!passing) {
-            // Destabilization during transcendence — reset to inactive
-            resolveEnlightenmentFailure(factionId, world);
+            progress.strainSeconds += deltaSeconds;
+            if (progress.strainSeconds >= graceSeconds) {
+                resolveEnlightenmentFailure(factionId, world);
+                events.push({ kind: 'enlightenment_interrupted', factionId });
+            }
             return;
         }
-        // Check window expiry
-        const transcStarted = fromISO(progress.transcendenceStartedAt!);
-        if (world.nowSeconds - transcStarted >= transcendenceDurationSeconds) {
+        progress.strainSeconds = Math.max(0, progress.strainSeconds - deltaSeconds);
+        progress.transcendenceSecondsAccumulated += deltaSeconds;
+        if (progress.transcendenceSecondsAccumulated >= transcendenceDurationSeconds) {
             resolveEnlightenmentSuccess(factionId, world);
+            events.push({ kind: 'enlightenment_achieved', factionId });
         }
     }
 }
 
+/** True while factionId is in its announced transcendence window. Rivals' services read this. */
+export function isTranscending(world: GameWorldState, factionId: string): boolean {
+    return world.victoryState?.enlightenmentProgress?.get?.(factionId)?.phase === 'transcending';
+}
+
 /**
  * Begin the timed Transcendence window for factionId.
- * Called internally once qualification duration is met.
+ * Called internally once qualification duration is met. Qualifying is the
+ * empire's own business; transcending is announced — the galaxy gets the
+ * window to answer it.
  */
 export function startTranscendence(
     factionId: string,
@@ -339,16 +441,25 @@ export function startTranscendence(
     const p = progress ?? ensureEnlightenmentProgress(factionId, world);
     p.phase = 'transcending';
     p.transcendenceStartedAt = nowISO(world);
+    p.transcendenceSecondsAccumulated = 0;
+    p.strainSeconds = 0;
     p.transcendenceInterrupted = false;
+    chronicle.record(world, {
+        type: 'enlightenment_transcending',
+        actorIds: [factionId],
+        facts: { windowDays: cfg.enlightenment.transcendenceWindowDays },
+        attribution: 'exposed',
+    });
     victoryEmit('enlightenmentTranscendenceStarted', { factionId });
 }
 
 /**
  * Resolve Enlightenment success:
- * 1. Apply one structural impact.
- * 2. Apply minor legacy bonuses to winning faction (capped by config).
- * 3. Apply cultural pressure drift to rival factions.
- * 4. Mark winning faction as prime espionage target next season.
+ * 1. The reward lands in the government's legacy — prestige, legitimacy,
+ *    political capital, and permanent modifiers that getGovernmentModifiers
+ *    already reads. It survives succession, like an ambition's.
+ * 2. Cultural pressure: every rival's own interest groups lose satisfaction,
+ *    more so where they were already restless.
  */
 export function resolveEnlightenmentSuccess(
     factionId: string,
@@ -359,65 +470,169 @@ export function resolveEnlightenmentSuccess(
     const vs = ensureVictoryState(world);
 
     progress.phase = 'complete';
+    progress.completedAt = nowISO(world);
 
-    // 1. Structural impact — pick deterministically from available types
-    const impacts = ec.structuralImpactTypes;
-    const impactIndex = world.nowSeconds % impacts.length;
-    progress.structuralImpact = impacts[impactIndex];
-
-    // 2. Legacy bonuses (capped, non-stacking)
-    const bonusCap = config.seasons.rewards.permanentBonusCap / 100;
-    progress.legacyBonuses['stabilityResistance'] = clamp(
-        (progress.legacyBonuses['stabilityResistance'] ?? 0) + ec.legacyBonusStabilityResistance,
-        0, bonusCap
-    );
-    progress.legacyBonuses['blocVolatilityReduction'] = clamp(
-        (progress.legacyBonuses['blocVolatilityReduction'] ?? 0) + ec.legacyBonusBlocVolatilityReduction,
-        0, bonusCap
-    );
-
-    // 3. Cultural pressure drift on all rival factions
-    for (const [rivalId] of world.movement.empirePostures) {
-        if (rivalId === factionId) continue;
-        // If rival is already unstable (bloc satisfaction < 0.6), they feel it more
-        const multiplier = world.shared.blocSatisfaction < 0.6 ? 1.5 : 1.0;
-        world.shared.blocSatisfaction = clampShared(
-            world.shared.blocSatisfaction - ec.culturalPressureDriftRate * multiplier
-        );
+    // 1. The reward. Until 2026-10 it was written to progress.legacyBonuses and
+    //    a structuralImpact label, and nothing ever read either.
+    const reward = ec.reward;
+    const gov = world.government?.get?.(factionId);
+    if (gov) {
+        if (!gov.legacy) gov.legacy = { prestige: 0, completed: [], bonuses: {}, chronicle: [] };
+        gov.legacy.prestige += reward.prestige;
+        gov.legitimacy = Math.max(0, Math.min(100, gov.legitimacy + reward.legitimacy));
+        gov.politicalCapital = Math.min(gov.politicalCapitalCap, gov.politicalCapital + reward.politicalCapital);
+        for (const [key, value] of Object.entries(reward.bonus)) {
+            gov.legacy.bonuses[key] = (gov.legacy.bonuses[key] ?? 0) + value;
+        }
+        gov.history?.push?.({ timestamp: world.nowSeconds, event: 'The empire achieved Transcendence.' });
     }
+    // What was granted, for the Saga panel.
+    progress.legacyBonuses = { ...reward.bonus };
 
-    // 4. Mark as prime espionage target (amplify pressure next season)
-    world.shared.espionagePressure = clampShared(
-        world.shared.espionagePressure + 0.15
-    );
+    // 2. Cultural pressure on each rival's own interest groups. This used to
+    //    subtract from the one galaxy-wide average once per rival, which hit
+    //    the winner as hard as anyone.
+    for (const [rivalId, posture] of world.movement.empirePostures) {
+        if (rivalId === factionId || !Array.isArray(posture.blocs) || posture.blocs.length === 0) continue;
+        const total = posture.blocs.reduce((s, b) => s + b.influence, 0);
+        const mean = total > 0
+            ? posture.blocs.reduce((s, b) => s + b.satisfaction * b.influence, 0) / total
+            : 50;
+        const hit = ec.culturalPressurePoints * (mean < 60 ? 1.5 : 1.0);
+        for (const bloc of posture.blocs) {
+            bloc.satisfaction = clamp(bloc.satisfaction - hit, 0, 100);
+        }
+    }
 
     // Update galaxy-wide victory record
     vs.lastVictoryType = 'enlightenment';
     vs.lastVictoryFactionId = factionId;
     vs.lastVictoryAt = nowISO(world);
 
+    chronicle.record(world, {
+        type: 'enlightenment_achieved',
+        actorIds: [factionId],
+        facts: { prestige: reward.prestige },
+        attribution: 'exposed',
+    });
+
     victoryEmit('enlightenmentVictory', {
         factionId,
-        structuralImpact: progress.structuralImpact,
         legacyBonuses: progress.legacyBonuses as unknown as Record<string, unknown>,
     });
 }
 
 /**
- * Resolve Enlightenment failure (transcendence interrupted).
- * Resets to inactive; factionId must restart qualification.
+ * Resolve Enlightenment failure (transcendence broken). The empire falls back
+ * into qualifying with part of a full bank — it has to earn the window again,
+ * but not from nothing.
  */
 export function resolveEnlightenmentFailure(
     factionId: string,
     world: GameWorldState
 ): void {
     const progress = ensureEnlightenmentProgress(factionId, world);
-    progress.phase = 'inactive';
+    const ec = cfg.enlightenment;
+    const retained = ec.qualificationDurationDays * 86400 * ec.interruptRetainFraction;
+    progress.phase = retained > 0 ? 'qualifying' : 'inactive';
     progress.transcendenceStartedAt = null;
+    progress.transcendenceSecondsAccumulated = 0;
+    progress.strainSeconds = 0;
     progress.transcendenceInterrupted = true;
-    progress.qualificationSecondsAccumulated = 0;
-    progress.qualifyingStartedAt = null;
+    progress.qualificationSecondsAccumulated = retained;
+    progress.qualifyingStartedAt = retained > 0 ? nowISO(world) : null;
+    chronicle.record(world, {
+        type: 'enlightenment_interrupted',
+        actorIds: [factionId],
+        attribution: 'exposed',
+    });
     victoryEmit('enlightenmentTranscendenceInterrupted', { factionId });
+}
+
+/**
+ * Everything the Saga panel shows about Enlightenment, for one empire. The
+ * conditions come from the same reader the worker tests, and the rivals list
+ * is public knowledge — transcending is announced to the galaxy.
+ */
+export interface EnlightenmentView {
+    phase: EnlightenmentProgress['phase'];
+    conditions: EnlightenmentCondition[];
+    /** 0–1 through the current stage (qualifying or transcending); 0 otherwise. */
+    stageProgress: number;
+    /** Real time left in the current stage, if every condition holds; null when no stage is running. */
+    stageRemaining: string | null;
+    /** A condition failed on the last tick: qualifying is draining, transcending is straining. */
+    slipping: boolean;
+    /** 0–1 of the transcendence grace used up; the attempt breaks at 1. */
+    strain: number;
+    /** Real time of failing a transcending empire can absorb. */
+    graceLength: string;
+    /** How many times faster qualifying progress drains than it grows. */
+    decayRate: number;
+    /** Percent of a full qualifying bank kept when a transcendence breaks. */
+    retainPercent: number;
+    /** How long each stage lasts, in real time. */
+    qualificationLength: string;
+    transcendenceLength: string;
+    /** The last transcendence attempt was broken. */
+    interrupted: boolean;
+    /** Other empires in their transcendence window right now (display names). */
+    rivalsTranscending: string[];
+    /** Other empires that have already achieved it (display names). */
+    rivalsComplete: string[];
+    /** Permanent modifiers granted on success, once complete. */
+    granted: Record<string, number>;
+}
+
+export function buildEnlightenmentView(world: GameWorldState, factionId: string): EnlightenmentView {
+    const ec = cfg.enlightenment;
+    const qualSeconds = ec.qualificationDurationDays * 86400;
+    const transSeconds = ec.transcendenceWindowDays * 86400;
+    const all = world.victoryState?.enlightenmentProgress;
+    const progress = all?.get?.(factionId);
+    const phase = progress?.phase ?? 'inactive';
+
+    let stageProgress = 0;
+    let stageSecondsRemaining: number | null = null;
+    if (phase === 'qualifying' && progress) {
+        stageProgress = clamp(progress.qualificationSecondsAccumulated / qualSeconds);
+        stageSecondsRemaining = Math.max(0, qualSeconds - progress.qualificationSecondsAccumulated);
+    } else if (phase === 'transcending' && progress) {
+        const held = typeof progress.transcendenceSecondsAccumulated === 'number'
+            ? progress.transcendenceSecondsAccumulated
+            : (progress.transcendenceStartedAt ? world.nowSeconds - fromISO(progress.transcendenceStartedAt) : 0);
+        stageProgress = clamp(held / transSeconds);
+        stageSecondsRemaining = Math.max(0, transSeconds - held);
+    } else if (phase === 'complete') {
+        stageProgress = 1;
+    }
+
+    const rivalsTranscending: string[] = [];
+    const rivalsComplete: string[] = [];
+    const nameOf = (id: string) => world.economy?.factions?.get?.(id)?.name || prettifyFactionId(id);
+    for (const [id, p] of all?.entries?.() ?? []) {
+        if (id === factionId) continue;
+        if (p.phase === 'transcending') rivalsTranscending.push(nameOf(id));
+        else if (p.phase === 'complete') rivalsComplete.push(nameOf(id));
+    }
+
+    return {
+        phase,
+        conditions: readEnlightenmentConditions(factionId, world),
+        stageProgress,
+        stageRemaining: stageSecondsRemaining === null ? null : formatSimDurationAsReal(stageSecondsRemaining),
+        slipping: (phase === 'qualifying' || phase === 'transcending') && !!progress?.failingNow,
+        strain: phase === 'transcending' ? clamp((progress?.strainSeconds ?? 0) / (ec.transcendenceGraceDays * 86400)) : 0,
+        graceLength: formatSimDurationAsReal(ec.transcendenceGraceDays * 86400),
+        decayRate: ec.qualificationDecayRate,
+        retainPercent: Math.round(ec.interruptRetainFraction * 100),
+        qualificationLength: formatSimDurationAsReal(qualSeconds),
+        transcendenceLength: formatSimDurationAsReal(transSeconds),
+        interrupted: !!progress?.transcendenceInterrupted,
+        rivalsTranscending,
+        rivalsComplete,
+        granted: phase === 'complete' ? { ...(progress?.legacyBonuses ?? {}) } : {},
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -645,14 +860,16 @@ export function evaluateAutonomousRegions(world: GameWorldState): void {
  * - Advances Enlightenment progress for all tracked factions.
  * - Ticks post-victory transition.
  */
-export function tickVictory(world: GameWorldState, deltaSeconds: number): void {
+export function tickVictory(world: GameWorldState, deltaSeconds: number): VictoryEvent[] {
     const vs = ensureVictoryState(world);
+    const events: VictoryEvent[] = [];
 
     // ── Conquest check ────────────────────────────────────────────────────────
     if (!vs.conquest) {
         const conqueror = checkConquestVictory(world);
         if (conqueror) {
             const conquest = declareConquest(conqueror, world);
+            events.push({ kind: 'conquest', factionId: conqueror });
             if (!conquest.transitionStarted) {
                 conquest.transitionStarted = true;
                 startPostVictoryTransition('conquest', conqueror, world);
@@ -665,11 +882,13 @@ export function tickVictory(world: GameWorldState, deltaSeconds: number): void {
 
     // ── Enlightenment check for all factions ──────────────────────────────────
     for (const factionId of world.movement.empirePostures.keys()) {
-        tickEnlightenmentProgress(factionId, world, deltaSeconds);
+        tickEnlightenmentProgress(factionId, world, deltaSeconds, events);
     }
 
     // ── Post-victory transition ───────────────────────────────────────────────
     if (world.postVictoryTransition && !world.postVictoryTransition.resolved) {
         tickPostVictoryTransition(world, deltaSeconds);
     }
+
+    return events;
 }

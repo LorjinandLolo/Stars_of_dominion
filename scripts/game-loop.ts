@@ -103,7 +103,7 @@ import {
     type BattlePlan,
 } from '../lib/combat/siege/battle-plans';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
-import { tickConstructionGlobal, startConstruction, repairBuilding } from '../lib/construction/construction-service';
+import { tickConstructionGlobal, startConstruction, repairBuilding, empireBuildingState } from '../lib/construction/construction-service';
 import { BUILDINGS } from '../data/buildings';
 import { generateSurface, autoPlaceBuilding } from '../lib/planet-surface/generator';
 import { SURFACE_SECTOR_COUNT } from '../lib/planet-surface/types';
@@ -2339,6 +2339,12 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 const already = planet.tiles.some((t: any) => t.buildingId === def.id && t.constructionState !== 'ruined')
                     || planet.buildQueue.some((q: any) => q.buildingId === def.id);
                 if (already) { recordOrderFailure(world, factionId, actionId, `${def.name} is unique per planet.`); break; }
+            }
+            // uniquePerEmpire was declared on the type and never enforced. A
+            // ruined copy still counts: it is repaired, not rebuilt.
+            if (def.uniquePerEmpire && empireBuildingState(world.construction.planets.values(), factionId, def.id) !== 'none') {
+                recordOrderFailure(world, factionId, actionId, `Your empire already has a ${def.name}.`);
+                break;
             }
 
             // Sectors already occupied by tiles or in-flight orders (shared

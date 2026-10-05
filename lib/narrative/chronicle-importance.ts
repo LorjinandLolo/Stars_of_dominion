@@ -74,6 +74,10 @@ const BASE_IMPORTANCE: Record<ChronicleEventType, number> = {
     empire_eliminated: 98,
     colony_founded: 26,
     season_milestone: 50,
+    // A victory in the making is the galaxy's story; its failure only slightly less.
+    enlightenment_transcending: 82,
+    enlightenment_interrupted: 70,
+    enlightenment_achieved: 96,
 };
 
 /** Read a numeric fact, tolerating the string-typed JSON values facts allow. */

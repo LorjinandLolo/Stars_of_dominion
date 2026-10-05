@@ -90,6 +90,8 @@ export interface BuildingDefinition {
   techRequired?: string;
   civilizationId?: string;
   upgradesFrom?: string; // ID of the building this upgrades from
+  /** Base repair time for a ruined copy; defaults to half buildTimeSeconds. */
+  repairTimeSeconds?: number;
 }
 
 export interface PlanetTile {

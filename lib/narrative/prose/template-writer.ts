@@ -434,6 +434,34 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
             };
         }
 
+        case 'enlightenment_transcending':
+            return {
+                headline: `${actor} begins to transcend`,
+                body: `For a full month ${actor} has governed without a faction left behind: a popular government, a secure mandate, worlds that want to belong. It has now entered Transcendence. If it holds together for ${num(e, 'windowDays') ?? 'a few more'} days, the achievement is permanent. ${pick([
+                    'Its rivals have the same few days to decide whether that is something they can allow.',
+                    'Every foreign service in the galaxy now has the same target and the same deadline.',
+                    'Nothing in the rules stops a rival from making those days very difficult.',
+                ], e.id)}`,
+                tone: 'alarmed',
+            };
+
+        case 'enlightenment_interrupted':
+            return {
+                headline: `${actor}'s Transcendence collapses`,
+                body: `The window has closed on ${actor}. Some part of what held it together gave way for too long: approval, mandate, a restless province, an interest group left behind, or the Archive itself. It keeps some of the ground it gained, but the window is gone and must be earned again. ${pick([
+                    'Whether anyone abroad helped it fall is a question its intelligence services will be asking.',
+                    'Its rivals will not say so publicly, but they are relieved.',
+                ], e.id)}`,
+                tone: 'grave',
+            };
+
+        case 'enlightenment_achieved':
+            return {
+                headline: `ENLIGHTENMENT: ${actor} transcends`,
+                body: `${actor} has achieved what no amount of conquest buys: a state its own people do not want to leave and do not want to change. The achievement is permanent and passes to every government that follows. Elsewhere, people have noticed, and in the capitals of its rivals the question is now why their own government cannot manage the same.`,
+                tone: 'neutral',
+            };
+
         case 'megaproject_completed': {
             const company = str(e, 'companyName', 'a chartered company');
             const project = str(e, 'projectName', 'a major work');

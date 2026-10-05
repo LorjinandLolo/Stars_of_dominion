@@ -48,6 +48,7 @@ import { grievanceHolders, readsGrievances, CIV_MOVANITE, CIV_LEOPANTHERI, CIV_R
 import { DEFERRED_METRIC, FAFO_METRIC, orderBudget, isUnderFafo, movaniteState } from './movanite';
 import { UNJUSTIFIED_WAR_METRIC, HONOR_LOCK_METRIC, honorStanding } from './leopantheri';
 import { ReputationService } from '../reputation/reputation-service';
+import { buildEnlightenmentView, type EnlightenmentView } from '../victory/victory-service';
 import { NODE_LOSS_METRIC, MEDIATION_METRIC, hiveCoherence, isHiveFrayed } from './rhimetals';
 import { SURGE_METRIC, VENDETTA_METRIC, isSurgingNow, isCrashed, surgeIntensity, gabagoonState } from './gabagoon';
 import { STARVATION_METRIC, starvation, biomassOf } from './nexulan';
@@ -117,6 +118,8 @@ export interface FactionSaga {
     records: SagaRecord[];
     /** Common-rules lifetime ledger — every empire. */
     deeds: SagaRecord[];
+    /** The road to Enlightenment, read by the same function the worker tests. */
+    enlightenment: EnlightenmentView;
 }
 
 const TICK_SECONDS = 6 * 60 * 60;
@@ -575,5 +578,6 @@ export function buildFactionSaga(world: GameWorldState, factionId: string): Fact
         statuses,
         records,
         deeds: buildSagaDeeds(world, factionId),
+        enlightenment: buildEnlightenmentView(world, factionId),
     };
 }

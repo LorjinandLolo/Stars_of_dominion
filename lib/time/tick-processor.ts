@@ -18,7 +18,7 @@ import { tickAIExpansion } from '../exploration/ai-expansion';
 import { tickAIBeltAmbush } from '../ai/belt-ambush-ai';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_SYSTEMS_SURVEYED } from '../tech/deed-metrics';
-import { tickVictory } from '../victory/victory-service';
+import { tickVictory, enlightenmentWindowLabel } from '../victory/victory-service';
 import { ACTION_DEFINITIONS } from '../actions/registry';
 import { processPirateTurn } from '../ai/pirate-ai-service';
 import { issueMoveOrder } from '../movement/movement-service';
@@ -945,21 +945,29 @@ function step20_titlesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
         //     test file. Before tickTitles so a feat completed this tick is in
         //     the ledger the same strategic cycle.
         try {
-            const before = (world as any).victoryState?.lastVictoryAt ?? null;
-            tickVictory(world, TICK_DELTA_SECONDS);
-            const vs = (world as any).victoryState;
-            if (vs?.lastVictoryAt && vs.lastVictoryAt !== before) {
+            // One notification per event: two empires completing on the same
+            // tick used to collapse into a single note naming whichever the
+            // Map visited last.
+            for (const ev of tickVictory(world, TICK_DELTA_SECONDS)) {
+                const name = world.economy.factions.get(ev.factionId)?.name ?? ev.factionId;
+                const window = enlightenmentWindowLabel();
+                const note = {
+                    conquest: { title: 'THE GALAXY HAS A CONQUEROR', body: `${name} has achieved conquest victory. The post-victory era begins.`, priority: 'urgent' },
+                    enlightenment_transcending: { title: 'AN EMPIRE BEGINS TO TRANSCEND', body: `${name} has held its people together long enough to begin Transcendence. If it stays whole for ${window} more, it ascends.`, priority: 'urgent' },
+                    enlightenment_interrupted: { title: 'TRANSCENDENCE BROKEN', body: `${name} lost its footing and its Transcendence has failed. It must begin again.`, priority: 'normal' },
+                    enlightenment_achieved: { title: 'TRANSCENDENCE ACHIEVED', body: `${name} has achieved Enlightenment. Its rivals' own people look on and wonder.`, priority: 'urgent' },
+                }[ev.kind];
                 fireNotification({
-                    id: `victory-${vs.lastVictoryType}-${vs.lastVictoryFactionId}-${vs.lastVictoryAt}`,
+                    id: `victory-${ev.kind}-${ev.factionId}-${world.nowSeconds}`,
                     factionId: 'all',
                     category: 'system',
-                    priority: 'urgent',
-                    title: vs.lastVictoryType === 'conquest' ? 'THE GALAXY HAS A CONQUEROR' : 'TRANSCENDENCE ACHIEVED',
-                    body: `${world.economy.factions.get(vs.lastVictoryFactionId)?.name ?? vs.lastVictoryFactionId} has achieved ${vs.lastVictoryType} victory. The post-victory era begins.`,
+                    priority: note.priority,
+                    title: note.title,
+                    body: note.body,
                     createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                     read: false,
-                    linkToTab: 'dashboard',
-                    payload: { victoryType: vs.lastVictoryType, factionId: vs.lastVictoryFactionId },
+                    linkToTab: ev.kind === 'conquest' ? 'dashboard' : 'saga',
+                    payload: { victoryEvent: ev.kind, factionId: ev.factionId },
                 } as any);
             }
         } catch (e) { console.error('[TickProcessor] tickVictory failed:', e); }

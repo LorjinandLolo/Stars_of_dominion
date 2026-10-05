@@ -65,7 +65,12 @@ export type ChronicleEventType =
     // World & meta
     | 'empire_eliminated'
     | 'colony_founded'
-    | 'season_milestone';
+    | 'season_milestone'
+    // Enlightenment victory (lib/victory). Qualifying is private; the
+    // transcendence window is announced, and so is how it ends.
+    | 'enlightenment_transcending'
+    | 'enlightenment_interrupted'
+    | 'enlightenment_achieved';
 
 /**
  * Public attribution ceiling for an event.
