@@ -163,6 +163,58 @@ Do not implement in the same session as anything else. Produce `docs/multi-galax
 5. **The public gazette is per galaxy.**
 6. **Hosting model: a worker pool, one galaxy per worker process** (option A, agreed 2026-10-01). Workers take a lease on any galaxy nobody is running; capacity is `--scale worker=N`. Server Masters are paying customers whose galaxy runs on the owner's machines with admin powers inside it (not on their own hardware); their galaxies carry no ads. The owner expects to pass 100 galaxies quickly, so the first version is built for several galaxies per worker process from the start: worlds are data keyed by galaxy id, not the module singleton (the 52-file refactor is in scope, not deferred), each worker leases a batch of galaxies, and strategic ticks are staggered per galaxy. Delta sync (or push) is the prerequisite for the next order of magnitude and the document must schedule it.
 
+## Item 11: one espionage page that reaches the real system
+
+Audit of 2026-10-06, verified in code. The dock shows two espionage pages (`components/shell/dockConfig.tsx:112-113`): OPERATIONS is `components/panels/IntelligencePanel.tsx`, AGENCY is `components/intrigue/EspionageAgencyPanel.tsx`. Both have agents, recruitment and an op launcher, and they disagree with each other. Neither reaches the system the worker actually runs:
+
+- The 20-operation catalog (`lib/espionage/operation-catalog.ts`: Infiltrate Government, Technology Theft, Fake Fleet Signature, Fund a Coup, Election Interference, Covert Piracy, Counter-Intel Sweep, ...) is launched only by the AI (`lib/ai/intelligence-ai-service.ts:59` calls `launchCatalogOperation`). The player's `ESP_LAUNCH_OP` (`scripts/game-loop.ts:3076`) goes through the legacy `launchOperation` (`lib/espionage/espionage-service.ts:75`): three vague domains, no Intel cost, no network-stage gate, no capacity. The Intel counter, the infiltration bar and the "Next: Deep Assets at 65" line the UI shows therefore gate nothing the player can do.
+- AGENCY > COVERT OPS makes the player pick an agent, then `launchCovertOpAction` (`app/actions/espionage.ts`) never sends the agent id. Its "estimated success" box is a client-side formula unrelated to the server's. AGENCY > ROSTER deploys with a hardcoded `domain: 'infrastructureSabotage'`; `SpyAgent.deployedDomain` is written and read by nothing. `applyAgentOpConsequences` (`lib/espionage/agent-service.ts`) is never called from resolution, so agents gain no XP and lose no cover from ops.
+- Results never reach the player: `op.narrative`, `succeeded` and `attributionState` are set in `resolveOperation` and rendered nowhere; no `fireNotification` on resolution for either side. Resolved ops sit in the OPERATIONS list for 72 h labelled "resolved" with an investment bar.
+- Counter-intelligence has no UI at all: `counterIntelBudget`, `regionalCounterIntel`, `counterIntelStrength` exist in `FactionIntelState` and no component reads or sets them. The only defensive move is a board "threat" card.
+- OPERATIONS launch form uses hardcoded investment 0.5 / risk 0.2 and lists regions; AGENCY lists every system including the player's own and fails silently on a wrong target.
+- Manual section 9 (`lib/manual/manual-data.ts:274`) describes mechanics that do not exist (24-hour fleet disable, "Logic Modifier", leader bonus).
+- Smaller: two recruitment flows with different cost labels (INTEL vs credits; the worker charges credits), AgentCard shows a sliced raw system id, the AGENCY recruit modal is a fixed 800 px and breaks in the preview pane, footer filler "Shadow protocol alpha engaged".
+
+Build, in sub-items (one session each):
+
+**11a. One page.** Delete `EspionageAgencyPanel.tsx` and its dock entry. Keep `IntelligencePanel` with tabs Board, Networks, Operations, Reports, Agents (recruitment folds into Agents). Names, not ids, everywhere (system and faction display names). Remove the footer filler. Fix the manual section to describe what 11b ships.
+
+**11b. Expose the catalog to the player.** New order `ESP_LAUNCH_CATALOG_OP` (registry + game-loop case) wrapping `launchCatalogOperation`; it already enforces Intel cost, capacity and the stage gate (`lib/espionage/network-stages.ts`). Operations tab: pick a target empire, see your stage against it, then catalog cards grouped by category; locked cards stay visible and say which stage unlocks them ("needs Embedded Network, 35"). Each card shows Intel cost, duration range and risk tier from the definition. Success preview comes from the server (`computeCatalogSuccessChance`), carried in the shard per (target, definition) or fetched on demand; no client formula. Retire the legacy launch form; keep `ESP_LAUNCH_OP` only until `lib/ai/strategic-ai-service.ts:376` is moved to the catalog path, then delete it.
+
+**11c. Agents matter.** A catalog op may name one available agent. Trait bonus to success via the existing trait-to-domain bridge; on resolution call `applyAgentOpConsequences` (cover loss by risk, XP, burn at zero cover). Deploy means one thing: build a network in a system (drop the `domain` parameter and `deployedDomain`). Recruitment charges credits and says so.
+
+**11d. Outcomes reach the player.** `fireNotification` on resolution: to the actor (outcome + narrative), and to the target when attribution is suspected or exposed (what happened, where, who is suspected). Reports tab shows after-action entries next to intel reports. Resolved ops leave the active list.
+
+**11e. Counter-intelligence tab.** Budget slider that spends Intel per hour into `counterIntelStrength`, plus a per-system investment list (`regionalCounterIntel`, which `computeAttributionProbability` already reads). One order `ESP_SET_COUNTERINTEL`. Counter-Intel Sweep launches from here.
+
+Acceptance: one espionage entry in the dock; DEV 1 can launch Infiltrate Government against an AI empire, see it refuse Fund a Coup with the stage reason, get a notification when it resolves, and see the victim notified when a risky op is caught; probe `tmp/test-espionage-player-path.ts` drives recruit, deploy, catalog launch, resolve and agent consequences through the services the order handlers call; `scripts/approval-probe.ts` and `scripts/enlightenment-soak-probe.ts` still green (AI counterplay against a transcending empire runs through the same catalog).
+
+## Item 12: the case board (detective board)
+
+A player who is hit by a covert operation should be able to work out who did it, and be wrong. The substrate exists: a `ChronicleEvent` records the real actor in `actorIds` and the public ceiling in `attribution` (`lib/narrative/chronicle-types.ts`), `IntelReport` carries a hidden `accurate` flag, `AttributionRecord` holds a suspected faction and a probability, and the press already prints suspected names. Today attribution is one deterministic roll at resolution (`resolveAttribution`); the board turns it into a process the player plays.
+
+Two prerequisites found in the audit: `recordOperationToChronicle` always writes `suspected:<real actor>` (`espionage-service.ts:636`), so a suspicion can never be wrong yet; and nothing ever sets an agent to `captured`, so there is no interrogation source.
+
+### Item 12 design decisions (agreed 2026-10-06)
+
+1. **A case opens for the victim** when an op resolves against them and is not instantly exposed (exposed means caught red-handed, no board). The case shows the effect only: what, where, when. Never the author.
+2. **Suspects** are every faction the victim has contact with, unsorted. The board does no inference for the player; an optional "analyst estimate" line may be added for the casual path later.
+3. **Clues arrive over time**, at a rate scaled by the victim's `counterIntelStrength` (this is what counter-intel buys). Each clue is a card with text and a source, and a server-side hidden weight for or against each suspect. Sources: method signature (catalog category and `requiredTech`, e.g. "this needed Black Market Operations"), sensor contacts near the time (`world.movement.sensorSources`), motive (feuds and grievances from `lib/narrative/memory-service.ts` and the grievance store), press (Gazette articles naming a suspect, wrong under a false flag), intel reports from the victim's own ops against a suspect (may be inaccurate), and interrogation of an agent captured by Counter-Intel Sweep (lies when the agent has the `double_agent` trait).
+4. **The player pins clues to suspects**, then files an **accusation** (`ESP_FILE_ACCUSATION`, one faction). The worker checks the chronicle truth. Right: the op flips to exposed retroactively, the diplomatic penalty lands on the actor, the victim's chamber debate opens (`espionage_exposed_on_us`), the press gets a scandal, and the victim gains Intel and political capital. Wrong: tension with the innocent faction, reputation loss for the accuser, and the real actor gains infiltration. Alternatives to accusing: leak to the press (investigation article, no diplomatic effect), or keep the case as leverage for Blackmail a Minister.
+5. **False flags become real.** `false_flag_border_raid` (and any op marked so in the catalog) plants clues pointing at a third faction.
+6. **AI empires build cases too**, simply: accuse when summed clue weight passes a threshold scaled by personality. The player's own ops face the same board.
+7. A Server Master seeding a red herring is one planted clue; design the clue record so a non-simulation author is possible, do not build the tooling yet.
+
+Phases (one session each, in order, after 11a to 11c):
+
+**12a. Worker side.** Case and clue records in the faction shard (JSON TEXT, like the rest); case opening in `resolveOperation`; clue generation tick with the six sources above; `ESP_FILE_ACCUSATION` and `ESP_LEAK_CASE` orders with the consequences in decision 4; fix the two prerequisites (suspected attribution may name an innocent, Counter-Intel Sweep can capture); probe `tmp/test-case-board.ts` asserts that a planted false flag misleads and a correct accusation flips the chronicle attribution.
+
+**12b. UI.** Case Board tab on the Item 11 page: open cases, suspect column, clue column, pin a clue to a suspect, accuse / leak / hold. Works at 375 px (Item 8 rules).
+
+**12c. Pressure on both sides.** False-flag clue planting, AI accusations, press articles seeded from open cases through the chronicle (`investigation_published` and `scandal_confirmed` already exist as event types).
+
+Acceptance: in a probe, a victim of a political op receives at least three clues within 2 sim days at default counter-intel, a false-flag op produces a majority of clues pointing at the innocent, an accusation of the real actor opens the victim's debate and marks the chronicle event exposed, and a wrong accusation raises tension with the innocent; in the preview, DEV 1 can open a case, pin clues and accuse.
+
 ## Order
 
-0, 1, 2, 3 in that order; they are the Wordle promise. Then 4, 5. Then 6a to 6d. Then 8 and 9. Item 7 and item 10 after a design conversation.
+0, 1, 2, 3 in that order; they are the Wordle promise. Then 4, 5. Then 6a to 6d. Then 8 and 9. Item 7 and item 10 after a design conversation. Items 11 and 12 (added 2026-10-06) once the playtest galaxy is live: 11a, 11b, 11c first, then 12a, 12b, 12c; 11d and 11e slot into any free session (12a needs 11b for a player-launchable Counter-Intel Sweep).
