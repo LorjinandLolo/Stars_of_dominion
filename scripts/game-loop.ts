@@ -203,6 +203,7 @@ import {
 import type { CharterTerms, CorporateRight, RenewalResponse } from '../lib/economy/corporate/charter-types';
 import { resolveRenewal } from '../lib/economy/corporate/charter-renewal';
 import { reflagCharter } from '../lib/economy/corporate/foreign-control';
+import { revokeAgainstRogue } from '../lib/economy/corporate/rogue-service';
 import { drawStateLoan } from '../lib/economy/corporate/mission-services';
 import { grantCharter, nationalizeCompany } from '../lib/economy/corporate/charter-orders';
 import { RIGHT_DEFS } from '../lib/economy/corporate/charter-catalog';
@@ -5393,22 +5394,27 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                  recordOrderFailure(world, factionId, actionId, `Revoking this charter costs ${revokeCost} political capital.`);
                  break;
              }
-             company.charterRevocationPending = true;
+             // Mid-break, how far gone the board is decides what the revocation
+             // does: under half the rogue clock it ends the break; past it the
+             // board ignores the revocation and leaves at the next cycle.
+             const wasRogue = Boolean(company.hasGoneRogue);
+             const againstRogue = revokeAgainstRogue(world, company);
+             if (againstRogue !== 'hastened') company.charterRevocationPending = true;
              company.loyalty = Math.max(0, (company.loyalty ?? 50) - 30);
              company.autonomyLevel = Math.min(100, company.autonomyLevel + 15);
              corp.eventLog.push({
                  type: 'charter_revoked',
                  companyId: company.id,
-                 payload: { reason: 'Revoked by the chartering government', politicalCapital: revokeCost },
+                 payload: { reason: 'Revoked by the chartering government', politicalCapital: revokeCost, againstRogue },
                  timestamp: world.nowSeconds,
              });
              chronicle.record(world, {
                  type: 'charter_revoked',
                  actorIds: [factionId],
                  location: company.headquartersSystemId,
-                 facts: { companyName: company.charter.fullName, wasRogue: Boolean(company.hasGoneRogue) },
+                 facts: { companyName: company.charter.fullName, wasRogue, rogueOutcome: againstRogue },
              });
-             console.log(`[Order] Faction ${factionId} revoked the charter of ${company.charter.fullName}`);
+             console.log(`[Order] Faction ${factionId} revoked the charter of ${company.charter.fullName}${wasRogue ? ` (rogue: ${againstRogue})` : ''}`);
              break;
         }
 

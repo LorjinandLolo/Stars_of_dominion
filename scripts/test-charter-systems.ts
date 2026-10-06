@@ -276,6 +276,9 @@ function main() {
     assert.ok(drawn.ok);
     assert.strictEqual(reserves(world, founder)['CREDITS'], before + 50_000);
     assert.ok(Math.abs(bank.stateLoan - 55_000) < 1e-6, 'interest is written on at once');
+    // (150,000 vault + 55,000 owed) × 0.5 − 55,000: a drawing in parts leaves
+    // the rest of the line, less the interest — not nothing.
+    assert.ok(Math.abs(creditLineAvailable(bank) - 47_500) <= 1, `the rest of the line is still on offer (${creditLineAvailable(bank)})`);
     tickMissionServices(world);
     assert.ok(bank.stateLoan < 55_000 && reserves(world, founder)['CREDITS'] < before + 50_000, 'and the state services the debt every tick');
 

@@ -34,9 +34,23 @@ const METALS_PER_OUTPOST = 6;
 /** Rares and chemicals per working outpost per tick (extraction charters). */
 const RARES_PER_OUTPOST = 2;
 const CHEMICALS_PER_OUTPOST = 3;
-/** Political capital per working trade station per tick, and the ceiling. */
-const CAPITAL_PER_STATION = 0.15;
-const CAPITAL_PER_TICK_CAP = 1;
+/**
+ * Credits per working trade station per tick, and the ceiling. Paid political
+ * capital alone until 2026-10-06; now money first, with a small PC trickle
+ * below (the user's call: both, as merchants pay taxes AND buy influence).
+ * At a strategic tick every ~24 real minutes, a full six-station network brings
+ * the treasury ~36k credits a real day — about 40% of what a world's taxes do.
+ */
+const CREDITS_PER_STATION = 100;
+const CREDITS_PER_TICK_CAP = 600;
+/**
+ * …and a little political capital on top: the merchant lobby's favour at
+ * court. Half the old all-PC rate, so a full network adds at most 2 PC a sim
+ * day to the 5–15 a government earns by governing — a side source, never the
+ * engine (political capital must come mostly from approval and legitimacy).
+ */
+const CAPITAL_PER_STATION = 0.075;
+const CAPITAL_PER_TICK_CAP = 0.5;
 /** Fleet strength restored per tick at a system with a working depot. */
 const DEPOT_REPAIR = 0.03;
 /** Share of a tick each working private yard takes off a state ship order. */
@@ -95,11 +109,18 @@ function deliver(world: GameWorldState, company: CharteredCompany, goods: Record
 
 function serveTrade(world: GameWorldState, company: CharteredCompany, rate: number, now: number): string | null {
     const stations = countOf(company, 'trade_station', now);
+    const reserves = reservesOf(world, company.foundingFactionId);
+    if (stations === 0 || !reserves) return null;
+    const gain = Math.round(Math.min(CREDITS_PER_TICK_CAP, stations * CREDITS_PER_STATION) * rate);
+    if (gain <= 0) return null;
+    reserves['CREDITS'] = (reserves['CREDITS'] ?? 0) + gain;
     const gov = getGovernment(world, company.foundingFactionId);
-    if (stations === 0 || !gov) return null;
-    const gain = Math.min(CAPITAL_PER_TICK_CAP, stations * CAPITAL_PER_STATION) * rate;
-    gov.politicalCapital = Math.min(gov.politicalCapitalCap ?? 100, gov.politicalCapital + gain);
-    return `Its ${stations} trade station(s) earned the government ${gain.toFixed(2)} political capital.`;
+    const favour = gov ? Math.min(CAPITAL_PER_TICK_CAP, stations * CAPITAL_PER_STATION) * rate : 0;
+    if (gov && favour > 0) {
+        gov.politicalCapital = Math.min(gov.politicalCapitalCap ?? 100, gov.politicalCapital + favour);
+    }
+    return `Its ${stations} trade station(s) paid the treasury ${gain.toLocaleString()}cr`
+        + (favour > 0 ? ` and won the government ${favour.toFixed(2)} political capital.` : '.');
 }
 
 function serveLogistics(world: GameWorldState, company: CharteredCompany, rate: number, now: number): string | null {

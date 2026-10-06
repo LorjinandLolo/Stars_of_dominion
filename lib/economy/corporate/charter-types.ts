@@ -391,6 +391,8 @@ export interface CharterTerms {
  */
 export const CHARTER_TERM_OPTIONS: readonly number[] = [3, 5, 8];
 export const DEFAULT_CHARTER_TERM_DAYS = 5;
+/** What a charter from before terms existed is given on first load: the long term. */
+export const LEGACY_CHARTER_TERM_DAYS = 8;
 
 /** What the company wants written into the renewed charter. */
 export type RenewalAskKind = 'none' | 'profit_share' | 'right' | 'territory';

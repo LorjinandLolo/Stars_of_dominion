@@ -71,7 +71,7 @@ export const MISSION_DEFS: Record<CorporateMission, MissionDef> = {
         revenueMultiplier: 1.25,
         expansionCostMultiplier: 1.0,
         personalityBias: ['profit_driven', 'monopolist'],
-        service: 'Every working trade station earns the government political capital.',
+        service: 'Every working trade station pays the treasury credits, and the merchant lobby wins the government a little political capital.',
     },
     banking: {
         id: 'banking',

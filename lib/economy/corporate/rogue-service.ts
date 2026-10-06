@@ -36,6 +36,8 @@ import type { CorporateWorldState } from './company-registry';
 import { ensureCorporateState, getOrCreateFactionState } from './company-registry';
 import {
     ROGUE_GRACE_SECONDS,
+    REVOKE_STOPS_ROGUE_BELOW,
+    rogueProgress,
     computeInfluence,
     computeStanding,
     hasRight,
@@ -380,6 +382,44 @@ function breakAway(world: GameWorldState, corp: CorporateWorldState, company: Ch
  * of time. Called once per strategic tick, before tickSecession so a crisis
  * opened here is live in the same tick.
  */
+export type RevokeAgainstRogue = 'not_rogue' | 'stopped' | 'hastened';
+
+/**
+ * What revoking the charter does to a company that is mid-break. Called by the
+ * CORP_REVOKE_CHARTER handler before it marks the revocation.
+ * - not rogue: nothing here; the revocation proceeds as normal.
+ * - under REVOKE_STOPS_ROGUE_BELOW of the clock: the break is over. The company
+ *   winds down as an ordinary revocation (which also stops the autonomy check
+ *   from setting it rogue again).
+ * - at or past it: the board ignores the revocation and goes on the next
+ *   strategic tick. The caller must NOT mark the revocation pending — a
+ *   revoked company does not break away, it winds down.
+ */
+export function revokeAgainstRogue(world: GameWorldState, company: CharteredCompany): RevokeAgainstRogue {
+    if (!company.hasGoneRogue) return 'not_rogue';
+    const now = world.nowSeconds;
+    if (rogueProgress(company, now) < REVOKE_STOPS_ROGUE_BELOW) {
+        company.hasGoneRogue = false;
+        company.rogueSince = undefined;
+        notify(
+            world, company.foundingFactionId, `corp-rogue-ended-${company.id}-${now}`,
+            'ROGUE COMPANY BROUGHT TO HEEL',
+            `Revoked in time: ${company.charter.fullName} will wind down under the law instead of leaving with what it holds.`,
+            company.id
+        );
+        return 'stopped';
+    }
+    // Next strategic tick crosses the deadline.
+    company.rogueSince = now - ROGUE_GRACE_SECONDS;
+    notify(
+        world, company.foundingFactionId, `corp-rogue-hastened-${company.id}-${now}`,
+        'REVOCATION IGNORED — THE COMPANY IS LEAVING',
+        `${company.charter.fullName} was too far gone. The board has taken the revocation as its signal: it breaks away at the next cycle.`,
+        company.id
+    );
+    return 'hastened';
+}
+
 export function tickRogueCompanies(world: GameWorldState): RogueBreak[] {
     const corp = ensureCorporateState(world);
     const now = world.nowSeconds;

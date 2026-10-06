@@ -553,6 +553,11 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
                         with what the charter let it hold: the colonies it governs, and either the charter
                         itself — if a foreign power will have it — or its armed squadrons, as corsairs.
                     </p>
+                    <p className={`text-[10px] mt-1 ${c.revokeAgainstRogue === 'stops' ? 'text-emerald-400' : 'text-rose-300'}`}>
+                        {c.revokeAgainstRogue === 'stops'
+                            ? 'Still early: revoking the charter now ends the break, and the company winds down under the law.'
+                            : 'Too far gone: revoking now only tells the board you have given up — it leaves at the next cycle.'}
+                    </p>
                 </div>
             )}
 
@@ -827,7 +832,13 @@ function CompanyDetail({ c, playerFactionId, factionNames, onError }: {
                             disabled={busy === 'revoke' || c.charterRevocationPending}
                             className="px-3 py-2 rounded bg-slate-900 border border-slate-700 text-slate-300 text-[10px] font-display uppercase tracking-wider hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-40"
                         >
-                            {c.charterRevocationPending ? 'Revocation pending' : 'Revoke charter'}
+                            {c.charterRevocationPending
+                                ? 'Revocation pending'
+                                : c.revokeAgainstRogue === 'hastens'
+                                    ? 'Revoke — they will leave'
+                                    : c.revokeAgainstRogue === 'stops'
+                                        ? 'Revoke — ends the break'
+                                        : 'Revoke charter'}
                         </button>
                     </div>
                 </div>

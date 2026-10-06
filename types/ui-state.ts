@@ -681,6 +681,8 @@ export interface CompanySnapshot {
      * its founder. Null when no clock is running.
      */
     rogueBreakInRealSeconds: number | null;
+    /** What revoking the charter would do to this rogue company now: end the break, or hasten it. Null when not rogue. */
+    revokeAgainstRogue: 'stops' | 'hastens' | null;
     /** Length of each grant, in Galactic Days. */
     termDays: number;
     /** Real seconds until the charter expires; null for state property. */

@@ -23,6 +23,7 @@ import {
     SHARE_CLASSES,
     CHARTER_TERM_OPTIONS,
     DEFAULT_CHARTER_TERM_DAYS,
+    LEGACY_CHARTER_TERM_DAYS,
 } from './charter-types';
 import {
     MISSION_DEFS,
@@ -55,6 +56,20 @@ export const MIN_LEGITIMACY_TO_CHARTER = 25;
  * countdown and must not import the worker-side service.
  */
 export const ROGUE_GRACE_SECONDS = atLeastAGalacticDay(3 * 86_400);
+
+/**
+ * Below this share of the rogue clock, revoking the charter ends the break
+ * (the company winds down as an ordinary revocation). At or above it, the
+ * board is too far gone: revoking only tells it the state has given up, and it
+ * breaks away on the next strategic tick. The user's rule, 2026-10-06.
+ */
+export const REVOKE_STOPS_ROGUE_BELOW = 0.5;
+
+/** How far along its rogue clock a company is, 0–1; 0 when it is not rogue. */
+export function rogueProgress(company: Pick<CharteredCompany, 'hasGoneRogue' | 'rogueSince'>, nowSeconds: number): number {
+    if (!company.hasGoneRogue || typeof company.rogueSince !== 'number') return 0;
+    return Math.max(0, Math.min(1, (nowSeconds - company.rogueSince) / ROGUE_GRACE_SECONDS));
+}
 
 const GROWTH_LOG_CAP = 30;
 
@@ -389,9 +404,11 @@ export function ensureCharterFields(company: CharteredCompany, nowSeconds: numbe
     if (typeof company.megaprojectIncome !== 'number') company.megaprojectIncome = 0;
     if (typeof company.stateMegaprojectIncome !== 'number') company.stateMegaprojectIncome = 0;
     if (typeof company.nationalized !== 'boolean') company.nationalized = false;
-    // Charters written before terms existed were perpetual; they now run a
-    // standard term from the moment the snapshot is first loaded.
-    if (typeof company.charterTermDays !== 'number') company.charterTermDays = DEFAULT_CHARTER_TERM_DAYS;
+    // Charters written before terms existed were perpetual; they now run the
+    // LONG term (8 Galactic Days, the user's call 2026-10-06) from the moment
+    // the snapshot is first loaded, so the first renewals arrive late rather
+    // than all at once.
+    if (typeof company.charterTermDays !== 'number') company.charterTermDays = LEGACY_CHARTER_TERM_DAYS;
     if (typeof company.charterExpiresAt !== 'number') {
         company.charterExpiresAt = nowSeconds + company.charterTermDays * GALACTIC_DAY_SIM_SECONDS;
     }
@@ -487,11 +504,20 @@ export const CREDIT_LINE_CAP = 150_000;
 /** Share of its own treasury a bank will put at the state's disposal. */
 export const CREDIT_LINE_TREASURY_SHARE = 0.5;
 
-/** Credits a banking company would still lend the state today. */
+/**
+ * Credits a banking company would still lend the state today.
+ *
+ * The line is sized on what the bank is worth, and money it has lent the
+ * state is still the bank's — an asset, owed back. Sizing it on the vault
+ * alone (as until 2026-10-06) counted every drawing twice, once as cash gone
+ * and again as debt: "30,000cr on offer" fell to nothing after a 20,000
+ * drawing, so the line could only ever be taken in one go.
+ */
 export function creditLineAvailable(company: CharteredCompany): number {
     if (company.mission !== 'banking' || !servesTheState(company)) return 0;
-    const line = Math.min(CREDIT_LINE_CAP, company.treasury * CREDIT_LINE_TREASURY_SHARE);
-    return Math.max(0, Math.floor(line - (company.stateLoan ?? 0)));
+    const owed = company.stateLoan ?? 0;
+    const line = Math.min(CREDIT_LINE_CAP, (company.treasury + owed) * CREDIT_LINE_TREASURY_SHARE);
+    return Math.max(0, Math.floor(line - owed));
 }
 
 /** Political capital to renew a charter unchanged over the board's objection. */

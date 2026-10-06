@@ -39,6 +39,8 @@ function toDefianceSnapshot(event: any) {
 // the client derives the same standing/tier/cap-table the worker does.
 import {
     ROGUE_GRACE_SECONDS,
+    REVOKE_STOPS_ROGUE_BELOW,
+    rogueProgress,
     asWrittenCost,
     creditLineAvailable,
     isAssetActive,
@@ -747,6 +749,9 @@ export function useGameSync() {
                     // and the company has not already broken away in it.
                     rogueBreakInRealSeconds: c.hasGoneRogue && typeof c.rogueSince === 'number' && (c.rogueBrokeAt ?? -1) < c.rogueSince
                         ? realSecondsUntil(c.rogueSince + ROGUE_GRACE_SECONDS, world.nowSeconds ?? 0)
+                        : null,
+                    revokeAgainstRogue: c.hasGoneRogue
+                        ? (rogueProgress(c, world.nowSeconds ?? 0) < REVOKE_STOPS_ROGUE_BELOW ? 'stops' : 'hastens')
                         : null,
                     termDays: c.charterTermDays ?? 5,
                     charterExpiresInRealSeconds: !c.nationalized && typeof c.charterExpiresAt === 'number'
