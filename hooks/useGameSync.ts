@@ -922,6 +922,9 @@ export function useGameSync() {
             // counter-intelligence is in their private shard, so the estimate
             // the Operations tab shows is our half of the odds only.
             opSuccessBonus: playerFactionId ? getTechModifier(world as any, playerFactionId, 'esp_op_success_add') : 0,
+            cases: Array.from((espWorld as any).cases?.values?.() ?? [])
+                .filter((c: any) => !playerFactionId || c.ownerFactionId === playerFactionId)
+                .sort((a: any, b: any) => b.openedAt - a.openedAt) as any[],
         };
 
         // Piracy: the faction's own projection. It arrives from the

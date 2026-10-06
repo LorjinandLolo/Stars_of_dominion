@@ -114,6 +114,21 @@ export function scrubOwnerSecrets(shard: any): any {
         });
     }
 
+    // Case board (item 12): the owner gets the effect, the suspects, the clue
+    // texts and their own verdict. Never the sponsor, the operation (its id
+    // names the sponsor), the false flag, clues still to come, prisoners
+    // already questioned, or how much each clue really points at whom.
+    if (Array.isArray(out.espionageCases)) {
+        out.espionageCases = out.espionageCases.map((kase: any) => {
+            if (!kase || typeof kase !== 'object') return kase;
+            const { operationId, actorFactionId, falseFlagFactionId, pendingClues, interrogatedAgentIds, ...rest } = kase;
+            rest.clues = Array.isArray(rest.clues)
+                ? rest.clues.map((c: any) => { const { weights, ...visible } = c ?? {}; return visible; })
+                : [];
+            return rest;
+        });
+    }
+
     if (Array.isArray(out.espionageAgents)) {
         out.espionageAgents = out.espionageAgents.map((agent: any) => {
             if (!agent || typeof agent !== 'object') return agent;

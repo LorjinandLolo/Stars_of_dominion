@@ -38,6 +38,12 @@ export interface EspionageOperation {
      */
     definitionId?: string;
     /**
+     * A false flag: the empire this operation was dressed up to look like.
+     * Suspicion and planted clues point there (item 12; set by false-flag
+     * operations in 12c). HIDDEN from everyone but the sponsor.
+     */
+    falseFlagFactionId?: string;
+    /**
      * The agent running this operation, when one was named at launch. Their
      * traits and experience shape the odds; resolution costs them cover and
      * earns them experience. Absent for agentless (and all AI) operations.
@@ -218,4 +224,69 @@ export interface EspionageWorldState {
     // Phase 15: Agent & Intel Network
     agents: Map<string, SpyAgent>;                           // agentId → agent
     intelNetworks: Map<string, IntelNetwork>;                // `${factionId}:${systemId}` → network
+    // Item 12: investigations into operations a victim did not catch outright.
+    cases?: Map<string, CovertCase>;                         // caseId → case
+}
+
+// ─── Case board (item 12) ─────────────────────────────────────────────────────
+
+/** Where a clue came from. `author` is a non-simulation author (a Server Master). */
+export type ClueSource = 'method' | 'press' | 'sensors' | 'motive' | 'own_intel' | 'interrogation' | 'author';
+
+/**
+ * One piece of evidence on a case. The text and the suspects it names are the
+ * player's; `weights` is the hidden truth of how much it really points at each
+ * suspect (positive toward, negative away, 0 a red herring) and never reaches
+ * the owner — AI accusations (12c) read it, players read the text.
+ */
+export interface CaseClue {
+    id: string;
+    source: ClueSource;
+    text: string;
+    /** Suspects the clue names. Public: the text says as much. */
+    pointsAt: string[];
+    arrivedAt: number;   // unix seconds (sim clock)
+    /** HIDDEN. */
+    weights?: Record<string, number>;
+    /** Who wrote it, when not the simulation. */
+    authorId?: string;
+}
+
+export type CaseStatus = 'open' | 'accused' | 'leaked' | 'cold';
+
+/**
+ * A covert operation against an empire that its service did not catch outright,
+ * now under investigation. The board shows the effect (what, where, when), the
+ * suspects and the clues as they arrive; the player names a culprit.
+ *
+ * Fields marked HIDDEN are the truth of the case. They are saved in the owner's
+ * shard (the only copy) and stripped on the wire (lib/persistence/shard-privacy.ts).
+ */
+export interface CovertCase {
+    id: string;
+    ownerFactionId: string;
+    title: string;
+    /** What happened, where and when, without the author. */
+    summary: string;
+    systemId: string;
+    kindPhrase: string;
+    openedAt: number;
+    suspectIds: string[];
+    clues: CaseClue[];
+    status: CaseStatus;
+    accusedFactionId?: string | null;
+    /** How an accusation went. Public once filed. */
+    verdict?: 'correct' | 'wrong' | null;
+    closedAt?: number | null;
+    /** When the next clue is due (sim clock). */
+    nextClueAt: number;
+    /** HIDDEN: the operation and its real sponsor. */
+    operationId?: string;
+    actorFactionId?: string;
+    /** HIDDEN: who the operation was dressed up as. */
+    falseFlagFactionId?: string | null;
+    /** HIDDEN: clues not yet arrived. */
+    pendingClues?: CaseClue[];
+    /** HIDDEN: captured agents already questioned for this case. */
+    interrogatedAgentIds?: string[];
 }

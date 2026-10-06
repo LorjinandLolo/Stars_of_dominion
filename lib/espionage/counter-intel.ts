@@ -30,6 +30,8 @@ import { getOrCreateFactionIntel } from './faction-intel';
 import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
 import { AFTER_ACTION_DOMAIN, AFTER_ACTION_TTL_SECONDS } from './op-aftermath';
+import type { SpyAgent } from './agent-types';
+import { captureAgents, SWEEP_CAPTURE_CHANCE } from './case-board';
 
 /** Intel per hour at a 100% service budget. Base Intel income is 1.5/h. */
 export const CI_BUDGET_INTEL_PER_HOUR = 1.0;
@@ -129,17 +131,26 @@ export function effectiveRegionalCounterIntel(intel: FactionIntelState | undefin
 
 /**
  * Apply a Counter-Intel Sweep. `mult` is the outcome multiplier (0 on
- * failure). Returns the foreign empires whose networks were found.
+ * failure). Returns the foreign empires whose networks were found, and the
+ * agents taken from those networks (item 12a: prisoners can be questioned).
  */
-export function applySweep(op: EspionageOperation, def: OperationDefinition, world: GameWorldState, mult: number): string[] {
+export function applySweep(
+    op: EspionageOperation,
+    def: OperationDefinition,
+    world: GameWorldState,
+    mult: number
+): { found: string[]; captured: SpyAgent[] } {
     const self = op.actorFactionId;
     const found = new Set<string>();
-    if (mult <= 0) return [];
+    const captured: SpyAgent[] = [];
+    if (mult <= 0) return { found: [], captured };
 
     // detect_cells: foreign networks in the swept system are found and broken up.
     for (const network of world.espionage.intelNetworks.values()) {
         if (network.systemId !== op.targetRegionId || network.ownerFactionId === self) continue;
-        if (weakenNetwork(network, SWEEP_NETWORK_DAMAGE * mult) > 0) found.add(network.ownerFactionId);
+        if (weakenNetwork(network, SWEEP_NETWORK_DAMAGE * mult) <= 0) continue;
+        found.add(network.ownerFactionId);
+        captured.push(...captureAgents(world, self, network.agentIds, Math.min(1, SWEEP_CAPTURE_CHANCE * mult)));
     }
 
     // reduce_foreign_intel: every rival's hold on us loosens.
@@ -151,7 +162,7 @@ export function applySweep(op: EspionageOperation, def: OperationDefinition, wor
             if (level > 0) intel.infiltrationLevels[self] = Math.max(0, level - cut);
         }
     }
-    return [...found];
+    return { found: [...found], captured };
 }
 
 const NON_PLAYABLE = new Set(['faction-pirates', 'faction-neutral']);
@@ -162,16 +173,19 @@ function isPlayerRun(world: GameWorldState, factionId: string): boolean {
 }
 
 /** Tell the sweeping empire what it found, and the owners of what it broke. */
-export function reportSweep(op: EspionageOperation, world: GameWorldState, succeeded: boolean, found: string[], cut: number): void {
+export function reportSweep(op: EspionageOperation, world: GameWorldState, succeeded: boolean, found: string[], cut: number, captured: SpyAgent[] = []): void {
     const now = world.nowSeconds;
     const where = (world.movement?.systems?.get?.(op.targetRegionId) as any)?.name ?? 'an unnamed system';
     const createdAt = new Date(now * 1000).toISOString();
     const self = op.actorFactionId;
 
+    const prisoners = captured.length
+        ? ` We took ${captured.map(a => `${a.codename} (${labelFor(a.ownerFactionId)})`).join(', ')} prisoner; they can be questioned on any open case.`
+        : '';
     const body = !succeeded
         ? `The sweep at ${where} turned up nothing it could act on.`
         : found.length > 0
-            ? `The sweep at ${where} found and broke up networks run by ${found.map(labelFor).join(', ')}. Every rival's infiltration of us fell by ${Math.round(cut)}.`
+            ? `The sweep at ${where} found and broke up networks run by ${found.map(labelFor).join(', ')}.${prisoners} Every rival's infiltration of us fell by ${Math.round(cut)}.`
             : `The sweep at ${where} found no foreign network there. Every rival's infiltration of us fell by ${Math.round(cut)}.`;
 
     if (isPlayerRun(world, self)) {
@@ -206,13 +220,14 @@ export function reportSweep(op: EspionageOperation, world: GameWorldState, succe
     // was found, not by whom it was swept: that is obvious from where it was.
     for (const owner of found) {
         if (!isPlayerRun(world, owner)) continue;
+        const lost = captured.filter(a => a.ownerFactionId === owner).map(a => a.codename);
         fireNotification({
             id: `esp-rolled-${owner}-${now}-${Math.floor(Math.random() * 1e9).toString(36)}`,
             factionId: owner,
             category: 'espionage',
             priority: 'urgent',
-            title: 'NETWORK ROLLED UP',
-            body: `${labelFor(self)}'s service swept ${where} and broke up our network there.`,
+            title: lost.length ? 'AGENT CAPTURED' : 'NETWORK ROLLED UP',
+            body: `${labelFor(self)}'s service swept ${where} and broke up our network there.${lost.length ? ` ${lost.join(', ')} ${lost.length > 1 ? 'were' : 'was'} taken.` : ''}`,
             createdAt,
             read: false,
             linkToTab: 'intelligence',

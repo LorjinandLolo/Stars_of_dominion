@@ -108,6 +108,8 @@ export interface SpyAgent {
     loyaltyRating: number;
     /** Unix-seconds: when the agent becomes available_again after cooldown. */
     cooldownUntil: number | null;
+    /** The empire holding this agent, while status is `captured`. */
+    capturedByFactionId?: string | null;
     /** Total number of Operations this agent has participated in. */
     operationsRun: number;
     /** Unix-seconds of the most recent op. */

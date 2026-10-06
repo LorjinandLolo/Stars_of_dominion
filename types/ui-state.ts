@@ -201,8 +201,8 @@ export interface EmpireIdentityState {
 // ─── Espionage ──────────────────────────────────────────────────────────────
 // Single source of truth: lib/espionage types, re-exported for UI consumers.
 import type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate } from '@/lib/espionage/agent-types';
-import type { EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity } from '@/lib/espionage/espionage-types';
-export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity };
+import type { EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity, CovertCase, CaseClue } from '@/lib/espionage/espionage-types';
+export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity, CovertCase, CaseClue };
 
 export interface EspionageState {
     agents: SpyAgent[];
@@ -222,6 +222,11 @@ export interface EspionageState {
      * the worker's own formula (catalogOwnSideChance).
      */
     opSuccessBonus: number;
+    /**
+     * Open and recent cases on the player's case board (item 12). Arrives
+     * scrubbed: no sponsor, no pending clues, no clue weights.
+     */
+    cases: CovertCase[];
 }
 
 // ─── Diplomacy & Rivalries ──────────────────────────────────────────────────

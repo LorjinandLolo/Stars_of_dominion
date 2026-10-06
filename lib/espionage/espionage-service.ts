@@ -34,6 +34,7 @@ import { shiftRivalry } from '../diplomacy/offer-service';
 import { chargeHonorForCatalogOp } from '../factions/leopantheri';
 import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
 import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep } from './counter-intel';
+import { chooseSuspect, maybeOpenCase, tickCases } from './case-board';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
@@ -349,6 +350,9 @@ export function tickOperations(
 
     // Phase 15: tick agent networks (build strength, decay, promote FoW levels)
     tickAgentNetworks(world, deltaSeconds);
+
+    // Item 12: clues arrive, prisoners talk, unsolved cases go cold.
+    tickCases(world);
 }
 
 function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
@@ -374,12 +378,15 @@ function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
     // Attribution resolution
     const attribution = resolveAttribution(op, world);
     op.attributionState = attribution;
-    recordOperationToChronicle(op, world);
+    // Who the victim blames: the sponsor when caught, possibly someone else
+    // when only suspected (case-board chooseSuspect).
+    const suspectId = attribution === 'suspected' ? chooseSuspect(op, world) : op.actorFactionId;
+    recordOperationToChronicle(op, world, suspectId);
 
     // Record
     const record: AttributionRecord = {
         operationId: op.id,
-        suspectedFactionId: op.actorFactionId,
+        suspectedFactionId: suspectId,
         attributionState: attribution,
         probability: computeAttributionProbability(op, world),
         tensionApplied: attribution === 'exposed' ? espCfg.attribution.diplomaticPenaltyOnExpose :
@@ -401,6 +408,8 @@ function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
         kindPhrase: KIND_PHRASE[op.domain] ?? 'a covert operation',
         outcomePhrase: succeeded ? 'a success' : 'a failure',
     });
+    maybeOpenCase(op, world, { name: legacyName, kindPhrase: KIND_PHRASE[op.domain] ?? 'a covert operation' },
+        attribution === 'suspected' ? suspectId : null);
 }
 
 // ─── Catalog operation resolution (consolidated path) ─────────────────────────
@@ -496,7 +505,7 @@ function resolveSweepOperation(op: EspionageOperation, def: OperationDefinition,
     op.status = op.succeeded ? 'resolved' : 'failed';
     op.attributionState = 'invisible';
 
-    const found = applySweep(op, def, world, mult);
+    const { found, captured } = applySweep(op, def, world, mult);
     if (found.length > 0) bumpMetric(world, op.actorFactionId, 'esp.opsDetectedAgainstUs', found.length);
 
     const intel = world.espionage.factionIntel.get(op.actorFactionId);
@@ -505,7 +514,7 @@ function resolveSweepOperation(op: EspionageOperation, def: OperationDefinition,
 
     op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${found.length ? ` (found ${found.length})` : ''}`;
     const cut = (def.effects.find(e => e.type === 'reduce_foreign_intel')?.value ?? 0) * mult;
-    reportSweep(op, world, op.succeeded, found, cut);
+    reportSweep(op, world, op.succeeded, found, cut, captured);
 }
 
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
@@ -539,11 +548,14 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     op.attributionState = exposed
         ? 'exposed'
         : (resolveAttribution(op, world) === 'invisible' ? 'invisible' : 'suspected');
-    recordOperationToChronicle(op, world);
+    // Who the victim blames: the sponsor when caught, possibly someone else
+    // (a false flag's mark, or their worst rival) when only suspected.
+    const suspectId = op.attributionState === 'suspected' ? chooseSuspect(op, world) : op.actorFactionId;
+    recordOperationToChronicle(op, world, suspectId);
 
     world.espionage.attributionRecords.push({
         operationId: op.id,
-        suspectedFactionId: op.actorFactionId,
+        suspectedFactionId: suspectId,
         attributionState: op.attributionState,
         probability: exposed ? 1 : computeAttributionProbability(op, world),
         tensionApplied: op.attributionState === 'exposed' ? espCfg.attribution.diplomaticPenaltyOnExpose :
@@ -589,6 +601,9 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
         outcomePhrase: OUTCOME_PHRASE[outcome] ?? outcome.replace(/_/g, ' '),
         agent,
     });
+    // Not caught outright: the victim gets a case to work (item 12).
+    maybeOpenCase(op, world, { name: def.name, kindPhrase: KIND_PHRASE[def.category] ?? 'a covert operation' },
+        op.attributionState === 'suspected' ? suspectId : null);
 
     eventBus.emit({
         type: 'intelligenceOperationResolve',
@@ -798,10 +813,12 @@ export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): v
  * merely suspected one lets it name a name it cannot prove. This split is what
  * makes deception a playable move rather than a hidden die roll.
  */
-function recordOperationToChronicle(op: EspionageOperation, world: GameWorldState): void {
+function recordOperationToChronicle(op: EspionageOperation, world: GameWorldState, suspectId: string = op.actorFactionId): void {
+    // The press prints who is SUSPECTED, which since item 12a may not be the
+    // sponsor. actorIds below stays the truth.
     const attribution: ChronicleAttribution =
         op.attributionState === 'exposed' ? 'exposed'
-            : op.attributionState === 'suspected' ? `suspected:${op.actorFactionId}`
+            : op.attributionState === 'suspected' ? `suspected:${suspectId}`
                 : 'invisible';
 
     chronicle.record(world, {

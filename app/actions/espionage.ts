@@ -146,3 +146,31 @@ export async function setCounterIntelAction(
     if (result.success) revalidatePath('/');
     return result;
 }
+
+/** Name the culprit of one of our open cases. The worker checks the truth. */
+export async function fileAccusationAction(factionId: string, caseId: string, suspectId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `accuse-${Date.now()}`,
+        actionId: 'ESP_FILE_ACCUSATION',
+        issuerId: factionId,
+        targetId: suspectId,
+        payload: { caseId, suspectId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/** Give an open case to the press, naming a suspect. No diplomatic effect. */
+export async function leakCaseAction(factionId: string, caseId: string, suspectId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `leak-${Date.now()}`,
+        actionId: 'ESP_LEAK_CASE',
+        issuerId: factionId,
+        targetId: suspectId,
+        payload: { caseId, suspectId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}

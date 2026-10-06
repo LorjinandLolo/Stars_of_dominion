@@ -209,6 +209,8 @@ Phases (one session each, in order, after 11a to 11c):
 
 **12a. Worker side.** Case and clue records in the faction shard (JSON TEXT, like the rest); case opening in `resolveOperation`; clue generation tick with the six sources above; `ESP_FILE_ACCUSATION` and `ESP_LEAK_CASE` orders with the consequences in decision 4; fix the two prerequisites (suspected attribution may name an innocent, Counter-Intel Sweep can capture); probe `tmp/test-case-board.ts` asserts that a planted false flag misleads and a correct accusation flips the chronicle attribution.
 
+*12a as built (2026-10-07):* `lib/espionage/case-board.ts`, probe `scripts/case-board-probe.ts`. Differences from the plan above: the press clue reads the attribution record's suspect (the worker cannot read the Gazette, which lives in the narrator's tables); motive reads `world.rivalries` (feuds are derived by the narrator's memory service, also DB-side); two truthful sources were added because a fresh galaxy has no rivalries or foreign ships, the money trail (who could afford the operation) and neighbours (who holds the nearest systems); cases open only for player-run victims, AI cases come with 12c; pins are left to the client (12b). Players learn the verdict of an accusation, never the real sponsor of a wrong one.
+
 **12b. UI.** Case Board tab on the Item 11 page: open cases, suspect column, clue column, pin a clue to a suspect, accuse / leak / hold. Works at 375 px (Item 8 rules).
 
 **12c. Pressure on both sides.** False-flag clue planting, AI accusations, press articles seeded from open cases through the chronicle (`investigation_published` and `scandal_confirmed` already exist as event types).

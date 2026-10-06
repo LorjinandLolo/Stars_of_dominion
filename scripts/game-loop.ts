@@ -165,6 +165,7 @@ import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
 import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
+import { fileAccusation, leakCase } from '../lib/espionage/case-board';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3095,6 +3096,33 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 break;
             }
             console.log(`[Tick Worker] ${factionId}: ${espResult.message}`);
+            break;
+        }
+
+        case 'ESP_FILE_ACCUSATION':
+        case 'ESP_LEAK_CASE': {
+            const caseId = String(payload?.caseId ?? '');
+            const suspectId = String(payload?.suspectId ?? '');
+            const result = actionId === 'ESP_FILE_ACCUSATION'
+                ? fileAccusation(world, factionId, caseId, suspectId)
+                : leakCase(world, factionId, caseId, suspectId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            fireNotification({
+                id: `case-${actionId}-${caseId}`,
+                factionId,
+                category: 'espionage',
+                priority: 'normal',
+                title: actionId === 'ESP_LEAK_CASE' ? 'CASE LEAKED'
+                    : (result as any).verdict === 'correct' ? 'ACCUSATION PROVED' : 'ACCUSATION FAILED',
+                body: result.message,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+                read: false,
+                linkToTab: 'intelligence',
+            });
+            console.log(`[Tick Worker] ${factionId} ${actionId}: ${result.message}`);
             break;
         }
 

@@ -113,6 +113,7 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!(esp.regionEscalation instanceof Map)) esp.regionEscalation = new Map();
     if (!(esp.agents instanceof Map)) esp.agents = new Map();
     if (!(esp.intelNetworks instanceof Map)) esp.intelNetworks = new Map();
+    if (!(esp.cases instanceof Map)) esp.cases = new Map();
     // Pre-consolidation leftovers: never-written counterIntel map and the
     // parallel V2 intelligence system.
     delete esp.counterIntel;
@@ -287,6 +288,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         espionageReports: Array.from(world.espionage.reports.values())
             .filter(r => r.ownerFactionId === factionId),
         espionageBoard: Array.from(world.espionage.boardOpportunities.values()).filter(o => o.ownerFactionId === factionId),
+        // Cases are stored WHOLE (the real sponsor, clues still to come, hidden
+        // weights): the shard is their only copy. shard-privacy strips the
+        // truth on the wire, exactly as it does for report accuracy.
+        espionageCases: Array.from((world.espionage.cases ?? new Map()).values()).filter((c: any) => c.ownerFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Which systems this player has left to their advisors. Their setting,
         // so it rides their own shard; absent record = everything delegated
@@ -367,6 +372,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.espionageOperations) {
         shard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
     }
+    if (shard.espionageCases) {
+        if (!(world.espionage.cases instanceof Map)) world.espionage.cases = new Map();
+        shard.espionageCases.forEach((c: any) => world.espionage.cases!.set(c.id, c));
+    }
     if (shard.espionageReports) {
         shard.espionageReports.forEach((r: any) => world.espionage.reports.set(r.id, r));
     }
@@ -441,6 +450,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.operations.clear();
     cloned.espionage.reports.clear();
     cloned.espionage.boardOpportunities.clear();
+    cloned.espionage.cases?.clear();
     // A player's delegation settings are theirs: the shard carries them (and
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.

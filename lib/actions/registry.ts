@@ -361,6 +361,20 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { budget: "number", regions: "object" },
     cost: {}
   },
+  ESP_FILE_ACCUSATION: {
+    id: "ESP_FILE_ACCUSATION",
+    category: "espionage",
+    // Name the culprit of one of our own open cases (lib/espionage/case-board.ts).
+    params: { caseId: "id", suspectId: "id" },
+    cost: {}
+  },
+  ESP_LEAK_CASE: {
+    id: "ESP_LEAK_CASE",
+    category: "espionage",
+    // Give an open case to the press, naming a suspect, with no diplomatic weight.
+    params: { caseId: "id", suspectId: "id" },
+    cost: {}
+  },
   ESP_LAUNCH_CATALOG_OP: {
     id: "ESP_LAUNCH_CATALOG_OP",
     category: "espionage",
