@@ -18,6 +18,7 @@ import { getGovernment, spendPoliticalCapital } from './government-service';
 import { getHeadOfState, resolveSuccession } from './succession-service';
 import { policyEnactCost } from './policy-service';
 import { recordPoliticalEvent } from './ideology-drift';
+import { POLICY_SLOTS, hasFreePolicySlot, noSlotMessage } from './policy-slots';
 
 /** Above this senate_power, the chamber must approve legislation. */
 export const PARLIAMENT_SENATE_THRESHOLD = 40;
@@ -254,6 +255,25 @@ export function resolveBill(world: GameWorldState, gov: GovernmentState, bill: P
     const support = projectSupport(world, gov, bill);
     bill.projectedSupport = support;
 
+    // A tabled bill holds its slot, so this only bites a government already
+    // over the limit when the limit arrived (snapshots from before 2026-10).
+    const room = gov.activePolicies.includes(bill.policyId)
+        || gov.activePolicies.length < POLICY_SLOTS;
+    if (support >= PASS_THRESHOLD && !room) {
+        bill.status = 'failed';
+        gov.history.push({
+            timestamp: world.nowSeconds,
+            event: `${bill.policyName} passed the ${gov.institutionName} but lapsed: every policy slot is taken.`,
+        });
+        notify(world, gov.factionId, {
+            id: `bill-${bill.id}`,
+            title: 'Bill Lapsed',
+            body: `${bill.policyName} carried the chamber, but the government has no policy slot free for it.`,
+            priority: 'normal',
+        });
+        return;
+    }
+
     if (support >= PASS_THRESHOLD) {
         bill.status = 'passed';
         if (!gov.activePolicies.includes(bill.policyId)) gov.activePolicies.push(bill.policyId);
@@ -312,6 +332,8 @@ export function decreePolicy(world: GameWorldState, factionId: string, policyId:
     const def = policyRegistry.get(policyId);
     if (!def) return { ok: false, message: `Unknown policy "${policyId}".` };
     if (gov.activePolicies.includes(policyId)) return { ok: false, message: `${def.name ?? policyId} is already in force.` };
+    // A decree overtaking its own pending bill reuses that bill's slot.
+    if (!hasFreePolicySlot(gov, policyId)) return { ok: false, message: noSlotMessage() };
 
     const cost = Math.round(policyEnactCost(def) * DECREE_COST_MULTIPLIER);
     if (!spendPoliticalCapital(world, factionId, cost, `decreed ${def.name ?? policyId}`)) {

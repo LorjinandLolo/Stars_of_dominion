@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { POLICY_SLOTS, policySlotsUsed } from '@/lib/government/policy-slots';
 import { Scale, Users, CheckCircle, Zap, AlertCircle, FileText, MessageSquare, Landmark, Coins, ShieldCheck, Leaf, Briefcase, Trophy, Compass, Link2, Flag, Globe } from 'lucide-react';
 import {
     enactPolicyAction,
@@ -128,6 +129,8 @@ export default function GovernmentPanel() {
 
     const activePolicies = gov?.activePolicies ?? politicsState?.activePolicies ?? [];
     const capital = gov?.politicalCapital ?? 0;
+    const slotsUsed = policySlotsUsed({ activePolicies, bills: gov?.bills });
+    const slotsFull = slotsUsed >= POLICY_SLOTS;
     // Defiance and secession deadlines are sim-clock seconds (world.nowSeconds
     // at creation), so they are measured against the synced tick clock — the
     // wall clock drifts away from it at 15x and is impure in render anyway.
@@ -1015,7 +1018,12 @@ export default function GovernmentPanel() {
                         <span className="flex items-center gap-2">
                             <Zap size={12} className="text-amber-400" /> GOVERNMENT POLICY
                         </span>
-                        <span className="font-mono text-sky-400">{Math.floor(capital)} PC AVAILABLE</span>
+                        <span className="font-mono text-sky-400">
+                            <span className={slotsFull ? 'text-amber-400' : 'text-slate-400'} title="Active policies plus bills before the chamber">
+                                SLOTS {slotsUsed} / {POLICY_SLOTS}
+                            </span>
+                            {' · '}{Math.floor(capital)} PC AVAILABLE
+                        </span>
                     </div>
 
                     {error && (
@@ -1028,7 +1036,9 @@ export default function GovernmentPanel() {
                         {(catalog ?? []).map((policy) => {
                             const isActive = activePolicies.includes(policy.id);
                             const cost = isActive ? policy.repealCost : policy.cost;
-                            const affordable = capital >= cost;
+                            // A repeal frees a slot, so only enacting needs one.
+                            const noSlot = !isActive && slotsFull;
+                            const affordable = capital >= cost && !noSlot;
                             const busy = pending === policy.id;
                             return (
                                 <div key={policy.id} className={`flex items-center gap-4 p-3 rounded-lg border transition-all ${isActive ? 'bg-blue-900/10 border-blue-500/30' : 'bg-slate-900/30 border-slate-800/40 hover:border-slate-700'}`}>
@@ -1054,7 +1064,7 @@ export default function GovernmentPanel() {
                                     <button
                                         onClick={() => runPolicyOrder(policy, isActive)}
                                         disabled={busy || !affordable}
-                                        title={affordable ? undefined : `Requires ${cost} political capital`}
+                                        title={noSlot ? `Every policy slot is taken (${POLICY_SLOTS}) — repeal one first` : affordable ? undefined : `Requires ${cost} political capital`}
                                         className={`px-3 py-1.5 rounded text-[10px] font-display transition-all whitespace-nowrap ${
                                             !affordable
                                                 ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
@@ -1063,7 +1073,7 @@ export default function GovernmentPanel() {
                                                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
                                         }`}
                                     >
-                                        {busy ? '…' : `${isActive ? 'REPEAL' : 'ENACT'} · ${cost} PC`}
+                                        {busy ? '…' : noSlot ? 'NO SLOT' : `${isActive ? 'REPEAL' : 'ENACT'} · ${cost} PC`}
                                     </button>
                                 </div>
                             );

@@ -28,6 +28,7 @@ import { readEnlightenmentConditions, ARCHIVE_BUILDING_ID } from '../lib/victory
 import { empireBuildingState, startConstruction, repairBuilding } from '../lib/construction/construction-service';
 import { BUILDINGS } from '../data/buildings';
 import { listPolicies, evaluatePolicy, enactPolicy } from '../lib/government/policy-service';
+import { POLICY_SLOTS } from '../lib/government/policy-slots';
 import config from '../lib/movement/movement-config.json';
 
 const ticks = Math.max(1, Number(process.argv[2]) || SEASON_TICKS);
@@ -69,17 +70,25 @@ function seekerBuildsArchive(world: any, factionId: string): boolean {
     return startConstruction(planet, tileId, ARCHIVE_BUILDING_ID, world.nowSeconds, world).success;
 }
 
-/** The seeker's whole strategy: the most approval for the capital it has. */
+/**
+ * The seeker's whole strategy: the POLICY_SLOTS most popular policies its
+ * government is allowed, saved up for in order — with three slots, filling
+ * them with whatever is cheap first would leave it stuck, and a player
+ * chasing approval would not do that.
+ */
 function seekerTurn(world: any, factionId: string): string | null {
-    const candidates = listPolicies()
+    const gov = world.government.get(factionId);
+    const allowed = listPolicies()
         .filter(p => (p.effects?.approval ?? 0) > 0)
-        .sort((a, b) => (b.effects?.approval ?? 0) - (a.effects?.approval ?? 0));
-    for (const policy of candidates) {
-        if (!evaluatePolicy(world, factionId, policy.id).ok) continue;
-        const result = enactPolicy(world, factionId, policy.id);
-        if (result.ok) return policy.id;
-    }
-    return null;
+        .filter(p => {
+            const r = evaluatePolicy(world, factionId, p.id);
+            return r.ok || r.reason === 'insufficient_political_capital' || r.reason === 'no_policy_slot' || r.reason === 'already_active';
+        })
+        .sort((a, b) => (b.effects?.approval ?? 0) - (a.effects?.approval ?? 0))
+        .slice(0, POLICY_SLOTS);
+    const next = allowed.find(p => !gov?.activePolicies?.includes(p.id) && !gov?.bills?.some((b: any) => b.status === 'pending' && b.policyId === p.id));
+    if (!next || !evaluatePolicy(world, factionId, next.id).ok) return null;
+    return enactPolicy(world, factionId, next.id).ok ? next.id : null;
 }
 
 interface Track {

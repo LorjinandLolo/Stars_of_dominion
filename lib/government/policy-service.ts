@@ -13,6 +13,7 @@ import { applyIdeologyShift } from '@/lib/politics/ideology-service';
 import { applyPolicyEffect } from '@/lib/politics/politics-service';
 import { getGovernment, spendPoliticalCapital } from './government-service';
 import { hasParliament, tableBill } from './parliament-service';
+import { hasFreePolicySlot, noSlotMessage } from './policy-slots';
 
 /**
  * Effect keys with a live consumer. Anything else in a policy's `effects` is
@@ -43,7 +44,8 @@ export type PolicyRejection =
     | 'not_active'
     | 'restricted_by_government'
     | 'requires_government_tags'
-    | 'insufficient_political_capital';
+    | 'insufficient_political_capital'
+    | 'no_policy_slot';
 
 export interface PolicyActionResult {
     ok: boolean;
@@ -95,6 +97,11 @@ export function evaluatePolicy(
 
     if (gov.activePolicies.includes(policyId)) {
         return { ok: false, policyId, reason: 'already_active', message: `${label(def)} is already in force.` };
+    }
+
+    // Checked before capital, so a full slate is the reason the player sees.
+    if (!hasFreePolicySlot(gov)) {
+        return { ok: false, policyId, reason: 'no_policy_slot', message: noSlotMessage() };
     }
 
     const profile = gov.governmentId ? governmentRegistry.get(gov.governmentId) : undefined;
