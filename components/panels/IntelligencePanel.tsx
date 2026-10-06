@@ -16,19 +16,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
-    AlertTriangle, CheckCircle, DollarSign, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio, Search,
-    Shield, Skull, Target, Unlock, UserPlus, Users, XCircle, Zap,
+    AlertTriangle, CheckCircle, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio,
+    Shield, Target, Unlock, UserPlus, Users, XCircle,
 } from 'lucide-react';
 import { AgentCard, TraitChip, visibleTraits } from '@/components/panels/espionage/AgentCard';
+import { CatalogLauncher } from '@/components/panels/espionage/CatalogLauncher';
 import {
     recruitAgentAction,
     recallAgentAction,
     assignAgentAction,
-    launchCovertOpAction,
+    launchCatalogOpAction,
     getRecruitPoolAction,
     seizeOpportunityAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
+import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
 import type { IntelNetwork } from '@/types/ui-state';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
@@ -43,27 +45,16 @@ const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'agents', label: 'Agents', icon: <Users size={12} /> },
 ];
 
-const DOMAINS: { id: OperationDomain; label: string; desc: string; risk: string; color: string; icon: React.ReactNode; note?: string }[] = [
-    {
-        id: 'infrastructureSabotage', label: 'Sabotage', color: '#f59e0b', risk: 'Medium', icon: <Zap size={14} />,
-        desc: 'Disrupt hyperlane gates, trade segments and installations.',
-    },
-    {
-        id: 'politicalSubversion', label: 'Subversion', color: '#a855f7', risk: 'Low', icon: <Skull size={14} />,
-        desc: 'Inflame bloc dissatisfaction and spread war fatigue.',
-    },
-    {
-        id: 'shadowEconomy', label: 'Shadow economy', color: '#22c55e', risk: 'Low', icon: <DollarSign size={14} />,
-        desc: 'Smuggling networks and piracy dens that bleed their trade.',
-        note: 'Needs Black Market Operations',
-    },
-];
-
+/** Names for operations launched before the catalog (old snapshots). */
 const DOMAIN_LABEL: Record<OperationDomain, string> = {
     infrastructureSabotage: 'Sabotage',
     politicalSubversion: 'Political subversion',
     shadowEconomy: 'Shadow economy',
 };
+
+function operationName(op: { definitionId?: string; domain: OperationDomain }): string {
+    return (op.definitionId && OPERATION_CATALOG_BY_ID.get(op.definitionId)?.name) || DOMAIN_LABEL[op.domain] || 'Operation';
+}
 
 /**
  * Agents no longer pick a domain when they deploy: a deployed agent builds a
@@ -134,7 +125,7 @@ function outcomeLine(op: { succeeded?: boolean; attributionState: string }): { t
 }
 
 export default function IntelligencePanel() {
-    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds } = useUIStore();
+    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds, techState } = useUIStore();
     const [activeTab, setActiveTab] = useState<TabType>('board');
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
     const [busy, setBusy] = useState(false);
@@ -144,12 +135,6 @@ export default function IntelligencePanel() {
     const [deployTargetId, setDeployTargetId] = useState('');
     const [recruitOpen, setRecruitOpen] = useState(false);
     const [loadingRecruits, setLoadingRecruits] = useState(false);
-
-    // Operations tab
-    const [opTargetId, setOpTargetId] = useState('');
-    const [opDomain, setOpDomain] = useState<OperationDomain>('politicalSubversion');
-    const [investment, setInvestment] = useState(0.6);
-    const [risk, setRisk] = useState(0.4);
 
     const systemName = (id: string | null | undefined) =>
         (id && systems.find(s => s.id === id)?.name) || 'Unknown system';
@@ -259,22 +244,18 @@ export default function IntelligencePanel() {
         showToast(`${candidate.codename} accepted. They report for duty shortly.`, true);
     };
 
-    const handleLaunch = async () => {
-        if (!opTargetId || !playerFactionId) return;
-        const targetFactionId = ownerOf(opTargetId);
-        if (!targetFactionId || targetFactionId === playerFactionId) {
-            showToast('Pick a system another empire holds.', false);
-            return;
-        }
+    const handleLaunch = async (targetFactionId: string, systemId: string, def: OperationDefinition) => {
+        if (!playerFactionId || !targetFactionId || targetFactionId === playerFactionId) return;
         setBusy(true);
-        const result = await launchCovertOpAction(playerFactionId, targetFactionId, opTargetId, opDomain, investment, risk);
+        const result = await launchCatalogOpAction(playerFactionId, targetFactionId, systemId, def.id);
         setBusy(false);
         if (!result.success) {
             showToast(result.error || 'Operation refused.', false);
             return;
         }
-        showToast(`${DOMAIN_LABEL[opDomain]} ordered against ${factionName(targetFactionId)} at ${systemName(opTargetId)}.`, true);
-        setOpTargetId('');
+        // Queued, not launched: the worker re-checks stage, slots, Intel and
+        // credits, and a refusal arrives as a notification.
+        showToast(`${def.name} ordered against ${factionName(targetFactionId)} at ${systemName(systemId)}.`, true);
     };
 
     const rivalSystemSelect = (value: string, onChange: (v: string) => void) => (
@@ -513,71 +494,19 @@ export default function IntelligencePanel() {
                 {/* ── Operations ──────────────────────────────────────── */}
                 {activeTab === 'operations' && (
                     <div className="space-y-6">
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 sm:p-5 space-y-4">
-                            <h3 className="text-[10px] font-display tracking-widest text-amber-500 uppercase flex items-center gap-2">
-                                <Search size={12} /> New operation
-                            </h3>
-
-                            <div>
-                                <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Target system</label>
-                                {rivalSystemSelect(opTargetId, setOpTargetId)}
-                                {rivalSystems.length === 0 && (
-                                    <p className="text-[10px] text-slate-500 mt-1">You have not found another empire's system yet. Survey further out.</p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Kind of operation</label>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                    {DOMAINS.map(d => (
-                                        <button
-                                            key={d.id}
-                                            onClick={() => setOpDomain(d.id)}
-                                            className={`rounded-lg border p-3 text-left transition-all ${opDomain === d.id
-                                                ? 'border-amber-500/50 bg-amber-500/10'
-                                                : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}
-                                        >
-                                            <div className="flex items-center gap-2 mb-1" style={{ color: d.color }}>
-                                                {d.icon}
-                                                <span className="text-[11px] font-display text-slate-200">{d.label}</span>
-                                            </div>
-                                            <div className="text-[10px] text-slate-500 leading-snug">{d.desc}</div>
-                                            <div className="text-[9px] mt-1.5 text-slate-500 uppercase tracking-wider">
-                                                {d.risk} risk{d.note ? ` · ${d.note}` : ''}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div title="More investment raises the odds and shortens the operation.">
-                                    <div className="text-[9px] font-bold tracking-widest text-slate-500 mb-1 flex justify-between uppercase">
-                                        <span>Investment</span><span className="text-amber-400">{Math.round(investment * 100)}%</span>
-                                    </div>
-                                    <input type="range" min={10} max={100} value={Math.round(investment * 100)}
-                                        onChange={e => setInvestment(Number(e.target.value) / 100)} className="w-full accent-amber-500" />
-                                </div>
-                                <div title="Bolder methods are more likely to be traced back to you.">
-                                    <div className="text-[9px] font-bold tracking-widest text-slate-500 mb-1 flex justify-between uppercase">
-                                        <span>Boldness</span><span className="text-red-400">{Math.round(risk * 100)}%</span>
-                                    </div>
-                                    <input type="range" min={10} max={100} value={Math.round(risk * 100)}
-                                        onChange={e => setRisk(Number(e.target.value) / 100)} className="w-full accent-red-500" />
-                                </div>
-                            </div>
-
-                            <button
-                                disabled={!opTargetId || !playerFactionId || busy}
-                                onClick={handleLaunch}
-                                className={`w-full py-2.5 rounded uppercase font-display text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 ${opTargetId && !busy
-                                    ? 'bg-amber-600 text-slate-950 hover:bg-amber-500'
-                                    : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
-                            >
-                                {busy ? <Loader2 size={12} className="animate-spin" /> : <Target size={12} />}
-                                {opTargetId ? 'Launch operation' : 'Choose a target first'}
-                            </button>
-                        </div>
+                        <CatalogLauncher
+                            rivals={rivalSystems}
+                            infiltrationLevels={espionageState.intel?.infiltrationLevels ?? {}}
+                            intelPoints={espionageState.intel?.intelPoints ?? 0}
+                            credits={Number((playerFactionId && (factions[playerFactionId] as any)?.reserves?.CREDITS) || 0)}
+                            capacity={espionageState.intel
+                                ? { used: espionageState.intel.usedAgentCapacity, max: espionageState.intel.agentCapacity }
+                                : null}
+                            techBonus={espionageState.opSuccessBonus ?? 0}
+                            unlockedTechIds={techState?.unlockedTechIds ?? []}
+                            busy={busy}
+                            onLaunch={handleLaunch}
+                        />
 
                         <div>
                             <SectionTitle icon={<Target size={10} />}>Under way</SectionTitle>
@@ -590,7 +519,7 @@ export default function IntelligencePanel() {
                                         <div key={op.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4">
                                             <div className="flex items-start justify-between gap-2 mb-2">
                                                 <div className="min-w-0">
-                                                    <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{DOMAIN_LABEL[op.domain]}</div>
+                                                    <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{operationName(op)}</div>
                                                     <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 truncate">
                                                         <MapPin size={10} className="text-slate-600 shrink-0" />
                                                         {systemName(op.targetRegionId)} · {factionName(op.targetFactionId)}
@@ -622,7 +551,7 @@ export default function IntelligencePanel() {
                                             <div key={op.id} className="bg-slate-900/30 border border-slate-800/40 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="text-[11px] text-slate-300 truncate">
-                                                        {DOMAIN_LABEL[op.domain]} · {systemName(op.targetRegionId)}
+                                                        {operationName(op)} · {systemName(op.targetRegionId)}
                                                     </div>
                                                     <div className="text-[10px] text-slate-500 truncate">{factionName(op.targetFactionId)}</div>
                                                 </div>

@@ -28,6 +28,7 @@ import {
     honorStanding,
     chargeUnjustifiedWar,
     chargeHonorLock,
+    chargeHonorForCatalogOp,
     isJustifiedAgainst,
     isWarDeclaration,
 } from '../lib/factions/leopantheri';
@@ -190,8 +191,11 @@ console.log('\n[5] Honor Lock');
     // Watching is not murdering. A philosopher-duelist may still gather intel —
     // listing these explicitly rather than by category is why.
     const watching = honorOf(LEO);
-    check('intelligence gathering stays free', chargeHonorLock(world, LEO, 'ESP_LAUNCH_OP') === null);
+    check('intelligence gathering stays free', chargeHonorForCatalogOp(world, LEO, 'intel_gathering') === null);
     check('and costs no honour', honorOf(LEO) === watching);
+    const beforeOp = honorOf(LEO);
+    check('a sabotage operation costs honour', chargeHonorForCatalogOp(world, LEO, 'sabotage') === 'sabotage' && honorOf(LEO) === beforeOp - HONOR_LOCK_LOSS);
+    check('another civilization pays nothing for an operation', chargeHonorForCatalogOp(world, OTHER, 'political') === null);
     check('an ordinary order is untouched', chargeHonorLock(world, LEO, 'MIL_MOVE_FLEET') === null);
     check('another civilization is never charged', chargeHonorLock(world, OTHER, 'ESP_SABOTAGE_FACILITY') === null);
 
@@ -248,7 +252,9 @@ console.log('\n[7] Persistence and layering');
     const imports = [...code('lib/factions/leopantheri.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
     check('leopantheri.ts imports only leaves', imports.every(i =>
         ['../game-world-state', './faction-traits-types', './civ-ids',
-         '../reputation/reputation-service', '../tech/history-ledger'].includes(i)),
+         '../reputation/reputation-service', '../tech/history-ledger',
+         // A type-only import of the op catalog, itself a leaf (types only).
+         '../espionage/operation-catalog'].includes(i)),
         imports.join(', '));
     setHonor(LEO, HONOR_BASELINE);
 }

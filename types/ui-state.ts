@@ -216,6 +216,12 @@ export interface EspionageState {
     reports: IntelReport[];
     /** The player's Intelligence Operations Board: live, expiring opportunities and threats. */
     board: BoardOpportunity[];
+    /**
+     * The player's researched tradecraft (`esp_op_success_add`), added to every
+     * operation's success chance. Feeds the Operations tab estimate, which uses
+     * the worker's own formula (catalogOwnSideChance).
+     */
+    opSuccessBonus: number;
 }
 
 // ─── Diplomacy & Rivalries ──────────────────────────────────────────────────

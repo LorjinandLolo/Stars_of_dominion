@@ -7,7 +7,13 @@ import { GameWorldState } from '../game-world-state';
 import { LeadershipService } from '../leadership/leadership-service';
 import { setEmpireDoctrine } from '../doctrine/doctrine-service';
 import { DoctrineDomain } from '../doctrine/types';
-import { launchOperation } from '../espionage/espionage-service';
+import { launchCatalogOperation } from '../espionage/espionage-service';
+
+/** Strategic black ops, heaviest first. A consolidating state keeps its head down. */
+const BLACK_OPS_PREFERENCE: Record<'quiet' | 'loud', string[]> = {
+    loud: ['sabotage_shipyard', 'raid_trade_route', 'disinformation_fake_fleet', 'infiltrate_military'],
+    quiet: ['disinformation_fake_fleet', 'infiltrate_military'],
+};
 
 import { CivilizationRegistry } from '../civilization/registry';
 import { getGovernment, getFactionStability } from '../government/government-service';
@@ -334,9 +340,11 @@ export class StrategicAIService {
         const opCap = MAX_CONCURRENT_OPS[stance];
         if (opCap === 0) return;
 
-        // The legacy launch path charges nothing and enforces no capacity, so
-        // without these two gates an AI at war ran unlimited free operations
-        // every tick — which is exactly what a fresh breakaway did.
+        // A per-stance cap and a treasury floor on top of the catalog's own
+        // Intel, credit and capacity checks. The old launch path enforced
+        // nothing, and an AI at war ran unlimited free operations every tick —
+        // which is exactly what a fresh breakaway did. A state in trouble
+        // should still stop sooner than its spy budget says it must.
         const activeOps = [...world.espionage.operations.values()]
             .filter(op => op.actorFactionId === factionId && op.status === 'active').length;
         if (activeOps >= opCap) return;
@@ -344,7 +352,6 @@ export class StrategicAIService {
         const treasury = (world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined)?.[Resource.CREDITS] ?? 0;
         if (treasury < ESPIONAGE_MIN_TREASURY) return;
 
-        const investment = stance === 'consolidating' ? 0.35 : 0.9;
         const chance = stance === 'consolidating' ? 0.1 : 0.25;
 
         // If tension is high, launch black ops — against ANY rival it is high
@@ -372,15 +379,13 @@ export class StrategicAIService {
         const targetSystem = targetSystemId ? world.movement.systems.get(targetSystemId) : undefined;
         if (!targetSystem) return;
 
-        // One operation per turn, whatever the stance.
-        launchOperation(
-            factionId,
-            targetId,
-            targetSystem.id,
-            'infrastructureSabotage', // AI defaults to sabotaging infra
-            investment,
-            0.4, // Medium risk
-            world
-        );
+        // One operation per turn, whatever the stance. Heaviest first: the
+        // network-stage gate decides which one this rival allows yet, so a
+        // young network runs reconnaissance and a mature one burns shipyards.
+        // Each refused attempt costs nothing (launchCatalogOperation checks
+        // before it charges).
+        for (const opId of BLACK_OPS_PREFERENCE[stance === 'consolidating' ? 'quiet' : 'loud']) {
+            if (launchCatalogOperation(factionId, targetId, targetSystem.id, opId, world).success) break;
+        }
     }
 }

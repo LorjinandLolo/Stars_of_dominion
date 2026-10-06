@@ -16,7 +16,7 @@ import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { getDeepNetworkAttributionBonus, tickAgentNetworks } from './agent-service';
 import { openDebate } from '../politics/debate-service';
-import { OPERATION_CATALOG_BY_ID, domainForCategory } from './operation-catalog';
+import { OPERATION_CATALOG_BY_ID, domainForCategory, catalogOwnSideChance, clampSuccessChance } from './operation-catalog';
 import type { OperationDefinition, OperationRisk } from './operation-catalog';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { canLaunchCategory, stageInfo } from './network-stages';
@@ -30,6 +30,7 @@ import { StorySource, StoryTruth } from '../press-system/types';
 import * as chronicle from '../narrative/chronicle';
 import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
+import { chargeHonorForCatalogOp } from '../factions/leopantheri';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
@@ -72,6 +73,7 @@ export interface LaunchResult {
  * Launch a new espionage operation.
  * Validates investment level, computes duration, and queues for tick processing.
  */
+/** @deprecated Legacy three-domain path. No caller launches through it any more (players and both AI services use launchCatalogOperation); kept for the pillar tests until they move. Old snapshots still resolve legacy ops in resolveOperation. */
 export function launchOperation(
     actorFactionId: string,
     targetFactionId: string,
@@ -150,6 +152,30 @@ export function launchCatalogOperation(
     const def = OPERATION_CATALOG_BY_ID.get(definitionId);
     if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
 
+    if (!targetFactionId || targetFactionId === actorFactionId) {
+        return { success: false, message: 'Choose another empire as the target.' };
+    }
+
+    // The operation lands in a real place. Effects that hit a planet pick one
+    // in this system, so a system the target does not hold would aim at nothing
+    // (or, worse, silently fall through to their first planet anywhere).
+    const sys: any = world.movement?.systems?.get?.(targetRegionId);
+    const holdsSystem = sys?.ownerFactionId === targetFactionId
+        || [...(world.construction?.planets?.values?.() ?? [])].some(
+            (p: any) => p.systemId === targetRegionId && p.ownerId === targetFactionId);
+    if (!holdsSystem) {
+        return { success: false, message: 'That system is not held by the target empire.' };
+    }
+
+    // Economic warfare is the old shadow-economy domain and keeps its tech
+    // gate: Black Market Operations grants ENABLE_SHADOW_ECONOMY.
+    if (def.category === 'economic') {
+        const unlocked = new Set<string>(world.tech?.get?.(actorFactionId)?.unlockedTechIds ?? []);
+        if (!techIdsHaveFlag(unlocked, 'ENABLE_SHADOW_ECONOMY')) {
+            return { success: false, message: `${def.name} needs the Black Market Operations technology.` };
+        }
+    }
+
     const intel = getOrCreateFactionIntel(world, actorFactionId);
 
     // Network stage gate: advanced categories need deeper infiltration.
@@ -166,10 +192,17 @@ export function launchCatalogOperation(
         return { success: false, message: 'Maximum operation capacity reached.' };
     }
     if (intel.intelPoints < def.intelCost) {
-        return { success: false, message: 'Insufficient Intel.' };
+        return { success: false, message: `${def.name} needs ${def.intelCost} Intel.` };
+    }
+    // The catalog has always priced operations in credits too; nothing charged
+    // them. Factions without an economy record (bare test worlds) are not billed.
+    const reserves: Record<string, number> | undefined = (world.economy?.factions?.get?.(actorFactionId) as any)?.reserves;
+    if (reserves && (reserves.CREDITS ?? 0) < def.creditsCost) {
+        return { success: false, message: `${def.name} costs ${def.creditsCost} credits.` };
     }
 
     intel.intelPoints -= def.intelCost;
+    if (reserves) reserves.CREDITS = (reserves.CREDITS ?? 0) - def.creditsCost;
     intel.usedAgentCapacity += 1;
 
     const now = world.nowSeconds;
@@ -193,6 +226,9 @@ export function launchCatalogOperation(
 
     world.espionage.operations.set(id, op);
     updateEscalation(targetRegionId, world.espionage, now);
+
+    // The Leo-pantheri pay honour for underhanded work, AI and player alike.
+    chargeHonorForCatalogOp(world, actorFactionId, def.category);
 
     return { success: true, operation: op, message: `Operation ${def.name} launched.` };
 }
@@ -331,7 +367,6 @@ export function computeCatalogSuccessChance(def: OperationDefinition, actorId: s
     const targetIntel = world.espionage.factionIntel.get(targetId);
 
     const infiltration = actorIntel?.infiltrationLevels[targetId] ?? 0;
-    const infiltrationBonus = infiltration / 200; // max +0.5 at 100 infiltration
 
     const counterIntelPenalty = (targetIntel?.counterIntelStrength ?? 0) / 200;
     const securityPenalty = (targetIntel?.internalSecurity ?? 0) / 200;
@@ -345,8 +380,9 @@ export function computeCatalogSuccessChance(def: OperationDefinition, actorId: s
     const transcending = world.victoryState?.enlightenmentProgress?.get?.(targetId)?.phase === 'transcending';
     const transcendingBonus = transcending ? config.victory.enlightenment.transcendingOpSuccessBonus : 0;
 
-    const chance = def.baseSuccessChance + infiltrationBonus + techBonus + transcendingBonus - counterIntelPenalty - securityPenalty;
-    return Math.max(0.05, Math.min(0.95, chance));
+    // The actor's half is shared with the player's estimate (operation-catalog).
+    const ownSide = catalogOwnSideChance(def, { infiltration, techBonus, transcendingBonus });
+    return clampSuccessChance(ownSide - counterIntelPenalty - securityPenalty);
 }
 
 function computeCatalogExposureChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {

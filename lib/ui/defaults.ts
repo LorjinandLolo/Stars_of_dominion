@@ -56,6 +56,7 @@ export const defaultEspionageState: EspionageState = {
     intel: null,
     reports: [],
     board: [],
+    opSuccessBonus: 0,
 };
 
 export const defaultDiplomacyState: DiplomacyState = {

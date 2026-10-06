@@ -35,6 +35,7 @@ import { NEUTRAL_DISTRICT_TRAITS } from './faction-traits-types';
 import { CIV_LEOPANTHERI, isLeopantheri, grievanceHolders } from './civ-ids';
 import { ReputationService } from '../reputation/reputation-service';
 import { bumpMetric } from '../tech/history-ledger';
+import type { OperationCategory } from '../espionage/operation-catalog';
 
 export const LEOPANTHERI_CIV_ID = CIV_LEOPANTHERI;
 
@@ -193,7 +194,37 @@ export function chargeHonorLock(world: GameWorldState, factionId: string, action
     if (!isLeopantheri(world, factionId)) return null;
     const verb = DISHONOURABLE_ACTIONS[actionId];
     if (!verb) return null;
+    return spendHonour(world, factionId, verb, actionId);
+}
 
+/**
+ * Catalog operations all travel as ESP_LAUNCH_CATALOG_OP, so the action id
+ * cannot tell watching from murder. The category can. Watching (intelligence
+ * gathering) and guarding your own house (counter-intelligence) stay free;
+ * everything else is underhanded.
+ */
+export const DISHONOURABLE_OP_CATEGORIES: Partial<Record<OperationCategory, string>> = {
+    disinformation: 'deception',
+    economic: 'economic sabotage',
+    sabotage: 'sabotage',
+    military_blackops: 'black operations',
+    political: 'subversion',
+};
+
+/**
+ * Charge honour for a catalog operation. Called by the worker AFTER the
+ * operation actually launched, so a launch refused for want of a network or
+ * Intel costs nothing — the same rule chargeHonorLock keeps by running after
+ * the affordability gate.
+ */
+export function chargeHonorForCatalogOp(world: GameWorldState, factionId: string, category: OperationCategory): string | null {
+    if (!isLeopantheri(world, factionId)) return null;
+    const verb = DISHONOURABLE_OP_CATEGORIES[category];
+    if (!verb) return null;
+    return spendHonour(world, factionId, verb, `ESP_LAUNCH_CATALOG_OP:${category}`);
+}
+
+function spendHonour(world: GameWorldState, factionId: string, verb: string, actionId: string): string {
     ReputationService.updateScore(world, factionId, { honor: -HONOR_LOCK_LOSS, deception: 4 }, `dishonour_${actionId}`);
     const st = world.factionTraits?.get(factionId)?.leopantheri;
     if (st) st.honorBreaches += 1;

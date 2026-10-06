@@ -92,7 +92,7 @@ export const BLOODMOON_FORBIDDEN_ACTIONS: Record<string, string> = {
     AIR_LAUNCH_SORTIE: 'fly a sortie',
     POW_DISPOSE: 'dispose of prisoners',
     // Espionage-offensive
-    ESP_LAUNCH_OP: 'run an operation',
+    ESP_LAUNCH_CATALOG_OP: 'run an operation',
     ESP_INFILTRATE_NETWORK: 'infiltrate a network',
     ESP_SABOTAGE_FACILITY: 'sabotage a facility',
     ESP_STEAL_TECHNOLOGY: 'steal technology',

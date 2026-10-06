@@ -488,3 +488,51 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
 /** Fast lookup by definition id. */
 export const OPERATION_CATALOG_BY_ID: ReadonlyMap<string, OperationDefinition> =
   new Map(OPERATION_CATALOG.map(def => [def.id, def]));
+
+// ─── Player-facing helpers ────────────────────────────────────────────────────
+
+export const CATEGORY_LABELS: Record<OperationCategory, string> = {
+  intel_gathering: "Intelligence gathering",
+  disinformation: "Disinformation",
+  economic: "Economic warfare",
+  sabotage: "Sabotage",
+  military_blackops: "Black operations",
+  political: "Political warfare",
+  counter_intelligence: "Counter-intelligence",
+};
+
+/**
+ * Categories the player launches from the Operations tab, in stage order.
+ * Counter-intelligence is defensive and gets its own tab (spec item 11e).
+ */
+export const OFFENSIVE_CATEGORIES: OperationCategory[] = [
+  "intel_gathering",
+  "disinformation",
+  "economic",
+  "sabotage",
+  "military_blackops",
+  "political",
+];
+
+/** Success is never certain and never hopeless. */
+export const SUCCESS_FLOOR = 0.05;
+export const SUCCESS_CEILING = 0.95;
+
+export function clampSuccessChance(chance: number): number {
+  return Math.max(SUCCESS_FLOOR, Math.min(SUCCESS_CEILING, chance));
+}
+
+/**
+ * The half of an operation's success chance the actor controls: the
+ * definition's base rate, how deep the actor's network in the target runs, and
+ * the actor's own tradecraft research. The target's counter-intelligence and
+ * internal security are subtracted on top of this at resolution
+ * (computeCatalogSuccessChance). The player sees this half as the estimate:
+ * the other half is the rival's secret.
+ */
+export function catalogOwnSideChance(
+  def: OperationDefinition,
+  input: { infiltration: number; techBonus: number; transcendingBonus?: number }
+): number {
+  return def.baseSuccessChance + input.infiltration / 200 + input.techBonus + (input.transcendingBonus ?? 0);
+}

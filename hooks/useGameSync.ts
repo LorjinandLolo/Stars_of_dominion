@@ -3,6 +3,7 @@ import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
 import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
+import { getTechModifier } from '@/lib/tech/modifiers';
 import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
 import { useNotificationStore } from '@/lib/notifications/notification-store';
@@ -917,6 +918,10 @@ export function useGameSync() {
                 ? Array.from(espWorld.boardOpportunities.values()).filter(o => o.ownerFactionId === playerFactionId)
                 : Array.from(espWorld.boardOpportunities.values())
             ).sort((a, b) => a.expiresAt - b.expiresAt),
+            // Our own tradecraft, read the way the worker reads it. The rival's
+            // counter-intelligence is in their private shard, so the estimate
+            // the Operations tab shows is our half of the odds only.
+            opSuccessBonus: playerFactionId ? getTechModifier(world as any, playerFactionId, 'esp_op_success_add') : 0,
         };
 
         // Piracy: the faction's own projection. It arrives from the

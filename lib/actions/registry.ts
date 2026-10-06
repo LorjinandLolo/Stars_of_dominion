@@ -353,11 +353,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { agentId: "id", systemId: "id", domain: "string" },
     cost: { credits: 100 }
   },
-  ESP_LAUNCH_OP: {
-    id: "ESP_LAUNCH_OP",
+  ESP_LAUNCH_CATALOG_OP: {
+    id: "ESP_LAUNCH_CATALOG_OP",
     category: "espionage",
-    params: { targetFactionId: "id", targetRegionId: "id", domain: "string", investment: "number" },
-    cost: { credits: 500, intel: 50 }
+    params: { targetFactionId: "id", targetRegionId: "id", definitionId: "string" },
+    // Intel and credits vary per catalog definition; launchCatalogOperation
+    // checks and deducts both, so a refused launch costs nothing.
+    cost: {}
   },
   ESP_RECRUIT_AGENT: {
     id: "ESP_RECRUIT_AGENT",

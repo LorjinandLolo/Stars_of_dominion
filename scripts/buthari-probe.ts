@@ -152,7 +152,7 @@ console.log('\n[3] Never Aggressors');
 
     // THE anti-overreach assertion. Their subversion must stay open — copying
     // the Bloodmoon list would forbid the one thing they exist to do.
-    for (const action of ['ESP_LAUNCH_OP', 'ESP_INCITE_UNREST', 'ESP_SABOTAGE_FACILITY', 'DIP_IMPOSE_SANCTIONS', 'PIR_SPONSOR_ORG']) {
+    for (const action of ['ESP_LAUNCH_CATALOG_OP', 'ESP_INCITE_UNREST', 'ESP_SABOTAGE_FACILITY', 'DIP_IMPOSE_SANCTIONS', 'PIR_SPONSOR_ORG']) {
         check(`${action} stays ALLOWED — subversion is the whole point`,
             checkAggressionGate(world, BT, action).allowed === true);
     }

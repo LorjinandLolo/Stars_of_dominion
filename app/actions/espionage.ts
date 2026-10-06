@@ -99,22 +99,23 @@ export async function recallAgentAction(factionId: string, agentId: string): Pro
 }
 
 /**
- * Launch a covert operation in a target region.
+ * Launch a catalog operation (lib/espionage/operation-catalog.ts) against a
+ * system the target empire holds. The worker enforces the network-stage gate,
+ * operation capacity, Intel and credit cost; a refusal reaches the player as
+ * an order failure.
  */
-export async function launchCovertOpAction(
+export async function launchCatalogOpAction(
     actorFactionId: string,
     targetFactionId: string,
     targetRegionId: string,
-    domain: OperationDomain,
-    investment: number,
-    risk: number
+    definitionId: string
 ): Promise<ActionResult> {
     const result = await executePlayerAction({
         id: `op-${Date.now()}`,
-        actionId: 'ESP_LAUNCH_OP',
+        actionId: 'ESP_LAUNCH_CATALOG_OP',
         issuerId: actorFactionId,
         targetId: targetRegionId,
-        payload: { targetFactionId, targetRegionId, domain, investment, risk },
+        payload: { targetFactionId, targetRegionId, definitionId },
         timestamp: Math.floor(Date.now() / 1000)
     });
 

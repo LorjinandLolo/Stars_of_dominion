@@ -111,7 +111,7 @@ import { computeSectorOccupancy } from '../lib/planet-surface/occupancy';
 // Static imports for order handlers. These used to be fire-and-forget dynamic
 // `import().then(...)` calls inside executeOrder — the mutation could land AFTER
 // saveWorldState() had already serialized the world, silently losing the order.
-import { launchOperation } from '../lib/espionage/espionage-service';
+import { launchCatalogOperation } from '../lib/espionage/espionage-service';
 import { createOffer, respondToOffer, withdrawOffer, breakTreaty, registerActOfWar, ensureDiplomacyState, shiftRivalry, isAtWar } from '../lib/diplomacy/offer-service';
 import { launchGambit, respondToGambit } from '../lib/diplomacy/gambit-service';
 import { evaluateSupportAndApply } from '../lib/diplomacy/mandate-service';
@@ -3074,27 +3074,24 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
-        case 'ESP_LAUNCH_OP': {
-            // Client sends `investment`/`risk` (see launchCovertOpAction); older
-            // callers sent `investmentLevel`/`riskLevel` — accept both.
-            // The unlocked-tech set has to be passed explicitly; omitting it left
-            // launchOperation defaulting to an empty set, so its shadow-economy
-            // tech gate rejected every player op in that domain.
-            const espResult = launchOperation(
+        case 'ESP_LAUNCH_CATALOG_OP': {
+            // The player's launch path used to be the legacy three-domain
+            // launchOperation: no Intel cost, no network-stage gate, no
+            // capacity. Players now run the same catalog the AI does, and
+            // launchCatalogOperation checks and charges everything itself
+            // (the registry cost is empty), so a refusal needs no refund.
+            const espResult = launchCatalogOperation(
                 factionId,
-                payload.targetFactionId,
-                payload.targetRegionId,
-                payload.domain,
-                payload.investment ?? payload.investmentLevel ?? 0.5,
-                payload.risk ?? payload.riskLevel ?? 0.5,
-                world,
-                new Set<string>(world.tech?.get?.(factionId)?.unlockedTechIds ?? [])
+                String(payload.targetFactionId ?? ''),
+                String(payload.targetRegionId ?? ''),
+                String(payload.definitionId ?? ''),
+                world
             );
             if (!espResult.success) {
                 recordOrderFailure(world, factionId, actionId, espResult.message);
                 break;
             }
-            console.log(`[Tick Worker] Launched Espionage Op for ${factionId}`);
+            console.log(`[Tick Worker] ${factionId}: ${espResult.message}`);
             break;
         }
 

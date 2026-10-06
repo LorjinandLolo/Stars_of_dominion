@@ -300,8 +300,10 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'Operations: pick a target system, a kind (sabotage, political subversion, shadow economy), how much to invest and how bold to be. More investment raises the odds and finishes sooner. Bolder methods are more likely to be traced back to you.',
-                            'Shadow-economy operations need the Black Market Operations technology.',
+                            'Operations: pick an empire, one of its systems, then an operation. Each costs Intel and credits and takes up one of your operation slots until it resolves.',
+                            'Your infiltration of the target decides what you can run. Intelligence gathering is open from the start; disinformation and economic warfare open at Embedded Network, sabotage and black operations at Deep Assets, political warfare (coups, assassinations, election interference) at Shadow Government.',
+                            'The odds shown are your side only. The target\'s counter-intelligence and internal security are subtracted when the operation resolves.',
+                            'Economic warfare also needs the Black Market Operations technology.',
                             'The Board posts time-limited opportunities and threats. Seize them before they expire.',
                             'Reports carry a confidence estimate. A report can be outdated, incomplete, or planted by the other side.'
                         ]
