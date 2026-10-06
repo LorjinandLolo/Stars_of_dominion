@@ -37,6 +37,12 @@ export interface EspionageOperation {
      * Optional: legacy domain-only ops predate the catalog.
      */
     definitionId?: string;
+    /**
+     * The agent running this operation, when one was named at launch. Their
+     * traits and experience shape the odds; resolution costs them cover and
+     * earns them experience. Absent for agentless (and all AI) operations.
+     */
+    agentId?: string;
     /** 0–1: investment level. Higher = better success rate + more detectable. */
     investmentLevel: number;
     /** 0–1: how risky the method chosen is. Affects attribution probability. */

@@ -14,7 +14,8 @@ import type { GameWorldState } from '../game-world-state';
 import { clampShared } from '../game-world-state';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
-import { getDeepNetworkAttributionBonus, tickAgentNetworks } from './agent-service';
+import { getDeepNetworkAttributionBonus, tickAgentNetworks, applyAgentOpConsequences } from './agent-service';
+import { agentSuccessModifier, agentAttributionAvoidance, type SpyAgent } from './agent-types';
 import { openDebate } from '../politics/debate-service';
 import { OPERATION_CATALOG_BY_ID, domainForCategory, catalogOwnSideChance, clampSuccessChance } from './operation-catalog';
 import type { OperationDefinition, OperationRisk } from './operation-catalog';
@@ -129,6 +130,9 @@ export function launchOperation(
     return { success: true, operation: op, message: `Operation ${id} launched` };
 }
 
+/** Disambiguates operation ids launched within the same millisecond. */
+let opSequence = 0;
+
 /** Bridge catalog risk tiers onto the legacy 0–1 riskLevel scale. */
 const RISK_LEVEL_VALUES: Record<OperationRisk, number> = {
     low: 0.25,
@@ -147,7 +151,8 @@ export function launchCatalogOperation(
     targetFactionId: string,
     targetRegionId: string,
     definitionId: string,
-    world: GameWorldState
+    world: GameWorldState,
+    agentId?: string | null
 ): LaunchResult {
     const def = OPERATION_CATALOG_BY_ID.get(definitionId);
     if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
@@ -201,13 +206,29 @@ export function launchCatalogOperation(
         return { success: false, message: `${def.name} costs ${def.creditsCost} credits.` };
     }
 
+    // An agent, when named, must be ours and free. Checked last of the
+    // refusals so a bad agent never masks a stage or cost reason.
+    let agent: SpyAgent | null = null;
+    if (agentId) {
+        agent = world.espionage.agents.get(agentId) ?? null;
+        if (!agent || agent.ownerFactionId !== actorFactionId) {
+            return { success: false, message: 'That agent does not answer to you.' };
+        }
+        if (agent.status !== 'available') {
+            return { success: false, message: `${agent.codename} is not available (${agent.status.replace('_', ' ')}).` };
+        }
+    }
+
     intel.intelPoints -= def.intelCost;
     if (reserves) reserves.CREDITS = (reserves.CREDITS ?? 0) - def.creditsCost;
     intel.usedAgentCapacity += 1;
 
     const now = world.nowSeconds;
     const durationHours = def.durationHoursMin + Math.random() * (def.durationHoursMax - def.durationHoursMin);
-    const id = `op-${actorFactionId}-${def.id}-${Date.now()}`;
+    // Unique even when one faction launches the same operation twice in a
+    // tick: a millisecond timestamp alone collided, the second launch
+    // overwrote the first, and both kept their slot.
+    const id = `op-${actorFactionId}-${def.id}-${Date.now()}-${++opSequence}`;
 
     const op: EspionageOperation = {
         id,
@@ -216,6 +237,7 @@ export function launchCatalogOperation(
         targetRegionId,
         domain: domainForCategory(def.category),
         definitionId: def.id,
+        ...(agent ? { agentId: agent.id } : {}),
         investmentLevel: 0.5,
         riskLevel: RISK_LEVEL_VALUES[def.risk],
         startedAt: toISO(now),
@@ -226,11 +248,24 @@ export function launchCatalogOperation(
 
     world.espionage.operations.set(id, op);
     updateEscalation(targetRegionId, world.espionage, now);
+    if (agent) agent.status = 'on_operation';
 
     // The Leo-pantheri pay honour for underhanded work, AI and player alike.
     chargeHonorForCatalogOp(world, actorFactionId, def.category);
 
     return { success: true, operation: op, message: `Operation ${def.name} launched.` };
+}
+
+/**
+ * The agent an operation named, while they still belong to the operation's
+ * sponsor and have not been burned, captured or turned in the meantime.
+ */
+export function operationAgent(op: EspionageOperation, world: GameWorldState): SpyAgent | null {
+    if (!op.agentId) return null;
+    const agent = world.espionage.agents.get(op.agentId);
+    if (!agent || agent.ownerFactionId !== op.actorFactionId) return null;
+    if (agent.status === 'burned' || agent.status === 'captured' || agent.status === 'turned') return null;
+    return agent;
 }
 
 function updateEscalation(regionId: string, esp: EspionageWorldState, now: number): void {
@@ -362,7 +397,13 @@ function catalogSucceeded(outcome: CatalogOutcome): boolean {
     return outcome === 'critical_success' || outcome === 'success' || outcome === 'partial_success';
 }
 
-export function computeCatalogSuccessChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
+export function computeCatalogSuccessChance(
+    def: OperationDefinition,
+    actorId: string,
+    targetId: string,
+    world: GameWorldState,
+    agent?: SpyAgent | null
+): number {
     const actorIntel = world.espionage.factionIntel.get(actorId);
     const targetIntel = world.espionage.factionIntel.get(targetId);
 
@@ -381,11 +422,19 @@ export function computeCatalogSuccessChance(def: OperationDefinition, actorId: s
     const transcendingBonus = transcending ? config.victory.enlightenment.transcendingOpSuccessBonus : 0;
 
     // The actor's half is shared with the player's estimate (operation-catalog).
-    const ownSide = catalogOwnSideChance(def, { infiltration, techBonus, transcendingBonus });
+    // The agent counts with ALL their traits here, hidden ones included.
+    const agentModifier = agent ? agentSuccessModifier(agent.traitIds, agent.experienceLevel, def.category) : 0;
+    const ownSide = catalogOwnSideChance(def, { infiltration, techBonus, transcendingBonus, agentModifier });
     return clampSuccessChance(ownSide - counterIntelPenalty - securityPenalty);
 }
 
-function computeCatalogExposureChance(def: OperationDefinition, actorId: string, targetId: string, world: GameWorldState): number {
+function computeCatalogExposureChance(
+    def: OperationDefinition,
+    actorId: string,
+    targetId: string,
+    world: GameWorldState,
+    agent?: SpyAgent | null
+): number {
     const targetIntel = world.espionage.factionIntel.get(targetId);
     let chance = def.baseExposureChance + (targetIntel?.surveillanceStrength ?? 0) / 100;
 
@@ -398,12 +447,17 @@ function computeCatalogExposureChance(def: OperationDefinition, actorId: string,
     chance += getTechModifier(world, targetId, 'esp_counter_exposure_add');
     chance *= getTechModifier(world, actorId, 'esp_exposure_mult');
 
+    // A Ghost leaves no trace; a Brutal agent leaves several.
+    if (agent) chance -= agentAttributionAvoidance(agent.traitIds);
+
     return Math.max(0.02, Math.min(0.90, chance));
 }
 
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
-    const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.targetFactionId, world);
-    const exposureChance = computeCatalogExposureChance(def, op.actorFactionId, op.targetFactionId, world);
+    // The agent the operation named, if they are still ours to command.
+    const agent = operationAgent(op, world);
+    const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.targetFactionId, world, agent);
+    const exposureChance = computeCatalogExposureChance(def, op.actorFactionId, op.targetFactionId, world, agent);
 
     const roll = Math.random();
     let outcome: CatalogOutcome = 'failure';
@@ -460,6 +514,12 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     // Release operation capacity
     const intel = world.espionage.factionIntel.get(op.actorFactionId);
     if (intel) intel.usedAgentCapacity = Math.max(0, intel.usedAgentCapacity - 1);
+
+    // The agent comes home: experience earned, cover spent (more when the
+    // job was blown), burned if nothing is left of it.
+    if (agent) {
+        applyAgentOpConsequences(agent, op.succeeded === true, op.riskLevel, world.nowSeconds, world, exposed);
+    }
 
     op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${exposed ? ' (exposed)' : ''}`;
 
@@ -767,7 +827,11 @@ export function computeAttributionProbability(
         world
     );
 
-    return Math.min(1, rawScore + deepNetworkBonus);
+    // The agent who ran it: a Ghost is harder to trace, a Brutal one easier.
+    const agent = operationAgent(op, world);
+    const avoidance = agent ? agentAttributionAvoidance(agent.traitIds) : 0;
+
+    return Math.max(0, Math.min(1, rawScore + deepNetworkBonus - avoidance));
 }
 
 // ─── Apply operation effects ──────────────────────────────────────────────────

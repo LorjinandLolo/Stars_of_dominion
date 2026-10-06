@@ -7,7 +7,6 @@
 import { revalidatePath } from 'next/cache';
 import { generateRecruitPool } from '@/lib/espionage/agent-service';
 import type { ActionResult } from '@/lib/actions/types';
-import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import type { AgentCandidate } from '@/lib/espionage/agent-types';
 import { executePlayerAction } from './registry-handler';
 
@@ -42,20 +41,19 @@ export async function recruitAgentAction(
 }
 
 /**
- * Deploy an agent to a system.
+ * Deploy an agent to a system, where they build an intel network.
  */
 export async function assignAgentAction(
     factionId: string,
     agentId: string,
-    systemId: string,
-    domain: OperationDomain
+    systemId: string
 ): Promise<ActionResult> {
     const result = await executePlayerAction({
         id: `assign-${Date.now()}`,
         actionId: 'ESP_ASSIGN_AGENT',
         issuerId: factionId,
         targetId: systemId,
-        payload: { agentId, systemId, domain },
+        payload: { agentId, systemId },
         timestamp: Math.floor(Date.now() / 1000)
     });
 
@@ -101,21 +99,23 @@ export async function recallAgentAction(factionId: string, agentId: string): Pro
 /**
  * Launch a catalog operation (lib/espionage/operation-catalog.ts) against a
  * system the target empire holds. The worker enforces the network-stage gate,
- * operation capacity, Intel and credit cost; a refusal reaches the player as
+ * operation capacity, Intel and credit cost, and that the named agent (if any)
+ * is ours and free; a refusal reaches the player as
  * an order failure.
  */
 export async function launchCatalogOpAction(
     actorFactionId: string,
     targetFactionId: string,
     targetRegionId: string,
-    definitionId: string
+    definitionId: string,
+    agentId?: string | null
 ): Promise<ActionResult> {
     const result = await executePlayerAction({
         id: `op-${Date.now()}`,
         actionId: 'ESP_LAUNCH_CATALOG_OP',
         issuerId: actorFactionId,
         targetId: targetRegionId,
-        payload: { targetFactionId, targetRegionId, definitionId },
+        payload: { targetFactionId, targetRegionId, definitionId, ...(agentId ? { agentId } : {}) },
         timestamp: Math.floor(Date.now() / 1000)
     });
 

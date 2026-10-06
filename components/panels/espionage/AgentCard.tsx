@@ -11,6 +11,8 @@ interface AgentCardProps {
     /** Display name of the system the agent is deployed to, if any. */
     systemName?: string | null;
     nowSeconds: number;
+    /** Set when the empire cannot deploy agents yet (missing tech). */
+    deployBlockedReason?: string | null;
     onDeploy?: (agentId: string) => void;
     onRecall?: (agentId: string) => void;
 }
@@ -19,6 +21,7 @@ const STATUS: Record<AgentStatus, { label: string; color: string }> = {
     available: { label: 'AVAILABLE', color: '#10b981' },
     deployed: { label: 'DEPLOYED', color: '#3b82f6' },
     on_cooldown: { label: 'RESTING', color: '#f59e0b' },
+    on_operation: { label: 'ON OPERATION', color: '#a855f7' },
     burned: { label: 'BURNED', color: '#ef4444' },
     captured: { label: 'CAPTURED', color: '#8b5cf6' },
     turned: { label: 'TRAITOR', color: '#dc2626' },
@@ -61,7 +64,7 @@ function Bar({ label, value, color }: { label: string; value: number; color: str
     );
 }
 
-export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeconds, onDeploy, onRecall }) => {
+export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeconds, deployBlockedReason, onDeploy, onRecall }) => {
     const sc = STATUS[agent.status];
     const coverColor = agent.coverStrength < 0.3 ? '#ef4444' : agent.coverStrength < 0.6 ? '#f59e0b' : '#3b82f6';
     const loyaltyColor = agent.loyaltyRating < 0.5 ? '#f97316' : '#22c55e';
@@ -107,7 +110,11 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeco
                 </div>
 
                 <div className="pt-1">
-                    {agent.status === 'available' ? (
+                    {agent.status === 'available' && deployBlockedReason ? (
+                        <div className="w-full bg-slate-900 text-slate-500 border border-slate-800 py-2 rounded text-[10px] text-center" title={deployBlockedReason}>
+                            {deployBlockedReason}
+                        </div>
+                    ) : agent.status === 'available' ? (
                         <button
                             className="w-full bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 py-2 rounded text-[10px] font-display tracking-widest transition-colors uppercase"
                             onClick={() => onDeploy?.(agent.id)}
@@ -125,6 +132,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeco
                         <div className="w-full bg-slate-900 text-slate-500 border border-slate-800 py-2 rounded text-[10px] font-display tracking-widest uppercase text-center">
                             {agent.status === 'on_cooldown' && agent.cooldownUntil
                                 ? `Ready ${formatGalacticDeadline(agent.cooldownUntil, nowSeconds)}`
+                                : agent.status === 'on_operation' ? 'Running an operation'
                                 : agent.status === 'burned' ? 'Cover blown' : 'Unavailable'}
                         </div>
                     )}

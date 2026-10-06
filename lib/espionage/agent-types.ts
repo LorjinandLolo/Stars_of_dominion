@@ -6,7 +6,7 @@
  * Intel Networks are persistent spy presences in a system that power Fog of War.
  */
 
-import type { OperationDomain } from './espionage-types';
+import type { OperationCategory } from './operation-catalog';
 
 // ─── Agent Traits ─────────────────────────────────────────────────────────────
 
@@ -75,6 +75,7 @@ export type AgentStatus =
     | 'available'   // Ready to be assigned
     | 'deployed'    // Active in a system building/running a network
     | 'on_cooldown' // Resting after an op; cannot be deployed
+    | 'on_operation' // Running a catalog operation until it resolves
     | 'burned'      // Cover blown; cannot operate; must be retired
     | 'captured'    // Held by enemy faction; may be traded or interrogated
     | 'turned';     // Enemy converted them; now a liability
@@ -95,8 +96,6 @@ export interface SpyAgent {
     status: AgentStatus;
     /** System the agent is currently deployed to. Null when recalled or idle. */
     deployedToSystemId: string | null;
-    /** Which domain they are covering in their deployed system. */
-    deployedDomain: OperationDomain | null;
     /**
      * 0–1: how intact the agent's cover story is.
      * Degrades every op based on risk. Exposes agent on reach 0.
@@ -164,4 +163,85 @@ export interface AgentCandidate {
     recruitmentCost: number;
     /** How many days until this candidate is no longer available. */
     expiresInDays: number;
+}
+
+// ─── Trait effects on catalog operations ──────────────────────────────────────
+
+/**
+ * Which trait bonus applies to which kind of operation. Category-based rather
+ * than through the old three-domain bridge, which filed intelligence gathering
+ * under "political subversion" and so let a Seducer add forty points to
+ * Technology Theft.
+ */
+const CATEGORY_TRAIT_BONUS: Partial<Record<OperationCategory, 'sabotageBonus' | 'subversionBonus' | 'shadowEconomyBonus'>> = {
+    sabotage: 'sabotageBonus',
+    military_blackops: 'sabotageBonus',
+    political: 'subversionBonus',
+    disinformation: 'subversionBonus',
+    economic: 'shadowEconomyBonus',
+};
+
+/** Largest swing one agent can put on an operation's success chance. */
+export const AGENT_MODIFIER_CAP = 0.5;
+
+/**
+ * Success-chance delta an agent brings to an operation of `category`.
+ * Traits count in full at 100 experience and half at 0. Pass the traits the
+ * caller is allowed to know: the worker passes all of them, the owner's page
+ * passes the visible ones, so a hidden `compromised` penalty never shows up in
+ * the estimate.
+ */
+export function agentSuccessModifier(
+    traitIds: AgentTraitId[],
+    experienceLevel: number,
+    category: OperationCategory
+): number {
+    const bonusKey = CATEGORY_TRAIT_BONUS[category];
+    let modifier = 0;
+    for (const traitId of traitIds) {
+        const m = AGENT_TRAITS[traitId]?.modifiers;
+        if (!m) continue;
+        modifier += m.globalSuccessBonus ?? 0;
+        modifier -= m.globalSuccessPenalty ?? 0;
+        if (bonusKey) modifier += m[bonusKey] ?? 0;
+    }
+    const xpFactor = 0.5 + (Math.max(0, Math.min(100, experienceLevel)) / 100) * 0.5;
+    return Math.max(-AGENT_MODIFIER_CAP, Math.min(AGENT_MODIFIER_CAP, modifier * xpFactor));
+}
+
+/**
+ * How much harder (positive) or easier (negative) the agent makes it to trace
+ * an operation back to its sponsor. Ghosts are quiet; Brutal agents are loud.
+ */
+export function agentAttributionAvoidance(traitIds: AgentTraitId[]): number {
+    let avoidance = 0;
+    for (const traitId of traitIds) {
+        const m = AGENT_TRAITS[traitId]?.modifiers;
+        avoidance += m?.attributionAvoidance ?? 0;
+        avoidance -= m?.exposureRisk ?? 0;
+    }
+    return Math.max(-0.3, Math.min(0.5, avoidance));
+}
+
+// ─── Recruitment price ────────────────────────────────────────────────────────
+
+export const BASE_RECRUIT_COST = 2500;
+
+/**
+ * What a candidate with these traits costs, in credits. The worker prices a
+ * recruit from its traits rather than trusting the figure the client sends.
+ */
+export function recruitCostForTraits(traitIds: AgentTraitId[]): number {
+    const cost = BASE_RECRUIT_COST
+        + (traitIds.length - 1) * 1000
+        + (traitIds.includes('veteran') ? 2000 : 0)
+        - (traitIds.includes('compromised') ? 1000 : 0); // compromised agents are mysteriously cheap
+    return Math.max(500, cost);
+}
+
+/** A trait list the recruit pool could have produced: 1-3 known traits, no repeats. */
+export function isValidRecruitTraitList(traitIds: unknown): traitIds is AgentTraitId[] {
+    if (!Array.isArray(traitIds) || traitIds.length < 1 || traitIds.length > 3) return false;
+    if (new Set(traitIds).size !== traitIds.length) return false;
+    return traitIds.every(t => typeof t === 'string' && t in AGENT_TRAITS);
 }

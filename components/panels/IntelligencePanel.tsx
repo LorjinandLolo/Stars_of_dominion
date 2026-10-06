@@ -34,6 +34,7 @@ import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espiona
 import type { IntelNetwork } from '@/types/ui-state';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
+import { checkOrderTechGate } from '@/lib/tech/order-gates';
 
 type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents';
 
@@ -55,13 +56,6 @@ const DOMAIN_LABEL: Record<OperationDomain, string> = {
 function operationName(op: { definitionId?: string; domain: OperationDomain }): string {
     return (op.definitionId && OPERATION_CATALOG_BY_ID.get(op.definitionId)?.name) || DOMAIN_LABEL[op.domain] || 'Operation';
 }
-
-/**
- * Agents no longer pick a domain when they deploy: a deployed agent builds a
- * network, and nothing reads the domain. The order still carries one until the
- * worker drops the parameter (spec item 11c).
- */
-const DEPLOY_DOMAIN: OperationDomain = 'politicalSubversion';
 
 const PENETRATION: Record<IntelNetwork['penetrationLevel'], { label: string; color: string; icon: React.ReactNode; meaning: string }> = {
     none: { label: 'No signal', color: '#64748b', icon: <Lock size={9} />, meaning: 'No visibility. Enemy fleets hidden.' },
@@ -180,7 +174,7 @@ export default function IntelligencePanel() {
         if (!deployingAgentId || !deployTargetId || !playerFactionId) return;
         setBusy(true);
         const agent = espionageState.agents.find(a => a.id === deployingAgentId);
-        const result = await assignAgentAction(playerFactionId, deployingAgentId, deployTargetId, DEPLOY_DOMAIN);
+        const result = await assignAgentAction(playerFactionId, deployingAgentId, deployTargetId);
         setBusy(false);
         if (!result.success) {
             showToast(result.error || 'Deployment refused.', false);
@@ -189,7 +183,7 @@ export default function IntelligencePanel() {
         updateEspionage({
             agents: espionageState.agents.map(a =>
                 a.id === deployingAgentId
-                    ? { ...a, status: 'deployed', deployedToSystemId: deployTargetId, deployedDomain: DEPLOY_DOMAIN }
+                    ? { ...a, status: 'deployed', deployedToSystemId: deployTargetId }
                     : a
             ),
         });
@@ -244,10 +238,10 @@ export default function IntelligencePanel() {
         showToast(`${candidate.codename} accepted. They report for duty shortly.`, true);
     };
 
-    const handleLaunch = async (targetFactionId: string, systemId: string, def: OperationDefinition) => {
+    const handleLaunch = async (targetFactionId: string, systemId: string, def: OperationDefinition, agentId: string | null) => {
         if (!playerFactionId || !targetFactionId || targetFactionId === playerFactionId) return;
         setBusy(true);
-        const result = await launchCatalogOpAction(playerFactionId, targetFactionId, systemId, def.id);
+        const result = await launchCatalogOpAction(playerFactionId, targetFactionId, systemId, def.id, agentId);
         setBusy(false);
         if (!result.success) {
             showToast(result.error || 'Operation refused.', false);
@@ -255,6 +249,13 @@ export default function IntelligencePanel() {
         }
         // Queued, not launched: the worker re-checks stage, slots, Intel and
         // credits, and a refusal arrives as a notification.
+        if (agentId) {
+            // Optimistic, so the same agent cannot be picked twice before the
+            // next sync; the worker is the authority.
+            updateEspionage({
+                agents: espionageState.agents.map(a => a.id === agentId ? { ...a, status: 'on_operation' } : a),
+            });
+        }
         showToast(`${def.name} ordered against ${factionName(targetFactionId)} at ${systemName(systemId)}.`, true);
     };
 
@@ -283,6 +284,12 @@ export default function IntelligencePanel() {
         .filter(([, level]) => level > 0)
         .sort(([, a], [, b]) => b - a);
     const liveAgents = espionageState.agents.filter(a => a.status !== 'burned');
+    // The worker refuses recruiting and deploying without Spy Deployment
+    // Protocols (lib/tech/order-gates.ts). Same table here, so the page says
+    // so up front instead of taking the order and failing it a tick later.
+    const techWorld = { tech: new Map([[playerFactionId ?? '', { unlockedTechIds: techState?.unlockedTechIds ?? [] } as any]]) };
+    const recruitGate = checkOrderTechGate(techWorld, playerFactionId ?? '', 'ESP_RECRUIT_AGENT');
+    const deployGate = checkOrderTechGate(techWorld, playerFactionId ?? '', 'ESP_ASSIGN_AGENT');
     const pressure = espionageState.exposureRisk;
 
     return (
@@ -504,6 +511,7 @@ export default function IntelligencePanel() {
                                 : null}
                             techBonus={espionageState.opSuccessBonus ?? 0}
                             unlockedTechIds={techState?.unlockedTechIds ?? []}
+                            agents={espionageState.agents}
                             busy={busy}
                             onLaunch={handleLaunch}
                         />
@@ -522,7 +530,7 @@ export default function IntelligencePanel() {
                                                     <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{operationName(op)}</div>
                                                     <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 truncate">
                                                         <MapPin size={10} className="text-slate-600 shrink-0" />
-                                                        {systemName(op.targetRegionId)} · {factionName(op.targetFactionId)}
+                                                        {systemName(op.targetRegionId)} · {factionName(op.targetFactionId)}{op.agentId ? ` · ${espionageState.agents.find(a => a.id === op.agentId)?.codename ?? 'agent'}` : ''}
                                                     </div>
                                                 </div>
                                                 <span className="text-[9px] font-mono text-amber-400 uppercase shrink-0">
@@ -615,12 +623,18 @@ export default function IntelligencePanel() {
                                 {liveAgents.length} agent{liveAgents.length === 1 ? '' : 's'} ·{' '}
                                 {liveAgents.filter(a => a.status === 'deployed').length} in the field
                             </div>
-                            <button
-                                onClick={() => setRecruitOpen(o => !o)}
-                                className="px-3 py-2 rounded border border-emerald-700/50 text-emerald-400 text-[10px] font-display tracking-widest uppercase hover:bg-emerald-900/20 flex items-center gap-1.5"
-                            >
-                                <UserPlus size={12} /> {recruitOpen ? 'Hide recruits' : 'Recruit'}
-                            </button>
+                            {recruitGate.allowed ? (
+                                <button
+                                    onClick={() => setRecruitOpen(o => !o)}
+                                    className="px-3 py-2 rounded border border-emerald-700/50 text-emerald-400 text-[10px] font-display tracking-widest uppercase hover:bg-emerald-900/20 flex items-center gap-1.5"
+                                >
+                                    <UserPlus size={12} /> {recruitOpen ? 'Hide recruits' : 'Recruit'}
+                                </button>
+                            ) : (
+                                <span className="px-3 py-2 rounded border border-slate-800 text-slate-500 text-[10px] flex items-center gap-1.5" title={recruitGate.reason}>
+                                    <Lock size={12} /> {recruitGate.reason}
+                                </span>
+                            )}
                         </div>
 
                         {deployingAgentId && (
@@ -696,6 +710,7 @@ export default function IntelligencePanel() {
                                     agent={agent}
                                     systemName={agent.deployedToSystemId ? systemName(agent.deployedToSystemId) : null}
                                     nowSeconds={nowSeconds}
+                                    deployBlockedReason={deployGate.allowed ? null : deployGate.reason}
                                     onDeploy={id => { setDeployingAgentId(id); setDeployTargetId(''); }}
                                     onRecall={handleRecall}
                                 />

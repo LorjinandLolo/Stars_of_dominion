@@ -350,7 +350,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
   ESP_ASSIGN_AGENT: {
     id: "ESP_ASSIGN_AGENT",
     category: "espionage",
-    params: { agentId: "id", systemId: "id", domain: "string" },
+    params: { agentId: "id", systemId: "id" },
     cost: { credits: 100 }
   },
   ESP_LAUNCH_CATALOG_OP: {

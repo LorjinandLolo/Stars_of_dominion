@@ -8,17 +8,15 @@
 
 import {
     SpyAgent,
-    AgentTrait,
     AgentTraitId,
     AgentCandidate,
     IntelNetwork,
     NetworkPenetrationLevel,
     VisibilityLevel,
-    AGENT_TRAITS,
     AgentStatus,
+    recruitCostForTraits,
 } from './agent-types';
 import type { GameWorldState } from '../game-world-state';
-import type { OperationDomain } from './espionage-types';
 import { updateInfiltration } from './faction-intel';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -33,7 +31,6 @@ const COVER_DECAY_PER_OP = 0.10;              // cover drops 10% each op
 const LOYALTY_DECAY_RATE_PER_HOUR = 0.0005;  // slow passive decay in hostile systems
 const AGENT_COOLDOWN_HOURS = 12;             // hours after an op before agent is available
 const RECRUIT_POOL_SIZE = 3;
-const BASE_RECRUIT_COST = 2500;
 
 // Penetration level thresholds
 const PENETRATION_THRESHOLDS: Record<NetworkPenetrationLevel, number> = {
@@ -74,20 +71,16 @@ export function generateRecruitPool(factionId: string, nowSeconds: number): Agen
         const traitCount = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3
         const traitIds = shuffled.slice(0, traitCount) as AgentTraitId[];
 
-        // Cost scales with number of desirable traits
-        const hasVeteran = traitIds.includes('veteran');
-        const hasCompromised = traitIds.includes('compromised');
-        const cost = BASE_RECRUIT_COST
-            + (traitIds.length - 1) * 1000
-            + (hasVeteran ? 2000 : 0)
-            - (hasCompromised ? 1000 : 0); // compromised agents are mysteriously cheap
+        // Cost scales with number of desirable traits (shared with the worker,
+        // which re-prices every recruit order from its traits).
+        const cost = recruitCostForTraits(traitIds);
 
         candidates.push({
             id: `candidate-${factionId}-${nowSeconds}-${i}`,
             name: NAMES[nameIdx],
             codename: CODENAMES[codenameIdx],
             traitIds,
-            recruitmentCost: Math.max(500, cost),
+            recruitmentCost: cost,
             expiresInDays: 7,
         });
     }
@@ -116,7 +109,6 @@ export function recruitAgent(
         experienceLevel: 5, // fresh recruit starts with minimal XP
         status: 'available',
         deployedToSystemId: null,
-        deployedDomain: null,
         coverStrength: 1.0,
         loyaltyRating: 0.95, // new agents start very loyal
         cooldownUntil: null,
@@ -135,14 +127,19 @@ export function recruitAgent(
 export function deployAgent(
     agent: SpyAgent,
     systemId: string,
-    domain: OperationDomain,
     world: GameWorldState
-): void {
-    if (agent.status !== 'available') return;
+): { ok: boolean; message: string } {
+    // Deploying means one thing: build a network in a system. It used to take
+    // a "domain" too, which was stored on the agent and read by nothing.
+    if (agent.status !== 'available') {
+        return { ok: false, message: `${agent.codename} is not available (${agent.status.replace('_', ' ')}).` };
+    }
+    if (!world.movement?.systems?.get?.(systemId)) {
+        return { ok: false, message: 'That system is not on the map.' };
+    }
 
     agent.status = 'deployed';
     agent.deployedToSystemId = systemId;
-    agent.deployedDomain = domain;
 
     // Create or update the Intel Network for this system
     const networkKey = `${agent.ownerFactionId}:${systemId}`;
@@ -166,6 +163,7 @@ export function deployAgent(
     }
     // Refresh the network's active window
     network.activeUntil = world.nowSeconds + 30 * 24 * 3600;
+    return { ok: true, message: `${agent.codename} deployed.` };
 }
 
 /**
@@ -184,7 +182,6 @@ export function recallAgent(agent: SpyAgent, world: GameWorldState): void {
     agent.status = 'on_cooldown';
     agent.cooldownUntil = world.nowSeconds + AGENT_COOLDOWN_HOURS * 3600;
     agent.deployedToSystemId = null;
-    agent.deployedDomain = null;
 }
 
 /**
@@ -208,25 +205,29 @@ export function burnAgent(agent: SpyAgent, world: GameWorldState): void {
     }
 
     agent.deployedToSystemId = null;
-    agent.deployedDomain = null;
 }
+
+/** Extra cover an agent loses when the operation they ran is exposed. */
+export const EXPOSED_COVER_LOSS = 0.25;
 
 /**
  * Apply XP and cover degradation to an agent after an operation resolves.
- * Call this from the espionage resolution path.
+ * Called from catalog resolution (resolveCatalogOperation) for the agent the
+ * operation named.
  */
 export function applyAgentOpConsequences(
     agent: SpyAgent,
     succeeded: boolean,
     riskLevel: number,
     nowSeconds: number,
-    world: GameWorldState
+    world: GameWorldState,
+    exposed = false
 ): void {
     agent.operationsRun += 1;
     agent.lastOperationAt = nowSeconds;
 
-    // Cover degrades proportional to risk
-    const coverLoss = COVER_DECAY_PER_OP * (0.5 + riskLevel * 0.5);
+    // Cover degrades proportional to risk, and badly when the job was blown.
+    const coverLoss = COVER_DECAY_PER_OP * (0.5 + riskLevel * 0.5) + (exposed ? EXPOSED_COVER_LOSS : 0);
     agent.coverStrength = Math.max(0, agent.coverStrength - coverLoss);
 
     // Gain XP (more for success, some for failure — learning experience)
@@ -255,8 +256,19 @@ export function tickAgentNetworks(world: GameWorldState, deltaSeconds: number): 
     const now = world.nowSeconds;
     const hours = deltaSeconds / 3600;
 
+    // Operations an agent may be tied up in. Resolution normally frees the
+    // agent; this catches an operation that vanished without resolving (a
+    // pruned or hand-edited snapshot), so nobody is stuck "on operation".
+    const liveOpAgents = new Set<string>();
+    for (const op of world.espionage.operations.values()) {
+        if (op.agentId && (op.status === 'active' || op.status === 'pending')) liveOpAgents.add(op.agentId);
+    }
+
     // 1. Release agents from cooldown
     for (const agent of world.espionage.agents.values()) {
+        if (agent.status === 'on_operation' && !liveOpAgents.has(agent.id)) {
+            agent.status = 'available';
+        }
         if (agent.status === 'on_cooldown' && agent.cooldownUntil !== null && now >= agent.cooldownUntil) {
             agent.status = 'available';
             agent.cooldownUntil = null;
@@ -363,48 +375,6 @@ export function getDeepNetworkAttributionBonus(
         }
     }
     return 0;
-}
-
-// ─── Agent Trait Modifiers ────────────────────────────────────────────────────
-
-/**
- * Compute the net success modifier for an agent running a specific domain op.
- * Returns a delta in [−1, +1] to add to the base success rate.
- */
-export function computeAgentSuccessModifier(agent: SpyAgent, domain: OperationDomain): number {
-    let modifier = 0;
-
-    for (const traitId of agent.traitIds) {
-        const trait = AGENT_TRAITS[traitId];
-        if (!trait) continue;
-
-        // Global bonuses/penalties
-        modifier += trait.modifiers.globalSuccessBonus ?? 0;
-        modifier -= trait.modifiers.globalSuccessPenalty ?? 0;
-
-        // Domain-specific bonuses
-        if (domain === 'infrastructureSabotage') modifier += trait.modifiers.sabotageBonus ?? 0;
-        if (domain === 'politicalSubversion') modifier += trait.modifiers.subversionBonus ?? 0;
-        if (domain === 'shadowEconomy') modifier += trait.modifiers.shadowEconomyBonus ?? 0;
-    }
-
-    // Scale modifier by agent experience (max effect at 100 XP)
-    const xpFactor = 0.5 + (agent.experienceLevel / 100) * 0.5;
-    return Math.max(-0.5, Math.min(0.5, modifier * xpFactor));
-}
-
-/**
- * Compute the attribution avoidance bonus from agent traits.
- * Returns a delta that reduces the attribution probability.
- */
-export function computeAgentAttributionAvoidance(agent: SpyAgent): number {
-    let avoidance = 0;
-    for (const traitId of agent.traitIds) {
-        const trait = AGENT_TRAITS[traitId];
-        avoidance += trait?.modifiers.attributionAvoidance ?? 0;
-        avoidance += trait?.modifiers.exposureRisk ?? 0; // brutal adds risk, negative avoidance
-    }
-    return Math.max(-0.3, Math.min(0.5, avoidance));
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────

@@ -525,14 +525,16 @@ export function clampSuccessChance(chance: number): number {
 /**
  * The half of an operation's success chance the actor controls: the
  * definition's base rate, how deep the actor's network in the target runs, and
- * the actor's own tradecraft research. The target's counter-intelligence and
+ * the actor's own tradecraft research, and the agent running it (if any).
+ * The target's counter-intelligence and
  * internal security are subtracted on top of this at resolution
  * (computeCatalogSuccessChance). The player sees this half as the estimate:
  * the other half is the rival's secret.
  */
 export function catalogOwnSideChance(
   def: OperationDefinition,
-  input: { infiltration: number; techBonus: number; transcendingBonus?: number }
+  input: { infiltration: number; techBonus: number; transcendingBonus?: number; agentModifier?: number }
 ): number {
-  return def.baseSuccessChance + input.infiltration / 200 + input.techBonus + (input.transcendingBonus ?? 0);
+  return def.baseSuccessChance + input.infiltration / 200 + input.techBonus
+    + (input.transcendingBonus ?? 0) + (input.agentModifier ?? 0);
 }

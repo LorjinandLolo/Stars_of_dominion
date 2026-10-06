@@ -1,5 +1,5 @@
 // scripts/espionage-catalog-probe.ts
-// Probe: the player launches the operation catalog (spec item 11b).
+// Probe: the player launches the operation catalog (spec items 11b, 11c).
 //
 //   npx tsx scripts/espionage-catalog-probe.ts
 //
@@ -21,6 +21,9 @@ import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { techIdsHaveFlag } from '../lib/tech/flags';
 import { BLOODMOON_FORBIDDEN_ACTIONS } from '../lib/factions/kaerruun';
 import { getTechModifier } from '../lib/tech/modifiers';
+import { recruitAgent, deployAgent, applyAgentOpConsequences } from '../lib/espionage/agent-service';
+import { agentSuccessModifier, agentAttributionAvoidance, recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
+import { visibleTraits } from '../components/panels/espionage/AgentCard';
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = '') => {
@@ -164,6 +167,98 @@ async function main() {
         const def = OPERATION_CATALOG_BY_ID.get('infiltrate_government')!;
         check('their counter-intelligence only ever lowers the real odds',
             computeCatalogSuccessChance(def, A, V, w) <= clampSuccessChance(catalogOwnSideChance(def, { infiltration: 50, techBonus })));
+    }
+
+    console.log('\n[6] Agents on operations (item 11c)');
+    {
+        const w = freshWorld();
+        w.espionage.agents.clear();
+        const intel = getOrCreateFactionIntel(w, A);
+        intel.intelPoints = 1000;
+        w.economy.factions.get(A).reserves.CREDITS = 1_000_000;
+        const cap = capitalOf(w, V);
+        const mk = (id: string, owner: string, traitIds: any[], xp = 50) => {
+            const agent = recruitAgent({ id, name: id, codename: id.toUpperCase(), traitIds, recruitmentCost: 0, expiresInDays: 7 }, owner, w.nowSeconds, w);
+            agent.experienceLevel = xp;
+            return agent;
+        };
+        const vet = mk('vet', A, ['veteran']);
+        const theirs = mk('theirs', V, ['ghost']);
+
+        const before = { intel: intel.intelPoints, credits: credits(w, A) };
+        const foreign = launchCatalogOperation(A, V, cap, 'infiltrate_government', w, theirs.id);
+        check('a rival\'s agent cannot be put on our operation', !foreign.success, foreign.message);
+        check('and the refusal charges nothing', intel.intelPoints === before.intel && credits(w, A) === before.credits);
+
+        const res = launchCatalogOperation(A, V, cap, 'infiltrate_government', w, vet.id);
+        check('an available agent can run an operation', res.success, res.message);
+        check('the operation names them', res.operation?.agentId === vet.id);
+        check('and they are busy until it resolves', vet.status === 'on_operation');
+        const again = launchCatalogOperation(A, V, cap, 'infiltrate_military', w, vet.id);
+        check('a busy agent cannot take a second operation', !again.success && /not available/.test(again.message), again.message);
+        const deploy = deployAgent(vet, cap, w);
+        check('nor be deployed meanwhile', !deploy.ok);
+
+        const def = OPERATION_CATALOG_BY_ID.get('sabotage_shipyard')!;
+        const plain = computeCatalogSuccessChance(def, A, V, w);
+        const withVet = computeCatalogSuccessChance(def, A, V, w, vet);
+        check('a Veteran raises the odds', withVet > plain, `${plain} -> ${withVet}`);
+        const mole = mk('mole', A, ['veteran', 'compromised']);
+        check('a compromised agent quietly lowers them', computeCatalogSuccessChance(def, A, V, w, mole) < withVet);
+        const seenByOwner = agentSuccessModifier(visibleTraits(mole.traitIds), mole.experienceLevel, def.category);
+        check('but the owner\'s estimate does not show the hidden penalty',
+            seenByOwner === agentSuccessModifier(['veteran'], mole.experienceLevel, def.category));
+        check('a Seducer adds nothing to intelligence gathering',
+            agentSuccessModifier(['seducer'], 100, 'intel_gathering') === 0);
+        check('but helps political warfare', agentSuccessModifier(['seducer'], 100, 'political') > 0);
+        check('a Brutal agent is easier to trace', agentAttributionAvoidance(['brutal']) < 0);
+        check('a Ghost is harder to trace', agentAttributionAvoidance(['ghost']) > 0);
+
+        // Resolution brings the agent home changed.
+        const op = res.operation!;
+        const cover0 = vet.coverStrength, xp0 = vet.experienceLevel;
+        w.nowSeconds = Date.parse(op.completesAt) / 1000 + 1;
+        tickOperations(w, 3600);
+        check('after resolution the agent has one more operation', vet.operationsRun === 1);
+        check('has spent cover', vet.coverStrength < cover0, `${cover0} -> ${vet.coverStrength}`);
+        check('has gained experience', vet.experienceLevel > xp0);
+        check('and rests (or is burned)', vet.status === 'on_cooldown' || vet.status === 'burned', vet.status);
+
+        // Exposure costs extra cover.
+        const a1 = mk('calm', A, ['ghost']);
+        const a2 = mk('blown', A, ['ghost']);
+        applyAgentOpConsequences(a1, true, 0.5, w.nowSeconds, w, false);
+        applyAgentOpConsequences(a2, true, 0.5, w.nowSeconds, w, true);
+        check('being exposed costs more cover', a2.coverStrength < a1.coverStrength - 0.2, `${a1.coverStrength} vs ${a2.coverStrength}`);
+
+        // An operation that vanished does not strand its agent.
+        const stranded = mk('stranded', A, ['ghost']);
+        stranded.status = 'on_operation';
+        tickOperations(w, 60);
+        check('an agent whose operation is gone is released', (stranded.status as string) === 'available', stranded.status);
+
+        // Deploying is network-only and reports refusals.
+        const scout = mk('scout', A, ['ghost']);
+        check('deploying a free agent works', deployAgent(scout, cap, w).ok);
+        check('deploying to nowhere is refused', !deployAgent(mk('lost', A, ['ghost']), 'no-such-system', w).ok);
+        check('agents no longer carry a deployment domain', !('deployedDomain' in scout));
+    }
+
+    console.log('\n[7] Recruitment is priced by the worker');
+    {
+        check('one plain trait costs the base price', recruitCostForTraits(['ghost']) === 2500);
+        check('a Veteran costs more', recruitCostForTraits(['veteran']) === 4500);
+        check('a forged list with a repeat is rejected', !isValidRecruitTraitList(['ghost', 'ghost']));
+        check('four traits are rejected', !isValidRecruitTraitList(['ghost', 'brutal', 'seducer', 'veteran']));
+        check('an unknown trait is rejected', !isValidRecruitTraitList(['omniscient']));
+        check('a real list passes', isValidRecruitTraitList(['ghost', 'veteran']));
+        const loop = code('scripts/game-loop.ts');
+        check('the recruit handler prices from traits, not from the client',
+            /case 'ESP_RECRUIT_AGENT':[\s\S]{0,900}recruitCostForTraits\(candidate\.traitIds\)/.test(loop));
+        check('the deploy handler refunds a refused deployment',
+            /case 'ESP_ASSIGN_AGENT':[\s\S]{0,900}refundOrderCost/.test(loop));
+        check('the launch handler forwards the agent',
+            /case 'ESP_LAUNCH_CATALOG_OP':[\s\S]{0,1200}payload\.agentId/.test(loop));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

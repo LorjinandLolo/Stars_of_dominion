@@ -288,7 +288,8 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             'A deployed agent builds a network in that system. As it grows it reveals more: first a rumor of fleets, then their count and owner, then their full composition and orders.',
                             'A staffed network on foreign soil also raises your infiltration of the system\'s owner. Infiltration climbs through four stages: Recon Cell, Embedded Network, Deep Assets, Shadow Government.',
-                            'Recall an agent and their network starts to fade. Agents rest briefly between assignments.'
+                            'Recall an agent and their network starts to fade. Agents rest briefly between assignments.',
+                            'A free agent can also run an operation. Their traits shift the odds (Veterans help everything, Brutal agents help sabotage, Seducers political work, Economists economic warfare) and change how easily it is traced back to you (Ghosts are quiet, Brutal agents are not). Each operation costs them cover, more when they are caught, and an agent with no cover left is burned.'
                         ]
                     }
                 ]

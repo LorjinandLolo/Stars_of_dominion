@@ -163,6 +163,7 @@ function pressRngFor(world: any, ...parts: string[]): PressRNG {
 }
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
+import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3085,7 +3086,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 String(payload.targetFactionId ?? ''),
                 String(payload.targetRegionId ?? ''),
                 String(payload.definitionId ?? ''),
-                world
+                world,
+                payload.agentId ? String(payload.agentId) : null
             );
             if (!espResult.success) {
                 recordOrderFailure(world, factionId, actionId, espResult.message);
@@ -3096,23 +3098,38 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         }
 
         case 'ESP_ASSIGN_AGENT': {
+            // Used to fail silently (and keep the deployment fee) when the
+            // agent was busy or not ours.
             const agent = world.espionage.agents.get(payload.agentId);
-            if (agent && agent.ownerFactionId === factionId) {
-                deployAgent(agent, payload.systemId, payload.domain, world);
-                console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
+            if (!agent || agent.ownerFactionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'That agent does not answer to you.');
+                refundOrderCost(world, factionId, actionId);
+                return;
             }
+            const deployed = deployAgent(agent, String(payload.systemId ?? ''), world);
+            if (!deployed.ok) {
+                recordOrderFailure(world, factionId, actionId, deployed.message);
+                refundOrderCost(world, factionId, actionId);
+                return;
+            }
+            console.log(`[Tick Worker] Deployed Agent ${agent.codename} to ${payload.systemId}`);
             break;
         }
 
         case 'ESP_RECRUIT_AGENT': {
             const candidate = payload.candidate;
-            if (!candidate?.id || !Array.isArray(candidate.traitIds)) {
+            if (!candidate?.id || !isValidRecruitTraitList(candidate.traitIds)) {
                 recordOrderFailure(world, factionId, actionId, 'Malformed recruit candidate.');
                 return;
             }
-            // Cost varies per candidate, so it bypasses the static cost gate.
+            // The candidate travels through the client, so its price is
+            // recomputed from its traits here. Trusting the figure it carried
+            // let a forged order hire a Veteran for nothing.
             const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
-            const cost = Math.max(0, Number(candidate.recruitmentCost) || 0);
+            const cost = recruitCostForTraits(candidate.traitIds);
+            candidate.recruitmentCost = cost;
+            candidate.name = String(candidate.name ?? 'Unknown').slice(0, 40);
+            candidate.codename = String(candidate.codename ?? 'Agent').slice(0, 24);
             if (reserves && (reserves.CREDITS ?? 0) < cost) {
                 recordOrderFailure(world, factionId, actionId, `Recruiting ${candidate.codename} costs ${cost} credits.`);
                 return;
@@ -3125,10 +3142,16 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
         case 'ESP_RECALL_AGENT': {
             const agent = world.espionage.agents.get(payload.agentId);
-            if (agent && agent.ownerFactionId === factionId) {
-                recallAgent(agent, world);
-                console.log(`[Tick Worker] Recalled Agent ${agent.codename} for ${factionId}`);
+            if (!agent || agent.ownerFactionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'That agent does not answer to you.');
+                return;
             }
+            if (agent.status !== 'deployed') {
+                recordOrderFailure(world, factionId, actionId, `${agent.codename} is not in the field.`);
+                return;
+            }
+            recallAgent(agent, world);
+            console.log(`[Tick Worker] Recalled Agent ${agent.codename} for ${factionId}`);
             break;
         }
 
