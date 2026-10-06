@@ -6,7 +6,7 @@
 
 import { getGameWorldState } from '../lib/game-world-state-singleton';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
-import { collectFactionTaxes, getFactionEconomyMods } from '../lib/economy/economy-service';
+import { collectFactionTaxes, getFactionEconomyMods, tickProduction } from '../lib/economy/economy-service';
 import { tickAIExpansion } from '../lib/exploration/ai-expansion';
 import { tickAIColonization } from '../lib/exploration/colonize-service';
 import { advanceExploration } from '../lib/exploration/exploration-service';
@@ -38,11 +38,12 @@ console.log('\n[2] National tithe');
 {
     const faction = world.economy.factions.get(A)! as any;
     const planet = [...world.economy.planets.values()].find(p => p.factionId === A)!;
-    planet.currentRates.metals = 10;
-    planet.currentRates.food = 10;
-    planet.stockpile.metals = 5000;
-    planet.stockpile.food = 5000;
+    // Empty silos: the tithe must come out of this tick's extraction, set
+    // aside before the factories draw — not out of whatever happens to be left.
+    planet.stockpile.metals = 0;
+    planet.stockpile.food = 0;
     const m0 = faction.reserves.METALS ?? 0, f0 = faction.reserves.FOOD ?? 0, c0 = faction.reserves.CREDITS ?? 0;
+    tickProduction(planet, 3600, world);
     collectFactionTaxes(world.economy, 3600);
     check(`METALS reserve grew`, (faction.reserves.METALS ?? 0) > m0, `${m0} -> ${faction.reserves.METALS}`);
     check(`FOOD reserve grew`, (faction.reserves.FOOD ?? 0) > f0, `${f0} -> ${faction.reserves.FOOD}`);

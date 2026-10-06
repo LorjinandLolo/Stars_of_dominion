@@ -285,7 +285,9 @@
             ]
         },
         "taxation": {
-            "productionTaxRate": 0.15
+            "_comment": "The state's cut of raw extraction, taken before factories draw inputs. The economy's pace dial: raw output runs ~100x the cost scale, so 0.005 gives a fresh capital-only empire ~6.4k metals and ~90k credits per real day, each colony adding about as much (scripts/economy-pace-probe.ts). Was 0.15 when the skim came after manufacturing and delivered no metals at all.",
+            "productionTaxRate": 0.005,
+            "inKindShare": 0.5
         },
         "consumption": {
             "foodPerPopPerHour": 2,

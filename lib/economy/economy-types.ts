@@ -86,6 +86,12 @@ export interface PlanetProduction {
      */
     stockpile: ResourceBundle;
     /**
+     * The state's cut of this tick's raw extraction, taken off the stockpile
+     * before the factories draw their inputs; collectFactionTaxes delivers it
+     * and clears it. Transient within one economy tick.
+     */
+    stateSkim?: ResourceBundle;
+    /**
      * Warehouse capacity, overflow waste and storage pressure, recomputed each
      * economy tick. Optional: absent on pre-storage snapshots until first tick.
      */

@@ -214,11 +214,22 @@ export function tickProduction(
     }>;
     const manufactured = new Set(recipes.map(r => r.output));
 
+    // The state takes its cut of raw extraction HERE, before the factories
+    // below draw their inputs. Taxed afterwards (as it was until 2026-10),
+    // metals and chemicals were always already eaten by the ammo and military
+    // chains, so the in-kind tithe delivered none and every faction's metal
+    // reserve sat at its starting stock all season.
+    const taxRate = econ.taxation.productionTaxRate;
+    const taxable = new Set<string>(TAXABLE_RESOURCES.map(([key]) => key));
+    planet.stateSkim = {};
     for (const [k, v] of Object.entries(rates)) {
         const key = k as keyof ResourceBundle;
         if (manufactured.has(key)) continue;
         const effectiveRate = (v ?? 0) * efficiencyMod * mods.production;
-        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + effectiveRate * deltaSeconds;
+        const produced = effectiveRate * deltaSeconds;
+        const skim = taxable.has(key) && produced > 0 ? produced * taxRate : 0;
+        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + produced - skim;
+        if (skim > 0) planet.stateSkim[key] = skim;
         planet.currentRates[key] = effectiveRate; // Track effective rate
     }
 
@@ -352,42 +363,40 @@ const TAXABLE_RESOURCES: Array<[keyof ResourceBundle, Resource]> = [
 ];
 
 /**
- * Collect state taxes on planetary production. The government skims a fraction
- * of each planet's newly produced market goods and monetizes it at the current
- * galactic price, crediting the owning faction's CREDITS reserve. This is the
- * primary faction income stream — without it reserves only ever drain.
+ * Deliver the state's cut of planetary production. tickProduction set the
+ * skim aside (planet.stateSkim) before manufacturing ran; here half of it
+ * reaches the national reserves as goods and the rest is monetized at the
+ * galactic price into CREDITS. This is the primary faction income stream —
+ * without it reserves only ever drain.
+ *
+ * The rate is the economy's pace dial. Raw output runs at roughly a hundred
+ * times the scale of what things cost, so productionTaxRate (0.005 since
+ * 2026-10-06) is what makes a colony a few hours of income rather than nothing
+ * or everything: a fresh empire (capital only) banks about 6.4k metals and
+ * 90k credits per real day, and each colony adds about as much (scripts/economy-pace-probe.ts).
  */
 export function collectFactionTaxes(
     ecoWorld: EconomyWorldState,
-    deltaSeconds: number,
+    _deltaSeconds: number,
     modsByFaction?: Map<string, FactionEconomyMods>
 ): void {
-    const taxRate = econ.taxation.productionTaxRate;
-    if (taxRate <= 0) return;
-
     // In-kind tithe: a slice of the tax skim is delivered to the national
     // reserves as GOODS instead of being monetized. Faction reserves are what
-    // colonization (1k metals + 1k food per colony) and unit recruitment spend
-    // — before this, credits were the ONLY reserve with an income stream, so
-    // every faction (human and AI alike) hard-capped at about two colonies
-    // when its starting metals/food ran out, for the entire season.
-    const IN_KIND_SHARE = 0.5;
+    // colonization (1k metals + 1k food per colony), buildings and unit
+    // recruitment spend.
+    const IN_KIND_SHARE = econ.taxation.inKindShare;
 
     for (const planet of ecoWorld.planets.values()) {
+        const skim = planet.stateSkim;
+        planet.stateSkim = undefined;
         const faction = ecoWorld.factions.get(planet.factionId);
-        if (!faction) continue;
+        if (!faction || !skim) continue;
         const taxMult = modsByFaction?.get(planet.factionId)?.tax ?? 1;
 
         let credits = 0;
         for (const [resKey, marketRes] of TAXABLE_RESOURCES) {
-            const produced = (planet.currentRates[resKey] ?? 0) * deltaSeconds;
-            if (produced <= 0) continue;
-            // Skim from the stockpile the production tick just filled — never more
-            // than what is actually on hand.
-            const available = planet.stockpile[resKey] ?? 0;
-            const taken = Math.min(available, produced * taxRate);
+            const taken = skim[resKey] ?? 0;
             if (taken <= 0) continue;
-            planet.stockpile[resKey] = available - taken;
 
             const inKind = taken * IN_KIND_SHARE;
             faction.reserves[marketRes] = (faction.reserves[marketRes] ?? 0) + inKind;
