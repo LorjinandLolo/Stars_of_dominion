@@ -32,6 +32,7 @@ import * as chronicle from '../narrative/chronicle';
 import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
 import { chargeHonorForCatalogOp } from '../factions/leopantheri';
+import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
@@ -387,6 +388,13 @@ function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
     } else {
         op.narrative = buildNarrative(op.domain, false, attribution);
     }
+
+    const legacyName = { infrastructureSabotage: 'Infrastructure sabotage', politicalSubversion: 'Political subversion', shadowEconomy: 'Shadow economy operation' }[op.domain] ?? 'Covert operation';
+    reportOperationOutcome(op, world, {
+        name: legacyName,
+        kindPhrase: KIND_PHRASE[op.domain] ?? 'a covert operation',
+        outcomePhrase: succeeded ? 'a success' : 'a failure',
+    });
 }
 
 // ─── Catalog operation resolution (consolidated path) ─────────────────────────
@@ -522,6 +530,14 @@ function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinitio
     }
 
     op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${exposed ? ' (exposed)' : ''}`;
+
+    // Tell the sponsor how it went, and the victim what their service caught.
+    reportOperationOutcome(op, world, {
+        name: def.name,
+        kindPhrase: KIND_PHRASE[def.category] ?? 'a covert operation',
+        outcomePhrase: OUTCOME_PHRASE[outcome] ?? outcome.replace(/_/g, ' '),
+        agent,
+    });
 
     eventBus.emit({
         type: 'intelligenceOperationResolve',

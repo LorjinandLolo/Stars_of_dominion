@@ -1,5 +1,5 @@
 // scripts/espionage-catalog-probe.ts
-// Probe: the player launches the operation catalog (spec items 11b, 11c).
+// Probe: the player launches the operation catalog (spec items 11b, 11c, 11d).
 //
 //   npx tsx scripts/espionage-catalog-probe.ts
 //
@@ -24,6 +24,10 @@ import { getTechModifier } from '../lib/tech/modifiers';
 import { recruitAgent, deployAgent, applyAgentOpConsequences } from '../lib/espionage/agent-service';
 import { agentSuccessModifier, agentAttributionAvoidance, recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
 import { visibleTraits } from '../components/panels/espionage/AgentCard';
+import { reportOperationOutcome, AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '../lib/espionage/op-aftermath';
+import { drainNotifications } from '../lib/time/notification-hooks';
+import { labelFor } from '../lib/time/notification-names';
+import { scrubOwnerSecrets } from '../lib/persistence/shard-privacy';
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = '') => {
@@ -259,6 +263,75 @@ async function main() {
             /case 'ESP_ASSIGN_AGENT':[\s\S]{0,900}refundOrderCost/.test(loop));
         check('the launch handler forwards the agent',
             /case 'ESP_LAUNCH_CATALOG_OP':[\s\S]{0,1200}payload\.agentId/.test(loop));
+    }
+
+    console.log('\n[8] Both sides hear how it went (item 11d)');
+    {
+        const w = freshWorld();
+        w.espionage.reports.clear();
+        w.espionage.attributionRecords.length = 0;
+        const intel = getOrCreateFactionIntel(w, A);
+        intel.intelPoints = 1000;
+        const cap = capitalOf(w, V);
+        drainNotifications();
+
+        // Force the dice: a critical success that is also caught.
+        const realRandom = Math.random;
+        Math.random = () => 0.01;
+        let op: any;
+        try {
+            const res = launchCatalogOperation(A, V, cap, 'infiltrate_government', w);
+            op = res.operation;
+            w.nowSeconds = Date.parse(op.completesAt) / 1000 + 1;
+            tickOperations(w, 3600);
+        } finally {
+            Math.random = realRandom;
+        }
+        check('the forced operation was caught', op.attributionState === 'exposed', op.attributionState);
+        const notes = drainNotifications();
+        const reports = [...w.espionage.reports.values()];
+        const aar = reports.find(r => r.ownerFactionId === A && r.domain === AFTER_ACTION_DOMAIN);
+        check('the sponsor gets an after-action report', !!aar);
+        check('it says how it went and that we were caught', !!aar && /complete success/.test(aar.body) && /caught/.test(aar.body), aar?.body);
+        check('the sponsor is notified', notes.some(n => n.factionId === A && n.title === 'OPERATION SUCCEEDED'));
+        const inc = reports.find(r => r.ownerFactionId === V && r.domain === INCOMING_DOMAIN);
+        check('the victim gets a report of what was caught', !!inc && /^Caught:/.test(inc.title), inc?.title);
+        check('and is notified, urgently', notes.some(n => n.factionId === V && n.title === 'FOREIGN OPERATION CAUGHT' && n.priority === 'urgent'));
+        const victimNote = notes.find(n => n.factionId === V)!;
+        const victimText = JSON.stringify({ id: inc?.id, src: (inc as any)?.sourceOperationId, note: { id: victimNote?.id, payload: victimNote?.payload } });
+        check('no victim-side id carries the operation id (it names the sponsor)', !victimText.includes(op.id) && !victimText.includes(A), victimText);
+
+        // A suspicion that lands on the wrong empire (what item 12a will make possible).
+        const C = 'faction-null-syndicate';
+        const fake: any = { ...op, id: `op-${A}-test-suspect`, attributionState: 'suspected', succeeded: false };
+        w.espionage.attributionRecords.push({ operationId: fake.id, suspectedFactionId: C, attributionState: 'suspected', probability: 0.6, tensionApplied: 0, resolvedAt: '' });
+        reportOperationOutcome(fake, w, { name: 'Infiltrate Government', kindPhrase: 'an intelligence operation', outcomePhrase: 'a failure' });
+        const wrong = [...w.espionage.reports.values()].find(r => r.ownerFactionId === V && /^Suspected/.test(r.title));
+        check('a suspicion names the suspect on record', !!wrong && wrong.targetFactionId === C && !wrong.body.includes(labelFor(A)), wrong?.body);
+        check('its hidden truth flag says the suspicion is wrong', wrong?.accurate === false);
+        check('and its confidence is the attribution probability', wrong?.confidence === 0.6);
+        const sponsorView = w.espionage.reports.get(`aar-${fake.id}`);
+        check('the sponsor learns the blame fell elsewhere',
+            !!sponsorView && /blames/.test(sponsorView.body) && sponsorView.body.includes(labelFor(C)), sponsorView?.body);
+        const shardView = scrubOwnerSecrets({ espionageReports: [wrong] });
+        check('the victim\'s client never receives that truth flag', !('accurate' in shardView.espionageReports[0]));
+
+        // Invisible operations tell the victim nothing.
+        const before = [...w.espionage.reports.values()].filter(r => r.ownerFactionId === V).length;
+        drainNotifications();
+        reportOperationOutcome({ ...op, id: `op-${A}-test-quiet`, attributionState: 'invisible' }, w,
+            { name: 'Infiltrate Government', kindPhrase: 'an intelligence operation', outcomePhrase: 'a success' });
+        check('an invisible operation leaves the victim no report', [...w.espionage.reports.values()].filter(r => r.ownerFactionId === V).length === before);
+        check('and no notification', !drainNotifications().some(n => n.factionId === V));
+
+        // Nobody plays the AI: no report, no bell.
+        w.claimedFactionIds = [V];
+        reportOperationOutcome({ ...op, id: `op-${A}-test-ai`, attributionState: 'exposed' }, w,
+            { name: 'Infiltrate Government', kindPhrase: 'an intelligence operation', outcomePhrase: 'a success' });
+        const aiNotes = drainNotifications();
+        check('an AI sponsor is not notified', !aiNotes.some(n => n.factionId === A));
+        check('nor filed a report', !w.espionage.reports.has(`aar-op-${A}-test-ai`));
+        check('a human victim still is', aiNotes.some(n => n.factionId === V));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

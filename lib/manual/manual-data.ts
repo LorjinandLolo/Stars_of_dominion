@@ -306,7 +306,8 @@ export const MANUAL_DATA: ManualSection[] = [
                             'The odds shown are your side only. The target\'s counter-intelligence and internal security are subtracted when the operation resolves.',
                             'Economic warfare also needs the Black Market Operations technology.',
                             'The Board posts time-limited opportunities and threats. Seize them before they expire.',
-                            'Reports carry a confidence estimate. A report can be outdated, incomplete, or planted by the other side.'
+                            'Reports carry a confidence estimate. A report can be outdated, incomplete, or planted by the other side.',
+                            'When an operation resolves you are told how it went and whether you were caught, and an after-action entry stays in Reports for about two days. When your service catches a foreign operation against you, you hear about it too: a caught operation names its sponsor, a suspected one names who your service blames, with no proof.'
                         ]
                     },
                     {

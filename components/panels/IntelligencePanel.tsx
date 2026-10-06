@@ -35,6 +35,7 @@ import type { IntelNetwork } from '@/types/ui-state';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
+import { AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '@/lib/espionage/op-aftermath';
 
 type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents';
 
@@ -51,6 +52,16 @@ const DOMAIN_LABEL: Record<OperationDomain, string> = {
     infrastructureSabotage: 'Sabotage',
     politicalSubversion: 'Political subversion',
     shadowEconomy: 'Shadow economy',
+};
+
+/** How each kind of entry reads in the Reports tab. */
+const REPORT_KIND: Record<string, string> = {
+    [AFTER_ACTION_DOMAIN]: 'After action',
+    [INCOMING_DOMAIN]: 'Against us',
+    military: 'Military',
+    political: 'Political',
+    scientific: 'Scientific',
+    counterintel: 'Counter-intelligence',
 };
 
 function operationName(op: { definitionId?: string; domain: OperationDomain }): string {
@@ -579,6 +590,16 @@ export default function IntelligencePanel() {
                         {espionageState.reports.map(report => {
                             const confPct = Math.round(report.confidence * 100);
                             const confColor = confPct >= 75 ? '#10b981' : confPct >= 55 ? '#f59e0b' : '#ef4444';
+                            // Our own after-action entries are facts, not estimates: badge the
+                            // outcome. Incoming entries are what our service caught.
+                            const isAfterAction = report.domain === AFTER_ACTION_DOMAIN;
+                            const isIncoming = report.domain === INCOMING_DOMAIN;
+                            const succeeded = isAfterAction && /succeeded$/.test(report.title);
+                            const badge = isAfterAction
+                                ? { text: succeeded ? 'Succeeded' : 'Failed', color: succeeded ? '#10b981' : '#ef4444' }
+                                : isIncoming && confPct >= 100
+                                    ? { text: 'Caught', color: '#ef4444' }
+                                    : { text: `${confPct}% confidence`, color: confColor };
                             return (
                                 <div key={report.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4">
                                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -587,16 +608,16 @@ export default function IntelligencePanel() {
                                             <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 flex-wrap">
                                                 <span>{factionName(report.targetFactionId)}</span>
                                                 <span className="text-slate-700">•</span>
-                                                <span className="uppercase">{report.domain}</span>
+                                                <span className="uppercase">{REPORT_KIND[report.domain] ?? report.domain}</span>
                                                 <span className="text-slate-700">•</span>
                                                 <span>{reportAge(nowSeconds, report.createdAt)}</span>
                                             </div>
                                         </div>
                                         <span
                                             className="text-[9px] font-display px-1.5 py-0.5 rounded border uppercase tracking-widest shrink-0"
-                                            style={{ color: confColor, borderColor: `${confColor}50`, backgroundColor: `${confColor}15` }}
+                                            style={{ color: badge.color, borderColor: `${badge.color}50`, backgroundColor: `${badge.color}15` }}
                                         >
-                                            {confPct}% confidence
+                                            {badge.text}
                                         </span>
                                     </div>
                                     <p className="text-[11px] text-slate-400 leading-relaxed">{report.body}</p>
@@ -604,7 +625,7 @@ export default function IntelligencePanel() {
                             );
                         })}
                         {espionageState.reports.length === 0 && (
-                            <EmptyState icon={<FileText size={24} />} title="No intelligence on file" hint="Successful intelligence work delivers reports here." />
+                            <EmptyState icon={<FileText size={24} />} title="No intelligence on file" hint="Findings from your operations, how each one went, and the foreign operations your service catches land here." />
                         )}
                         {espionageState.reports.length > 0 && (
                             <div className="flex items-center gap-2 pt-1 text-[10px] text-slate-500 italic">
