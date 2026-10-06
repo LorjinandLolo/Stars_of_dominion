@@ -81,8 +81,19 @@ export const PAIN_MAX = 0.30;
  */
 export const NOT_TAKEN_ALIVE = 0.85;
 
-/** Extra friction every other empire feels toward them, in rivalry points. */
-export const PARIAH_BIAS = 68;
+/**
+ * Extra friction every other empire feels toward them, in rivalry points.
+ *
+ * Was 68 until 2026-10-06. On top of an ordinary pair's 0–37 that put every
+ * Infernoid pair at 68–90, past the AI's embargo line (60) from the first
+ * tick: every AI sanctioned them, and their treasury earned ~4% of anyone
+ * else's for the whole season, before the Infernoid player had done a thing.
+ * At 45 they are distrusted by everyone (no trade pact or non-aggression offer
+ * from an AI, which wants a rivalry under 40 and 25), but only the empires that
+ * also quarrel with their ideology are pushed over 60 and reach for sanctions.
+ * Their own deeds do the rest.
+ */
+export const PARIAH_BIAS = 45;
 
 export const DETONATION_METRIC = 'inf.firebloodDetonations';
 

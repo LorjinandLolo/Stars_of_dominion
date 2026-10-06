@@ -241,7 +241,11 @@ console.log('\n[5] Diplomatic Pariah');
     const r = world.rivalries.get(`rivalry-${INF}-${OTHER}`) ?? world.rivalries.get(`rivalry-${OTHER}-${INF}`);
     check('one tick creates the rivalry', !!r, 'no record means every reader falls back to the friendly ?? 20 default');
     check('both directions exist', !!world.rivalries.get(`rivalry-${INF}-${OTHER}`) && !!world.rivalries.get(`rivalry-${OTHER}-${INF}`));
-    check('and it is hostile after ONE tick, not fifty', (r?.rivalryScore ?? 0) >= 60, `score=${r?.rivalryScore}`);
+    // Distrusted at once: past the 40 under which an AI offers trade. Not, by
+    // pariah standing alone, an automatic embargo (60) — see PARIAH_BIAS.
+    check('and it is distrusted after ONE tick, not fifty', (r?.rivalryScore ?? 0) >= 40, `score=${r?.rivalryScore}`);
+    check('a pariah with no other quarrel is not embargoed on sight',
+        PARIAH_BIAS < 60, `PARIAH_BIAS=${PARIAH_BIAS}`);
     check('but not at war — drift must never trip the war threshold',
         (r?.escalationLevel ?? 0) < 7, `escalation=${r?.escalationLevel}`);
 
