@@ -276,22 +276,40 @@ export const MANUAL_DATA: ManualSection[] = [
         icon: 'eye',
         subsections: [
             {
+                id: 'agents',
+                title: 'Agents and Networks',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Everything covert lives on one page: Intelligence > Espionage. Recruit agents there with credits, then send each one to a system another empire holds.'
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'A deployed agent builds a network in that system. As it grows it reveals more: first a rumor of fleets, then their count and owner, then their full composition and orders.',
+                            'A staffed network on foreign soil also raises your infiltration of the system\'s owner. Infiltration climbs through four stages: Recon Cell, Embedded Network, Deep Assets, Shadow Government.',
+                            'Recall an agent and their network starts to fade. Agents rest briefly between assignments.'
+                        ]
+                    }
+                ]
+            },
+            {
                 id: 'ops',
-                title: 'Espionage Operations',
+                title: 'Operations, the Board and Reports',
                 blocks: [
                     {
                         type: 'bullet_list',
                         content: [
-                            'Sabotage: Disable buildings or fleets for 24 hours.',
-                            'Infiltration: Gain full visibility of a rival\'s economy.',
-                            'Misinformation: Fake fleet movements to lure enemies away.',
-                            'Inciting Rebellion: Lower a planet\'s happiness until a civil war breaks out.'
+                            'Operations: pick a target system, a kind (sabotage, political subversion, shadow economy), how much to invest and how bold to be. More investment raises the odds and finishes sooner. Bolder methods are more likely to be traced back to you.',
+                            'Shadow-economy operations need the Black Market Operations technology.',
+                            'The Board posts time-limited opportunities and threats. Seize them before they expire.',
+                            'Reports carry a confidence estimate. A report can be outdated, incomplete, or planted by the other side.'
                         ]
                     },
                     {
-                        type: 'formula',
-                        title: 'Success Probability',
-                        content: 'Success % = (Int Strength - Enemy Ops Def) * Logic Modifier + Leader Bonus'
+                        type: 'strategy_tip',
+                        title: 'Being caught',
+                        content: 'An operation resolves undetected, suspected, or exposed. Exposure costs you with the victim and opens a debate in their chamber. Running many operations in the same region makes each one easier to spot.'
                     }
                 ]
             }

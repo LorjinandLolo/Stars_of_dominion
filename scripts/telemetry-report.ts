@@ -24,7 +24,7 @@ const pruneAt = process.argv.indexOf('--prune');
 const pruneDays = pruneAt > 0 ? Math.max(7, Number(process.argv[pruneAt + 1]) || 60) : null;
 
 /** Every main panel, so the report can say which ones nobody opened. */
-const ALL_TABS: NavTab[] = ['galaxy', 'economy', 'government', 'intelligence', 'press', 'shadow', 'agency', 'council', 'saga', 'dossier'];
+const ALL_TABS: NavTab[] = ['galaxy', 'economy', 'government', 'intelligence', 'press', 'shadow', 'council', 'saga', 'dossier'];
 
 function parse(detail: string | null): Record<string, any> {
     if (!detail) return {};

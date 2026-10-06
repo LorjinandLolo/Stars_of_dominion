@@ -109,8 +109,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
         accent: '#c084fc',
         tier: 'advanced',
         tabs: [
-            { tab: 'intelligence', label: 'OPERATIONS', icon: <Eye size={13} /> },
-            { tab: 'agency', label: 'AGENCY', icon: <Eye size={13} /> },
+            { tab: 'intelligence', label: 'ESPIONAGE', icon: <Eye size={13} /> },
             { tab: 'shadow', label: 'SHADOW', icon: <Skull size={13} />, conditional: 'shadow' },
         ],
     },

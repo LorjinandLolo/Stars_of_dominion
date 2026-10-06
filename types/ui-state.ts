@@ -10,8 +10,6 @@ export type NavTab =
     | 'intelligence'
     | 'press'
     | 'shadow'
-    /** The espionage agency: agent roster, intel networks, covert ops command. */
-    | 'agency'
     | 'council'
     /** The faction saga: your bespoke mechanics, live state and lifetime ledger. */
     | 'saga'

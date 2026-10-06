@@ -36,10 +36,6 @@ const PressPanel = dynamic(() => import('@/components/panels/PressPanel'), {
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-cyan-500/80 animate-pulse border border-cyan-900/20 bg-slate-950 rounded shadow-2xl">CONNECTING TO PRESS FEED...</div>
 });
-const EspionageAgencyPanel = dynamic(() => import('@/components/intrigue/EspionageAgencyPanel'), {
-    ssr: false,
-    loading: () => <div className="p-6 text-xs font-mono text-red-500/80 animate-pulse border border-red-900/20 bg-slate-950 rounded shadow-2xl">SYNCHRONIZING SECURE AGENCY DATA...</div>
-});
 const CouncilPanel = dynamic(() => import('@/components/panels/CouncilPanel'), {
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-yellow-500/80 animate-pulse border border-yellow-900/20 bg-slate-950 rounded shadow-2xl">ESTABLISHING CONCILIAR LINK...</div>
@@ -121,11 +117,9 @@ const PANEL_MAP = {
     intelligence: <IntelligencePanel />,
     press: <PressPanel />,
     // SHADOW is the underworld: bands, their bases, what we pay them and how
-    // close our own arrangements are to being exposed. It used to point at the
-    // espionage agency, which left ShadowPanel unreachable — the agency now has
-    // its own sub-tab beside OPERATIONS.
+    // close our own arrangements are to being exposed. Espionage proper (agents,
+    // networks, operations) is one page: INTELLIGENCE.
     shadow: <ShadowPanel />,
-    agency: <EspionageAgencyPanel />,
     council: <CouncilPanel />,
     dossier: <DossierPanel />,
     saga: <FactionPanel />,

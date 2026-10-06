@@ -1,27 +1,114 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+/**
+ * The one espionage page. It used to share the job with a second "Agency"
+ * panel; both had a roster, a recruit flow and a launcher, and they disagreed
+ * (one charged "INTEL" for recruits the worker billed in credits, one sent an
+ * agent the server never received). Everything lives here now:
+ *
+ *   Board       time-limited opportunities and threats
+ *   Networks    infiltration per empire and the system networks agents build
+ *   Operations  launch and follow covert operations
+ *   Reports     what successful intelligence work delivered
+ *   Agents      roster, deployment and recruitment
+ */
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
-import { Radio, MapPin, AlertTriangle, Users, Target, Search, Info, Shield, Layers, FileText } from 'lucide-react';
-import { AgentCard } from '@/components/panels/espionage/AgentCard';
+import {
+    AlertTriangle, CheckCircle, DollarSign, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio, Search,
+    Shield, Skull, Target, Unlock, UserPlus, Users, XCircle, Zap,
+} from 'lucide-react';
+import { AgentCard, TraitChip, visibleTraits } from '@/components/panels/espionage/AgentCard';
 import {
     recruitAgentAction,
     recallAgentAction,
     assignAgentAction,
     launchCovertOpAction,
     getRecruitPoolAction,
-    seizeOpportunityAction
+    seizeOpportunityAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
+import type { IntelNetwork } from '@/types/ui-state';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 
-type TabType = 'board' | 'operations' | 'reports' | 'agents' | 'recruitment';
+type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents';
 
-/** Countdown label from sim-clock seconds. */
+const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: 'board', label: 'Board', icon: <Radio size={12} /> },
+    { id: 'networks', label: 'Networks', icon: <Globe size={12} /> },
+    { id: 'operations', label: 'Operations', icon: <Target size={12} /> },
+    { id: 'reports', label: 'Reports', icon: <FileText size={12} /> },
+    { id: 'agents', label: 'Agents', icon: <Users size={12} /> },
+];
+
+const DOMAINS: { id: OperationDomain; label: string; desc: string; risk: string; color: string; icon: React.ReactNode; note?: string }[] = [
+    {
+        id: 'infrastructureSabotage', label: 'Sabotage', color: '#f59e0b', risk: 'Medium', icon: <Zap size={14} />,
+        desc: 'Disrupt hyperlane gates, trade segments and installations.',
+    },
+    {
+        id: 'politicalSubversion', label: 'Subversion', color: '#a855f7', risk: 'Low', icon: <Skull size={14} />,
+        desc: 'Inflame bloc dissatisfaction and spread war fatigue.',
+    },
+    {
+        id: 'shadowEconomy', label: 'Shadow economy', color: '#22c55e', risk: 'Low', icon: <DollarSign size={14} />,
+        desc: 'Smuggling networks and piracy dens that bleed their trade.',
+        note: 'Needs Black Market Operations',
+    },
+];
+
+const DOMAIN_LABEL: Record<OperationDomain, string> = {
+    infrastructureSabotage: 'Sabotage',
+    politicalSubversion: 'Political subversion',
+    shadowEconomy: 'Shadow economy',
+};
+
+/**
+ * Agents no longer pick a domain when they deploy: a deployed agent builds a
+ * network, and nothing reads the domain. The order still carries one until the
+ * worker drops the parameter (spec item 11c).
+ */
+const DEPLOY_DOMAIN: OperationDomain = 'politicalSubversion';
+
+const PENETRATION: Record<IntelNetwork['penetrationLevel'], { label: string; color: string; icon: React.ReactNode; meaning: string }> = {
+    none: { label: 'No signal', color: '#64748b', icon: <Lock size={9} />, meaning: 'No visibility. Enemy fleets hidden.' },
+    rumor: { label: 'Rumor', color: '#f59e0b', icon: <Radio size={9} />, meaning: 'Fleet presence detected, not identified.' },
+    confirmed: { label: 'Confirmed', color: '#60a5fa', icon: <Eye size={9} />, meaning: 'Fleet count and owner revealed.' },
+    deep: { label: 'Deep', color: '#a855f7', icon: <Unlock size={9} />, meaning: 'Full composition, supply and orders visible.' },
+};
+
+function PenetrationBadge({ level }: { level: IntelNetwork['penetrationLevel'] }) {
+    const p = PENETRATION[level] ?? PENETRATION.none;
+    return (
+        <span className="flex items-center gap-1 text-[9px] font-display tracking-widest px-1.5 py-0.5 rounded border uppercase shrink-0"
+            style={{ color: p.color, borderColor: `${p.color}50`, backgroundColor: `${p.color}15` }}>
+            {p.icon}{p.label}
+        </span>
+    );
+}
+
+function EmptyState({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
+    return (
+        <div className="py-12 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600 text-center px-4">
+            <div className="mb-2 opacity-30">{icon}</div>
+            <p className="text-[10px] uppercase tracking-widest font-display">{title}</p>
+            {hint && <p className="text-[10px] mt-1 text-slate-500">{hint}</p>}
+        </div>
+    );
+}
+
+function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
+            {icon}{children}
+        </div>
+    );
+}
+
+/** Board deadlines are sim-clock; show them in the player's calendar words. */
 function expiryCountdown(nowSeconds: number, expiresAt: number): string {
-    // Board deadlines are sim-clock; this used to print sim hours ("11H LEFT")
-    // that ran out fifteen times faster than they read. Real calendar words now.
     if (expiresAt <= nowSeconds) return 'Expired';
     return `Until ${formatGalacticDeadline(expiresAt, nowSeconds)}`;
 }
@@ -33,410 +120,258 @@ function reportAge(nowSeconds: number, createdAt: number): string {
     return formatRealAgo(new Date(Date.now() - realSecondsAgo * 1000));
 }
 
+/** Operations carry ISO timestamps on the sim clock. */
+function isoToSim(iso: string): number {
+    return new Date(iso).getTime() / 1000;
+}
+
+function outcomeLine(op: { succeeded?: boolean; attributionState: string }): { text: string; color: string } {
+    const caught = op.attributionState === 'exposed' ? 'exposed' : op.attributionState === 'suspected' ? 'suspected' : 'undetected';
+    if (op.succeeded) {
+        return { text: `Succeeded · ${caught}`, color: caught === 'undetected' ? '#10b981' : '#f59e0b' };
+    }
+    return { text: `Failed · ${caught}`, color: '#ef4444' };
+}
+
 export default function IntelligencePanel() {
-    const { regions, espionageState, updateEspionage, playerFactionId, factions, nowSeconds } = useUIStore();
+    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds } = useUIStore();
     const [activeTab, setActiveTab] = useState<TabType>('board');
+    const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+    const [busy, setBusy] = useState(false);
 
-    // Deployment Selection State
+    // Agents tab
     const [deployingAgentId, setDeployingAgentId] = useState<string | null>(null);
-    const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
-    const [selectedDomain, setSelectedDomain] = useState<OperationDomain>('infrastructureSabotage');
+    const [deployTargetId, setDeployTargetId] = useState('');
+    const [recruitOpen, setRecruitOpen] = useState(false);
+    const [loadingRecruits, setLoadingRecruits] = useState(false);
 
-    // Load a recruit pool when the recruitment tab is first opened.
-    useEffect(() => {
-        if (activeTab !== 'recruitment' || !playerFactionId) return;
-        if (espionageState.candidates.length > 0) return;
-        getRecruitPoolAction(playerFactionId)
-            .then(candidates => updateEspionage({ candidates }))
-            .catch(e => console.warn('[Intelligence] Failed to load recruit pool:', e));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, playerFactionId]);
+    // Operations tab
+    const [opTargetId, setOpTargetId] = useState('');
+    const [opDomain, setOpDomain] = useState<OperationDomain>('politicalSubversion');
+    const [investment, setInvestment] = useState(0.6);
+    const [risk, setRisk] = useState(0.4);
 
-    const handleDeploy = (agentId: string) => {
-        setDeployingAgentId(agentId);
-        setActiveTab('operations'); // Switch to operations/network view to pick a target
+    const systemName = (id: string | null | undefined) =>
+        (id && systems.find(s => s.id === id)?.name) || 'Unknown system';
+    const factionName = (id: string | null | undefined) =>
+        (id && factions[id]?.name) || 'Unknown empire';
+    const ownerOf = (systemId: string) => {
+        const s: any = systems.find(x => x.id === systemId);
+        return (s?.ownerFactionId ?? s?.ownerId ?? null) as string | null;
     };
 
-    const confirmDeployment = async () => {
-        if (!deployingAgentId || !selectedSystemId || !playerFactionId) return;
-
-        const result = await assignAgentAction(playerFactionId, deployingAgentId, selectedSystemId, selectedDomain);
-        if (result.success) {
-            updateEspionage({
-                agents: espionageState.agents.map(a =>
-                    a.id === deployingAgentId ? {
-                        ...a,
-                        status: 'deployed',
-                        deployedToSystemId: selectedSystemId,
-                        deployedDomain: selectedDomain
-                    } : a
-                )
-            });
-            setDeployingAgentId(null);
-            setSelectedSystemId(null);
+    /** Systems held by someone else, grouped by owner, for both target pickers. */
+    const rivalSystems = useMemo(() => {
+        const groups = new Map<string, { id: string; name: string }[]>();
+        for (const s of systems as any[]) {
+            const owner = s.ownerFactionId ?? s.ownerId;
+            if (!owner || owner === playerFactionId) continue;
+            if (!groups.has(owner)) groups.set(owner, []);
+            groups.get(owner)!.push({ id: s.id, name: s.name });
         }
+        return [...groups.entries()]
+            .map(([owner, list]) => ({ owner, name: factions[owner]?.name ?? 'Unknown empire', systems: list.sort((a, b) => a.name.localeCompare(b.name)) }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [systems, factions, playerFactionId]);
+
+    function showToast(msg: string, ok: boolean) {
+        setToast({ msg, ok });
+        setTimeout(() => setToast(null), 4000);
+    }
+
+    // Load a recruit pool the first time recruitment is opened.
+    useEffect(() => {
+        if (!recruitOpen || !playerFactionId) return;
+        if (espionageState.candidates.length > 0) return;
+        setLoadingRecruits(true);
+        getRecruitPoolAction(playerFactionId)
+            .then(candidates => updateEspionage({ candidates }))
+            .catch(() => showToast('Could not reach the recruiters. Try again shortly.', false))
+            .finally(() => setLoadingRecruits(false));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [recruitOpen, playerFactionId]);
+
+    const confirmDeployment = async () => {
+        if (!deployingAgentId || !deployTargetId || !playerFactionId) return;
+        setBusy(true);
+        const agent = espionageState.agents.find(a => a.id === deployingAgentId);
+        const result = await assignAgentAction(playerFactionId, deployingAgentId, deployTargetId, DEPLOY_DOMAIN);
+        setBusy(false);
+        if (!result.success) {
+            showToast(result.error || 'Deployment refused.', false);
+            return;
+        }
+        updateEspionage({
+            agents: espionageState.agents.map(a =>
+                a.id === deployingAgentId
+                    ? { ...a, status: 'deployed', deployedToSystemId: deployTargetId, deployedDomain: DEPLOY_DOMAIN }
+                    : a
+            ),
+        });
+        showToast(`${agent?.codename ?? 'Agent'} is on the way to ${systemName(deployTargetId)}.`, true);
+        setDeployingAgentId(null);
+        setDeployTargetId('');
     };
 
     const handleRecall = async (agentId: string) => {
         if (!playerFactionId) return;
         const result = await recallAgentAction(playerFactionId, agentId);
-        if (result.success) {
-            // Optimistic / Local State Update
-            updateEspionage({
-                agents: espionageState.agents.map(a =>
-                    a.id === agentId ? { ...a, status: 'on_cooldown', deployedToSystemId: null } : a
-                )
-            });
+        if (!result.success) {
+            showToast(result.error || 'Recall refused.', false);
+            return;
         }
+        updateEspionage({
+            agents: espionageState.agents.map(a =>
+                a.id === agentId ? { ...a, status: 'on_cooldown', deployedToSystemId: null } : a
+            ),
+        });
+        showToast('Agent recalled. Their network will start to fade.', true);
     };
 
     const handleSeize = async (opportunityId: string) => {
         if (!playerFactionId) return;
         const result = await seizeOpportunityAction(playerFactionId, opportunityId);
-        if (result.success) {
-            // Optimistic: mark seized; authoritative state arrives via shard sync.
-            updateEspionage({
-                board: espionageState.board.map(o =>
-                    o.id === opportunityId ? { ...o, status: 'seized' as const } : o
-                )
-            });
+        if (!result.success) {
+            showToast(result.error || 'Could not act on that.', false);
+            return;
         }
+        // Optimistic: authoritative state arrives via shard sync.
+        updateEspionage({
+            board: espionageState.board.map(o =>
+                o.id === opportunityId ? { ...o, status: 'seized' as const } : o
+            ),
+        });
     };
 
     const handleRecruit = async (candidateId: string) => {
         const candidate = espionageState.candidates.find(c => c.id === candidateId);
         if (!candidate || !playerFactionId) return;
-
+        setBusy(true);
         const result = await recruitAgentAction(candidate, playerFactionId);
-        if (result.success) {
-            // Order queued: the new agent arrives via the next shard sync.
-            // Optimistically remove the candidate so it can't be double-recruited.
-            updateEspionage({
-                candidates: espionageState.candidates.filter(c => c.id !== candidateId),
-            });
+        setBusy(false);
+        if (!result.success) {
+            showToast(result.error || 'Recruitment refused.', false);
+            return;
         }
+        // The new agent arrives with the next sync; drop the candidate so it
+        // cannot be hired twice.
+        updateEspionage({ candidates: espionageState.candidates.filter(c => c.id !== candidateId) });
+        showToast(`${candidate.codename} accepted. They report for duty shortly.`, true);
     };
+
+    const handleLaunch = async () => {
+        if (!opTargetId || !playerFactionId) return;
+        const targetFactionId = ownerOf(opTargetId);
+        if (!targetFactionId || targetFactionId === playerFactionId) {
+            showToast('Pick a system another empire holds.', false);
+            return;
+        }
+        setBusy(true);
+        const result = await launchCovertOpAction(playerFactionId, targetFactionId, opTargetId, opDomain, investment, risk);
+        setBusy(false);
+        if (!result.success) {
+            showToast(result.error || 'Operation refused.', false);
+            return;
+        }
+        showToast(`${DOMAIN_LABEL[opDomain]} ordered against ${factionName(targetFactionId)} at ${systemName(opTargetId)}.`, true);
+        setOpTargetId('');
+    };
+
+    const rivalSystemSelect = (value: string, onChange: (v: string) => void) => (
+        <select
+            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-2 text-[11px] text-slate-300 focus:border-amber-500/50 outline-none"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+        >
+            <option value="">Choose a system held by another empire</option>
+            {rivalSystems.map(g => (
+                <optgroup key={g.owner} label={g.name}>
+                    {g.systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+            ))}
+        </select>
+    );
+
+    const activeOps = espionageState.operations
+        .filter(op => op.status === 'active' || op.status === 'pending')
+        .sort((a, b) => a.completesAt.localeCompare(b.completesAt));
+    const concludedOps = espionageState.operations
+        .filter(op => op.status === 'resolved' || op.status === 'failed')
+        .sort((a, b) => b.completesAt.localeCompare(a.completesAt));
+    const infiltration = Object.entries(espionageState.intel?.infiltrationLevels ?? {})
+        .filter(([, level]) => level > 0)
+        .sort(([, a], [, b]) => b - a);
+    const liveAgents = espionageState.agents.filter(a => a.status !== 'burned');
+    const pressure = espionageState.exposureRisk;
 
     return (
         <div className="h-full flex flex-col overflow-hidden bg-slate-950/40">
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-800/60 backdrop-blur-md bg-slate-900/40">
-                <div className="flex justify-between items-center">
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-800/60 backdrop-blur-md bg-slate-900/40">
+                <div className="flex justify-between items-center gap-3">
                     <div>
-                        <h2 className="font-display text-sm tracking-widest text-amber-500 uppercase">Intelligence Agency</h2>
-                        <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-tight">Clandestine Network & Field Ops</p>
+                        <h2 className="font-display text-sm tracking-widest text-amber-500 uppercase">Intelligence</h2>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Agents, networks and covert operations</p>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 border border-amber-500/30 rounded text-amber-400 bg-amber-500/5">
+                    <span
+                        title="Intel accrues over time and from the board. Operations will spend it."
+                        className="text-[10px] font-mono px-2 py-0.5 border border-amber-500/30 rounded text-amber-400 bg-amber-500/5 shrink-0"
+                    >
                         INTEL {Math.floor(espionageState.intel?.intelPoints ?? 0)}
                     </span>
                 </div>
             </div>
 
-            {/* Global Metrics */}
-            <div className="px-6 py-3 border-b border-slate-800/40 bg-slate-900/20">
+            {/* Pressure on us */}
+            <div className="px-4 sm:px-6 py-3 border-b border-slate-800/40 bg-slate-900/20"
+                title="How hard foreign services are working on your empire. High pressure erodes your interest groups.">
                 <div className="flex justify-between text-[10px] font-display tracking-widest text-slate-500 mb-1.5 uppercase">
-                    <span>Empire-Wide Exposure</span>
-                    <span className={espionageState.exposureRisk > 50 ? 'text-red-400' : 'text-amber-400'}>
-                        {espionageState.exposureRisk}%
-                    </span>
+                    <span>Foreign pressure on your empire</span>
+                    <span className={pressure > 50 ? 'text-red-400' : 'text-amber-400'}>{pressure}%</span>
                 </div>
                 <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                        className="h-full rounded-full transition-all duration-700" 
-                        style={{ 
-                            width: `${espionageState.exposureRisk}%`,
-                            backgroundColor: espionageState.exposureRisk > 70 ? '#ef4444' : espionageState.exposureRisk > 40 ? '#f59e0b' : '#10b981'
-                        }} 
+                    <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                            width: `${pressure}%`,
+                            backgroundColor: pressure > 70 ? '#ef4444' : pressure > 40 ? '#f59e0b' : '#10b981',
+                        }}
                     />
                 </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="px-6 bg-slate-900/10 border-b border-slate-800/40">
-                <div className="flex gap-6">
-                    {(['board', 'operations', 'reports', 'agents', 'recruitment'] as TabType[]).map((tab) => (
+            {/* Tabs */}
+            <div className="px-4 sm:px-6 bg-slate-900/10 border-b border-slate-800/40 overflow-x-auto">
+                <div className="flex gap-5">
+                    {TABS.map(tab => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`py-3 text-[10px] font-display tracking-widest uppercase transition-all border-b-2 relative ${
-                                activeTab === tab 
-                                    ? 'text-amber-400 border-amber-500' 
-                                    : 'text-slate-500 border-transparent hover:text-slate-300'
-                            }`}
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`py-3 text-[10px] font-display tracking-widest uppercase transition-all border-b-2 shrink-0 ${activeTab === tab.id
+                                ? 'text-amber-400 border-amber-500'
+                                : 'text-slate-500 border-transparent hover:text-slate-300'
+                                }`}
                         >
-                            <div className="flex items-center gap-2">
-                                {tab === 'board' && <Radio size={12} />}
-                                {tab === 'operations' && <Target size={12} />}
-                                {tab === 'reports' && <FileText size={12} />}
-                                {tab === 'agents' && <Users size={12} />}
-                                {tab === 'recruitment' && <Search size={12} />}
-                                {tab}
-                            </div>
+                            <span className="flex items-center gap-2">{tab.icon}{tab.label}</span>
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-                {activeTab === 'operations' && (
-                    <div className="space-y-6">
-                        {/* Launch Operation Form */}
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-5">
-                            <h3 className="text-[10px] font-display tracking-widest text-amber-500 uppercase mb-4 flex items-center gap-2">
-                                <Search size={12} /> Launch New Operation
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                <div>
-                                    <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Target Region</label>
-                                    <select 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-[10px] text-slate-300 font-mono focus:border-amber-500/50 outline-none"
-                                        onChange={(e) => setSelectedSystemId(e.target.value)}
-                                        value={selectedSystemId || ''}
-                                    >
-                                        <option value="">-- SELECT TARGET --</option>
-                                        {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Domain</label>
-                                    <select 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-[10px] text-slate-300 font-mono focus:border-amber-500/50 outline-none"
-                                        onChange={(e) => setSelectedDomain(e.target.value as OperationDomain)}
-                                        value={selectedDomain}
-                                    >
-                                        <option value="infrastructureSabotage">INFRA SABOTAGE</option>
-                                        <option value="politicalSubversion">POL SUBVERSION</option>
-                                        <option value="shadowEconomy">SHADOW ECONOMY</option>
-                                    </select>
-                                </div>
-                                <div className="flex items-end">
-                                    <button
-                                        disabled={!selectedSystemId || !playerFactionId}
-                                        onClick={async () => {
-                                            if (!selectedSystemId || !playerFactionId) return;
-                                            const region: any = regions.find(r => r.id === selectedSystemId);
-                                            const targetFactionId = region?.ownerId ?? region?.ownerFactionId ?? '';
-                                            if (!targetFactionId || targetFactionId === playerFactionId) return;
-                                            await launchCovertOpAction(playerFactionId, targetFactionId, selectedSystemId, selectedDomain, 0.5, 0.2);
-                                        }}
-                                        className={`w-full py-1.5 rounded uppercase font-display text-[10px] tracking-widest transition-all ${
-                                            selectedSystemId 
-                                                ? 'bg-amber-600 text-slate-950 hover:bg-amber-500' 
-                                                : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                                        }`}
-                                    >
-                                        Deploy Operation
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+            {toast && (
+                <div className={`mx-4 sm:mx-6 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 text-xs ${toast.ok
+                    ? 'bg-green-950/80 border border-green-700/60 text-green-300'
+                    : 'bg-red-950/80 border border-red-700/60 text-red-300'}`}>
+                    {toast.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    {toast.msg}
+                </div>
+            )}
 
-                        {/* Operations List */}
-                        <div>
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
-                                <Target size={10} /> Active Operations
-                            </div>
-                            <div className="space-y-3">
-                                {espionageState.operations.map((op) => {
-                                    const region = regions.find((r) => r.id === op.targetRegionId);
-                                    return (
-                                        <div key={op.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4 hover:border-slate-700/80 transition-colors">
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div>
-                                                    <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">
-                                                        {op.domain.replace(/([A-Z])/g, ' $1')}
-                                                    </div>
-                                                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
-                                                        <MapPin size={10} className="text-slate-600" />
-                                                        <span className="uppercase tracking-tighter">Target: {region?.name || 'External'}</span>
-                                                    </div>
-                                                </div>
-                                                <span className="text-[9px] font-display px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400 bg-amber-500/10 uppercase">
-                                                    {op.status}
-                                                </span>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-[9px] text-slate-500 uppercase font-bold tracking-tighter">
-                                                    <span>Investment Progress</span>
-                                                    <span className="text-blue-400 font-mono">{Math.round(op.investmentLevel * 100)}%</span>
-                                                </div>
-                                                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${op.investmentLevel * 100}%` }} />
-                                                </div>
-                                                <div className="flex justify-end pt-1">
-                                                    <span className="text-[9px] text-slate-600 font-mono uppercase">
-                                                        ETA: {new Date(op.completesAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {espionageState.operations.length === 0 && (
-                                    <div className="py-12 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
-                                        <Target size={24} className="mb-2 opacity-20" />
-                                        <p className="text-[10px] uppercase tracking-widest font-display">No active operations</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Spy Network Stages (per target empire) */}
-                        <div>
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
-                                <Shield size={10} /> Spy Networks
-                            </div>
-                            <div className="space-y-2">
-                                {Object.entries(espionageState.intel?.infiltrationLevels ?? {})
-                                    .filter(([, level]) => level > 0)
-                                    .sort(([, a], [, b]) => b - a)
-                                    .map(([targetId, level]) => {
-                                        const stage = stageForInfiltration(level);
-                                        const info = stageInfo(stage);
-                                        const next = nextStage(stage);
-                                        const progressPct = next
-                                            ? ((level - info.minInfiltration) / (next.minInfiltration - info.minInfiltration)) * 100
-                                            : 100;
-                                        return (
-                                            <div key={targetId} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-3">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <span className="text-[11px] text-slate-300 uppercase tracking-tight font-medium">
-                                                        {factions[targetId]?.name ?? targetId}
-                                                    </span>
-                                                    <span className="text-[9px] font-display px-1.5 py-0.5 rounded border border-purple-500/30 text-purple-300 bg-purple-500/10 uppercase tracking-widest">
-                                                        {info.label}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-1">
-                                                    <span>Infiltration {Math.floor(level)}/100</span>
-                                                    <span>{next ? `Next: ${next.label} at ${next.minInfiltration}` : 'Maximum reach'}</span>
-                                                </div>
-                                                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" style={{ width: `${Math.min(100, Math.max(3, progressPct))}%` }} />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                {Object.values(espionageState.intel?.infiltrationLevels ?? {}).every(l => l <= 0) && (
-                                    <div className="py-8 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
-                                        <Shield size={20} className="mb-2 opacity-20" />
-                                        <p className="text-[10px] uppercase tracking-widest font-display">No foreign networks established</p>
-                                        <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Deploy agents to rival systems to begin infiltration</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Network Coverage */}
-                        <div>
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-3 uppercase flex items-center gap-2">
-                                <Radio size={10} /> Intelligence Network Coverage
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {regions.map((region) => {
-                                    const network = espionageState.networks.find(n => n.systemId === region.id);
-                                    const isSelected = selectedSystemId === region.id;
-                                    const isDeploymentMode = !!deployingAgentId;
-
-                                    return (
-                                        <div 
-                                            key={region.id} 
-                                            onClick={() => isDeploymentMode && setSelectedSystemId(region.id)}
-                                            className={`flex items-center gap-3 px-3 py-3 border rounded-lg transition-all cursor-pointer ${
-                                                isSelected 
-                                                    ? 'bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/20' 
-                                                    : isDeploymentMode
-                                                        ? 'bg-slate-900/40 border-slate-700/50 hover:border-amber-500/30'
-                                                        : 'bg-slate-900/30 border-slate-800/40 hover:bg-slate-900/50'
-                                            }`}
-                                        >
-                                            <div className="w-1.5 h-1.5 rounded-full shadow-[0_0_4px_currentColor]" style={{ color: region.color, backgroundColor: region.color }} />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-[11px] text-slate-300 truncate font-medium uppercase tracking-tight">{region.name}</div>
-                                                <div className="text-[9px] text-slate-500 flex items-center gap-1.5 mt-0.5 uppercase">
-                                                    {network ? (
-                                                        <span className="flex items-center gap-1 text-emerald-400/80">
-                                                            Str: {Math.round(network.strength * 100)}%
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-slate-700">Blind Domain</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {network && (
-                                                <span className="text-[8px] px-1.5 py-0.5 border border-slate-800 rounded uppercase text-slate-500 font-mono">
-                                                    {network.penetrationLevel}
-                                                </span>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Deployment Tool */}
-                        {deployingAgentId && (
-                            <div className="bg-slate-900 border border-amber-500/30 rounded-lg p-5 shadow-[0_0_30px_rgba(245,158,11,0.05)] animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
-                                        <Users size={16} />
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] font-display tracking-widest text-amber-500 uppercase">Field Deployment Protocol</div>
-                                        <div className="text-xs text-slate-300 font-mono">AGENT: {espionageState.agents.find(a => a.id === deployingAgentId)?.codename}</div>
-                                    </div>
-                                </div>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Operation Domain</label>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {(['infrastructureSabotage', 'politicalSubversion', 'shadowEconomy'] as OperationDomain[]).map((dom) => (
-                                                <button
-                                                    key={dom}
-                                                    onClick={() => setSelectedDomain(dom)}
-                                                    className={`px-3 py-2 rounded text-[9px] font-display uppercase tracking-widest border transition-all ${
-                                                        selectedDomain === dom
-                                                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
-                                                            : 'bg-slate-800/50 border-slate-700/50 text-slate-500 hover:text-slate-300 hover:border-slate-600'
-                                                    }`}
-                                                >
-                                                    {dom === 'infrastructureSabotage' && <Shield size={10} className="mb-1 mx-auto" />}
-                                                    {dom === 'politicalSubversion' && <Users size={10} className="mb-1 mx-auto" />}
-                                                    {dom === 'shadowEconomy' && <Layers size={10} className="mb-1 mx-auto" />}
-                                                    <span className="block truncate">{dom.replace('infrastructure', '').replace('political', '').replace('shadow', '')}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 pt-2">
-                                        <button 
-                                            onClick={() => setDeployingAgentId(null)}
-                                            className="flex-1 px-4 py-2 border border-slate-700 text-slate-500 rounded uppercase font-display text-[10px] tracking-widest hover:bg-slate-800 transition-colors"
-                                        >
-                                            Abort
-                                        </button>
-                                        <button 
-                                            disabled={!selectedSystemId}
-                                            onClick={confirmDeployment}
-                                            className={`flex-1 px-4 py-2 rounded uppercase font-display text-[10px] tracking-widest transition-all ${
-                                                selectedSystemId
-                                                    ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                                                    : 'bg-slate-800 text-slate-600 grayscale cursor-not-allowed opacity-50'
-                                            }`}
-                                        >
-                                            Confirm Insertion
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide">
+                {/* ── Board ───────────────────────────────────────────── */}
                 {activeTab === 'board' && (
                     <div className="space-y-3">
-                        {espionageState.board.map((opp) => {
+                        {espionageState.board.map(opp => {
                             const isThreat = opp.kind === 'threat';
                             const expired = opp.status === 'expired' || nowSeconds >= opp.expiresAt;
                             const seized = opp.status === 'seized';
@@ -448,12 +383,10 @@ export default function IntelligencePanel() {
                             return (
                                 <div
                                     key={opp.id}
-                                    className={`bg-slate-900/50 border rounded-lg p-4 transition-colors ${
-                                        seized || expired ? 'border-slate-800/40 opacity-50' : 'border-slate-800/60 hover:border-slate-700/80'
-                                    }`}
+                                    className={`bg-slate-900/50 border rounded-lg p-4 transition-colors ${seized || expired ? 'border-slate-800/40 opacity-50' : 'border-slate-800/60 hover:border-slate-700/80'}`}
                                 >
-                                    <div className="flex items-start justify-between mb-2">
-                                        <div className="flex items-center gap-2">
+                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                             <span
                                                 className="text-[9px] font-display px-1.5 py-0.5 rounded border uppercase tracking-widest"
                                                 style={{ color: accent, borderColor: `${accent}50`, backgroundColor: `${accent}15` }}
@@ -472,7 +405,7 @@ export default function IntelligencePanel() {
                                         {!seized && !expired && (
                                             <button
                                                 onClick={() => handleSeize(opp.id)}
-                                                className="px-4 py-1.5 rounded uppercase font-display text-[10px] tracking-widest transition-all text-slate-950 hover:brightness-110 active:scale-95"
+                                                className="px-4 py-2 rounded uppercase font-display text-[10px] tracking-widest transition-all text-slate-950 hover:brightness-110 active:scale-95"
                                                 style={{ backgroundColor: accent }}
                                             >
                                                 {isThreat ? 'Respond' : 'Seize'}
@@ -483,29 +416,241 @@ export default function IntelligencePanel() {
                             );
                         })}
                         {espionageState.board.length === 0 && (
-                            <div className="py-16 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
-                                <Radio size={24} className="mb-2 opacity-20" />
-                                <p className="text-[10px] uppercase tracking-widest font-display">Board quiet</p>
-                                <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Field stations report opportunities as they develop</p>
+                            <EmptyState icon={<Radio size={24} />} title="Board quiet" hint="Field stations post opportunities and threats here as they develop." />
+                        )}
+                    </div>
+                )}
+
+                {/* ── Networks ────────────────────────────────────────── */}
+                {activeTab === 'networks' && (
+                    <div className="space-y-6">
+                        <div>
+                            <SectionTitle icon={<Shield size={10} />}>Infiltration by empire</SectionTitle>
+                            <div className="space-y-2">
+                                {infiltration.map(([targetId, level]) => {
+                                    const stage = stageForInfiltration(level);
+                                    const info = stageInfo(stage);
+                                    const next = nextStage(stage);
+                                    const progressPct = next
+                                        ? ((level - info.minInfiltration) / (next.minInfiltration - info.minInfiltration)) * 100
+                                        : 100;
+                                    return (
+                                        <div key={targetId} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-3">
+                                            <div className="flex items-center justify-between gap-2 mb-1">
+                                                <span className="text-[11px] text-slate-300 uppercase tracking-tight font-medium">{factionName(targetId)}</span>
+                                                <span className="text-[9px] font-display px-1.5 py-0.5 rounded border border-purple-500/30 text-purple-300 bg-purple-500/10 uppercase tracking-widest shrink-0">
+                                                    {info.label}
+                                                </span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mb-2">{info.description}</p>
+                                            <div className="flex justify-between text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-1">
+                                                <span>Infiltration {Math.floor(level)}/100</span>
+                                                <span>{next ? `${next.label} at ${next.minInfiltration}` : 'Maximum reach'}</span>
+                                            </div>
+                                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-purple-500" style={{ width: `${Math.min(100, Math.max(3, progressPct))}%` }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {infiltration.length === 0 && (
+                                    <EmptyState icon={<Shield size={20} />} title="No foreign networks yet"
+                                        hint="Assign an agent to a system another empire holds. A staffed network raises your infiltration of its owner." />
+                                )}
+                            </div>
+                        </div>
+
+                        <div>
+                            <SectionTitle icon={<MapPin size={10} />}>System networks</SectionTitle>
+                            <div className="space-y-2">
+                                {espionageState.networks.map(net => {
+                                    const owner = ownerOf(net.systemId);
+                                    const color = (PENETRATION[net.penetrationLevel] ?? PENETRATION.none).color;
+                                    const staff = net.agentIds
+                                        .map(id => espionageState.agents.find(a => a.id === id)?.codename)
+                                        .filter(Boolean);
+                                    return (
+                                        <div key={net.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-3">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-xs text-slate-200 truncate">{systemName(net.systemId)}</div>
+                                                    <div className="text-[10px] text-slate-500 truncate">
+                                                        {owner ? (owner === playerFactionId ? 'Your system' : factionName(owner)) : 'Unclaimed'}
+                                                        {' · '}
+                                                        {staff.length > 0 ? staff.join(', ') : 'no agents'}
+                                                    </div>
+                                                </div>
+                                                <PenetrationBadge level={net.penetrationLevel} />
+                                            </div>
+                                            <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
+                                                <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(net.strength * 100)}%`, backgroundColor: color }} />
+                                            </div>
+                                            {net.agentIds.length === 0 && (
+                                                <div className="mt-2 text-[10px] text-amber-500 flex items-center gap-1">
+                                                    <AlertTriangle size={10} /> Unstaffed. This network is fading.
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {espionageState.networks.length === 0 && (
+                                    <EmptyState icon={<Globe size={20} />} title="No system networks" hint="Agents build a network in the system you send them to." />
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900/30 border border-slate-800/40 rounded-lg p-3 space-y-1.5">
+                            <div className="text-[9px] font-display tracking-widest text-slate-500 uppercase mb-1">What a network shows you</div>
+                            {(Object.keys(PENETRATION) as IntelNetwork['penetrationLevel'][]).map(level => (
+                                <div key={level} className="flex items-center gap-2 text-[10px] text-slate-500">
+                                    <PenetrationBadge level={level} /> {PENETRATION[level].meaning}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Operations ──────────────────────────────────────── */}
+                {activeTab === 'operations' && (
+                    <div className="space-y-6">
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 sm:p-5 space-y-4">
+                            <h3 className="text-[10px] font-display tracking-widest text-amber-500 uppercase flex items-center gap-2">
+                                <Search size={12} /> New operation
+                            </h3>
+
+                            <div>
+                                <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Target system</label>
+                                {rivalSystemSelect(opTargetId, setOpTargetId)}
+                                {rivalSystems.length === 0 && (
+                                    <p className="text-[10px] text-slate-500 mt-1">You have not found another empire's system yet. Survey further out.</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="text-[9px] text-slate-500 uppercase tracking-widest block mb-2 font-bold">Kind of operation</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    {DOMAINS.map(d => (
+                                        <button
+                                            key={d.id}
+                                            onClick={() => setOpDomain(d.id)}
+                                            className={`rounded-lg border p-3 text-left transition-all ${opDomain === d.id
+                                                ? 'border-amber-500/50 bg-amber-500/10'
+                                                : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-1" style={{ color: d.color }}>
+                                                {d.icon}
+                                                <span className="text-[11px] font-display text-slate-200">{d.label}</span>
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 leading-snug">{d.desc}</div>
+                                            <div className="text-[9px] mt-1.5 text-slate-500 uppercase tracking-wider">
+                                                {d.risk} risk{d.note ? ` · ${d.note}` : ''}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div title="More investment raises the odds and shortens the operation.">
+                                    <div className="text-[9px] font-bold tracking-widest text-slate-500 mb-1 flex justify-between uppercase">
+                                        <span>Investment</span><span className="text-amber-400">{Math.round(investment * 100)}%</span>
+                                    </div>
+                                    <input type="range" min={10} max={100} value={Math.round(investment * 100)}
+                                        onChange={e => setInvestment(Number(e.target.value) / 100)} className="w-full accent-amber-500" />
+                                </div>
+                                <div title="Bolder methods are more likely to be traced back to you.">
+                                    <div className="text-[9px] font-bold tracking-widest text-slate-500 mb-1 flex justify-between uppercase">
+                                        <span>Boldness</span><span className="text-red-400">{Math.round(risk * 100)}%</span>
+                                    </div>
+                                    <input type="range" min={10} max={100} value={Math.round(risk * 100)}
+                                        onChange={e => setRisk(Number(e.target.value) / 100)} className="w-full accent-red-500" />
+                                </div>
+                            </div>
+
+                            <button
+                                disabled={!opTargetId || !playerFactionId || busy}
+                                onClick={handleLaunch}
+                                className={`w-full py-2.5 rounded uppercase font-display text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 ${opTargetId && !busy
+                                    ? 'bg-amber-600 text-slate-950 hover:bg-amber-500'
+                                    : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+                            >
+                                {busy ? <Loader2 size={12} className="animate-spin" /> : <Target size={12} />}
+                                {opTargetId ? 'Launch operation' : 'Choose a target first'}
+                            </button>
+                        </div>
+
+                        <div>
+                            <SectionTitle icon={<Target size={10} />}>Under way</SectionTitle>
+                            <div className="space-y-3">
+                                {activeOps.map(op => {
+                                    const start = isoToSim(op.startedAt);
+                                    const end = isoToSim(op.completesAt);
+                                    const pct = end > start ? Math.min(100, Math.max(0, ((nowSeconds - start) / (end - start)) * 100)) : 100;
+                                    return (
+                                        <div key={op.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4">
+                                            <div className="flex items-start justify-between gap-2 mb-2">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{DOMAIN_LABEL[op.domain]}</div>
+                                                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 truncate">
+                                                        <MapPin size={10} className="text-slate-600 shrink-0" />
+                                                        {systemName(op.targetRegionId)} · {factionName(op.targetFactionId)}
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] font-mono text-amber-400 uppercase shrink-0">
+                                                    Resolves {formatGalacticDeadline(end, nowSeconds)}
+                                                </span>
+                                            </div>
+                                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {activeOps.length === 0 && (
+                                    <EmptyState icon={<Target size={24} />} title="No operations under way" />
+                                )}
+                            </div>
+                        </div>
+
+                        {concludedOps.length > 0 && (
+                            <div>
+                                <SectionTitle icon={<FileText size={10} />}>Recently concluded</SectionTitle>
+                                <div className="space-y-2">
+                                    {concludedOps.map(op => {
+                                        const outcome = outcomeLine(op);
+                                        return (
+                                            <div key={op.id} className="bg-slate-900/30 border border-slate-800/40 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-[11px] text-slate-300 truncate">
+                                                        {DOMAIN_LABEL[op.domain]} · {systemName(op.targetRegionId)}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 truncate">{factionName(op.targetFactionId)}</div>
+                                                </div>
+                                                <span className="text-[10px] font-mono shrink-0" style={{ color: outcome.color }}>{outcome.text}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
 
+                {/* ── Reports ─────────────────────────────────────────── */}
                 {activeTab === 'reports' && (
                     <div className="space-y-3">
-                        {espionageState.reports.map((report) => {
+                        {espionageState.reports.map(report => {
                             const confPct = Math.round(report.confidence * 100);
                             const confColor = confPct >= 75 ? '#10b981' : confPct >= 55 ? '#f59e0b' : '#ef4444';
                             return (
-                                <div key={report.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4 hover:border-slate-700/80 transition-colors">
-                                    <div className="flex items-start justify-between mb-2">
-                                        <div>
+                                <div key={report.id} className="bg-slate-900/50 border border-slate-800/60 rounded-lg p-4">
+                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                        <div className="min-w-0">
                                             <div className="text-xs font-mono tracking-wider text-slate-200 uppercase">{report.title}</div>
-                                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 uppercase tracking-tighter">
-                                                <span>Subject: {factions[report.targetFactionId]?.name ?? report.targetFactionId}</span>
+                                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 flex-wrap">
+                                                <span>{factionName(report.targetFactionId)}</span>
                                                 <span className="text-slate-700">•</span>
-                                                <span className="text-[9px] px-1 py-0.5 border border-slate-800 rounded font-mono">{report.domain}</span>
+                                                <span className="uppercase">{report.domain}</span>
                                                 <span className="text-slate-700">•</span>
                                                 <span>{reportAge(nowSeconds, report.createdAt)}</span>
                                             </div>
@@ -522,84 +667,116 @@ export default function IntelligencePanel() {
                             );
                         })}
                         {espionageState.reports.length === 0 && (
-                            <div className="py-16 border border-dashed border-slate-800/50 rounded-lg flex flex-col items-center justify-center text-slate-600">
-                                <FileText size={24} className="mb-2 opacity-20" />
-                                <p className="text-[10px] uppercase tracking-widest font-display">No intelligence on file</p>
-                                <p className="text-[9px] uppercase tracking-tighter mt-1 text-slate-700">Successful intelligence operations deliver reports here</p>
-                            </div>
+                            <EmptyState icon={<FileText size={24} />} title="No intelligence on file" hint="Successful intelligence work delivers reports here." />
                         )}
                         {espionageState.reports.length > 0 && (
-                            <div className="flex items-center gap-2 pt-1">
-                                <AlertTriangle size={10} className="text-slate-600" />
-                                <span className="text-[9px] text-slate-600 uppercase tracking-tighter italic">
-                                    Confidence is an estimate. Reports may be outdated, incomplete, or deliberately falsified.
-                                </span>
+                            <div className="flex items-center gap-2 pt-1 text-[10px] text-slate-500 italic">
+                                <AlertTriangle size={10} />
+                                Confidence is an estimate. Reports may be outdated, incomplete, or planted.
                             </div>
                         )}
                     </div>
                 )}
 
+                {/* ── Agents ──────────────────────────────────────────── */}
                 {activeTab === 'agents' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {espionageState.agents.map((agent) => (
-                            <AgentCard 
-                                key={agent.id} 
-                                agent={agent} 
-                                onDeploy={handleDeploy}
-                                onRecall={handleRecall}
-                            />
-                        ))}
-                        {espionageState.agents.length === 0 && (
-                            <div className="col-span-full py-20 flex flex-col items-center text-slate-600">
-                                <Users size={48} className="mb-4 opacity-10" />
-                                <h3 className="font-display text-xs tracking-widest uppercase">No Active Assets</h3>
-                                <p className="text-[10px] uppercase tracking-tighter mt-2">Intelligence network is currently unstaffed.</p>
+                    <div className="space-y-5">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="text-[10px] text-slate-500">
+                                {liveAgents.length} agent{liveAgents.length === 1 ? '' : 's'} ·{' '}
+                                {liveAgents.filter(a => a.status === 'deployed').length} in the field
                             </div>
-                        )}
-                    </div>
-                )}
+                            <button
+                                onClick={() => setRecruitOpen(o => !o)}
+                                className="px-3 py-2 rounded border border-emerald-700/50 text-emerald-400 text-[10px] font-display tracking-widest uppercase hover:bg-emerald-900/20 flex items-center gap-1.5"
+                            >
+                                <UserPlus size={12} /> {recruitOpen ? 'Hide recruits' : 'Recruit'}
+                            </button>
+                        </div>
 
-                {activeTab === 'recruitment' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {espionageState.candidates.map((candidate) => (
-                            <div key={candidate.id} className="bg-slate-900/60 border border-slate-800 rounded-lg overflow-hidden flex flex-col group hover:border-amber-500/30 transition-all duration-300">
-                                <div className="p-4 bg-slate-900/80 border-b border-slate-800/40">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="text-base font-mono tracking-widest text-slate-100 uppercase leading-none">{candidate.codename}</div>
-                                            <p className="text-[10px] text-slate-500 font-medium mt-1.5 uppercase tracking-tighter">{candidate.name}</p>
-                                        </div>
-                                        <div className="text-[10px] font-mono text-amber-500 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/20">
-                                            § {candidate.recruitmentCost}
-                                        </div>
-                                    </div>
+                        {deployingAgentId && (
+                            <div className="bg-slate-900 border border-amber-500/30 rounded-lg p-4 space-y-3">
+                                <div className="text-[10px] font-display tracking-widest text-amber-500 uppercase">
+                                    Send {espionageState.agents.find(a => a.id === deployingAgentId)?.codename} to
                                 </div>
-                                <div className="p-4 flex-1 space-y-4">
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {candidate.traitIds.map((trait) => (
-                                            <span key={trait} className="text-[9px] bg-slate-800/80 text-slate-400 border border-slate-700/50 px-2 py-0.5 rounded uppercase tracking-tighter">
-                                                {trait}
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <button 
-                                        className="w-full bg-slate-100 hover:bg-white text-slate-950 font-display text-[10px] py-2 rounded uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(255,255,255,0.05)] hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95"
-                                        onClick={() => handleRecruit(candidate.id)}
+                                {rivalSystemSelect(deployTargetId, setDeployTargetId)}
+                                <p className="text-[10px] text-slate-500">
+                                    The agent builds a network there. It reveals fleets in that system and raises your infiltration of its owner.
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => { setDeployingAgentId(null); setDeployTargetId(''); }}
+                                        className="flex-1 px-4 py-2 border border-slate-700 text-slate-400 rounded uppercase font-display text-[10px] tracking-widest hover:bg-slate-800"
                                     >
-                                        Initiate Onboarding
+                                        Cancel
+                                    </button>
+                                    <button
+                                        disabled={!deployTargetId || busy}
+                                        onClick={confirmDeployment}
+                                        className={`flex-1 px-4 py-2 rounded uppercase font-display text-[10px] tracking-widest ${deployTargetId && !busy
+                                            ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                                            : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+                                    >
+                                        Send agent
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                        )}
+
+                        {recruitOpen && (
+                            <div className="space-y-3">
+                                <SectionTitle icon={<UserPlus size={10} />}>Candidates · paid in credits</SectionTitle>
+                                {loadingRecruits && (
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-500"><Loader2 size={12} className="animate-spin" /> Contacting recruiters…</div>
+                                )}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {espionageState.candidates.map(candidate => (
+                                        <div key={candidate.id} className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 flex flex-col gap-3">
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div>
+                                                    <div className="text-base font-mono tracking-widest text-slate-100 uppercase leading-none">{candidate.codename}</div>
+                                                    <p className="text-[10px] text-slate-500 mt-1.5">{candidate.name}</p>
+                                                </div>
+                                                <div className="text-[10px] font-mono text-amber-500 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/20 shrink-0">
+                                                    § {candidate.recruitmentCost}
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {visibleTraits(candidate.traitIds).map(t => <TraitChip key={t} traitId={t} />)}
+                                            </div>
+                                            <button
+                                                disabled={busy}
+                                                className="w-full bg-slate-100 hover:bg-white text-slate-950 font-display text-[10px] py-2 rounded uppercase tracking-widest disabled:opacity-50"
+                                                onClick={() => handleRecruit(candidate.id)}
+                                            >
+                                                Hire
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {!loadingRecruits && espionageState.candidates.length === 0 && (
+                                    <p className="text-[10px] text-slate-500">No candidates right now.</p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {espionageState.agents.map(agent => (
+                                <AgentCard
+                                    key={agent.id}
+                                    agent={agent}
+                                    systemName={agent.deployedToSystemId ? systemName(agent.deployedToSystemId) : null}
+                                    nowSeconds={nowSeconds}
+                                    onDeploy={id => { setDeployingAgentId(id); setDeployTargetId(''); }}
+                                    onRecall={handleRecall}
+                                />
+                            ))}
+                        </div>
+                        {espionageState.agents.length === 0 && !recruitOpen && (
+                            <EmptyState icon={<Users size={32} />} title="No agents" hint="Recruit an agent, then send them to a rival system to start a network." />
+                        )}
                     </div>
                 )}
-            </div>
-            
-            <div className="px-6 py-2 border-t border-slate-800/40 bg-slate-900/40 flex items-center gap-2">
-                <Info size={10} className="text-slate-500" />
-                <span className="text-[9px] text-slate-500 uppercase tracking-widest font-medium italic">
-                    All communications encrypted. Shadow protocol alpha engaged.
-                </span>
             </div>
         </div>
     );
