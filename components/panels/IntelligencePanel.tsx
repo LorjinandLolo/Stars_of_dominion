@@ -16,12 +16,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
-    AlertTriangle, CheckCircle, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio,
+    AlertTriangle, Briefcase, CheckCircle, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio,
     Shield, ShieldCheck, Target, Unlock, UserPlus, Users, XCircle,
 } from 'lucide-react';
 import { AgentCard, TraitChip, visibleTraits } from '@/components/panels/espionage/AgentCard';
 import { CatalogLauncher } from '@/components/panels/espionage/CatalogLauncher';
 import { CounterIntelTab } from '@/components/panels/espionage/CounterIntelTab';
+import { CaseBoardTab } from '@/components/panels/espionage/CaseBoardTab';
 import {
     recruitAgentAction,
     recallAgentAction,
@@ -30,6 +31,8 @@ import {
     getRecruitPoolAction,
     seizeOpportunityAction,
     setCounterIntelAction,
+    fileAccusationAction,
+    leakCaseAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
@@ -39,10 +42,11 @@ import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/t
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
 import { AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '@/lib/espionage/op-aftermath';
 
-type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents' | 'defence';
+type TabType = 'board' | 'cases' | 'networks' | 'operations' | 'reports' | 'agents' | 'defence';
 
 const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'board', label: 'Board', icon: <Radio size={12} /> },
+    { id: 'cases', label: 'Cases', icon: <Briefcase size={12} /> },
     { id: 'networks', label: 'Networks', icon: <Globe size={12} /> },
     { id: 'operations', label: 'Operations', icon: <Target size={12} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={12} /> },
@@ -313,6 +317,27 @@ export default function IntelligencePanel() {
         showToast('Counter-intelligence plan sent. Upkeep starts with the next hour.', true);
     };
 
+    const cases = espionageState.cases ?? [];
+    const openCases = cases.filter(c => c.status === 'open').length;
+
+    const handleAccuse = async (caseId: string, suspectId: string) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await fileAccusationAction(playerFactionId, caseId, suspectId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Accusation refused.', false); return; }
+        showToast(`Accusation against ${factionName(suspectId)} filed. The verdict arrives with the next update.`, true);
+    };
+
+    const handleLeak = async (caseId: string, suspectId: string) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await leakCaseAction(playerFactionId, caseId, suspectId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Leak refused.', false); return; }
+        showToast(`The story naming ${factionName(suspectId)} is on its way to the press.`, true);
+    };
+
     const handleSweep = async (systemId: string, agentId: string | null) => {
         if (!playerFactionId) return;
         setBusy(true);
@@ -377,7 +402,11 @@ export default function IntelligencePanel() {
                                 : 'text-slate-500 border-transparent hover:text-slate-300'
                                 }`}
                         >
-                            <span className="flex items-center gap-2">{tab.icon}{tab.label}</span>
+                            <span className="flex items-center gap-2">{tab.icon}{tab.label}
+                                {tab.id === 'cases' && openCases > 0 && (
+                                    <span className="ml-0.5 px-1.5 rounded-full bg-amber-500 text-slate-950 text-[9px] font-mono">{openCases}</span>
+                                )}
+                            </span>
                         </button>
                     ))}
                 </div>
@@ -663,6 +692,18 @@ export default function IntelligencePanel() {
                 )}
 
                 {/* ── Agents ──────────────────────────────────────────── */}
+                {/* ── Case board ──────────────────────────────────────── */}
+                {activeTab === 'cases' && (
+                    <CaseBoardTab
+                        cases={cases}
+                        factionName={factionName}
+                        nowSeconds={nowSeconds}
+                        busy={busy}
+                        onAccuse={handleAccuse}
+                        onLeak={handleLeak}
+                    />
+                )}
+
                 {/* ── Counter-intelligence ────────────────────────────── */}
                 {activeTab === 'defence' && (
                     <CounterIntelTab

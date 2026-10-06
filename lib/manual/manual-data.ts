@@ -314,6 +314,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         type: 'bullet_list',
                         content: [
                             'Counter-intelligence (its own tab) is paid every hour in Intel. The service budget raises your counter-intelligence strength, which cuts every foreign operation\'s odds against you and makes their reports on you likelier to be planted. System coverage, on up to ten of your systems, makes operations there likelier to be traced. If you cannot pay the upkeep, none of it works.',
+                            'Cases: when a foreign operation hits you and your service does not catch who sent it, a case opens on the Cases tab. Clues come in over time (faster with more counter-intelligence): what it took, who could afford it, whose ships were there, who has motive, what the press and your sources say, what prisoners say. Pin each clue to the empire you think it points at, then accuse one publicly, leak the story, or wait. Suspicion can be wrong, and a false flag is built to make it so. Accuse wrongly and you insult an innocent empire; the real culprit gets away.',
                             'A Counter-Intel Sweep audits one of your own systems: foreign networks found there are broken up and named, and every rival\'s infiltration of you drops. The owners of a broken network find out.'
                         ]
                     },
