@@ -394,3 +394,15 @@ function recomputePenetrationLevel(network: IntelNetwork): void {
         network.penetrationLevel = 'none';
     }
 }
+
+/**
+ * Knock a network back (a counter-intelligence sweep found it). Returns the
+ * strength removed. The network keeps its agents; item 12a decides whether a
+ * sweep can also take them.
+ */
+export function weakenNetwork(network: IntelNetwork, amount: number): number {
+    const before = network.strength;
+    network.strength = Math.max(0, network.strength - amount);
+    recomputePenetrationLevel(network);
+    return before - network.strength;
+}

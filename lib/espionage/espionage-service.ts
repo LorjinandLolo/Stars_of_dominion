@@ -33,6 +33,7 @@ import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
 import { chargeHonorForCatalogOp } from '../factions/leopantheri';
 import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
+import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep } from './counter-intel';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
@@ -158,7 +159,12 @@ export function launchCatalogOperation(
     const def = OPERATION_CATALOG_BY_ID.get(definitionId);
     if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
 
-    if (!targetFactionId || targetFactionId === actorFactionId) {
+    // Counter-intelligence is run in your own space; everything else abroad.
+    const defensive = def.category === 'counter_intelligence';
+    if (defensive && targetFactionId !== actorFactionId) {
+        return { success: false, message: `${def.name} is run in your own systems.` };
+    }
+    if (!defensive && (!targetFactionId || targetFactionId === actorFactionId)) {
         return { success: false, message: 'Choose another empire as the target.' };
     }
 
@@ -170,7 +176,7 @@ export function launchCatalogOperation(
         || [...(world.construction?.planets?.values?.() ?? [])].some(
             (p: any) => p.systemId === targetRegionId && p.ownerId === targetFactionId);
     if (!holdsSystem) {
-        return { success: false, message: 'That system is not held by the target empire.' };
+        return { success: false, message: defensive ? 'You can only sweep systems you hold.' : 'That system is not held by the target empire.' };
     }
 
     // Economic warfare is the old shadow-economy domain and keeps its tech
@@ -413,6 +419,17 @@ export function computeCatalogSuccessChance(
     agent?: SpyAgent | null
 ): number {
     const actorIntel = world.espionage.factionIntel.get(actorId);
+
+    // A sweep runs in our own house: no rival defences stand against it, and
+    // our own counter-intelligence strength is the depth it works from (it
+    // takes the infiltration slot of the shared formula, same /200 scale).
+    if (def.category === 'counter_intelligence') {
+        const techBonus = getTechModifier(world, actorId, 'esp_op_success_add');
+        const agentModifier = agent ? agentSuccessModifier(agent.traitIds, agent.experienceLevel, def.category) : 0;
+        return clampSuccessChance(catalogOwnSideChance(def, {
+            infiltration: actorIntel?.counterIntelStrength ?? 0, techBonus, agentModifier,
+        }));
+    }
     const targetIntel = world.espionage.factionIntel.get(targetId);
 
     const infiltration = actorIntel?.infiltrationLevels[targetId] ?? 0;
@@ -461,9 +478,43 @@ function computeCatalogExposureChance(
     return Math.max(0.02, Math.min(0.90, chance));
 }
 
+/**
+ * A Counter-Intel Sweep resolves at home: nobody to be caught by, nothing for
+ * the chronicle or the victim's chamber. It finds and breaks foreign networks
+ * in the swept system and loosens every rival's infiltration of us.
+ */
+function resolveSweepOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState, agent: SpyAgent | null): void {
+    const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.actorFactionId, world, agent);
+    const roll = Math.random();
+    const outcome: CatalogOutcome = roll < successChance / 4 ? 'critical_success'
+        : roll < successChance ? 'success'
+            : roll < successChance * 1.3 ? 'partial_success'
+                : 'failure';
+    const mult = outcome === 'critical_success' ? 1.5 : outcome === 'partial_success' ? 0.5 : outcome === 'success' ? 1 : 0;
+
+    op.succeeded = catalogSucceeded(outcome);
+    op.status = op.succeeded ? 'resolved' : 'failed';
+    op.attributionState = 'invisible';
+
+    const found = applySweep(op, def, world, mult);
+    if (found.length > 0) bumpMetric(world, op.actorFactionId, 'esp.opsDetectedAgainstUs', found.length);
+
+    const intel = world.espionage.factionIntel.get(op.actorFactionId);
+    if (intel) intel.usedAgentCapacity = Math.max(0, intel.usedAgentCapacity - 1);
+    if (agent) applyAgentOpConsequences(agent, op.succeeded, op.riskLevel, world.nowSeconds, world, false);
+
+    op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${found.length ? ` (found ${found.length})` : ''}`;
+    const cut = (def.effects.find(e => e.type === 'reduce_foreign_intel')?.value ?? 0) * mult;
+    reportSweep(op, world, op.succeeded, found, cut);
+}
+
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
     // The agent the operation named, if they are still ours to command.
     const agent = operationAgent(op, world);
+    if (def.category === 'counter_intelligence') {
+        resolveSweepOperation(op, def, world, agent);
+        return;
+    }
     const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.targetFactionId, world, agent);
     const exposureChance = computeCatalogExposureChance(def, op.actorFactionId, op.targetFactionId, world, agent);
 
@@ -726,6 +777,8 @@ export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): v
         if (factionId === 'faction-pirates' || factionId === 'faction-neutral') continue;
         const intel = getOrCreateFactionIntel(world, factionId);
         intel.intelPoints = Math.min(1000, intel.intelPoints + 1.5 * hours);
+        // Counter-intelligence is paid for out of that income (lib/espionage/counter-intel.ts).
+        tickCounterIntel(intel, hours);
 
         // Idle decay — deployed agents (tickAgentNetworks) and successful ops
         // outpace this; abandoned networks slowly regress through the stages.
@@ -820,7 +873,8 @@ export function computeAttributionProbability(
 
     // Counter-intel investment by the target faction
     const ciState = world.espionage.factionIntel.get(op.targetFactionId);
-    const ciLevel = ciState?.regionalCounterIntel[op.targetRegionId] ?? 0;
+    // Coverage the target is actually paying for; unpaid coverage buys nothing.
+    const ciLevel = effectiveRegionalCounterIntel(ciState, op.targetRegionId);
 
     // Escalation multiplier
     const escalation = world.espionage.regionEscalation.get(op.targetRegionId);

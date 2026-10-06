@@ -164,6 +164,7 @@ function pressRngFor(world: any, ...parts: string[]): PressRNG {
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
+import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3094,6 +3095,18 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 break;
             }
             console.log(`[Tick Worker] ${factionId}: ${espResult.message}`);
+            break;
+        }
+
+        case 'ESP_SET_COUNTERINTEL': {
+            // Settings only; tickCounterIntel charges the upkeep each hour.
+            const plan = validateCounterIntelPlan(world, factionId, payload ?? {});
+            if (!plan.ok) {
+                recordOrderFailure(world, factionId, actionId, plan.message);
+                return;
+            }
+            setCounterIntelPlan(world, factionId, plan.budget, plan.regional);
+            console.log(`[Tick Worker] ${factionId} counter-intelligence: budget ${plan.budget}, ${Object.keys(plan.regional).length} systems covered`);
             break;
         }
 

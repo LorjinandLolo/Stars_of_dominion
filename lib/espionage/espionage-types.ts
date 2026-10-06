@@ -86,6 +86,12 @@ export interface FactionIntelState {
     regionalCounterIntel: Record<string, number>;
     /** Total counter-intel budget allocated (0–1 fraction of max). */
     counterIntelBudget: number;
+    /**
+     * True when last tick's counter-intelligence upkeep could not be paid in
+     * Intel. The settings are kept, but while unpaid nothing they buy works:
+     * regional coverage reads as zero and strength drifts toward zero.
+     */
+    counterIntelUnpaid?: boolean;
 }
 
 // ─── Attribution tracking ─────────────────────────────────────────────────────

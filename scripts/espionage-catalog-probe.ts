@@ -1,5 +1,5 @@
 // scripts/espionage-catalog-probe.ts
-// Probe: the player launches the operation catalog (spec items 11b, 11c, 11d).
+// Probe: the player launches the operation catalog (spec items 11b to 11e).
 //
 //   npx tsx scripts/espionage-catalog-probe.ts
 //
@@ -14,7 +14,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 import { getGameWorldState } from '../lib/game-world-state-singleton';
 import { serializeWorld, deserializeWorld } from '../lib/persistence/save-service';
-import { launchCatalogOperation, computeCatalogSuccessChance, tickOperations } from '../lib/espionage/espionage-service';
+import { launchCatalogOperation, computeCatalogSuccessChance, computeAttributionProbability, tickOperations } from '../lib/espionage/espionage-service';
 import { getOrCreateFactionIntel } from '../lib/espionage/faction-intel';
 import { OPERATION_CATALOG_BY_ID, catalogOwnSideChance, clampSuccessChance } from '../lib/espionage/operation-catalog';
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
@@ -28,6 +28,9 @@ import { reportOperationOutcome, AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '..
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { labelFor } from '../lib/time/notification-names';
 import { scrubOwnerSecrets } from '../lib/persistence/shard-privacy';
+import { validateCounterIntelPlan, setCounterIntelPlan, tickCounterIntel, counterIntelUpkeepPerHour, effectiveRegionalCounterIntel } from '../lib/espionage/counter-intel';
+import { updateInfiltration } from '../lib/espionage/faction-intel';
+import { DISHONOURABLE_OP_CATEGORIES } from '../lib/factions/leopantheri';
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = '') => {
@@ -162,6 +165,7 @@ async function main() {
         const techBonus = getTechModifier(w, A, 'esp_op_success_add');
         let worst = 0;
         for (const def of OPERATION_CATALOG_BY_ID.values()) {
+            if (def.category === 'counter_intelligence') continue; // sweeps: section [10]
             const page = clampSuccessChance(catalogOwnSideChance(def, { infiltration: 50, techBonus }));
             const worker = computeCatalogSuccessChance(def, A, V, w);
             worst = Math.max(worst, Math.abs(page - worker));
@@ -332,6 +336,103 @@ async function main() {
         check('an AI sponsor is not notified', !aiNotes.some(n => n.factionId === A));
         check('nor filed a report', !w.espionage.reports.has(`aar-op-${A}-test-ai`));
         check('a human victim still is', aiNotes.some(n => n.factionId === V));
+    }
+
+    console.log('\n[9] Counter-intelligence (item 11e)');
+    {
+        const w = freshWorld();
+        const home = capitalOf(w, A);
+        const theirs = capitalOf(w, V);
+
+        const ok = validateCounterIntelPlan(w, A, { budget: 0.52, regions: { [home]: 0.6 } });
+        check('a plan over our own system is accepted', ok.ok);
+        check('budget snaps to 5% and coverage to 25%', ok.ok && ok.budget === 0.5 && ok.regional[home] === 0.5, JSON.stringify(ok));
+        check('a budget over 100% is refused', !validateCounterIntelPlan(w, A, { budget: 2, regions: {} }).ok);
+        check('covering a rival\'s system is refused', !validateCounterIntelPlan(w, A, { budget: 0, regions: { [theirs]: 1 } }).ok);
+        const dropped = validateCounterIntelPlan(w, A, { budget: 0, regions: { [home]: 0.05 } });
+        check('near-zero coverage is dropped, not stored', dropped.ok && Object.keys(dropped.regional).length === 0);
+        check('the worker handles the order',
+            /case 'ESP_SET_COUNTERINTEL':[\s\S]{0,600}validateCounterIntelPlan/.test(code('scripts/game-loop.ts')));
+
+        // Upkeep and strength.
+        const intel = getOrCreateFactionIntel(w, A);
+        intel.intelPoints = 100;
+        intel.counterIntelStrength = 0;
+        setCounterIntelPlan(w, A, 1, { [home]: 1 });
+        const upkeep = counterIntelUpkeepPerHour(1, { [home]: 1 });
+        tickCounterIntel(intel, 10);
+        check('upkeep is paid in Intel', Math.abs(intel.intelPoints - (100 - upkeep * 10)) < 1e-9, `${intel.intelPoints}`);
+        check('and strength climbs toward the budget', intel.counterIntelStrength > 0 && !intel.counterIntelUnpaid);
+        check('paid coverage counts', effectiveRegionalCounterIntel(intel, home) === 1);
+        const peak = intel.counterIntelStrength;
+        intel.intelPoints = 0;
+        tickCounterIntel(intel, 10);
+        check('without Intel the plan goes unpaid', intel.counterIntelUnpaid === true);
+        check('strength falls while unpaid', intel.counterIntelStrength < peak);
+        check('and unpaid coverage counts for nothing', effectiveRegionalCounterIntel(intel, home) === 0);
+
+        // Coverage makes operations in that system easier to trace.
+        const probe: any = { id: 'x', actorFactionId: V, targetFactionId: A, targetRegionId: home, domain: 'politicalSubversion', riskLevel: 0.5 };
+        intel.counterIntelUnpaid = false;
+        intel.regionalCounterIntel = {};
+        const bare = computeAttributionProbability(probe, w);
+        intel.regionalCounterIntel = { [home]: 1 };
+        const watched = computeAttributionProbability(probe, w);
+        check('a covered system traces operations more often', watched > bare, `${bare} -> ${watched}`);
+
+        // Strength cuts foreign odds.
+        const def = OPERATION_CATALOG_BY_ID.get('infiltrate_government')!;
+        intel.counterIntelStrength = 0;
+        const soft = computeCatalogSuccessChance(def, V, A, w);
+        intel.counterIntelStrength = 80;
+        check('our strength cuts their odds', computeCatalogSuccessChance(def, V, A, w) < soft);
+    }
+
+    console.log('\n[10] Counter-Intel Sweep');
+    {
+        const w = freshWorld();
+        w.espionage.intelNetworks.clear();
+        const home = capitalOf(w, A);
+        const intel = getOrCreateFactionIntel(w, A);
+        intel.intelPoints = 500;
+        check('a sweep against a rival is refused', !launchCatalogOperation(A, V, capitalOf(w, V), 'counterintel_sweep', w).success);
+        check('a sweep in a rival\'s system is refused', !launchCatalogOperation(A, A, capitalOf(w, V), 'counterintel_sweep', w).success);
+        check('an offensive operation against ourselves is still refused', !launchCatalogOperation(A, A, home, 'infiltrate_government', w).success);
+
+        // A Vektori network in our capital, and Vektori's hold on us.
+        w.espionage.intelNetworks.set(`${V}:${home}`, { id: `${V}:${home}`, ownerFactionId: V, systemId: home, strength: 0.9, penetrationLevel: 'deep', agentIds: [], activeUntil: w.nowSeconds + 1e6 });
+        w.espionage.intelNetworks.set(`${A}:${home}`, { id: `${A}:${home}`, ownerFactionId: A, systemId: home, strength: 0.5, penetrationLevel: 'confirmed', agentIds: [], activeUntil: w.nowSeconds + 1e6 });
+        updateInfiltration(w, V, A, 50);
+        drainNotifications();
+
+        const realRandom = Math.random;
+        Math.random = () => 0.3; // inside success, outside critical
+        let op: any;
+        try {
+            const res = launchCatalogOperation(A, A, home, 'counterintel_sweep', w);
+            check('a sweep in our own system launches', res.success, res.message);
+            op = res.operation;
+            w.nowSeconds = Date.parse(op.completesAt) / 1000 + 1;
+            tickOperations(w, 3600);
+        } finally {
+            Math.random = realRandom;
+        }
+        const theirNet = w.espionage.intelNetworks.get(`${V}:${home}`);
+        check('the sweep succeeds', op.succeeded === true, op.status);
+        check('the foreign network is broken up', !!theirNet && theirNet.strength < 0.9 - 0.3, `${theirNet?.strength}`);
+        check('our own network there is untouched', w.espionage.intelNetworks.get(`${A}:${home}`)?.strength === 0.5);
+        check('the rival\'s infiltration of us drops', (getOrCreateFactionIntel(w, V).infiltrationLevels[A] ?? 0) < 50);
+        check('the slot comes back', intel.usedAgentCapacity === 0);
+        const notes = drainNotifications();
+        check('we hear what it found', notes.some(n => n.factionId === A && n.title === 'FOREIGN NETWORKS FOUND' && n.body.includes(labelFor(V))));
+        check('the network\'s owner hears it was rolled up', notes.some(n => n.factionId === V && n.title === 'NETWORK ROLLED UP'));
+        check('a sweep is not something the victim is "told about"', !notes.some(n => n.title.startsWith('FOREIGN OPERATION')));
+        const sweepDef = OPERATION_CATALOG_BY_ID.get('counterintel_sweep')!;
+        intel.counterIntelStrength = 40;
+        const pageSweep = clampSuccessChance(catalogOwnSideChance(sweepDef, { infiltration: 40, techBonus: getTechModifier(w, A, 'esp_op_success_add') }));
+        check('the page and the worker agree on sweep odds', Math.abs(pageSweep - computeCatalogSuccessChance(sweepDef, A, A, w)) < 1e-9);
+        const leoFree = DISHONOURABLE_OP_CATEGORIES.counter_intelligence === undefined;
+        check('the Leo-pantheri may guard their house with honour', leoFree);
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

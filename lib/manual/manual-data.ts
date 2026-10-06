@@ -311,6 +311,13 @@ export const MANUAL_DATA: ManualSection[] = [
                         ]
                     },
                     {
+                        type: 'bullet_list',
+                        content: [
+                            'Counter-intelligence (its own tab) is paid every hour in Intel. The service budget raises your counter-intelligence strength, which cuts every foreign operation\'s odds against you and makes their reports on you likelier to be planted. System coverage, on up to ten of your systems, makes operations there likelier to be traced. If you cannot pay the upkeep, none of it works.',
+                            'A Counter-Intel Sweep audits one of your own systems: foreign networks found there are broken up and named, and every rival\'s infiltration of you drops. The owners of a broken network find out.'
+                        ]
+                    },
+                    {
                         type: 'strategy_tip',
                         title: 'Being caught',
                         content: 'An operation resolves undetected, suspected, or exposed. Exposure costs you with the victim and opens a debate in their chamber. Running many operations in the same region makes each one easier to spot.'

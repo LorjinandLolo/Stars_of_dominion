@@ -123,3 +123,26 @@ export async function launchCatalogOpAction(
     return result;
 }
 
+
+/**
+ * Set the counter-intelligence plan: a service-wide budget (0..1) and coverage
+ * (0..1) on systems the faction holds. Upkeep is paid hourly in Intel by the
+ * worker; the worker validates and refuses a bad plan.
+ */
+export async function setCounterIntelAction(
+    factionId: string,
+    budget: number,
+    regions: Record<string, number>
+): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `ci-${Date.now()}`,
+        actionId: 'ESP_SET_COUNTERINTEL',
+        issuerId: factionId,
+        targetId: factionId,
+        payload: { budget, regions },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+
+    if (result.success) revalidatePath('/');
+    return result;
+}

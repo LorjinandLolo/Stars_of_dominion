@@ -353,6 +353,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { agentId: "id", systemId: "id" },
     cost: { credits: 100 }
   },
+  ESP_SET_COUNTERINTEL: {
+    id: "ESP_SET_COUNTERINTEL",
+    category: "espionage",
+    // budget 0..1; regions { systemId: 0..1 } over systems the faction holds.
+    // Paid hourly in Intel by tickCounterIntel, so nothing is charged here.
+    params: { budget: "number", regions: "object" },
+    cost: {}
+  },
   ESP_LAUNCH_CATALOG_OP: {
     id: "ESP_LAUNCH_CATALOG_OP",
     category: "espionage",

@@ -17,10 +17,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
     AlertTriangle, CheckCircle, Eye, FileText, Globe, Loader2, Lock, MapPin, Radio,
-    Shield, Target, Unlock, UserPlus, Users, XCircle,
+    Shield, ShieldCheck, Target, Unlock, UserPlus, Users, XCircle,
 } from 'lucide-react';
 import { AgentCard, TraitChip, visibleTraits } from '@/components/panels/espionage/AgentCard';
 import { CatalogLauncher } from '@/components/panels/espionage/CatalogLauncher';
+import { CounterIntelTab } from '@/components/panels/espionage/CounterIntelTab';
 import {
     recruitAgentAction,
     recallAgentAction,
@@ -28,6 +29,7 @@ import {
     launchCatalogOpAction,
     getRecruitPoolAction,
     seizeOpportunityAction,
+    setCounterIntelAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
@@ -37,7 +39,7 @@ import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/t
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
 import { AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '@/lib/espionage/op-aftermath';
 
-type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents';
+type TabType = 'board' | 'networks' | 'operations' | 'reports' | 'agents' | 'defence';
 
 const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'board', label: 'Board', icon: <Radio size={12} /> },
@@ -45,6 +47,7 @@ const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'operations', label: 'Operations', icon: <Target size={12} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={12} /> },
     { id: 'agents', label: 'Agents', icon: <Users size={12} /> },
+    { id: 'defence', label: 'Counter-intel', icon: <ShieldCheck size={12} /> },
 ];
 
 /** Names for operations launched before the catalog (old snapshots). */
@@ -295,6 +298,29 @@ export default function IntelligencePanel() {
         .filter(([, level]) => level > 0)
         .sort(([, a], [, b]) => b - a);
     const liveAgents = espionageState.agents.filter(a => a.status !== 'burned');
+    const credits = Number((playerFactionId && (factions[playerFactionId] as any)?.reserves?.CREDITS) || 0);
+    const ownSystems = (systems as any[])
+        .filter(s => playerFactionId && (s.ownerFactionId ?? s.ownerId) === playerFactionId)
+        .map(s => ({ id: s.id as string, name: s.name as string }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const handleSavePlan = async (budget: number, regions: Record<string, number>) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await setCounterIntelAction(playerFactionId, budget, regions);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Plan refused.', false); return; }
+        showToast('Counter-intelligence plan sent. Upkeep starts with the next hour.', true);
+    };
+
+    const handleSweep = async (systemId: string, agentId: string | null) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await launchCatalogOpAction(playerFactionId, playerFactionId, systemId, 'counterintel_sweep', agentId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Sweep refused.', false); return; }
+        showToast(`Counter-Intel Sweep ordered at ${systemName(systemId)}.`, true);
+    };
     // The worker refuses recruiting and deploying without Spy Deployment
     // Protocols (lib/tech/order-gates.ts). Same table here, so the page says
     // so up front instead of taking the order and failing it a tick later.
@@ -516,7 +542,7 @@ export default function IntelligencePanel() {
                             rivals={rivalSystems}
                             infiltrationLevels={espionageState.intel?.infiltrationLevels ?? {}}
                             intelPoints={espionageState.intel?.intelPoints ?? 0}
-                            credits={Number((playerFactionId && (factions[playerFactionId] as any)?.reserves?.CREDITS) || 0)}
+                            credits={credits}
                             capacity={espionageState.intel
                                 ? { used: espionageState.intel.usedAgentCapacity, max: espionageState.intel.agentCapacity }
                                 : null}
@@ -637,6 +663,20 @@ export default function IntelligencePanel() {
                 )}
 
                 {/* ── Agents ──────────────────────────────────────────── */}
+                {/* ── Counter-intelligence ────────────────────────────── */}
+                {activeTab === 'defence' && (
+                    <CounterIntelTab
+                        intel={espionageState.intel}
+                        ownSystems={ownSystems}
+                        agents={espionageState.agents}
+                        credits={credits}
+                        techBonus={espionageState.opSuccessBonus ?? 0}
+                        busy={busy}
+                        onSavePlan={handleSavePlan}
+                        onSweep={handleSweep}
+                    />
+                )}
+
                 {activeTab === 'agents' && (
                     <div className="space-y-5">
                         <div className="flex items-center justify-between gap-3">
