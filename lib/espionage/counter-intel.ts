@@ -31,7 +31,8 @@ import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
 import { AFTER_ACTION_DOMAIN, AFTER_ACTION_TTL_SECONDS } from './op-aftermath';
 import type { SpyAgent } from './agent-types';
-import { captureAgents, SWEEP_CAPTURE_CHANCE } from './case-board';
+// Capture lives here, not in case-board: the Counter-intel tab imports this
+// module, and case-board reaches lib/government (Node-only) for its rewards.
 
 /** Intel per hour at a 100% service budget. Base Intel income is 1.5/h. */
 export const CI_BUDGET_INTEL_PER_HOUR = 1.0;
@@ -233,4 +234,34 @@ export function reportSweep(op: EspionageOperation, world: GameWorldState, succe
             linkToTab: 'intelligence',
         });
     }
+}
+
+/** Chance a sweep takes each agent of a network it breaks up (scaled by outcome). */
+export const SWEEP_CAPTURE_CHANCE = 0.5;
+
+// ─── Sweeps take prisoners ───────────────────────────────────────────────────
+
+/**
+ * Take agents from foreign networks a sweep broke up. Returns who was taken.
+ * Called by applySweep for each network it found.
+ */
+export function captureAgents(
+    world: GameWorldState,
+    captorId: string,
+    agentIds: string[],
+    chance: number,
+    rand: () => number = Math.random
+): SpyAgent[] {
+    const taken: SpyAgent[] = [];
+    for (const id of agentIds) {
+        const agent = world.espionage.agents.get(id);
+        if (!agent || agent.ownerFactionId === captorId) continue;
+        if (agent.status !== 'deployed' && agent.status !== 'on_cooldown') continue;
+        if (rand() >= chance) continue;
+        agent.status = 'captured';
+        agent.capturedByFactionId = captorId;
+        agent.deployedToSystemId = null;
+        taken.push(agent);
+    }
+    return taken;
 }

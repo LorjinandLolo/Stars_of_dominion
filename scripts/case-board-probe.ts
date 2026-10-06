@@ -251,6 +251,12 @@ async function main() {
 
         const sweep = code('lib/espionage/counter-intel.ts');
         check('sweeps take prisoners from the networks they break', /captureAgents\(world, self, network\.agentIds/.test(sweep));
+        // The Counter-intel tab imports counter-intel in the browser. case-board
+        // reaches lib/government, which reads files from disk: importing it from
+        // there broke the game page's bundle.
+        const imports = [...sweep.matchAll(/from '([^']+)'/g)].map(m => m[1]);
+        check('counter-intel stays browser-safe (no case-board, no government)',
+            !imports.some(i => /case-board|government|politics/.test(i)), imports.join(', '));
     }
 
     console.log('\n[9] Cases go cold, and the orders exist');

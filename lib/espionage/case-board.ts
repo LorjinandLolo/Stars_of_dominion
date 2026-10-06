@@ -48,8 +48,6 @@ export const CASE_PRUNE_AFTER_SECONDS = 30 * 24 * 3600;
 export const SUSPECT_ACCURACY = 0.65;
 /** Chance a false flag gets the suspicion it was dressed for. */
 export const FALSE_FLAG_TAKE = 0.8;
-/** Chance a sweep takes each agent of a network it breaks up (scaled by outcome). */
-export const SWEEP_CAPTURE_CHANCE = 0.5;
 /** Rewards and costs of an accusation. */
 export const CORRECT_ACCUSATION_INTEL = 40;
 export const CORRECT_ACCUSATION_CAPITAL = 5;
@@ -515,31 +513,4 @@ export function leakCase(world: GameWorldState, factionId: string, caseId: strin
         attribution: `suspected:${suspectId}`,
     });
     return { ok: true, message: `The story is with the press. It names ${labelFor(suspectId)}.` };
-}
-
-// ─── Sweeps take prisoners ───────────────────────────────────────────────────
-
-/**
- * Take agents from foreign networks a sweep broke up. Returns who was taken.
- * Called by applySweep for each network it found.
- */
-export function captureAgents(
-    world: GameWorldState,
-    captorId: string,
-    agentIds: string[],
-    chance: number,
-    rand: () => number = Math.random
-): SpyAgent[] {
-    const taken: SpyAgent[] = [];
-    for (const id of agentIds) {
-        const agent = world.espionage.agents.get(id);
-        if (!agent || agent.ownerFactionId === captorId) continue;
-        if (agent.status !== 'deployed' && agent.status !== 'on_cooldown') continue;
-        if (rand() >= chance) continue;
-        agent.status = 'captured';
-        agent.capturedByFactionId = captorId;
-        agent.deployedToSystemId = null;
-        taken.push(agent);
-    }
-    return taken;
 }
