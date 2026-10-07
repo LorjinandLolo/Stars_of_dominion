@@ -45,6 +45,11 @@ export interface EspionageOperation {
      */
     falseFlagFactionId?: string;
     /**
+     * The species a witness would see when no agent ran it (AI services hire
+     * faces too). An agent's own species wins when there is one.
+     */
+    operativeSpecies?: string | null;
+    /**
      * The agent running this operation, when one was named at launch. Their
      * traits and experience shape the odds; resolution costs them cover and
      * earns them experience. Absent for agentless (and all AI) operations.

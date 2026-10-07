@@ -64,6 +64,7 @@ import { tickCivilWar } from '../government/civil-war-service';
 import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
+import { tickAICases } from '../ai/case-ai';
 import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
@@ -647,6 +648,10 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         for (const factionId of world.economy.factions.keys()) {
             if (!isAIRunFaction(world, factionId)) continue;
             processEmpireIntelligenceTurn(factionId, world);
+            // ...and works its case files: leads, accusations, leaks (item 12c).
+            for (const act of tickAICases(world, factionId)) {
+                console.log(`[AI-CASES] ${factionId} ${act.action}${act.suspectId ? ` ${act.suspectId}` : ''}: ${act.message}`);
+            }
         }
 
         // Attribution records are appended on every resolved operation and were

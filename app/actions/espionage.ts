@@ -120,14 +120,19 @@ export async function launchCatalogOpAction(
     targetFactionId: string,
     targetRegionId: string,
     definitionId: string,
-    agentId?: string | null
+    agentId?: string | null,
+    falseFlagFactionId?: string | null
 ): Promise<ActionResult> {
     const result = await executePlayerAction({
         id: `op-${Date.now()}`,
         actionId: 'ESP_LAUNCH_CATALOG_OP',
         issuerId: actorFactionId,
         targetId: targetRegionId,
-        payload: { targetFactionId, targetRegionId, definitionId, ...(agentId ? { agentId } : {}) },
+        payload: {
+            targetFactionId, targetRegionId, definitionId,
+            ...(agentId ? { agentId } : {}),
+            ...(falseFlagFactionId ? { falseFlagFactionId } : {}),
+        },
         timestamp: Math.floor(Date.now() / 1000)
     });
 

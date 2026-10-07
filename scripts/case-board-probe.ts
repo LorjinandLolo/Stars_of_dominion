@@ -148,7 +148,7 @@ async function main() {
         w3.claimedFactionIds = [A];
         updateInfiltration(w3, A, V, 95);
         runOp(w3, 'election_interference', [0.05, 0.99, 0.99]);
-        check('an AI victim gets no case (yet: 12c)', casesOf(w3, V).length === 0);
+        check('an AI victim gets a file too (item 12c)', casesOf(w3, V).length === 1);
     }
 
     console.log('\n[4] A false flag misleads');
@@ -584,6 +584,140 @@ async function main() {
             const imports = [...code(file).matchAll(/from '([^']+)'/g)].map(m => m[1]);
             check(`${file.split('/').pop()} stays browser-safe`, !imports.some(i => /case-board|government|politics|counter-intel/.test(i)), imports.join(', '));
         }
+    }
+
+    // ── Item 12c ─────────────────────────────────────────────────────────────
+    const { aiOperativeSpecies, aiFrameFor, MAX_AI_OPEN_CASES, pressFacts } = await import('../lib/espionage/case-board');
+    const { tickAICases, surfaceScores, accuseThreshold } = await import('../lib/ai/case-ai');
+
+    console.log('\n[20] False flags plant evidence for real');
+    {
+        const w = freshWorld();
+        updateInfiltration(w, A, V, 95);
+        const intel = getOrCreateFactionIntel(w, A);
+        intel.intelPoints = 1000;
+        w.economy.factions.get(A).reserves.CREDITS = 1_000_000;
+        const cap = capitalOf(w, V);
+        check('a frame on an operation not built for one is refused',
+            !launchCatalogOperation(A, V, cap, 'election_interference', w, null, { falseFlagFactionId: C }).success);
+        check('framing yourself is refused', !launchCatalogOperation(A, V, cap, 'false_flag_border_raid', w, null, { falseFlagFactionId: A }).success);
+        check('framing the victim is refused', !launchCatalogOperation(A, V, cap, 'false_flag_border_raid', w, null, { falseFlagFactionId: V }).success);
+        const res = launchCatalogOperation(A, V, cap, 'false_flag_border_raid', w, null, { falseFlagFactionId: C });
+        check('a False Flag Raid can frame a third empire', res.success && res.operation?.falseFlagFactionId === C, res.message);
+        const before = rivalry(w, V, C);
+        const real = Math.random; let i = 0; const dice = [0.05, 0.99, 0.1, 0.5];
+        Math.random = () => dice[Math.min(i++, dice.length - 1)];
+        try { w.nowSeconds = Date.parse(res.operation!.completesAt) / 1000 + 1; tickOperations(w, 60); } finally { Math.random = real; }
+        check('the victim\'s anger goes where the codes point', rivalry(w, V, C) > before, `${before} -> ${rivalry(w, V, C)}`);
+        const k: any = casesOf(w, V)[0];
+        check('and the victim\'s file carries the planted evidence', !!k && [...k.clues, ...(k.pendingClues ?? [])].some((c: any) => /transponder code/.test(c.text) && c.pointsAt.includes(C)));
+        check('the page offers a frame picker', /def\.falseFlag \&\& \(/.test(code('components/panels/espionage/CatalogLauncher.tsx')));
+        check('an AI frames the victim\'s worst enemy', aiFrameFor(w, A, V) === C, aiFrameFor(w, A, V) ?? 'none');
+    }
+
+    console.log('\n[21] AI services hire faces too');
+    {
+        const w = freshWorld();
+        check('usually their own people', aiOperativeSpecies(w, A, () => 0.9) === civ(w, A));
+        const foreign = aiOperativeSpecies(w, A, () => 0.1);
+        check('sometimes a foreigner', !!foreign && foreign !== civ(w, A), foreign ?? 'none');
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99], o => { o.operativeSpecies = civ(w, C); });
+        const k: any = casesOf(w, V)[0];
+        const face = [...k.clues, ...(k.pendingClues ?? [])].find((c: any) => /describe the operative/.test(c.text));
+        check('an agentless operation still shows its hired face', !!face && face.pointsAt.includes(C), face?.text);
+        check('the AI launch passes a face', /operativeSpecies: aiOperativeSpecies\(world, factionId\)/.test(code('lib/ai/intelligence-ai-service.ts')));
+    }
+
+    console.log('\n[22] AI victims open files, quietly and few');
+    {
+        const w = freshWorld();
+        w.claimedFactionIds = [A]; // V is AI-run now
+        updateInfiltration(w, A, V, 95);
+        drainNotifications();
+        runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        check('an AI victim opens a file', casesOf(w, V).length === 1);
+        check('without filling a bell nobody reads', !drainNotifications().some(n => n.factionId === V));
+        for (let n = 0; n < MAX_AI_OPEN_CASES + 2; n++) {
+            getOrCreateFactionIntel(w, A).usedAgentCapacity = 0;
+            runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        }
+        check(`at most ${MAX_AI_OPEN_CASES} open at once`, casesOf(w, V).filter((c: any) => c.status === 'open').length === MAX_AI_OPEN_CASES);
+
+        // Players: a cap too, and quiet snooping opens nothing.
+        const { MAX_PLAYER_OPEN_CASES, PASSIVE_CLUE_ALERTS } = await import('../lib/espionage/case-board');
+        const wp = freshWorld();
+        updateInfiltration(wp, A, V, 95);
+        runOp(wp, 'infiltrate_government', [0.05, 0.99, 0.99, 0.99, 0.99]); // succeeds, unnoticed
+        const quiet = wp.espionage.operations.size ? [...wp.espionage.operations.values()].pop() : null;
+        check('successful snooping nobody noticed opens no file', quiet?.attributionState !== 'invisible' || casesOf(wp, V).length === 0, quiet?.attributionState);
+        for (let n = 0; n < MAX_PLAYER_OPEN_CASES + 3; n++) {
+            getOrCreateFactionIntel(wp, A).usedAgentCapacity = 0;
+            runOp(wp, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        }
+        const openP = casesOf(wp, V).filter((c: any) => c.status === 'open').length;
+        check(`a player works at most ${MAX_PLAYER_OPEN_CASES} files; older ones are shelved`, openP === MAX_PLAYER_OPEN_CASES, `${openP}`);
+        check('passive clues arrive without a ping', PASSIVE_CLUE_ALERTS === false);
+    }
+
+    console.log('\n[23] AI investigators accuse, and can be fooled');
+    {
+        // A false flag against an AI: the file points at C on its face.
+        const w = freshWorld();
+        w.claimedFactionIds = [A];
+        updateInfiltration(w, A, V, 95);
+        // A frame that fits: C could plausibly have done it (its own network inside V).
+        updateInfiltration(w, C, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.1, 0.5], o => { o.falseFlagFactionId = C; });
+        const k: any = casesOf(w, V)[0];
+        const start = w.nowSeconds;
+        for (let t = 0; t <= 3 * 24 * 3600; t += 3600) { w.nowSeconds = start + t; tickCases(w, 3600); }
+        const scores = surfaceScores(k);
+        check('read at face value, the framed empire leads', [...scores.entries()].sort((a, b) => b[1] - a[1])[0][0] === C, JSON.stringify([...scores]));
+        check('a paranoid service needs less evidence', accuseThreshold(V) < accuseThreshold('faction-covenant'));
+        getOrCreateFactionIntel(w, V).intelPoints = 0; // no leads: decide on what is there
+        const before = rivalry(w, V, C);
+        const acts = tickAICases(w, V);
+        check('the AI accuses the framed empire', acts.some(a => a.action === 'accuse' && a.suspectId === C), JSON.stringify({ acts, scores: [...scores], threshold: accuseThreshold(V), clues: k.clues.map((c: any) => c.tag + ':' + c.pointsAt.join('/')) }));
+        check('and the innocent pays for the frame', rivalry(w, V, C) > before);
+
+        // A plain operation by a player, against an AI with good sources.
+        const w2 = freshWorld();
+        w2.claimedFactionIds = [A];
+        updateInfiltration(w2, A, V, 95);
+        updateInfiltration(w2, V, A, 40); // V has an Embedded Network inside A
+        runOp(w2, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const k2: any = casesOf(w2, V)[0];
+        getOrCreateFactionIntel(w2, V).intelPoints = 500;
+        w2.nowSeconds = k2.openedAt + 2 * 86400;
+        const first = tickAICases(w2, V);
+        check('with Intel to spare and thin evidence, the AI pursues a lead', first.some(a => a.action === 'lead') || first.some(a => a.action === 'accuse'), JSON.stringify(first));
+        if (k2.lead) { w2.nowSeconds = k2.lead.dueAt + 1; tickCases(w2, 60); }
+        drainNotifications();
+        let acted: any[] = [];
+        for (let i2 = 0; i2 < 6 && k2.status === 'open'; i2++) { w2.nowSeconds += 86400; tickCases(w2, 3600); acted = acted.concat(tickAICases(w2, V)); if (k2.lead) { w2.nowSeconds = k2.lead.dueAt + 1; tickCases(w2, 60); } }
+        const accused = acted.find(a => a.action === 'accuse');
+        check('the AI names the player who did it', !!accused && accused.suspectId === A, JSON.stringify(acted));
+        check('and the player hears they are exposed', drainNotifications().some(n => n.factionId === A && n.title === 'OUR OPERATION IS EXPOSED'));
+        check('the strategic tick runs the AI pass', /tickAICases\(world, factionId\)/.test(code('lib/time/tick-processor.ts')));
+        check('the AI never reads hidden weights', !/\.weights/.test(code('lib/ai/case-ai.ts')));
+    }
+
+    console.log('\n[24] The press');
+    {
+        const w = freshWorld();
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const k: any = casesOf(w, V)[0];
+        const pf = pressFacts(w, k);
+        check('case stories carry a subject the templates can print', /against .* at /.test(pf.subject) && !pf.subject.includes('Aurelian'), pf.subject);
+        resetChronicleBuffer();
+        w.nowSeconds = k.openedAt + CASE_COLD_AFTER_SECONDS + 1;
+        tickCases(w, 60);
+        const cold = drainBuffer().rows.find(r => r.type === 'investigation_published' && /"cold":true/.test(r.facts));
+        check('a file that goes cold makes the papers', !!cold && /unsolved/.test(cold.facts), cold?.facts);
+        check('without naming anyone', cold?.attribution === 'invisible');
+        check('the scandal template can mock a wrong motive', /motiveRight === false/.test(code('lib/narrative/prose/template-writer.ts')));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

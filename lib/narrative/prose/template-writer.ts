@@ -224,7 +224,12 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
         case 'scandal_confirmed':
             return {
                 headline: `SCANDAL: ${str(e, 'subject', 'the allegations')} confirmed in ${target}`,
-                body: `The allegations concerning ${str(e, 'subject', 'the affair')} in ${target} are now established fact. What remains is the question every such confirmation raises: who knew, and how long did they expect it to hold.`,
+                body: `The allegations concerning ${str(e, 'subject', 'the affair')} in ${target} are now established fact. What remains is the question every such confirmation raises: who knew, and how long did they expect it to hold.${
+                    // Item 12c: the right culprit named for the wrong reason.
+                    e.facts.motiveRight === false
+                        ? ` The accusers' account of why, "${str(e, 'motive', 'their theory')}", has not survived contact with the facts, and this paper will not pretend otherwise.`
+                        : e.facts.motiveRight === true ? ` The accusers named the motive too, ${str(e, 'motive', 'and it held').toLowerCase()}, and it held.` : ''
+                }`,
                 tone: 'grave',
             };
 

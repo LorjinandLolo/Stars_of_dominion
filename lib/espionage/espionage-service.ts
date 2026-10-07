@@ -32,6 +32,7 @@ import * as chronicle from '../narrative/chronicle';
 import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
 import { chargeHonorForCatalogOp } from '../factions/leopantheri';
+import { ReputationService } from '../reputation/reputation-service';
 import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
 import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep, tickDossiers } from './counter-intel';
 import { chooseSuspect, maybeOpenCase, tickCases } from './case-board';
@@ -155,7 +156,8 @@ export function launchCatalogOperation(
     targetRegionId: string,
     definitionId: string,
     world: GameWorldState,
-    agentId?: string | null
+    agentId?: string | null,
+    options: { falseFlagFactionId?: string | null; operativeSpecies?: string | null } = {}
 ): LaunchResult {
     const def = OPERATION_CATALOG_BY_ID.get(definitionId);
     if (!def) return { success: false, message: `Unknown operation definition: ${definitionId}` };
@@ -214,6 +216,15 @@ export function launchCatalogOperation(
         return { success: false, message: `${def.name} costs ${def.creditsCost} credits.` };
     }
 
+    // A frame: only operations built for it, and only a third empire.
+    const frame = options.falseFlagFactionId || null;
+    if (frame) {
+        if (!def.falseFlag) return { success: false, message: ` cannot be dressed up as someone else's work.` };
+        if (frame === actorFactionId || frame === targetFactionId || !world.economy?.factions?.has?.(frame)) {
+            return { success: false, message: 'Frame a third empire, not yourself or your target.' };
+        }
+    }
+
     // An agent, when named, must be ours and free. Checked last of the
     // refusals so a bad agent never masks a stage or cost reason.
     let agent: SpyAgent | null = null;
@@ -246,6 +257,8 @@ export function launchCatalogOperation(
         domain: domainForCategory(def.category),
         definitionId: def.id,
         ...(agent ? { agentId: agent.id } : {}),
+        ...(frame ? { falseFlagFactionId: frame } : {}),
+        ...(options.operativeSpecies ? { operativeSpecies: options.operativeSpecies } : {}),
         investmentLevel: 0.5,
         riskLevel: RISK_LEVEL_VALUES[def.risk],
         startedAt: toISO(now),
@@ -642,6 +655,17 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
     } catch { /* posture absent on minimal worlds */ }
 
     for (const effect of def.effects) {
+        // False flags (item 12c): the raid wore someone else's codes, and the
+        // victim's outrage goes where the codes point. Both effects were
+        // declared on the False Flag Raid and handled nowhere.
+        if (op.falseFlagFactionId && op.falseFlagFactionId !== op.targetFactionId) {
+            if (effect.type === 'framed_faction_penalty') {
+                try { shiftRivalry(world, op.targetFactionId, op.falseFlagFactionId, 15 * effect.value * mult, 'border_raid', 'transponder codes at the scene'); } catch { /* minimal worlds */ }
+            }
+            if (effect.type === 'diplomatic_tension') {
+                try { ReputationService.updateScore(world, op.falseFlagFactionId, { aggression: Math.round(effect.value / 4 * mult) }, 'framed_border_raid'); } catch { /* no ledger */ }
+            }
+        }
         if (targetGov) {
             if (effect.type === 'election_swing') {
                 targetGov.electionInterference = Math.min(60, (targetGov.electionInterference ?? 0) + effect.value * mult);

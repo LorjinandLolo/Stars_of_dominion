@@ -5,6 +5,7 @@
 
 import { GameWorldState } from '../game-world-state';
 import { launchCatalogOperation } from '../espionage/espionage-service';
+import { aiFrameFor, aiOperativeSpecies } from '../espionage/case-board';
 import { getOrCreateFactionIntel } from '../espionage/faction-intel';
 import { OPERATION_CATALOG_BY_ID } from '../espionage/operation-catalog';
 import { canLaunchCategory } from '../espionage/network-stages';
@@ -56,7 +57,12 @@ export function processEmpireIntelligenceTurn(factionId: string, world: GameWorl
             // Target the victim's capital system so region-based mechanics
             // (escalation, sensors, instability) hit a real system.
             const targetRegionId = world.economy.factions.get(targetId)?.capitalSystemId ?? targetId;
-            const res = launchCatalogOperation(factionId, targetId, targetRegionId, opId, world);
+            // A hired face, and a frame on operations built for one (item 12c).
+            const frame = OPERATION_CATALOG_BY_ID.get(opId)?.falseFlag ? aiFrameFor(world, factionId, targetId) : null;
+            const res = launchCatalogOperation(factionId, targetId, targetRegionId, opId, world, null, {
+                falseFlagFactionId: frame,
+                operativeSpecies: aiOperativeSpecies(world, factionId),
+            });
             if (res.success) {
                 console.log(`[AI-INTEL] ${factionId} (${profile.archetype}) launched ${opId} against ${targetId}`);
                 break; // Only one per tick for now
@@ -178,4 +184,9 @@ function chooseOperationForArchetype(
         if (canLaunchCategory(infiltration, def.category).allowed) return opId;
     }
     return null;
+}
+
+/** An AI service's character, for the case board (lib/ai/case-ai.ts). */
+export function intelArchetypeOf(factionId: string): AIIntelligenceArchetype | null {
+    return AI_PROFILES[factionId]?.archetype ?? null;
 }

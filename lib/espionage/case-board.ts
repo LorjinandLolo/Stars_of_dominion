@@ -59,6 +59,14 @@ export const CORRECT_ACCUSATION_CAPITAL = 5;
 export const EXPOSED_RIVALRY_JUMP = 10;
 export const FALSE_ACCUSATION_RIVALRY_JUMP = 8;
 export const FALSE_ACCUSATION_ACTOR_INFILTRATION = 10;
+/** Open files an AI empire works at once. */
+export const MAX_AI_OPEN_CASES = 4;
+/** Notify on each passive clue (off: see releaseDueClues). */
+export const PASSIVE_CLUE_ALERTS = false;
+/** Open files a player works at once; older ones are shelved for newer. */
+export const MAX_PLAYER_OPEN_CASES = 12;
+/** The kind phrase intelligence-gathering files carry (op-aftermath KIND_PHRASE). */
+const KIND_PHRASE_INTEL = 'an intelligence operation';
 
 const NON_PLAYABLE = new Set(['faction-pirates', 'faction-neutral']);
 
@@ -178,7 +186,9 @@ export function buildClues(
     // hired foreigner points at their homeworld.
     const agent = op.agentId ? world.espionage.agents.get(op.agentId) : undefined;
     const actorSpecies = speciesOf(factions?.get?.(actor) as any);
-    const seenSpecies = agent ? (agent.species ?? actorSpecies) : null;
+    // An agent shows their own face; an agentless operation shows whatever
+    // face the sponsor hired for it (AI services, item 12c), or none.
+    const seenSpecies = agent ? (agent.species ?? actorSpecies) : (op.operativeSpecies ?? null);
     if (seenSpecies && factions) {
         const kin = empiresOfSpecies(factions.entries() as any, seenSpecies).filter(id => id !== victim && suspects.includes(id));
         const label = speciesLabel(seenSpecies);
@@ -316,7 +326,7 @@ export function buildClues(
 
     // Seeing through a hired face: our files may know this operative as a
     // freelancer. Comes late, and only to a service that keeps good files.
-    if (agent && seenSpecies && actorSpecies && seenSpecies !== actorSpecies) {
+    if (seenSpecies && actorSpecies && seenSpecies !== actorSpecies) {
         const ci = world.espionage.factionIntel.get(victim)?.counterIntelStrength ?? 0;
         if (rand() < hirelingSpotChance(ci)) {
             const kin = factions ? empiresOfSpecies(factions.entries() as any, seenSpecies).filter(id => id !== victim && suspects.includes(id)) : [];
@@ -561,7 +571,29 @@ export function maybeOpenCase(
     if (!victim || victim === op.actorFactionId) return null;
     if (op.attributionState === 'exposed') return null;          // caught red-handed: no mystery
     if (op.attributionState === 'invisible' && !op.succeeded) return null; // nothing to see
-    if (!isPlayerRun(world, victim)) return null;
+    // Quiet spying leaves no mark: a successful intelligence operation nobody
+    // noticed has no effect for the victim to investigate.
+    if (op.attributionState === 'invisible' && op.definitionId
+        && OPERATION_CATALOG_BY_ID.get(op.definitionId)?.category === 'intel_gathering') return null;
+    // AI victims investigate too (item 12c), on a few files at a time so a
+    // season of AI espionage does not fill their shards.
+    if (!isPlayerRun(world, victim)) {
+        const open = [...ensureCases(world).values()].filter(c => c.ownerFactionId === victim && c.status === 'open').length;
+        if (open >= MAX_AI_OPEN_CASES) return null;
+    } else {
+        // A player can work only so many files. Over the cap, shelve the oldest
+        // file about mere snooping first, else the oldest file of all.
+        const open = [...ensureCases(world).values()]
+            .filter(c => c.ownerFactionId === victim && c.status === 'open')
+            .sort((a, b) => a.openedAt - b.openedAt);
+        if (open.length >= MAX_PLAYER_OPEN_CASES) {
+            const snoop = open.find(c => c.kindPhrase === KIND_PHRASE_INTEL);
+            const shelf = snoop ?? open[0];
+            shelf.status = 'cold';
+            shelf.closedAt = world.nowSeconds;
+            shelf.lead = null;
+        }
+    }
 
     const now = world.nowSeconds;
     const where = systemName(world, op.targetRegionId);
@@ -613,7 +645,7 @@ export function maybeOpenCase(
         definitionId: op.definitionId ?? null,
         operativeSpecies: op.agentId
             ? (world.espionage.agents.get(op.agentId)?.species ?? speciesOf(world.economy?.factions?.get?.(op.actorFactionId) as any))
-            : null,
+            : (op.operativeSpecies ?? null),
     };
     ensureCases(world).set(kase.id, kase);
     releaseDueClues(kase, world, false);
@@ -622,7 +654,7 @@ export function maybeOpenCase(
 
     // A suspected operation was already announced (op-aftermath); only an
     // unnoticed one needs telling that something happened at all.
-    if (op.attributionState === 'suspected') return kase;
+    if (op.attributionState === 'suspected' || !isPlayerRun(world, victim)) return kase;
     fireNotification({
         id: `case-open-${kase.id}`,
         factionId: victim,
@@ -652,7 +684,10 @@ function releaseDueClues(kase: CovertCase, world: GameWorldState, notify: boolea
         // Nothing waiting: the next clue (an interrogation, say) can come at once.
         kase.nextClueAt = now;
     }
-    if (released > 0 && notify && isPlayerRun(world, kase.ownerFactionId)) {
+    // Passive clues arrive without a ping: with AI espionage live, a player
+    // can hold dozens of files, and one alert per clue buried the bell. Files
+    // opening, leads reporting back and verdicts still notify.
+    if (released > 0 && notify && PASSIVE_CLUE_ALERTS && isPlayerRun(world, kase.ownerFactionId)) {
         fireNotification({
             id: `case-clue-${kase.id}-${now}`,
             factionId: kase.ownerFactionId,
@@ -712,6 +747,15 @@ export function tickCases(world: GameWorldState, deltaSeconds = 0): void {
             kase.status = 'cold';
             kase.closedAt = now;
             kase.lead = null;
+            // The press notices an investigation that went nowhere.
+            chronicle.record(world, {
+                type: 'investigation_published',
+                actorIds: [kase.ownerFactionId],
+                targetIds: [kase.ownerFactionId],
+                location: kase.systemId,
+                facts: { ...pressFacts(world, kase), subject: `the unsolved ${kase.kindPhrase.replace(/^an? /, '')} at ${systemName(world, kase.systemId)}`, kind: kase.kindPhrase, cold: true },
+                attribution: 'invisible',
+            });
         }
     }
 }
@@ -772,7 +816,7 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
             targetIds: [factionId],
             location: kase.systemId,
             // The press can mock a right culprit named for the wrong reason.
-            facts: { kind: kase.kindPhrase, accusedBy: accuserName, proved: true, motive: motive ? motiveLabel(motive) : null, motiveRight: motive ? motiveRight : null },
+            facts: { ...pressFacts(world, kase), kind: kase.kindPhrase, accusedBy: accuserName, proved: true, motive: motive ? motiveLabel(motive) : null, motiveRight: motive ? motiveRight : null },
             attribution: 'exposed',
         });
         if (isPlayerRun(world, actor)) {
@@ -797,7 +841,7 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
         actorIds: [factionId],
         targetIds: [suspectId],
         location: kase.systemId,
-        facts: { kind: kase.kindPhrase, accusation: true, proved: false },
+        facts: { ...pressFacts(world, kase), kind: kase.kindPhrase, accusation: true, proved: false },
         attribution: 'exposed',
     });
     if (isPlayerRun(world, suspectId)) {
@@ -831,7 +875,7 @@ export function leakCase(world: GameWorldState, factionId: string, caseId: strin
         actorIds: [factionId],
         targetIds: [suspectId],
         location: kase.systemId,
-        facts: { kind: kase.kindPhrase, leaked: true },
+        facts: { ...pressFacts(world, kase), kind: kase.kindPhrase, leaked: true },
         attribution: `suspected:${suspectId}`,
     });
     return { ok: true, message: `The story is with the press. It names ${labelFor(suspectId)}.` };
@@ -912,4 +956,47 @@ export function tickMoles(world: GameWorldState, cases: Map<string, CovertCase>,
             expiresAt: now + 7 * 24 * 3600,
         });
     }
+}
+
+// ─── AI tradecraft (item 12c) ────────────────────────────────────────────────
+
+/** Chance an AI service hires a foreign face for an operation. */
+export const AI_FOREIGN_FACE_CHANCE = 0.25;
+
+/**
+ * The face an AI operation shows a witness: usually the sponsor's own species,
+ * sometimes a hired foreigner's. AI services run operations without agents, so
+ * without this their operations left no species trace at all.
+ */
+export function aiOperativeSpecies(world: GameWorldState, actorId: string, rand: () => number = Math.random): string | null {
+    const factions = world.economy?.factions;
+    const own = speciesOf(factions?.get?.(actorId) as any);
+    if (rand() >= AI_FOREIGN_FACE_CHANCE) return own;
+    const others = [...new Set([...(factions?.values?.() ?? [])].map((f: any) => f?.civilizationId).filter((s: any) => s && s !== own))] as string[];
+    return others.length ? others[Math.floor(rand() * others.length)] : own;
+}
+
+/**
+ * Who an AI dresses a false flag up as: the empire the victim already hates
+ * most, so the frame fits. Never the sponsor or the victim.
+ */
+export function aiFrameFor(world: GameWorldState, actorId: string, targetId: string): string | null {
+    const candidates = [...(world.economy?.factions?.keys?.() ?? [])]
+        .filter(id => id !== actorId && id !== targetId && !NON_PLAYABLE.has(id));
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => rivalryScore(world, targetId, b) - rivalryScore(world, targetId, a));
+    return candidates[0];
+}
+
+/**
+ * What the narrator's investigation and scandal templates read (lib/narrative/
+ * prose/template-writer.ts): a subject line and how documented the case is.
+ * Names only what the file shows: the incident and its victim, never the sponsor.
+ */
+export function pressFacts(world: GameWorldState, kase: CovertCase): { subject: string; evidence: number; obstructions: number } {
+    return {
+        subject: `${kase.kindPhrase.replace(/^an? /, 'the ')} against ${labelFor(kase.ownerFactionId)} at ${systemName(world, kase.systemId)}`,
+        evidence: Math.min(90, kase.clues.length * 15 + (kase.leadsRun ?? 0) * 10),
+        obstructions: 0,
+    };
 }

@@ -75,6 +75,11 @@ export interface OperationDefinition {
   effects: OperationEffect[];
   counterplayTags: string[];
   crisisTriggers?: OperationCrisisTrigger[];
+  /**
+   * Can be dressed up as another empire's work (item 12c): the launcher may
+   * name an empire to frame, and the victim's file fills with planted evidence.
+   */
+  falseFlag?: boolean;
 }
 
 // ─── Category → legacy domain bridge ──────────────────────────────────────────
@@ -261,6 +266,7 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     id: "false_flag_border_raid",
     name: "False Flag Raid",
     category: "military_blackops",
+    falseFlag: true,
     description: "Attack a border installation using another faction's transponder codes.",
     targetTypes: ["system", "building"],
     intelCost: 70,

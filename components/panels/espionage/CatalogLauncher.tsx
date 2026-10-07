@@ -45,7 +45,7 @@ interface Props {
     /** The player's agents; only available ones can be put on an operation. */
     agents: SpyAgent[];
     busy: boolean;
-    onLaunch: (targetFactionId: string, systemId: string, def: OperationDefinition, agentId: string | null) => void;
+    onLaunch: (targetFactionId: string, systemId: string, def: OperationDefinition, agentId: string | null, falseFlagFactionId?: string | null) => void;
 }
 
 const RISK_COLOR: Record<OperationDefinition['risk'], string> = {
@@ -67,6 +67,8 @@ export function CatalogLauncher({
     const [targetId, setTargetId] = useState('');
     const [systemId, setSystemId] = useState('');
     const [agentId, setAgentId] = useState('');
+    /** Who a false-flag operation is dressed up as, per operation. */
+    const [frames, setFrames] = useState<Record<string, string>>({});
 
     const freeAgents = agents.filter(a => a.status === 'available');
     // Drop a pick whose agent got busy (or burned) since it was chosen.
@@ -216,6 +218,14 @@ export function CatalogLauncher({
                                                                 </span>
                                                             </div>
                                                             <div className="text-[10px] text-slate-500 leading-snug">{def.description}</div>
+                                                            {def.falseFlag && (
+                                                                <select value={frames[def.id] ?? ''} onChange={e => setFrames(f => ({ ...f, [def.id]: e.target.value }))}
+                                                                    className="w-full min-h-[40px] bg-slate-950 border border-slate-800 rounded px-2 py-2 text-[11px] text-slate-300 outline-none"
+                                                                    title="Their codes at the scene: the victim's file fills with evidence against them, and the victim's anger goes their way.">
+                                                                    <option value="">Dress it up as: nobody (no frame)</option>
+                                                                    {rivals.filter(r => r.owner !== target.owner).map(r => <option key={r.owner} value={r.owner}>Dress it up as: {r.name}</option>)}
+                                                                </select>
+                                                            )}
                                                             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono text-slate-400">
                                                                 <span>{def.intelCost} Intel</span>
                                                                 <span>§ {def.creditsCost}</span>
@@ -227,7 +237,7 @@ export function CatalogLauncher({
                                                             </div>
                                                             <button
                                                                 disabled={!!why || busy || !systemId}
-                                                                onClick={() => { onLaunch(target.owner, systemId, def, agent ? agent.id : null); setAgentId(''); }}
+                                                                onClick={() => { onLaunch(target.owner, systemId, def, agent ? agent.id : null, frames[def.id] || null); setAgentId(''); }}
                                                                 className={`mt-auto py-2 rounded uppercase font-display text-[10px] tracking-widest flex items-center justify-center gap-1.5 ${why || busy
                                                                     ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
                                                                     : 'bg-amber-600 text-slate-950 hover:bg-amber-500'}`}

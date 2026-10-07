@@ -264,10 +264,10 @@ export default function IntelligencePanel() {
         showToast(`${candidate.codename} accepted. They report for duty shortly.`, true);
     };
 
-    const handleLaunch = async (targetFactionId: string, systemId: string, def: OperationDefinition, agentId: string | null) => {
+    const handleLaunch = async (targetFactionId: string, systemId: string, def: OperationDefinition, agentId: string | null, falseFlagFactionId: string | null = null) => {
         if (!playerFactionId || !targetFactionId || targetFactionId === playerFactionId) return;
         setBusy(true);
-        const result = await launchCatalogOpAction(playerFactionId, targetFactionId, systemId, def.id, agentId);
+        const result = await launchCatalogOpAction(playerFactionId, targetFactionId, systemId, def.id, agentId, falseFlagFactionId);
         setBusy(false);
         if (!result.success) {
             showToast(result.error || 'Operation refused.', false);

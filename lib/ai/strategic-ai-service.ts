@@ -8,6 +8,7 @@ import { LeadershipService } from '../leadership/leadership-service';
 import { setEmpireDoctrine } from '../doctrine/doctrine-service';
 import { DoctrineDomain } from '../doctrine/types';
 import { launchCatalogOperation } from '../espionage/espionage-service';
+import { aiOperativeSpecies } from '../espionage/case-board';
 
 /** Strategic black ops, heaviest first. A consolidating state keeps its head down. */
 const BLACK_OPS_PREFERENCE: Record<'quiet' | 'loud', string[]> = {
@@ -385,7 +386,7 @@ export class StrategicAIService {
         // Each refused attempt costs nothing (launchCatalogOperation checks
         // before it charges).
         for (const opId of BLACK_OPS_PREFERENCE[stance === 'consolidating' ? 'quiet' : 'loud']) {
-            if (launchCatalogOperation(factionId, targetId, targetSystem.id, opId, world).success) break;
+            if (launchCatalogOperation(factionId, targetId, targetSystem.id, opId, world, null, { operativeSpecies: aiOperativeSpecies(world, factionId) }).success) break;
         }
     }
 }

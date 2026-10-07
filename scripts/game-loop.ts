@@ -3090,7 +3090,9 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 String(payload.targetRegionId ?? ''),
                 String(payload.definitionId ?? ''),
                 world,
-                payload.agentId ? String(payload.agentId) : null
+                payload.agentId ? String(payload.agentId) : null,
+                // A frame, for operations built for one (validated in the launcher).
+                { falseFlagFactionId: payload.falseFlagFactionId ? String(payload.falseFlagFactionId) : null }
             );
             if (!espResult.success) {
                 recordOrderFailure(world, factionId, actionId, espResult.message);

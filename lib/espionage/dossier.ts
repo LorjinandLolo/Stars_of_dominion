@@ -116,6 +116,7 @@ const RELATION_PHRASE: Record<string, string> = {
     refused_backed_demand: 'a refused demand',
     mercenary_contract_signed: 'a mercenary contract',
     war_declared: 'a declaration of war',
+    border_raid: 'a border raid',
 };
 
 export function relationPhrase(kind: string): string {
