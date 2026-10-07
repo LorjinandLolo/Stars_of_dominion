@@ -65,6 +65,7 @@ import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { tickAICases } from '../ai/case-ai';
+import { tickRebellion } from '../rebellion/cell-service';
 import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
@@ -641,6 +642,11 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         tickShadowEconomy(world, delta);
         tickFactionIntel(world, delta);
         tickOpportunityBoard(world, delta);
+
+        // Rebel cells (Item 13a): grievance breeds them, prosperity starves them.
+        for (const cell of tickRebellion(world)) {
+            console.log(`[REBELLION] a cell formed on ${cell.planetId} (${cell.cause})`);
+        }
 
         // AI-run factions only: this turn SPENDS the faction's intel points
         // and launches covert operations attributed to it — run on a human's

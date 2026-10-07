@@ -925,6 +925,11 @@ export function useGameSync() {
             cases: Array.from((espWorld as any).cases?.values?.() ?? [])
                 .filter((c: any) => !playerFactionId || c.ownerFactionId === playerFactionId)
                 .sort((a: any, b: any) => b.openedAt - a.openedAt) as any[],
+            // Rebel cells our security has found; the wire already dropped the rest.
+            rebelCells: Array.from((world as any).rebellion?.cells?.values?.() ?? [])
+                .filter((c: any) => !playerFactionId || c.hostFactionId === playerFactionId) as any[],
+            rebelCrackdowns: Array.from((world as any).rebellion?.crackdowns?.values?.() ?? [])
+                .filter((c: any) => !playerFactionId || c.hostFactionId === playerFactionId) as any[],
         };
 
         // Piracy: the faction's own projection. It arrives from the

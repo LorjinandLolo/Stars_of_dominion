@@ -36,6 +36,8 @@ import { ReputationService } from '../reputation/reputation-service';
 import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
 import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep, tickDossiers } from './counter-intel';
 import { chooseSuspect, maybeOpenCase, tickCases } from './case-board';
+import { revealCellsBySweep } from '../rebellion/cell-service';
+import { fireNotification } from '../time/notification-hooks';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
 import { getMinister } from '../government/cabinet-service';
@@ -528,6 +530,17 @@ function resolveSweepOperation(op: EspionageOperation, def: OperationDefinition,
     op.narrative = `${def.name}: ${outcome.replace(/_/g, ' ')}${found.length ? ` (found ${found.length})` : ''}`;
     const cut = (def.effects.find(e => e.type === 'reduce_foreign_intel')?.value ?? 0) * mult;
     reportSweep(op, world, op.succeeded, found, cut, captured);
+
+    // Item 13a: a sweep also looks for rebel cells on the worlds of the swept system.
+    const cells = revealCellsBySweep(world, op.actorFactionId, op.targetRegionId, mult);
+    if (cells.length > 0 && isPlayerRunFaction(world, op.actorFactionId)) {
+        fireNotification({
+            id: `sweep-cells-${op.id}`, factionId: op.actorFactionId, category: 'espionage', priority: 'urgent',
+            title: 'REBEL CELL FOUND',
+            body: `The sweep turned up ${cells.map(c => `${c.name} (${c.members} members, for ${c.cause})`).join('; ')}.`,
+            createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+        });
+    }
 }
 
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
@@ -1105,4 +1118,11 @@ function toISO(unixSeconds: number): string {
 
 function fromISO(iso: string): number {
     return new Date(iso).getTime() / 1000;
+}
+
+/** Is this faction played by a person (or is the claim list absent)? */
+function isPlayerRunFaction(world: GameWorldState, factionId: string): boolean {
+    if (factionId === 'faction-pirates' || factionId === 'faction-neutral') return false;
+    const claimed = (world as any).claimedFactionIds;
+    return !Array.isArray(claimed) || claimed.includes(factionId);
 }

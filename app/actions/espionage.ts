@@ -208,3 +208,17 @@ export async function pursueLeadAction(factionId: string, caseId: string, lead: 
     if (result.success) revalidatePath('/');
     return result;
 }
+
+/** A security crackdown on one of our worlds (rebel cells, Item 13). */
+export async function crackdownAction(factionId: string, planetId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `crackdown-${Date.now()}`,
+        actionId: 'REB_CRACKDOWN',
+        issuerId: factionId,
+        targetId: planetId,
+        payload: { planetId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}

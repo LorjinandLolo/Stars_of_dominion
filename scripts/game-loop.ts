@@ -167,6 +167,7 @@ import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/
 import { isKnownSpecies } from '../lib/espionage/dossier';
 import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
 import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
+import { crackdown, crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3099,6 +3100,24 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 break;
             }
             console.log(`[Tick Worker] ${factionId}: ${espResult.message}`);
+            break;
+        }
+
+        case 'REB_CRACKDOWN': {
+            const planetId = String(payload?.planetId ?? '');
+            const blocked = crackdownBlocker(world, factionId, planetId);
+            if (blocked) {
+                recordOrderFailure(world, factionId, actionId, blocked);
+                return;
+            }
+            // An act of state: political capital, charged only once it can go ahead.
+            if (!spendPoliticalCapital(world, factionId, CRACKDOWN_CAPITAL, 'a security crackdown')) {
+                const held = Math.floor(getGovernment(world, factionId)?.politicalCapital ?? 0);
+                recordOrderFailure(world, factionId, actionId, `A crackdown needs ${CRACKDOWN_CAPITAL} political capital; the government holds ${held}.`);
+                return;
+            }
+            const result = crackdown(world, factionId, planetId);
+            console.log(`[Tick Worker] ${factionId} REB_CRACKDOWN: ${result.message}`);
             break;
         }
 

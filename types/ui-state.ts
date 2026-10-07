@@ -202,7 +202,8 @@ export interface EmpireIdentityState {
 // Single source of truth: lib/espionage types, re-exported for UI consumers.
 import type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate } from '@/lib/espionage/agent-types';
 import type { EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity, CovertCase, CaseClue } from '@/lib/espionage/espionage-types';
-export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity, CovertCase, CaseClue };
+import type { RebelCell, Crackdown } from '@/lib/rebellion/rebellion-types';
+export type { SpyAgent, IntelNetwork, AgentStatus, AgentCandidate, EspionageOperation, FactionIntelState, IntelReport, BoardOpportunity, CovertCase, CaseClue, RebelCell, Crackdown };
 
 export interface EspionageState {
     agents: SpyAgent[];
@@ -227,6 +228,10 @@ export interface EspionageState {
      * scrubbed: no sponsor, no pending clues, no clue weights.
      */
     cases: CovertCase[];
+    /** Rebel cells on our worlds that our security service has found (Item 13). */
+    rebelCells: RebelCell[];
+    /** Crackdowns on our worlds, for their cooldowns. */
+    rebelCrackdowns: Crackdown[];
 }
 
 // ─── Diplomacy & Rivalries ──────────────────────────────────────────────────

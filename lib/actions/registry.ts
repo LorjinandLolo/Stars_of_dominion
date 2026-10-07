@@ -368,6 +368,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { caseId: "id", suspectId: "id" },
     cost: {}
   },
+  REB_CRACKDOWN: {
+    id: "REB_CRACKDOWN",
+    category: "espionage",
+    // A security crackdown on one of our worlds (lib/rebellion/cell-service.ts).
+    // Costs political capital, charged in the handler after its checks pass.
+    params: { planetId: "id" },
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

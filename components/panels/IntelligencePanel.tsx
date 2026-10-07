@@ -23,6 +23,7 @@ import { AgentCard, TraitChip, visibleTraits } from '@/components/panels/espiona
 import { CatalogLauncher } from '@/components/panels/espionage/CatalogLauncher';
 import { CounterIntelTab } from '@/components/panels/espionage/CounterIntelTab';
 import { CaseBoardTab } from '@/components/panels/espionage/CaseBoardTab';
+import { InternalSecurity } from '@/components/panels/espionage/InternalSecurity';
 import {
     recruitAgentAction,
     recallAgentAction,
@@ -34,6 +35,7 @@ import {
     fileAccusationAction,
     leakCaseAction,
     pursueLeadAction,
+    crackdownAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
@@ -141,7 +143,7 @@ function outcomeLine(op: { succeeded?: boolean; attributionState: string }): { t
 }
 
 export default function IntelligencePanel() {
-    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds, techState, diplomacyState } = useUIStore();
+    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds, techState, diplomacyState, planets } = useUIStore();
     const [activeTab, setActiveTab] = useState<TabType>('board');
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
     const [busy, setBusy] = useState(false);
@@ -353,6 +355,15 @@ export default function IntelligencePanel() {
         setBusy(false);
         if (!result.success) { showToast(result.error || 'Leak refused.', false); return; }
         showToast(`The story naming ${factionName(suspectId)} is on its way to the press.`, true);
+    };
+
+    const handleCrackdown = async (planetId: string) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await crackdownAction(playerFactionId, planetId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Crackdown refused.', false); return; }
+        showToast('Crackdown ordered. Security reports with the next update.', true);
     };
 
     const handleSweep = async (systemId: string, agentId: string | null) => {
@@ -731,16 +742,26 @@ export default function IntelligencePanel() {
 
                 {/* ── Counter-intelligence ────────────────────────────── */}
                 {activeTab === 'defence' && (
-                    <CounterIntelTab
-                        intel={espionageState.intel}
-                        ownSystems={ownSystems}
-                        agents={espionageState.agents}
-                        credits={credits}
-                        techBonus={espionageState.opSuccessBonus ?? 0}
-                        busy={busy}
-                        onSavePlan={handleSavePlan}
-                        onSweep={handleSweep}
-                    />
+                    <div className="space-y-6">
+                        <CounterIntelTab
+                            intel={espionageState.intel}
+                            ownSystems={ownSystems}
+                            agents={espionageState.agents}
+                            credits={credits}
+                            techBonus={espionageState.opSuccessBonus ?? 0}
+                            busy={busy}
+                            onSavePlan={handleSavePlan}
+                            onSweep={handleSweep}
+                        />
+                        <InternalSecurity
+                            cells={espionageState.rebelCells ?? []}
+                            crackdowns={espionageState.rebelCrackdowns ?? []}
+                            worlds={(planets as any[]).filter(p => p.ownerId === playerFactionId).map(p => ({ id: p.id, name: p.name, unrest: Number(p.unrest ?? 0) }))}
+                            nowSeconds={nowSeconds}
+                            busy={busy}
+                            onCrackdown={handleCrackdown}
+                        />
+                    </div>
                 )}
 
                 {activeTab === 'agents' && (

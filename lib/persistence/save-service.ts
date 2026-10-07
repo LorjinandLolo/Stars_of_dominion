@@ -114,6 +114,10 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!(esp.agents instanceof Map)) esp.agents = new Map();
     if (!(esp.intelNetworks instanceof Map)) esp.intelNetworks = new Map();
     if (!(esp.cases instanceof Map)) esp.cases = new Map();
+    // Rebel cells (Item 13). Own collection, not the pirate organizations.
+    if (!w.rebellion) w.rebellion = {};
+    if (!(w.rebellion.cells instanceof Map)) w.rebellion.cells = new Map();
+    if (!(w.rebellion.crackdowns instanceof Map)) w.rebellion.crackdowns = new Map();
     // Pre-consolidation leftovers: never-written counterIntel map and the
     // parallel V2 intelligence system.
     delete esp.counterIntel;
@@ -292,6 +296,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // weights): the shard is their only copy. shard-privacy strips the
         // truth on the wire, exactly as it does for report accuracy.
         espionageCases: Array.from((world.espionage.cases ?? new Map()).values()).filter((c: any) => c.ownerFactionId === factionId),
+        // Rebel cells on this faction's worlds, found or not: the shard is their
+        // only copy. The wire drops the ones its service has not found.
+        rebelCells: Array.from(((world as any).rebellion?.cells ?? new Map()).values()).filter((c: any) => c.hostFactionId === factionId),
+        rebelCrackdowns: Array.from(((world as any).rebellion?.crackdowns ?? new Map()).values()).filter((c: any) => c.hostFactionId === factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Which systems this player has left to their advisors. Their setting,
         // so it rides their own shard; absent record = everything delegated
@@ -372,6 +380,14 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
     if (shard.espionageOperations) {
         shard.espionageOperations.forEach((op: any) => world.espionage.operations.set(op.id, op));
     }
+    if (shard.rebelCells || shard.rebelCrackdowns) {
+        const w: any = world;
+        if (!w.rebellion) w.rebellion = {};
+        if (!(w.rebellion.cells instanceof Map)) w.rebellion.cells = new Map();
+        if (!(w.rebellion.crackdowns instanceof Map)) w.rebellion.crackdowns = new Map();
+        (shard.rebelCells ?? []).forEach((c: any) => w.rebellion.cells.set(c.id, c));
+        (shard.rebelCrackdowns ?? []).forEach((c: any) => w.rebellion.crackdowns.set(c.planetId, c));
+    }
     if (shard.espionageCases) {
         if (!(world.espionage.cases instanceof Map)) world.espionage.cases = new Map();
         shard.espionageCases.forEach((c: any) => world.espionage.cases!.set(c.id, c));
@@ -451,6 +467,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.reports.clear();
     cloned.espionage.boardOpportunities.clear();
     cloned.espionage.cases?.clear();
+    (cloned as any).rebellion?.cells?.clear?.();
+    (cloned as any).rebellion?.crackdowns?.clear?.();
     // A player's delegation settings are theirs: the shard carries them (and
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.

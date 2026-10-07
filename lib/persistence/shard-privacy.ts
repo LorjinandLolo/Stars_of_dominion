@@ -114,6 +114,14 @@ export function scrubOwnerSecrets(shard: any): any {
         });
     }
 
+    // Rebel cells (Item 13): a government sees only the cells its own security
+    // service has found. The rest are on its worlds and in its shard, and
+    // invisible to it until a sweep, a crackdown or an informant turns them up.
+    if (Array.isArray(out.rebelCells)) {
+        out.rebelCells = out.rebelCells.filter((c: any) =>
+            Array.isArray(c?.safeHouse?.knownToFactionIds) && c.safeHouse.knownToFactionIds.includes(out.factionId));
+    }
+
     // Case board (item 12): the owner gets the effect, the suspects, the clue
     // texts and their own verdict. Never the sponsor, the operation (its id
     // names the sponsor), the false flag, clues still to come, prisoners

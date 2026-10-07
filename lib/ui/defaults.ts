@@ -58,6 +58,8 @@ export const defaultEspionageState: EspionageState = {
     board: [],
     opSuccessBonus: 0,
     cases: [],
+    rebelCells: [],
+    rebelCrackdowns: [],
 };
 
 export const defaultDiplomacyState: DiplomacyState = {
