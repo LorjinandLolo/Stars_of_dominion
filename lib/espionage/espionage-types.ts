@@ -2,6 +2,7 @@
 // Pillar 6 — Espionage & Subversion data schemas.
 
 import type { SpyAgent, IntelNetwork } from './agent-types';
+import type { ClueTag } from './dossier';
 
 // ─── Operation domains ────────────────────────────────────────────────────────
 
@@ -98,6 +99,14 @@ export interface FactionIntelState {
      * regional coverage reads as zero and strength drifts toward zero.
      */
     counterIntelUnpaid?: boolean;
+    /**
+     * What this empire's service has found out about each rival, keyed by
+     * factionId. Never the truth itself: only what sweeps, prisoners and our
+     * own sources have shown us. Feeds the case board's dossiers.
+     */
+    dossier?: Record<string, DossierKnowledge>;
+    /** Foreign agents we hold, as they present themselves. */
+    prisoners?: PrisonerRecord[];
 }
 
 // ─── Attribution tracking ─────────────────────────────────────────────────────
@@ -250,6 +259,10 @@ export interface CaseClue {
     weights?: Record<string, number>;
     /** Who wrote it, when not the simulation. */
     authorId?: string;
+    /** What it speaks to: motive, means, opportunity, or testimony. Public. */
+    tag?: ClueTag;
+    /** Suspects the clue argues AGAINST (their sources heard nothing, an honest denial). Public: the text says as much. */
+    clears?: string[];
 }
 
 export type CaseStatus = 'open' | 'accused' | 'leaked' | 'cold';
@@ -289,4 +302,28 @@ export interface CovertCase {
     pendingClues?: CaseClue[];
     /** HIDDEN: captured agents already questioned for this case. */
     interrogatedAgentIds?: string[];
+    /** HIDDEN: when a mole in the owner's service last leaked this file. */
+    moleLeakedAt?: number;
+}
+
+/** What our service has learned about one rival (FactionIntelState.dossier). */
+export interface DossierKnowledge {
+    /** Their infiltration of us, as a sweep last measured it. */
+    revealedInfiltration?: number;
+    revealedAt?: number;
+    /** Whether they have Black Market tradecraft; known only with sources inside them. */
+    blackMarket?: boolean;
+    blackMarketSeenAt?: number;
+}
+
+/** A captured foreign agent, as their captor sees them. */
+export interface PrisonerRecord {
+    agentId: string;
+    codename: string;
+    /** Their species (civilization id), plain to see. */
+    species: string | null;
+    /** Who they say they work for. A Double Agent lies. */
+    claimedEmployerId: string;
+    takenAt: number;
+    systemId: string;
 }

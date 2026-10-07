@@ -33,7 +33,7 @@ import type { ChronicleAttribution } from '../narrative/chronicle-types';
 import { shiftRivalry } from '../diplomacy/offer-service';
 import { chargeHonorForCatalogOp } from '../factions/leopantheri';
 import { reportOperationOutcome, KIND_PHRASE, OUTCOME_PHRASE } from './op-aftermath';
-import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep } from './counter-intel';
+import { tickCounterIntel, effectiveRegionalCounterIntel, applySweep, reportSweep, tickDossiers } from './counter-intel';
 import { chooseSuspect, maybeOpenCase, tickCases } from './case-board';
 // Government Phase 5: political warfare reaches the rival's institutions.
 import { CABINET_PORTFOLIOS } from '../government/types';
@@ -352,7 +352,7 @@ export function tickOperations(
     tickAgentNetworks(world, deltaSeconds);
 
     // Item 12: clues arrive, prisoners talk, unsolved cases go cold.
-    tickCases(world);
+    tickCases(world, deltaSeconds);
 }
 
 function resolveOperation(op: EspionageOperation, world: GameWorldState): void {
@@ -802,6 +802,8 @@ export function tickFactionIntel(world: GameWorldState, deltaSeconds: number): v
             intel.infiltrationLevels[targetId] = Math.max(0, level - INFILTRATION_DECAY_PER_HOUR * hours);
         }
     }
+    // What our sources inside rivals can see, for the case board's dossiers.
+    tickDossiers(world);
 }
 
 /**

@@ -133,7 +133,8 @@ export function scrubOwnerSecrets(shard: any): any {
         out.espionageAgents = out.espionageAgents.map((agent: any) => {
             if (!agent || typeof agent !== 'object') return agent;
             const copy = { ...agent };
-            if (Array.isArray(copy.traitIds)) {
+            // Hidden until the owner's counter-intelligence outs them (item 12b-2).
+            if (Array.isArray(copy.traitIds) && !copy.compromiseKnown) {
                 copy.traitIds = copy.traitIds.filter((t: string) => t !== 'compromised');
             }
             // 'turned' is [CLASSIFIED] per agent-types.ts — the owner still sees

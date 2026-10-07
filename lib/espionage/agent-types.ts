@@ -91,6 +91,13 @@ export interface SpyAgent {
     ownerFactionId: string;
     /** 1–3 trait IDs. */
     traitIds: AgentTraitId[];
+    /**
+     * Species (civilization id). Usually the employer's own; a hired
+     * foreigner leaves the wrong species behind at the scene (item 12b-2).
+     */
+    species?: string | null;
+    /** The owner has found out this agent is compromised (a mole). */
+    compromiseKnown?: boolean;
     /** 0–100: grows with successful ops; degrades on failure or idle. */
     experienceLevel: number;
     status: AgentStatus;
@@ -161,6 +168,9 @@ export interface AgentCandidate {
     name: string;
     codename: string;
     traitIds: AgentTraitId[];
+    /** Species (civilization id); foreign recruits cost more. */
+    species?: string | null;
+    foreign?: boolean;
     /** Credit cost to recruit this candidate. */
     recruitmentCost: number;
     /** How many days until this candidate is no longer available. */
@@ -233,12 +243,16 @@ export const BASE_RECRUIT_COST = 2500;
  * What a candidate with these traits costs, in credits. The worker prices a
  * recruit from its traits rather than trusting the figure the client sends.
  */
-export function recruitCostForTraits(traitIds: AgentTraitId[]): number {
+/** A foreign recruit (another species) costs this much more: they are rarer, and worth it. */
+export const FOREIGN_RECRUIT_MULTIPLIER = 1.5;
+
+export function recruitCostForTraits(traitIds: AgentTraitId[], foreign = false): number {
     const cost = BASE_RECRUIT_COST
         + (traitIds.length - 1) * 1000
         + (traitIds.includes('veteran') ? 2000 : 0)
         - (traitIds.includes('compromised') ? 1000 : 0); // compromised agents are mysteriously cheap
-    return Math.max(500, cost);
+    const base = Math.max(500, cost);
+    return foreign ? Math.round((base * FOREIGN_RECRUIT_MULTIPLIER) / 50) * 50 : base;
 }
 
 /** A trait list the recruit pool could have produced: 1-3 known traits, no repeats. */

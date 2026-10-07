@@ -262,7 +262,7 @@ async function main() {
         check('a real list passes', isValidRecruitTraitList(['ghost', 'veteran']));
         const loop = code('scripts/game-loop.ts');
         check('the recruit handler prices from traits, not from the client',
-            /case 'ESP_RECRUIT_AGENT':[\s\S]{0,900}recruitCostForTraits\(candidate\.traitIds\)/.test(loop));
+            /case 'ESP_RECRUIT_AGENT':[\s\S]{0,1400}recruitCostForTraits\(candidate\.traitIds, foreign\)/.test(loop));
         check('the deploy handler refunds a refused deployment',
             /case 'ESP_ASSIGN_AGENT':[\s\S]{0,900}refundOrderCost/.test(loop));
         check('the launch handler forwards the agent',

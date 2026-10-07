@@ -276,6 +276,177 @@ async function main() {
             /case 'ESP_FILE_ACCUSATION':\s*case 'ESP_LEAK_CASE':[\s\S]{0,600}fileAccusation\(/.test(code('scripts/game-loop.ts')));
     }
 
+    // ── Item 12b-2 ───────────────────────────────────────────────────────────
+    const mkAgent = (w: any, id: string, owner: string, species: string | null, traits: any[] = ['ghost']) => {
+        const a = recruitAgent({ id, name: id, codename: id.toUpperCase(), traitIds: traits, species, recruitmentCost: 0, expiresInDays: 7 }, owner, w.nowSeconds, w);
+        return a;
+    };
+    const civ = (w: any, id: string) => w.economy.factions.get(id)?.civilizationId;
+
+    console.log('\n[10] Hired foreigners leave the wrong face behind');
+    {
+        const w = freshWorld();
+        updateInfiltration(w, A, V, 95);
+        const foreigner = mkAgent(w, 'hired', A, civ(w, C));
+        const real = Math.random;
+        Math.random = () => 0.99; // the hireling is not spotted
+        let kase: any;
+        try {
+            runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99], o => { o.agentId = foreigner.id; });
+            kase = casesOf(w, V)[0];
+            const start = w.nowSeconds;
+            for (let t = 0; t <= 6 * 24 * 3600; t += 3600) { w.nowSeconds = start + t; tickCases(w, 3600); }
+        } finally { Math.random = real; }
+        const all = [...kase.clues, ...(kase.pendingClues ?? [])];
+        const face = all.find((c: any) => /describe the operative/.test(c.text));
+        check('a witness describes the operative', !!face, all.map((c: any) => c.text).join(' | '));
+        check('the face points at the foreigner\'s people', face?.pointsAt.includes(C) && !face?.pointsAt.includes(A), face?.text);
+        check('and the clue is tagged opportunity', face?.tag === 'opportunity');
+
+        const w2 = freshWorld();
+        updateInfiltration(w2, A, V, 95);
+        const own = mkAgent(w2, 'own', A, civ(w2, A));
+        runOp(w2, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99], o => { o.agentId = own.id; });
+        const face2 = [...casesOf(w2, V)[0].clues, ...(casesOf(w2, V)[0].pendingClues ?? [])].find((c: any) => /describe the operative/.test(c.text));
+        check('an operative of our own species points home', !!face2?.pointsAt.includes(A), face2?.text);
+
+        const w3 = freshWorld();
+        updateInfiltration(w3, A, V, 95);
+        runOp(w3, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const none = [...casesOf(w3, V)[0].clues, ...(casesOf(w3, V)[0].pendingClues ?? [])].some((c: any) => /describe the operative/.test(c.text));
+        check('no agent, no face', !none);
+
+        // Seeing through it: a service with good files spots the freelancer.
+        const w4 = freshWorld();
+        updateInfiltration(w4, A, V, 95);
+        getOrCreateFactionIntel(w4, V).counterIntelStrength = 100;
+        const hired2 = mkAgent(w4, 'hired2', A, civ(w4, C));
+        const real2 = Math.random;
+        Math.random = () => 0.01;
+        try { runOp(w4, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.01], o => { o.agentId = hired2.id; }); }
+        finally { Math.random = real2; }
+        const k4: any = casesOf(w4, V)[0];
+        const spotted = [...k4.clues, ...(k4.pendingClues ?? [])].find((c: any) => /freelancer/.test(c.text));
+        check('good files see through a hired face', !!spotted && spotted.clears?.includes(C), spotted?.text);
+        check('the freelancer note points away from the face\'s people', (spotted?.weights?.[C] ?? 0) < 0);
+
+        // A captured hireling says who paid.
+        const prisoner = mkAgent(w, 'taken', A, civ(w, C));
+        prisoner.status = 'captured'; prisoner.capturedByFactionId = V;
+        const says = interrogationClue(prisoner, kase, w);
+        check('a captured hireling names who paid them', says.pointsAt[0] === A && /paid for/.test(says.text), says.text);
+    }
+
+    console.log('\n[11] Real motives, and who gains');
+    {
+        const w = freshWorld();
+        w.nowSeconds += 60; // after the setup grudges, so it is the latest
+        shiftRivalry(w, V, C, 5, 'sanctions_imposed');
+        w.economy.factions.get(V).reserves.CREDITS = 900_000;
+        w.economy.factions.get(C).reserves.CREDITS = 800_000;
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const k: any = casesOf(w, V)[0];
+        const all = [...k.clues, ...(k.pendingClues ?? [])];
+        const grudge = all.find((c: any) => /^Grudges on file/.test(c.text));
+        check('the motive clue names a real incident', !!grudge && /sanctions between us/.test(grudge.text), grudge?.text);
+        check('it is tagged motive', grudge?.tag === 'motive');
+        const cui = all.find((c: any) => /^Who gains if we stumble/.test(c.text));
+        check('cui bono names the treasury just behind ours', !!cui && cui.pointsAt[0] === C, cui?.text);
+        check('every clue carries a tag', all.every((c: any) => !!c.tag), all.filter((c: any) => !c.tag).map((c: any) => c.text).join(' | '));
+    }
+
+    console.log('\n[12] The convenient witness');
+    {
+        const w = freshWorld();
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.1, 0.5], o => { o.falseFlagFactionId = C; });
+        const k: any = casesOf(w, V)[0];
+        const walkIn = [...k.clues, ...(k.pendingClues ?? [])].find((c: any) => /walk-in/.test(c.text));
+        check('a false flag brings a walk-in', !!walkIn && walkIn.pointsAt[0] === C);
+        const interval = CLUE_INTERVAL_SECONDS;
+        check('and it is due within hours, not the usual wait', k.nextClueAt - k.openedAt <= interval / 4 + 1, `${(k.nextClueAt - k.openedAt) / 3600} h`);
+        const honest = freshWorld();
+        updateInfiltration(honest, A, V, 95);
+        runOp(honest, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const hk: any = casesOf(honest, V)[0];
+        check('genuine cases never bring a walk-in', ![...hk.clues, ...(hk.pendingClues ?? [])].some((c: any) => /walk-in/.test(c.text)));
+    }
+
+    console.log('\n[13] The mole');
+    {
+        const w = freshWorld();
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', [0.05, 0.99, 0.99, 0.99, 0.99]);
+        const k: any = casesOf(w, V)[0];
+        const mole = mkAgent(w, 'mole', V, civ(w, V), ['compromised']);
+        getOrCreateFactionIntel(w, V).counterIntelStrength = 0;
+        w.espionage.reports.clear();
+        tickCases(w, 3600);
+        const leak = [...w.espionage.reports.values()].find((r: any) => r.ownerFactionId === A && r.domain === 'mole');
+        check('a mole in the victim\'s service leaks the file to its sponsor', !!leak, `${w.espionage.reports.size} reports`);
+        check('the leak says how many findings name the sponsor', !!leak && /naming us/.test(leak.body), leak?.body);
+        check('nobody else gets it', ![...w.espionage.reports.values()].some((r: any) => r.domain === 'mole' && r.ownerFactionId !== A));
+        const before = w.espionage.reports.size;
+        tickCases(w, 3600);
+        check('at most one leak a day per file', w.espionage.reports.size === before);
+        // Outing.
+        getOrCreateFactionIntel(w, V).counterIntelStrength = 100;
+        const real = Math.random; Math.random = () => 0;
+        try { tickCases(w, 3600); } finally { Math.random = real; }
+        check('counter-intelligence outs the mole', mole.compromiseKnown === true);
+        const wire = scrubOwnerSecrets({ espionageAgents: [mole] }).espionageAgents[0];
+        check('and the owner now sees the trait', wire.traitIds.includes('compromised'));
+        k.moleLeakedAt = 0; w.nowSeconds += 2 * 86400;
+        const n = w.espionage.reports.size;
+        tickCases(w, 3600);
+        check('an outed mole stops leaking', w.espionage.reports.size === n);
+        const hidden = scrubOwnerSecrets({ espionageAgents: [mkAgent(w, 'quiet', V, civ(w, V), ['compromised'])] }).espionageAgents[0];
+        check('an unknown mole stays hidden from the owner', !hidden.traitIds.includes('compromised'));
+    }
+
+    console.log('\n[14] Dossiers: what sweeps and sources show');
+    {
+        const w = freshWorld();
+        const home = capitalOf(w, V);
+        updateInfiltration(w, A, V, 60);
+        w.espionage.intelNetworks.set(`${A}:${home}`, { id: `${A}:${home}`, ownerFactionId: A, systemId: home, strength: 0.9, penetrationLevel: 'deep', agentIds: [], activeUntil: w.nowSeconds + 1e6 });
+        const cell = mkAgent(w, 'cell', A, civ(w, A), ['double_agent']);
+        cell.status = 'deployed'; cell.deployedToSystemId = home;
+        w.espionage.intelNetworks.get(`${A}:${home}`).agentIds.push(cell.id);
+        const { applySweep } = await import('../lib/espionage/counter-intel');
+        const { OPERATION_CATALOG_BY_ID } = await import('../lib/espionage/operation-catalog');
+        const sweepOp: any = { id: 'sweep-x', actorFactionId: V, targetFactionId: V, targetRegionId: home };
+        const real = Math.random; Math.random = () => 0; // capture certain
+        try { applySweep(sweepOp, OPERATION_CATALOG_BY_ID.get('counterintel_sweep')!, w, 1); } finally { Math.random = real; }
+        const vIntel = getOrCreateFactionIntel(w, V);
+        check('a sweep records how deep the caught rival still is', typeof vIntel.dossier?.[A]?.revealedInfiltration === 'number', JSON.stringify(vIntel.dossier));
+        const p = vIntel.prisoners?.find(x => x.agentId === cell.id);
+        check('a prisoner goes on the captor\'s books', !!p);
+        check('with their species plain to see', p?.species === civ(w, A));
+        check('a Double Agent claims another employer', !!p && p.claimedEmployerId !== A, p?.claimedEmployerId);
+
+        updateInfiltration(w, V, C, 40);
+        const { tickDossiers } = await import('../lib/espionage/counter-intel');
+        tickDossiers(w);
+        check('sources inside a rival show their tradecraft', typeof vIntel.dossier?.[C]?.blackMarket === 'boolean');
+        check('no sources, no tradecraft on file', vIntel.dossier?.['faction-covenant']?.blackMarket === undefined);
+    }
+
+    console.log('\n[15] Recruiting foreigners');
+    {
+        const { generateRecruitPool } = await import('../lib/espionage/agent-service');
+        const { recruitCostForTraits } = await import('../lib/espionage/agent-types');
+        const pool = Array.from({ length: 200 }, (_, i) => generateRecruitPool(A, i, 'civ-elyndra', ['civ-grakkar', 'civ-sarrak'])).flat();
+        const foreign = pool.filter(c => c.foreign);
+        check('about one candidate in four is foreign', foreign.length > pool.length * 0.15 && foreign.length < pool.length * 0.35, `${foreign.length}/${pool.length}`);
+        check('foreigners are of another species', foreign.every(c => c.species && c.species !== 'civ-elyndra'));
+        check('and cost half again as much', foreign.every(c => c.recruitmentCost === recruitCostForTraits(c.traitIds, true)) && recruitCostForTraits(['ghost'], true) === 3750);
+        check('the worker re-prices by species', /candidate\.species = isKnownSpecies\(candidate\.species\)[\s\S]{0,300}recruitCostForTraits\(candidate\.traitIds, foreign\)/.test(code('scripts/game-loop.ts')));
+        const leaf = [...code('lib/espionage/dossier.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
+        check('the dossier vocabulary stays browser-safe', leaf.every(i => /ideologies|types/.test(i)), leaf.join(', '));
+    }
+
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
     process.exit(failures === 0 ? 0 : 1);
 }

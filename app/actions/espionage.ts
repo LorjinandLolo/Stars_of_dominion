@@ -14,8 +14,20 @@ import { executePlayerAction } from './registry-handler';
  * Generates a fresh pool of agent candidates. Pure random generation —
  * no world state involved, so it's safe to run in the web server process.
  */
-export async function getRecruitPoolAction(factionId: string): Promise<AgentCandidate[]> {
-    return generateRecruitPool(factionId, Math.floor(Date.now() / 1000));
+export async function getRecruitPoolAction(
+    factionId: string,
+    ownSpecies: string | null = null,
+    otherSpecies: string[] = []
+): Promise<AgentCandidate[]> {
+    // Species are public (every empire's civilizationId is), so the page
+    // passes them; the worker re-prices the hire from species and traits.
+    const clean = (s: unknown) => (typeof s === 'string' && /^civ-[a-z0-9-]+$/.test(s) ? s : null);
+    return generateRecruitPool(
+        factionId,
+        Math.floor(Date.now() / 1000),
+        clean(ownSpecies),
+        (Array.isArray(otherSpecies) ? otherSpecies : []).map(clean).filter((s): s is string => !!s).slice(0, 40)
+    );
 }
 
 /**

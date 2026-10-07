@@ -31,6 +31,7 @@ import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
 import { AFTER_ACTION_DOMAIN, AFTER_ACTION_TTL_SECONDS } from './op-aftermath';
 import type { SpyAgent } from './agent-types';
+import { techIdsHaveFlag } from '../tech/flags';
 // Capture lives here, not in case-board: the Counter-intel tab imports this
 // module, and case-board reaches lib/government (Node-only) for its rewards.
 
@@ -163,6 +164,13 @@ export function applySweep(
             if (level > 0) intel.infiltrationLevels[self] = Math.max(0, level - cut);
         }
     }
+    // What the sweep showed us goes into our dossiers: how deep each rival we
+    // caught still is inside us, after the cut.
+    const ours = getOrCreateFactionIntel(world, self);
+    for (const owner of found) {
+        const theirs = world.espionage.factionIntel.get(owner)?.infiltrationLevels?.[self] ?? 0;
+        (ours.dossier ??= {})[owner] = { ...(ours.dossier[owner] ?? {}), revealedInfiltration: Math.round(theirs), revealedAt: world.nowSeconds };
+    }
     return { found: [...found], captured };
 }
 
@@ -258,10 +266,59 @@ export function captureAgents(
         if (!agent || agent.ownerFactionId === captorId) continue;
         if (agent.status !== 'deployed' && agent.status !== 'on_cooldown') continue;
         if (rand() >= chance) continue;
+        const systemId = agent.deployedToSystemId ?? '';
         agent.status = 'captured';
         agent.capturedByFactionId = captorId;
         agent.deployedToSystemId = null;
         taken.push(agent);
+        recordPrisoner(world, captorId, agent, systemId, rand);
     }
     return taken;
 }
+
+/**
+ * Put a prisoner on the captor's books, as they present themselves: species
+ * is plain to see; the employer is what they say, and a Double Agent lies.
+ */
+export function recordPrisoner(world: GameWorldState, captorId: string, agent: SpyAgent, systemId: string, rand: () => number = Math.random): void {
+    const intel = getOrCreateFactionIntel(world, captorId);
+    let claimed = agent.ownerFactionId;
+    if (agent.traitIds.includes('double_agent')) {
+        const others = [...(world.economy?.factions?.keys?.() ?? [])]
+            .filter(id => id !== agent.ownerFactionId && id !== captorId && id !== 'faction-pirates' && id !== 'faction-neutral');
+        if (others.length) claimed = others[Math.floor(rand() * others.length)];
+    }
+    const list = (intel.prisoners ??= []);
+    list.push({
+        agentId: agent.id,
+        codename: agent.codename,
+        species: agent.species ?? (world.economy?.factions?.get?.(agent.ownerFactionId) as any)?.civilizationId ?? null,
+        claimedEmployerId: claimed,
+        takenAt: world.nowSeconds,
+        systemId,
+    });
+    if (list.length > 20) list.splice(0, list.length - 20);
+}
+
+/**
+ * Refresh what our sources inside rivals show us. Black Market tradecraft is
+ * visible to a service with an Embedded Network inside them, and stays on file
+ * after the network fades.
+ */
+export function tickDossiers(world: GameWorldState): void {
+    for (const [self, intel] of world.espionage.factionIntel) {
+        for (const [target, level] of Object.entries(intel.infiltrationLevels ?? {})) {
+            if (level < DOSSIER_SOURCES_MIN_INFILTRATION) continue;
+            const bm = techIdsHaveFlag(world.tech?.get?.(target)?.unlockedTechIds ?? [], 'ENABLE_SHADOW_ECONOMY');
+            const entry = ((intel.dossier ??= {})[target] ??= {});
+            if (entry.blackMarket !== bm || entry.blackMarketSeenAt == null) {
+                entry.blackMarket = bm;
+                entry.blackMarketSeenAt = world.nowSeconds;
+            }
+        }
+        void self;
+    }
+}
+
+/** Infiltration at which our sources inside a rival can see their tradecraft (Embedded Network). */
+export const DOSSIER_SOURCES_MIN_INFILTRATION = 35;

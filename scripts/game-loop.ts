@@ -164,6 +164,7 @@ function pressRngFor(world: any, ...parts: string[]): PressRNG {
 import { ACTION_DEFINITIONS } from '../lib/actions/registry';
 import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-service';
 import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
+import { isKnownSpecies } from '../lib/espionage/dossier';
 import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
 import { fileAccusation, leakCase } from '../lib/espionage/case-board';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
@@ -3167,7 +3168,13 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             // recomputed from its traits here. Trusting the figure it carried
             // let a forged order hire a Veteran for nothing.
             const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
-            const cost = recruitCostForTraits(candidate.traitIds);
+            // Species: our own unless the candidate is a known other species, in
+            // which case they are foreign and cost more. Anything else is ours.
+            const ownSpecies = (world.economy?.factions?.get?.(factionId) as any)?.civilizationId ?? null;
+            candidate.species = isKnownSpecies(candidate.species) ? candidate.species : ownSpecies;
+            const foreign = !!candidate.species && candidate.species !== ownSpecies;
+            candidate.foreign = foreign;
+            const cost = recruitCostForTraits(candidate.traitIds, foreign);
             candidate.recruitmentCost = cost;
             candidate.name = String(candidate.name ?? 'Unknown').slice(0, 40);
             candidate.codename = String(candidate.codename ?? 'Agent').slice(0, 24);

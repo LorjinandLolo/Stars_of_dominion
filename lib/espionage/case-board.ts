@@ -28,6 +28,7 @@ import { OPERATION_CATALOG_BY_ID, type OperationCategory } from './operation-cat
 import { MIN_STAGE_FOR_CATEGORY, stageInfo } from './network-stages';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { techIdsHaveFlag } from '../tech/flags';
+import { empiresOfSpecies, isGrievance, relationPhrase, speciesLabel, speciesOf, withArticle, type ClueTag } from './dossier';
 import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
 import * as chronicle from '../narrative/chronicle';
@@ -114,33 +115,76 @@ export function chooseSuspect(op: EspionageOperation, world: GameWorldState, ran
 
 // ─── Clues ───────────────────────────────────────────────────────────────────
 
-function clue(source: CaseClue['source'], text: string, pointsAt: string[], weights: Record<string, number>, now: number): CaseClue {
-    return { id: opaqueId('clue', now), source, text, pointsAt, weights, arrivedAt: 0 };
+function clue(source: CaseClue['source'], tag: ClueTag, text: string, pointsAt: string[], weights: Record<string, number>, now: number): CaseClue {
+    return { id: opaqueId('clue', now), source, tag, text, pointsAt, weights, arrivedAt: 0 };
+}
+
+/** Hidden weights: the sponsor gets `genuine`, everyone else named gets 0. */
+function onlySponsor(ids: string[], actor: string, genuine: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const id of ids) out[id] = id === actor ? genuine : 0;
+    return out;
+}
+
+/** Chance a hired foreigner is recognised as a freelancer, by our counter-intelligence. */
+export function hirelingSpotChance(counterIntelStrength: number): number {
+    return Math.min(0.9, 0.3 + Math.max(0, counterIntelStrength) / 200);
+}
+
+function ago(now: number, at: number): string {
+    const days = Math.max(0, Math.round((now - at) / 86400));
+    return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
 /**
  * The clues a case will release, worked out at the moment it opens (the
- * sensor log and the rivalries of that moment). Order is release order.
+ * sensor log, the relations log and the treasuries of that moment). Order is
+ * release order. Each clue carries a public tag (motive, means, opportunity,
+ * testimony) and hidden weights.
  */
-export function buildClues(op: EspionageOperation, world: GameWorldState, suspects: string[], suspectedId: string | null): CaseClue[] {
+export function buildClues(
+    op: EspionageOperation,
+    world: GameWorldState,
+    suspects: string[],
+    suspectedId: string | null,
+    rand: () => number = Math.random
+): CaseClue[] {
     const now = world.nowSeconds;
     const victim = op.targetFactionId;
     const actor = op.actorFactionId;
     const where = systemName(world, op.targetRegionId);
     const def = op.definitionId ? OPERATION_CATALOG_BY_ID.get(op.definitionId) : undefined;
     const flag = op.falseFlagFactionId && op.falseFlagFactionId !== victim ? op.falseFlagFactionId : null;
+    const factions = world.economy?.factions;
     const out: CaseClue[] = [];
-    const w = (id: string, genuine: number) => ({ [id]: id === actor ? genuine : 0 });
 
     // Press: whoever the attribution formula fingered, right or wrong.
     if (suspectedId) {
-        out.push(clue('press', `Our own press is already naming ${labelFor(suspectedId)}.`, [suspectedId], w(suspectedId, 0.5), now));
+        out.push(clue('press', 'testimony', `Our own press is already naming ${labelFor(suspectedId)}.`, [suspectedId], onlySponsor([suspectedId], actor, 0.5), now));
     }
 
-    // Planted evidence. A false flag leaves the look of someone else behind.
+    // The convenient witness. A walk-in who turns up within hours, certain,
+    // with a name: genuine sources never come this way, plants always do.
     if (flag) {
-        out.push(clue('sensors', `A transponder code recovered near ${where} belongs to ${labelFor(flag)}.`, [flag], { [flag]: 0 }, now));
-        out.push(clue('own_intel', `A walk-in source swears ${labelFor(flag)} ran it.`, [flag], { [flag]: 0 }, now));
+        out.push(clue('own_intel', 'testimony', `A walk-in turned up within hours, certain it was ${labelFor(flag)}, and named the officer who gave the order.`, [flag], { [flag]: 0 }, now));
+    }
+
+    // Species trace: someone saw the operative. Own species points home; a
+    // hired foreigner points at their homeworld.
+    const agent = op.agentId ? world.espionage.agents.get(op.agentId) : undefined;
+    const actorSpecies = speciesOf(factions?.get?.(actor) as any);
+    const seenSpecies = agent ? (agent.species ?? actorSpecies) : null;
+    if (seenSpecies && factions) {
+        const kin = empiresOfSpecies(factions.entries() as any, seenSpecies).filter(id => id !== victim && suspects.includes(id));
+        const label = speciesLabel(seenSpecies);
+        out.push(clue('sensors', 'opportunity',
+            `Witnesses at ${where} describe the operative: ${withArticle(label)}.${kin.length ? '' : ' No empire of that species is on our list.'}`,
+            kin, onlySponsor(kin, actor, 0.4), now));
+    }
+
+    // A false flag's planted hardware.
+    if (flag) {
+        out.push(clue('sensors', 'opportunity', `A transponder code recovered near ${where} belongs to ${labelFor(flag)}.`, [flag], { [flag]: 0 }, now));
     }
 
     // Method: what it took, and who could field that. Always true of the sponsor.
@@ -162,7 +206,7 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
             ].filter(Boolean).join(' and ');
             const weights: Record<string, number> = {};
             for (const id of holders) weights[id] = id === actor ? 1 / holders.length + 0.3 : 0;
-            out.push(clue('method',
+            out.push(clue('method', 'means',
                 `This took ${needs}. ${holders.length === 1 ? 'Only one service could field that' : `${holders.length} services could field that`}: ${holders.map(labelFor).join(', ')}.`,
                 holders, weights, now));
         }
@@ -173,11 +217,10 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
     if (def && def.creditsCost > 0) {
         const floor = def.creditsCost * 5;
         const payers = suspects.filter(id => id === actor
-            || Number((world.economy?.factions?.get?.(id) as any)?.reserves?.CREDITS ?? 0) >= floor);
+            || Number((factions?.get?.(id) as any)?.reserves?.CREDITS ?? 0) >= floor);
         if (payers.length > 0 && payers.length < suspects.length) {
-            const weights: Record<string, number> = {};
-            for (const id of payers) weights[id] = id === actor ? 0.1 : 0;
-            out.push(clue('method', `It cost someone around § ${def.creditsCost}. Services with that to spare: ${payers.map(labelFor).join(', ')}.`, payers, weights, now));
+            out.push(clue('method', 'means', `It cost someone around § ${def.creditsCost}. Services with that to spare: ${payers.map(labelFor).join(', ')}.`,
+                payers, onlySponsor(payers, actor, 0.1), now));
         }
     }
 
@@ -190,22 +233,42 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
     }
     if (present.size > 0) {
         const ids = [...present].sort();
-        const weights: Record<string, number> = {};
-        for (const id of ids) weights[id] = id === actor ? 0.3 : 0;
-        out.push(clue('sensors', `Our pickets logged ships of ${ids.map(labelFor).join(', ')} at ${where} around the time.`, ids, weights, now));
+        out.push(clue('sensors', 'opportunity', `Our pickets logged ships of ${ids.map(labelFor).join(', ')} at ${where} around the time.`, ids, onlySponsor(ids, actor, 0.3), now));
     }
 
-    // Motive: who has the most reason to want us hurt.
-    const byGrudge = suspects
-        .map(id => ({ id, score: rivalryScore(world, victim, id) }))
-        .filter(x => x.score > 0)
+    // Motive: the grudges on file. Real incidents from the relations log, the
+    // two worst relationships first; a bare score only when the log is empty.
+    const grudges = suspects
+        .map(id => {
+            const r: any = world.rivalries?.get?.(`rivalry-${victim}-${id}`) ?? world.rivalries?.get?.(`rivalry-${id}-${victim}`);
+            const events = (Array.isArray(r?.recentEvents) ? r.recentEvents : [])
+                .filter((e: any) => isGrievance(e) && now - e.atSeconds < 30 * 86400)
+                .sort((a: any, b: any) => b.atSeconds - a.atSeconds);
+            return { id, score: r?.rivalryScore ?? 0, last: events[0] as { kind: string; atSeconds: number } | undefined };
+        })
+        .filter(g => g.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, 2);
-    if (byGrudge.length > 0) {
-        const ids = byGrudge.map(x => x.id);
-        const weights: Record<string, number> = {};
-        for (const id of ids) weights[id] = id === actor ? 0.2 : 0;
-        out.push(clue('motive', `${ids.map(labelFor).join(' and ')} ${ids.length > 1 ? 'have' : 'has'} the most reason to want us hurt.`, ids, weights, now));
+    if (grudges.length > 0) {
+        const ids = grudges.map(g => g.id);
+        const lines = grudges.map(g => g.last
+            ? `${labelFor(g.id)} (${relationPhrase(g.last.kind)} between us, ${ago(now, g.last.atSeconds)})`
+            : `${labelFor(g.id)} (relations long sour)`);
+        out.push(clue('motive', 'motive', `Grudges on file: ${lines.join('; ')}.`, ids, onlySponsor(ids, actor, 0.2), now));
+    }
+
+    // Cui bono: who moves up if we are knocked down. Sometimes the sponsor,
+    // often not, which is the point of asking.
+    const ourCredits = Number((factions?.get?.(victim) as any)?.reserves?.CREDITS ?? 0);
+    const chasers = suspects
+        .map(id => ({ id, credits: Number((factions?.get?.(id) as any)?.reserves?.CREDITS ?? 0) }))
+        .filter(x => x.credits > 0 && x.credits < ourCredits)
+        .sort((a, b) => b.credits - a.credits)
+        .slice(0, 2)
+        .map(x => x.id);
+    if (chasers.length > 0) {
+        out.push(clue('motive', 'motive', `Who gains if we stumble? ${chasers.map(labelFor).join(' and ')}, the treasuries just behind ours.`,
+            chasers, onlySponsor(chasers, actor, 0.1), now));
     }
 
     // Neighbours: who holds systems closest to where it happened. True as
@@ -228,9 +291,8 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
         }
         const ids = [...nearest.entries()].sort((a, b) => a[1] - b[1]).slice(0, 2).map(([id]) => id);
         if (ids.length > 0) {
-            const weights: Record<string, number> = {};
-            for (const id of ids) weights[id] = id === actor ? 0.1 : 0;
-            out.push(clue('motive', `${ids.map(labelFor).join(' and ')} ${ids.length > 1 ? 'hold' : 'holds'} the nearest systems to ${where}.`, ids, weights, now));
+            out.push(clue('motive', 'opportunity', `${ids.map(labelFor).join(' and ')} ${ids.length > 1 ? 'hold' : 'holds'} the nearest systems to ${where}.`,
+                ids, onlySponsor(ids, actor, 0.1), now));
         }
     }
 
@@ -239,11 +301,25 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
     const ours = world.espionage.factionIntel.get(victim)?.infiltrationLevels ?? {};
     const embedded = stageInfo('embedded_network').minInfiltration;
     if ((ours[actor] ?? 0) >= embedded) {
-        out.push(clue('own_intel', `Our sources inside ${labelFor(actor)} heard talk of an operation against us.`, [actor], { [actor]: 0.8 }, now));
+        out.push(clue('own_intel', 'testimony', `Our sources inside ${labelFor(actor)} heard talk of an operation against us.`, [actor], { [actor]: 0.8 }, now));
     } else {
         const watched = suspects.find(id => id !== actor && (ours[id] ?? 0) >= embedded);
         if (watched) {
-            out.push(clue('own_intel', `Our sources inside ${labelFor(watched)} heard nothing about it.`, [watched], { [watched]: -0.5 }, now));
+            out.push({ ...clue('own_intel', 'testimony', `Our sources inside ${labelFor(watched)} heard nothing about it.`, [watched], { [watched]: -0.5 }, now), clears: [watched] });
+        }
+    }
+
+    // Seeing through a hired face: our files may know this operative as a
+    // freelancer. Comes late, and only to a service that keeps good files.
+    if (agent && seenSpecies && actorSpecies && seenSpecies !== actorSpecies) {
+        const ci = world.espionage.factionIntel.get(victim)?.counterIntelStrength ?? 0;
+        if (rand() < hirelingSpotChance(ci)) {
+            const kin = factions ? empiresOfSpecies(factions.entries() as any, seenSpecies).filter(id => id !== victim && suspects.includes(id)) : [];
+            const weights: Record<string, number> = {};
+            for (const id of kin) weights[id] = -0.4;
+            out.push({ ...clue('own_intel', 'testimony',
+                `Our files know the ${speciesLabel(seenSpecies)} operative: a freelancer who has sold work to more than one service. Their face proves nothing about who paid.`,
+                kin, weights, now), clears: kin });
         }
     }
     return out;
@@ -251,7 +327,8 @@ export function buildClues(op: EspionageOperation, world: GameWorldState, suspec
 
 /**
  * What a captured agent says about a case. Honest agents tell the truth as
- * they know it: their service did it, or it did not. A Double Agent lies.
+ * they know it: their service did it, or it did not. A Double Agent lies. A
+ * hired foreigner says who paid them, which is the whole value of catching one.
  */
 export function interrogationClue(agent: SpyAgent, kase: CovertCase, world: GameWorldState, rand: () => number = Math.random): CaseClue {
     const now = world.nowSeconds;
@@ -261,18 +338,22 @@ export function interrogationClue(agent: SpyAgent, kase: CovertCase, world: Game
     const didIt = owner === actor;
     const others = kase.suspectIds.filter(id => id !== owner);
     const scapegoat = others.length ? others[Math.floor(rand() * others.length)] : owner;
+    const ownerSpecies = speciesOf(world.economy?.factions?.get?.(owner) as any);
+    const hired = !!agent.species && !!ownerSpecies && agent.species !== ownerSpecies;
+    const who = hired ? `${agent.codename}, ${withArticle(speciesLabel(agent.species))} taken in a sweep,` : `${agent.codename}, taken in a sweep,`;
+    const kind = kase.kindPhrase.replace(/^an? /, '');
 
     if (didIt !== lies) {
-        // Says their own service did it (true unless lying).
-        const blamed = owner;
-        return clue('interrogation', `${agent.codename}, taken in a sweep, says ${labelFor(owner)} ran the ${kase.kindPhrase.replace(/^an? /, '')}.`,
-            [blamed], { [blamed]: didIt ? 1 : 0 }, now);
+        // Says their own employer did it (true unless lying).
+        return clue('interrogation', 'testimony',
+            hired ? `${who} says ${labelFor(owner)} paid for the ${kind}.` : `${who} says ${labelFor(owner)} ran the ${kind}.`,
+            [owner], { [owner]: didIt ? 1 : 0 }, now);
     }
     if (lies && didIt) {
-        return clue('interrogation', `${agent.codename}, taken in a sweep, blames ${labelFor(scapegoat)}.`, [scapegoat], { [scapegoat]: 0 }, now);
+        return clue('interrogation', 'testimony', `${who} blames ${labelFor(scapegoat)}.`, [scapegoat], { [scapegoat]: 0 }, now);
     }
-    return clue('interrogation', `${agent.codename}, taken in a sweep, swears ${labelFor(owner)} had nothing to do with it.`,
-        [owner], { [owner]: -0.6 }, now);
+    return { ...clue('interrogation', 'testimony', `${who} swears ${labelFor(owner)} had nothing to do with it.`,
+        [owner], { [owner]: -0.6 }, now), clears: [owner] };
 }
 
 // ─── Opening and ticking ─────────────────────────────────────────────────────
@@ -331,6 +412,8 @@ export function maybeOpenCase(
     };
     ensureCases(world).set(kase.id, kase);
     releaseDueClues(kase, world, false);
+    // A false flag's walk-in is quick to arrive: that is its tell.
+    if (kase.falseFlagFactionId) kase.nextClueAt = Math.min(kase.nextClueAt, now + interval / 4);
 
     // A suspected operation was already announced (op-aftermath); only an
     // unnoticed one needs telling that something happened at all.
@@ -381,9 +464,10 @@ function releaseDueClues(kase: CovertCase, world: GameWorldState, notify: boolea
 }
 
 /** Release clues, question new prisoners, let old cases go cold and old closed ones go. */
-export function tickCases(world: GameWorldState): void {
+export function tickCases(world: GameWorldState, deltaSeconds = 0): void {
     const cases = ensureCases(world);
     const now = world.nowSeconds;
+    tickMoles(world, cases, deltaSeconds);
     const prisoners = [...world.espionage.agents.values()].filter(a => a.status === 'captured' && a.capturedByFactionId);
 
     for (const [id, kase] of cases) {
@@ -513,4 +597,81 @@ export function leakCase(world: GameWorldState, factionId: string, caseId: strin
         attribution: `suspected:${suspectId}`,
     });
     return { ok: true, message: `The story is with the press. It names ${labelFor(suspectId)}.` };
+}
+
+// ─── The mole ────────────────────────────────────────────────────────────────
+
+/** Chance per hour, at full counter-intelligence strength, of outing one mole. */
+export const MOLE_DETECT_PER_HOUR_AT_FULL_CI = 0.01;
+/** A mole leaks each open file at most this often (sim seconds). */
+export const MOLE_LEAK_INTERVAL_SECONDS = 24 * 3600;
+export const MOLE_REPORT_DOMAIN = 'mole';
+
+function isActiveMole(agent: SpyAgent): boolean {
+    return agent.traitIds.includes('compromised') && !agent.compromiseKnown
+        && agent.status !== 'burned' && agent.status !== 'captured' && agent.status !== 'turned';
+}
+
+/**
+ * A compromised agent in an empire's own service feeds its case files to the
+ * people the files are about: the sponsor of each open case learns how close
+ * the investigation is. The owner's counter-intelligence can out the mole, at
+ * which point the leaking stops and the owner finally sees the trait.
+ */
+export function tickMoles(world: GameWorldState, cases: Map<string, CovertCase>, deltaSeconds: number): void {
+    const now = world.nowSeconds;
+    const hours = Math.max(0, deltaSeconds) / 3600;
+    const molesByOwner = new Map<string, SpyAgent[]>();
+    for (const agent of world.espionage.agents.values()) {
+        if (!isActiveMole(agent)) continue;
+        if (!molesByOwner.has(agent.ownerFactionId)) molesByOwner.set(agent.ownerFactionId, []);
+        molesByOwner.get(agent.ownerFactionId)!.push(agent);
+    }
+    if (molesByOwner.size === 0) return;
+
+    // Outing: the owner's counter-intelligence finds them.
+    for (const [owner, moles] of molesByOwner) {
+        const ci = world.espionage.factionIntel.get(owner)?.counterIntelStrength ?? 0;
+        const chance = MOLE_DETECT_PER_HOUR_AT_FULL_CI * (ci / 100) * hours;
+        for (const mole of moles) {
+            if (chance <= 0 || Math.random() >= chance) continue;
+            mole.compromiseKnown = true;
+            if (isPlayerRun(world, owner)) {
+                fireNotification({
+                    id: `mole-found-${mole.id}-${now}`, factionId: owner, category: 'espionage', priority: 'urgent',
+                    title: 'MOLE FOUND',
+                    body: `${mole.codename} has been feeding our case files to a foreign service. They are compromised; whatever they touched, assume it was read.`,
+                    createdAt: new Date(now * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+                });
+            }
+        }
+    }
+
+    // Leaking: each open file goes to the sponsor it is about.
+    for (const kase of cases.values()) {
+        if (kase.status !== 'open' || !kase.actorFactionId) continue;
+        const moles = (molesByOwner.get(kase.ownerFactionId) ?? []).filter(isActiveMole);
+        if (moles.length === 0) continue;
+        if (kase.moleLeakedAt != null && now - kase.moleLeakedAt < MOLE_LEAK_INTERVAL_SECONDS) continue;
+        kase.moleLeakedAt = now;
+        const sponsor = kase.actorFactionId;
+        if (!isPlayerRun(world, sponsor)) continue;
+        const naming = kase.clues.filter(c => c.pointsAt.includes(sponsor)).length;
+        const press = kase.clues.find(c => c.source === 'press')?.pointsAt[0];
+        const body = `Our asset inside ${labelFor(kase.ownerFactionId)}'s service reports on their file "${kase.title}": `
+            + `${kase.clues.length} finding${kase.clues.length === 1 ? '' : 's'} so far, ${naming} of them naming us.`
+            + (press ? ` Their press is pointing at ${labelFor(press)}.` : '');
+        world.espionage.reports.set(`mole-${kase.id}-${now}`, {
+            id: `mole-${kase.id}-${now}`,
+            ownerFactionId: sponsor,
+            targetFactionId: kase.ownerFactionId,
+            domain: MOLE_REPORT_DOMAIN,
+            title: `Their investigation: ${kase.title}`,
+            body,
+            confidence: 1,
+            accurate: true,
+            createdAt: now,
+            expiresAt: now + 7 * 24 * 3600,
+        });
+    }
 }

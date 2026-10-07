@@ -59,8 +59,17 @@ const ALL_TRAIT_IDS: AgentTraitId[] = [
  * Uses Math.random() — call this only when the player opens the recruitment tab,
  * not on every tick, to keep the simulation deterministic.
  */
-export function generateRecruitPool(factionId: string, nowSeconds: number): AgentCandidate[] {
+/** About one candidate in four is of another species: an émigré or a mercenary. */
+export const FOREIGN_CANDIDATE_CHANCE = 0.25;
+
+export function generateRecruitPool(
+    factionId: string,
+    nowSeconds: number,
+    ownSpecies: string | null = null,
+    otherSpecies: string[] = []
+): AgentCandidate[] {
     const candidates: AgentCandidate[] = [];
+    const foreignPool = otherSpecies.filter(s => s && s !== ownSpecies);
 
     for (let i = 0; i < RECRUIT_POOL_SIZE; i++) {
         const nameIdx = Math.floor(Math.random() * NAMES.length);
@@ -71,15 +80,22 @@ export function generateRecruitPool(factionId: string, nowSeconds: number): Agen
         const traitCount = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3
         const traitIds = shuffled.slice(0, traitCount) as AgentTraitId[];
 
-        // Cost scales with number of desirable traits (shared with the worker,
-        // which re-prices every recruit order from its traits).
-        const cost = recruitCostForTraits(traitIds);
+        // Mostly our own people; now and then someone from elsewhere, whose
+        // face at the scene points at their homeworld instead of at us.
+        const foreign = foreignPool.length > 0 && Math.random() < FOREIGN_CANDIDATE_CHANCE;
+        const species = foreign ? foreignPool[Math.floor(Math.random() * foreignPool.length)] : ownSpecies;
+
+        // Cost scales with desirable traits and with being foreign (shared with
+        // the worker, which re-prices every recruit order from these).
+        const cost = recruitCostForTraits(traitIds, foreign);
 
         candidates.push({
             id: `candidate-${factionId}-${nowSeconds}-${i}`,
             name: NAMES[nameIdx],
             codename: CODENAMES[codenameIdx],
             traitIds,
+            species,
+            foreign,
             recruitmentCost: cost,
             expiresInDays: 7,
         });
@@ -106,6 +122,7 @@ export function recruitAgent(
         codename: candidate.codename,
         ownerFactionId,
         traitIds: candidate.traitIds,
+        species: candidate.species ?? null,
         experienceLevel: 5, // fresh recruit starts with minimal XP
         status: 'available',
         deployedToSystemId: null,

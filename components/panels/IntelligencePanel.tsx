@@ -40,6 +40,7 @@ import type { IntelNetwork } from '@/types/ui-state';
 import { stageForInfiltration, stageInfo, nextStage } from '@/lib/espionage/network-stages';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
+import { speciesLabel } from '@/lib/espionage/dossier';
 import { AFTER_ACTION_DOMAIN, INCOMING_DOMAIN } from '@/lib/espionage/op-aftermath';
 
 type TabType = 'board' | 'cases' | 'networks' | 'operations' | 'reports' | 'agents' | 'defence';
@@ -65,6 +66,8 @@ const DOMAIN_LABEL: Record<OperationDomain, string> = {
 const REPORT_KIND: Record<string, string> = {
     [AFTER_ACTION_DOMAIN]: 'After action',
     [INCOMING_DOMAIN]: 'Against us',
+    // case-board's MOLE_REPORT_DOMAIN, written out: the page must never import case-board.
+    mole: 'From our mole',
     military: 'Military',
     political: 'Political',
     scientific: 'Scientific',
@@ -137,7 +140,7 @@ function outcomeLine(op: { succeeded?: boolean; attributionState: string }): { t
 }
 
 export default function IntelligencePanel() {
-    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds, techState } = useUIStore();
+    const { systems, espionageState, updateEspionage, playerFactionId, factions, nowSeconds, techState, diplomacyState } = useUIStore();
     const [activeTab, setActiveTab] = useState<TabType>('board');
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
     const [busy, setBusy] = useState(false);
@@ -181,7 +184,11 @@ export default function IntelligencePanel() {
         if (!recruitOpen || !playerFactionId) return;
         if (espionageState.candidates.length > 0) return;
         setLoadingRecruits(true);
-        getRecruitPoolAction(playerFactionId)
+        // Our species, and the others a recruiter might find: every empire's
+        // civilization is public. The worker prices the hire from these.
+        const ownSpecies = (factions[playerFactionId] as any)?.civilizationId ?? null;
+        const others = [...new Set(Object.values(factions).map((f: any) => f?.civilizationId).filter((s: any) => s && s !== ownSpecies))] as string[];
+        getRecruitPoolAction(playerFactionId, ownSpecies, others)
             .then(candidates => updateEspionage({ candidates }))
             .catch(() => showToast('Could not reach the recruiters. Try again shortly.', false))
             .finally(() => setLoadingRecruits(false));
@@ -701,6 +708,13 @@ export default function IntelligencePanel() {
                         busy={busy}
                         onAccuse={handleAccuse}
                         onLeak={handleLeak}
+                        dossier={{
+                            playerFactionId,
+                            factions: factions as any,
+                            rivalries: diplomacyState?.rivalries ?? [],
+                            treaties: (diplomacyState?.treaties ?? []) as any,
+                            intel: espionageState.intel,
+                        }}
                     />
                 )}
 
@@ -780,7 +794,12 @@ export default function IntelligencePanel() {
                                             <div className="flex justify-between items-start gap-2">
                                                 <div>
                                                     <div className="text-base font-mono tracking-widest text-slate-100 uppercase leading-none">{candidate.codename}</div>
-                                                    <p className="text-[10px] text-slate-500 mt-1.5">{candidate.name}</p>
+                                                    <p className="text-[10px] text-slate-500 mt-1.5">{candidate.name}{candidate.species ? ` · ${speciesLabel(candidate.species)}` : ''}</p>
+                                                    {candidate.foreign && (
+                                                        <p className="text-[10px] text-amber-400 mt-1" title="A hired foreigner leaves their own species behind at the scene, not ours. Dearer, and worth it.">
+                                                            Foreign hire: a witness would point at their people, not ours.
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="text-[10px] font-mono text-amber-500 bg-amber-500/5 px-2 py-1 rounded border border-amber-500/20 shrink-0">
                                                     § {candidate.recruitmentCost}

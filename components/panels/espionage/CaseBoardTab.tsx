@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import type { CaseClue, CovertCase } from '@/types/ui-state';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
+import { SuspectDossier, type DossierContext } from './SuspectDossier';
+import { speciesLabel } from '@/lib/espionage/dossier';
 
 interface Props {
     cases: CovertCase[];
@@ -25,6 +27,8 @@ interface Props {
     busy: boolean;
     onAccuse: (caseId: string, suspectId: string) => void;
     onLeak: (caseId: string, suspectId: string) => void;
+    /** What our service knows about each suspect, for the dossier. */
+    dossier: Omit<DossierContext, 'cases' | 'factionName' | 'ago'>;
 }
 
 const SOURCE: Record<CaseClue['source'], { label: string; icon: React.ReactNode }> = {
@@ -64,7 +68,7 @@ function ago(nowSeconds: number, at: number): string {
     return formatRealAgo(new Date(Date.now() - realSecondsAgo * 1000));
 }
 
-export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, onLeak }: Props) {
+export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, onLeak, dossier }: Props) {
     const open = cases.filter(c => c.status === 'open');
     const closed = cases.filter(c => c.status !== 'open');
     const [selectedId, setSelectedId] = useState<string | null>(open[0]?.id ?? cases[0]?.id ?? null);
@@ -175,6 +179,9 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                             <span className="normal-case tracking-normal">{ago(nowSeconds, c.arrivedAt)}</span>
                                         </div>
                                         <p className="text-[12px] text-slate-200 leading-snug">{c.text}</p>
+                                        {(c.clears?.length ?? 0) > 0 && (
+                                            <p className="text-[10px] text-emerald-400">Points away from {c.clears!.map(factionName).join(', ')}.</p>
+                                        )}
                                         {kase.status === 'open' && (
                                             <div className="flex items-center gap-2">
                                                 <Pin size={11} className={pinnedTo ? 'text-amber-400' : 'text-slate-600'} />
@@ -208,7 +215,10 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                         className={`w-full min-h-[40px] flex items-center justify-between gap-2 rounded border px-3 py-2 text-left ${selected === s.id
                                             ? 'border-amber-500/60 bg-amber-500/10'
                                             : 'border-slate-800 bg-slate-900/40 hover:border-slate-600'}`}>
-                                        <span className="text-[11px] text-slate-200 truncate">{factionName(s.id)}</span>
+                                        <span className="min-w-0">
+                                            <span className="block text-[11px] text-slate-200 truncate">{factionName(s.id)}</span>
+                                            <span className="block text-[9px] text-slate-500 truncate">{speciesLabel(dossier.factions[s.id]?.civilizationId)}</span>
+                                        </span>
                                         <span className="text-[10px] font-mono shrink-0 flex items-center gap-2">
                                             {s.pinned > 0 && <span className="text-amber-400 flex items-center gap-0.5"><Pin size={10} />{s.pinned}</span>}
                                             <span className="text-slate-500" title="Clues that name them">{s.named} named</span>
@@ -216,6 +226,20 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                     </button>
                                 ))}
                             </div>
+
+                            {selected && (
+                                <SuspectDossier
+                                    suspectId={selected}
+                                    pinned={kase.clues.filter(c => pins[c.id] === selected)}
+                                    cleared={kase.clues.some(c => c.clears?.includes(selected))}
+                                    ctx={{
+                                        ...dossier,
+                                        cases,
+                                        factionName,
+                                        ago: (at: number) => ago(nowSeconds, at),
+                                    }}
+                                />
+                            )}
 
                             {kase.status === 'open' && selected && (
                                 <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 space-y-2">

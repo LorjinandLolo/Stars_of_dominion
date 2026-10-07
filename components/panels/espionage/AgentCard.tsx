@@ -5,6 +5,7 @@ import { SpyAgent, AgentStatus } from '@/types/ui-state';
 import { MapPin, Zap } from 'lucide-react';
 import { AGENT_TRAITS, type AgentTraitId } from '@/lib/espionage/agent-types';
 import { formatGalacticDeadline } from '@/lib/time/galactic-time';
+import { speciesLabel } from '@/lib/espionage/dossier';
 
 interface AgentCardProps {
     agent: SpyAgent;
@@ -30,10 +31,10 @@ const STATUS: Record<AgentStatus, { label: string; color: string }> = {
 /**
  * Traits the owner is allowed to see. `compromised` is a hidden malus: the
  * trait definition says the owner is unaware of it unless counter-intelligence
- * finds it, so it must never be drawn on the owner's own roster.
+ * finds it, so it is drawn only once the owner's service has outed them.
  */
-export function visibleTraits(traitIds: AgentTraitId[]): AgentTraitId[] {
-    return traitIds.filter(t => t !== 'compromised');
+export function visibleTraits(traitIds: AgentTraitId[], compromiseKnown = false): AgentTraitId[] {
+    return compromiseKnown ? traitIds : traitIds.filter(t => t !== 'compromised');
 }
 
 export function TraitChip({ traitId }: { traitId: AgentTraitId }) {
@@ -78,7 +79,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeco
                             {agent.codename}
                         </div>
                         <p className="text-[10px] text-slate-500 font-medium mt-1 uppercase tracking-tighter">
-                            {agent.name} · {agent.operationsRun} op{agent.operationsRun === 1 ? '' : 's'}
+                            {agent.name}{agent.species ? ` · ${speciesLabel(agent.species)}` : ''} · {agent.operationsRun} op{agent.operationsRun === 1 ? '' : 's'}
                         </p>
                     </div>
                     <span
@@ -106,7 +107,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, systemName, nowSeco
                 <Bar label="Loyalty" value={agent.loyaltyRating} color={loyaltyColor} />
 
                 <div className="flex flex-wrap gap-1">
-                    {visibleTraits(agent.traitIds).map(t => <TraitChip key={t} traitId={t} />)}
+                    {visibleTraits(agent.traitIds, agent.compromiseKnown).map(t => <TraitChip key={t} traitId={t} />)}
                 </div>
 
                 <div className="pt-1">
