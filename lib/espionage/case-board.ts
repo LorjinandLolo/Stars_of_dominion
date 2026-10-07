@@ -62,6 +62,9 @@ export const FALSE_ACCUSATION_RIVALRY_JUMP = 8;
 export const FALSE_ACCUSATION_ACTOR_INFILTRATION = 10;
 /** Open files an AI empire works at once. */
 export const MAX_AI_OPEN_CASES = 4;
+/** An informant inside a cell (13c): chance they talk, and how long the next crackdown there knows where to look. */
+export const INFORMANT_TALKS_CHANCE = 0.7;
+export const INFORMANT_WINDOW_SECONDS = 20 * 86400;
 /** Notify on each passive clue (off: see releaseDueClues). */
 export const PASSIVE_CLUE_ALERTS = false;
 /** Open files a player works at once; older ones are shelved for newer. */
@@ -433,6 +436,11 @@ export function leadBlocker(world: GameWorldState, kase: CovertCase, kind: LeadK
     }
     if (kind === 'prisoner' && prisonersHeld(world, kase.ownerFactionId).length === 0) return 'We hold no prisoners.';
     if (kind === 'operative' && !kase.operativeSpecies) return 'Nobody saw the operative.';
+    if (kind === 'informant') {
+        if (!kase.cellId) return 'Only a rebel cell has people close to it who might talk.';
+        const cell = (world as any).rebellion?.cells?.get?.(kase.cellId);
+        if (!cell || cell.status !== 'active') return 'The cell is gone, and its people with it.';
+    }
     return null;
 }
 
@@ -525,6 +533,31 @@ export function resolveLead(world: GameWorldState, kase: CovertCase, rand: () =>
                 return record.claimedEmployerId !== owner ? { ...out, clears: [record.claimedEmployerId] } : out;
             }
             return interrogationClue(agent, kase, world, rand);
+        }
+        case 'informant': {
+            // Compartments (Item 13, decision 6): an informant knows one cell, its
+            // members and its money, and nothing of any other cell.
+            const cell = (world as any).rebellion?.cells?.get?.(kase.cellId ?? '');
+            if (!cell || cell.status !== 'active') return nothing('The cell is gone, and its people with it.');
+            if (rand() >= INFORMANT_TALKS_CHANCE + ci / 250) return nothing(`Nobody close to ${cell.name} would talk. Not yet.`);
+            if (!cell.safeHouse.knownToFactionIds.includes(victim)) cell.safeHouse.knownToFactionIds.push(victim);
+            cell.safeHouse.concealment = Math.max(0.1, cell.safeHouse.concealment - 0.3);
+            cell.informedUntilSeconds = now + INFORMANT_WINDOW_SECONDS;
+            const named = `names ${Math.max(2, Math.round((cell.members ?? 8) / 4))} of its members`;
+            const payers = [...(((world as any).rebellion?.sponsorships?.values?.() ?? []) as Iterable<any>)]
+                .filter(s => s.cellId === cell.id && !s.endedAtSeconds)
+                .sort((a, b) => a.startedAtSeconds - b.startedAtSeconds);
+            const payer = payers[0];
+            const who = `An informant close to ${cell.name}`;
+            if (!payer) {
+                return clue('interrogation', 'testimony', `${who} ${named}, and swears nobody pays them: it is all for ${cell.cause}.`,
+                    [HOMEGROWN], { [HOMEGROWN]: 0.8 }, now);
+            }
+            if (payer.cutout) {
+                return clue('interrogation', 'testimony', `${who} ${named}. The money, they say, comes through a go-between nobody in the cell can name.`, [], {}, now);
+            }
+            return clue('interrogation', 'testimony', `${who} ${named}, and says the money comes from ${labelFor(payer.sponsorFactionId)}.`,
+                [payer.sponsorFactionId], { [payer.sponsorFactionId]: 0.8 }, now);
         }
         case 'operative': {
             const species = kase.operativeSpecies;

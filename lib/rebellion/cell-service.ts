@@ -12,17 +12,17 @@
  *                grievance, which recruits. The trap is the design: every win
  *                costs the next one (Item 13, decision 5).
  *
- * Cells do nothing yet. Acts (heists, sabotage, propaganda) and sponsors come
- * with 13b; informants, escalation and the rebel seat with 13c. Keeping 13a
- * effect-free is deliberate: the approval collapse taught that a loop with a
- * driver and no brake runs away, and this loop's brake (acts the host can
- * answer) does not exist until 13b.
+ * Acts and sponsors live in sponsor-service (13b); movements, which turn a
+ * long-lived cell into a secession crisis, in movement-service (13c). An
+ * informant inside a cell (a case-file lead) tells the next crackdown on its
+ * world where to look.
  */
 
 import type { GameWorldState } from '../game-world-state';
 import { CRACKDOWN_CAPITAL, type Crackdown, type RebelCell, type RebellionState } from './rebellion-types';
 import { ReputationService } from '../reputation/reputation-service';
 import { fireNotification } from '../time/notification-hooks';
+import * as chronicle from '../narrative/chronicle';
 
 // ─── Tuning (per strategic tick: 6 sim hours) ────────────────────────────────
 
@@ -46,6 +46,8 @@ export const CRACKDOWN_HIT_FOUND = 35;
 export const CRACKDOWN_HIT_UNFOUND = 15;
 export const CRACKDOWN_OPPRESSION = 6;
 export const CRACKDOWN_UNREST = 5;
+/** Extra hit on a cell an informant has given away (13c). */
+export const CRACKDOWN_HIT_INFORMED = 15;
 
 const NON_PLAYABLE = new Set(['faction-pirates', 'faction-neutral']);
 
@@ -144,7 +146,15 @@ export function formCell(world: GameWorldState, planet: any, grievance: Grievanc
     return cell;
 }
 
-function endCell(cell: RebelCell, status: 'dissolved' | 'crushed', now: number): void {
+/** Did this world leave `oldHost` for `newHost` through a secession crisis (a breakaway state)? Plain data, no government import. */
+function liberatedFrom(world: GameWorldState, planetId: string, oldHost: string, newHost: string): boolean {
+    for (const c of (world.secessionCrises?.values?.() ?? []) as Iterable<any>) {
+        if (c.factionId === oldHost && c.rebelFactionId === newHost && Array.isArray(c.planetIds) && c.planetIds.includes(planetId)) return true;
+    }
+    return false;
+}
+
+export function endCell(cell: RebelCell, status: 'dissolved' | 'crushed' | 'risen', now: number): void {
     cell.status = status;
     cell.strength = 0;
     cell.members = 0;
@@ -173,8 +183,13 @@ export function tickRebellion(world: GameWorldState, rand: () => number = Math.r
             continue;
         }
 
-        // The world changed hands: the cell's quarrel was with the old owner.
-        if (cell.hostFactionId !== host) cell.hostFactionId = host;
+        // The world changed hands. If it left its old owner in a secession, the
+        // cell got what it fought for and stands down (13c). Under a conqueror
+        // it fights on, against the new owner.
+        if (cell.hostFactionId !== host) {
+            if (liberatedFrom(world, planet.id, cell.hostFactionId, host)) { endCell(cell, 'dissolved', now); continue; }
+            cell.hostFactionId = host;
+        }
         cell.grievance = g.score;
         cell.strength = Math.max(0, Math.min(100, cell.strength + (g.score - GROWTH_BASELINE) * GROWTH_PER_POINT));
         cell.members = membersFor(cell.strength);
@@ -245,9 +260,10 @@ export function crackdown(world: GameWorldState, factionId: string, planetId: st
         if (cell.status !== 'active' || cell.planetId !== planetId) continue;
         hit++;
         const known = isCellKnownTo(cell, factionId);
-        const caught = known || rand() < 1 - cell.safeHouse.concealment * 0.6;
+        const informed = (cell.informedUntilSeconds ?? 0) > now;
+        const caught = known || informed || rand() < 1 - cell.safeHouse.concealment * 0.6;
         if (caught && revealCell(cell, factionId)) found++;
-        cell.strength = Math.max(0, cell.strength - (caught ? CRACKDOWN_HIT_FOUND : CRACKDOWN_HIT_UNFOUND));
+        cell.strength = Math.max(0, cell.strength - (caught ? CRACKDOWN_HIT_FOUND : CRACKDOWN_HIT_UNFOUND) - (informed ? CRACKDOWN_HIT_INFORMED : 0));
         cell.members = membersFor(cell.strength);
         cell.crackdownsSurvived++;
         if (caught) cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment * 0.5);
@@ -263,6 +279,14 @@ export function crackdown(world: GameWorldState, factionId: string, planetId: st
         untilSeconds: now + CRACKDOWN_COOLDOWN_SECONDS, cellsHit: hit, cellsFound: found,
     };
     rebellion.crackdowns.set(planetId, record);
+    // Arrests on a world are public: the press reports the crackdown, never what it found.
+    chronicle.record(world, {
+        type: 'crackdown',
+        actorIds: [factionId],
+        targetIds: [],
+        location: planet.systemId,
+        facts: { planetName: String(planet.name ?? 'a world'), cellsHit: hit },
+    });
 
     const message = hit === 0
         ? `Security swept ${planet.name} and found nobody. The people of ${planet.name} will remember it anyway.`

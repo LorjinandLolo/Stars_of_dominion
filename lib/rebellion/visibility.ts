@@ -50,5 +50,6 @@ export function foreignCellsFor(world: any, factionId: string): ForeignCellView[
             strength: Math.round(c.strength),
             members: c.members,
             actsCommitted: c.actsCommitted ?? 0,
+            movement: !!c.crisisId,
         }));
 }

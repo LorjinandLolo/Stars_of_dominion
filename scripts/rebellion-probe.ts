@@ -398,6 +398,263 @@ async function main() {
         void getOrCreateFactionIntel;
     }
 
+    // ── 13c ──────────────────────────────────────────────────────────────────
+    const MV = await import('../lib/rebellion/movement-service');
+    const RA = await import('../lib/ai/rebellion-ai');
+    const { resolveLead, pursueLead, leadBlocker, INFORMANT_WINDOW_SECONDS } = await import('../lib/espionage/case-board');
+    const { ensureGovernments, getGovernment } = await import('../lib/government/government-service');
+    const { ensureGovernors, getGovernor } = await import('../lib/government/governor-service');
+    const { tickCivilWar } = await import('../lib/government/civil-war-service');
+    const { listBreakaways } = await import('../lib/breakaway/breakaway-rules');
+    const { takeBreakaway } = await import('../lib/breakaway/breakaway-service');
+    const chronicle = await import('../lib/narrative/chronicle');
+    const DAY = 86400;
+    const H = 'faction-covenant';
+    const K = 'faction-kaerruun';
+    const L = 'faction-leopantheri';
+    const cellOn = (w: any, owner: string, strength = 30) => {
+        const p = worldOf(w, owner);
+        oppress(w, owner, p);
+        const c = formCell(w, p, grievanceOf(w, p), () => 0.5);
+        c.strength = strength;
+        return { p, c };
+    };
+    const intelOf = (w: any, id: string) => getOrCreateFactionIntel(w, id);
+
+    console.log('\n[14] Informants');
+    {
+        const runInformant = (mode: 'direct' | 'cutout' | 'none') => {
+            const { w, p, cell } = setup();
+            giveNetwork(w, A, p.systemId);
+            if (mode !== 'none') SP.sponsorCell(w, A, cell.id, { cutout: mode === 'cutout' });
+            SP.commitAct(w, cell, 'propaganda', SP.activeSponsorshipsOf(w, cell.id));
+            const file = cellFile(w, cell.id);
+            intelOf(w, V).intelPoints = 500;
+            const started = pursueLead(w, V, file.id, 'informant', null);
+            const found = resolveLead(w, file, () => 0);
+            return { w, p, cell, file, started, found };
+        };
+        const direct = runInformant('direct');
+        check('an informant can be turned on a cell\'s file', direct.started.ok, direct.started.message);
+        check('they name the sponsor a cell is paid by directly', !!direct.found && direct.found.pointsAt.includes(A), direct.found?.text);
+        check('they name members of their own cell', /names \d+ of its members/.test(direct.found?.text ?? ''));
+        check('the cell is marked for the next crackdown', (direct.cell.informedUntilSeconds ?? 0) >= direct.w.nowSeconds + INFORMANT_WINDOW_SECONDS - 1);
+        direct.file.pendingClues = []; direct.file.clues.push({ ...direct.found!, arrivedAt: direct.w.nowSeconds });
+        const solved = fileAccusation(direct.w, V, direct.file.id, A);
+        check('and the file can be solved on it', solved.ok && (solved as any).verdict === 'correct', solved.message);
+        const cut = runInformant('cutout');
+        check('a cutout keeps the sponsor\'s name from informants too', !!cut.found && cut.found.pointsAt.length === 0 && /go-between/.test(cut.found.text), cut.found?.text);
+        const none = runInformant('none');
+        check('an unpaid cell\'s informant says nobody pays them', !!none.found && none.found.pointsAt.includes(HOMEGROWN), none.found?.text);
+        check('only a cell\'s file has informants', !!leadBlocker(direct.w, { ...direct.file, cellId: null, lead: null, status: 'open' }, 'informant', null));
+
+        // Compartments: one informant gives away one cell.
+        const { w } = setup();
+        const other = worldOf(w, A);
+        oppress(w, A, other);
+        const otherCell = formCell(w, other, grievanceOf(w, other), () => 0.5);
+        const { cell } = (() => { const c = [...ensureRebellion(w).cells.values()].find((x: any) => x.hostFactionId === V)!; return { cell: c }; })();
+        SP.commitAct(w, cell, 'propaganda', []);
+        const f = cellFile(w, cell.id);
+        f.lead = { kind: 'informant', targetFactionId: null, startedAt: w.nowSeconds, dueAt: w.nowSeconds, cost: 0 };
+        resolveLead(w, f, () => 0);
+        check('an informant knows their own cell and no other', !otherCell.safeHouse.knownToFactionIds.includes(V) && !otherCell.informedUntilSeconds);
+
+        // An informed crackdown hits harder and always finds the cell.
+        const { w: w2, p: p2, cell: c2 } = setup();
+        c2.strength = 60;
+        c2.safeHouse.knownToFactionIds = [];
+        c2.informedUntilSeconds = w2.nowSeconds + DAY;
+        crackdown(w2, V, p2.id, () => 0.999);
+        check('an informed crackdown finds the cell and hits it harder', c2.safeHouse.knownToFactionIds.includes(V) && c2.strength === 60 - 35 - 15, `${c2.strength}`);
+    }
+
+    console.log('\n[15] Prison breaks');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, A, p.systemId);
+        const s = (SP.sponsorCell(w, A, cell.id) as any).sponsorship;
+        const agent: any = { id: 'probe-agent-wren', codename: 'Wren', ownerFactionId: A, status: 'captured', capturedByFactionId: V, traitIds: [], experience: 0, cover: 50, deployedToSystemId: null, cooldownUntil: null };
+        w.espionage.agents.set(agent.id, agent);
+        (intelOf(w, V).prisoners ??= []).push({ agentId: agent.id, codename: 'Wren', species: null, claimedEmployerId: A, takenAt: w.nowSeconds, systemId: p.systemId });
+        check('a cell knows its sponsor\'s people are held', SP.sponsorPrisoners(w, cell, [s]).includes(agent.id));
+        check('a homegrown cell has nobody to break out', SP.sponsorPrisoners(w, cell, []).length === 0);
+        drainNotifications();
+        SP.commitAct(w, cell, 'prison_break', [s]);
+        check('a prison break frees the sponsor\'s agent', agent.status === 'on_cooldown' && !agent.capturedByFactionId);
+        check('and takes them off the host\'s books', !(intelOf(w, V).prisoners ?? []).some((x: any) => x.agentId === agent.id));
+        check('the sponsor hears of it', drainNotifications().some(n => n.factionId === A && n.title === 'AGENT FREED'));
+    }
+
+    console.log('\n[16] Assassination');
+    {
+        const { w, p, cell } = setup();
+        ensureGovernments(w);
+        ensureGovernors(w);
+        const before = getGovernor(w, p.id);
+        check('the world has a governor to lose', !!before);
+        chronicle.resetChronicleBuffer();
+        SP.commitAct(w, cell, 'assassination', []);
+        const after = getGovernor(w, p.id);
+        check('the governor is killed', before?.status === 'deceased');
+        check('and a successor takes the office', !!after && after.id !== before?.id);
+        const rows = chronicle.drainBuffer().rows as any[];
+        const row = rows.find(r => r.type === 'rebel_act');
+        check('the press has it, as a grave story', !!row && JSON.parse(row.facts).act === 'assassination' && row.importance >= 60);
+    }
+
+    console.log('\n[17] A movement comes into the open');
+    {
+        const w = freshWorld();
+        ensureGovernments(w);
+        const { p, c } = cellOn(w, H, 60);
+        giveNetwork(w, A, p.systemId);
+        setCredits(w, A, 1_000_000);
+        SP.sponsorCell(w, A, c.id);
+        c.formedAtSeconds = w.nowSeconds - 29 * DAY;
+        check('a cell under thirty sim days stays hidden', MV.tickMovements(w).rose.length === 0 && !c.crisisId);
+        c.formedAtSeconds = w.nowSeconds - 31 * DAY;
+        c.strength = 40;
+        check('so does a weak one', MV.tickMovements(w).rose.length === 0);
+        c.strength = 60;
+        const t = MV.tickMovements(w);
+        const crisis: any = c.crisisId ? w.secessionCrises.get(c.crisisId) : null;
+        check('a movement that survives thirty sim days opens a secession crisis', t.rose.includes(c) && !!crisis && crisis.status === 'open' && crisis.planetIds.includes(p.id));
+        check('the crisis carries the cell\'s name', !!crisis && crisis.cellId === c.id && /Rising/.test(crisis.name));
+        check('and none of its hidden sponsors', !!crisis && !(crisis.foreignSponsors ?? []).includes(A) && !(crisis.exposedSponsors ?? []).includes(A));
+        check('the host now knows the cell', c.safeHouse.knownToFactionIds.includes(H));
+        check('the sponsor sees a movement abroad', SP.foreignCellsFor(w, A).some(v => v.id === c.id && v.movement));
+        {
+            const spare: any = [...w.construction.planets.values()].find((x: any) => !x.ownerId);
+            spare.ownerId = H;
+            const second = formCell(w, spare, grievanceOf(w, spare), () => 0.5);
+            second.strength = 60; second.formedAtSeconds = w.nowSeconds - 31 * DAY;
+            MV.tickMovements(w);
+            check('an empire faces one rising at a time', !second.crisisId);
+            ensureRebellion(w).cells.delete(second.id);
+            spare.ownerId = null;
+        }
+
+        // Settled: the concessions took its reasons.
+        crisis.status = 'settled';
+        const s0 = c.strength;
+        MV.tickMovements(w);
+        check('a settled crisis costs the cell and sends it back into hiding', c.strength === s0 - MV.SETTLED_STRENGTH_LOSS && !c.crisisId);
+        c.strength = 60;
+        check('and it must wait again before it can rise', MV.tickMovements(w).rose.length === 0);
+
+        // Suppressed: crushed.
+        const w2 = freshWorld(); ensureGovernments(w2);
+        const { c: c2 } = cellOn(w2, H, 60);
+        c2.formedAtSeconds = w2.nowSeconds - 31 * DAY;
+        MV.tickMovements(w2);
+        (w2.secessionCrises.get(c2.crisisId) as any).status = 'suppressed';
+        MV.tickMovements(w2);
+        check('a suppressed movement is crushed', c2.status === 'crushed');
+    }
+
+    console.log('\n[18] A movement becomes a state, and a person can take it');
+    {
+        const w = freshWorld();
+        ensureGovernments(w);
+        const { p, c } = cellOn(w, H, 60);
+        giveNetwork(w, A, p.systemId);
+        setCredits(w, A, 1_000_000);
+        const s = (SP.sponsorCell(w, A, c.id) as any).sponsorship;
+        c.formedAtSeconds = w.nowSeconds - 31 * DAY;
+        MV.tickMovements(w);
+        const crisis: any = w.secessionCrises.get(c.crisisId);
+        crisis.status = 'escalated';
+        crisis.escalatedAtSeconds = w.nowSeconds - 30 * DAY;
+        MV.tickMovements(w);
+        check('an escalated movement names a state', !!crisis.rebelFactionId);
+        tickCivilWar(w, 6 * 3600);
+        check('the region becomes that state', w.economy.factions.has(crisis.rebelFactionId));
+        drainNotifications();
+        const t = MV.tickMovements(w);
+        check('the cell has risen', t.states.includes(c) && c.status === 'risen' && c.breakawayFactionId === crisis.rebelFactionId);
+        check('its sponsorship is over', !!s.endedAtSeconds);
+        check('and the sponsor is told what it built', drainNotifications().some(n => n.factionId === A && n.title === 'OUR MOVEMENT IS A STATE'));
+        check('the state is open to a new player', listBreakaways(w).some((b: any) => b.factionId === crisis.rebelFactionId));
+        const taken = takeBreakaway(w, crisis.rebelFactionId, { fromFactionId: null, eliminated: false } as any);
+        check('a human can take it as a breakaway', taken.ok, taken.message);
+
+        // Another cell on that world got what it fought for; one under a conqueror fights on.
+        const comrade = formCell(w, p, grievanceOf(w, p), () => 0.5);
+        comrade.hostFactionId = H;
+        comrade.strength = 30;
+        tickRebellion(w, () => 0.99);
+        check('a cell on a world that seceded stands down', comrade.status === 'dissolved');
+        const w4 = freshWorld(); ensureGovernments(w4);
+        const { p: p4, c: c4 } = cellOn(w4, H, 30);
+        p4.ownerId = K;
+        tickRebellion(w4, () => 0.99);
+        check('a cell on a conquered world fights the conqueror', c4.status === 'active' && c4.hostFactionId === K);
+
+        // A late joiner's seat: a movement in the open rises for them.
+        const w2 = freshWorld(); ensureGovernments(w2);
+        const { c: c2 } = cellOn(w2, H, 60);
+        c2.formedAtSeconds = w2.nowSeconds - 31 * DAY;
+        MV.tickMovements(w2);
+        const rose = MV.riseMovementForPlayer(w2, [A, V]);
+        check('a late joiner\'s seat raises a movement already in the open', !!rose && c2.status === 'risen' && w2.economy.factions.has(rose.factionId));
+        const w3 = freshWorld(); ensureGovernments(w3);
+        const { c: c3 } = cellOn(w3, V, 60);
+        c3.formedAtSeconds = w3.nowSeconds - 31 * DAY;
+        MV.tickMovements(w3);
+        check('but never one inside a human\'s empire', MV.riseMovementForPlayer(w3, [A, V]) === null);
+        check('the lobby asks for a movement before it invents one', /riseMovementForPlayer\(world, humans\)[\s\S]{0,400}raiseUprising\(/.test(code('lib/breakaway/seat-service.ts')));
+        check('the strategic tick runs movements', /tickMovements\(world\)/.test(code('lib/time/tick-processor.ts')));
+    }
+
+    console.log('\n[19] AI governments crack down by temperament');
+    {
+        const run = (host: string, strength: number, opts: { crisis?: boolean; pc?: number; known?: boolean } = {}) => {
+            const w = freshWorld();
+            ensureGovernments(w);
+            const { p, c } = cellOn(w, host, strength);
+            if (opts.known !== false) c.safeHouse.knownToFactionIds.push(host);
+            if (opts.crisis) c.crisisId = 'probe-crisis';
+            const gov: any = getGovernment(w, host);
+            if (gov) gov.politicalCapital = opts.pc ?? 50;
+            return { w, p, c, did: RA.tickAICrackdowns(w, host) };
+        };
+        check('the Kaer\'Ruun crack down on any cell they know of', !!run(K, 12).did);
+        check('the Leo-pantheri let a small cell be', run(L, 25).did === null);
+        check('but crack down once it is a real threat', !!run(L, 70).did);
+        check('anyone cracks down on a movement in the open', !!run(L, 12, { crisis: true }).did);
+        check('a crackdown needs political capital', run(K, 40, { pc: 0 }).did === null);
+        const iron = run(K, 5, { known: false });
+        iron.p.unrest = 70;
+        const again = RA.tickAICrackdowns(iron.w, K);
+        check('an iron fist sweeps a restless world with no known cell', !!iron.did || !!again);
+        check('the strategic tick runs AI crackdowns', /tickAICrackdowns\(world, factionId\)/.test(code('lib/time/tick-processor.ts')));
+    }
+
+    console.log('\n[20] The press');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, A, p.systemId);
+        SP.sponsorCell(w, A, cell.id);
+        chronicle.resetChronicleBuffer();
+        SP.commitAct(w, cell, 'sabotage', SP.activeSponsorshipsOf(w, cell.id));
+        w.nowSeconds += 30 * DAY;
+        crackdown(w, V, p.id, () => 0);
+        const rows = chronicle.drainBuffer().rows as any[];
+        const act = rows.find(r => r.type === 'rebel_act');
+        check('a cell\'s act is history', !!act);
+        check('with its payer on the record but hidden from the press', !!act && JSON.parse(act.actorIds).includes(A) && act.attribution === 'invisible');
+        check('a crackdown is history', rows.some(r => r.type === 'crackdown' && JSON.parse(r.actorIds).includes(V)));
+        const { w: w2, cell: c2 } = setup();
+        chronicle.resetChronicleBuffer();
+        SP.commitAct(w2, c2, 'propaganda', []);
+        const own = (chronicle.drainBuffer().rows as any[]).find(r => r.type === 'rebel_act');
+        check('an unpaid cell\'s act hides nobody', !!own && own.attribution === 'exposed' && JSON.parse(own.actorIds).length === 0);
+        const tpl = code('lib/narrative/prose/template-writer.ts');
+        const block = tpl.slice(tpl.indexOf("case 'rebel_act'"), tpl.indexOf("case 'crackdown'"));
+        check('the rebel story never names a payer', block.length > 0 && !/\bactor\b/.test(block));
+    }
+
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
     process.exit(failures === 0 ? 0 : 1);
 }

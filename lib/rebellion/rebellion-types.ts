@@ -13,7 +13,7 @@
 
 import type { PirateBase, Sponsorship } from '../piracy/piracy-types';
 
-export type CellStatus = 'active' | 'dissolved' | 'crushed';
+export type CellStatus = 'active' | 'dissolved' | 'crushed' | 'risen';
 
 export interface RebelCell {
     id: string;
@@ -50,6 +50,16 @@ export interface RebelCell {
     /** Acts committed (13b). */
     actsCommitted?: number;
     lastActAtSeconds?: number | null;
+    // ─── 13c ───
+    /** An informant inside it (a lead) until then: the next crackdown on its world knows where to look. */
+    informedUntilSeconds?: number | null;
+    /** The secession crisis it came into the open as (13c): it is a movement now. */
+    crisisId?: string | null;
+    movementAtSeconds?: number | null;
+    /** When its last crisis ended without a state; it must wait again before it can rise. */
+    lastCrisisEndedAtSeconds?: number | null;
+    /** The breakaway state it became, when status is 'risen'. */
+    breakawayFactionId?: string | null;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -81,7 +91,7 @@ export const CRACKDOWN_CAPITAL = 10;
 /** "no foreign hand": the suspect on a cell's file that means the cell acted alone. */
 export const HOMEGROWN = 'homegrown';
 
-export type CellActKind = 'heist' | 'sabotage' | 'propaganda';
+export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination';
 
 /**
  * An empire paying a cell in a rival's territory. The pirate Sponsorship
@@ -115,6 +125,8 @@ export interface ForeignCellView {
     strength: number;
     members: number;
     actsCommitted: number;
+    /** Out in the open: a secession crisis carries its name (13c). */
+    movement: boolean;
 }
 
 /** Credits per strategic tick (24 real minutes). Shared with the page. */

@@ -35,6 +35,8 @@ import { deployAgent, recallAgent } from '../espionage/agent-service';
 import { shiftRivalry } from '../diplomacy/offer-service';
 import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
+import { getGovernor, replaceGovernor } from '../government/governor-service';
+import * as chronicle from '../narrative/chronicle';
 
 // ─── Tuning (per strategic tick) ─────────────────────────────────────────────
 
@@ -244,6 +246,17 @@ const ACT_PHRASE: Record<CellActKind, string> = {
     heist: 'a heist',
     sabotage: 'a sabotage attack',
     propaganda: 'a propaganda campaign',
+    prison_break: 'a prison break',
+    assassination: 'the killing of the governor',
+};
+
+/** How loudly the press carries each act (chronicle bands: 15-39 local news, 40-69 real news). */
+const ACT_IMPORTANCE: Record<CellActKind, number> = {
+    propaganda: 18, heist: 32, sabotage: 36, prison_break: 50, assassination: 62,
+};
+
+const ACT_TITLE: Record<CellActKind, string> = {
+    heist: 'HEIST', sabotage: 'SABOTAGE', propaganda: 'AGITATION', prison_break: 'PRISON BREAK', assassination: 'ASSASSINATION',
 };
 
 /** Chance per tick that a cell strikes. */
@@ -259,18 +272,39 @@ export function tickCellActs(world: GameWorldState, rand: () => number = Math.ra
     for (const cell of ensureRebellion(world).cells.values()) {
         const sponsors = activeSponsorshipsOf(world, cell.id);
         if (rand() >= actChance(cell, sponsors)) continue;
-        const act = pickAct(sponsors, rand);
+        const act = pickAct(world, cell, sponsors, rand);
         const kase = commitAct(world, cell, act, sponsors, rand);
         out.push({ cell, act, caseId: kase?.id ?? null });
     }
     return out;
 }
 
-function pickAct(sponsors: CellSponsorship[], rand: () => number): CellActKind {
+/** Agents of this cell's sponsors that its host holds: what a prison break is for. */
+export function sponsorPrisoners(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorship[]): string[] {
+    const payers = new Set(sponsors.map(s => s.sponsorFactionId));
+    return [...world.espionage.agents.values()]
+        .filter(a => a.status === 'captured' && a.capturedByFactionId === cell.hostFactionId && payers.has(a.ownerFactionId))
+        .map(a => a.id);
+}
+
+/** Strength a cell needs to kill a governor, armed; and unarmed, out of its own fury. */
+export const ASSASSINATION_MIN_STRENGTH = 40;
+export const ASSASSINATION_UNARMED_STRENGTH = 70;
+
+function canAssassinate(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorship[]): boolean {
+    if (!getGovernor(world, cell.planetId)) return false;
+    const armed = sponsors.some(s => s.armed);
+    return cell.strength >= (armed ? ASSASSINATION_MIN_STRENGTH : ASSASSINATION_UNARMED_STRENGTH);
+}
+
+function pickAct(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorship[], rand: () => number): CellActKind {
     const weights: [CellActKind, number][] = [
         ['propaganda', 1],
         ['heist', sponsors.length ? 2 : 1],
         ['sabotage', sponsors.some(s => s.armed) ? 2 : 0.5],
+        // A sponsor wants its people back; a cell breaks them out.
+        ['prison_break', sponsorPrisoners(world, cell, sponsors).length ? 3 : 0],
+        ['assassination', canAssassinate(world, cell, sponsors) ? (sponsors.some(s => s.armed) ? 1 : 0.5) : 0],
     ];
     const total = weights.reduce((n, [, w]) => n + w, 0);
     let r = rand() * total;
@@ -302,6 +336,39 @@ export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKi
             planet.unrest = Math.min(100, Number(planet.unrest ?? 0) + 3);
         }
         effect = 'works wrecked and the world shaken';
+    } else if (act === 'prison_break') {
+        const freed = sponsorPrisoners(world, cell, sponsors);
+        const intel = world.espionage.factionIntel.get(host);
+        for (const id of freed) {
+            const agent = world.espionage.agents.get(id);
+            if (!agent) continue;
+            agent.status = 'on_cooldown';
+            agent.capturedByFactionId = null;
+            agent.cooldownUntil = now + 2 * 86400;
+            if (intel?.prisoners) intel.prisoners = intel.prisoners.filter(p => p.agentId !== id);
+            if (isPlayerRun(world, agent.ownerFactionId)) {
+                fireNotification({
+                    id: `prison-break-${id}-${now}`, factionId: agent.ownerFactionId, category: 'espionage', priority: 'normal',
+                    title: 'AGENT FREED', body: `${agent.codename} is out: ${cell.name} broke them out of a prison of ${labelFor(host)}.`,
+                    createdAt: new Date(now * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+                });
+            }
+        }
+        if (planet) planet.stability = Math.max(0, Number(planet.stability ?? 50) - 4);
+        effect = freed.length ? `${freed.length} prisoner${freed.length === 1 ? '' : 's'} gone from the cells` : 'a prison stormed';
+    } else if (act === 'assassination') {
+        const governor = getGovernor(world, cell.planetId);
+        if (governor) {
+            governor.status = 'deceased';
+            governor.assignmentId = undefined;
+            governor.history.push({ timestamp: now, description: `Killed on ${planet?.name ?? cell.planetId} by ${cell.name}.` });
+            replaceGovernor(world, cell.planetId);
+        }
+        if (planet) {
+            planet.stability = Math.max(0, Number(planet.stability ?? 50) - 10);
+            planet.unrest = Math.min(100, Number(planet.unrest ?? 0) + 5);
+        }
+        effect = governor ? `Governor ${governor.name} is dead` : 'the governor\'s residence attacked';
     } else {
         const blocs: any[] = (world as any).movement?.empirePostures?.get?.(host)?.blocs ?? [];
         const bloc = blocs.find(b => b.id === cell.causeBlocId);
@@ -321,11 +388,23 @@ export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKi
     if (isPlayerRun(world, host)) {
         fireNotification({
             id: `cell-act-${cell.id}-${now}`, factionId: host, category: 'espionage', priority: 'urgent',
-            title: `REBEL ${act === 'heist' ? 'HEIST' : act === 'sabotage' ? 'SABOTAGE' : 'AGITATION'} ON ${String(planet?.name ?? 'A WORLD').toUpperCase()}`,
+            title: `REBEL ${ACT_TITLE[act]} ON ${String(planet?.name ?? 'A WORLD').toUpperCase()}`,
             body: `${cell.name}, for ${cell.cause}, has claimed ${ACT_PHRASE[act]}: ${effect}. A case file is open: who stands behind them?`,
             createdAt: new Date(now * 1000).toISOString(), read: false, linkToTab: 'intelligence',
         });
     }
+    // The press has the claim; the payers stay off the record until exposed.
+    chronicle.record(world, {
+        type: 'rebel_act',
+        actorIds: sponsors.map(s => s.sponsorFactionId),
+        targetIds: [host],
+        location: cell.systemId,
+        attribution: sponsors.length ? 'invisible' : 'exposed',
+        // Most acts are local news; a killing or a jailbreak makes the front page.
+        importanceOverride: ACT_IMPORTANCE[act],
+        coalesceKey: `rebel-${cell.id}`,
+        facts: { cellName: cell.name, cause: cell.cause, act, actPhrase: ACT_PHRASE[act], planetName: String(planet?.name ?? 'a world'), effect },
+    });
     return openCellCase(world, cell, act, sponsors, rand);
 }
 

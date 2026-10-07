@@ -269,6 +269,32 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
             };
         }
 
+        case 'rebel_act': {
+            // The cell claims its acts; who pays it is the story the press cannot print yet.
+            const cell = str(e, 'cellName', 'A rebel cell');
+            const Cell = cell.charAt(0).toUpperCase() + cell.slice(1);
+            const planet = str(e, 'planetName', 'a world');
+            const cause = str(e, 'cause', 'its cause');
+            const act = str(e, 'act', 'propaganda');
+            const headline = act === 'assassination' ? `GOVERNOR KILLED ON ${planet.toUpperCase()}: ${Cell} claims the killing`
+                : act === 'prison_break' ? `Prison break on ${planet}: ${cell} frees ${target}'s prisoners`
+                : act === 'heist' ? `${Cell} robs ${target} on ${planet}`
+                : act === 'sabotage' ? `Sabotage on ${planet}: ${cell} claims the attack`
+                : `${Cell} takes its cause to the streets of ${planet}`;
+            return {
+                headline,
+                body: `${Cell}, speaking for ${cause}, has claimed ${str(e, 'actPhrase', 'an attack')} on ${planet}, a world of ${target}: ${str(e, 'effect', 'the damage is still being counted')}. ${target} has not said who it believes stands behind the cell, if anyone does. Cells like this one rarely say where their money comes from, and the ones that pay them say even less.`,
+                tone: act === 'assassination' ? 'grave' : 'alarmed',
+            };
+        }
+
+        case 'crackdown':
+            return {
+                headline: `${actor} cracks down on ${str(e, 'planetName', 'one of its worlds')}`,
+                body: `Security forces of ${actor} have swept ${str(e, 'planetName', 'a restless world')}, with arrests reported across the city districts. The government calls it the restoration of order. On ${str(e, 'planetName', 'the world')} itself, people are calling it something else, and some of them will remember it when the next cell recruits.`,
+                tone: 'grave',
+            };
+
         case 'civil_war_started':
             return {
                 headline: `THE EMPIRE SPLITS: ${str(e, 'rebelName', 'a breakaway state')} declares independence from ${target}`,

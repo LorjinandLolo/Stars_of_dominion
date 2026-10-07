@@ -68,12 +68,18 @@ export function InternalSecurity({ cells, crackdowns, worlds, nowSeconds, busy, 
                                 {(c.actsCommitted ?? 0) > 0 && ` · ${c.actsCommitted} strike${c.actsCommitted === 1 ? "" : "s"}`}
                                 {c.crackdownsSurvived > 0 && ` · survived ${c.crackdownsSurvived} crackdown${c.crackdownsSurvived === 1 ? '' : 's'}`}
                             </div>
+                            {c.crisisId && (
+                                <div className="text-[10px] text-red-400">In the open: a secession crisis carries its name. Answer it on the Government page, or crack down.</div>
+                            )}
+                            {(c.informedUntilSeconds ?? 0) > nowSeconds && (
+                                <div className="text-[10px] text-emerald-400">We have an informant inside: a crackdown here knows where to look.</div>
+                            )}
                         </div>
                     );
                 })}
                 {ended.length > 0 && (
                     <p className="text-[10px] text-slate-500">
-                        Ended lately: {ended.map(c => `${c.name} (${c.status === 'crushed' ? 'crushed' : 'faded away'})`).join(', ')}.
+                        Ended lately: {ended.map(c => `${c.name} (${c.status === 'crushed' ? 'crushed' : c.status === 'risen' ? 'rose as a state' : 'faded away'})`).join(', ')}.
                     </p>
                 )}
             </div>

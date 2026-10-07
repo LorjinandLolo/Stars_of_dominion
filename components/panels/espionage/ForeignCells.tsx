@@ -135,7 +135,7 @@ export function ForeignCells({ cells, sponsorships, agents, credits, factionName
                     <div key={c.id} className="border border-slate-800 rounded p-2 text-[11px]">
                         <div className="flex justify-between gap-2">
                             <span className="text-slate-200 capitalize">{c.name}</span>
-                            <span className="text-slate-400">{strengthWord(c.strength)}</span>
+                            <span className={c.movement ? "text-red-400" : "text-slate-400"}>{c.movement ? "in the open" : strengthWord(c.strength)}</span>
                         </div>
                         <div className="text-[10px] text-slate-500">
                             {c.planetName} · {factionName(c.hostFactionId)} · about {c.members} members · for {c.cause}

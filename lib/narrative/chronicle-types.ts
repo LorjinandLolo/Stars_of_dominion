@@ -43,6 +43,9 @@ export type ChronicleEventType =
     | 'civil_war_started'
     // A person takes the helm of a breakaway state (casual-play Item 7).
     | 'breakaway_claimed'
+    // Rebel cells (Item 13c): an act a cell claimed, and a government's crackdown.
+    | 'rebel_act'
+    | 'crackdown'
     | 'defiance_event'
     // Economy
     | 'trade_route_opened'

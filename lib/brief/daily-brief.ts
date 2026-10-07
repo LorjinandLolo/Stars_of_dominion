@@ -268,6 +268,8 @@ export function describeChronicleRow(row: BriefChronicleRow, factionId: string):
         case 'government_changed': return `${actor} changed government.`;
         case 'secession_declared': return `${target} declared independence from ${actor}.`;
         case 'breakaway_claimed': return `${actor} has a new leader.`;
+        case 'rebel_act': return `${facts.cellName ?? 'A rebel cell'} struck on ${facts.planetName ?? 'a world'} of ${target}.`;
+        case 'crackdown': return `${actor} cracked down on ${facts.planetName ?? 'one of its worlds'}.`;
         case 'enlightenment_transcending': return `${actor} has begun to transcend.`;
         case 'enlightenment_interrupted': return `${actor}'s Transcendence failed.`;
         case 'enlightenment_achieved': return `${actor} achieved Enlightenment.`;

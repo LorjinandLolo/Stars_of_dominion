@@ -157,7 +157,7 @@ export function assessmentLine(pinned: { tag?: ClueTag }[], cleared: boolean): s
 
 // ─── Leads (item 12b-3) ──────────────────────────────────────────────────────
 
-export type LeadKind = 'money' | 'prisoner' | 'sources' | 'sensors' | 'method' | 'operative';
+export type LeadKind = 'money' | 'prisoner' | 'sources' | 'sensors' | 'method' | 'operative' | 'informant';
 
 export interface LeadDefinition {
     kind: LeadKind;
@@ -169,6 +169,8 @@ export interface LeadDefinition {
     baseHours: number;
     /** Needs a target empire (ask our sources inside X). */
     needsTarget?: boolean;
+    /** Only on a rebel cell's file (13c). */
+    cellOnly?: boolean;
 }
 
 export const LEADS: LeadDefinition[] = [
@@ -178,6 +180,7 @@ export const LEADS: LeadDefinition[] = [
     { kind: 'sources', label: 'Ask our sources', description: 'Ask our people inside one empire what they heard. Needs an Embedded Network there.', baseCost: 25, baseHours: 12, needsTarget: true },
     { kind: 'prisoner', label: 'Press a prisoner', description: 'Question a prisoner again, harder. Needs a prisoner in our hands.', baseCost: 10, baseHours: 4 },
     { kind: 'operative', label: 'Trace the operative', description: 'Who trained the operative a witness saw. Needs a witness on file.', baseCost: 20, baseHours: 8 },
+    { kind: 'informant', label: 'Turn an informant', description: 'Pay someone close to the cell to talk: members, and where the money comes from. Rebel cell files only.', baseCost: 20, baseHours: 10, cellOnly: true },
 ];
 
 export const LEAD_BY_KIND: Record<LeadKind, LeadDefinition> =

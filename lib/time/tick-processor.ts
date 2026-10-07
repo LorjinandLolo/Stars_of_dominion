@@ -65,7 +65,8 @@ import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { tickAICases } from '../ai/case-ai';
-import { tickAISponsorship } from '../ai/rebellion-ai';
+import { tickAICrackdowns, tickAISponsorship } from '../ai/rebellion-ai';
+import { tickMovements } from '../rebellion/movement-service';
 import { tickRebellion } from '../rebellion/cell-service';
 import { tickSponsorships, tickCellActs } from '../rebellion/sponsor-service';
 import { PopulationService } from '../construction/population-service';
@@ -652,8 +653,13 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         // 13b: sponsors pay and leave traces; cells strike.
         tickSponsorships(world);
         for (const act of tickCellActs(world)) {
-            console.log(`[REBELLION]  on : `);
+            console.log(`[REBELLION] ${act.cell.name} ${act.act} on ${act.cell.planetId}${act.caseId ? ` (file ${act.caseId})` : ''}`);
         }
+        // 13c: long-lived strong cells come into the open as secession crises,
+        // and movements follow their crisis to a settlement, defeat or a state.
+        const moved = tickMovements(world);
+        for (const cell of moved.rose) console.log(`[REBELLION] ${cell.name} came into the open on ${cell.planetId}`);
+        for (const cell of moved.states) console.log(`[REBELLION] ${cell.name} became ${cell.breakawayFactionId}`);
 
         // AI-run factions only: this turn SPENDS the faction's intel points
         // and launches covert operations attributed to it — run on a human's
@@ -665,6 +671,9 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
             // ...pays rebels abroad when it is hostile enough (Item 13b)...
             const sponsored = tickAISponsorship(world, factionId);
             if (sponsored) console.log(`[REBELLION] ${factionId} ${sponsored}`);
+            // ...and cracks down on cells at home, as hard as its temperament runs (13c).
+            const cracked = tickAICrackdowns(world, factionId);
+            if (cracked) console.log(`[REBELLION] ${factionId} ${cracked}`);
             for (const act of tickAICases(world, factionId)) {
                 console.log(`[AI-CASES] ${factionId} ${act.action}${act.suspectId ? ` ${act.suspectId}` : ''}: ${act.message}`);
             }

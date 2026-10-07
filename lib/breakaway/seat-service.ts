@@ -29,6 +29,7 @@ import {
     type SeatReason,
 } from './breakaway-rules';
 import { raiseUprising, takeBreakaway } from './breakaway-service';
+import { riseMovementForPlayer } from '@/lib/rebellion/movement-service';
 
 export const LOBBY_TAKE_BREAKAWAY = 'LOBBY_TAKE_BREAKAWAY';
 /** The faction column of a lobby row: it belongs to no empire yet. */
@@ -193,9 +194,17 @@ export async function handleLobbyOrder(world: any, payload: LobbySeatPayload): P
         if (free.length && !nearSystemId) {
             rebelId = free[0].factionId;
         } else {
-            const raised = raiseUprising(world, { nearSystemId, humanFactionIds: humans });
-            if (!raised.ok || !raised.factionId) return { ok: false, message: raised.message ?? 'No province could rise.' };
-            rebelId = raised.factionId;
+            // Item 13c: a real movement already in the open rises for them
+            // before the game invents one. (An invite wants a state next to its
+            // host, which a movement elsewhere is not.)
+            const movement = nearSystemId ? null : riseMovementForPlayer(world, humans);
+            if (movement) {
+                rebelId = movement.factionId;
+            } else {
+                const raised = raiseUprising(world, { nearSystemId, humanFactionIds: humans });
+                if (!raised.ok || !raised.factionId) return { ok: false, message: raised.message ?? 'No province could rise.' };
+                rebelId = raised.factionId;
+            }
         }
     }
 

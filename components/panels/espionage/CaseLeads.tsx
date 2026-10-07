@@ -61,7 +61,7 @@ export function CaseLeads({ kase, intel, factionName, nowSeconds, busy, onLead }
             </div>
             <p className="text-[10px] text-slate-500">One at a time. Findings, not proof: a lead can come back empty, or point at the wrong door.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {LEADS.map(l => {
+                {LEADS.filter(l => !l.cellOnly || !!kase.cellId).map(l => {
                     const why = blocker(l.kind);
                     return (
                         <div key={l.kind} className="border border-slate-800 rounded p-2 flex flex-col gap-1.5">

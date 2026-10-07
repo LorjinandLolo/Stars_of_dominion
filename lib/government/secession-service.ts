@@ -277,7 +277,7 @@ export function openCrisis(
     });
     gov.history.push({
         timestamp: world.nowSeconds,
-        event: `${crisis.name}: ${planetIds.length} worlds demand independence.`,
+        event: `${crisis.name}: ${planetIds.length === 1 ? "One world demands" : `${planetIds.length} worlds demand`} independence.`,
     });
 
     try {
@@ -287,7 +287,7 @@ export function openCrisis(
             category: 'politics',
             priority: 'urgent',
             title: crisis.name.toUpperCase(),
-            body: `${planetIds.length} worlds demand independence. Support for leaving: ${Math.round(crisis.independenceSupport)}%.`,
+            body: `${planetIds.length === 1 ? "One world demands" : `${planetIds.length} worlds demand`} independence. Support for leaving: ${Math.round(crisis.independenceSupport)}%.`,
             createdAt: new Date(world.nowSeconds * 1000).toISOString(),
             read: false,
             linkToTab: 'government',
