@@ -29,6 +29,7 @@ import { MIN_STAGE_FOR_CATEGORY, stageInfo } from './network-stages';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { techIdsHaveFlag } from '../tech/flags';
 import { SIM_SECONDS_PER_REAL_SECOND } from '../time/time-config';
+import { HOMEGROWN } from '../rebellion/rebellion-types';
 import {
     empiresOfSpecies, isGrievance, relationPhrase, speciesLabel, speciesOf, withArticle, type ClueTag,
     LEAD_BY_KIND, leadCost, leadDurationSeconds, MOTIVE_WINDOW_SECONDS, SOURCES_LEAD_MIN_INFILTRATION, motiveLabel, type LeadKind,
@@ -780,6 +781,7 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
     const kase = ownOpenCase(world, factionId, caseId);
     if (typeof kase === 'string') return { ok: false, message: kase };
     if (!kase.suspectIds.includes(suspectId)) return { ok: false, message: 'That empire is not a suspect in this case.' };
+    if (suspectId === HOMEGROWN) return closeAsHomegrown(world, kase, motive);
 
     const now = world.nowSeconds;
     const actor = kase.actorFactionId ?? '';
@@ -801,6 +803,9 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
     if (correct) {
         const op = kase.operationId ? world.espionage.operations.get(kase.operationId) : undefined;
         if (op) op.attributionState = 'exposed';
+        // A cell's file: naming the sponsor exposes the sponsorship (Item 13b).
+        const sponsorship: any = kase.sponsorshipId ? (world as any).rebellion?.sponsorships?.get?.(kase.sponsorshipId) : undefined;
+        if (sponsorship && !sponsorship.exposedAtSeconds) { sponsorship.evidence = 1; sponsorship.attributionState = 'exposed'; sponsorship.exposedAtSeconds = now; }
         try { shiftRivalry(world, factionId, actor, EXPOSED_RIVALRY_JUMP, 'spy_exposed', kase.kindPhrase); } catch { /* minimal worlds */ }
         try { openDebate(world, factionId, 'espionage_exposed_on_us', { aggressor: accusedName }, actor); } catch { /* no chamber */ }
         try { grantPoliticalCapital(world, factionId, CORRECT_ACCUSATION_CAPITAL, 'proved a foreign operation'); } catch { /* no government */ }
@@ -863,6 +868,7 @@ export function leakCase(world: GameWorldState, factionId: string, caseId: strin
     const kase = ownOpenCase(world, factionId, caseId);
     if (typeof kase === 'string') return { ok: false, message: kase };
     if (!kase.suspectIds.includes(suspectId)) return { ok: false, message: 'That empire is not a suspect in this case.' };
+    if (suspectId === HOMEGROWN) return { ok: false, message: 'There is nobody to name: to call it homegrown, close the file with an accusation instead.' };
 
     kase.status = 'leaked';
     kase.lead = null;
@@ -999,4 +1005,31 @@ export function pressFacts(world: GameWorldState, kase: CovertCase): { subject: 
         evidence: Math.min(90, kase.clues.length * 15 + (kase.leadsRun ?? 0) * 10),
         obstructions: 0,
     };
+}
+
+// ─── Rebel cells' files (Item 13b) ───────────────────────────────────────────
+
+/**
+ * Close a cell's file as homegrown: no foreign hand. Right when nobody was
+ * paying the cell; wrong when somebody was, and the sponsor goes on unseen.
+ * No empire is accused, so nobody is insulted either way.
+ */
+function closeAsHomegrown(world: GameWorldState, kase: CovertCase, motive: string | null): CaseActionResult {
+    const now = world.nowSeconds;
+    const right = kase.actorFactionId === HOMEGROWN;
+    kase.status = 'accused';
+    kase.accusedFactionId = HOMEGROWN;
+    kase.verdict = right ? 'correct' : 'wrong';
+    kase.closedAt = now;
+    kase.lead = null;
+    kase.theoryMotive = motive;
+    kase.motiveVerdict = right && motive ? (motive === kase.trueMotive ? 'right' : 'wrong') : null;
+    if (right) {
+        const intel = getOrCreateFactionIntel(world, kase.ownerFactionId);
+        intel.intelPoints = Math.min(1000, intel.intelPoints + 10);
+        return { ok: true, verdict: 'correct', message: 'Nobody paid them. The cell acted on its own grievance, and the file can say so.' };
+    }
+    // The sponsor goes on unseen and a little bolder.
+    if (kase.actorFactionId) updateInfiltration(world, kase.actorFactionId, kase.ownerFactionId, 5);
+    return { ok: true, verdict: 'wrong', message: 'We called it homegrown. Somebody was paying them, and still is.' };
 }

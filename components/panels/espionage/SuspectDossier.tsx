@@ -15,6 +15,7 @@ import { FileText, Fingerprint, Handshake, History, Lock, ShieldAlert, UserX } f
 import type { CaseClue, CovertCase, FactionIntelState, RivalryState } from '@/types/ui-state';
 import { assessmentLine, ideologyLabel, relationPhrase, speciesLabel } from '@/lib/espionage/dossier';
 import { stageForInfiltration, stageInfo } from '@/lib/espionage/network-stages';
+import { HOMEGROWN } from '@/lib/rebellion/rebellion-types';
 
 export interface DossierContext {
     playerFactionId: string | null;
@@ -56,6 +57,22 @@ export function SuspectDossier({ suspectId, pinned, cleared, ctx }: {
     cleared: boolean;
     ctx: DossierContext;
 }) {
+    if (suspectId === HOMEGROWN) {
+        return (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 space-y-2 text-[11px]">
+                <div className="text-slate-200">No foreign hand</div>
+                <p className="text-[10px] text-slate-400">
+                    The theory that our own people did this for their own reasons, and nobody paid them. Movements do not need a sponsor to strike. They need a grievance.
+                </p>
+                <p className="text-[10px] text-slate-500">
+                    {pinned.length === 0
+                        ? 'Nothing pinned here yet. A prisoner who says nobody paid them is the best evidence for it.'
+                        : `${pinned.length} finding${pinned.length === 1 ? '' : 's'} pinned here.`}
+                    {cleared ? ' Something on the file argues a foreign power was involved.' : ''}
+                </p>
+            </div>
+        );
+    }
     const me = ctx.playerFactionId ?? '';
     const f = ctx.factions[suspectId] ?? {};
     const rivalry = ctx.rivalries.find(r =>

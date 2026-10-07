@@ -24,6 +24,8 @@ import { CatalogLauncher } from '@/components/panels/espionage/CatalogLauncher';
 import { CounterIntelTab } from '@/components/panels/espionage/CounterIntelTab';
 import { CaseBoardTab } from '@/components/panels/espionage/CaseBoardTab';
 import { InternalSecurity } from '@/components/panels/espionage/InternalSecurity';
+import { ForeignCells } from '@/components/panels/espionage/ForeignCells';
+import { HOMEGROWN } from '@/lib/rebellion/rebellion-types';
 import {
     recruitAgentAction,
     recallAgentAction,
@@ -36,6 +38,8 @@ import {
     leakCaseAction,
     pursueLeadAction,
     crackdownAction,
+    sponsorCellAction,
+    cutSponsorshipAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
@@ -157,7 +161,7 @@ export default function IntelligencePanel() {
     const systemName = (id: string | null | undefined) =>
         (id && systems.find(s => s.id === id)?.name) || 'Unknown system';
     const factionName = (id: string | null | undefined) =>
-        (id && factions[id]?.name) || 'Unknown empire';
+        id === HOMEGROWN ? 'No foreign hand' : (id && factions[id]?.name) || 'Unknown empire';
     const ownerOf = (systemId: string) => {
         const s: any = systems.find(x => x.id === systemId);
         return (s?.ownerFactionId ?? s?.ownerId ?? null) as string | null;
@@ -364,6 +368,24 @@ export default function IntelligencePanel() {
         setBusy(false);
         if (!result.success) { showToast(result.error || 'Crackdown refused.', false); return; }
         showToast('Crackdown ordered. Security reports with the next update.', true);
+    };
+
+    const handleSponsor = async (cellId: string, opts: { armed: boolean; cutout: boolean; agentId: string | null }) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await sponsorCellAction(playerFactionId, cellId, opts);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Sponsorship refused.', false); return; }
+        showToast('The money is on its way. They will hear from us with the next update.', true);
+    };
+
+    const handleCutSponsorship = async (sponsorshipId: string) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await cutSponsorshipAction(playerFactionId, sponsorshipId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Could not cut them off.', false); return; }
+        showToast('We stop paying them with the next update.', true);
     };
 
     const handleSweep = async (systemId: string, agentId: string | null) => {
@@ -608,6 +630,17 @@ export default function IntelligencePanel() {
                             agents={espionageState.agents}
                             busy={busy}
                             onLaunch={handleLaunch}
+                        />
+
+                        <ForeignCells
+                            cells={espionageState.foreignCells ?? []}
+                            sponsorships={espionageState.cellSponsorships ?? []}
+                            agents={espionageState.agents}
+                            credits={credits}
+                            factionName={factionName}
+                            busy={busy}
+                            onSponsor={handleSponsor}
+                            onCut={handleCutSponsorship}
                         />
 
                         <div>

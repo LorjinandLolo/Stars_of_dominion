@@ -11,7 +11,7 @@
  * it is, who has compromised it), and 13b's sponsors will reuse Sponsorship.
  */
 
-import type { PirateBase } from '../piracy/piracy-types';
+import type { PirateBase, Sponsorship } from '../piracy/piracy-types';
 
 export type CellStatus = 'active' | 'dissolved' | 'crushed';
 
@@ -45,6 +45,11 @@ export interface RebelCell {
     endedAtSeconds?: number | null;
     /** Crackdowns that hit it. */
     crackdownsSurvived: number;
+    /** Money the cell holds (13b): what heists bring in and sponsors pay. */
+    treasury?: number;
+    /** Acts committed (13b). */
+    actsCommitted?: number;
+    lastActAtSeconds?: number | null;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -62,7 +67,61 @@ export interface RebellionState {
     cells: Map<string, RebelCell>;
     /** planetId → the latest crackdown there. */
     crackdowns: Map<string, Crackdown>;
+    /** Who is paying which cell (13b). Stored in each sponsor's own shard. */
+    sponsorships?: Map<string, CellSponsorship>;
+    /** Client only: the foreign cells this player's service can see. */
+    foreignView?: ForeignCellView[];
 }
 
 /** Political capital a crackdown costs: it is an act of state. Here so the page can show it. */
 export const CRACKDOWN_CAPITAL = 10;
+
+// ─── 13b: sponsors and acts ──────────────────────────────────────────────────
+
+/** "no foreign hand": the suspect on a cell's file that means the cell acted alone. */
+export const HOMEGROWN = 'homegrown';
+
+export type CellActKind = 'heist' | 'sabotage' | 'propaganda';
+
+/**
+ * An empire paying a cell in a rival's territory. The pirate Sponsorship
+ * record, reused: organizationId is the cell's id, evidence accrues the same
+ * way, and exposure rides the same ladder (exposureStep in sponsorship-service).
+ */
+export interface CellSponsorship extends Sponsorship {
+    cellId: string;
+    /** Weapons as well as money: stronger acts, faster evidence. */
+    armed: boolean;
+    /** Paid through a middleman: a captured member cannot name the sponsor; evidence builds at half speed; costs more. */
+    cutout: boolean;
+    /** An agent seconded to the cell: their face is the one a witness sees. */
+    secondedAgentId?: string | null;
+    creditsPaid: number;
+    /** The sponsor's share of what heists took. */
+    cutReceived: number;
+    endedAtSeconds?: number | null;
+    endReason?: 'cut' | 'lapsed' | 'cell_ended' | null;
+}
+
+/** What a foreign service sees of a cell it could sponsor. No sponsors, no truth. */
+export interface ForeignCellView {
+    id: string;
+    name: string;
+    planetId: string;
+    planetName: string;
+    systemId: string;
+    hostFactionId: string;
+    cause: string;
+    strength: number;
+    members: number;
+    actsCommitted: number;
+}
+
+/** Credits per strategic tick (24 real minutes). Shared with the page. */
+export const SPONSOR_FUND_PER_TICK = 300;
+export const SPONSOR_ARM_PER_TICK = 200;
+export const SPONSOR_CUTOUT_MULTIPLIER = 1.5;
+
+export function sponsorshipCostPerTick(armed: boolean, cutout: boolean): number {
+    return Math.round((SPONSOR_FUND_PER_TICK + (armed ? SPONSOR_ARM_PER_TICK : 0)) * (cutout ? SPONSOR_CUTOUT_MULTIPLIER : 1));
+}

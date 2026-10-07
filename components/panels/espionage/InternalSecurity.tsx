@@ -65,6 +65,7 @@ export function InternalSecurity({ cells, crackdowns, worlds, nowSeconds, busy, 
                             </div>
                             <div className="text-[10px] text-slate-500">
                                 {worldName(c.planetId)} · about {c.members} members · for {c.cause}
+                                {(c.actsCommitted ?? 0) > 0 && ` · ${c.actsCommitted} strike${c.actsCommitted === 1 ? "" : "s"}`}
                                 {c.crackdownsSurvived > 0 && ` · survived ${c.crackdownsSurvived} crackdown${c.crackdownsSurvived === 1 ? '' : 's'}`}
                             </div>
                         </div>

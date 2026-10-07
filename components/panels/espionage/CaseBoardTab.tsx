@@ -19,6 +19,7 @@ import type { CaseClue, CovertCase } from '@/types/ui-state';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 import { SuspectDossier, type DossierContext } from './SuspectDossier';
 import { motiveLabel, motiveOptions, speciesLabel, type ClueTag, type LeadKind } from '@/lib/espionage/dossier';
+import { HOMEGROWN } from '@/lib/rebellion/rebellion-types';
 import { CaseLeads } from './CaseLeads';
 
 interface Props {
@@ -86,6 +87,7 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
 
     /** Motives on offer for a suspect, from the same public facts the worker reads. */
     const theoryOptions = (suspect: string) => {
+        if (suspect === HOMEGROWN) return [{ key: 'cause', label: motiveLabel('cause') }];
         const me = dossier.playerFactionId ?? '';
         const r = dossier.rivalries.find(x =>
             (x.empireAId === me && x.empireBId === suspect) || (x.empireBId === me && x.empireAId === suspect));
@@ -282,19 +284,23 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                         <>
                                             <button disabled={busy} onClick={() => setConfirming('accuse')}
                                                 className="w-full min-h-[40px] py-2 rounded uppercase font-display text-[10px] tracking-widest flex items-center justify-center gap-1.5 bg-red-700/80 text-white hover:bg-red-600 disabled:opacity-50">
-                                                <Gavel size={12} /> Accuse {factionName(selected)}
+                                                <Gavel size={12} /> {selected === HOMEGROWN ? 'Close it: no foreign hand' : `Accuse ${factionName(selected)}`}
                                             </button>
-                                            <button disabled={busy} onClick={() => setConfirming('leak')}
-                                                className="w-full min-h-[40px] py-2 rounded uppercase font-display text-[10px] tracking-widest flex items-center justify-center gap-1.5 border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50">
-                                                <Megaphone size={12} /> Leak to the press
-                                            </button>
+                                            {selected !== HOMEGROWN && (
+                                                <button disabled={busy} onClick={() => setConfirming('leak')}
+                                                    className="w-full min-h-[40px] py-2 rounded uppercase font-display text-[10px] tracking-widest flex items-center justify-center gap-1.5 border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50">
+                                                    <Megaphone size={12} /> Leak to the press
+                                                </button>
+                                            )}
                                             <p className="text-[10px] text-slate-500">Or hold: the case stays open while leads come in, and goes cold in about two days.</p>
                                         </>
                                     )}
                                     {confirming === 'accuse' && (
                                         <>
                                             <p className="text-[11px] text-slate-300">
-                                                Publicly accuse {factionName(selected)}? If we are right they are exposed, and we gain standing. If we are wrong they are insulted, we look unreliable, and whoever really did it gets bolder.
+                                                {selected === HOMEGROWN
+                                                    ? 'Close the file as the work of our own people, with no foreign hand behind it? If we are right, nobody is insulted. If someone did pay them, they go on paying.'
+                                                    : `Publicly accuse ${factionName(selected)}? If we are right they are exposed, and we gain standing. If we are wrong they are insulted, we look unreliable, and whoever really did it gets bolder.`}
                                             </p>
                                             <label className="block text-[9px] uppercase tracking-wider text-slate-500">Our theory of why</label>
                                             <select value={theory} onChange={e => setTheory(e.target.value)}

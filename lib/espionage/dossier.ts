@@ -220,6 +220,7 @@ export function motiveLabel(key: string): string {
     if (key === 'war') return 'To weaken us in the war';
     if (key === 'economic') return 'To get ahead of us economically';
     if (key === 'opportunism') return 'Opportunism: we were exposed and they took the chance';
+    if (key === 'cause') return 'Their own cause: no one paid them';
     if (key.startsWith('grievance:')) return `Retaliation for ${relationPhrase(key.slice('grievance:'.length))}`;
     return key;
 }

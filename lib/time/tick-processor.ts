@@ -65,7 +65,9 @@ import { getGovernmentModifiers } from '../government/modifiers';
 import { tickOpportunityBoard } from '../espionage/ops-board-service';
 import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { tickAICases } from '../ai/case-ai';
+import { tickAISponsorship } from '../ai/rebellion-ai';
 import { tickRebellion } from '../rebellion/cell-service';
+import { tickSponsorships, tickCellActs } from '../rebellion/sponsor-service';
 import { PopulationService } from '../construction/population-service';
 import { ReputationService } from '../reputation/reputation-service';
 import { LeadershipService } from '../leadership/leadership-service';
@@ -647,6 +649,11 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         for (const cell of tickRebellion(world)) {
             console.log(`[REBELLION] a cell formed on ${cell.planetId} (${cell.cause})`);
         }
+        // 13b: sponsors pay and leave traces; cells strike.
+        tickSponsorships(world);
+        for (const act of tickCellActs(world)) {
+            console.log(`[REBELLION]  on : `);
+        }
 
         // AI-run factions only: this turn SPENDS the faction's intel points
         // and launches covert operations attributed to it — run on a human's
@@ -655,6 +662,9 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
             if (!isAIRunFaction(world, factionId)) continue;
             processEmpireIntelligenceTurn(factionId, world);
             // ...and works its case files: leads, accusations, leaks (item 12c).
+            // ...pays rebels abroad when it is hostile enough (Item 13b)...
+            const sponsored = tickAISponsorship(world, factionId);
+            if (sponsored) console.log(`[REBELLION] ${factionId} ${sponsored}`);
             for (const act of tickAICases(world, factionId)) {
                 console.log(`[AI-CASES] ${factionId} ${act.action}${act.suspectId ? ` ${act.suspectId}` : ''}: ${act.message}`);
             }

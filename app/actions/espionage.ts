@@ -222,3 +222,35 @@ export async function crackdownAction(factionId: string, planetId: string): Prom
     if (result.success) revalidatePath('/');
     return result;
 }
+
+/** Pay a rebel cell in a rival's territory: money, optionally weapons, a cutout, a seconded agent. */
+export async function sponsorCellAction(
+    factionId: string,
+    cellId: string,
+    opts: { armed?: boolean; cutout?: boolean; agentId?: string | null } = {}
+): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `sponsor-${Date.now()}`,
+        actionId: 'REB_SPONSOR_CELL',
+        issuerId: factionId,
+        targetId: cellId,
+        payload: { cellId, armed: !!opts.armed, cutout: !!opts.cutout, ...(opts.agentId ? { agentId: opts.agentId } : {}) },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/** Stop paying a cell. */
+export async function cutSponsorshipAction(factionId: string, sponsorshipId: string): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `cut-${Date.now()}`,
+        actionId: 'REB_CUT_SPONSORSHIP',
+        issuerId: factionId,
+        targetId: sponsorshipId,
+        payload: { sponsorshipId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}

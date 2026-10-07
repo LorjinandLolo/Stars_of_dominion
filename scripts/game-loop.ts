@@ -167,7 +167,8 @@ import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/
 import { isKnownSpecies } from '../lib/espionage/dossier';
 import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
 import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
-import { crackdown, crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
+import { crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
+import { crackdownWithPrisoners, sponsorCell, cutSponsorship as cutCellSponsorship } from '../lib/rebellion/sponsor-service';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3116,8 +3117,32 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, `A crackdown needs ${CRACKDOWN_CAPITAL} political capital; the government holds ${held}.`);
                 return;
             }
-            const result = crackdown(world, factionId, planetId);
+            const result = crackdownWithPrisoners(world, factionId, planetId);
             console.log(`[Tick Worker] ${factionId} REB_CRACKDOWN: ${result.message}`);
+            break;
+        }
+
+        case 'REB_SPONSOR_CELL': {
+            const result = sponsorCell(world, factionId, String(payload?.cellId ?? ''), {
+                armed: payload?.armed === true,
+                cutout: payload?.cutout === true,
+                agentId: payload?.agentId ? String(payload.agentId) : null,
+            });
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} REB_SPONSOR_CELL: ${result.message}`);
+            break;
+        }
+
+        case 'REB_CUT_SPONSORSHIP': {
+            const result = cutCellSponsorship(world, factionId, String(payload?.sponsorshipId ?? ''));
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} REB_CUT_SPONSORSHIP: ${result.message}`);
             break;
         }
 

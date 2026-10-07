@@ -60,6 +60,8 @@ export const defaultEspionageState: EspionageState = {
     cases: [],
     rebelCells: [],
     rebelCrackdowns: [],
+    foreignCells: [],
+    cellSponsorships: [],
 };
 
 export const defaultDiplomacyState: DiplomacyState = {

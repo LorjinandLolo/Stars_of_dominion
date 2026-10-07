@@ -376,6 +376,21 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id" },
     cost: {}
   },
+  REB_SPONSOR_CELL: {
+    id: "REB_SPONSOR_CELL",
+    category: "espionage",
+    // Pay a rebel cell in a rival's territory (lib/rebellion/sponsor-service.ts).
+    // Optional payload: armed, cutout, agentId. Charged per strategic tick by
+    // tickSponsorships, so nothing is charged here.
+    params: { cellId: "id" },
+    cost: {}
+  },
+  REB_CUT_SPONSORSHIP: {
+    id: "REB_CUT_SPONSORSHIP",
+    category: "espionage",
+    params: { sponsorshipId: "id" },
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

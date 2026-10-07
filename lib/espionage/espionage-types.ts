@@ -312,6 +312,10 @@ export interface CovertCase {
     /** HIDDEN: the operation's catalog definition and the species a witness saw (operations are pruned; files outlive them). */
     definitionId?: string | null;
     operativeSpecies?: string | null;
+    /** The rebel cell this file is about, when a cell acted (Item 13b). Public: it claimed the act. */
+    cellId?: string | null;
+    /** HIDDEN: the sponsorship behind the act, if any. */
+    sponsorshipId?: string | null;
     /** HIDDEN: the operation and its real sponsor. */
     operationId?: string;
     actorFactionId?: string;

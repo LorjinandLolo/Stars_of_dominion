@@ -2,6 +2,7 @@
 // Stars of Dominion — Game Save Service
 // Serializes GameWorldState to JSON-safe format (Maps → Records) for Appwrite storage.
 
+import { foreignCellsFor } from '../rebellion/visibility';
 import type { GameWorldState } from '@/lib/game-world-state';
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { getEmpireStorageReport } from '@/lib/logistics/storage-service';
@@ -118,6 +119,7 @@ export function normalizeEspionageState(world: GameWorldState): void {
     if (!w.rebellion) w.rebellion = {};
     if (!(w.rebellion.cells instanceof Map)) w.rebellion.cells = new Map();
     if (!(w.rebellion.crackdowns instanceof Map)) w.rebellion.crackdowns = new Map();
+    if (!(w.rebellion.sponsorships instanceof Map)) w.rebellion.sponsorships = new Map();
     // Pre-consolidation leftovers: never-written counterIntel map and the
     // parallel V2 intelligence system.
     delete esp.counterIntel;
@@ -300,6 +302,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // only copy. The wire drops the ones its service has not found.
         rebelCells: Array.from(((world as any).rebellion?.cells ?? new Map()).values()).filter((c: any) => c.hostFactionId === factionId),
         rebelCrackdowns: Array.from(((world as any).rebellion?.crackdowns ?? new Map()).values()).filter((c: any) => c.hostFactionId === factionId),
+        // Item 13b: what this faction pays (the truth; only its own), and the
+        // foreign cells its service can see (a view, rebuilt every save).
+        cellSponsorships: Array.from(((world as any).rebellion?.sponsorships ?? new Map()).values()).filter((s: any) => s.sponsorFactionId === factionId),
+        foreignCellsView: foreignCellsFor(world, factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Which systems this player has left to their advisors. Their setting,
         // so it rides their own shard; absent record = everything delegated
@@ -388,6 +394,14 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         (shard.rebelCells ?? []).forEach((c: any) => w.rebellion.cells.set(c.id, c));
         (shard.rebelCrackdowns ?? []).forEach((c: any) => w.rebellion.crackdowns.set(c.planetId, c));
     }
+    if (shard.cellSponsorships || shard.foreignCellsView) {
+        const w: any = world;
+        if (!w.rebellion) w.rebellion = {};
+        if (!(w.rebellion.sponsorships instanceof Map)) w.rebellion.sponsorships = new Map();
+        (shard.cellSponsorships ?? []).forEach((s: any) => w.rebellion.sponsorships.set(s.id, s));
+        // A view, not state: the page reads it, the worker rebuilds it on save.
+        if (Array.isArray(shard.foreignCellsView)) w.rebellion.foreignView = shard.foreignCellsView;
+    }
     if (shard.espionageCases) {
         if (!(world.espionage.cases instanceof Map)) world.espionage.cases = new Map();
         shard.espionageCases.forEach((c: any) => world.espionage.cases!.set(c.id, c));
@@ -469,6 +483,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     cloned.espionage.cases?.clear();
     (cloned as any).rebellion?.cells?.clear?.();
     (cloned as any).rebellion?.crackdowns?.clear?.();
+    (cloned as any).rebellion?.sponsorships?.clear?.();
+    if ((cloned as any).rebellion) delete (cloned as any).rebellion.foreignView;
     // A player's delegation settings are theirs: the shard carries them (and
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.

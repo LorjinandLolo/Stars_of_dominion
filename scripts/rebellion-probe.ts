@@ -185,10 +185,217 @@ async function main() {
         check('REB_CRACKDOWN is registered', !!(ACTION_DEFINITIONS as any).REB_CRACKDOWN);
         const loop = code('scripts/game-loop.ts');
         check('the worker checks before it charges political capital',
-            /case 'REB_CRACKDOWN':[\s\S]{0,300}crackdownBlocker\([\s\S]{0,400}spendPoliticalCapital\([\s\S]{0,400}crackdown\(/.test(loop));
+            /case 'REB_CRACKDOWN':[\s\S]{0,300}crackdownBlocker\([\s\S]{0,400}spendPoliticalCapital\([\s\S]{0,400}crackdown(?:WithPrisoners)?\(/.test(loop));
         check('the strategic tick runs the oppression loop', /tickRebellion\(world\)/.test(code('lib/time/tick-processor.ts')));
         const ui = [...code('components/panels/espionage/InternalSecurity.tsx').matchAll(/from '([^']+)'/g)].map(m => m[1]);
         check('the page section stays browser-safe', !ui.some(i => /cell-service|government|politics|reputation/.test(i)), ui.join(', '));
+    }
+
+    // ── 13b ──────────────────────────────────────────────────────────────────
+    const SP = await import('../lib/rebellion/sponsor-service');
+    const { HOMEGROWN } = await import('../lib/rebellion/rebellion-types');
+    const { ensureCases, fileAccusation, leakCase, tickCases } = await import('../lib/espionage/case-board');
+    const { getOrCreateFactionIntel } = await import('../lib/espionage/faction-intel');
+    const { tickAISponsorship } = await import('../lib/ai/rebellion-ai');
+    const { drainNotifications } = await import('../lib/time/notification-hooks');
+    const C = 'faction-null-syndicate';
+    // A seeded generator: these checks are about rates, and must not flake.
+    const rng = (seed: number) => () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const giveNetwork = (w: any, owner: string, systemId: string) => w.espionage.intelNetworks.set(`${owner}:${systemId}`, { id: `${owner}:${systemId}`, ownerFactionId: owner, systemId, strength: 0.4, penetrationLevel: 'rumor', agentIds: [], activeUntil: w.nowSeconds + 1e6 });
+    const setCredits = (w: any, id: string, n: number) => { w.economy.factions.get(id).reserves.CREDITS = n; };
+    const cellFile = (w: any, cellId: string) => [...ensureCases(w).values()].find((c: any) => c.cellId === cellId) as any;
+    const rivalry = (w: any, a: string, b: string) => (w.rivalries.get(`rivalry-${a}-${b}`) ?? w.rivalries.get(`rivalry-${b}-${a}`))?.rivalryScore ?? 0;
+    const setup = () => {
+        const w = freshWorld();
+        const p = worldOf(w, V);
+        oppress(w, V, p);
+        const cell = formCell(w, p, grievanceOf(w, p), () => 0.5);
+        cell.strength = 30;
+        setCredits(w, A, 1_000_000);
+        return { w, p, cell };
+    };
+
+    console.log('\n[7] Sponsoring a cell abroad');
+    {
+        const { w, p, cell } = setup();
+        check('a service without reach cannot see the cell', !SP.canSeeCell(w, A, cell));
+        check('so cannot sponsor it', !SP.sponsorCell(w, A, cell.id).ok);
+        giveNetwork(w, A, p.systemId);
+        check('a network in the system shows it', SP.foreignCellsFor(w, A).some(c => c.id === cell.id));
+        check('the host cannot sponsor rebels against itself', !SP.sponsorCell(w, V, cell.id).ok);
+        setCredits(w, A, 10);
+        check('a sponsor who cannot pay is refused', !SP.sponsorCell(w, A, cell.id).ok);
+        setCredits(w, A, 1_000_000);
+        const res = SP.sponsorCell(w, A, cell.id, { armed: true });
+        check('a sponsor who can is accepted', res.ok, res.message);
+        check('one arrangement per cell per sponsor', !SP.sponsorCell(w, A, cell.id).ok);
+        const before = Number(w.economy.factions.get(A).reserves.CREDITS);
+        const s0 = cell.strength;
+        SP.tickSponsorships(w);
+        check('each cycle costs the sponsor', Number(w.economy.factions.get(A).reserves.CREDITS) < before);
+        check('and strengthens the cell', cell.strength > s0);
+        check('and leaves evidence', (res as any).sponsorship.evidence > 0);
+    }
+
+    console.log('\n[8] A sponsored cell strikes, and the host opens a file on it');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, A, p.systemId);
+        SP.sponsorCell(w, A, cell.id, { armed: true });
+        drainNotifications();
+        let actedAt = -1;
+        const r = rng(7);
+        for (let t = 0; t < 40 && actedAt < 0; t++) {
+            w.nowSeconds += 6 * 3600;
+            SP.tickSponsorships(w);
+            if (SP.tickCellActs(w, r).some(a => a.cell.id === cell.id)) actedAt = t;
+        }
+        check('it acts within ten sim days', actedAt >= 0, `tick ${actedAt}`);
+        const file = cellFile(w, cell.id);
+        check('the host has a file on it', !!file);
+        check('the file names the cell first', !!file && file.title.toLowerCase().includes(cell.name.toLowerCase()) && /claimed it/.test(file.clues[0]?.text ?? ''), file?.clues?.[0]?.text);
+        check('"no foreign hand" is among the possibilities', !!file && file.suspectIds.includes(HOMEGROWN));
+        check('the sponsor is hidden in the file', file?.actorFactionId === A);
+        check('acting gave the cell away to its host', cell.safeHouse.knownToFactionIds.includes(V));
+        check('the host was told', drainNotifications().some(n => n.factionId === V && /^REBEL/.test(n.title)));
+
+        // A heist pays the sponsor.
+        const { w: w2, p: p2, cell: c2 } = setup();
+        giveNetwork(w2, A, p2.systemId);
+        SP.sponsorCell(w2, A, c2.id);
+        setCredits(w2, V, 500_000);
+        const sponsorBefore = Number(w2.economy.factions.get(A).reserves.CREDITS);
+        SP.commitAct(w2, c2, 'heist', SP.activeSponsorshipsOf(w2, c2.id));
+        check('a heist takes from the host and pays the sponsor a cut',
+            Number(w2.economy.factions.get(V).reserves.CREDITS) < 500_000 && Number(w2.economy.factions.get(A).reserves.CREDITS) > sponsorBefore);
+    }
+
+    console.log('\n[9] Prisoners: a cutout keeps the sponsor\'s name out of their mouths');
+    {
+        const run = (cutout: boolean | null) => {
+            const { w, p, cell } = setup();
+            giveNetwork(w, A, p.systemId);
+            if (cutout !== null) SP.sponsorCell(w, A, cell.id, { cutout });
+            SP.commitAct(w, cell, 'propaganda', SP.activeSponsorshipsOf(w, cell.id));
+            const file = cellFile(w, cell.id);
+            w.nowSeconds += 30 * 86400; // past any crackdown cooldown
+            SP.crackdownWithPrisoners(w, V, p.id, () => 0);
+            tickCases(w, 60);
+            return [...file.clues, ...(file.pendingClues ?? [])].find((c: any) => c.source === 'interrogation');
+        };
+        const plain = run(false);
+        check('a member of a cell paid directly names the sponsor', !!plain && plain.pointsAt.includes(A), plain?.text);
+        const cut = run(true);
+        check('a member of a cell paid through a cutout cannot', !!cut && cut.pointsAt.length === 0 && /could never name/.test(cut.text), cut?.text);
+        const alone = run(null);
+        check('a member of an unpaid cell says nobody paid them', !!alone && alone.pointsAt.includes(HOMEGROWN), alone?.text);
+    }
+
+    console.log('\n[10] Evidence, exposure, and naming the sponsor');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, A, p.systemId);
+        const s = (SP.sponsorCell(w, A, cell.id) as any).sponsorship;
+        SP.commitAct(w, cell, 'propaganda', [s]);
+        const file = cellFile(w, cell.id);
+        const before = rivalry(w, V, A);
+        drainNotifications();
+        SP.addEvidence(w, s, 1);
+        check('enough evidence exposes the sponsor', !!s.exposedAtSeconds && s.attributionState === 'exposed');
+        check('the host\'s file gets the documents', (file.pendingClues ?? []).some((c: any) => /prove/.test(c.text) && c.pointsAt.includes(A)));
+        check('relations with the host sour', rivalry(w, V, A) > before);
+        const notes = drainNotifications();
+        check('both sides are told', notes.some(n => n.factionId === V && n.title === 'FOREIGN HAND EXPOSED') && notes.some(n => n.factionId === A && n.title === 'OUR SPONSORSHIP IS EXPOSED'));
+
+        const { w: w2, p: p2, cell: c2 } = setup();
+        giveNetwork(w2, A, p2.systemId);
+        const s2 = (SP.sponsorCell(w2, A, c2.id, { cutout: true }) as any).sponsorship;
+        SP.commitAct(w2, c2, 'propaganda', [s2]);
+        const f2 = cellFile(w2, c2.id);
+        const res = fileAccusation(w2, V, f2.id, A);
+        check('naming the sponsor of a cell exposes them', res.ok && (res as any).verdict === 'correct' && !!s2.exposedAtSeconds, res.message);
+        const { w: w3, p: p3, cell: c3 } = setup();
+        giveNetwork(w3, A, p3.systemId);
+        giveNetwork(w3, C, p3.systemId);
+        setCredits(w3, C, 1_000_000);
+        const direct = (SP.sponsorCell(w3, A, c3.id) as any).sponsorship;
+        const viaCutout = (SP.sponsorCell(w3, C, c3.id, { cutout: true }) as any).sponsorship;
+        const d0 = direct.evidence, c0 = viaCutout.evidence;
+        SP.tickSponsorships(w3);
+        check('a cutout builds evidence at half speed', Math.abs((viaCutout.evidence - c0) * 2 - (direct.evidence - d0)) < 1e-9, `${direct.evidence - d0} vs ${viaCutout.evidence - c0}`);
+    }
+
+    console.log('\n[11] Homegrown');
+    {
+        const { w, cell } = setup();
+        SP.commitAct(w, cell, 'propaganda', []);
+        const file = cellFile(w, cell.id);
+        check('an unpaid cell\'s file has nobody behind it', file?.actorFactionId === HOMEGROWN);
+        check('its true motive is the cause itself', file?.trueMotive === 'cause');
+        check('leaking a file as "homegrown" is refused', !leakCase(w, V, file.id, HOMEGROWN).ok);
+        const res = fileAccusation(w, V, file.id, HOMEGROWN, 'cause');
+        check('calling it homegrown is right', res.ok && (res as any).verdict === 'correct', res.message);
+
+        const { w: w2, p: p2, cell: c2 } = setup();
+        giveNetwork(w2, A, p2.systemId);
+        SP.sponsorCell(w2, A, c2.id);
+        SP.commitAct(w2, c2, 'propaganda', SP.activeSponsorshipsOf(w2, c2.id));
+        const f2 = cellFile(w2, c2.id);
+        const before = rivalry(w2, V, A);
+        const r2 = fileAccusation(w2, V, f2.id, HOMEGROWN);
+        check('calling a paid cell homegrown is wrong, and insults nobody', r2.ok && (r2 as any).verdict === 'wrong' && rivalry(w2, V, A) === before, r2.message);
+    }
+
+    console.log('\n[12] Who holds what');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, A, p.systemId);
+        SP.sponsorCell(w, A, cell.id);
+        SP.commitAct(w, cell, 'heist', SP.activeSponsorshipsOf(w, cell.id));
+        const sponsorShard = JSON.parse(extractFactionShard(w, A));
+        const hostShard = JSON.parse(extractFactionShard(w, V));
+        check('the sponsorship rides the sponsor\'s shard', sponsorShard.cellSponsorships.length === 1);
+        check('and never the host\'s', (hostShard.cellSponsorships ?? []).length === 0);
+        check('the sponsor gets a view of the cells it can see', sponsorShard.foreignCellsView.some((c: any) => c.id === cell.id));
+        check('the view carries no sponsors', !JSON.stringify(sponsorShard.foreignCellsView).includes('sponsor'));
+        check('rivals get none of it', !('foreignCellsView' in projectPublicShard(sponsorShard, undefined as any)) && !('cellSponsorships' in projectPublicShard(sponsorShard, undefined as any)));
+        const wireFile = scrubOwnerSecrets(hostShard).espionageCases.find((c: any) => c.cellId === cell.id);
+        check('the host\'s file keeps the cell public and the sponsorship hidden', !!wireFile && !('sponsorshipId' in wireFile) && !('actorFactionId' in wireFile));
+        const back: any = freshWorld();
+        injectFactionShard(back, extractFactionShard(w, A));
+        check('a sponsorship survives a restart', (back.rebellion.sponsorships as Map<string, any>).size === 1);
+        const vis = [...code('lib/rebellion/visibility.ts').matchAll(/from '([^']+)'/g)].map(m => m[1]);
+        check('the persistence layer\'s view stays browser-safe', vis.every(i => /rebellion-types/.test(i)), vis.join(', '));
+        check('save-service never imports the sponsor service', !/sponsor-service/.test(code('lib/persistence/save-service.ts')));
+        for (const f of ['components/panels/espionage/ForeignCells.tsx', 'components/panels/espionage/CaseBoardTab.tsx', 'components/panels/espionage/SuspectDossier.tsx', 'components/panels/IntelligencePanel.tsx']) {
+            const imps = [...code(f).matchAll(/from '([^']+)'/g)].map(m => m[1]);
+            check(`${f.split('/').pop()} stays browser-safe`, !imps.some(i => /sponsor-service|cell-service|case-board|government|politics/.test(i)), imps.filter(i => /lib\//.test(i)).join(', '));
+        }
+    }
+
+    console.log('\n[13] AI sponsors');
+    {
+        const { w, p, cell } = setup();
+        giveNetwork(w, C, p.systemId);
+        setCredits(w, C, 100_000);
+        for (const id of [`rivalry-${C}-${V}`, `rivalry-${V}-${C}`]) { const r: any = w.rivalries.get(id); if (r) r.escalationLevel = 6; }
+        if (!w.rivalries.get(`rivalry-${C}-${V}`) && !w.rivalries.get(`rivalry-${V}-${C}`)) {
+            const { getOrCreateRivalry } = await import('../lib/diplomacy/offer-service');
+            const r: any = getOrCreateRivalry(w, C, V, 80); r.escalationLevel = 6;
+        }
+        const did = tickAISponsorship(w, C, () => 0);
+        check('a hostile AI with reach pays the cell', !!did && /sponsor/.test(did), String(did));
+        const s: any = SP.activeSponsorshipsOf(w, cell.id).find(x => x.sponsorFactionId === C);
+        check('armed, when hostility runs high', !!s?.armed);
+        SP.addEvidence(w, s, 1);
+        check('an AI caught paying cuts it', /cut/.test(String(tickAISponsorship(w, C, () => 0))) && !!s.endedAtSeconds);
+
+        const buthari = 'faction-buthari';
+        giveNetwork(w, buthari, p.systemId);
+        setCredits(w, buthari, 100_000);
+        check('the Buthari never arm another\'s rebels', tickAISponsorship(w, buthari, () => 0) === null);
+        check('the strategic tick runs AI sponsorship', /tickAISponsorship\(world, factionId\)/.test(code('lib/time/tick-processor.ts')));
+        void getOrCreateFactionIntel;
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
