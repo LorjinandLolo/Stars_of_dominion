@@ -447,6 +447,145 @@ async function main() {
         check('the dossier vocabulary stays browser-safe', leaf.every(i => /ideologies|types/.test(i)), leaf.join(', '));
     }
 
+    // ── Item 12b-3 ───────────────────────────────────────────────────────────
+    const { motiveFor, pursueLead, resolveLead } = await import('../lib/espionage/case-board');
+    const { motiveOptions, leadCost, LEAD_BY_KIND } = await import('../lib/espionage/dossier');
+    const openFile = (w: any, setup?: (op: any) => void, dice = [0.05, 0.99, 0.99, 0.99, 0.99]) => {
+        updateInfiltration(w, A, V, 95);
+        runOp(w, 'election_interference', dice, setup);
+        return casesOf(w, V).sort((a: any, b: any) => b.openedAt - a.openedAt)[0] as any;
+    };
+
+    console.log('\n[16] Motives: the truth is always among the choices');
+    {
+        const w = freshWorld();
+        w.nowSeconds += 60;
+        shiftRivalry(w, V, A, 5, 'sanctions_imposed');
+        check('a fresh grievance is the motive', motiveFor(w, A, V) === 'grievance:sanctions_imposed', motiveFor(w, A, V));
+        const r: any = w.rivalries.get(`rivalry-${V}-${A}`) ?? w.rivalries.get(`rivalry-${A}-${V}`);
+        const opts = motiveOptions(r.recentEvents, (r.escalationLevel ?? 0) >= 7, w.nowSeconds).map(o => o.key);
+        check('and the page offers it', opts.includes(motiveFor(w, A, V)), opts.join(', '));
+        for (const id of [`rivalry-${V}-${A}`, `rivalry-${A}-${V}`]) { const x: any = w.rivalries.get(id); if (x) x.escalationLevel = 7; }
+        check('war trumps grievance', motiveFor(w, A, V) === 'war');
+        const w2 = freshWorld();
+        for (const r2 of w2.rivalries.values()) { r2.recentEvents = []; r2.escalationLevel = 0; }
+        w2.economy.factions.get(A).reserves.CREDITS = 10;
+        w2.economy.factions.get(V).reserves.CREDITS = 1000;
+        check('a poorer sponsor with no grievance wants money', motiveFor(w2, A, V) === 'economic');
+        w2.economy.factions.get(A).reserves.CREDITS = 10_000;
+        check('a richer one is an opportunist', motiveFor(w2, A, V) === 'opportunism');
+    }
+
+    console.log('\n[17] Leads: paid, one at a time, gated');
+    {
+        const w = freshWorld();
+        const k = openFile(w);
+        const intel = getOrCreateFactionIntel(w, V);
+        intel.intelPoints = 5;
+        check('not enough Intel, no lead', !pursueLead(w, V, k.id, 'money', null).ok && intel.intelPoints === 5);
+        intel.intelPoints = 200;
+        check('sources without a network are refused', !pursueLead(w, V, k.id, 'sources', A).ok);
+        check('a prisoner lead without prisoners is refused', !pursueLead(w, V, k.id, 'prisoner', null).ok);
+        check('a trace without a witness is refused', !pursueLead(w, V, k.id, 'operative', null).ok);
+        check('an unknown lead is refused', !pursueLead(w, V, k.id, 'astrology', null).ok);
+        check('another empire\'s file is refused', !pursueLead(w, A, k.id, 'money', null).ok);
+        const res = pursueLead(w, V, k.id, 'money', null);
+        check('following the money starts', res.ok, res.message);
+        check(`it costs ${LEAD_BY_KIND.money.baseCost} Intel at zero counter-intelligence`, intel.intelPoints === 200 - leadCost('money', 0));
+        check('a second lead waits for the first', !pursueLead(w, V, k.id, 'sensors', null).ok);
+        check('a strong service pays less', leadCost('money', 100) < leadCost('money', 0));
+        check('the worker handles the order', /case 'ESP_PURSUE_LEAD':[\s\S]{0,400}pursueLead\(/.test(code('scripts/game-loop.ts')));
+
+        const before = k.clues.length;
+        const real = Math.random; Math.random = () => 0.01;
+        try { w.nowSeconds = k.lead.dueAt + 1; tickCases(w, 60); } finally { Math.random = real; }
+        const money = k.clues.find((c: any) => /money for this ran/.test(c.text));
+        check('the lead reports back as a finding', !!money && k.clues.length > before && !k.lead && k.leadsRun === 1);
+        check('the money names the sponsor among others, never alone', money.pointsAt.includes(A) && money.pointsAt.length > 1, money.text);
+        check('tagged means', money.tag === 'means');
+    }
+
+    console.log('\n[18] What leads find');
+    {
+        const w = freshWorld();
+        const k = openFile(w);
+        updateInfiltration(w, V, A, 40);
+        updateInfiltration(w, V, C, 40);
+        k.lead = { kind: 'sources', targetFactionId: A, startedAt: 0, dueAt: 0, cost: 0 };
+        const yes = resolveLead(w, k)!;
+        check('sources inside the sponsor confirm it', yes.pointsAt[0] === A && (yes.weights?.[A] ?? 0) > 0, yes.text);
+        k.lead = { kind: 'sources', targetFactionId: C, startedAt: 0, dueAt: 0, cost: 0 };
+        const no = resolveLead(w, k)!;
+        check('sources inside an innocent clear them', !!no.clears?.includes(C), no.text);
+
+        const w2 = freshWorld();
+        const hired = mkAgent(w2, 'hired', A, civ(w2, C));
+        const k2 = openFile(w2, o => { o.agentId = hired.id; });
+        k2.lead = { kind: 'operative', startedAt: 0, dueAt: 0, cost: 0 };
+        const trace = resolveLead(w2, k2, () => 0.01)!;
+        check('tracing a hired operative finds the freelancer', /freelancer/.test(trace.text) && !!trace.clears?.includes(C), trace.text);
+        check('and the broker\'s clients include the sponsor', trace.pointsAt.includes(A));
+
+        const w3 = freshWorld();
+        const own = mkAgent(w3, 'own', A, civ(w3, A));
+        const k3 = openFile(w3, o => { o.agentId = own.id; });
+        k3.lead = { kind: 'operative', startedAt: 0, dueAt: 0, cost: 0 };
+        const home = resolveLead(w3, k3)!;
+        check('an operative of the sponsor\'s own species traces home', home.pointsAt.includes(A) && /service training/.test(home.text), home.text);
+
+        const w4 = freshWorld();
+        const k4 = openFile(w4);
+        const liar = mkAgent(w4, 'liar', A, civ(w4, A), ['double_agent']);
+        liar.status = 'captured'; liar.capturedByFactionId = V;
+        getOrCreateFactionIntel(w4, V).prisoners = [{ agentId: liar.id, codename: 'LIAR', species: civ(w4, A), claimedEmployerId: C, takenAt: 0, systemId: '' }];
+        k4.lead = { kind: 'prisoner', startedAt: 0, dueAt: 0, cost: 0 };
+        const broke = resolveLead(w4, k4, () => 0.01)!;
+        check('a pressed Double Agent breaks and names their real employer', broke.pointsAt[0] === A && /broke/.test(broke.text), broke.text);
+        check('which clears the employer they had claimed', !!broke.clears?.includes(C));
+    }
+
+    console.log('\n[19] Theories, linked files, and what the wire carries');
+    {
+        const w = freshWorld();
+        w.nowSeconds += 60;
+        shiftRivalry(w, V, A, 5, 'sanctions_imposed');
+        const k = openFile(w);
+        check('the file knows the true motive', k.trueMotive === 'grievance:sanctions_imposed', k.trueMotive);
+        const intel = getOrCreateFactionIntel(w, V);
+        const before = intel.intelPoints;
+        const res = fileAccusation(w, V, k.id, A, 'grievance:sanctions_imposed');
+        check('right culprit, right motive', res.ok && k.motiveVerdict === 'right' && /named the reason/.test(res.message), res.message);
+        const rightGain = intel.intelPoints - before;
+
+        const w2 = freshWorld();
+        w2.nowSeconds += 60;
+        shiftRivalry(w2, V, A, 5, 'sanctions_imposed');
+        const k2 = openFile(w2);
+        const intel2 = getOrCreateFactionIntel(w2, V);
+        const before2 = intel2.intelPoints;
+        resetChronicleBuffer();
+        const res2 = fileAccusation(w2, V, k2.id, A, 'economic');
+        check('right culprit, wrong motive still exposes them', res2.ok && (res2 as any).verdict === 'correct' && k2.motiveVerdict === 'wrong');
+        check('but the press mocks the reasoning', /press is enjoying it/.test(res2.message)
+            && drainBuffer().rows.some(r => r.type === 'scandal_confirmed' && /"motiveRight":false/.test(r.facts)));
+        check('a right motive pays more', rightGain > intel2.intelPoints - before2, `${rightGain} vs ${intel2.intelPoints - before2}`);
+
+        const w3 = freshWorld();
+        openFile(w3);
+        const second = openFile(w3);
+        check('a second incident in the same system is linked', /second incident/.test(second.linkedNote ?? ''), second.linkedNote);
+
+        const wire = scrubOwnerSecrets({ espionageCases: [second] }).espionageCases[0];
+        check('the wire drops the true motive, the definition and the operative\'s species',
+            !('trueMotive' in wire) && !('definitionId' in wire) && !('operativeSpecies' in wire));
+        check('but keeps the running lead and the linked note', 'lead' in wire && 'linkedNote' in wire);
+
+        for (const file of ['components/panels/espionage/CaseLeads.tsx', 'components/panels/espionage/CaseBoardTab.tsx', 'components/panels/espionage/SuspectDossier.tsx']) {
+            const imports = [...code(file).matchAll(/from '([^']+)'/g)].map(m => m[1]);
+            check(`${file.split('/').pop()} stays browser-safe`, !imports.some(i => /case-board|government|politics|counter-intel/.test(i)), imports.join(', '));
+        }
+    }
+
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
     process.exit(failures === 0 ? 0 : 1);
 }

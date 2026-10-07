@@ -293,6 +293,20 @@ export interface CovertCase {
     closedAt?: number | null;
     /** When the next clue is due (sim clock). */
     nextClueAt: number;
+    /** The lead our service is pursuing on this file, if any (item 12b-3). One at a time. */
+    lead?: { kind: string; targetFactionId?: string | null; startedAt: number; dueAt: number; cost: number } | null;
+    /** Leads pursued so far. */
+    leadsRun?: number;
+    /** Earlier files this one looks connected to ("third sabotage here in ten days"). */
+    linkedNote?: string | null;
+    /** The motive we named when accusing, and whether it held. Public once filed. */
+    theoryMotive?: string | null;
+    motiveVerdict?: 'right' | 'wrong' | null;
+    /** HIDDEN: why the sponsor really did it, as a motive key (lib/espionage/dossier.ts). */
+    trueMotive?: string;
+    /** HIDDEN: the operation's catalog definition and the species a witness saw (operations are pruned; files outlive them). */
+    definitionId?: string | null;
+    operativeSpecies?: string | null;
     /** HIDDEN: the operation and its real sponsor. */
     operationId?: string;
     actorFactionId?: string;

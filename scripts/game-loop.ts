@@ -166,7 +166,7 @@ import { deployAgent, recruitAgent, recallAgent } from '../lib/espionage/agent-s
 import { recruitCostForTraits, isValidRecruitTraitList } from '../lib/espionage/agent-types';
 import { isKnownSpecies } from '../lib/espionage/dossier';
 import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/counter-intel';
-import { fileAccusation, leakCase } from '../lib/espionage/case-board';
+import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -3100,12 +3100,28 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'ESP_PURSUE_LEAD': {
+            // Intel is charged inside pursueLead, after every check passes.
+            const result = pursueLead(
+                world, factionId,
+                String(payload?.caseId ?? ''),
+                String(payload?.lead ?? ''),
+                payload?.targetFactionId ? String(payload.targetFactionId) : null
+            );
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} ESP_PURSUE_LEAD: ${result.message}`);
+            break;
+        }
+
         case 'ESP_FILE_ACCUSATION':
         case 'ESP_LEAK_CASE': {
             const caseId = String(payload?.caseId ?? '');
             const suspectId = String(payload?.suspectId ?? '');
             const result = actionId === 'ESP_FILE_ACCUSATION'
-                ? fileAccusation(world, factionId, caseId, suspectId)
+                ? fileAccusation(world, factionId, caseId, suspectId, typeof payload?.motive === 'string' ? payload.motive.slice(0, 80) : null)
                 : leakCase(world, factionId, caseId, suspectId);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.message);

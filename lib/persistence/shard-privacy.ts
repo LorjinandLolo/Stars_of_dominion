@@ -121,7 +121,7 @@ export function scrubOwnerSecrets(shard: any): any {
     if (Array.isArray(out.espionageCases)) {
         out.espionageCases = out.espionageCases.map((kase: any) => {
             if (!kase || typeof kase !== 'object') return kase;
-            const { operationId, actorFactionId, falseFlagFactionId, pendingClues, interrogatedAgentIds, ...rest } = kase;
+            const { operationId, actorFactionId, falseFlagFactionId, pendingClues, interrogatedAgentIds, trueMotive, moleLeakedAt, definitionId, operativeSpecies, ...rest } = kase;
             rest.clues = Array.isArray(rest.clues)
                 ? rest.clues.map((c: any) => { const { weights, ...visible } = c ?? {}; return visible; })
                 : [];

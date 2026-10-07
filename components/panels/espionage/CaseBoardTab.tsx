@@ -18,14 +18,16 @@ import {
 import type { CaseClue, CovertCase } from '@/types/ui-state';
 import { formatGalacticDeadline, formatRealAgo, realSecondsUntil } from '@/lib/time/galactic-time';
 import { SuspectDossier, type DossierContext } from './SuspectDossier';
-import { speciesLabel } from '@/lib/espionage/dossier';
+import { motiveLabel, motiveOptions, speciesLabel, type ClueTag, type LeadKind } from '@/lib/espionage/dossier';
+import { CaseLeads } from './CaseLeads';
 
 interface Props {
     cases: CovertCase[];
     factionName: (id: string) => string;
     nowSeconds: number;
     busy: boolean;
-    onAccuse: (caseId: string, suspectId: string) => void;
+    onAccuse: (caseId: string, suspectId: string, motive: string | null) => void;
+    onLead: (caseId: string, kind: LeadKind, targetFactionId: string | null) => void;
     onLeak: (caseId: string, suspectId: string) => void;
     /** What our service knows about each suspect, for the dossier. */
     dossier: Omit<DossierContext, 'cases' | 'factionName' | 'ago'>;
@@ -68,7 +70,7 @@ function ago(nowSeconds: number, at: number): string {
     return formatRealAgo(new Date(Date.now() - realSecondsAgo * 1000));
 }
 
-export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, onLeak, dossier }: Props) {
+export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, onLeak, onLead, dossier }: Props) {
     const open = cases.filter(c => c.status === 'open');
     const closed = cases.filter(c => c.status !== 'open');
     const [selectedId, setSelectedId] = useState<string | null>(open[0]?.id ?? cases[0]?.id ?? null);
@@ -79,7 +81,16 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
 
     const [suspectId, setSuspectId] = useState<string | null>(null);
     const [confirming, setConfirming] = useState<'accuse' | 'leak' | null>(null);
-    useEffect(() => { setSuspectId(null); setConfirming(null); }, [kase?.id]);
+    const [theory, setTheory] = useState('');
+    useEffect(() => { setSuspectId(null); setConfirming(null); setTheory(''); }, [kase?.id]);
+
+    /** Motives on offer for a suspect, from the same public facts the worker reads. */
+    const theoryOptions = (suspect: string) => {
+        const me = dossier.playerFactionId ?? '';
+        const r = dossier.rivalries.find(x =>
+            (x.empireAId === me && x.empireBId === suspect) || (x.empireBId === me && x.empireAId === suspect));
+        return motiveOptions(r?.recentEvents ?? [], (r?.escalationLevel ?? 0) >= 7, nowSeconds);
+    };
 
     const pin = (clueId: string, suspect: string) => {
         if (!kase) return;
@@ -124,7 +135,7 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                             : 'border-slate-800 bg-slate-900/40 hover:border-slate-600'}`}>
                         <div className="text-[11px] text-slate-200 truncate">{c.title}</div>
                         <div className="text-[9px] uppercase tracking-wider mt-0.5 text-slate-500">
-                            {c.status === 'open' ? `${c.clues.length} clue${c.clues.length === 1 ? '' : 's'}`
+                            {c.status === 'open' ? `${c.clues.length} finding${c.clues.length === 1 ? '' : 's'}${c.lead ? ' · lead out' : ''}`
                                 : c.status === 'accused' ? (c.verdict === 'correct' ? 'Solved' : 'Wrong accusation')
                                     : c.status === 'leaked' ? 'Leaked' : 'Gone cold'}
                         </div>
@@ -141,9 +152,18 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                             <span className="text-[9px] text-slate-500 shrink-0">opened {ago(nowSeconds, kase.openedAt)}</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">{kase.summary}</p>
+                        {kase.linkedNote && (
+                            <p className="text-[10px] text-amber-400">Linked: {kase.linkedNote}</p>
+                        )}
+                        {kase.status !== 'open' && (
+                            <p className="text-[11px] text-slate-300 leading-relaxed border-l-2 border-slate-700 pl-3">
+                                <span className="text-[9px] uppercase tracking-wider text-slate-500">Debrief · </span>
+                                {debrief(kase, factionName)}
+                            </p>
+                        )}
                         {kase.status === 'open' && (
                             <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                                <MapPin size={10} /> More may come: next lead expected {formatGalacticDeadline(Math.max(kase.nextClueAt, nowSeconds + 60), nowSeconds)}.
+                                <MapPin size={10} /> More may come in on its own: next expected {formatGalacticDeadline(Math.max(kase.nextClueAt, nowSeconds + 60), nowSeconds)}.
                             </p>
                         )}
                         {kase.status === 'accused' && kase.accusedFactionId && (
@@ -162,12 +182,16 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                         {kase.status === 'cold' && <p className="text-[11px] text-slate-500">The trail went cold.</p>}
                     </div>
 
+                    {kase.status === 'open' && (
+                        <CaseLeads kase={kase} intel={dossier.intel} factionName={factionName} nowSeconds={nowSeconds} busy={busy} onLead={onLead} />
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         {/* Clues */}
                         <div className="md:col-span-3 space-y-2">
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase">Clues</div>
+                            <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase">Findings</div>
                             {kase.clues.length === 0 && (
-                                <p className="text-[11px] text-slate-500 border border-dashed border-slate-800 rounded-lg p-3">{kase.status === 'open' ? 'No leads yet. Our service is working on it.' : 'No leads came in.'}</p>
+                                <p className="text-[11px] text-slate-500 border border-dashed border-slate-800 rounded-lg p-3">{kase.status === 'open' ? 'No findings yet. Our service is working on it.' : 'No findings came in.'}</p>
                             )}
                             {kase.clues.map(c => {
                                 const src = sourceOf(c);
@@ -189,11 +213,11 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                                     className="flex-1 min-w-0 min-h-[40px] bg-slate-950 border border-slate-800 rounded px-2 py-2 text-[11px] text-slate-300 outline-none">
                                                     <option value="">Not pinned</option>
                                                     {c.pointsAt.length > 0 && (
-                                                        <optgroup label="Named in this clue">
+                                                        <optgroup label="Named in this finding">
                                                             {c.pointsAt.map(id => <option key={id} value={id}>{factionName(id)}</option>)}
                                                         </optgroup>
                                                     )}
-                                                    <optgroup label="Any suspect">
+                                                    <optgroup label="Any person of interest">
                                                         {kase.suspectIds.filter(id => !c.pointsAt.includes(id)).map(id => (
                                                             <option key={id} value={id}>{factionName(id)}</option>
                                                         ))}
@@ -208,7 +232,7 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
 
                         {/* Suspects and the decision */}
                         <div className="md:col-span-2 space-y-2">
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase">Suspects</div>
+                            <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase">Persons of interest</div>
                             <div className="space-y-1">
                                 {suspects.map(s => (
                                     <button key={s.id} onClick={() => { setSuspectId(s.id); setConfirming(null); }}
@@ -219,9 +243,20 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                             <span className="block text-[11px] text-slate-200 truncate">{factionName(s.id)}</span>
                                             <span className="block text-[9px] text-slate-500 truncate">{speciesLabel(dossier.factions[s.id]?.civilizationId)}</span>
                                         </span>
-                                        <span className="text-[10px] font-mono shrink-0 flex items-center gap-2">
-                                            {s.pinned > 0 && <span className="text-amber-400 flex items-center gap-0.5"><Pin size={10} />{s.pinned}</span>}
-                                            <span className="text-slate-500" title="Clues that name them">{s.named} named</span>
+                                        <span className="shrink-0 flex items-center gap-1" title={`Your pins: motive, means, opportunity. Named in ${s.named} finding${s.named === 1 ? '' : 's'}.`}>
+                                            {GRID.map(g => {
+                                                const n = kase.clues.filter(c => pins[c.id] === s.id && c.tag === g.tag).length;
+                                                return (
+                                                    <span key={g.tag} className={`min-w-[28px] h-6 px-1 rounded text-[9px] font-mono flex items-center justify-center border ${n > 0
+                                                        ? 'border-amber-500/60 bg-amber-500/15 text-amber-300'
+                                                        : 'border-slate-800 text-slate-600'}`}>
+                                                        {g.letter}{n > 1 ? n : ''}
+                                                    </span>
+                                                );
+                                            })}
+                                            {kase.clues.some(c => c.clears?.includes(s.id)) && (
+                                                <span className="w-6 h-6 rounded text-[10px] flex items-center justify-center border border-emerald-700/60 text-emerald-400" title="A finding points away from them">✓</span>
+                                            )}
                                         </span>
                                     </button>
                                 ))}
@@ -261,9 +296,16 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
                                             <p className="text-[11px] text-slate-300">
                                                 Publicly accuse {factionName(selected)}? If we are right they are exposed, and we gain standing. If we are wrong they are insulted, we look unreliable, and whoever really did it gets bolder.
                                             </p>
+                                            <label className="block text-[9px] uppercase tracking-wider text-slate-500">Our theory of why</label>
+                                            <select value={theory} onChange={e => setTheory(e.target.value)}
+                                                className="w-full min-h-[40px] bg-slate-950 border border-slate-800 rounded px-2 py-2 text-[11px] text-slate-300 outline-none">
+                                                <option value="">No theory: name them, not the reason</option>
+                                                {theoryOptions(selected).map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                                            </select>
+                                            <p className="text-[10px] text-slate-500">Name the right reason too and the case lands harder. Name the wrong one and the press will enjoy it, even if the culprit is right.</p>
                                             <div className="flex gap-2">
                                                 <button onClick={() => setConfirming(null)} className="flex-1 min-h-[40px] py-2 rounded border border-slate-700 text-slate-400 text-[10px] uppercase tracking-widest">Back</button>
-                                                <button disabled={busy} onClick={() => { onAccuse(kase.id, selected); setConfirming(null); }}
+                                                <button disabled={busy} onClick={() => { onAccuse(kase.id, selected, theory || null); setConfirming(null); setTheory(''); }}
                                                     className="flex-1 min-h-[40px] py-2 rounded bg-red-600 text-white text-[10px] uppercase tracking-widest hover:bg-red-500 disabled:opacity-50">Accuse</button>
                                             </div>
                                         </>
@@ -288,4 +330,31 @@ export function CaseBoardTab({ cases, factionName, nowSeconds, busy, onAccuse, o
             )}
         </div>
     );
+}
+
+/** The grid's three columns: motive, means, opportunity. */
+const GRID: { tag: ClueTag; letter: string }[] = [
+    { tag: 'motive', letter: 'MO' },
+    { tag: 'means', letter: 'ME' },
+    { tag: 'opportunity', letter: 'OP' },
+];
+
+/** A closed file's one-paragraph debrief, from what the file shows. */
+function debrief(kase: CovertCase, factionName: (id: string) => string): string {
+    const n = kase.clues.length;
+    const findings = `${n} finding${n === 1 ? '' : 's'}${kase.leadsRun ? `, ${kase.leadsRun} of our own lead${kase.leadsRun === 1 ? '' : 's'}` : ''}`;
+    const who = kase.accusedFactionId ? factionName(kase.accusedFactionId) : 'nobody';
+    if (kase.status === 'accused' && kase.verdict === 'correct') {
+        const motive = !kase.theoryMotive ? 'We named the culprit and left the reason unsaid.'
+            : kase.motiveVerdict === 'right' ? `We named the reason too, ${motiveLabel(kase.theoryMotive).toLowerCase()}, and it held.`
+                : `Our theory of why (${motiveLabel(kase.theoryMotive).toLowerCase()}) was wrong, and the press said so.`;
+        return `Solved on ${findings}. ${who} ran ${kase.kindPhrase} and has been exposed. ${motive}`;
+    }
+    if (kase.status === 'accused') {
+        return `We accused ${who} on ${findings}, and the evidence did not hold. They are insulted, we look unreliable, and whoever did it is still out there.`;
+    }
+    if (kase.status === 'leaked') {
+        return `Handed to the press after ${findings}, naming ${who} as a suspicion. No verdict, and no diplomatic weight.`;
+    }
+    return `The trail went cold after ${findings}. The file is shut, not solved.`;
 }

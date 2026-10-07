@@ -28,7 +28,11 @@ import { OPERATION_CATALOG_BY_ID, type OperationCategory } from './operation-cat
 import { MIN_STAGE_FOR_CATEGORY, stageInfo } from './network-stages';
 import { getOrCreateFactionIntel, updateInfiltration } from './faction-intel';
 import { techIdsHaveFlag } from '../tech/flags';
-import { empiresOfSpecies, isGrievance, relationPhrase, speciesLabel, speciesOf, withArticle, type ClueTag } from './dossier';
+import { SIM_SECONDS_PER_REAL_SECOND } from '../time/time-config';
+import {
+    empiresOfSpecies, isGrievance, relationPhrase, speciesLabel, speciesOf, withArticle, type ClueTag,
+    LEAD_BY_KIND, leadCost, leadDurationSeconds, MOTIVE_WINDOW_SECONDS, SOURCES_LEAD_MIN_INFILTRATION, motiveLabel, type LeadKind,
+} from './dossier';
 import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
 import * as chronicle from '../narrative/chronicle';
@@ -131,8 +135,9 @@ export function hirelingSpotChance(counterIntelStrength: number): number {
     return Math.min(0.9, 0.3 + Math.max(0, counterIntelStrength) / 200);
 }
 
+/** Real days, like the page: the sim clock runs 15x. */
 function ago(now: number, at: number): string {
-    const days = Math.max(0, Math.round((now - at) / 86400));
+    const days = Math.max(0, Math.round((now - at) / SIM_SECONDS_PER_REAL_SECOND / 86400));
     return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
@@ -242,7 +247,7 @@ export function buildClues(
         .map(id => {
             const r: any = world.rivalries?.get?.(`rivalry-${victim}-${id}`) ?? world.rivalries?.get?.(`rivalry-${id}-${victim}`);
             const events = (Array.isArray(r?.recentEvents) ? r.recentEvents : [])
-                .filter((e: any) => isGrievance(e) && now - e.atSeconds < 30 * 86400)
+                .filter((e: any) => isGrievance(e) && now - e.atSeconds <= MOTIVE_WINDOW_SECONDS)
                 .sort((a: any, b: any) => b.atSeconds - a.atSeconds);
             return { id, score: r?.rivalryScore ?? 0, last: events[0] as { kind: string; atSeconds: number } | undefined };
         })
@@ -356,6 +361,184 @@ export function interrogationClue(agent: SpyAgent, kase: CovertCase, world: Game
         [owner], { [owner]: -0.6 }, now), clears: [owner] };
 }
 
+// ─── Motives ─────────────────────────────────────────────────────────────────
+
+/** Earlier files within this window count as linked. */
+export const LINK_WINDOW_SECONDS = 10 * 86400;
+
+function ordinal(n: number): string {
+    return ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n] ?? `${n}th`;
+}
+
+function rivalryBetween(world: GameWorldState, a: string, b: string): any {
+    return world.rivalries?.get?.(`rivalry-${a}-${b}`) ?? world.rivalries?.get?.(`rivalry-${b}-${a}`);
+}
+
+/**
+ * Why the sponsor really did it, fixed when the file opens. Built from the
+ * same public facts the page uses to offer motives (motiveOptions in
+ * dossier.ts), so the right answer is always one of the choices: at war,
+ * else the freshest grievance between them, else money, else opportunism.
+ */
+export function motiveFor(world: GameWorldState, actorId: string, victimId: string): string {
+    const now = world.nowSeconds;
+    const r = rivalryBetween(world, actorId, victimId);
+    if ((r?.escalationLevel ?? 0) >= 7) return 'war';
+    const live = (Array.isArray(r?.recentEvents) ? r.recentEvents : [])
+        .filter((e: any) => isGrievance(e) && now - e.atSeconds <= MOTIVE_WINDOW_SECONDS)
+        .sort((a: any, b: any) => b.atSeconds - a.atSeconds);
+    if (live.length > 0) return `grievance:${live[0].kind}`;
+    const credits = (id: string) => Number((world.economy?.factions?.get?.(id) as any)?.reserves?.CREDITS ?? 0);
+    if (credits(actorId) < credits(victimId)) return 'economic';
+    return 'opportunism';
+}
+
+// ─── Leads ───────────────────────────────────────────────────────────────────
+
+/** Sponsor-side reward when a theory names the right motive as well as the right culprit. */
+export const RIGHT_MOTIVE_INTEL_BONUS = 20;
+export const RIGHT_MOTIVE_CAPITAL_BONUS = 3;
+
+function pick<T>(list: T[], rand: () => number): T | undefined {
+    return list.length ? list[Math.floor(rand() * list.length)] : undefined;
+}
+
+function prisonersHeld(world: GameWorldState, factionId: string) {
+    const intel = world.espionage.factionIntel.get(factionId);
+    return (intel?.prisoners ?? []).filter(p => {
+        const a = world.espionage.agents.get(p.agentId);
+        return a && a.status === 'captured' && a.capturedByFactionId === factionId;
+    });
+}
+
+/** Why a lead cannot be run on this file right now, or null when it can. */
+export function leadBlocker(world: GameWorldState, kase: CovertCase, kind: LeadKind, targetId: string | null): string | null {
+    if (kase.status !== 'open') return 'That file is closed.';
+    if (kase.lead) return 'Our service is already working a lead on this file.';
+    if (kind === 'sources') {
+        if (!targetId || !kase.suspectIds.includes(targetId)) return 'Pick a person of interest whose service we have people inside.';
+        const level = world.espionage.factionIntel.get(kase.ownerFactionId)?.infiltrationLevels?.[targetId] ?? 0;
+        if (level < SOURCES_LEAD_MIN_INFILTRATION) return `We have no Embedded Network inside ${labelFor(targetId)}.`;
+    }
+    if (kind === 'prisoner' && prisonersHeld(world, kase.ownerFactionId).length === 0) return 'We hold no prisoners.';
+    if (kind === 'operative' && !kase.operativeSpecies) return 'Nobody saw the operative.';
+    return null;
+}
+
+/** Start a lead: pay its Intel, set its clock. */
+export function pursueLead(world: GameWorldState, factionId: string, caseId: string, kind: string, targetId: string | null): CaseActionResult {
+    const kase = ensureCases(world).get(caseId);
+    if (!kase || kase.ownerFactionId !== factionId) return { ok: false, message: 'No such file.' };
+    if (!(kind in LEAD_BY_KIND)) return { ok: false, message: 'Unknown line of inquiry.' };
+    const leadKind = kind as LeadKind;
+    const blocker = leadBlocker(world, kase, leadKind, targetId);
+    if (blocker) return { ok: false, message: blocker };
+
+    const intel = getOrCreateFactionIntel(world, factionId);
+    const ci = intel.counterIntelStrength ?? 0;
+    const cost = leadCost(leadKind, ci);
+    if (intel.intelPoints < cost) return { ok: false, message: `${LEAD_BY_KIND[leadKind].label} needs ${cost} Intel.` };
+    intel.intelPoints -= cost;
+    const now = world.nowSeconds;
+    kase.lead = { kind: leadKind, targetFactionId: targetId, startedAt: now, dueAt: now + leadDurationSeconds(leadKind, ci), cost };
+    return { ok: true, message: `${LEAD_BY_KIND[leadKind].label}: our service is on it.` };
+}
+
+/**
+ * What a lead turns up. Findings, not verdicts: a lead never names the sponsor
+ * as proven, and several can come back empty or point at the wrong door.
+ */
+export function resolveLead(world: GameWorldState, kase: CovertCase, rand: () => number = Math.random): CaseClue | null {
+    const lead = kase.lead;
+    if (!lead) return null;
+    const now = world.nowSeconds;
+    const actor = kase.actorFactionId ?? '';
+    const victim = kase.ownerFactionId;
+    const ci = world.espionage.factionIntel.get(victim)?.counterIntelStrength ?? 0;
+    const where = systemName(world, kase.systemId);
+    const def = kase.definitionId ? OPERATION_CATALOG_BY_ID.get(kase.definitionId) : undefined;
+    const suspects = kase.suspectIds;
+    const nothing = (text: string) => clue('own_intel', 'testimony', text, [], {}, now);
+
+    switch (lead.kind as LeadKind) {
+        case 'money': {
+            if (rand() >= 0.6 + ci / 250) return nothing('The money went through too many hands. The trail is cold.');
+            const decoys = suspects.filter(id => id !== actor);
+            const named = [actor];
+            for (let i = 0; i < 2 && decoys.length; i++) named.push(decoys.splice(Math.floor(rand() * decoys.length), 1)[0]);
+            named.sort();
+            return clue('method', 'means', `The money for this ran through accounts tied to ${named.map(labelFor).join(', ')}.`,
+                named, onlySponsor(named, actor, 0.5), now);
+        }
+        case 'sensors': {
+            const here: any = world.movement?.systems?.get?.(kase.systemId);
+            const area = new Set<string>([kase.systemId, ...((here?.hyperlaneNeighbors as string[]) ?? [])]);
+            const seen = new Set<string>();
+            for (const fleet of (world.movement?.fleets?.values?.() ?? []) as Iterable<any>) {
+                if (area.has(fleet.currentSystemId) && fleet.factionId !== victim && suspects.includes(fleet.factionId)) seen.add(fleet.factionId);
+            }
+            const ids = [...seen].sort();
+            if (ids.length === 0) return nothing(`The sensor logs around ${where} show nobody who should not have been there.`);
+            return clue('sensors', 'opportunity', `Sensor logs in and around ${where} show ships of ${ids.map(labelFor).join(', ')}.`,
+                ids, onlySponsor(ids, actor, 0.3), now);
+        }
+        case 'method': {
+            if (!def) return nothing('The method leaves nothing we can measure.');
+            const stage = stageInfo(MIN_STAGE_FOR_CATEGORY[def.category as OperationCategory]);
+            const holders = suspects.filter(id => id === actor
+                || (world.espionage.factionIntel.get(id)?.infiltrationLevels?.[victim] ?? 0) >= stage.minInfiltration);
+            if (stage.minInfiltration === 0) return nothing('Anyone with a recon team could have done this. The method tells us nothing.');
+            const weights: Record<string, number> = {};
+            for (const id of holders) weights[id] = id === actor ? 1 / holders.length + 0.3 : 0;
+            return clue('method', 'means', `As of now, ${holders.length === 1 ? 'one service holds' : `${holders.length} services hold`} a ${stage.label} network inside us: ${holders.map(labelFor).join(', ')}.`,
+                holders, weights, now);
+        }
+        case 'sources': {
+            const target = lead.targetFactionId ?? '';
+            if (target === actor) {
+                return clue('own_intel', 'testimony', `Our sources inside ${labelFor(target)} confirm it: an operation against us was run from there.`,
+                    [target], { [target]: 0.9 }, now);
+            }
+            return { ...clue('own_intel', 'testimony', `Our sources inside ${labelFor(target)} heard nothing of it, and they would have.`,
+                [target], { [target]: -0.7 }, now), clears: [target] };
+        }
+        case 'prisoner': {
+            const record = pick(prisonersHeld(world, victim), rand);
+            const agent = record ? world.espionage.agents.get(record.agentId) : undefined;
+            if (!record || !agent) return nothing('There is nobody left to question.');
+            const owner = agent.ownerFactionId;
+            if (agent.traitIds.includes('double_agent') && rand() < 0.5 + ci / 200) {
+                const out = clue('interrogation', 'testimony',
+                    `${agent.codename} broke: they had been lying, and work for ${labelFor(owner)}${owner === actor ? ', who ran this' : ''}.`,
+                    [owner], { [owner]: owner === actor ? 1 : 0 }, now);
+                return record.claimedEmployerId !== owner ? { ...out, clears: [record.claimedEmployerId] } : out;
+            }
+            return interrogationClue(agent, kase, world, rand);
+        }
+        case 'operative': {
+            const species = kase.operativeSpecies;
+            if (!species) return nothing('Nobody saw the operative.');
+            const actorSpecies = speciesOf(world.economy?.factions?.get?.(actor) as any);
+            const kin = empiresOfSpecies((world.economy?.factions?.entries?.() ?? []) as any, species).filter(id => suspects.includes(id));
+            if (species !== actorSpecies) {
+                if (rand() >= 0.6 + ci / 200) return nothing(`The ${speciesLabel(species)} operative left no trail we can follow.`);
+                const decoy = pick(suspects.filter(id => id !== actor && !kin.includes(id)), rand);
+                const brokers = [actor, ...(decoy ? [decoy] : [])].sort();
+                const weights: Record<string, number> = {};
+                for (const id of kin) weights[id] = -0.5;
+                for (const id of brokers) weights[id] = id === actor ? 0.6 : 0;
+                return { ...clue('own_intel', 'testimony',
+                    `The ${speciesLabel(species)} operative is a freelancer, hired through a broker who has sold to ${brokers.map(labelFor).join(' and ')}.`,
+                    brokers, weights, now), clears: kin.filter(id => !brokers.includes(id)) };
+            }
+            return clue('own_intel', 'testimony',
+                `The operative is no freelancer: their tradecraft is ${speciesLabel(species)} service training.`,
+                kin, onlySponsor(kin, actor, 0.5), now);
+        }
+    }
+    return null;
+}
+
 // ─── Opening and ticking ─────────────────────────────────────────────────────
 
 function clueInterval(world: GameWorldState, factionId: string): number {
@@ -386,6 +569,18 @@ export function maybeOpenCase(
     const pending = buildClues(op, world, suspects, suspectedId);
     const interval = clueInterval(world, victim);
 
+    // Linked incidents: earlier files of ours in the same system, or of the
+    // same kind, within ten sim days.
+    const recent = [...ensureCases(world).values()].filter(c =>
+        c.ownerFactionId === victim && now - c.openedAt <= LINK_WINDOW_SECONDS);
+    const sameSystem = recent.filter(c => c.systemId === op.targetRegionId).length;
+    const sameKind = recent.filter(c => c.kindPhrase === detail.kindPhrase).length;
+    const linkedNote = sameSystem > 0
+        ? `The ${ordinal(sameSystem + 1)} incident at ${where} in ten days.`
+        : sameKind > 0
+            ? `The ${ordinal(sameKind + 1)} ${detail.kindPhrase.replace(/^an? /, '')} against us in ten days.`
+            : null;
+
     const kase: CovertCase = {
         id: opaqueId(`case-${victim}`, now),
         ownerFactionId: victim,
@@ -409,6 +604,16 @@ export function maybeOpenCase(
         falseFlagFactionId: op.falseFlagFactionId ?? null,
         pendingClues: pending,
         interrogatedAgentIds: [],
+        lead: null,
+        leadsRun: 0,
+        linkedNote,
+        theoryMotive: null,
+        motiveVerdict: null,
+        trueMotive: motiveFor(world, op.actorFactionId, victim),
+        definitionId: op.definitionId ?? null,
+        operativeSpecies: op.agentId
+            ? (world.espionage.agents.get(op.agentId)?.species ?? speciesOf(world.economy?.factions?.get?.(op.actorFactionId) as any))
+            : null,
     };
     ensureCases(world).set(kase.id, kase);
     releaseDueClues(kase, world, false);
@@ -483,10 +688,30 @@ export function tickCases(world: GameWorldState, deltaSeconds = 0): void {
             (kase.interrogatedAgentIds ??= []).push(agent.id);
             (kase.pendingClues ??= []).unshift(interrogationClue(agent, kase, world));
         }
+        // A pursued lead comes back.
+        if (kase.lead && now >= kase.lead.dueAt) {
+            const label = LEAD_BY_KIND[kase.lead.kind as LeadKind]?.label ?? 'Lead';
+            const finding = resolveLead(world, kase);
+            kase.lead = null;
+            kase.leadsRun = (kase.leadsRun ?? 0) + 1;
+            if (finding) {
+                finding.arrivedAt = now;
+                kase.clues.push(finding);
+                if (isPlayerRun(world, kase.ownerFactionId)) {
+                    fireNotification({
+                        id: `case-lead-${kase.id}-${now}`, factionId: kase.ownerFactionId, category: 'espionage', priority: 'normal',
+                        title: 'LEAD REPORTS BACK',
+                        body: `${kase.title} · ${label}: ${finding.text}`,
+                        createdAt: new Date(now * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+                    });
+                }
+            }
+        }
         releaseDueClues(kase, world, true);
         if (now - kase.openedAt > CASE_COLD_AFTER_SECONDS) {
             kase.status = 'cold';
             kase.closedAt = now;
+            kase.lead = null;
         }
     }
 }
@@ -507,7 +732,7 @@ function ownOpenCase(world: GameWorldState, factionId: string, caseId: string): 
  * consequence an exposure carries. Wrong: an innocent empire is insulted, the
  * accuser looks unreliable, and the real sponsor's hold tightens.
  */
-export function fileAccusation(world: GameWorldState, factionId: string, caseId: string, suspectId: string): CaseActionResult {
+export function fileAccusation(world: GameWorldState, factionId: string, caseId: string, suspectId: string, motive: string | null = null): CaseActionResult {
     const kase = ownOpenCase(world, factionId, caseId);
     if (typeof kase === 'string') return { ok: false, message: kase };
     if (!kase.suspectIds.includes(suspectId)) return { ok: false, message: 'That empire is not a suspect in this case.' };
@@ -523,6 +748,11 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
     kase.accusedFactionId = suspectId;
     kase.verdict = correct ? 'correct' : 'wrong';
     kase.closedAt = now;
+    // The theory: a named motive is judged only when the culprit is right.
+    kase.lead = null;
+    kase.theoryMotive = motive;
+    const motiveRight = correct && !!motive && motive === kase.trueMotive;
+    kase.motiveVerdict = correct && motive ? (motiveRight ? 'right' : 'wrong') : null;
 
     if (correct) {
         const op = kase.operationId ? world.espionage.operations.get(kase.operationId) : undefined;
@@ -532,13 +762,17 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
         try { grantPoliticalCapital(world, factionId, CORRECT_ACCUSATION_CAPITAL, 'proved a foreign operation'); } catch { /* no government */ }
         try { ReputationService.updateScore(world, actor, { deception: 5, reliability: -3 }, 'exposed_by_accusation'); } catch { /* no ledger */ }
         const intel = getOrCreateFactionIntel(world, factionId);
-        intel.intelPoints = Math.min(1000, intel.intelPoints + CORRECT_ACCUSATION_INTEL);
+        intel.intelPoints = Math.min(1000, intel.intelPoints + CORRECT_ACCUSATION_INTEL + (motiveRight ? RIGHT_MOTIVE_INTEL_BONUS : 0));
+        if (motiveRight) {
+            try { grantPoliticalCapital(world, factionId, RIGHT_MOTIVE_CAPITAL_BONUS, 'named the motive behind a foreign operation'); } catch { /* no government */ }
+        }
         chronicle.record(world, {
             type: 'scandal_confirmed',
             actorIds: [actor],
             targetIds: [factionId],
             location: kase.systemId,
-            facts: { kind: kase.kindPhrase, accusedBy: accuserName, proved: true },
+            // The press can mock a right culprit named for the wrong reason.
+            facts: { kind: kase.kindPhrase, accusedBy: accuserName, proved: true, motive: motive ? motiveLabel(motive) : null, motiveRight: motive ? motiveRight : null },
             attribution: 'exposed',
         });
         if (isPlayerRun(world, actor)) {
@@ -549,7 +783,10 @@ export function fileAccusation(world: GameWorldState, factionId: string, caseId:
                 createdAt, read: false, linkToTab: 'intelligence',
             });
         }
-        return { ok: true, verdict: 'correct', message: `The evidence held. ${accusedName} is exposed.` };
+        const why = !motive ? ''
+            : motiveRight ? ` And we named the reason: ${motiveLabel(motive).toLowerCase()}.`
+                : ' But our theory of why was wrong, and the press is enjoying it.';
+        return { ok: true, verdict: 'correct', message: `The evidence held. ${accusedName} is exposed.${why}` };
     }
 
     try { shiftRivalry(world, factionId, suspectId, FALSE_ACCUSATION_RIVALRY_JUMP, 'false_accusation', kase.kindPhrase); } catch { /* minimal worlds */ }
@@ -584,6 +821,7 @@ export function leakCase(world: GameWorldState, factionId: string, caseId: strin
     if (!kase.suspectIds.includes(suspectId)) return { ok: false, message: 'That empire is not a suspect in this case.' };
 
     kase.status = 'leaked';
+    kase.lead = null;
     kase.accusedFactionId = suspectId;
     kase.closedAt = world.nowSeconds;
     // The leak is OUR act (actorIds); what it alleges is a suspicion the press

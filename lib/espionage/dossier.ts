@@ -153,3 +153,92 @@ export function assessmentLine(pinned: { tag?: ClueTag }[], cleared: boolean): s
     const tail = testimony ? ` ${testimony} witness${testimony > 1 ? 'es' : ''} name${testimony > 1 ? '' : 's'} them.` : '';
     return `${parts.join(', ')}.${tail}${cleared ? ' One finding points away from them.' : ''}`;
 }
+
+// ─── Leads (item 12b-3) ──────────────────────────────────────────────────────
+
+export type LeadKind = 'money' | 'prisoner' | 'sources' | 'sensors' | 'method' | 'operative';
+
+export interface LeadDefinition {
+    kind: LeadKind;
+    label: string;
+    description: string;
+    /** Intel, before the counter-intelligence discount. */
+    baseCost: number;
+    /** Sim hours, before the counter-intelligence speed-up. */
+    baseHours: number;
+    /** Needs a target empire (ask our sources inside X). */
+    needsTarget?: boolean;
+}
+
+export const LEADS: LeadDefinition[] = [
+    { kind: 'money', label: 'Follow the money', description: 'Trace who paid for an operation of this size.', baseCost: 20, baseHours: 8 },
+    { kind: 'sensors', label: 'Pull the sensor logs', description: 'Ships logged in and around the system when it happened.', baseCost: 15, baseHours: 6 },
+    { kind: 'method', label: 'Check the method', description: 'Who could field what this took, as of now.', baseCost: 15, baseHours: 6 },
+    { kind: 'sources', label: 'Ask our sources', description: 'Ask our people inside one empire what they heard. Needs an Embedded Network there.', baseCost: 25, baseHours: 12, needsTarget: true },
+    { kind: 'prisoner', label: 'Press a prisoner', description: 'Question a prisoner again, harder. Needs a prisoner in our hands.', baseCost: 10, baseHours: 4 },
+    { kind: 'operative', label: 'Trace the operative', description: 'Who trained the operative a witness saw. Needs a witness on file.', baseCost: 20, baseHours: 8 },
+];
+
+export const LEAD_BY_KIND: Record<LeadKind, LeadDefinition> =
+    Object.fromEntries(LEADS.map(l => [l.kind, l])) as Record<LeadKind, LeadDefinition>;
+
+/** Infiltration our sources need inside an empire before we can ask them (Embedded Network). */
+export const SOURCES_LEAD_MIN_INFILTRATION = 35;
+
+/** Intel a lead costs: a strong service works cheaper. Shared by worker and page. */
+export function leadCost(kind: LeadKind, counterIntelStrength: number): number {
+    const ci = Math.max(0, Math.min(100, counterIntelStrength));
+    return Math.max(1, Math.round(LEAD_BY_KIND[kind].baseCost * (1 - ci / 200)));
+}
+
+/** Sim seconds a lead takes: a strong service works faster. */
+export function leadDurationSeconds(kind: LeadKind, counterIntelStrength: number): number {
+    const ci = Math.max(0, Math.min(100, counterIntelStrength));
+    return Math.round((LEAD_BY_KIND[kind].baseHours * 3600) / (1 + ci / 100));
+}
+
+/** The face-of-the-operative clue on a file (worker writes it; the page and the operative lead look for it). */
+export const OPERATIVE_TRACE_PREFIX = 'Witnesses at';
+
+export function hasOperativeTrace(clues: { text: string }[]): boolean {
+    return clues.some(c => c.text.startsWith(OPERATIVE_TRACE_PREFIX) && /describe the operative/.test(c.text));
+}
+
+// ─── Motives (case theories) ─────────────────────────────────────────────────
+
+/**
+ * Why an empire would do this to us, as a theory the player can name.
+ * Keys: 'war', 'economic', 'opportunism', or 'grievance:<relation kind>'.
+ * The worker fixes the true motive when a file opens (motiveFor in
+ * case-board); the page offers these options for a suspect from the same
+ * public facts, so the right answer is always among them.
+ */
+export interface MotiveOption { key: string; label: string }
+
+export function motiveLabel(key: string): string {
+    if (key === 'war') return 'To weaken us in the war';
+    if (key === 'economic') return 'To get ahead of us economically';
+    if (key === 'opportunism') return 'Opportunism: we were exposed and they took the chance';
+    if (key.startsWith('grievance:')) return `Retaliation for ${relationPhrase(key.slice('grievance:'.length))}`;
+    return key;
+}
+
+/** Grievances within this window count as live motives (and as grudges on file). */
+/** A week of real time, in sim seconds (the sim runs 15x). */
+export const MOTIVE_WINDOW_SECONDS = 7 * 86400 * 15;
+
+export function motiveOptions(
+    events: { kind: string; scoreDelta: number; atSeconds: number }[],
+    atWar: boolean,
+    nowSeconds: number
+): MotiveOption[] {
+    const keys: string[] = [];
+    if (atWar) keys.push('war');
+    for (const e of [...events].sort((a, b) => b.atSeconds - a.atSeconds)) {
+        if (!isGrievance(e) || nowSeconds - e.atSeconds > MOTIVE_WINDOW_SECONDS) continue;
+        const k = `grievance:${e.kind}`;
+        if (!keys.includes(k)) keys.push(k);
+    }
+    keys.push('economic', 'opportunism');
+    return keys.map(key => ({ key, label: motiveLabel(key) }));
+}

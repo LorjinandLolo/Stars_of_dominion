@@ -33,6 +33,7 @@ import {
     setCounterIntelAction,
     fileAccusationAction,
     leakCaseAction,
+    pursueLeadAction,
 } from '@/app/actions/espionage';
 import type { OperationDomain } from '@/lib/espionage/espionage-types';
 import { OPERATION_CATALOG_BY_ID, type OperationDefinition } from '@/lib/espionage/operation-catalog';
@@ -47,7 +48,7 @@ type TabType = 'board' | 'cases' | 'networks' | 'operations' | 'reports' | 'agen
 
 const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'board', label: 'Board', icon: <Radio size={12} /> },
-    { id: 'cases', label: 'Cases', icon: <Briefcase size={12} /> },
+    { id: 'cases', label: 'Case files', icon: <Briefcase size={12} /> },
     { id: 'networks', label: 'Networks', icon: <Globe size={12} /> },
     { id: 'operations', label: 'Operations', icon: <Target size={12} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={12} /> },
@@ -327,13 +328,22 @@ export default function IntelligencePanel() {
     const cases = espionageState.cases ?? [];
     const openCases = cases.filter(c => c.status === 'open').length;
 
-    const handleAccuse = async (caseId: string, suspectId: string) => {
+    const handleAccuse = async (caseId: string, suspectId: string, motive: string | null = null) => {
         if (!playerFactionId) return;
         setBusy(true);
-        const result = await fileAccusationAction(playerFactionId, caseId, suspectId);
+        const result = await fileAccusationAction(playerFactionId, caseId, suspectId, motive);
         setBusy(false);
         if (!result.success) { showToast(result.error || 'Accusation refused.', false); return; }
         showToast(`Accusation against ${factionName(suspectId)} filed. The verdict arrives with the next update.`, true);
+    };
+
+    const handleLead = async (caseId: string, kind: string, targetFactionId: string | null) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await pursueLeadAction(playerFactionId, caseId, kind, targetFactionId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Lead refused.', false); return; }
+        showToast('Lead ordered. Our service reports back when it has something.', true);
     };
 
     const handleLeak = async (caseId: string, suspectId: string) => {
@@ -708,6 +718,7 @@ export default function IntelligencePanel() {
                         busy={busy}
                         onAccuse={handleAccuse}
                         onLeak={handleLeak}
+                        onLead={handleLead}
                         dossier={{
                             playerFactionId,
                             factions: factions as any,

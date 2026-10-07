@@ -368,6 +368,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { caseId: "id", suspectId: "id" },
     cost: {}
   },
+  ESP_PURSUE_LEAD: {
+    id: "ESP_PURSUE_LEAD",
+    category: "espionage",
+    // Pursue a line of inquiry on one of our open files (lib/espionage/case-board.ts).
+    // payload.targetFactionId is required by the 'sources' lead only. Intel is
+    // charged by pursueLead itself, so a refused lead costs nothing.
+    params: { caseId: "id", lead: "string" },
+    cost: {}
+  },
   ESP_LEAK_CASE: {
     id: "ESP_LEAK_CASE",
     category: "espionage",

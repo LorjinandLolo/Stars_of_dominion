@@ -160,13 +160,13 @@ export async function setCounterIntelAction(
 }
 
 /** Name the culprit of one of our open cases. The worker checks the truth. */
-export async function fileAccusationAction(factionId: string, caseId: string, suspectId: string): Promise<ActionResult> {
+export async function fileAccusationAction(factionId: string, caseId: string, suspectId: string, motive: string | null = null): Promise<ActionResult> {
     const result = await executePlayerAction({
         id: `accuse-${Date.now()}`,
         actionId: 'ESP_FILE_ACCUSATION',
         issuerId: factionId,
         targetId: suspectId,
-        payload: { caseId, suspectId },
+        payload: { caseId, suspectId, ...(motive ? { motive } : {}) },
         timestamp: Math.floor(Date.now() / 1000)
     });
     if (result.success) revalidatePath('/');
@@ -181,6 +181,23 @@ export async function leakCaseAction(factionId: string, caseId: string, suspectI
         issuerId: factionId,
         targetId: suspectId,
         payload: { caseId, suspectId },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
+}
+
+/**
+ * Pursue a line of inquiry on one of our open files. The worker checks the
+ * lead's requirements and charges its Intel; the finding arrives when it is due.
+ */
+export async function pursueLeadAction(factionId: string, caseId: string, lead: string, targetFactionId: string | null = null): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `lead-${Date.now()}`,
+        actionId: 'ESP_PURSUE_LEAD',
+        issuerId: factionId,
+        targetId: caseId,
+        payload: { caseId, lead, ...(targetFactionId ? { targetFactionId } : {}) },
         timestamp: Math.floor(Date.now() / 1000)
     });
     if (result.success) revalidatePath('/');
