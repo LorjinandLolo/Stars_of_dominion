@@ -213,10 +213,62 @@ Phases (one session each, in order, after 11a to 11c):
 
 **12b. UI.** Case Board tab on the Item 11 page: open cases, suspect column, clue column, pin a clue to a suspect, accuse / leak / hold. Works at 375 px (Item 8 rules).
 
+*12b as built (2026-10-07):* `components/panels/espionage/CaseBoardTab.tsx`, commit a011f833. Pins live in the browser (localStorage) and never reach the worker. A fix on the way (54726453): the client must never import `lib/espionage/case-board.ts`, which reaches `lib/government` and from there a module that reads files from disk; `counter-intel.ts` holds the capture helper for that reason and the case-board probe guards the import list.
+
+### Item 12 refinements (agreed 2026-10-07): an agency, not a clue list
+
+The board as built waits for clues and sorts them. An agency works out why anyone would do this, pursues leads of its own choosing, and writes an assessment. Two further sub-items, both before 12c.
+
+**12b-2. Dossiers, motives, hired foreigners.**
+
+- *Suspect dossiers.* Each suspect is a file of what the victim's service actually knows, never the hidden truth: species and government (civilization registry, `economy.factions[].civilizationId`); standing with us (war, treaties, rivalry level); the last few events between us from `RivalryState.recentEvents`, which is the motive section ("they lost the Aglate route to us 6 days ago"); our access inside them (our infiltration stage, which gates leads); what we know they can do (their stage inside us only if a sweep or prisoner revealed it, their tech only if we have sources inside, otherwise "unknown"); history (prior accusations and verdicts, prisoners of theirs we hold); and an assessment line written from visible facts and the player's pins only ("motive strong, means unconfirmed, no opportunity established").
+- *Real motives.* The motive clue stops saying "has the most reason" from a score and names the grievance from the relations log.
+- *Species on agents.* `SpyAgent` and `AgentCandidate` carry a species (civilization id). The recruit pool is mostly the recruiter's own people; about one candidate in four is an émigré or mercenary of another species at roughly 1.5x the price.
+- *Species traces.* An operation run by an agent and not caught outright leaves a species clue on the victim's case (a witness, a body, a prisoner's accent): "the operative seen at Aglate was Grakkar". It points at every empire of that species. Own species points at the sponsor; a hired foreigner points at the foreigner's empire; no agent leaves no trace and gets no agent bonus. Three real choices for the sponsor. An operation caught outright names the sponsor regardless.
+- *Seeing through it.* The lead "trace the operative" (the first pursued lead, see 12b-3) can find the operative is a known hireling who has worked for several services, which weakens the species clue; a captured foreign agent names their real employer under questioning unless they are a Double Agent. Counter-intelligence strength raises the odds.
+- *The deceived.* The hired agent's species' empire takes the falsely-accused consequences if the victim bites, and the grudge is discoverable later (a prisoner, a sweep finding the recruitment trail).
+- *Three cheap twists.* The mole: a `compromised` agent leaks the owner's case files, so the sponsor learns what has been pinned and who will be accused; a sweep or prisoner can out them. Cui bono: a motive clue built from who actually profited (who gained the route we lost, whose bloc swung), which is sometimes not the sponsor. The convenient witness: planted walk-in sources arrive fast and name a suspect loudly, so a seasoned player learns that a walk-in is the signature of a plant.
+
+**12b-3. Leads, the grid, the theory, the language.**
+
+- *Leads.* On an open case the player picks a line of inquiry, pays Intel, waits some sim hours, and gets a finding, nothing, or a lie: follow the money (who paid for an operation of this size), question a prisoner (needs a captured agent), ask our sources inside X (needs an Embedded Network in X; honest only with real access), pull the sensor logs (ships near the system in the window), check the method (what stage and tech it needed), trace the operative (12b-2). One lead per case at a time. Passive clues keep trickling, slower; pursued leads are faster and targeted; counter-intelligence strength discounts them. Leads never reveal the hidden sponsor directly; they produce findings like any clue.
+- *Motive, means, opportunity.* Every clue is tagged motive, means or opportunity (motive and cui-bono clues = motive; method and money = means; sensors, neighbours and species traces = opportunity). The suspect list becomes a grid of three cells per suspect, filled by the clues pinned to them, with a "cleared" state when a clue clears them. Reading the grid is the deduction; the board still does no inference.
+- *Case theory.* The player names a prime suspect and a motive from a short list built from the actual events ("retaliation for the sanctions", "weaken us before a war", "deny us the Archive"). A right culprit with the right motive earns more; a right culprit with a wrong motive still exposes them but the press mocks the reasoning.
+- *Agency language.* "Cases" become case files, clues become findings, suspects become persons of interest, every closed file gets a one-paragraph debrief.
+- *Linked incidents.* A new case in the same region or with the same method within ten sim days says so ("third sabotage in this region this month"; `regionEscalation` already counts it).
+
+Acceptance for both: a probe shows a hired foreign agent produces a species clue pointing at the foreigner's empire and none at the sponsor; tracing the operative on a hireling weakens that clue; a prisoner from the sponsor's own service names them; a pursued lead costs Intel and lands within its window; the mole leaks pins to the sponsor only while compromised. In the preview, a dossier shows species, standing, recent events and access for a suspect, and the grid fills from pins.
+
 **12c. Pressure on both sides.** False-flag clue planting, AI accusations, press articles seeded from open cases through the chronicle (`investigation_published` and `scandal_confirmed` already exist as event types).
 
 Acceptance: in a probe, a victim of a political op receives at least three clues within 2 sim days at default counter-intel, a false-flag op produces a majority of clues pointing at the innocent, an accusation of the real actor opens the victim's debate and marks the chronicle event exposed, and a wrong accusation raises tension with the innocent; in the preview, DEV 1 can open a case, pin clues and accuse.
 
+## Item 13: rebel cells (the Andor loop)
+
+Oppression breeds cells, cells are funded by someone who stays hidden, the security bureau hunts them, and every crackdown makes more rebels. Every piece exists except the cells: non-state actors with bases, covert sponsorship and infiltration (`lib/piracy/`: `PirateOrganization`, `PirateBase.concealment`, `Sponsorship.covert` with accruing evidence, `compromisedByFactionId`, design in `docs/pirate-system/`); oppression and unrest (`planet.unrest`, bloc dissatisfaction, the `oppression` reputation score, cohesion); the endgame (`lib/government/secession-service.ts`, civil war, breakaway states a human can take in `lib/breakaway/`); the hunters (counter-intel budget, sweeps, prisoners, the case board); and catalog operations that are currently numbers (`incite_rebellion`, `fund_separatists`, `smuggle_weapons`).
+
+### Item 13 design decisions (agreed 2026-10-07)
+
+1. **A cell is a political pirate band.** Same entity model as `PirateOrganization` (members, bases with concealment, sponsorships, `knownToFactionIds`, `compromisedByFactionId`), with a cause taken from the loudest dissatisfied bloc on its world ("the miners of Aglate", "the old faith") and no fleet of its own. Reuse the model; do not fork it.
+2. **Cells form where unrest and oppression stay high**, on worlds, not in systems: a cell belongs to a planet. Strength grows with grievance (unrest, bloc dissatisfaction, the host's oppression score) and shrinks with prosperity and concessions. A cell that stays small for long dies quietly.
+3. **Sponsors stay hidden.** Any empire can covertly fund, arm or train a cell in a rival's space (credits, weapons via `smuggle_weapons`, a seconded agent). Evidence accrues the way covert pirate sponsorship accrues it. The cell may not know who pays; a sponsor can insist on a cutout, so the cell's leader cannot name them under questioning.
+4. **Cells act**, on their own schedule, against the host: heists (credits or a blueprint; a sponsor gets a cut), sabotage, propaganda that moves blocs, assassination of a governor, a prison break for captured agents. Each act opens a case on the host's board (Item 12) whose first suspect is the cell, and whose real question is who stands behind it.
+5. **The host hunts.** Sweeps find cells like networks. Informants (a lead) name members. A crackdown order raises security and arrests on a world; it works, and it raises the host's oppression score, which recruits for the cell. The trap is the design: every win costs the next one.
+6. **Cells are compartmented.** A captured member knows their own cell only; one prisoner rolls up one cell, never the movement.
+7. **Escalation.** A cell that survives and grows becomes a movement: open unrest, then a secession crisis (existing), then a breakaway state (existing). A sponsor caught owns a diplomatic incident or a war.
+8. **Three seats.** The hunter runs the bureau (budget, sweeps, informants, crackdowns, cases). The sponsor builds a rebellion in a rival's space without being named (the hired-species trick and pirate cutouts apply). The rebel is a late joiner who takes a movement before it has a planet and plays from hiding until it breaks away, extending Item 7's breakaway seat.
+9. **AI empires** both sponsor cells in rivals they are hostile to and crack down on cells at home, with personality deciding how hard; a Buthari never sponsors, a Kaer'Ruun never cracks down softly.
+
+Phases (one session each, after 12c):
+
+**13a. Cells and the oppression loop.** Cell entity on the pirate model, formation and growth from unrest and oppression, quiet death, compartments; the crackdown order and its oppression cost; cells visible to the host once found (sweeps, informants) and to the sponsor always. Probe: an oppressed world grows a cell within a season, a crackdown shrinks it and raises oppression, a prosperous world grows none.
+
+**13b. Sponsorship and acts.** Covert sponsorship of a cell (fund, arm, second an agent, cutout), evidence accrual, the cell's acts and their cases on the host's board, the sponsor's cut from heists; AI sponsorship by personality. Probe: a sponsored cell acts within ten sim days, the host's case names the cell first, a prisoner from a cutout cell cannot name the sponsor, one without a cutout can.
+
+**13c. The hunt and the rebel seat.** Informants as a lead, prison breaks, escalation into secession and breakaway, the late-joiner rebel seat with a hidden-movement phase; press articles for acts and crackdowns through the chronicle. Probe: a movement that survives thirty sim days opens a secession crisis; a human can take it as a breakaway; the AI cracks down by personality.
+
+Acceptance: in a soak, oppressive AI empires accumulate cells and mild ones do not; sponsored cells open cases the host can solve by prisoner or informant; nothing about a sponsor reaches a host's shard that the host's service has not found; `scripts/approval-probe.ts` stays green (crackdowns must not reopen the approval collapse).
+
 ## Order
 
-0, 1, 2, 3 in that order; they are the Wordle promise. Then 4, 5. Then 6a to 6d. Then 8 and 9. Item 7 and item 10 after a design conversation. Items 11 and 12 (added 2026-10-06) once the playtest galaxy is live: 11a, 11b, 11c first, then 12a, 12b, 12c; 11d and 11e slot into any free session (12a needs 11b for a player-launchable Counter-Intel Sweep).
+0, 1, 2, 3 in that order; they are the Wordle promise. Then 4, 5. Then 6a to 6d. Then 8 and 9. Item 7 and item 10 after a design conversation. Items 11 and 12 (added 2026-10-06) once the playtest galaxy is live: 11a, 11b, 11c first, then 12a, 12b, 12c; 11d and 11e slot into any free session (12a needs 11b for a player-launchable Counter-Intel Sweep). Status 2026-10-07: 11a to 11e, 12a and 12b are built (local commits up to a011f833, unpushed). Queue from here: 12b-2, 12b-3, 12c, then Item 13 (13a, 13b, 13c). Item 13 needs 12c for AI cases and the species trick.
