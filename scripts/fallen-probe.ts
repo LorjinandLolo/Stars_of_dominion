@@ -263,7 +263,7 @@ async function main() {
         check('it took from the conqueror exactly what a heist takes', jobTook > 0 && jobTook === actTook, `${jobTook} vs ${actTook}`);
         check('it counts as one act', jobWorld.cell.actsCommitted === actWorld.cell.actsCommitted);
         check('and the conqueror has a file on it', [...ensureCases(jobWorld.w).values()].filter((k: any) => k.cellId === jobWorld.cell.id).length === filesBefore + 1);
-        check('the crew on it grew closer', jobWorld.cell.exile.crew.slice(0, 3).every((c: any, i: number) => c.bond === Math.min(100, bondsBefore[i] + JS.BOND_PER_SUCCESS)));
+        check('the crew on it grew closer', jobWorld.cell.exile.crew.slice(0, 3).every((c: any, i: number) => c.bond >= Math.min(100, bondsBefore[i] + JS.BOND_PER_SUCCESS)));
         check('the next job waits', !!JS.jobBlocker(jobWorld.w, jobWorld.cell, JOB_BY_ID.payroll));
     }
 
@@ -474,6 +474,152 @@ async function main() {
         check('planning orders are registered and handled', ['REB_JOB_PLAN', 'REB_JOB_RECON', 'REB_JOB_GEAR'].every(a => code('lib/actions/registry.ts').includes(a) && code('scripts/game-loop.ts').includes(`case '${a}'`)));
         check('watches report on the strategic tick', /tickRecon\(world, c\)/.test(code('lib/rebellion/underground-service.ts')));
         void ensurePiracyState;
+    }
+
+    // ── 14d: the crew lives and dies ────────────────────────────────────────
+    const CS = await import('../lib/fallen/crew-service');
+    const chronicle = await import('../lib/narrative/chronicle');
+    /** A seed whose rolls pass (true) or fail (false) step by step. */
+    const seedPath = (pattern: boolean[]) => {
+        for (let i = 0; i < 50000; i++) {
+            const s = `path-${i}`;
+            if (pattern.every((pass, k) => pass ? JS.rollFor(s, k) < 0.9 : JS.rollFor(s, k) > 0.96)) return s;
+        }
+        throw new Error('no seed for ' + pattern.join(','));
+    };
+    const byId = (cell: any, id: string) => cell.exile.crew.find((c: any) => c.id === id);
+
+    console.log('\n[17] The dead stay dead');
+    {
+        const { w, cell } = hidden();
+        primeCrew(cell);
+        const target = JS.targetsFor(w, cell, J.JOB_BY_ID.vault)[0];
+        const crew = cell.exile.crew.slice(0, 4).map((c: any) => c.id);
+        const holder = crew[2];
+        JS.setPlan(w, cell, { jobId: 'vault', targetId: target.id, approach: 'quiet', crewIds: crew, roles: { violence: holder } });
+        cell.plan.recon = 2;
+        JS.startJob(w, cell, 'vault', []);
+        cell.job.seed = seedPath([true, false, false]);
+        chronicle.resetChronicleBuffer();
+        play(w, cell, ['march', 'lock']);
+        UG.refreshSeatView(w, cell);
+        const hold = cell.seatView.job.choices.find((c: any) => c.id === 'hold');
+        check('a sacrifice says what it may cost before it is chosen', !!hold?.risk && hold.risk.includes(byId(cell, holder).name), hold?.risk);
+        play(w, cell, ['hold']);
+        const dead = byId(cell, holder);
+        check('whoever held the stairs is dead', dead.status === 'dead' && !!dead.diedAtSeconds);
+        check('and remembered', cell.exile.memorial?.some((m: any) => m.name === dead.name && m.epitaph.length > 10));
+        check('the press reports a rebel killed, not who', (chronicle.drainBuffer().rows as any[]).some(r => r.type === 'rebel_killed' && !r.facts.includes(dead.name)));
+        for (let t = 0; t < 50; t++) { w.nowSeconds += 6 * 3600; CS.tickCrew(w, cell, () => 0.5); }
+        CS.rescueCaptured(w, cell);
+        check('time, healing and prison breaks do not bring them back', dead.status === 'dead');
+        cell.nextActAtSeconds = 0;
+        check('the dead go on no job', !JS.setPlan(w, cell, { jobId: 'broadcast', crewIds: [holder] }).ok);
+        UG.refreshSeatView(w, cell);
+        check('the leader sees them gone', cell.seatView.exile.crew.find((c: any) => c.id === holder)?.status === 'dead');
+    }
+
+    console.log('\n[18] Taken: a prisoner of the conqueror, who may talk');
+    {
+        const { w, cell, host } = hidden();
+        commitAct(w, cell, 'propaganda', []); // the conqueror already has a file on the cell
+        cell.nextActAtSeconds = 0;
+        const talker = cell.exile.crew[0].id;
+        JS.startJob(w, cell, 'payroll', [talker]);
+        cell.job.seed = seedPath([true, false, false]);
+        play(w, cell, ['pass', 'crack', 'talk']);
+        const taken = byId(cell, talker);
+        check('the one who talked to the sergeant is taken', taken.status === 'captured', cell.job.story.join(' / '));
+        const prisoners = w.espionage.factionIntel.get(host)?.prisoners ?? [];
+        const rec = prisoners.find((p: any) => p.agentId === talker);
+        check('and is among the conqueror\'s prisoners', !!rec && rec.codename === taken.name);
+        check('saying they serve the old empire', rec?.claimedEmployerId === F);
+        check('the conqueror now knows the cell exists', cell.safeHouse.knownToFactionIds.includes(host));
+        CS.tickCrew(w, cell, () => 0.99);
+        check('a prisoner may hold out', !taken.broke);
+        const cover = cell.safeHouse.concealment;
+        CS.tickCrew(w, cell, () => 0);
+        const file: any = [...ensureCases(w).values()].find((k: any) => k.cellId === cell.id && k.status === 'open');
+        const testimony = (file?.pendingClues ?? []).find((c: any) => c.source === 'interrogation');
+        check('or break', taken.broke === true);
+        check('and their testimony names the cell', !!testimony && testimony.text.includes(cell.name) && testimony.text.includes(taken.name), testimony?.text);
+        check('the next crackdown knows where to look', (cell.informedUntilSeconds ?? 0) > w.nowSeconds && cell.safeHouse.concealment < cover);
+        const before = cell.seatView ? 1 : 0; void before;
+
+        // A prison break brings them home.
+        cell.nextActAtSeconds = 0;
+        const crew = cell.exile.crew.filter((c: any) => c.status === 'free').slice(0, 2).map((c: any) => c.id);
+        JS.startJob(w, cell, 'detention', crew);
+        cell.job.seed = seedPath([true, true]);
+        play(w, cell, ['papers', 'all']);
+        check('the detention job worked', cell.job.status === 'success', cell.job.story.join(' / '));
+        check('the prisoner is home, hurt', taken.status === 'wounded');
+        check('and off the conqueror\'s books', !(w.espionage.factionIntel.get(host)?.prisoners ?? []).some((p: any) => p.agentId === talker));
+        check('the story says so', cell.job.story.some((s: string) => s.includes(taken.name) && /home/.test(s)));
+    }
+
+    console.log('\n[19] Wounds');
+    {
+        const { w, cell } = hidden();
+        const c = cell.exile.crew[0];
+        CS.woundCompanion(w, c);
+        check('the wounded go on no job', !JS.setPlan(w, cell, { jobId: 'broadcast', crewIds: [c.id] }).ok);
+        w.nowSeconds += CS.WOUND_SECONDS - 60;
+        CS.tickCrew(w, cell, () => 0.5);
+        check('wounds take their time', c.status === 'wounded');
+        w.nowSeconds += 120;
+        CS.tickCrew(w, cell, () => 0.5);
+        check('then heal', c.status === 'free');
+    }
+
+    console.log('\n[20] Unfinished business');
+    {
+        const { w, cell } = hidden();
+        primeCrew(cell);
+        const c = cell.exile.crew[0];
+        c.threadId = 'sister'; c.threadResolved = false;
+        const bond = c.bond, loyalty = c.loyalty;
+        JS.startJob(w, cell, 'detention', [c.id]);
+        cell.job.seed = seedPath([true, true]);
+        play(w, cell, ['papers', 'all']);
+        check('the right job settles a companion\'s thread', c.threadResolved === true && cell.job.story.some((s: string) => s.includes(c.name) && /sister/.test(s)));
+        check('and binds them closer', c.bond >= Math.min(100, bond + CS.THREAD_BOND) && c.loyalty > loyalty);
+        const forger = cell.exile.crew[1];
+        forger.threadId = 'identity'; forger.identityUsed = false;
+        check('a forged identity is good for one walk-in', CS.crewCheckModifier([forger], 'infiltration', true) === CS.IDENTITY_BONUS && CS.crewCheckModifier([forger], 'infiltration', true) === 0);
+    }
+
+    console.log('\n[21] Betrayal');
+    {
+        const { w, cell, host } = hidden();
+        const c = cell.exile.crew[0];
+        c.loyalty = 10;
+        cell.safeHouse.knownToFactionIds = cell.safeHouse.knownToFactionIds.filter((id: string) => id !== host);
+        CS.tickCrew(w, cell, () => 0);
+        check('loyalty that runs out may turn', c.turned === true);
+        check('the conqueror\'s handler knows where the cell is', cell.safeHouse.knownToFactionIds.includes(host) && (cell.informedUntilSeconds ?? 0) > w.nowSeconds);
+        UG.refreshSeatView(w, cell);
+        check('the leader cannot see who turned', !JSON.stringify(cell.seatView).includes('"turned"'));
+        check('a traitor on a job makes every check worse', CS.crewCheckModifier([c], 'tech', false) === -CS.TRAITOR_PENALTY);
+        const lines = CS.crewAfterJob(w, cell, { crewIds: [c.id], jobId: 'payroll' } as any, 'failure', () => 0);
+        check('and may be found out, and gone', c.status === 'gone' && lines.some(l => l.includes(c.name)));
+        check('the conqueror\'s wire never carries the crew', !JSON.stringify(scrubOwnerSecrets(JSON.parse(extractFactionShard(w, host)))).includes(c.name));
+    }
+
+    console.log('\n[22] Loyalty moves with what happens');
+    {
+        const { w, cell } = hidden();
+        const c = cell.exile.crew[0];
+        const l0 = c.loyalty;
+        CS.crewAfterJob(w, cell, { crewIds: [c.id], jobId: 'broadcast' } as any, 'failure', () => 0.99);
+        check('a failed job costs loyalty', c.loyalty === Math.max(0, l0 - 5));
+        CS.crewAfterJob(w, cell, { crewIds: [c.id], jobId: 'broadcast' } as any, 'success', () => 0.99);
+        check('a job that works earns some back', c.loyalty === Math.max(0, l0 - 5) + 3);
+        const other = cell.exile.crew[1];
+        const lo = other.loyalty, bo = other.bond;
+        CS.killCompanion(w, cell, cell.exile.crew[2], 'Killed covering the escape.');
+        check('a death costs the others some nerve and binds them closer', other.loyalty === Math.max(0, lo - 4) && other.bond === Math.min(100, bo + 2));
+        check('the crew service stays out of the browser', !/crew-service/.test(code('components/underground/UndergroundShell.tsx')));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

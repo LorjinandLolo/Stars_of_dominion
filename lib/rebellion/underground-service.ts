@@ -32,6 +32,7 @@ import {
 import { hostReadyForMovement, movementReady, riseAsMovement, MOVEMENT_MIN_AGE_SECONDS, MOVEMENT_MIN_STRENGTH } from './movement-service';
 import { fireNotification } from '../time/notification-hooks';
 import { buyGear, chooseInJob, jobBoard, jobView, planView, setPlan, startJob, startRecon, tickRecon } from '../fallen/job-service';
+import { crewForLeader, tickCrew } from '../fallen/crew-service';
 import { labelFor } from '../time/notification-names';
 
 /**
@@ -255,7 +256,8 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
         crisisName: crisis?.name ?? null,
         declare: (() => { const why = declareBlocker(world, cell); return { open: !why, why }; })(),
         log: previousLog,
-        exile: cell.exile ?? null,
+        // 14d: the leader never sees who has turned.
+        exile: cell.exile ? { ...cell.exile, crew: crewForLeader(cell.exile.crew) } : null,
         job: jobView(world, cell),
         jobs: jobBoard(world, cell),
         plan: planView(world, cell),
@@ -267,6 +269,8 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
 export function refreshSeatViews(world: GameWorldState): void {
     for (const c of ensureRebellion(world).cells.values()) {
         if (!c.seat) continue;
+        // 14d: wounds heal, prisoners are questioned, loyalty may turn.
+        tickCrew(world, c);
         // 14c: a watch that has run its time reports back.
         const report = tickRecon(world, c);
         if (report) notifySeat(world, c, 'THE WATCHER IS BACK', report);

@@ -235,7 +235,8 @@ export function noteForSeat(cell: RebelCell, at: number, text: string): void {
 
 export type CompanionRole = 'minister' | 'general' | 'spymaster' | 'pilot' | 'forger' | 'believer';
 export type CompanionSkill = 'infiltration' | 'violence' | 'piloting' | 'talk' | 'tech';
-export type CompanionStatus = 'free' | 'wounded' | 'captured' | 'dead';
+/** 'gone': a companion who betrayed the cell and slipped away when found out (14d). */
+export type CompanionStatus = 'free' | 'wounded' | 'captured' | 'dead' | 'gone';
 
 /** One of the people who went into hiding with a fallen leader. */
 export interface Companion {
@@ -259,6 +260,21 @@ export interface Companion {
     /** The empire's real leader they were, when they were one. */
     fromLeaderId?: string | null;
     joinedAtSeconds: number;
+    // ─── 14d: lives ───
+    /** Which unfinished business, so a job can settle it. */
+    threadId?: string | null;
+    threadResolved?: boolean;
+    woundedUntilSeconds?: number | null;
+    capturedAtSeconds?: number | null;
+    /** Talked under interrogation (a captured companion breaks at most once). */
+    broke?: boolean;
+    diedAtSeconds?: number | null;
+    /** How they died, for the memorial. */
+    epitaph?: string | null;
+    /** HIDDEN from the leader too: working for the conqueror. Never on any wire. */
+    turned?: boolean;
+    /** A forged identity is good for one walk-in. */
+    identityUsed?: boolean;
 }
 
 /** A fallen empire in hiding: who it was, and who came with its leader. */
@@ -272,6 +288,8 @@ export interface ExileRecord {
     crew: Companion[];
     /** Item 14c: ships taken from the conqueror, waiting for the state to need them. */
     dock?: DockedShip[];
+    /** Item 14d: the dead, remembered. */
+    memorial?: { name: string; role: CompanionRole; diedAtSeconds: number; epitaph: string }[];
 }
 
 export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
@@ -317,7 +335,7 @@ export interface JobView {
     crew: string[];
     story: string[];
     sceneText: string | null;
-    choices: { id: string; label: string; odds: string | null }[];
+    choices: { id: string; label: string; odds: string | null; risk?: string | null }[];
     ending: string | null;
 }
 

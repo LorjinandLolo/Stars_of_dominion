@@ -39,6 +39,7 @@ import { marketAt } from '../piracy/black-market-service';
 import { unitConfigFor } from '../combat/ship-registry';
 import { speciesLabel, withArticle, empiresOfSpecies } from '../espionage/dossier';
 import { HOMEGROWN } from '../rebellion/rebellion-types';
+import { applyFate, crewAfterJob, crewCheckModifier } from './crew-service';
 import type { CaseClue, CovertCase } from '../espionage/espionage-types';
 
 export type JobResult = { ok: true; message: string } | { ok: false; message: string };
@@ -82,10 +83,11 @@ export function jobContext(world: GameWorldState, cell: RebelCell, crew: Compani
 }
 
 /** The chance of one check, everything counted. */
-function chanceOf(cell: RebelCell, crew: Companion[], check: NonNullable<JobChoice['check']>, plan: { approach?: JobApproach | null; recon?: number; gear?: string[]; roles?: Partial<Record<CompanionSkill, string>> }): { chance: number; who: Companion | null } {
+function chanceOf(cell: RebelCell, crew: Companion[], check: NonNullable<JobChoice['check']>, plan: { approach?: JobApproach | null; recon?: number; gear?: string[]; roles?: Partial<Record<CompanionSkill, string>> }, consume = false): { chance: number; who: Companion | null } {
     const { who, assigned } = personFor(crew, plan.roles, check.skill);
     const base = checkChance(check.difficulty, who?.skills[check.skill] ?? 0, cell.safeHouse.concealment);
-    const chance = base + planBonus(check.skill, { ...plan, hasRole: assigned });
+    // 14d: a traitor on the job, or a forged identity's one walk-in.
+    const chance = base + planBonus(check.skill, { ...plan, hasRole: assigned }) + crewCheckModifier(crew, check.skill, consume);
     return { chance: Math.max(0.05, Math.min(0.95, chance)), who };
 }
 
@@ -278,7 +280,7 @@ export function chooseInJob(world: GameWorldState, cell: RebelCell, choiceId: un
     const ctx = jobContext(world, cell, crew, run.roles, targetPlanetOf(world, run));
     let step: JobStep = choice.success;
     if (choice.check) {
-        const { chance, who } = chanceOf(cell, crew, choice.check, run);
+        const { chance, who } = chanceOf(cell, crew, choice.check, run, true);
         const passed = rollFor(run.seed, run.step) < chance;
         step = passed ? choice.success : (choice.failure ?? choice.success);
         // What the conqueror's people will find: a face seen where a check went wrong,
@@ -287,6 +289,11 @@ export function chooseInJob(world: GameWorldState, cell: RebelCell, choiceId: un
         if (choice.check.skill === 'violence' && (run.gear ?? []).includes('weapons') && !(run.traces ?? []).some(t => t.kind === 'weapon')) {
             (run.traces ??= []).push({ kind: 'weapon', companionId: who?.id ?? null });
         }
+    }
+    // 14d: what the step does to whoever handled it.
+    if (step.fate) {
+        const victim = personFor(crew, run.roles, step.fate.skill).who;
+        if (victim) applyFate(world, cell, victim, step.fate.kind, ctx.world, fillTemplate(step.text, ctx));
     }
     const noise = approachNoise(run.approach, step.noise ?? 0);
     if (noise >= 2) (run.traces ??= []).push({ kind: 'witness', companionId: crew[run.step % Math.max(1, crew.length)]?.id ?? null });
@@ -341,6 +348,8 @@ function finishJob(world: GameWorldState, cell: RebelCell, def: JobDefinition, r
 
     run.status = outcome;
     run.endedAtSeconds = world.nowSeconds;
+    // 14d: rescues, settled threads, a traitor found out, loyalty that rises or falls.
+    for (const line of crewAfterJob(world, cell, run, outcome)) run.story.push(line);
     run.story.push(fillTemplate(def.endings[outcome], ctx));
     cell.jobsRun = (cell.jobsRun ?? 0) + 1;
     cell.nextActAtSeconds = world.nowSeconds + HELD_ACT_COOLDOWN_SECONDS;
@@ -419,6 +428,7 @@ export function jobView(world: GameWorldState, cell: RebelCell): JobView | null 
             id: c.id,
             label: fillTemplate(c.label, ctx),
             odds: c.check ? oddsWord(chanceOf(cell, crew, c.check, run).chance) : null,
+            risk: c.risk ? fillTemplate(c.risk, ctx) : null,
         })) : [],
         ending: run.status === 'running' ? null : fillTemplate(def.endings[run.status], ctx),
     };

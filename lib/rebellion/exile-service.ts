@@ -143,17 +143,18 @@ const LEADER_ROLE_TO_COMPANION: Record<string, { role: CompanionRole; formerly: 
 const TRAITS = ['steady', 'reckless', 'devout', 'cynical', 'loyal to a fault', 'quiet', 'proud', 'gentle', 'hot-tempered', 'patient'];
 
 /** Each companion's unfinished business. {world}, {conqueror}, {empire} filled in. */
-const THREADS = [
-    'Has a sister in a labour camp on {world}, and means to get her out.',
-    'Owes a smuggler a great deal of money, and the smuggler knows where the cell meets.',
-    'Swore an oath to the old flag that {conqueror} made them break once already.',
-    'Lost a child in the fighting and has told nobody.',
-    'Still writes to someone who works for {conqueror}.',
-    'Kept the old government\'s archive codes, and {conqueror} would pay anything for them.',
-    'Believes {empire} can be what it was. Not everyone in the cell does.',
-    'Was the one who opened the gates when {conqueror} came. Nobody knows.',
-    'Wants revenge on one officer of {conqueror} by name, more than anything else.',
-    'Has a forged identity good enough to walk into any office on {world}, once.',
+/** Ids let a job settle a thread (lib/fallen/crew-service.ts THREAD_RESOLUTION). */
+const THREADS: { id: string; text: string }[] = [
+    { id: 'sister', text: 'Has a sister in a labour camp on {world}, and means to get her out.' },
+    { id: 'debt', text: 'Owes a smuggler a great deal of money, and the smuggler knows where the cell meets.' },
+    { id: 'oath', text: 'Swore an oath to the old flag that {conqueror} made them break once already.' },
+    { id: 'child', text: 'Lost a child in the fighting and has told nobody.' },
+    { id: 'writes', text: 'Still writes to someone who works for {conqueror}.' },
+    { id: 'codes', text: 'Kept the old government\'s archive codes, and {conqueror} would pay anything for them.' },
+    { id: 'believer', text: 'Believes {empire} can be what it was. Not everyone in the cell does.' },
+    { id: 'gates', text: 'Was the one who opened the gates when {conqueror} came. Nobody knows.' },
+    { id: 'revenge', text: 'Wants revenge on one officer of {conqueror} by name, more than anything else.' },
+    { id: 'identity', text: 'Has a forged identity good enough to walk into any office on {world}, once.' },
 ];
 
 function skillsFor(role: CompanionRole, rng: RNG): Record<CompanionSkill, number> {
@@ -180,7 +181,10 @@ export function generateCrew(world: GameWorldState, fromFactionId: string, seed:
     const fill = (text: string) => text
         .replace('{world}', context.worldName).replace('{conqueror}', context.conquerorName).replace('{empire}', context.empireName);
     const threads = [...THREADS];
-    const takeThread = () => fill(threads.splice(rng.nextInt(0, threads.length - 1), 1)[0] ?? THREADS[0]);
+    const takeThread = () => {
+        const t = threads.splice(rng.nextInt(0, threads.length - 1), 1)[0] ?? THREADS[0];
+        return { text: fill(t.text), id: t.id };
+    };
 
     // The empire's own people who got out.
     const leaders = [...((world.leadership?.leaders?.values?.() ?? []) as Iterable<any>)]
@@ -199,7 +203,7 @@ export function generateCrew(world: GameWorldState, fromFactionId: string, seed:
             traits: [TRAITS[rng.nextInt(0, TRAITS.length - 1)]],
             loyalty: Math.max(50, Math.min(100, Number(leader.loyalty ?? 70))),
             bond: rng.nextInt(30, 50),
-            thread: takeThread(),
+            ...(({ text, id }) => ({ thread: text, threadId: id }))(takeThread()),
             status: 'free',
             fromLeaderId: leader.id,
             joinedAtSeconds: now,
@@ -229,7 +233,7 @@ export function generateCrew(world: GameWorldState, fromFactionId: string, seed:
             traits: [TRAITS[rng.nextInt(0, TRAITS.length - 1)]],
             loyalty: rng.nextInt(55, 90),
             bond: rng.nextInt(10, 35),
-            thread: takeThread(),
+            ...(({ text, id }) => ({ thread: text, threadId: id }))(takeThread()),
             status: 'free',
             fromLeaderId: null,
             joinedAtSeconds: now,

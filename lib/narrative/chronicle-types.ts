@@ -46,6 +46,8 @@ export type ChronicleEventType =
     // Rebel cells (Item 13c): an act a cell claimed, and a government's crackdown.
     | 'rebel_act'
     | 'crackdown'
+    // A rebel killed on a job (Item 14d): the press knows a world, rarely a name.
+    | 'rebel_killed'
     | 'defiance_event'
     // Economy
     | 'trade_route_opened'

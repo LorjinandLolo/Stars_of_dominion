@@ -22,12 +22,16 @@ import type { CellActKind, CompanionSkill, JobApproach } from '../rebellion/rebe
 export type JobEnd = 'success' | 'partial' | 'failure';
 export type Difficulty = 'easy' | 'fair' | 'hard' | 'desperate';
 
+export type FateKind = 'wound' | 'capture' | 'death';
+
 export interface JobStep {
     text: string;
     /** Next scene id, or how the job ends. */
     next: string | JobEnd;
     /** How much attention this drew (0–3): costs cover when the job ends. */
     noise?: number;
+    /** 14d: what happens to whoever handles this skill on the job. Permanent when it is death. */
+    fate?: { kind: FateKind; skill: CompanionSkill } | null;
 }
 
 export interface JobChoice {
@@ -35,6 +39,8 @@ export interface JobChoice {
     label: string;
     /** No check: always the success step. */
     check?: { skill: CompanionSkill; difficulty: Difficulty } | null;
+    /** 14d: what this choice may cost, said before it is taken (a template). */
+    risk?: string | null;
     success: JobStep;
     failure?: JobStep;
 }
@@ -135,8 +141,9 @@ export const JOBS: JobDefinition[] = [
                 text: 'Four guards, weapons up, and the box still shut.',
                 choices: [
                     { id: 'talk', label: 'Talk: you are the relief crew, and late', check: { skill: 'talk', difficulty: 'hard' },
+                        risk: 'If it fails, {talk} will not get away.',
                         success: { text: '{talk} is so tired, so bored and so sure of themselves that the sergeant apologises.', next: 'out' },
-                        failure: { text: 'The sergeant does not believe a word.', next: 'failure', noise: 2 } },
+                        failure: { text: 'The sergeant does not believe a word. The rest of you get out; {talk} does not.', next: 'failure', noise: 2, fate: { kind: 'capture', skill: 'talk' } } },
                     { id: 'run', label: 'Leave the money and run',
                         success: { text: 'You get out with nothing but your lives. Tonight that is enough.', next: 'failure', noise: 1 } },
                 ],
@@ -197,8 +204,9 @@ export const JOBS: JobDefinition[] = [
                 text: 'The alarm. Doors closing, one by one, along the corridor.',
                 choices: [
                     { id: 'fight', label: 'Fight through the gate', check: { skill: 'violence', difficulty: 'desperate' },
-                        success: { text: 'Somehow, through the gate, into the dark, with the prisoners.', next: 'partial', noise: 3 },
-                        failure: { text: 'The gate holds. You go over the wall alone.', next: 'failure', noise: 3 } },
+                        risk: '{violence} goes first through the gate, and may not come out.',
+                        success: { text: 'Somehow, through the gate, into the dark, with the prisoners. {violence} is bleeding.', next: 'partial', noise: 3, fate: { kind: 'wound', skill: 'violence' } },
+                        failure: { text: 'The gate holds. {violence} holds the corridor while the rest go over the wall, and is taken.', next: 'failure', noise: 3, fate: { kind: 'capture', skill: 'violence' } } },
                     { id: 'back', label: 'Abort, and get the crew out',
                         success: { text: 'You leave them. Every one of you will remember the faces at the bars.', next: 'failure', noise: 1 } },
                 ],
@@ -346,7 +354,7 @@ JOBS.push(
                 choices: [
                     { id: 'storm', label: 'Storm the airlock', check: { skill: 'violence', difficulty: 'hard' },
                         success: { text: '{violence} is through before the guard has finished turning round.', next: 'bridge', noise: 2 },
-                        failure: { text: 'The guard gets a shot off. Every light in the berth comes on.', next: 'bridge', noise: 3 } },
+                        failure: { text: 'The guard gets a shot off, and {violence} takes it. Every light in the berth comes on.', next: 'bridge', noise: 3, fate: { kind: 'wound', skill: 'violence' } } },
                 ],
             },
             crewman: {
@@ -388,6 +396,10 @@ JOBS.push(
                 choices: [
                     { id: 'out', label: 'Get everyone off',
                         success: { text: 'Over the side and into the dark. Empty-handed.', next: 'failure', noise: 1 } },
+                    { id: 'cover', label: 'Hold the ramp so the clamp can be cut', check: { skill: 'violence', difficulty: 'desperate' },
+                        risk: 'Whoever holds the ramp may not come back. It will be {violence}.',
+                        success: { text: '{violence} holds the ramp. The clamp gives. {violence} is the last aboard, hit twice.', next: 'launch', noise: 2, fate: { kind: 'wound', skill: 'violence' } },
+                        failure: { text: '{violence} holds the ramp long enough for the rest of you to get off the ship. Not long enough to follow.', next: 'failure', noise: 2, fate: { kind: 'death', skill: 'violence' } } },
                 ],
             },
         },
@@ -424,7 +436,7 @@ JOBS.push(
                 choices: [
                     { id: 'ambush', label: 'Blow the bridge and take the convoy', check: { skill: 'violence', difficulty: 'hard' },
                         success: { text: 'The bridge goes down, the convoy stops, and {violence} is on the lead truck before the dust settles.', next: 'vault', noise: 2 },
-                        failure: { text: 'The charge goes early. The convoy scatters, and every soldier on {world} hears it.', next: 'siege', noise: 3 } },
+                        failure: { text: 'The charge goes early, too close to {violence}. The convoy scatters, and every soldier on {world} hears it.', next: 'siege', noise: 3, fate: { kind: 'wound', skill: 'violence' } } },
                 ],
             },
             clerk: {
@@ -453,8 +465,9 @@ JOBS.push(
                 text: 'Alarms. The garrison is coming, drunk or not. Someone has to hold the stairs while the rest carry.',
                 choices: [
                     { id: 'hold', label: 'Hold the stairs', check: { skill: 'violence', difficulty: 'desperate' },
-                        success: { text: '{violence} holds the stairs for long enough, and walks out last, bleeding.', next: 'load', noise: 2 },
-                        failure: { text: 'The stairs fall. You get out with what was in your hands.', next: 'partial', noise: 2 } },
+                        risk: 'Whoever holds the stairs may not walk out. It will be {violence}.',
+                        success: { text: '{violence} holds the stairs for long enough, and walks out last, bleeding.', next: 'load', noise: 2, fate: { kind: 'wound', skill: 'violence' } },
+                        failure: { text: '{violence} holds the stairs until the end. The rest of you get out with what was in your hands, and without {violence}.', next: 'partial', noise: 2, fate: { kind: 'death', skill: 'violence' } } },
                     { id: 'go', label: 'Grab what you can and go',
                         success: { text: 'Two bags, not twenty. It will have to do.', next: 'partial', noise: 1 } },
                 ],

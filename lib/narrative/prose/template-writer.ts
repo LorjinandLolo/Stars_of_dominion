@@ -289,6 +289,13 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
             };
         }
 
+        case 'rebel_killed':
+            return {
+                headline: `A rebel killed on ${str(e, 'planetName', 'a world')}`,
+                body: `Security forces of ${target} report one rebel dead on ${str(e, 'planetName', 'a world')}, in an attack they have not described. The authorities have not released a name. On the streets, people say the dead one fought for ${str(e, 'cause', 'a cause the authorities would rather not name')}.`,
+                tone: 'grave',
+            };
+
         case 'crackdown':
             return {
                 headline: `${actor} cracks down on ${str(e, 'planetName', 'one of its worlds')}`,

@@ -240,7 +240,7 @@ const SKILL_WORD: Record<string, string> = {
 /** Item 14a: the people who fled with a fallen empire's leader. Text only in season one. */
 function CrewSection({ exile }: { exile: ExileRecord }) {
     const bondWord = (b: number) => (b >= 75 ? 'would die for you' : b >= 50 ? 'trusts you' : b >= 25 ? 'follows you' : 'barely knows you');
-    const statusWord: Record<string, string> = { free: '', wounded: 'wounded', captured: 'captured', dead: 'dead' };
+    const statusWord: Record<string, string> = { free: '', wounded: 'wounded', captured: 'held by the conqueror', dead: 'dead', gone: 'gone: betrayed us' };
     return (
         <section className="rounded-xl border border-red-900/50 bg-red-950/10 p-4 space-y-3">
             <div>
@@ -267,10 +267,21 @@ function CrewSection({ exile }: { exile: ExileRecord }) {
                                 return good.length ? `Good at ${good.join(' and ')}.` : 'Good at nothing in particular, yet.';
                             })()}
                         </div>
-                        <div className="text-[11px] text-slate-300 italic mt-0.5">{c.thread}</div>
+                        <div className={`text-[11px] italic mt-0.5 ${c.threadResolved ? 'text-emerald-400 line-through decoration-emerald-700' : 'text-slate-300'}`}>{c.thread}</div>
+                        {c.status === 'captured' && (
+                            <div className="text-[11px] text-red-300">Held and questioned. A prison break could bring them home.</div>
+                        )}
                     </li>
                 ))}
             </ul>
+            {(exile.memorial?.length ?? 0) > 0 && (
+                <div className="border-t border-red-900/40 pt-2 space-y-1">
+                    <h3 className="text-[10px] tracking-widest uppercase text-slate-500">We remember</h3>
+                    {exile.memorial!.map((m, i) => (
+                        <p key={i} className="text-[11px] text-slate-400"><span className="text-slate-200">{m.name}</span>, {COMPANION_ROLE_LABEL[m.role].toLowerCase()}. {m.epitaph}</p>
+                    ))}
+                </div>
+            )}
         </section>
     );
 }
@@ -310,7 +321,10 @@ function JobsSection({ view, busy, onOrder, onChoose }: {
                         {job.choices.map(c => (
                             <button key={c.id} disabled={busy} onClick={() => { setWaitingAt(storyLen); onChoose(c.id); }}
                                 className={`${BTN} text-left normal-case tracking-normal font-normal text-sm bg-slate-800 hover:bg-slate-700 text-slate-100 flex justify-between gap-3 py-2`}>
-                                <span>{c.label}</span>
+                                <span>
+                                    <span className="block">{c.label}</span>
+                                    {c.risk && <span className="block text-[11px] text-red-300 mt-0.5">{c.risk}</span>}
+                                </span>
                                 {c.odds && <span className="shrink-0 text-[11px] italic text-amber-300">{c.odds}</span>}
                             </button>
                         ))}
