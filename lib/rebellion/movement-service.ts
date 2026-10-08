@@ -27,6 +27,7 @@ import type { RebelCell } from './rebellion-types';
 import { openCrisis } from '../government/secession-service';
 import { fissionEmpire } from '../government/civil-war-service';
 import { BREAKAWAY_PREFIX } from '../breakaway/breakaway-rules';
+import { takeBreakaway } from '../breakaway/breakaway-service';
 import { endCell, ensureRebellion, revealCell } from './cell-service';
 import { activeSponsorshipsOf } from './sponsor-service';
 import { fireNotification } from '../time/notification-hooks';
@@ -106,6 +107,8 @@ export function riseAsMovement(world: GameWorldState, cell: RebelCell): Secessio
 
     // A world already in a crisis: the cell joins that one rather than opening its own.
     const existing = [...crises(world).values()].find(c => c.status === 'open' && c.planetIds.includes(cell.planetId));
+    // A crisis already promised to another person's state cannot be ours too.
+    if (cell.seat && existing?.rebelFactionId && existing.rebelFactionId !== cell.seat.factionId) return null;
     const crisis = existing ?? openCrisis(world, cell.hostFactionId, [cell.planetId], {
         name: `The ${planet.name} Rising`,
         leaderName: cap(cell.name),
@@ -114,6 +117,9 @@ export function riseAsMovement(world: GameWorldState, cell: RebelCell): Secessio
     if (!crisis) return null;
 
     (crisis as any).cellId ??= cell.id;
+    // A led cell's state is the one its leader already holds a claim on (13d):
+    // pinned now, before escalation can name another.
+    if (cell.seat && !crisis.rebelFactionId) crisis.rebelFactionId = cell.seat.factionId;
     const exposed = activeSponsorshipsOf(world, cell.id).filter(s => s.exposedAtSeconds).map(s => s.sponsorFactionId);
     if (exposed.length) crisis.exposedSponsors = [...new Set([...(crisis.exposedSponsors ?? []), ...exposed])];
 
@@ -145,6 +151,8 @@ export function tickMovements(world: GameWorldState): MovementTick {
     for (const cell of ensureRebellion(world).cells.values()) {
         if (cell.status !== 'active') continue;
         if (!cell.crisisId) {
+            // A cell a person leads comes into the open when they declare (13d).
+            if (cell.seat) continue;
             if (movementReady(cell, now) && hostReadyForMovement(world, cell.hostFactionId, now) && riseAsMovement(world, cell)) out.rose.push(cell);
             continue;
         }
@@ -178,6 +186,9 @@ function becomeState(world: GameWorldState, cell: RebelCell, rebelFactionId: str
     const sponsors = activeSponsorshipsOf(world, cell.id);
     endCell(cell, 'risen', now);
     cell.breakawayFactionId = rebelFactionId;
+    // The person who led it from hiding leads the state (13d): same account,
+    // same claim, now with worlds, a fleet and a war chest.
+    if (cell.seat && cell.seat.factionId === rebelFactionId) handOverSeat(world, cell, rebelFactionId);
     for (const s of sponsors) {
         s.endedAtSeconds = now;
         s.endReason = 'cell_ended';
@@ -194,7 +205,7 @@ function becomeState(world: GameWorldState, cell: RebelCell, rebelFactionId: str
 export function riseMovementForPlayer(world: GameWorldState, humanFactionIds: Iterable<string>): { factionId: string; name?: string } | null {
     const humans = new Set(humanFactionIds);
     const candidates = [...ensureRebellion(world).cells.values()]
-        .filter(c => c.status === 'active' && c.crisisId && !humans.has(c.hostFactionId))
+        .filter(c => c.status === 'active' && c.crisisId && !c.seat && !humans.has(c.hostFactionId))
         .map(c => ({ cell: c, crisis: crises(world).get(c.crisisId!) }))
         .filter((x): x is { cell: RebelCell; crisis: SecessionCrisis } => !!x.crisis && x.crisis.status === 'open')
         .sort((a, b) => b.cell.strength - a.cell.strength);
@@ -210,4 +221,13 @@ export function riseMovementForPlayer(world: GameWorldState, humanFactionIds: It
         return { factionId: fission.rebelFactionId, name: fission.rebelName };
     }
     return null;
+}
+
+/** The cell's leader becomes the state's: the AI never speaks for it, and it is readied like any taken breakaway. */
+function handOverSeat(world: GameWorldState, cell: RebelCell, rebelFactionId: string): void {
+    const claimed: string[] = Array.isArray((world as any).claimedFactionIds) ? (world as any).claimedFactionIds : [];
+    if (!claimed.includes(rebelFactionId)) (world as any).claimedFactionIds = [...claimed, rebelFactionId];
+    takeBreakaway(world, rebelFactionId, { fromFactionId: null, eliminated: false });
+    cell.seat = null;
+    cell.seatView = null;
 }

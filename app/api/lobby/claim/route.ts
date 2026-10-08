@@ -5,6 +5,7 @@ import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { claimThroughInvite } from '@/lib/invites/invite-service';
 import { normaliseInviteCode } from '@/lib/invites/invite-rules';
 import { LOBBY_FACTIONS } from '@/data/factions/lobby-factions';
+import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
 
 /** Player-facing name, sanitized: no control chars, bounded length. It is
  *  rendered into every other player's lobby verbatim. */
@@ -151,6 +152,9 @@ export async function GET(req: NextRequest) {
 
         const claimedFactions: Record<string, { displayName: string; isMine: boolean }> = {};
         profiles.forEach(doc => {
+             const mine = !!userId && doc.userId === userId;
+             // Underground seats (Item 13d) are shown only to their holder.
+             if (isUndergroundSeatId(doc.factionId) && !mine) return;
              claimedFactions[doc.factionId] = {
                  displayName: doc.displayName ?? 'Commander',
                  isMine: !!userId && doc.userId === userId,

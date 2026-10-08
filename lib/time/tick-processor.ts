@@ -67,6 +67,7 @@ import { processEmpireIntelligenceTurn } from '../ai/intelligence-ai-service';
 import { tickAICases } from '../ai/case-ai';
 import { tickAICrackdowns, tickAISponsorship } from '../ai/rebellion-ai';
 import { tickMovements } from '../rebellion/movement-service';
+import { refreshSeatViews } from '../rebellion/underground-service';
 import { tickRebellion } from '../rebellion/cell-service';
 import { tickSponsorships, tickCellActs } from '../rebellion/sponsor-service';
 import { PopulationService } from '../construction/population-service';
@@ -660,6 +661,8 @@ function step8_intelligence(world: ReturnType<typeof getGameWorldState>, delta: 
         const moved = tickMovements(world);
         for (const cell of moved.rose) console.log(`[REBELLION] ${cell.name} came into the open on ${cell.planetId}`);
         for (const cell of moved.states) console.log(`[REBELLION] ${cell.name} became ${cell.breakawayFactionId}`);
+        // 13d: what each person leading a cell from hiding sees.
+        refreshSeatViews(world);
 
         // AI-run factions only: this turn SPENDS the faction's intel points
         // and launches covert operations attributed to it — run on a human's

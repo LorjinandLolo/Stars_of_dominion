@@ -11,7 +11,7 @@
 // Everything here is asked of the server; this component decides nothing.
 
 import React from 'react';
-import { Flame, Eye, Loader2 } from 'lucide-react';
+import { Flame, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 interface Breakaway {
     factionId: string;
@@ -74,14 +74,14 @@ export default function BreakawayPanel({ onTaken }: { onTaken: (factionId: strin
         return () => { stopped = true; clearTimeout(first); };
     }, [status?.pending, busy, status?.claimedFactionId, onTaken]);
 
-    const take = async (breakawayId: string | null) => {
+    const take = async (breakawayId: string | null, underground = false) => {
         setBusy(true);
         setError(null);
         try {
             const res = await fetch('/api/lobby/breakaway', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(breakawayId ? { breakawayId } : {}),
+                body: JSON.stringify(breakawayId ? { breakawayId } : underground ? { underground: true } : {}),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { setError(data.error ?? 'That did not go through.'); setBusy(false); return; }
@@ -161,6 +161,17 @@ export default function BreakawayPanel({ onTaken }: { onTaken: (factionId: strin
                             </button>
                             {watch}
                         </div>
+                        <button
+                            id="lead-underground"
+                            onClick={() => take(null, true)}
+                            className={`${BUTTON} w-full border border-slate-600 bg-slate-950/70 hover:bg-slate-900 text-slate-200 inline-flex items-center justify-center gap-2`}
+                            title="Lead a rebel cell nobody knows you lead. No worlds yet: build it in secret, then stand in the open"
+                        >
+                            <EyeOff size={15} /> Lead a movement underground
+                        </button>
+                        <p className="text-xs text-slate-400">
+                            Underground: a rebel cell inside someone else's empire (an AI one where the game can), no worlds and no fleet. Strike, hide, take or refuse foreign money, and declare when it is strong enough. If it wins, the state is yours.
+                        </p>
                     </>
                 )}
                 {error && <p className="text-xs text-red-300">{error}</p>}

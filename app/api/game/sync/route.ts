@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { projectShardForCaller, viewerContextFromOwnShard } from '@/lib/persistence/shard-privacy';
+import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +97,10 @@ export async function GET(req: NextRequest) {
         const claims = await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } });
         const humanPlayers: Record<string, string> = {};
         for (const claim of claims) {
-            if (claim.factionId) humanPlayers[claim.factionId] = claim.displayName || 'Commander';
+            // An underground seat (Item 13d) is nobody's business: listing it
+            // would tell the galaxy a person leads a movement before it has a state.
+            if (!claim.factionId || isUndergroundSeatId(claim.factionId)) continue;
+            humanPlayers[claim.factionId] = claim.displayName || 'Commander';
         }
 
         return NextResponse.json({

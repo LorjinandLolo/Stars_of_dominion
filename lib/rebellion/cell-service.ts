@@ -19,7 +19,7 @@
  */
 
 import type { GameWorldState } from '../game-world-state';
-import { CRACKDOWN_CAPITAL, type Crackdown, type RebelCell, type RebellionState } from './rebellion-types';
+import { CRACKDOWN_CAPITAL, noteForSeat, type Crackdown, type RebelCell, type RebellionState } from './rebellion-types';
 import { ReputationService } from '../reputation/reputation-service';
 import { fireNotification } from '../time/notification-hooks';
 import * as chronicle from '../narrative/chronicle';
@@ -34,6 +34,8 @@ export const FORM_CHANCE_AT_MAX = 0.03;
 export const GROWTH_BASELINE = 30;
 /** Strength gained (or lost) per tick per point of grievance above (or below) the baseline. */
 export const GROWTH_PER_POINT = 0.05;
+/** Strength a led cell gains per tick at least, while active (13d): about 0.6 a sim day. */
+export const LED_MIN_GROWTH = 0.15;
 /** A cell's hideout gets harder to find while left alone, up to this. */
 export const MAX_CONCEALMENT = 0.95;
 export const CONCEALMENT_RECOVERY_PER_TICK = 0.01;
@@ -155,6 +157,7 @@ function liberatedFrom(world: GameWorldState, planetId: string, oldHost: string,
 }
 
 export function endCell(cell: RebelCell, status: 'dissolved' | 'crushed' | 'risen', now: number): void {
+    if (status !== 'risen') noteForSeat(cell, now, status === 'crushed' ? 'The movement is broken. Those who are left have scattered.' : 'The movement has melted away: nobody comes to the meetings any more.');
     cell.status = status;
     cell.strength = 0;
     cell.members = 0;
@@ -191,14 +194,21 @@ export function tickRebellion(world: GameWorldState, rand: () => number = Math.r
             cell.hostFactionId = host;
         }
         cell.grievance = g.score;
-        cell.strength = Math.max(0, Math.min(100, cell.strength + (g.score - GROWTH_BASELINE) * GROWTH_PER_POINT));
+        // Lying low (13d): half the growth, three times the recovery of cover.
+        let growth = (g.score - GROWTH_BASELINE) * GROWTH_PER_POINT;
+        // A cell with a leader (13d) does not fade on a quiet world: they keep
+        // organising, slowly, unless they have told it to go quiet.
+        if (cell.seat && !cell.lyingLow) growth = Math.max(growth, LED_MIN_GROWTH);
+        if (cell.seat && cell.lyingLow) growth = Math.max(growth, 0);
+        cell.strength = Math.max(0, Math.min(100, cell.strength + (cell.lyingLow && growth > 0 ? growth / 2 : growth)));
         cell.members = membersFor(cell.strength);
-        cell.safeHouse.concealment = Math.min(MAX_CONCEALMENT, cell.safeHouse.concealment + CONCEALMENT_RECOVERY_PER_TICK);
+        cell.safeHouse.concealment = Math.min(MAX_CONCEALMENT, cell.safeHouse.concealment + CONCEALMENT_RECOVERY_PER_TICK * (cell.lyingLow ? 3 : 1));
         if (cell.strength <= 0) endCell(cell, 'dissolved', now);
     }
 
     for (const [id, cell] of rebellion.cells) {
-        if (cell.status !== 'active' && cell.endedAtSeconds != null && now - cell.endedAtSeconds > CELL_PRUNE_AFTER_SECONDS) {
+        // A broken cell with a leader stays until they let it go (13d), so they can read what happened.
+        if (cell.status !== 'active' && !cell.seat && cell.endedAtSeconds != null && now - cell.endedAtSeconds > CELL_PRUNE_AFTER_SECONDS) {
             rebellion.cells.delete(id);
         }
     }
@@ -229,7 +239,7 @@ export function revealCellsBySweep(world: GameWorldState, sweeperId: string, sys
     for (const cell of ensureRebellion(world).cells.values()) {
         if (cell.status !== 'active' || cell.systemId !== systemId || cell.hostFactionId !== sweeperId) continue;
         if (rand() < Math.min(0.95, (1 - cell.safeHouse.concealment) + 0.3 * mult)) {
-            if (revealCell(cell, sweeperId)) found.push(cell);
+            if (revealCell(cell, sweeperId)) { found.push(cell); noteForSeat(cell, world.nowSeconds, 'A counter-intelligence sweep found our safe house. They know we exist.'); }
             cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment - 0.2);
         }
     }
@@ -267,6 +277,9 @@ export function crackdown(world: GameWorldState, factionId: string, planetId: st
         cell.members = membersFor(cell.strength);
         cell.crackdownsSurvived++;
         if (caught) cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment * 0.5);
+        noteForSeat(cell, now, caught
+            ? `A crackdown on ${planet.name} found us. Members taken, the safe house burned.`
+            : `Security swept ${planet.name}. They missed us, but people we knew were taken.`);
         if (cell.strength <= 0) endCell(cell, 'crushed', now);
     }
 

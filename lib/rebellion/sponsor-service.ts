@@ -21,7 +21,7 @@
 import type { GameWorldState } from '../game-world-state';
 import type { CaseClue, CovertCase } from '../espionage/espionage-types';
 import {
-    HOMEGROWN, sponsorshipCostPerTick,
+    HOMEGROWN, noteForSeat, sponsorshipCostPerTick,
     type CellActKind, type CellSponsorship, type RebelCell,
 } from './rebellion-types';
 import { crackdown, ensureRebellion, revealCell, type CrackdownResult } from './cell-service';
@@ -143,13 +143,16 @@ export function sponsorCell(
         endReason: null,
     };
     ensureSponsorships(world).set(sponsorship.id, sponsorship);
+    noteForSeat(cell, now, cutout
+        ? `Money has started to arrive${armed ? ', and weapons' : ''}, through a go-between who will not say whose it is.`
+        : `Money has started to arrive${armed ? ', and weapons' : ''}, from ${labelFor(sponsorId)}.`);
     return {
         ok: true, sponsorship,
         message: `We are paying ${cell.name}${armed ? ', and arming them' : ''}${cutout ? ', through a cutout' : ''}.`,
     };
 }
 
-export function endSponsorship(world: GameWorldState, s: CellSponsorship, reason: 'cut' | 'lapsed' | 'cell_ended'): void {
+export function endSponsorship(world: GameWorldState, s: CellSponsorship, reason: 'cut' | 'lapsed' | 'cell_ended' | 'refused'): void {
     if (s.endedAtSeconds) return;
     s.endedAtSeconds = world.nowSeconds;
     s.endReason = reason;
@@ -270,6 +273,8 @@ export function actChance(cell: RebelCell, sponsors: CellSponsorship[]): number 
 export function tickCellActs(world: GameWorldState, rand: () => number = Math.random): { cell: RebelCell; act: CellActKind; caseId: string | null }[] {
     const out: { cell: RebelCell; act: CellActKind; caseId: string | null }[] = [];
     for (const cell of ensureRebellion(world).cells.values()) {
+        // A cell a person leads strikes when they say so (13d).
+        if (cell.seat) continue;
         const sponsors = activeSponsorshipsOf(world, cell.id);
         if (rand() >= actChance(cell, sponsors)) continue;
         const act = pickAct(world, cell, sponsors, rand);
@@ -291,7 +296,7 @@ export function sponsorPrisoners(world: GameWorldState, cell: RebelCell, sponsor
 export const ASSASSINATION_MIN_STRENGTH = 40;
 export const ASSASSINATION_UNARMED_STRENGTH = 70;
 
-function canAssassinate(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorship[]): boolean {
+export function canAssassinate(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorship[]): boolean {
     if (!getGovernor(world, cell.planetId)) return false;
     const armed = sponsors.some(s => s.armed);
     return cell.strength >= (armed ? ASSASSINATION_MIN_STRENGTH : ASSASSINATION_UNARMED_STRENGTH);

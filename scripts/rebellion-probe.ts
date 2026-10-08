@@ -655,6 +655,157 @@ async function main() {
         check('the rebel story never names a payer', block.length > 0 && !/\bactor\b/.test(block));
     }
 
+    // ── 13d ──────────────────────────────────────────────────────────────────
+    const UG = await import('../lib/rebellion/underground-service');
+    const { isUndergroundSeatId, HELD_ACT_COOLDOWN_SECONDS } = await import('../lib/rebellion/rebellion-types');
+    const seated = (strength = 60, host = H) => {
+        const w = freshWorld();
+        ensureGovernments(w);
+        const { p, c } = cellOn(w, host, strength);
+        c.formedAtSeconds = w.nowSeconds - 31 * DAY;
+        const id = UG.seatIdFor(c);
+        UG.seatCell(w, c, id, 'Probe Rebel');
+        return { w, p, c, id };
+    };
+
+    console.log('\n[21] Taking a seat underground');
+    {
+        const w = freshWorld();
+        ensureGovernments(w);
+        const weak = cellOn(w, H, 20).c;
+        const strong = cellOn(w, K, 50).c;
+        const human = cellOn(w, V, 90).c;
+        check('the game gives a newcomer the strongest cell in an AI empire', UG.pickCellForSeat(w, [A, V]) === strong);
+        check('a human\'s empire only when no AI empire has a cell', UG.pickCellForSeat(w, [A, V, K, H]) === human);
+        const id = UG.seatIdFor(strong);
+        check('the seat is an underground id', isUndergroundSeatId(id) && id.startsWith('rebel-faction-'));
+        const r = UG.seatCell(w, strong, id, 'Probe Rebel');
+        check('the cell takes its leader', r.ok && UG.heldCellOf(w, id) === strong, r.message);
+        check('a led cell is not offered to the next newcomer', UG.pickCellForSeat(w, [A, V]) === weak);
+        check('the seat is not counted among the human empires', !(w.claimedFactionIds ?? []).includes(id));
+        check('the leader sees the cell', !!strong.seatView && strong.seatView.name === strong.name && strong.seatView.log.length > 0);
+
+        const empty = freshWorld();
+        ensureGovernments(empty);
+        const angry = worldOf(empty, L);
+        oppress(empty, L, angry);
+        const formed = UG.pickCellForSeat(empty, [A, V]);
+        check('with no cell anywhere, one forms on an angry AI world', !!formed && formed.status === 'active' && ![A, V].includes(formed.hostFactionId), formed ? `${formed.hostFactionId} ${formed.planetId === angry.id ? '(the oppressed one)' : ''}` : 'none');
+
+        UG.releaseOrphanSeats(w, []);
+        check('a seat whose claim is gone frees the cell', !strong.seat && !strong.seatView);
+    }
+
+    console.log('\n[22] The leader gives the orders');
+    {
+        const { w, c, id } = seated(40);
+        const before = c.actsCommitted ?? 0;
+        const filesBefore = [...ensureCases(w).values()].filter((k: any) => k.cellId === c.id).length;
+        const r = UG.orderCellAct(w, id, 'propaganda');
+        check('a human holding a cell orders an act and it happens', r.ok && (c.actsCommitted ?? 0) === before + 1, r.message);
+        check('the host gets a file on it like any other', [...ensureCases(w).values()].filter((k: any) => k.cellId === c.id).length === filesBefore + 1);
+        check('the next strike waits', !UG.orderCellAct(w, id, 'heist').ok);
+        w.nowSeconds += HELD_ACT_COOLDOWN_SECONDS + 1;
+        check('then the cell may strike again', UG.orderCellAct(w, id, 'heist').ok);
+        check('someone who leads no cell gives no orders', !UG.orderCellAct(w, 'rebel-faction-underground-nobody', 'heist').ok);
+        check('the governor is out of reach of a weak, unarmed cell', !!UG.actBlocker(w, c, 'assassination'));
+        check('there is nobody to break out', !!UG.actBlocker(w, c, 'prison_break'));
+        const acted = c.actsCommitted;
+        w.nowSeconds += HELD_ACT_COOLDOWN_SECONDS + 1;
+        SP.tickCellActs(w, () => 0);
+        check('a led cell never strikes on its own', c.actsCommitted === acted);
+
+        {
+            const q = seated(20);
+            pacify(q.w, H, q.p);
+            const loose = formCell(q.w, worldOf(q.w, K), grievanceOf(q.w, worldOf(q.w, K)), () => 0.5);
+            pacify(q.w, K, worldOf(q.w, K));
+            loose.strength = 20;
+            for (let t = 0; t < 40; t++) tickRebellion(q.w, () => 0.99);
+            check('a led cell keeps growing on a content world', q.c.status === 'active' && q.c.strength > 20, `${q.c.strength}`);
+            check('a cell nobody leads fades there', loose.strength < 20, `${loose.strength}`);
+        }
+
+        UG.setLyingLow(w, id, true);
+        const cover = c.safeHouse.concealment = 0.3;
+        tickRebellion(w, () => 0.99);
+        check('lying low rebuilds cover three times as fast', Math.abs(c.safeHouse.concealment - (cover + 0.03)) < 1e-9, `${c.safeHouse.concealment}`);
+        check('and closes the strikes in the leader\'s view', c.seatView!.actsOpen.every(a => !a.open));
+
+        giveNetwork(w, A, c.systemId);
+        setCredits(w, A, 1_000_000);
+        const s: any = (SP.sponsorCell(w, A, c.id, { cutout: true }) as any).sponsorship;
+        UG.refreshSeatView(w, c);
+        check('a cutout\'s money comes unnamed', c.seatView!.sponsors.some(x => x.sponsorshipId === s.id && x.sponsorName === null));
+        check('and the leader hears it arrive', /go-between/.test(c.seatView!.log[0]?.text ?? ''));
+        drainNotifications();
+        const refused = UG.refuseSponsor(w, id, s.id);
+        check('the leader can send a sponsor\'s money back', refused.ok && s.endReason === 'refused');
+        check('the sponsor learns only that it was refused', drainNotifications().some(n => n.factionId === A && n.title === 'SPONSORSHIP REFUSED'));
+    }
+
+    console.log('\n[23] Declaring');
+    {
+        const young = seated(60);
+        young.c.formedAtSeconds = young.w.nowSeconds - 5 * DAY;
+        check('a young movement cannot declare', !UG.declareMovement(young.w, young.id).ok);
+        const { w, c, id } = seated(60);
+        MV.tickMovements(w);
+        check('a led cell does not rise on its own', !c.crisisId);
+        const r = UG.declareMovement(w, id);
+        const crisis: any = c.crisisId ? w.secessionCrises.get(c.crisisId) : null;
+        check('the leader declares and the world rises', r.ok && !!crisis && crisis.status === 'open', r.message);
+        check('the crisis is pinned to the leader\'s own claim', crisis?.rebelFactionId === id);
+    }
+
+    console.log('\n[24] The host never learns a person leads the cell');
+    {
+        const { w, c, id } = seated(40);
+        UG.orderCellAct(w, id, 'sabotage');
+        UG.setLyingLow(w, id, false);
+        const hostShard = JSON.parse(extractFactionShard(w, H));
+        check('the cell rides the host\'s shard, seat and all, on the server', hostShard.rebelCells.some((x: any) => x.seat?.factionId === id));
+        const wire = scrubOwnerSecrets(hostShard);
+        const cellOnWire = wire.rebelCells.find((x: any) => x.id === c.id);
+        check('the host\'s wire copy has the cell', !!cellOnWire);
+        check('but no seat, no view, no leader', !!cellOnWire && !('seat' in cellOnWire) && !('seatView' in cellOnWire) && !('lyingLow' in cellOnWire) && !('nextActAtSeconds' in cellOnWire));
+        check('nothing on the host\'s wire names the seat or its holder', !JSON.stringify(wire).includes(id) && !JSON.stringify(wire).includes('Probe Rebel'));
+        check('rivals receive no cells at all', !('rebelCells' in projectPublicShard(hostShard, undefined as any)));
+        check('the sync roster leaves underground seats out', /isUndergroundSeatId\(claim\.factionId\)\) continue/.test(code('app/api/game/sync/route.ts')));
+        check('the lobby roster shows a seat only to its holder', /isUndergroundSeatId\(doc\.factionId\) && !mine\) return/.test(code('app/api/lobby/claim/route.ts')));
+        check('the worker keeps seats off the list of human empires', /filter\(id => !isUndergroundSeatId\(id\) \|\| world\.economy\.factions\.has\(id\)\)/.test(code('scripts/game-loop.ts')));
+        check('the worker frees cells whose leader let go', /releaseOrphanSeats\(world, ids\)/.test(code('scripts/game-loop.ts')));
+    }
+
+    console.log('\n[25] On fission the same account leads the state');
+    {
+        const { w, c, id } = seated(60);
+        UG.declareMovement(w, id);
+        const crisis: any = w.secessionCrises.get(c.crisisId);
+        check('nobody else can be handed the movement', MV.riseMovementForPlayer(w, [A, V]) === null);
+        crisis.status = 'escalated';
+        crisis.escalatedAtSeconds = w.nowSeconds - 30 * DAY;
+        MV.tickMovements(w);
+        tickCivilWar(w, 6 * 3600);
+        check('the state is made under the leader\'s claim', w.economy.factions.has(id));
+        drainNotifications();
+        MV.tickMovements(w);
+        check('the cell has risen into it', c.status === 'risen' && c.breakawayFactionId === id);
+        check('the same account leads it: it is a human empire now', (w.claimedFactionIds ?? []).includes(id));
+        check('the AI never speaks for it', !(await import('../lib/ai/belt-ambush-ai')).isAIRunFaction(w, id));
+        check('it is readied like any taken state', drainNotifications().some(n => n.factionId === id && /^YOU LEAD/.test(n.title)));
+        check('and the seat is spent', !c.seat);
+    }
+
+    console.log('\n[26] The underground page stays browser-safe');
+    {
+        for (const f of ['components/underground/SeatRouter.tsx', 'components/underground/UndergroundShell.tsx', 'components/lobby/BreakawayPanel.tsx']) {
+            const imps = [...code(f).matchAll(/from '([^']+)'/g)].map(m => m[1]);
+            check(`${f.split('/').pop()} stays browser-safe`, !imps.some(i => /underground-service|movement-service|sponsor-service|cell-service|case-board|government|politics/.test(i)), imps.filter(i => /lib\//.test(i)).join(', '));
+        }
+        check('the home page routes through the seat check', /SeatRouter/.test(code('app/(site)/page.tsx')));
+    }
+
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
     process.exit(failures === 0 ? 0 : 1);
 }

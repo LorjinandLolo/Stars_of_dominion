@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
             userId,
             displayName: (session?.user?.name || 'Commander').slice(0, 40),
             breakawayId: body?.breakawayId,
+            underground: body?.underground === true,
         });
         if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
         return NextResponse.json({ queued: true }, { status: 202 });

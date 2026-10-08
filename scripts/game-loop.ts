@@ -169,6 +169,8 @@ import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/
 import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
 import { crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
 import { crackdownWithPrisoners, sponsorCell, cutSponsorship as cutCellSponsorship } from '../lib/rebellion/sponsor-service';
+import { declareMovement, orderCellAct, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
+import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
@@ -784,13 +786,19 @@ async function runGameTick() {
         if (claimsStale) {
             try {
                 const claims = await prisma.playerProfile.findMany({ select: { factionId: true, displayName: true } });
-                (world as any).claimedFactionIds = claims.map(c => c.factionId).filter(Boolean);
+                // An underground seat (Item 13d) is not an empire until its
+                // state exists: kept off the list every AI and player-only system
+                // reads, and handed to its cell instead. A seat whose holder let
+                // go frees the cell.
+                const ids = claims.map(c => c.factionId).filter(Boolean) as string[];
+                releaseOrphanSeats(world, ids);
+                (world as any).claimedFactionIds = ids.filter(id => !isUndergroundSeatId(id) || world.economy.factions.has(id));
 
                 // Same pass feeds the notification rewriter below: who holds
                 // which empire, so a note can say "played by <name>".
                 const heldBy: Record<string, string> = {};
                 for (const c of claims) {
-                    if (c.factionId && c.displayName) heldBy[c.factionId] = c.displayName;
+                    if (c.factionId && c.displayName && (!isUndergroundSeatId(c.factionId) || world.economy.factions.has(c.factionId))) heldBy[c.factionId] = c.displayName;
                 }
                 (world as any).factionPlayerNames = heldBy;
             } catch {
@@ -3133,6 +3141,23 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 return;
             }
             console.log(`[Tick Worker] ${factionId} REB_SPONSOR_CELL: ${result.message}`);
+            break;
+        }
+
+        // Item 13d: a person leading a cell from hiding.
+        case 'REB_CELL_ACT':
+        case 'REB_CELL_LIE_LOW':
+        case 'REB_CELL_REFUSE_SPONSOR':
+        case 'REB_CELL_DECLARE': {
+            const result = actionId === 'REB_CELL_ACT' ? orderCellAct(world, factionId, String(payload?.act ?? ''))
+                : actionId === 'REB_CELL_LIE_LOW' ? setLyingLow(world, factionId, payload?.on === true)
+                : actionId === 'REB_CELL_REFUSE_SPONSOR' ? refuseSponsor(world, factionId, String(payload?.sponsorshipId ?? ''))
+                : declareMovement(world, factionId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} ${actionId}: ${result.message}`);
             break;
         }
 

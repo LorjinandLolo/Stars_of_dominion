@@ -118,8 +118,14 @@ export function scrubOwnerSecrets(shard: any): any {
     // service has found. The rest are on its worlds and in its shard, and
     // invisible to it until a sweep, a crackdown or an informant turns them up.
     if (Array.isArray(out.rebelCells)) {
-        out.rebelCells = out.rebelCells.filter((c: any) =>
-            Array.isArray(c?.safeHouse?.knownToFactionIds) && c.safeHouse.knownToFactionIds.includes(out.factionId));
+        out.rebelCells = out.rebelCells
+            .filter((c: any) => Array.isArray(c?.safeHouse?.knownToFactionIds) && c.safeHouse.knownToFactionIds.includes(out.factionId))
+            // Item 13d: the host never learns a person leads one of its cells.
+            .map((c: any) => {
+                const { seat, seatView, lyingLow, nextActAtSeconds, pendingSeatLog, ...rest } = c;
+                void seat; void seatView; void lyingLow; void nextActAtSeconds; void pendingSeatLog;
+                return rest;
+            });
     }
 
     // Case board (item 12): the owner gets the effect, the suspects, the clue

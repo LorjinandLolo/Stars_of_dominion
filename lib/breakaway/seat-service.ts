@@ -30,6 +30,7 @@ import {
 } from './breakaway-rules';
 import { raiseUprising, takeBreakaway } from './breakaway-service';
 import { riseMovementForPlayer } from '@/lib/rebellion/movement-service';
+import { pickCellForSeat, seatCell, seatIdFor } from '@/lib/rebellion/underground-service';
 
 export const LOBBY_TAKE_BREAKAWAY = 'LOBBY_TAKE_BREAKAWAY';
 /** The faction column of a lobby row: it belongs to no empire yet. */
@@ -48,6 +49,8 @@ export interface LobbySeatPayload {
     eliminated: boolean;
     /** The invite this seat spends, if any. */
     inviteCode: string | null;
+    /** Item 13d: lead a movement from hiding instead of a state. */
+    underground?: boolean;
 }
 
 /** The parts of the shared snapshot the eligibility check reads. */
@@ -123,6 +126,8 @@ export async function requestBreakawaySeat(input: {
     inviteCode?: string | null;
     /** Skip the "every seat taken" test — an invite whose host has no free neighbour. */
     viaInvite?: boolean;
+    /** Item 13d: lead a movement from hiding instead of a state. */
+    underground?: boolean;
 }): Promise<SeatRequestResult> {
     const status = await seatStatus(input.userId);
     if (status.pending) return { ok: false, status: 409, error: 'Your request is already with the galaxy — give it a moment.' };
@@ -146,6 +151,7 @@ export async function requestBreakawaySeat(input: {
         fromFactionId: status.reason === 'eliminated' ? status.claimedFactionId : null,
         eliminated: status.reason === 'eliminated',
         inviteCode: input.inviteCode ?? null,
+        underground: input.underground === true && !breakawayId,
     };
     await prisma.gameOrder.create({
         data: { actionId: LOBBY_TAKE_BREAKAWAY, factionId: LOBBY_FACTION, payload: JSON.stringify(payload) },
@@ -177,6 +183,8 @@ export async function handleLobbyOrder(world: any, payload: LobbySeatPayload): P
         const status = world?.titles?.defeatStatuses?.get?.(payload.fromFactionId);
         if (status !== 'ELIMINATED') return { ok: false, message: 'That empire is not destroyed.' };
     }
+
+    if (payload.underground) return takeUnderground(world, payload, mine, humans);
 
     const taken = new Set(humans);
     let rebelId = payload.breakawayId;
@@ -239,4 +247,49 @@ export async function handleLobbyOrder(world: any, payload: LobbySeatPayload): P
     const taken2 = takeBreakaway(world, rebelId, { fromFactionId: payload.fromFactionId, eliminated: payload.eliminated });
     if (!taken2.ok) return { ok: false, message: taken2.message ?? 'The state could not be handed over.', factionId: rebelId };
     return { ok: true, message: `${payload.displayName} leads ${taken2.name}.`, factionId: rebelId };
+}
+
+/**
+ * Item 13d: lead a movement from hiding. The game gives the newcomer a cell in
+ * an AI empire (or forms one on its angriest world), and the claim is on the
+ * state that movement will become. The seat is never added to the worker's
+ * list of human empires until that state exists.
+ */
+async function takeUnderground(
+    world: any,
+    payload: LobbySeatPayload,
+    mine: { userId: string; factionId: string } | null,
+    humans: string[],
+): Promise<LobbyOrderOutcome> {
+    const cell = pickCellForSeat(world, humans);
+    if (!cell) return { ok: false, message: 'No world anywhere is angry enough to hide a movement. Try again later, or take a state.' };
+    const seatId = seatIdFor(cell);
+    try {
+        if (mine) {
+            await prisma.playerProfile.update({
+                where: { userId: payload.userId },
+                data: { factionId: seatId, displayName: payload.displayName || undefined, briefSeenAt: null },
+            });
+        } else {
+            await prisma.playerProfile.create({
+                data: { userId: payload.userId, factionId: seatId, displayName: payload.displayName || 'Commander' },
+            });
+        }
+    } catch (e: any) {
+        if (e?.code === 'P2002') return { ok: false, message: 'Someone else took that movement a moment ago.' };
+        throw e;
+    }
+    if (payload.inviteCode) {
+        await prisma.invite.updateMany({
+            where: { code: payload.inviteCode },
+            data: { usedBy: payload.userId, usedAt: new Date(), claimedFactionId: seatId },
+        }).catch(() => {});
+    }
+    // A fallen empire's former leader stops being "human" for it; the seat is not added.
+    if (payload.fromFactionId && Array.isArray(world.claimedFactionIds)) {
+        world.claimedFactionIds = world.claimedFactionIds.filter((id: string) => id !== payload.fromFactionId);
+    }
+    const seated = seatCell(world, cell, seatId, payload.displayName || 'Commander');
+    if (!seated.ok) return { ok: false, message: seated.message, factionId: seatId };
+    return { ok: true, message: `${payload.displayName} leads a movement underground.`, factionId: seatId };
 }

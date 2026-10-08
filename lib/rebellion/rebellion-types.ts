@@ -60,6 +60,15 @@ export interface RebelCell {
     lastCrisisEndedAtSeconds?: number | null;
     /** The breakaway state it became, when status is 'risen'. */
     breakawayFactionId?: string | null;
+    // ─── 13d: the hidden seat ───
+    /** A person leads this cell from hiding. Never leaves the worker: scrubbed from the host's wire. */
+    seat?: CellSeat | null;
+    /** What the person leading it sees, refreshed by the worker (read by /api/rebel/cell). */
+    seatView?: CellSeatView | null;
+    /** Lying low: no strikes, faster to hide, slower to grow. */
+    lyingLow?: boolean;
+    /** The earliest a led cell may strike again. */
+    nextActAtSeconds?: number | null;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -91,6 +100,67 @@ export const CRACKDOWN_CAPITAL = 10;
 /** "no foreign hand": the suspect on a cell's file that means the cell acted alone. */
 export const HOMEGROWN = 'homegrown';
 
+// ─── 13d: the hidden seat ────────────────────────────────────────────────────
+
+/**
+ * A person who leads a cell holds a claim on the breakaway state the movement
+ * will become. The id carries this prefix so the page and the rosters can tell
+ * an underground seat from an empire before that state exists.
+ */
+export const UNDERGROUND_PREFIX = 'rebel-faction-underground-';
+
+export function isUndergroundSeatId(id: unknown): id is string {
+    return typeof id === 'string' && id.startsWith(UNDERGROUND_PREFIX);
+}
+
+/** Sim seconds between strikes a person orders (two sim days, about three real hours). */
+export const HELD_ACT_COOLDOWN_SECONDS = 2 * 86400;
+
+export interface CellSeat {
+    factionId: string;
+    displayName: string;
+    takenAtSeconds: number;
+}
+
+/** One sponsor as the cell sees it: a name only when no cutout stands between. */
+export interface SeatSponsorView {
+    sponsorshipId: string;
+    /** Empire name, or null when the money comes through a go-between. */
+    sponsorName: string | null;
+    armed: boolean;
+    since: number;
+}
+
+export interface CellSeatView {
+    asOfSeconds: number;
+    cellId: string;
+    /** 'crushed' or 'dissolved': the movement is over and the seat with it. */
+    status: CellStatus;
+    name: string;
+    cause: string;
+    planetName: string;
+    hostName: string;
+    strength: number;
+    members: number;
+    treasury: number;
+    concealment: number;
+    /** The host's security service has found us. */
+    found: boolean;
+    lyingLow: boolean;
+    acts: number;
+    nextActAtSeconds: number | null;
+    /** Acts a person may order now, and why the others are closed. */
+    actsOpen: { act: CellActKind; open: boolean; why: string | null }[];
+    sponsors: SeatSponsorView[];
+    /** In the open as a secession crisis. */
+    inTheOpen: boolean;
+    crisisName: string | null;
+    /** Can declare now, or why not. */
+    declare: { open: boolean; why: string | null };
+    /** Recent news from the cell's own life, newest first. */
+    log: { at: number; text: string }[];
+}
+
 export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination';
 
 /**
@@ -110,7 +180,7 @@ export interface CellSponsorship extends Sponsorship {
     /** The sponsor's share of what heists took. */
     cutReceived: number;
     endedAtSeconds?: number | null;
-    endReason?: 'cut' | 'lapsed' | 'cell_ended' | null;
+    endReason?: 'cut' | 'lapsed' | 'cell_ended' | 'refused' | null;
 }
 
 /** What a foreign service sees of a cell it could sponsor. No sponsors, no truth. */
@@ -136,4 +206,13 @@ export const SPONSOR_CUTOUT_MULTIPLIER = 1.5;
 
 export function sponsorshipCostPerTick(armed: boolean, cutout: boolean): number {
     return Math.round((SPONSOR_FUND_PER_TICK + (armed ? SPONSOR_ARM_PER_TICK : 0)) * (cutout ? SPONSOR_CUTOUT_MULTIPLIER : 1));
+}
+
+/** Note something in a led cell's own record, for its leader. No-op for a cell nobody leads. */
+export function noteForSeat(cell: RebelCell, at: number, text: string): void {
+    if (!cell.seat) return;
+    // Before the first view exists, notes wait on the cell until the view takes them.
+    const log: { at: number; text: string }[] = cell.seatView ? cell.seatView.log : ((cell as any).pendingSeatLog ??= []);
+    log.unshift({ at, text });
+    if (log.length > 12) log.length = 12;
 }

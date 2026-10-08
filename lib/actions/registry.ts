@@ -391,6 +391,33 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { sponsorshipId: "id" },
     cost: {}
   },
+  // Item 13d: orders from a person leading a cell from hiding. The issuer is
+  // their underground seat id; the worker checks they lead a cell
+  // (lib/rebellion/underground-service.ts).
+  REB_CELL_ACT: {
+    id: "REB_CELL_ACT",
+    category: "espionage",
+    params: { act: "string" },
+    cost: {}
+  },
+  REB_CELL_LIE_LOW: {
+    id: "REB_CELL_LIE_LOW",
+    category: "espionage",
+    params: { on: "boolean" },
+    cost: {}
+  },
+  REB_CELL_REFUSE_SPONSOR: {
+    id: "REB_CELL_REFUSE_SPONSOR",
+    category: "espionage",
+    params: { sponsorshipId: "id" },
+    cost: {}
+  },
+  REB_CELL_DECLARE: {
+    id: "REB_CELL_DECLARE",
+    category: "espionage",
+    params: {},
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

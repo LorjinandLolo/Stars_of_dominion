@@ -241,6 +241,22 @@ export async function sponsorCellAction(
     return result;
 }
 
+/** Item 13d: an order from a person leading a cell from hiding. */
+export async function cellOrderAction(
+    factionId: string,
+    actionId: 'REB_CELL_ACT' | 'REB_CELL_LIE_LOW' | 'REB_CELL_REFUSE_SPONSOR' | 'REB_CELL_DECLARE',
+    payload: Record<string, unknown> = {}
+): Promise<ActionResult> {
+    return executePlayerAction({
+        id: `cell-${Date.now()}`,
+        actionId,
+        issuerId: factionId,
+        targetId: factionId,
+        payload,
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+}
+
 /** Stop paying a cell. */
 export async function cutSponsorshipAction(factionId: string, sponsorshipId: string): Promise<ActionResult> {
     const result = await executePlayerAction({
