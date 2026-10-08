@@ -33,6 +33,7 @@ import { hostReadyForMovement, movementReady, riseAsMovement, MOVEMENT_MIN_AGE_S
 import { fireNotification } from '../time/notification-hooks';
 import { buyGear, chooseInJob, jobBoard, jobView, planView, setPlan, startJob, startRecon, tickRecon } from '../fallen/job-service';
 import { crewForLeader, tickCrew } from '../fallen/crew-service';
+import { ensureHunter, tickHunter } from '../fallen/hunter-service';
 import { labelFor } from '../time/notification-names';
 
 /**
@@ -224,6 +225,8 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
     if (!cell.seat) { cell.seatView = null; return; }
     const sponsors = activeSponsorshipsOf(world, cell.id);
     const crisis: any = cell.crisisId ? world.secessionCrises?.get?.(cell.crisisId) : null;
+    // 14e: an AI conqueror puts a name on the case as soon as a fallen empire hides.
+    ensureHunter(world, cell);
     const previousLog = cell.seatView?.log ?? (cell as any).pendingSeatLog ?? [];
     delete (cell as any).pendingSeatLog;
     const view: CellSeatView = {
@@ -271,6 +274,8 @@ export function refreshSeatViews(world: GameWorldState): void {
         if (!c.seat) continue;
         // 14d: wounds heal, prisoners are questioned, loyalty may turn.
         tickCrew(world, c);
+        // 14e: the officer on the case looks for us.
+        tickHunter(world, c);
         // 14c: a watch that has run its time reports back.
         const report = tickRecon(world, c);
         if (report) notifySeat(world, c, 'THE WATCHER IS BACK', report);

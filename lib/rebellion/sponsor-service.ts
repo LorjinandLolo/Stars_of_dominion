@@ -21,7 +21,7 @@
 import type { GameWorldState } from '../game-world-state';
 import type { CaseClue, CovertCase } from '../espionage/espionage-types';
 import {
-    HOMEGROWN, noteForSeat, sponsorshipCostPerTick,
+    HOMEGROWN, addHeat, noteForSeat, sponsorshipCostPerTick,
     type CellActKind, type CellSponsorship, type RebelCell,
 } from './rebellion-types';
 import { crackdown, ensureRebellion, revealCell, type CrackdownResult } from './cell-service';
@@ -54,6 +54,8 @@ export const ACT_BASE_CHANCE = 0.01;
 export const ACT_STRENGTH_CHANCE = 0.04;
 export const ACT_FUNDED_CHANCE = 0.06;
 export const ACT_ARMED_CHANCE = 0.04;
+/** Heat an act adds to the hunter on the cell's case (Item 14e). */
+export const ACT_HEAT = 12;
 /** Share of a heist that goes to the cell's sponsors. */
 export const SPONSOR_CUT = 0.4;
 
@@ -252,15 +254,16 @@ const ACT_PHRASE: Record<CellActKind, string> = {
     prison_break: 'a prison break',
     assassination: 'the killing of the governor',
     hijack: 'the theft of a warship',
+    ambush: 'the killing of a security officer',
 };
 
 /** How loudly the press carries each act (chronicle bands: 15-39 local news, 40-69 real news). */
 const ACT_IMPORTANCE: Record<CellActKind, number> = {
-    propaganda: 18, heist: 32, sabotage: 36, prison_break: 50, assassination: 62, hijack: 55,
+    propaganda: 18, heist: 32, sabotage: 36, prison_break: 50, assassination: 62, hijack: 55, ambush: 52,
 };
 
 const ACT_TITLE: Record<CellActKind, string> = {
-    heist: 'HEIST', sabotage: 'SABOTAGE', propaganda: 'AGITATION', prison_break: 'PRISON BREAK', assassination: 'ASSASSINATION', hijack: 'HIJACKING',
+    heist: 'HEIST', sabotage: 'SABOTAGE', propaganda: 'AGITATION', prison_break: 'PRISON BREAK', assassination: 'ASSASSINATION', hijack: 'HIJACKING', ambush: 'AMBUSH',
 };
 
 /** Chance per tick that a cell strikes. */
@@ -338,6 +341,9 @@ export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKi
 
     if (act === 'hijack') {
         effect = opts.effect ?? 'a warship gone from its berth';
+    } else if (act === 'ambush') {
+        if (planet) planet.stability = Math.max(0, Number(planet.stability ?? 50) - 4);
+        effect = opts.effect ?? 'an officer of the security service dead';
     } else if (act === 'heist') {
         const take = Math.round(Math.min(credits(world, host) * 0.01, 1500 + cell.strength * 40) * Math.max(1, opts.takeMultiplier ?? 1));
         addCredits(world, host, -take);
@@ -396,6 +402,8 @@ export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKi
         effect = `${cell.cause} stirred up`;
     }
 
+    // Item 14e: every act makes the officer hunting the cell look harder.
+    addHeat(cell, ACT_HEAT);
     // Acting costs the cell its cover: it claims the act, and the host now knows it exists.
     cell.actsCommitted = (cell.actsCommitted ?? 0) + 1;
     cell.lastActAtSeconds = now;

@@ -291,7 +291,7 @@ async function main() {
         check('one job at a time', !JS.startJob(w, cell, 'broadcast', [ids[2]]).ok);
         const plain = (() => { const x = hidden(); x.cell.exile = null; return x; })();
         check('a cell without a crew takes no jobs', !!JS.jobBlocker(plain.w, plain.cell, JOB_BY_ID.payroll));
-        check('every job lands as a cell act', JOBS.every(j => ['heist', 'prison_break', 'propaganda', 'sabotage', 'assassination', 'hijack'].includes(j.act)));
+        check('every job lands as a cell act', JOBS.every(j => ['heist', 'prison_break', 'propaganda', 'sabotage', 'assassination', 'hijack', 'ambush'].includes(j.act)));
         check('every choice leads somewhere real', JOBS.every(j => Object.values(j.scenes).every(s => s.choices.every(c =>
             [c.success, c.failure].filter(Boolean).every((st: any) => ['success', 'partial', 'failure'].includes(st.next) || !!j.scenes[st.next])))));
     }
@@ -610,6 +610,7 @@ async function main() {
     {
         const { w, cell } = hidden();
         const c = cell.exile.crew[0];
+        c.threadId = null; // no thread to settle: this check is about loyalty alone
         const l0 = c.loyalty;
         CS.crewAfterJob(w, cell, { crewIds: [c.id], jobId: 'broadcast' } as any, 'failure', () => 0.99);
         check('a failed job costs loyalty', c.loyalty === Math.max(0, l0 - 5));
@@ -620,6 +621,109 @@ async function main() {
         CS.killCompanion(w, cell, cell.exile.crew[2], 'Killed covering the escape.');
         check('a death costs the others some nerve and binds them closer', other.loyalty === Math.max(0, lo - 4) && other.bond === Math.min(100, bo + 2));
         check('the crew service stays out of the browser', !/crew-service/.test(code('components/underground/UndergroundShell.tsx')));
+    }
+
+    // ── 14e: the hunter ──────────────────────────────────────────────────────
+    const HS = await import('../lib/fallen/hunter-service');
+    const { revealCellsBySweep: sweep, crackdown } = await import('../lib/rebellion/cell-service');
+    const { ACT_HEAT } = await import('../lib/rebellion/sponsor-service');
+    const label = (cell: any) => `${cell.exile.hunter.title} ${cell.exile.hunter.name}`;
+
+    console.log('\n[23] An AI conqueror puts a name on the case');
+    {
+        const { w, cell, host } = hidden();
+        const h = cell.exile.hunter;
+        check('an officer has the case from the start', !!h && h.factionId === host && h.generation === 1 && !h.dead);
+        check('the leader learns their name', cell.seatView.log.some((l: any) => l.text.includes(h.name)));
+        check('the leader sees them on the page', cell.seatView.exile.hunter?.name === h.name);
+
+        const w2 = freshWorld();
+        ensureGovernments(w2);
+        empireThenConquest(w2, 3);
+        w2.claimedFactionIds = [...w2.claimedFactionIds, K];
+        const hh = pickHideout(w2, F)!;
+        const c2: any = exileCellAt(w2, hh, F, () => 0.5);
+        const id2 = seatIdFor(c2);
+        attachExile(w2, c2, hh, F, id2);
+        seatCell(w2, c2, id2, 'Fallen Probe');
+        check('a human conqueror gets no invented officer: they are the hunter', !c2.exile.hunter);
+        check('and the movement has nobody to go after', !!JS.jobBlocker(w2, c2, J.JOB_BY_ID.inspector));
+    }
+
+    console.log('\n[24] A sweep that finds the cell is in the story the same tick');
+    {
+        const { w, cell, host } = hidden();
+        cell.safeHouse.knownToFactionIds = cell.safeHouse.knownToFactionIds.filter((id: string) => id !== host);
+        const found = sweep(w, host, cell.systemId, 1, () => 0);
+        check('the conqueror\'s sweep found the cell', found.some((c: any) => c.id === cell.id));
+        check('the story has it at once, under the officer\'s name', cell.seatView.log[0]?.text.includes(label(cell)) && /sweep/.test(cell.seatView.log[0].text), cell.seatView.log[0]?.text);
+        check('and so does the officer\'s file', cell.exile.hunter.notes[0]?.text.includes('sweep'));
+
+        const own = hidden();
+        own.cell.safeHouse.knownToFactionIds = own.cell.safeHouse.knownToFactionIds.filter((id: string) => id !== own.host);
+        const r = HS.tickHunter(own.w, own.cell, () => 0);
+        check('the officer searches with a real sweep, and can find us', r.searched && r.found && own.cell.safeHouse.knownToFactionIds.includes(own.host));
+        const missed = hidden();
+        missed.cell.safeHouse.knownToFactionIds = missed.cell.safeHouse.knownToFactionIds.filter((id: string) => id !== missed.host);
+        let n = 0;
+        const r2 = HS.tickHunter(missed.w, missed.cell, () => (n++ === 0 ? 0 : 0.999));
+        check('or come up empty, and the story says so', r2.searched && !r2.found && /found nothing/.test(missed.cell.seatView.log[0]?.text ?? ''));
+    }
+
+    console.log('\n[25] Crackdowns, turned sources and interrogations, under the officer\'s name');
+    {
+        const { w, cell, host } = hidden();
+        crackdown(w, host, cell.planetId, () => 0);
+        check('a crackdown on the hideout world', cell.seatView.log.some((l: any) => l.text.includes(label(cell)) && /crackdown/.test(l.text)));
+        const c = cell.exile.crew[0];
+        c.loyalty = 5;
+        CS.tickCrew(w, cell, () => 0);
+        const beat = cell.exile.hunter.notes.find((x: any) => /new source/.test(x.text));
+        check('a companion turns: the leader learns someone talks, never who', !!beat && !beat.text.includes(c.name));
+        const p = cell.exile.crew[1];
+        CS.captureCompanion(w, cell, p, 'the docks');
+        CS.breakPrisoner(w, cell, p);
+        check('an interrogation that breaks someone', cell.exile.hunter.notes.some((x: any) => x.text.includes(p.name) && /questioned/.test(x.text)));
+    }
+
+    console.log('\n[26] Every act heats the hunt; quiet cools it');
+    {
+        const { w, cell } = hidden();
+        const h0 = cell.exile.hunter.heat;
+        commitAct(w, cell, 'propaganda', []);
+        check('an act makes the officer look harder', cell.exile.hunter.heat === Math.min(100, h0 + ACT_HEAT));
+        const h1 = cell.exile.hunter.heat;
+        HS.tickHunter(w, cell, () => 0.999);
+        check('time without acts cools them', cell.exile.hunter.heat < h1);
+    }
+
+    console.log('\n[27] The inspector: going after the hunter');
+    {
+        const { w, cell } = hidden();
+        primeCrew(cell);
+        const crew = cell.exile.crew.slice(0, 3).map((c: any) => c.id);
+        const avenger = byId(cell, crew[0]);
+        avenger.threadId = 'revenge'; avenger.threadResolved = false;
+        check('the job needs a plan and a watch', !JS.startJob(w, cell, 'inspector', crew).ok);
+        JS.setPlan(w, cell, { jobId: 'inspector', approach: 'quiet', crewIds: crew });
+        cell.plan.recon = 1;
+        const first = { ...cell.exile.hunter };
+        JS.startJob(w, cell, 'inspector', []);
+        UG.refreshSeatView(w, cell);
+        check('the job names the officer', cell.seatView.job.sceneText.includes(first.name));
+        cell.job.seed = seedPath([true, true, true]);
+        play(w, cell, ['wait', 'shoot', 'drive']);
+        check('it worked', cell.job.status === 'success', cell.job.story.join(' / '));
+        check('the officer is dead', cell.exile.hunter.dead === true);
+        check('the conqueror has a file on the killing', [...ensureCases(w).values()].some((k: any) => k.cellId === cell.id && /officer/.test(k.kindPhrase)));
+        check('the one who wanted revenge has had it', avenger.threadResolved === true);
+        check('nobody to go after until the successor comes', !!JS.jobBlocker(w, cell, J.JOB_BY_ID.inspector));
+        w.nowSeconds += HS.SUCCESSOR_SECONDS - 60;
+        check('the case waits a few days', HS.ensureHunter(w, cell) === null);
+        w.nowSeconds += 120;
+        const next = HS.ensureHunter(w, cell);
+        check('then a successor takes it, hotter than the last', !!next && next.generation === 2 && next.heat >= Math.min(100, first.heat + HS.SUCCESSOR_HEAT - 1) && next.name !== first.name);
+        check('the hunter service stays out of the browser', !/hunter-service/.test(code('components/underground/UndergroundShell.tsx')));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

@@ -491,3 +491,83 @@ JOBS.push(
 );
 for (const j of JOBS) if (!j.target) j.target = j.act === 'heist' ? 'world' : 'none';
 for (const j of JOBS) JOB_BY_ID[j.id] = j;
+
+// ─── Item 14e: the hunter ────────────────────────────────────────────────────
+
+JOBS.push({
+    id: 'inspector',
+    title: 'The inspector',
+    pitch: '{hunter} has hunted us long enough. Learn their routine, and end it.',
+    act: 'ambush',
+    maxCrew: 3,
+    target: 'none',
+    minRecon: 1,
+    start: 'road',
+    starts: { quiet: 'road', loud: 'office', inside: 'driver' },
+    scenes: {
+        road: {
+            id: 'road',
+            text: '{hunter} takes the same road to the security bureau every morning, one escort car behind. {infiltration} knows the crossing where they slow down.',
+            choices: [
+                { id: 'wait', label: 'Wait at the crossing among the morning crowd', check: { skill: 'infiltration', difficulty: 'fair' },
+                    success: { text: 'Nobody notices one more worker waiting for the tram.', next: 'strike' },
+                    failure: { text: 'A patrol asks {infiltration} for papers, and takes too long reading them. The car is already coming.', next: 'strike', noise: 1 } },
+            ],
+        },
+        office: {
+            id: 'office',
+            text: 'The security bureau on {world}. {hunter} works late, and the night guard is two people and a dog.',
+            choices: [
+                { id: 'storm', label: 'Go in through the front', check: { skill: 'violence', difficulty: 'hard' },
+                    success: { text: '{violence} is up the stairs before the alarm finishes its first note.', next: 'strike', noise: 2 },
+                    failure: { text: 'The guards are better than they looked. {violence} is hit on the stairs, and keeps climbing.', next: 'strike', noise: 3, fate: { kind: 'wound', skill: 'violence' } } },
+            ],
+        },
+        driver: {
+            id: 'driver',
+            text: '{hunter}\'s driver has a family on a world {conqueror} burned. {talk} has been talking to them for a month.',
+            choices: [
+                { id: 'turn', label: 'Ask the driver to take the long way tonight', check: { skill: 'talk', difficulty: 'fair' },
+                    success: { text: 'The driver says nothing, and takes the long way.', next: 'strike' },
+                    failure: { text: 'The driver takes the long way, and tells the escort car why.', next: 'strike', noise: 2 } },
+            ],
+        },
+        strike: {
+            id: 'strike',
+            text: '{hunter}. Close enough to see their face, the one from every report.',
+            choices: [
+                { id: 'shoot', label: 'Now', check: { skill: 'violence', difficulty: 'fair' },
+                    success: { text: 'It is over in a second. It took a year.', next: 'escape', noise: 1 },
+                    failure: { text: 'The shot goes wide. The escort is out of its car.', next: 'missed', noise: 2 } },
+            ],
+        },
+        missed: {
+            id: 'missed',
+            text: '{hunter} is down behind the car, alive, shouting into a radio.',
+            choices: [
+                { id: 'again', label: 'Go in after them', check: { skill: 'violence', difficulty: 'desperate' },
+                    risk: '{violence} goes in alone. They may not come back out.',
+                    success: { text: '{violence} goes round the car. It ends there.', next: 'escape', noise: 2 },
+                    failure: { text: '{violence} goes round the car, and does not come back. {hunter} is carried away alive.', next: 'failure', noise: 2, fate: { kind: 'death', skill: 'violence' } } },
+                { id: 'run', label: 'Get out while you can',
+                    success: { text: 'You run. Behind you, {hunter} is already giving orders.', next: 'failure', noise: 1 } },
+            ],
+        },
+        escape: {
+            id: 'escape',
+            text: 'Sirens. {piloting} has a car two streets away.',
+            choices: [
+                { id: 'drive', label: 'Drive', check: { skill: 'piloting', difficulty: 'fair' },
+                    risk: 'If the car is boxed in, {piloting} will not get out of it.',
+                    success: { text: 'Through the market, under the old rail bridge, and gone.', next: 'success' },
+                    failure: { text: 'The car is boxed in at the bridge. The rest of you get out on foot; {piloting} does not.', next: 'partial', noise: 2, fate: { kind: 'capture', skill: 'piloting' } } },
+            ],
+        },
+    },
+    endings: {
+        success: '{hunter} is dead. {conqueror} will send someone else, and they will want it more.',
+        partial: '{hunter} is dead, and {conqueror} knows exactly who did it.',
+        failure: '{hunter} lives, and has seen our faces now.',
+    },
+});
+JOB_BY_ID.inspector = JOBS[JOBS.length - 1];

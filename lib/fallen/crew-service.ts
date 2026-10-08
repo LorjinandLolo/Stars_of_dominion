@@ -20,7 +20,7 @@
  */
 
 import type { GameWorldState } from '../game-world-state';
-import { HOMEGROWN, noteForSeat, type Companion, type JobRun, type RebelCell } from '../rebellion/rebellion-types';
+import { HOMEGROWN, huntBeat, hunterLabel, noteForSeat, type Companion, type JobRun, type RebelCell } from '../rebellion/rebellion-types';
 import { revealCell } from '../rebellion/cell-service';
 import { ensureCases, INFORMANT_WINDOW_SECONDS } from '../espionage/case-board';
 import { getOrCreateFactionIntel } from '../espionage/faction-intel';
@@ -171,6 +171,8 @@ export function breakPrisoner(world: GameWorldState, cell: RebelCell, c: Compani
         } catch { /* tests */ }
     }
     notifySeat(world, cell, 'SOMEONE HAS TALKED', `${c.name} broke under interrogation. ${labelFor(host)} knows where we meet.`);
+    const hunter = hunterLabel(cell);
+    if (hunter) huntBeat(cell, world.nowSeconds, `${hunter} questioned ${c.name} personally. It took them four days.`);
 }
 
 /** A prison break brings home every companion the conqueror holds. Returns their names. */
@@ -207,7 +209,12 @@ export function tickCrew(world: GameWorldState, cell: RebelCell, rand: () => num
         }
         if (c.status === 'free' && !c.turned && c.loyalty < TURN_LOYALTY) {
             const pull = c.threadId === 'writes' ? 2 : 1;
-            if (rand() < TURN_CHANCE * pull) c.turned = true;
+            if (rand() < TURN_CHANCE * pull) {
+                c.turned = true;
+                // The leader learns that someone talks, never who.
+                const hunter = hunterLabel(cell);
+                if (hunter) huntBeat(cell, now, `${hunter} has a new source. Someone close to us is talking to them.`);
+            }
         }
         // A traitor keeps their handler informed.
         if (c.turned && c.status === 'free') {
@@ -227,6 +234,7 @@ export const THREAD_RESOLUTION: Record<string, { jobs: string[]; text: string }>
     believer: { jobs: ['broadcast'], text: '{name} heard the city answer the broadcast, and believes it more than ever.' },
     codes: { jobs: ['cutter'], text: '{name}\'s old archive codes opened the ship\'s locks like a key. Nobody will pay for them now.' },
     child: { jobs: ['detention', 'vault'], text: 'Afterwards, {name} told you about their child. It was the first time.' },
+    revenge: { jobs: ['inspector'], text: '{name} was there when it ended. It did not feel the way they thought it would.' },
 };
 
 /** Everything that happens to the crew when a job ends. Returns lines for the story. */

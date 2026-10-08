@@ -16,7 +16,7 @@ import React from 'react';
 import { EyeOff, Flame, Loader2, LogOut, Megaphone, Radio, Shield, Users, Wallet } from 'lucide-react';
 import {
     COMPANION_ROLE_LABEL, HELD_ACT_COOLDOWN_SECONDS,
-    type CellActKind, type CellSeatView, type Companion, type CompanionSkill, type ExileRecord, type JobApproach, type JobBoardEntry, type JobPlan, type JobPlanView,
+    type CellActKind, type CellSeatView, type Companion, type Hunter, type CompanionSkill, type ExileRecord, type JobApproach, type JobBoardEntry, type JobPlan, type JobPlanView,
 } from '@/lib/rebellion/rebellion-types';
 import { APPROACH_LABEL } from '@/lib/fallen/jobs';
 import { speciesLabel } from '@/lib/espionage/dossier';
@@ -34,6 +34,7 @@ function realDuration(simSeconds: number): string {
 
 const ACT_LABEL: Record<CellActKind, { label: string; blurb: string }> = {
     hijack: { label: 'Steal a ship', blurb: 'Only as a planned job: a warship taken from its berth to our hidden dock.' },
+    ambush: { label: 'Kill the hunter', blurb: 'Only as a planned job: the officer hunting us.' },
     propaganda: { label: 'Agitate', blurb: 'Leaflets, slogans, a crowd. Turns the people we speak for against the government.' },
     heist: { label: 'Rob them', blurb: 'Take money from the treasury. Sponsors take a share.' },
     sabotage: { label: 'Sabotage', blurb: 'Wreck works and shake the world\'s stability.' },
@@ -130,6 +131,8 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
                 </header>
 
                 {view.exile && <CrewSection exile={view.exile} />}
+
+                {view.exile?.hunter && <HunterSection hunter={view.exile.hunter} />}
 
                 {view.exile && (
                     <JobsSection
@@ -496,5 +499,30 @@ function PlanPanel({ view, pv, plan, jobId, busy, crewName, onOrder }: {
             <button disabled={busy || watching} onClick={() => onOrder('REB_JOB_START', { jobId, crewIds: plan.crewIds }, 'The crew sets out.')}
                 className={`${BTN} w-full bg-red-800/80 hover:bg-red-700/80 text-white`}>{watching ? 'Wait for the watcher' : 'Go'}</button>
         </div>
+    );
+}
+
+/** Item 14e: the officer an AI conqueror has set on us, and what we know of their work. */
+function HunterSection({ hunter }: { hunter: Hunter }) {
+    const heat = hunter.heat >= 70 ? { word: 'closing in', color: 'text-red-400' }
+        : hunter.heat >= 40 ? { word: 'close', color: 'text-amber-400' }
+        : hunter.heat >= 15 ? { word: 'looking', color: 'text-amber-300' }
+        : { word: 'patient', color: 'text-slate-400' };
+    return (
+        <section className="rounded-xl border border-slate-700 bg-slate-950/80 p-4 space-y-2">
+            <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Who hunts us</h2>
+            {hunter.dead ? (
+                <p className="text-sm text-slate-300">{hunter.title} {hunter.name} is dead. Someone else will have the case soon, and they will want it more.</p>
+            ) : (
+                <p className="text-sm text-slate-200">
+                    {hunter.title} {hunter.name}{hunter.species ? `, ${speciesLabel(hunter.species)}` : ''}, of the security service.
+                    {' '}<span className={heat.color}>{heat.word}</span>
+                    {hunter.generation > 1 ? <span className="text-slate-500"> · the {hunter.generation === 2 ? 'second' : hunter.generation === 3 ? 'third' : `${hunter.generation}th`} officer on our case</span> : null}
+                </p>
+            )}
+            {hunter.notes.length > 0 && (
+                <ul className="space-y-1">{hunter.notes.slice(0, 5).map((n, i) => <li key={i} className="text-[11px] text-slate-400">{n.text}</li>)}</ul>
+            )}
+        </section>
     );
 }

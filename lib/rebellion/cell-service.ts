@@ -19,7 +19,7 @@
  */
 
 import type { GameWorldState } from '../game-world-state';
-import { CRACKDOWN_CAPITAL, noteForSeat, type Crackdown, type RebelCell, type RebellionState } from './rebellion-types';
+import { CRACKDOWN_CAPITAL, huntBeat, hunterLabel, noteForSeat, type Crackdown, type RebelCell, type RebellionState } from './rebellion-types';
 import { ReputationService } from '../reputation/reputation-service';
 import { fireNotification } from '../time/notification-hooks';
 import * as chronicle from '../narrative/chronicle';
@@ -239,7 +239,13 @@ export function revealCellsBySweep(world: GameWorldState, sweeperId: string, sys
     for (const cell of ensureRebellion(world).cells.values()) {
         if (cell.status !== 'active' || cell.systemId !== systemId || cell.hostFactionId !== sweeperId) continue;
         if (rand() < Math.min(0.95, (1 - cell.safeHouse.concealment) + 0.3 * mult)) {
-            if (revealCell(cell, sweeperId)) { found.push(cell); noteForSeat(cell, world.nowSeconds, 'A counter-intelligence sweep found our safe house. They know we exist.'); }
+            if (revealCell(cell, sweeperId)) {
+                found.push(cell);
+                noteForSeat(cell, world.nowSeconds, 'A counter-intelligence sweep found our safe house. They know we exist.');
+                // Item 14e: the officer on our case put their name to it.
+                const hunter = hunterLabel(cell);
+                if (hunter) huntBeat(cell, world.nowSeconds, `${hunter} led the sweep that found the safe house. From their report: "The cell is real, it is organised, and it is ours to finish."`);
+            }
             cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment - 0.2);
         }
     }
@@ -280,6 +286,10 @@ export function crackdown(world: GameWorldState, factionId: string, planetId: st
         noteForSeat(cell, now, caught
             ? `A crackdown on ${planet.name} found us. Members taken, the safe house burned.`
             : `Security swept ${planet.name}. They missed us, but people we knew were taken.`);
+        const hunter = hunterLabel(cell);
+        if (hunter) huntBeat(cell, now, caught
+            ? `${hunter} ordered the crackdown on ${planet.name}, and was there to watch the safe house burn.`
+            : `${hunter} ordered the crackdown on ${planet.name}. Wrong doors, this time. They will not stop at one.`);
         if (cell.strength <= 0) endCell(cell, 'crushed', now);
     }
 

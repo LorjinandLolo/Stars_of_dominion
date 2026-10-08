@@ -40,6 +40,8 @@ import { unitConfigFor } from '../combat/ship-registry';
 import { speciesLabel, withArticle, empiresOfSpecies } from '../espionage/dossier';
 import { HOMEGROWN } from '../rebellion/rebellion-types';
 import { applyFate, crewAfterJob, crewCheckModifier } from './crew-service';
+import { hunterTargetBlocker, killHunter } from './hunter-service';
+import { hunterLabel } from '../rebellion/rebellion-types';
 import type { CaseClue, CovertCase } from '../espionage/espionage-types';
 
 export type JobResult = { ok: true; message: string } | { ok: false; message: string };
@@ -77,6 +79,8 @@ export function jobContext(world: GameWorldState, cell: RebelCell, crew: Compani
         world: String(planet?.name ?? 'the hideout world'),
         conqueror: cell.exile?.conquerorName ?? labelFor(cell.hostFactionId),
         empire: cell.exile?.fromName ?? 'the old empire',
+        // 14e: the officer hunting us, by name.
+        hunter: hunterLabel(cell) ?? cell.exile?.hunter?.name ?? 'the officer',
     };
     for (const s of SKILLS) ctx[s] = personFor(crew, roles, s).who?.name ?? crew[0]?.name ?? 'someone';
     return ctx;
@@ -136,6 +140,7 @@ export function jobBlocker(world: GameWorldState, cell: RebelCell, def: JobDefin
     if ((cell.nextActAtSeconds ?? 0) > world.nowSeconds) return 'Too soon after the last job: let things go quiet first.';
     if (!cell.exile.crew.some(c => c.status === 'free')) return 'Nobody is free to go.';
     if (def.target !== 'none' && targetsFor(world, cell, def).length === 0) return def.target === 'fleet' ? 'No ship of theirs is within reach.' : 'None of their worlds is within reach.';
+    if (def.act === 'ambush') return hunterTargetBlocker(world, cell);
     return null;
 }
 
@@ -333,6 +338,15 @@ function finishJob(world: GameWorldState, cell: RebelCell, def: JobDefinition, r
         takeMultiplier: def.takeMultiplier ?? 1,
         planetId: targetPlanetOf(world, run),
     };
+    if (outcome !== 'failure' && def.act === 'ambush') {
+        const killed = killHunter(world, cell);
+        if (!killed) {
+            outcome = 'failure';
+            run.story.push('There was nobody there. The case has already passed to someone else.');
+        } else {
+            opts = { ...opts, effect: `${killed} of the security service killed` };
+        }
+    }
     if (outcome !== 'failure' && def.act === 'hijack') {
         const cls = takeShip(world, run.targetId);
         if (!cls) {

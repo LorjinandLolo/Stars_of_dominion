@@ -175,7 +175,7 @@ export interface CellSeatView {
     log: { at: number; text: string }[];
 }
 
-export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination' | 'hijack';
+export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination' | 'hijack' | 'ambush';
 
 /**
  * An empire paying a cell in a rival's territory. The pirate Sponsorship
@@ -290,6 +290,8 @@ export interface ExileRecord {
     dock?: DockedShip[];
     /** Item 14d: the dead, remembered. */
     memorial?: { name: string; role: CompanionRole; diedAtSeconds: number; epitaph: string }[];
+    /** Item 14e: the officer hunting us, when the conqueror is not a person. */
+    hunter?: Hunter | null;
 }
 
 export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
@@ -392,4 +394,50 @@ export interface JobPlanView {
     gear: { id: string; label: string; price: number; owned: boolean; blackMarket: boolean }[];
     treasury: number;
     dock: DockedShip[];
+}
+
+// ─── Item 14e: the hunter ────────────────────────────────────────────────────
+
+/**
+ * The officer an AI conqueror sets on a fallen empire's movement. Against a
+ * human conqueror there is none: the human is the hunter (Item 14, decision 6).
+ */
+export interface Hunter {
+    name: string;
+    title: string;
+    species: string | null;
+    factionId: string;
+    sinceSeconds: number;
+    /** 0–100: how hard they are looking, fed by every act against their empire. */
+    heat: number;
+    /** What the leader learns of their work, newest first. */
+    notes: { at: number; text: string }[];
+    /** First, second, third officer on this case. */
+    generation: number;
+    dead?: boolean;
+    diedAtSeconds?: number | null;
+    /** When a successor takes the case. */
+    successorAtSeconds?: number | null;
+}
+
+/** "Inspector Mara Voss", or null when no living officer hunts this cell. */
+export function hunterLabel(cell: RebelCell): string | null {
+    const h = cell.exile?.hunter;
+    return h && !h.dead ? `${h.title} ${h.name}` : null;
+}
+
+/** A beat of the hunt, for the leader's story and the hunter's file. No-op without a living hunter. */
+export function huntBeat(cell: RebelCell, at: number, text: string): void {
+    const h = cell.exile?.hunter;
+    if (!h || h.dead) return;
+    h.notes.unshift({ at, text });
+    if (h.notes.length > 8) h.notes.length = 8;
+    noteForSeat(cell, at, text);
+}
+
+/** Every act against the conqueror makes the hunter look harder. */
+export function addHeat(cell: RebelCell, amount: number): void {
+    const h = cell.exile?.hunter;
+    if (!h || h.dead) return;
+    h.heat = Math.max(0, Math.min(100, h.heat + amount));
 }
