@@ -244,7 +244,7 @@ export async function sponsorCellAction(
 /** Item 13d: an order from a person leading a cell from hiding. */
 export async function cellOrderAction(
     factionId: string,
-    actionId: 'REB_CELL_ACT' | 'REB_CELL_LIE_LOW' | 'REB_CELL_REFUSE_SPONSOR' | 'REB_CELL_DECLARE' | 'REB_JOB_START' | 'REB_JOB_CHOOSE',
+    actionId: 'REB_CELL_ACT' | 'REB_CELL_LIE_LOW' | 'REB_CELL_REFUSE_SPONSOR' | 'REB_CELL_DECLARE' | 'REB_JOB_START' | 'REB_JOB_CHOOSE' | 'REB_JOB_PLAN' | 'REB_JOB_RECON' | 'REB_JOB_GEAR',
     payload: Record<string, unknown> = {}
 ): Promise<ActionResult> {
     return executePlayerAction({

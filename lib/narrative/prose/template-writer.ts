@@ -280,6 +280,7 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
                 : act === 'prison_break' ? `Prison break on ${planet}: ${cell} frees ${target}'s prisoners`
                 : act === 'heist' ? `${Cell} robs ${target} on ${planet}`
                 : act === 'sabotage' ? `Sabotage on ${planet}: ${cell} claims the attack`
+                : act === 'hijack' ? `Warship stolen near ${planet}: ${cell} claims the hijacking`
                 : `${Cell} takes its cause to the streets of ${planet}`;
             return {
                 headline,

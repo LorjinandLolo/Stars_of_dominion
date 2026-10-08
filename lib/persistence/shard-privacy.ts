@@ -123,8 +123,8 @@ export function scrubOwnerSecrets(shard: any): any {
             // Item 13d: the host never learns a person leads one of its cells.
             .map((c: any) => {
                 // Item 14: nor that a fallen empire hides in it, nor who came with its leader.
-                const { seat, seatView, lyingLow, nextActAtSeconds, pendingSeatLog, exile, job, jobsRun, ...rest } = c;
-                void seat; void seatView; void lyingLow; void nextActAtSeconds; void pendingSeatLog; void exile; void job; void jobsRun;
+                const { seat, seatView, lyingLow, nextActAtSeconds, pendingSeatLog, exile, job, jobsRun, plan, ...rest } = c;
+                void seat; void seatView; void lyingLow; void nextActAtSeconds; void pendingSeatLog; void exile; void job; void jobsRun; void plan;
                 return rest;
             });
     }

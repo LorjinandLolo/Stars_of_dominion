@@ -28,6 +28,7 @@ import { openCrisis } from '../government/secession-service';
 import { fissionEmpire } from '../government/civil-war-service';
 import { BREAKAWAY_PREFIX } from '../breakaway/breakaway-rules';
 import { takeBreakaway } from '../breakaway/breakaway-service';
+import { unitConfigFor } from '../combat/ship-registry';
 import { endCell, ensureRebellion, revealCell } from './cell-service';
 import { activeSponsorshipsOf } from './sponsor-service';
 import { fireNotification } from '../time/notification-hooks';
@@ -231,6 +232,31 @@ function handOverSeat(world: GameWorldState, cell: RebelCell, rebelFactionId: st
     takeBreakaway(world, rebelFactionId, cell.exile
         ? { fromFactionId: cell.exile.fromFactionId, eliminated: true }
         : { fromFactionId: null, eliminated: false });
+    launchHiddenDock(world, cell, rebelFactionId);
     cell.seat = null;
     cell.seatView = null;
+}
+
+/**
+ * Item 14c: the ships the exiles stole come out of hiding as the new state's
+ * second squadron, at its capital. Built from the state's militia record (the
+ * shape every fleet needs), with its own composition and power.
+ */
+function launchHiddenDock(world: GameWorldState, cell: RebelCell, rebelFactionId: string): void {
+    const dock = cell.exile?.dock ?? [];
+    if (dock.length === 0) return;
+    const template: any = [...world.movement.fleets.values()].find((f: any) => f.factionId === rebelFactionId);
+    if (!template) return;
+    const composition: Record<string, number> = {};
+    let power = 10;
+    for (const ship of dock) {
+        composition[ship.shipClass] = (composition[ship.shipClass] ?? 0) + 1;
+        power += unitConfigFor(ship.shipClass)?.power ?? 10;
+    }
+    const id = `fleet-${rebelFactionId}-hidden-dock`;
+    world.movement.fleets.set(id, {
+        ...JSON.parse(JSON.stringify(template)),
+        id, name: 'The Hidden Dock', composition, basePower: power, strength: 1.0, orders: [], plannedPath: [],
+    });
+    cell.exile!.dock = [];
 }

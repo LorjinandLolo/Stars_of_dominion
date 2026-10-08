@@ -74,6 +74,8 @@ export interface RebelCell {
     /** Item 14b: the job under way, if any. Private like the seat. */
     job?: JobRun | null;
     jobsRun?: number;
+    /** Item 14c: the job being planned. Private like the seat. */
+    plan?: JobPlan | null;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -143,6 +145,8 @@ export interface CellSeatView {
     /** Item 14b: the job under way or just finished, and the jobs on offer. */
     job?: JobView | null;
     jobs?: JobBoardEntry[];
+    /** Item 14c: the plan, and what can be planned against. */
+    plan?: JobPlanView | null;
     cellId: string;
     /** 'crushed' or 'dissolved': the movement is over and the seat with it. */
     status: CellStatus;
@@ -171,7 +175,7 @@ export interface CellSeatView {
     log: { at: number; text: string }[];
 }
 
-export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination';
+export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination' | 'hijack';
 
 /**
  * An empire paying a cell in a rival's territory. The pirate Sponsorship
@@ -266,6 +270,8 @@ export interface ExileRecord {
     conquerorName: string;
     sinceSeconds: number;
     crew: Companion[];
+    /** Item 14c: ships taken from the conqueror, waiting for the state to need them. */
+    dock?: DockedShip[];
 }
 
 export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
@@ -293,6 +299,14 @@ export interface JobRun {
     status: 'running' | 'success' | 'partial' | 'failure';
     startedAtSeconds: number;
     endedAtSeconds?: number | null;
+    // ─── 14c: a planned job ───
+    approach?: JobApproach | null;
+    targetId?: string | null;
+    roles?: Partial<Record<CompanionSkill, string>>;
+    gear?: string[];
+    recon?: number;
+    /** What the conqueror's people will find afterwards. */
+    traces?: JobTrace[];
 }
 
 /** A job as its leader sees it. Odds are words, never numbers. */
@@ -314,4 +328,50 @@ export interface JobBoardEntry {
     maxCrew: number;
     open: boolean;
     why: string | null;
+    /** 14c: what it is aimed at. */
+    targetKind?: 'world' | 'fleet' | 'none';
+    minRecon?: number;
+}
+
+// ─── Item 14c: planning ──────────────────────────────────────────────────────
+
+export type JobApproach = 'quiet' | 'loud' | 'inside';
+
+/** A job being planned: the target, who does what, what we know, what we carry. */
+export interface JobPlan {
+    jobId: string;
+    targetId: string | null;
+    approach: JobApproach;
+    crewIds: string[];
+    /** Who takes each part of the job: their skill counts for that part, with a specialist's edge. */
+    roles: Partial<Record<CompanionSkill, string>>;
+    /** Levels of reconnaissance done (0–2). */
+    recon: number;
+    /** A watch under way: who, and when they report. */
+    reconBy?: string | null;
+    reconUntilSeconds?: number | null;
+    gear: string[];
+}
+
+/** Something a job left behind for the conqueror's investigators. */
+export interface JobTrace {
+    kind: 'witness' | 'camera' | 'weapon';
+    companionId: string | null;
+}
+
+/** A ship taken from the conqueror, hidden until the movement has a state. */
+export interface DockedShip {
+    shipClass: string;
+    takenFromFactionId: string;
+    takenAtSeconds: number;
+    name: string;
+}
+
+export interface JobPlanView {
+    plan: JobPlan | null;
+    /** What each job can be aimed at, as the cell can see it. */
+    targets: Record<string, { id: string; label: string }[]>;
+    gear: { id: string; label: string; price: number; owned: boolean; blackMarket: boolean }[];
+    treasury: number;
+    dock: DockedShip[];
 }

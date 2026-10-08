@@ -251,15 +251,16 @@ const ACT_PHRASE: Record<CellActKind, string> = {
     propaganda: 'a propaganda campaign',
     prison_break: 'a prison break',
     assassination: 'the killing of the governor',
+    hijack: 'the theft of a warship',
 };
 
 /** How loudly the press carries each act (chronicle bands: 15-39 local news, 40-69 real news). */
 const ACT_IMPORTANCE: Record<CellActKind, number> = {
-    propaganda: 18, heist: 32, sabotage: 36, prison_break: 50, assassination: 62,
+    propaganda: 18, heist: 32, sabotage: 36, prison_break: 50, assassination: 62, hijack: 55,
 };
 
 const ACT_TITLE: Record<CellActKind, string> = {
-    heist: 'HEIST', sabotage: 'SABOTAGE', propaganda: 'AGITATION', prison_break: 'PRISON BREAK', assassination: 'ASSASSINATION',
+    heist: 'HEIST', sabotage: 'SABOTAGE', propaganda: 'AGITATION', prison_break: 'PRISON BREAK', assassination: 'ASSASSINATION', hijack: 'HIJACKING',
 };
 
 /** Chance per tick that a cell strikes. */
@@ -318,14 +319,27 @@ function pickAct(world: GameWorldState, cell: RebelCell, sponsors: CellSponsorsh
 }
 
 /** Carry out one act: its effect, its traces, and the host's file on it. */
-export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKind, sponsors: CellSponsorship[], rand: () => number = Math.random): CovertCase | null {
+/**
+ * What a planned job (Item 14c) adds to an act: a bigger take, the world it
+ * happened on, and an effect the job itself carried out (a hijacking moves a
+ * real ship before it gets here). Plain strikes pass nothing.
+ */
+export interface ActOptions {
+    takeMultiplier?: number;
+    planetId?: string | null;
+    effect?: string | null;
+}
+
+export function commitAct(world: GameWorldState, cell: RebelCell, act: CellActKind, sponsors: CellSponsorship[], rand: () => number = Math.random, opts: ActOptions = {}): CovertCase | null {
     const now = world.nowSeconds;
-    const planet = planetOf(world, cell.planetId);
+    const planet = planetOf(world, opts.planetId ?? cell.planetId);
     const host = cell.hostFactionId;
     let effect = '';
 
-    if (act === 'heist') {
-        const take = Math.round(Math.min(credits(world, host) * 0.01, 1500 + cell.strength * 40));
+    if (act === 'hijack') {
+        effect = opts.effect ?? 'a warship gone from its berth';
+    } else if (act === 'heist') {
+        const take = Math.round(Math.min(credits(world, host) * 0.01, 1500 + cell.strength * 40) * Math.max(1, opts.takeMultiplier ?? 1));
         addCredits(world, host, -take);
         const cut = sponsors.length ? Math.round(take * SPONSOR_CUT) : 0;
         for (const s of sponsors) {

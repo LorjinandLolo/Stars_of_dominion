@@ -169,7 +169,7 @@ import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/
 import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
 import { crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
 import { crackdownWithPrisoners, sponsorCell, cutSponsorship as cutCellSponsorship } from '../lib/rebellion/sponsor-service';
-import { declareMovement, orderCellAct, orderJobChoice, orderJobStart, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
+import { declareMovement, orderCellAct, orderGear, orderJobChoice, orderJobStart, orderPlan, orderRecon, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
 import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
@@ -3163,10 +3163,15 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
         // Item 14b: a fallen empire's crew plays a job.
         case 'REB_JOB_START':
-        case 'REB_JOB_CHOOSE': {
-            const result = actionId === 'REB_JOB_START'
-                ? orderJobStart(world, factionId, payload?.jobId, payload?.crewIds)
-                : orderJobChoice(world, factionId, payload?.choiceId);
+        case 'REB_JOB_CHOOSE':
+        case 'REB_JOB_PLAN':
+        case 'REB_JOB_RECON':
+        case 'REB_JOB_GEAR': {
+            const result = actionId === 'REB_JOB_START' ? orderJobStart(world, factionId, payload?.jobId, payload?.crewIds)
+                : actionId === 'REB_JOB_CHOOSE' ? orderJobChoice(world, factionId, payload?.choiceId)
+                : actionId === 'REB_JOB_PLAN' ? orderPlan(world, factionId, payload)
+                : actionId === 'REB_JOB_RECON' ? orderRecon(world, factionId, payload?.companionId)
+                : orderGear(world, factionId, payload?.gearId);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.message);
                 return;

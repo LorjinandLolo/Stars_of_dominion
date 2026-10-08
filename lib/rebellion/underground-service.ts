@@ -31,7 +31,7 @@ import {
 } from './sponsor-service';
 import { hostReadyForMovement, movementReady, riseAsMovement, MOVEMENT_MIN_AGE_SECONDS, MOVEMENT_MIN_STRENGTH } from './movement-service';
 import { fireNotification } from '../time/notification-hooks';
-import { chooseInJob, jobBoard, jobView, startJob } from '../fallen/job-service';
+import { buyGear, chooseInJob, jobBoard, jobView, planView, setPlan, startJob, startRecon, tickRecon } from '../fallen/job-service';
 import { labelFor } from '../time/notification-names';
 
 /**
@@ -258,13 +258,45 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
         exile: cell.exile ?? null,
         job: jobView(world, cell),
         jobs: jobBoard(world, cell),
+        plan: planView(world, cell),
     };
     cell.seatView = view;
 }
 
 /** Refresh every led cell's view. The worker calls this each strategic tick. */
 export function refreshSeatViews(world: GameWorldState): void {
-    for (const c of ensureRebellion(world).cells.values()) if (c.seat) refreshSeatView(world, c);
+    for (const c of ensureRebellion(world).cells.values()) {
+        if (!c.seat) continue;
+        // 14c: a watch that has run its time reports back.
+        const report = tickRecon(world, c);
+        if (report) notifySeat(world, c, 'THE WATCHER IS BACK', report);
+        refreshSeatView(world, c);
+    }
+}
+
+// ─── Item 14c: planning ──────────────────────────────────────────────────────
+
+function withCell(world: GameWorldState, factionId: string, fn: (cell: RebelCell) => SeatResult): SeatResult {
+    const cell = heldCellOf(world, factionId);
+    if (!cell) return { ok: false, message: 'You lead no cell.' };
+    const r = fn(cell);
+    refreshSeatView(world, cell);
+    return r;
+}
+
+/** Plan a job: target, approach, who goes, who does what. */
+export function orderPlan(world: GameWorldState, factionId: string, payload: any): SeatResult {
+    return withCell(world, factionId, cell => setPlan(world, cell, payload ?? {}));
+}
+
+/** Send someone to watch the planned job's target. */
+export function orderRecon(world: GameWorldState, factionId: string, companionId: unknown): SeatResult {
+    return withCell(world, factionId, cell => startRecon(world, cell, companionId));
+}
+
+/** Buy gear for the planned job. */
+export function orderGear(world: GameWorldState, factionId: string, gearId: unknown): SeatResult {
+    return withCell(world, factionId, cell => buyGear(world, cell, gearId));
 }
 
 // ─── Item 14b: jobs ──────────────────────────────────────────────────────────

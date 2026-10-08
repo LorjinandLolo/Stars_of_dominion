@@ -433,6 +433,27 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { choiceId: "string" },
     cost: {}
   },
+  // Item 14c: planning a job. targetId, approach, crewIds and roles are
+  // re-checked by the worker (lib/fallen/job-service.ts setPlan).
+  REB_JOB_PLAN: {
+    id: "REB_JOB_PLAN",
+    category: "espionage",
+    params: { jobId: "string" },
+    cost: {}
+  },
+  REB_JOB_RECON: {
+    id: "REB_JOB_RECON",
+    category: "espionage",
+    params: { companionId: "string" },
+    cost: {}
+  },
+  REB_JOB_GEAR: {
+    id: "REB_JOB_GEAR",
+    category: "espionage",
+    // Paid from the movement's own treasury inside buyGear, not the empire's.
+    params: { gearId: "string" },
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

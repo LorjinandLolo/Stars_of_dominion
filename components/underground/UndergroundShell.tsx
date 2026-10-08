@@ -14,7 +14,11 @@
 
 import React from 'react';
 import { EyeOff, Flame, Loader2, LogOut, Megaphone, Radio, Shield, Users, Wallet } from 'lucide-react';
-import { COMPANION_ROLE_LABEL, HELD_ACT_COOLDOWN_SECONDS, type CellActKind, type CellSeatView, type ExileRecord } from '@/lib/rebellion/rebellion-types';
+import {
+    COMPANION_ROLE_LABEL, HELD_ACT_COOLDOWN_SECONDS,
+    type CellActKind, type CellSeatView, type Companion, type CompanionSkill, type ExileRecord, type JobApproach, type JobBoardEntry, type JobPlan, type JobPlanView,
+} from '@/lib/rebellion/rebellion-types';
+import { APPROACH_LABEL } from '@/lib/fallen/jobs';
 import { speciesLabel } from '@/lib/espionage/dossier';
 import { cellOrderAction } from '@/app/actions/espionage';
 
@@ -29,6 +33,7 @@ function realDuration(simSeconds: number): string {
 }
 
 const ACT_LABEL: Record<CellActKind, { label: string; blurb: string }> = {
+    hijack: { label: 'Steal a ship', blurb: 'Only as a planned job: a warship taken from its berth to our hidden dock.' },
     propaganda: { label: 'Agitate', blurb: 'Leaflets, slogans, a crowd. Turns the people we speak for against the government.' },
     heist: { label: 'Rob them', blurb: 'Take money from the treasury. Sponsors take a share.' },
     sabotage: { label: 'Sabotage', blurb: 'Wreck works and shake the world\'s stability.' },
@@ -130,7 +135,7 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
                     <JobsSection
                         view={view}
                         busy={busy}
-                        onStart={(jobId, crewIds) => order('REB_JOB_START', { jobId, crewIds }, 'The crew sets out.')}
+                        onOrder={order}
                         onChoose={choiceId => order('REB_JOB_CHOOSE', { choiceId }, 'Done. Wait for what happens.')}
                     />
                 )}
@@ -275,15 +280,16 @@ function CrewSection({ exile }: { exile: ExileRecord }) {
  * as words; the worker rolls them. The scene changes when the worker has
  * resolved the choice, a few seconds later.
  */
-function JobsSection({ view, busy, onStart, onChoose }: {
+type OrderFn = (actionId: Parameters<typeof cellOrderAction>[1], payload?: Record<string, unknown>, sent?: string) => void;
+
+function JobsSection({ view, busy, onOrder, onChoose }: {
     view: CellSeatView;
     busy: boolean;
-    onStart: (jobId: string, crewIds: string[]) => void;
+    onOrder: OrderFn;
     onChoose: (choiceId: string) => void;
 }) {
     const job = view.job;
     const [picking, setPicking] = React.useState<string | null>(null);
-    const [crew, setCrew] = React.useState<string[]>([]);
     const [waitingAt, setWaitingAt] = React.useState<number | null>(null);
     const storyLen = job?.story.length ?? 0;
     React.useEffect(() => { setWaitingAt(null); }, [storyLen, job?.status]);
@@ -315,7 +321,9 @@ function JobsSection({ view, busy, onStart, onChoose }: {
     }
 
     const board = view.jobs ?? [];
-    const chosen = board.find(j => j.id === picking) ?? null;
+    const pv = view.plan ?? null;
+    const plan = pv?.plan ?? null;
+    const crewName = (id: string | null | undefined) => (view.exile?.crew ?? []).find(c => c.id === id)?.name ?? 'someone';
     return (
         <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Jobs</h2>
@@ -327,36 +335,152 @@ function JobsSection({ view, busy, onStart, onChoose }: {
                     <ol className="space-y-1">{job.story.map((s, i) => <li key={i} className="text-xs text-slate-400">{s}</li>)}</ol>
                 </div>
             )}
-            {board.map(j => (
-                <div key={j.id} className="rounded-lg border border-slate-800 p-2 space-y-1.5">
-                    <div className="text-sm text-slate-200">{j.title}</div>
-                    <div className="text-[11px] text-slate-400">{j.pitch}</div>
-                    {picking === j.id ? (
-                        <div className="space-y-1.5">
-                            <div className="text-[10px] text-slate-500">Who goes? Up to {j.maxCrew}.</div>
-                            {free.map(c => (
-                                <label key={c.id} className="flex items-center gap-2 min-h-[36px] text-xs text-slate-300">
-                                    <input type="checkbox" checked={crew.includes(c.id)}
-                                        disabled={!crew.includes(c.id) && crew.length >= j.maxCrew}
-                                        onChange={e => setCrew(e.target.checked ? [...crew, c.id] : crew.filter(x => x !== c.id))} />
-                                    {c.name} <span className="text-slate-500">({COMPANION_ROLE_LABEL[c.role].toLowerCase()})</span>
-                                </label>
-                            ))}
-                            <div className="flex gap-2">
-                                <button onClick={() => { setPicking(null); setCrew([]); }} className={`${BTN} flex-1 border border-slate-700 text-slate-400`}>Back</button>
-                                <button disabled={busy || crew.length === 0} onClick={() => { onStart(j.id, crew); setPicking(null); setCrew([]); }}
-                                    className={`${BTN} flex-1 bg-amber-600/80 hover:bg-amber-500/80 text-white`}>Go</button>
-                            </div>
-                        </div>
-                    ) : (
-                        <button disabled={!j.open || busy} onClick={() => { setPicking(j.id); setCrew([]); }}
-                            className={`${BTN} w-full ${j.open ? 'bg-slate-800 hover:bg-slate-700 text-amber-200' : 'bg-slate-900 text-slate-500 border border-slate-800'}`}>
-                            {j.open ? 'Plan it' : j.why}
-                        </button>
-                    )}
-                </div>
-            ))}
-            {chosen === null && board.length === 0 && <p className="text-xs text-slate-500">No jobs yet.</p>}
+            {(pv?.dock?.length ?? 0) > 0 && (
+                <p className="text-[11px] text-slate-400">
+                    In the hidden dock: {pv!.dock.map(d => `the ${d.name} (${d.shipClass})`).join(', ')}. They sail for our state the day we have one.
+                </p>
+            )}
+            {board.map(j => {
+                const planned = plan?.jobId === j.id ? plan : null;
+                return (
+                    <div key={j.id} className="rounded-lg border border-slate-800 p-2 space-y-1.5">
+                        <div className="text-sm text-slate-200">{j.title}</div>
+                        <div className="text-[11px] text-slate-400">{j.pitch}</div>
+                        {(j.minRecon ?? 0) > 0 && <div className="text-[10px] text-slate-500">Needs {j.minRecon} watches on the target first.</div>}
+
+                        {planned && pv && picking !== j.id && (
+                            <PlanPanel view={view} pv={pv} plan={planned} jobId={j.id} busy={busy} crewName={crewName} onOrder={onOrder} />
+                        )}
+
+                        {picking === j.id ? (
+                            <Planner job={j} targets={pv?.targets?.[j.id] ?? []} free={free} busy={busy}
+                                onCancel={() => setPicking(null)}
+                                onSave={payload => { onOrder('REB_JOB_PLAN', { jobId: j.id, ...payload }, 'The plan is set.'); setPicking(null); }} />
+                        ) : (
+                            <button disabled={(!j.open && !planned) || busy} onClick={() => setPicking(j.id)}
+                                className={`${BTN} w-full ${j.open || planned ? 'bg-slate-800 hover:bg-slate-700 text-amber-200' : 'bg-slate-900 text-slate-500 border border-slate-800'}`}>
+                                {planned ? 'Change the plan' : j.open ? 'Plan it' : j.why}
+                            </button>
+                        )}
+                    </div>
+                );
+            })}
+            {board.length === 0 && <p className="text-xs text-slate-500">No jobs yet.</p>}
         </section>
+    );
+}
+
+/** Item 14c: choose the target, the approach, who goes and who does what. */
+function Planner({ job, targets, free, busy, onCancel, onSave }: {
+    job: JobBoardEntry;
+    targets: { id: string; label: string }[];
+    free: Companion[];
+    busy: boolean;
+    onCancel: () => void;
+    onSave: (payload: { targetId: string | null; approach: JobApproach; crewIds: string[]; roles: Partial<Record<CompanionSkill, string>> }) => void;
+}) {
+    const [targetId, setTargetId] = React.useState<string>(targets[0]?.id ?? '');
+    const [approach, setApproach] = React.useState<JobApproach>('quiet');
+    const [crew, setCrew] = React.useState<string[]>([]);
+    const [roles, setRoles] = React.useState<Partial<Record<CompanionSkill, string>>>({});
+    const chosen = free.filter(c => crew.includes(c.id));
+    const needsTarget = job.targetKind && job.targetKind !== 'none';
+    const SELECT = 'w-full min-h-[40px] bg-slate-950 border border-slate-800 rounded px-2 text-xs text-slate-200';
+    return (
+        <div className="space-y-2 border-t border-slate-800 pt-2">
+            {needsTarget && (
+                <label className="block text-[10px] text-slate-500">Target
+                    <select value={targetId} onChange={e => setTargetId(e.target.value)} className={SELECT}>
+                        {targets.length === 0 && <option value="">Nothing within reach</option>}
+                        {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                </label>
+            )}
+            <label className="block text-[10px] text-slate-500">Approach
+                <select value={approach} onChange={e => setApproach(e.target.value as JobApproach)} className={SELECT}>
+                    {(Object.keys(APPROACH_LABEL) as JobApproach[]).map(a => <option key={a} value={a}>{APPROACH_LABEL[a]}</option>)}
+                </select>
+            </label>
+            <div className="text-[10px] text-slate-500">Who goes? Up to {job.maxCrew}.</div>
+            {free.map(c => (
+                <label key={c.id} className="flex items-center gap-2 min-h-[36px] text-xs text-slate-300">
+                    <input type="checkbox" checked={crew.includes(c.id)}
+                        disabled={!crew.includes(c.id) && crew.length >= job.maxCrew}
+                        onChange={e => setCrew(e.target.checked ? [...crew, c.id] : crew.filter(x => x !== c.id))} />
+                    {c.name} <span className="text-slate-500">({COMPANION_ROLE_LABEL[c.role].toLowerCase()})</span>
+                </label>
+            ))}
+            {chosen.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {(Object.keys(SKILL_WORD) as CompanionSkill[]).map(skill => (
+                        <label key={skill} className="block text-[10px] text-slate-500">Who handles {SKILL_WORD[skill]}?
+                            <select value={roles[skill] ?? ''} onChange={e => setRoles({ ...roles, [skill]: e.target.value || undefined })} className={SELECT}>
+                                <option value="">Whoever is best</option>
+                                {chosen.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </label>
+                    ))}
+                </div>
+            )}
+            <div className="flex gap-2">
+                <button onClick={onCancel} className={`${BTN} flex-1 border border-slate-700 text-slate-400`}>Back</button>
+                <button disabled={busy || crew.length === 0 || (needsTarget && !targetId)}
+                    onClick={() => onSave({ targetId: needsTarget ? targetId : null, approach, crewIds: crew, roles })}
+                    className={`${BTN} flex-1 bg-amber-600/80 hover:bg-amber-500/80 text-white`}>Set the plan</button>
+            </div>
+        </div>
+    );
+}
+
+/** Item 14c: a plan in hand: watches, gear, and the go. */
+function PlanPanel({ view, pv, plan, jobId, busy, crewName, onOrder }: {
+    view: CellSeatView;
+    pv: JobPlanView;
+    plan: JobPlan;
+    jobId: string;
+    busy: boolean;
+    crewName: (id: string | null | undefined) => string;
+    onOrder: OrderFn;
+}) {
+    const [watcher, setWatcher] = React.useState('');
+    const target = (pv.targets[jobId] ?? []).find(t => t.id === plan.targetId);
+    const free = (view.exile?.crew ?? []).filter(c => c.status === 'free');
+    const watching = !!plan.reconUntilSeconds;
+    const roleLine = (Object.entries(plan.roles) as [CompanionSkill, string][]).map(([s, id]) => `${crewName(id)} on ${SKILL_WORD[s]}`).join('; ');
+    return (
+        <div className="rounded border border-amber-900/50 bg-amber-950/10 p-2 space-y-2 text-[11px] text-slate-300">
+            <div>
+                The plan: {target ? `${target.label}, ` : ''}{APPROACH_LABEL[plan.approach].split(':')[0].toLowerCase()}, with {plan.crewIds.map(crewName).join(', ')}.
+                {roleLine ? ` ${roleLine}.` : ''}
+            </div>
+            <div>
+                {plan.recon === 0 ? 'Nobody has watched the target yet.' : plan.recon === 1 ? 'We know the routine.' : 'We know the routine, the guards and the gaps.'}
+                {watching ? ` ${crewName(plan.reconBy)} is watching now.` : ''}
+            </div>
+            {!watching && plan.recon < 2 && (
+                <div className="flex gap-2">
+                    <select value={watcher} onChange={e => setWatcher(e.target.value)} className="flex-1 min-h-[40px] bg-slate-950 border border-slate-800 rounded px-2 text-xs text-slate-200">
+                        <option value="">Send someone to watch…</option>
+                        {free.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <button disabled={busy || !watcher} onClick={() => onOrder('REB_JOB_RECON', { companionId: watcher }, 'They go to watch. About an hour and a half.')}
+                        className={`${BTN} shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200`}>Watch</button>
+                </div>
+            )}
+            <div className="space-y-1">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Gear · we have {pv.treasury}</div>
+                {pv.gear.map(g => (
+                    <div key={g.id} className="flex items-center justify-between gap-2">
+                        <span>{g.label}{g.owned ? ' (ours)' : ` · ${g.price}${g.blackMarket ? ', black market' : ''}`}</span>
+                        {!g.owned && (
+                            <button disabled={busy || pv.treasury < g.price} onClick={() => onOrder('REB_JOB_GEAR', { gearId: g.id }, 'Bought.')}
+                                className={`${BTN} shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200`}>Buy</button>
+                        )}
+                    </div>
+                ))}
+            </div>
+            <button disabled={busy || watching} onClick={() => onOrder('REB_JOB_START', { jobId, crewIds: plan.crewIds }, 'The crew sets out.')}
+                className={`${BTN} w-full bg-red-800/80 hover:bg-red-700/80 text-white`}>{watching ? 'Wait for the watcher' : 'Go'}</button>
+        </div>
     );
 }

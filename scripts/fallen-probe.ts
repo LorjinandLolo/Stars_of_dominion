@@ -291,7 +291,7 @@ async function main() {
         check('one job at a time', !JS.startJob(w, cell, 'broadcast', [ids[2]]).ok);
         const plain = (() => { const x = hidden(); x.cell.exile = null; return x; })();
         check('a cell without a crew takes no jobs', !!JS.jobBlocker(plain.w, plain.cell, JOB_BY_ID.payroll));
-        check('every job lands as a cell act', JOBS.every(j => ['heist', 'prison_break', 'propaganda', 'sabotage', 'assassination'].includes(j.act)));
+        check('every job lands as a cell act', JOBS.every(j => ['heist', 'prison_break', 'propaganda', 'sabotage', 'assassination', 'hijack'].includes(j.act)));
         check('every choice leads somewhere real', JOBS.every(j => Object.values(j.scenes).every(s => s.choices.every(c =>
             [c.success, c.failure].filter(Boolean).every((st: any) => ['success', 'partial', 'failure'].includes(st.next) || !!j.scenes[st.next])))));
     }
@@ -317,6 +317,163 @@ async function main() {
             const imps = [...code(f).matchAll(/from '([^']+)'/g)].map(m => m[1]);
             check(`${f.split('/').pop()} stays browser-safe`, !imps.some(i => /job-service|exile-service|underground-service|sponsor-service|cell-service|case-board|government|politics/.test(i)), imps.join(', '));
         }
+    }
+
+    // ── 14c: planning, heists and hijacks ───────────────────────────────────
+    const J = await import('../lib/fallen/jobs');
+    const { ensurePiracyState } = await import('../lib/piracy/organization-service').catch(() => ({ ensurePiracyState: null as any }));
+    /** A squadron of the conqueror resting in the hideout's system. */
+    const addFleet = (w: any, cell: any, composition: Record<string, number> = { corvette: 2, frigate: 1 }, extra: any = {}) => {
+        const id = `fleet-probe-${Object.keys(w.movement.fleets).length}-${Math.floor(Math.random() * 1e6)}`;
+        w.movement.fleets.set(id, { id, factionId: cell.hostFactionId, name: 'Third Picket', currentSystemId: cell.systemId, destinationSystemId: null, composition: { ...composition }, basePower: 200, strength: 1, orders: [], plannedPath: [], ...extra });
+        return w.movement.fleets.get(id);
+    };
+    const shipsIn = (f: any) => Object.values(f.composition).reduce((n: number, v: any) => n + Number(v), 0);
+    const primeCrew = (cell: any) => { for (const c of cell.exile.crew) for (const k of Object.keys(c.skills)) c.skills[k] = 5; cell.safeHouse.concealment = 0.95; };
+
+    console.log('\n[12] Targets from the real galaxy');
+    {
+        const { w, cell } = hidden();
+        const near = addFleet(w, cell);
+        addFleet(w, cell, { corvette: 2 }, { destinationSystemId: 'elsewhere' });
+        addFleet(w, cell, { corvette: 1 });
+        const far = [...w.movement.systems.values()].find((s: any) => s.id !== cell.systemId && !(w.movement.systems.get(cell.systemId).hyperlaneNeighbors ?? []).includes(s.id));
+        addFleet(w, cell, { corvette: 3 }, { currentSystemId: far.id });
+        const fleets = JS.targetsFor(w, cell, J.JOB_BY_ID.cutter);
+        check('a resting squadron in reach is a target', fleets.some(t => t.id === near.id));
+        check('one under way, one too small, one too far are not', fleets.length === 1, fleets.map(t => t.label).join(' | '));
+        const worlds = JS.targetsFor(w, cell, J.JOB_BY_ID.vault);
+        check('the conqueror\'s worlds in reach are targets', worlds.length > 0 && worlds.every(t => w.construction.planets.get(t.id)?.ownerId === cell.hostFactionId));
+        check('a broadcast needs no target', JS.targetsFor(w, cell, J.JOB_BY_ID.broadcast).length === 0 && !JS.jobBlocker(w, cell, J.JOB_BY_ID.broadcast));
+    }
+
+    console.log('\n[13] The plan: watches, gear, parts and approach');
+    {
+        const { w, cell } = hidden();
+        const fleet = addFleet(w, cell);
+        const crew = cell.exile.crew.map((c: any) => c.id);
+        check('a target out of reach is refused', !JS.setPlan(w, cell, { jobId: 'cutter', targetId: 'fleet-nowhere', crewIds: [crew[0]] }).ok);
+        check('too many people are refused', !JS.setPlan(w, cell, { jobId: 'cutter', targetId: fleet.id, crewIds: crew.slice(0, 4) }).ok);
+        check('a big job needs a plan', !JS.startJob(w, cell, 'cutter', [crew[0]]).ok);
+        const set = JS.setPlan(w, cell, { jobId: 'cutter', targetId: fleet.id, approach: 'inside', crewIds: crew.slice(0, 3), roles: { tech: crew[1], talk: crew[0], piloting: 'stranger' } });
+        check('a plan is set', set.ok && cell.plan?.targetId === fleet.id, set.message);
+        check('parts go only to people on the job', cell.plan!.roles.tech === crew[1] && !cell.plan!.roles.piloting);
+        check('an inside man needs a watch first', !JS.startJob(w, cell, 'cutter', []).ok);
+        const cover = cell.safeHouse.concealment;
+        check('someone goes to watch', JS.startRecon(w, cell, crew[3] ?? crew[2]).ok && cell.safeHouse.concealment < cover);
+        check('one watch at a time', !JS.startRecon(w, cell, crew[0]).ok);
+        check('no job while the watcher is out', !JS.startJob(w, cell, 'cutter', []).ok);
+        w.nowSeconds += J.RECON_SECONDS - 60;
+        check('the watch takes its time', JS.tickRecon(w, cell) === null && cell.plan!.recon === 0);
+        w.nowSeconds += 120;
+        check('then the watcher reports', !!JS.tickRecon(w, cell) && cell.plan!.recon === 1);
+        cell.treasury = 100;
+        check('gear costs the movement\'s own money', !JS.buyGear(w, cell, 'slicer').ok);
+        cell.treasury = 5000;
+        const full = JS.gearPrice(w, cell, 'slicer');
+        check('gear is bought', JS.buyGear(w, cell, 'slicer').ok && cell.treasury === 5000 - full.price && cell.plan!.gear.includes('slicer'));
+        check('changing the crew keeps the watch and the gear on the same target', JS.setPlan(w, cell, { jobId: 'cutter', targetId: fleet.id, approach: 'inside', crewIds: crew.slice(0, 2), roles: { talk: crew[0] } }).ok && cell.plan!.recon === 1 && cell.plan!.gear.includes('slicer'));
+        const piracy: any = (w as any).piracy;
+        if (piracy?.blackMarkets instanceof Map) {
+            piracy.blackMarkets.set('probe-market', { id: 'probe-market', systemId: cell.systemId });
+            check('a black market in the system sells cheaper', JS.gearPrice(w, cell, 'skiff').price === Math.round(800 * J.BLACK_MARKET_DISCOUNT) && JS.gearPrice(w, cell, 'skiff').blackMarket);
+        }
+        check('a plan makes the odds better', J.planBonus('tech', { approach: 'inside', recon: 2, gear: ['slicer'], hasRole: true }) > 0.2
+            && J.planBonus('violence', { approach: 'quiet' }) < 0);
+        check('the vault needs two watches', JS.setPlan(w, cell, { jobId: 'vault', targetId: JS.targetsFor(w, cell, J.JOB_BY_ID.vault)[0].id, crewIds: [crew[0]] }).ok && !JS.startJob(w, cell, 'vault', []).ok);
+    }
+
+    console.log('\n[14] The vault: a planned heist takes from the target\'s owner, many times over');
+    {
+        const run = (direct: boolean) => {
+            const x = hidden();
+            primeCrew(x.cell);
+            const before = credits(x.w, x.host);
+            if (direct) { commitAct(x.w, x.cell, 'heist', []); return { took: before - credits(x.w, x.host), x }; }
+            const target = JS.targetsFor(x.w, x.cell, J.JOB_BY_ID.vault)[0];
+            const crew = x.cell.exile.crew.slice(0, 4).map((c: any) => c.id);
+            JS.setPlan(x.w, x.cell, { jobId: 'vault', targetId: target.id, approach: 'quiet', crewIds: crew });
+            x.cell.plan.recon = 2;
+            const started = JS.startJob(x.w, x.cell, 'vault', []);
+            if (!started.ok) throw new Error(started.message);
+            x.cell.job.seed = seedWhere([0, 1, 2], r => r < 0.9);
+            play(x.w, x.cell, ['march', 'lock', 'lift']);
+            return { took: before - credits(x.w, x.host), x };
+        };
+        const vault = run(false), heist = run(true);
+        check('the vault job worked', vault.x.cell.job.status === 'success', vault.x.cell.job.story.join(' / '));
+        check('it took from the target world\'s owner', vault.took > 0);
+        check(`six times what a raid takes (${vault.took} vs ${heist.took})`, Math.abs(vault.took - heist.took * 6) <= 6);
+        check('the plan is spent', !vault.x.cell.plan);
+    }
+
+    console.log('\n[15] The cutter: a hijacked ship leaves their fleet for our dock');
+    {
+        const { w, cell, host } = hidden();
+        primeCrew(cell);
+        const fleet = addFleet(w, cell, { frigate: 1, corvette: 2 });
+        const crew = cell.exile.crew.slice(0, 3).map((c: any) => c.id);
+        JS.setPlan(w, cell, { jobId: 'cutter', targetId: fleet.id, approach: 'quiet', crewIds: crew });
+        JS.startJob(w, cell, 'cutter', []);
+        cell.job.seed = seedWhere([0, 1, 2], r => r < 0.9);
+        const files = [...ensureCases(w).values()].filter((k: any) => k.cellId === cell.id).length;
+        play(w, cell, ['slip', 'override', 'run']);
+        check('the hijacking worked', cell.job.status === 'success', cell.job.story.join(' / '));
+        check('a ship left the conqueror\'s fleet', shipsIn(fleet) === 2);
+        check('the smallest, as the quietest to take', fleet.composition.corvette === 1 && fleet.composition.frigate === 1);
+        check('and lies in our hidden dock', cell.exile.dock?.length === 1 && cell.exile.dock[0].shipClass === 'corvette' && cell.exile.dock[0].takenFromFactionId === host);
+        check('the conqueror has a file on it', [...ensureCases(w).values()].filter((k: any) => k.cellId === cell.id).length === files + 1);
+
+        const gone = hidden();
+        primeCrew(gone.cell);
+        const f2 = addFleet(gone.w, gone.cell, { corvette: 2 });
+        JS.setPlan(gone.w, gone.cell, { jobId: 'cutter', targetId: f2.id, approach: 'quiet', crewIds: [gone.cell.exile.crew[0].id] });
+        JS.startJob(gone.w, gone.cell, 'cutter', []);
+        gone.cell.job.seed = seedWhere([0, 1, 2], r => r < 0.9);
+        f2.composition = { corvette: 1 };
+        play(gone.w, gone.cell, ['slip', 'override', 'run']);
+        check('a ship that is no longer there cannot be taken', gone.cell.job.status === 'failure' && !(gone.cell.exile.dock?.length));
+
+        // The movement wins: the dock sails as the new state's squadron.
+        cell.formedAtSeconds = w.nowSeconds - 31 * DAY;
+        cell.strength = 60;
+        cell.nextActAtSeconds = 0;
+        UG.declareMovement(w, cell.seat.factionId);
+        const crisis: any = w.secessionCrises.get(cell.crisisId);
+        crisis.status = 'escalated';
+        crisis.escalatedAtSeconds = w.nowSeconds - 30 * DAY;
+        const state = cell.seat.factionId;
+        tickMovements(w); tickCivilWar(w, 6 * 3600); tickMovements(w);
+        const docked: any = [...w.movement.fleets.values()].find((f: any) => f.factionId === state && f.name === 'The Hidden Dock');
+        check('the hidden dock sails for the state the movement won', !!docked && docked.composition.corvette === 1);
+    }
+
+    console.log('\n[16] What a job leaves behind goes on the conqueror\'s file');
+    {
+        const { w, cell, host } = hidden();
+        primeCrew(cell);
+        cell.treasury = 5000;
+        const fleet = addFleet(w, cell);
+        const crew = cell.exile.crew.slice(0, 3).map((c: any) => c.id);
+        JS.setPlan(w, cell, { jobId: 'cutter', targetId: fleet.id, approach: 'loud', crewIds: crew, roles: { violence: crew[0] } });
+        JS.buyGear(w, cell, 'weapons');
+        JS.startJob(w, cell, 'cutter', []);
+        // Force the storm to go wrong: a witness. The rest goes right.
+        cell.job.seed = (() => { for (let i = 0; i < 20000; i++) { const s = `t-${i}`; if (JS.rollFor(s, 0) > 0.96 && JS.rollFor(s, 1) < 0.9 && JS.rollFor(s, 2) < 0.9) return s; } throw new Error('seed'); })();
+        play(w, cell, ['storm', 'override', 'run']);
+        check('the loud job still worked', cell.job.status === 'success' || cell.job.status === 'partial', cell.job.status);
+        const file: any = [...ensureCases(w).values()].find((k: any) => k.cellId === cell.id);
+        const texts = [...(file?.clues ?? []), ...(file?.pendingClues ?? [])].map((c: any) => c.text);
+        check('the cameras saw it', texts.some(t => /Security cameras/.test(t)));
+        check('a witness describes one of us', texts.some(t => /Witnesses at .* describe/.test(t)));
+        check('a weapon was left behind', texts.some(t => /weapon was left behind/.test(t)));
+        check('and someone heard the old empire named', texts.some(t => /as if it still stood/.test(t)));
+        const wire = scrubOwnerSecrets(JSON.parse(extractFactionShard(w, host)));
+        const onWire = wire.rebelCells.find((c: any) => c.id === cell.id);
+        check('the conqueror sees the clues but never the plan', !!file && !!onWire && !('plan' in onWire) && !('job' in onWire));
+        check('planning orders are registered and handled', ['REB_JOB_PLAN', 'REB_JOB_RECON', 'REB_JOB_GEAR'].every(a => code('lib/actions/registry.ts').includes(a) && code('scripts/game-loop.ts').includes(`case '${a}'`)));
+        check('watches report on the strategic tick', /tickRecon\(world, c\)/.test(code('lib/rebellion/underground-service.ts')));
+        void ensurePiracyState;
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
