@@ -27,6 +27,8 @@ interface Status {
     breakaways: Breakaway[];
     pending: boolean;
     claimedFactionId: string | null;
+    /** Item 14: a world still remembers this fallen empire. */
+    canHide?: boolean;
 }
 
 const BUTTON = 'min-h-[40px] px-4 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50';
@@ -74,14 +76,14 @@ export default function BreakawayPanel({ onTaken }: { onTaken: (factionId: strin
         return () => { stopped = true; clearTimeout(first); };
     }, [status?.pending, busy, status?.claimedFactionId, onTaken]);
 
-    const take = async (breakawayId: string | null, underground = false) => {
+    const take = async (breakawayId: string | null, underground = false, hiding = false) => {
         setBusy(true);
         setError(null);
         try {
             const res = await fetch('/api/lobby/breakaway', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(breakawayId ? { breakawayId } : underground ? { underground: true } : {}),
+                body: JSON.stringify(breakawayId ? { breakawayId } : hiding ? { hiding: true } : underground ? { underground: true } : {}),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { setError(data.error ?? 'That did not go through.'); setBusy(false); return; }
@@ -133,6 +135,20 @@ export default function BreakawayPanel({ onTaken }: { onTaken: (factionId: strin
                     </p>
                 ) : (
                     <>
+                        {status.canHide && (
+                            <div className="rounded-xl border border-red-500/40 bg-red-950/20 p-3 space-y-2">
+                                <button
+                                    id="go-into-hiding"
+                                    onClick={() => take(null, false, true)}
+                                    className={`${BUTTON} w-full bg-red-800/80 hover:bg-red-700/80 text-white inline-flex items-center justify-center gap-2`}
+                                >
+                                    <EyeOff size={15} /> Go into hiding
+                                </button>
+                                <p className="text-xs text-slate-300">
+                                    Flee with the people who would still follow you, to a world out on the edge of what was yours, where the conqueror's reach is thin. Build a movement in secret; if it wins, the state is yours.
+                                </p>
+                            </div>
+                        )}
                         {status.breakaways.length > 0 && (
                             <ul className="space-y-2">
                                 {status.breakaways.map(b => (

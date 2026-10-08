@@ -42,8 +42,11 @@ export default function DefeatOverlay() {
                     className="w-full min-h-[44px] bg-amber-600/80 hover:bg-amber-500/80 rounded-lg font-display text-[11px] tracking-[0.25em] text-white uppercase flex items-center justify-center gap-2 transition-colors"
                 >
                     <Flame size={14} />
-                    Lead a breakaway state
+                    Go into hiding, or lead a breakaway
                 </a>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Some of your worlds still remember you. You can flee with the people who would follow you and fight on from hiding, or take the helm of a breakaway state.
+                </p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                     You can keep watching the season unfold as an observer. When the
                     season closes, every empire — fallen ones included — appears in the

@@ -254,6 +254,7 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
         crisisName: crisis?.name ?? null,
         declare: (() => { const why = declareBlocker(world, cell); return { open: !why, why }; })(),
         log: previousLog,
+        exile: cell.exile ?? null,
     };
     cell.seatView = view;
 }

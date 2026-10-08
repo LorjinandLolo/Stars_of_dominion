@@ -69,6 +69,8 @@ export interface RebelCell {
     lyingLow?: boolean;
     /** The earliest a led cell may strike again. */
     nextActAtSeconds?: number | null;
+    /** Item 14: a fallen empire's people in hiding. Private like the seat: scrubbed from the host's wire. */
+    exile?: ExileRecord | null;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -133,6 +135,8 @@ export interface SeatSponsorView {
 
 export interface CellSeatView {
     asOfSeconds: number;
+    /** Item 14: present when the leader is a fallen empire's, in hiding. */
+    exile?: ExileRecord | null;
     cellId: string;
     /** 'crushed' or 'dissolved': the movement is over and the seat with it. */
     status: CellStatus;
@@ -216,3 +220,53 @@ export function noteForSeat(cell: RebelCell, at: number, text: string): void {
     log.unshift({ at, text });
     if (log.length > 12) log.length = 12;
 }
+
+// ─── Item 14: the fallen ─────────────────────────────────────────────────────
+
+export type CompanionRole = 'minister' | 'general' | 'spymaster' | 'pilot' | 'forger' | 'believer';
+export type CompanionSkill = 'infiltration' | 'violence' | 'piloting' | 'talk' | 'tech';
+export type CompanionStatus = 'free' | 'wounded' | 'captured' | 'dead';
+
+/** One of the people who went into hiding with a fallen leader. */
+export interface Companion {
+    id: string;
+    name: string;
+    role: CompanionRole;
+    /** What they were before the fall ("Minister of the Interior", "a freighter pilot"). */
+    formerly: string;
+    /** Civilization id, plain to see. */
+    species: string | null;
+    /** 0–5 each. */
+    skills: Record<CompanionSkill, number>;
+    traits: string[];
+    /** 0–100. How far they will follow. */
+    loyalty: number;
+    /** 0–100. What they are to the leader, grown through what they live through together. */
+    bond: number;
+    /** Their own unfinished business. */
+    thread: string;
+    status: CompanionStatus;
+    /** The empire's real leader they were, when they were one. */
+    fromLeaderId?: string | null;
+    joinedAtSeconds: number;
+}
+
+/** A fallen empire in hiding: who it was, and who came with its leader. */
+export interface ExileRecord {
+    fromFactionId: string;
+    fromName: string;
+    /** Who conquered the hideout world. */
+    conquerorId: string;
+    conquerorName: string;
+    sinceSeconds: number;
+    crew: Companion[];
+}
+
+export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
+    minister: 'Minister',
+    general: 'General',
+    spymaster: 'Spymaster',
+    pilot: 'Pilot',
+    forger: 'Forger',
+    believer: 'Believer',
+};

@@ -30,7 +30,9 @@ import {
 } from './breakaway-rules';
 import { raiseUprising, takeBreakaway } from './breakaway-service';
 import { riseMovementForPlayer } from '@/lib/rebellion/movement-service';
-import { pickCellForSeat, seatCell, seatIdFor } from '@/lib/rebellion/underground-service';
+import { pickCellForSeat, seatCell, seatIdFor, seatLog } from '@/lib/rebellion/underground-service';
+import { attachExile, crewLine, exileCellAt, pickHideout } from '@/lib/rebellion/exile-service';
+import { rememberedLossesOf } from '@/lib/conquest/lost-worlds';
 
 export const LOBBY_TAKE_BREAKAWAY = 'LOBBY_TAKE_BREAKAWAY';
 /** The faction column of a lobby row: it belongs to no empire yet. */
@@ -51,6 +53,8 @@ export interface LobbySeatPayload {
     inviteCode: string | null;
     /** Item 13d: lead a movement from hiding instead of a state. */
     underground?: boolean;
+    /** Item 14: a fallen empire goes into hiding on its own lost worlds. */
+    hiding?: boolean;
 }
 
 /** The parts of the shared snapshot the eligibility check reads. */
@@ -85,6 +89,8 @@ export interface SeatStatus {
     /** A request from this account is waiting for the worker. */
     pending: boolean;
     claimedFactionId: string | null;
+    /** Item 14: a fallen empire some world still remembers can go into hiding. */
+    canHide: boolean;
 }
 
 /** What the lobby shows this account. */
@@ -110,6 +116,8 @@ export async function seatStatus(userId: string): Promise<SeatStatus> {
         breakaways,
         pending: !!pending,
         claimedFactionId: mine?.factionId ?? null,
+        canHide: verdict.eligible && verdict.reason === 'eliminated' && !!mine?.factionId
+            && rememberedLossesOf({ lostWorlds: raw?.lostWorlds, nowSeconds: raw?.nowSeconds }, mine.factionId).length > 0,
     };
 }
 
@@ -128,6 +136,8 @@ export async function requestBreakawaySeat(input: {
     viaInvite?: boolean;
     /** Item 13d: lead a movement from hiding instead of a state. */
     underground?: boolean;
+    /** Item 14: a fallen empire goes into hiding on its own lost worlds. */
+    hiding?: boolean;
 }): Promise<SeatRequestResult> {
     const status = await seatStatus(input.userId);
     if (status.pending) return { ok: false, status: 409, error: 'Your request is already with the galaxy — give it a moment.' };
@@ -152,7 +162,13 @@ export async function requestBreakawaySeat(input: {
         eliminated: status.reason === 'eliminated',
         inviteCode: input.inviteCode ?? null,
         underground: input.underground === true && !breakawayId,
+        hiding: input.hiding === true && !breakawayId,
     };
+    if (payload.hiding && !status.canHide) {
+        return { ok: false, status: 403, error: status.reason === 'eliminated'
+            ? 'No world remembers your empire any more: they belong to whoever holds them now.'
+            : 'Only the leader of a fallen empire can go into hiding.' };
+    }
     await prisma.gameOrder.create({
         data: { actionId: LOBBY_TAKE_BREAKAWAY, factionId: LOBBY_FACTION, payload: JSON.stringify(payload) },
     });
@@ -184,6 +200,7 @@ export async function handleLobbyOrder(world: any, payload: LobbySeatPayload): P
         if (status !== 'ELIMINATED') return { ok: false, message: 'That empire is not destroyed.' };
     }
 
+    if (payload.hiding) return goIntoHiding(world, payload, mine);
     if (payload.underground) return takeUnderground(world, payload, mine, humans);
 
     const taken = new Set(humans);
@@ -292,4 +309,42 @@ async function takeUnderground(
     const seated = seatCell(world, cell, seatId, payload.displayName || 'Commander');
     if (!seated.ok) return { ok: false, message: seated.message, factionId: seatId };
     return { ok: true, message: `${payload.displayName} leads a movement underground.`, factionId: seatId };
+}
+
+/**
+ * Item 14a: a fallen empire's leader goes into hiding. The worker finds the
+ * outlying lost world that still remembers them, raises the restoration cell
+ * there with the people who fled, and seats them. Re-checked here: the route
+ * read a snapshot that may be a cycle old.
+ */
+async function goIntoHiding(
+    world: any,
+    payload: LobbySeatPayload,
+    mine: { userId: string; factionId: string } | null,
+): Promise<LobbyOrderOutcome> {
+    if (!payload.eliminated || !payload.fromFactionId || !mine || mine.factionId !== payload.fromFactionId) {
+        return { ok: false, message: 'Only the leader of a fallen empire can go into hiding.' };
+    }
+    const hideout = pickHideout(world, payload.fromFactionId);
+    if (!hideout) return { ok: false, message: 'No world remembers your empire any more.' };
+    const cell = exileCellAt(world, hideout, payload.fromFactionId);
+    const seatId = seatIdFor(cell);
+    try {
+        await prisma.playerProfile.update({
+            where: { userId: payload.userId },
+            data: { factionId: seatId, displayName: payload.displayName || undefined, briefSeenAt: null },
+        });
+    } catch (e: any) {
+        if (e?.code === 'P2002') return { ok: false, message: 'Someone else holds that movement.' };
+        throw e;
+    }
+    if (Array.isArray(world.claimedFactionIds)) {
+        world.claimedFactionIds = world.claimedFactionIds.filter((id: string) => id !== payload.fromFactionId);
+    }
+    const exile = attachExile(world, cell, hideout, payload.fromFactionId, seatId);
+    const seated = seatCell(world, cell, seatId, payload.displayName || 'Commander');
+    if (!seated.ok) return { ok: false, message: seated.message, factionId: seatId };
+    seatLog(cell, world.nowSeconds, crewLine(exile));
+    seatLog(cell, world.nowSeconds, `You are in hiding on ${hideout.reason}`);
+    return { ok: true, message: `${payload.displayName} has gone into hiding.`, factionId: seatId };
 }

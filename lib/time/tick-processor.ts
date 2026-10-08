@@ -68,6 +68,7 @@ import { tickAICases } from '../ai/case-ai';
 import { tickAICrackdowns, tickAISponsorship } from '../ai/rebellion-ai';
 import { tickMovements } from '../rebellion/movement-service';
 import { refreshSeatViews } from '../rebellion/underground-service';
+import { tickLostWorlds } from '../conquest/lost-worlds';
 import { tickRebellion } from '../rebellion/cell-service';
 import { tickSponsorships, tickCellActs } from '../rebellion/sponsor-service';
 import { PopulationService } from '../construction/population-service';
@@ -946,6 +947,9 @@ function step14_empireFleetRepair(world: ReturnType<typeof getGameWorldState>) {
 }
 
 function step20_titlesAndSeasons(world: ReturnType<typeof getGameWorldState>) {
+    // Item 14a: who lost which world, before anyone's fall is diagnosed, so a
+    // fallen empire's last loss is on the ledger the tick it falls.
+    try { tickLostWorlds(world); } catch (e) { console.error('[TickProcessor] tickLostWorlds failed:', e); }
     try {
         // 1. Diagnose collapse. This is a *status*, never a game-over: a faction
         //    at ELIMINATED is a faction with zero planets, and the same systems

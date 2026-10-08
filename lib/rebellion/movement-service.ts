@@ -227,7 +227,10 @@ export function riseMovementForPlayer(world: GameWorldState, humanFactionIds: It
 function handOverSeat(world: GameWorldState, cell: RebelCell, rebelFactionId: string): void {
     const claimed: string[] = Array.isArray((world as any).claimedFactionIds) ? (world as any).claimedFactionIds : [];
     if (!claimed.includes(rebelFactionId)) (world as any).claimedFactionIds = [...claimed, rebelFactionId];
-    takeBreakaway(world, rebelFactionId, { fromFactionId: null, eliminated: false });
+    // A fallen empire's leader (Item 14) brings the comeback perks their defeat earned.
+    takeBreakaway(world, rebelFactionId, cell.exile
+        ? { fromFactionId: cell.exile.fromFactionId, eliminated: true }
+        : { fromFactionId: null, eliminated: false });
     cell.seat = null;
     cell.seatView = null;
 }

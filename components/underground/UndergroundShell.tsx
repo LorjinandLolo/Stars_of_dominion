@@ -14,7 +14,8 @@
 
 import React from 'react';
 import { EyeOff, Flame, Loader2, LogOut, Megaphone, Radio, Shield, Users, Wallet } from 'lucide-react';
-import { HELD_ACT_COOLDOWN_SECONDS, type CellActKind, type CellSeatView } from '@/lib/rebellion/rebellion-types';
+import { COMPANION_ROLE_LABEL, HELD_ACT_COOLDOWN_SECONDS, type CellActKind, type CellSeatView, type ExileRecord } from '@/lib/rebellion/rebellion-types';
+import { speciesLabel } from '@/lib/espionage/dossier';
 import { cellOrderAction } from '@/app/actions/espionage';
 
 const POLL_MS = 15_000;
@@ -120,6 +121,8 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
                     </p>
                 </header>
 
+                {view.exile && <CrewSection exile={view.exile} />}
+
                 <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <Stat icon={<Flame size={12} />} label="Strength" value={`${view.strength} / 100`} />
                     <Stat icon={<Users size={12} />} label="Members" value={`about ${view.members}`} />
@@ -210,5 +213,47 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
             <div className="text-[9px] uppercase tracking-wider text-slate-500 flex items-center gap-1">{icon}{label}</div>
             <div className="text-sm text-slate-200 mt-0.5">{value}</div>
         </div>
+    );
+}
+
+const SKILL_WORD: Record<string, string> = {
+    infiltration: 'getting in unseen', violence: 'a fight', piloting: 'flying', talk: 'talking people round', tech: 'machines and records',
+};
+
+/** Item 14a: the people who fled with a fallen empire's leader. Text only in season one. */
+function CrewSection({ exile }: { exile: ExileRecord }) {
+    const bondWord = (b: number) => (b >= 75 ? 'would die for you' : b >= 50 ? 'trusts you' : b >= 25 ? 'follows you' : 'barely knows you');
+    const statusWord: Record<string, string> = { free: '', wounded: 'wounded', captured: 'captured', dead: 'dead' };
+    return (
+        <section className="rounded-xl border border-red-900/50 bg-red-950/10 p-4 space-y-3">
+            <div>
+                <h2 className="text-[10px] tracking-widest uppercase text-red-300 flex items-center gap-2"><Users size={12} /> Who came with you</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                    You led {exile.fromName}. {exile.conquerorName} holds it now. These people did not stay to watch.
+                </p>
+            </div>
+            <ul className="space-y-2">
+                {exile.crew.map(c => (
+                    <li key={c.id} className={`rounded-lg border border-slate-800 p-2 ${c.status === 'dead' ? 'opacity-50' : ''}`}>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-sm text-slate-100">{c.name}</span>
+                            <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                                {COMPANION_ROLE_LABEL[c.role]}{statusWord[c.status] ? ` · ${statusWord[c.status]}` : ''}
+                            </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                            Once {c.formerly}. {c.species ? speciesLabel(c.species) : 'Of another people'}, {c.traits.join(', ')}; {bondWord(c.bond)}.
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                            {(() => {
+                                const good = (Object.entries(c.skills) as [string, number][]).filter(([, v]) => v >= 3).map(([k]) => SKILL_WORD[k] ?? k);
+                                return good.length ? `Good at ${good.join(' and ')}.` : 'Good at nothing in particular, yet.';
+                            })()}
+                        </div>
+                        <div className="text-[11px] text-slate-300 italic mt-0.5">{c.thread}</div>
+                    </li>
+                ))}
+            </ul>
+        </section>
     );
 }

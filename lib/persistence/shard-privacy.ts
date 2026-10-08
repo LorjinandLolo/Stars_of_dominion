@@ -122,8 +122,9 @@ export function scrubOwnerSecrets(shard: any): any {
             .filter((c: any) => Array.isArray(c?.safeHouse?.knownToFactionIds) && c.safeHouse.knownToFactionIds.includes(out.factionId))
             // Item 13d: the host never learns a person leads one of its cells.
             .map((c: any) => {
-                const { seat, seatView, lyingLow, nextActAtSeconds, pendingSeatLog, ...rest } = c;
-                void seat; void seatView; void lyingLow; void nextActAtSeconds; void pendingSeatLog;
+                // Item 14: nor that a fallen empire hides in it, nor who came with its leader.
+                const { seat, seatView, lyingLow, nextActAtSeconds, pendingSeatLog, exile, ...rest } = c;
+                void seat; void seatView; void lyingLow; void nextActAtSeconds; void pendingSeatLog; void exile;
                 return rest;
             });
     }
