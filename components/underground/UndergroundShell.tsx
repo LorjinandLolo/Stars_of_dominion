@@ -19,6 +19,7 @@ import { speciesLabel } from '@/lib/espionage/dossier';
 import { cellOrderAction } from '@/app/actions/espionage';
 
 const POLL_MS = 15_000;
+const JOB_POLL_MS = 3_000;
 /** The sim runs at 15x: sim seconds to a real-time phrase. */
 function realDuration(simSeconds: number): string {
     const minutes = Math.max(1, Math.round(simSeconds / 15 / 60));
@@ -61,11 +62,13 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
         setLoaded(true);
     }, [onRisen]);
 
+    // A job is played in one sitting: while one is under way, look for the next scene often.
+    const jobRunning = view?.job?.status === 'running';
     React.useEffect(() => {
         load();
-        const t = setInterval(load, POLL_MS);
+        const t = setInterval(load, jobRunning ? JOB_POLL_MS : POLL_MS);
         return () => clearInterval(t);
-    }, [load]);
+    }, [load, jobRunning]);
 
     const order = async (actionId: Parameters<typeof cellOrderAction>[1], payload: Record<string, unknown> = {}, sent = 'Sent. The cell acts on it within a minute.') => {
         setBusy(true);
@@ -122,6 +125,15 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
                 </header>
 
                 {view.exile && <CrewSection exile={view.exile} />}
+
+                {view.exile && (
+                    <JobsSection
+                        view={view}
+                        busy={busy}
+                        onStart={(jobId, crewIds) => order('REB_JOB_START', { jobId, crewIds }, 'The crew sets out.')}
+                        onChoose={choiceId => order('REB_JOB_CHOOSE', { choiceId }, 'Done. Wait for what happens.')}
+                    />
+                )}
 
                 <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <Stat icon={<Flame size={12} />} label="Strength" value={`${view.strength} / 100`} />
@@ -254,6 +266,97 @@ function CrewSection({ exile }: { exile: ExileRecord }) {
                     </li>
                 ))}
             </ul>
+        </section>
+    );
+}
+
+/**
+ * Item 14b: the job board and the job being played. Choices show their odds
+ * as words; the worker rolls them. The scene changes when the worker has
+ * resolved the choice, a few seconds later.
+ */
+function JobsSection({ view, busy, onStart, onChoose }: {
+    view: CellSeatView;
+    busy: boolean;
+    onStart: (jobId: string, crewIds: string[]) => void;
+    onChoose: (choiceId: string) => void;
+}) {
+    const job = view.job;
+    const [picking, setPicking] = React.useState<string | null>(null);
+    const [crew, setCrew] = React.useState<string[]>([]);
+    const [waitingAt, setWaitingAt] = React.useState<number | null>(null);
+    const storyLen = job?.story.length ?? 0;
+    React.useEffect(() => { setWaitingAt(null); }, [storyLen, job?.status]);
+    const free = (view.exile?.crew ?? []).filter(c => c.status === 'free');
+
+    if (job && job.status === 'running') {
+        return (
+            <section className="rounded-xl border border-amber-500/50 bg-slate-900/80 p-4 space-y-3">
+                <h2 className="text-[10px] tracking-widest uppercase text-amber-300">{job.title} · {job.crew.join(', ')}</h2>
+                {job.story.length > 0 && (
+                    <ol className="space-y-1.5">{job.story.map((s, i) => <li key={i} className="text-xs text-slate-400 leading-relaxed">{s}</li>)}</ol>
+                )}
+                {job.sceneText && <p className="text-sm text-slate-100 leading-relaxed">{job.sceneText}</p>}
+                {waitingAt !== null ? (
+                    <p className="flex items-center gap-2 text-xs text-amber-200"><Loader2 size={14} className="animate-spin" /> It is happening…</p>
+                ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                        {job.choices.map(c => (
+                            <button key={c.id} disabled={busy} onClick={() => { setWaitingAt(storyLen); onChoose(c.id); }}
+                                className={`${BTN} text-left normal-case tracking-normal font-normal text-sm bg-slate-800 hover:bg-slate-700 text-slate-100 flex justify-between gap-3 py-2`}>
+                                <span>{c.label}</span>
+                                {c.odds && <span className="shrink-0 text-[11px] italic text-amber-300">{c.odds}</span>}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </section>
+        );
+    }
+
+    const board = view.jobs ?? [];
+    const chosen = board.find(j => j.id === picking) ?? null;
+    return (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+            <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Jobs</h2>
+            {job && (
+                <div className="rounded-lg border border-slate-800 p-3 space-y-1">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                        Last job: {job.title} · {job.status === 'success' ? 'it worked' : job.status === 'partial' ? 'it worked, loudly' : 'it failed'}
+                    </div>
+                    <ol className="space-y-1">{job.story.map((s, i) => <li key={i} className="text-xs text-slate-400">{s}</li>)}</ol>
+                </div>
+            )}
+            {board.map(j => (
+                <div key={j.id} className="rounded-lg border border-slate-800 p-2 space-y-1.5">
+                    <div className="text-sm text-slate-200">{j.title}</div>
+                    <div className="text-[11px] text-slate-400">{j.pitch}</div>
+                    {picking === j.id ? (
+                        <div className="space-y-1.5">
+                            <div className="text-[10px] text-slate-500">Who goes? Up to {j.maxCrew}.</div>
+                            {free.map(c => (
+                                <label key={c.id} className="flex items-center gap-2 min-h-[36px] text-xs text-slate-300">
+                                    <input type="checkbox" checked={crew.includes(c.id)}
+                                        disabled={!crew.includes(c.id) && crew.length >= j.maxCrew}
+                                        onChange={e => setCrew(e.target.checked ? [...crew, c.id] : crew.filter(x => x !== c.id))} />
+                                    {c.name} <span className="text-slate-500">({COMPANION_ROLE_LABEL[c.role].toLowerCase()})</span>
+                                </label>
+                            ))}
+                            <div className="flex gap-2">
+                                <button onClick={() => { setPicking(null); setCrew([]); }} className={`${BTN} flex-1 border border-slate-700 text-slate-400`}>Back</button>
+                                <button disabled={busy || crew.length === 0} onClick={() => { onStart(j.id, crew); setPicking(null); setCrew([]); }}
+                                    className={`${BTN} flex-1 bg-amber-600/80 hover:bg-amber-500/80 text-white`}>Go</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <button disabled={!j.open || busy} onClick={() => { setPicking(j.id); setCrew([]); }}
+                            className={`${BTN} w-full ${j.open ? 'bg-slate-800 hover:bg-slate-700 text-amber-200' : 'bg-slate-900 text-slate-500 border border-slate-800'}`}>
+                            {j.open ? 'Plan it' : j.why}
+                        </button>
+                    )}
+                </div>
+            ))}
+            {chosen === null && board.length === 0 && <p className="text-xs text-slate-500">No jobs yet.</p>}
         </section>
     );
 }

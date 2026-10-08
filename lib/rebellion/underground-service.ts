@@ -31,6 +31,7 @@ import {
 } from './sponsor-service';
 import { hostReadyForMovement, movementReady, riseAsMovement, MOVEMENT_MIN_AGE_SECONDS, MOVEMENT_MIN_STRENGTH } from './movement-service';
 import { fireNotification } from '../time/notification-hooks';
+import { chooseInJob, jobBoard, jobView, startJob } from '../fallen/job-service';
 import { labelFor } from '../time/notification-names';
 
 /**
@@ -255,6 +256,8 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
         declare: (() => { const why = declareBlocker(world, cell); return { open: !why, why }; })(),
         log: previousLog,
         exile: cell.exile ?? null,
+        job: jobView(world, cell),
+        jobs: jobBoard(world, cell),
     };
     cell.seatView = view;
 }
@@ -262,4 +265,25 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
 /** Refresh every led cell's view. The worker calls this each strategic tick. */
 export function refreshSeatViews(world: GameWorldState): void {
     for (const c of ensureRebellion(world).cells.values()) if (c.seat) refreshSeatView(world, c);
+}
+
+// ─── Item 14b: jobs ──────────────────────────────────────────────────────────
+
+/** Start a job with the chosen crew. Only a fallen empire's crew takes jobs. */
+export function orderJobStart(world: GameWorldState, factionId: string, jobId: unknown, crewIds: unknown): SeatResult {
+    const cell = heldCellOf(world, factionId);
+    if (!cell) return { ok: false, message: 'You lead no cell.' };
+    const r = startJob(world, cell, String(jobId ?? ''), crewIds);
+    refreshSeatView(world, cell);
+    return r;
+}
+
+/** One choice in the job under way. The page sends the choice id and nothing else. */
+export function orderJobChoice(world: GameWorldState, factionId: string, choiceId: unknown): SeatResult {
+    const cell = heldCellOf(world, factionId);
+    if (!cell) return { ok: false, message: 'You lead no cell.' };
+    const r = chooseInJob(world, cell, choiceId);
+    if (r.ok && cell.job && cell.job.status !== 'running') seatLog(cell, world.nowSeconds, r.message);
+    refreshSeatView(world, cell);
+    return r;
 }

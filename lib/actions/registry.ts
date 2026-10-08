@@ -418,6 +418,21 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: {},
     cost: {}
   },
+  // Item 14b: a fallen empire's crew plays a job (lib/fallen/job-service.ts).
+  // The page sends a job id and crew, then one choice id at a time; the worker
+  // rolls every outcome.
+  REB_JOB_START: {
+    id: "REB_JOB_START",
+    category: "espionage",
+    params: { jobId: "string", crewIds: "object" },
+    cost: {}
+  },
+  REB_JOB_CHOOSE: {
+    id: "REB_JOB_CHOOSE",
+    category: "espionage",
+    params: { choiceId: "string" },
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

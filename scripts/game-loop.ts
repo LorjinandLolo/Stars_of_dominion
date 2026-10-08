@@ -169,7 +169,7 @@ import { validateCounterIntelPlan, setCounterIntelPlan } from '../lib/espionage/
 import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-board';
 import { crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
 import { crackdownWithPrisoners, sponsorCell, cutSponsorship as cutCellSponsorship } from '../lib/rebellion/sponsor-service';
-import { declareMovement, orderCellAct, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
+import { declareMovement, orderCellAct, orderJobChoice, orderJobStart, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
 import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
@@ -3153,6 +3153,20 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 : actionId === 'REB_CELL_LIE_LOW' ? setLyingLow(world, factionId, payload?.on === true)
                 : actionId === 'REB_CELL_REFUSE_SPONSOR' ? refuseSponsor(world, factionId, String(payload?.sponsorshipId ?? ''))
                 : declareMovement(world, factionId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} ${actionId}: ${result.message}`);
+            break;
+        }
+
+        // Item 14b: a fallen empire's crew plays a job.
+        case 'REB_JOB_START':
+        case 'REB_JOB_CHOOSE': {
+            const result = actionId === 'REB_JOB_START'
+                ? orderJobStart(world, factionId, payload?.jobId, payload?.crewIds)
+                : orderJobChoice(world, factionId, payload?.choiceId);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.message);
                 return;

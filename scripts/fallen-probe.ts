@@ -183,6 +183,142 @@ async function main() {
         }
     }
 
+    // ── 14b: jobs ────────────────────────────────────────────────────────────
+    const JS = await import('../lib/fallen/job-service');
+    const { JOBS, JOB_BY_ID, checkChance, oddsWord } = await import('../lib/fallen/jobs');
+    const { commitAct } = await import('../lib/rebellion/sponsor-service');
+    const { ensureCases } = await import('../lib/espionage/case-board');
+    const UG = await import('../lib/rebellion/underground-service');
+    /** A fallen leader in hiding, ready for a job. Deterministic for the same world. */
+    const hidden = () => {
+        const w = freshWorld();
+        ensureGovernments(w);
+        empireThenConquest(w, 3);
+        const h = pickHideout(w, F)!;
+        const cell: any = exileCellAt(w, h, F, () => 0.5);
+        const id = seatIdFor(cell);
+        attachExile(w, cell, h, F, id);
+        seatCell(w, cell, id, 'Fallen Probe');
+        cell.strength = 40;
+        cell.nextActAtSeconds = 0;
+        const host = cell.hostFactionId;
+        w.economy.factions.get(host).reserves.CREDITS = 400_000;
+        return { w, cell, id, host };
+    };
+    const credits = (w: any, id: string) => Number(w.economy.factions.get(id).reserves.CREDITS);
+    /** A seed whose rolls at these steps all fall below (or, with `fail`, above) the given chance. */
+    const seedWhere = (steps: number[], test: (roll: number) => boolean) => {
+        for (let i = 0; i < 20000; i++) { const s = `probe-${i}`; if (steps.every(k => test(JS.rollFor(s, k)))) return s; }
+        throw new Error('no seed');
+    };
+    const play = (w: any, cell: any, choices: string[]) => choices.map(c => JS.chooseInJob(w, cell, c));
+
+    console.log('\n[6] Jobs: the same seed plays the same way');
+    {
+        const runOnce = () => {
+            const { w, cell } = hidden();
+            const crew = cell.exile.crew.slice(0, 3).map((c: any) => c.id);
+            JS.startJob(w, cell, 'payroll', crew);
+            cell.job.seed = 'fixed-seed';
+            play(w, cell, ['pass', 'crack', 'quiet', 'talk', 'run']);
+            return { story: cell.job.story.join('\n'), status: cell.job.status };
+        };
+        const a = runOnce(), b = runOnce();
+        check('the same seed and choices give the same story', a.story === b.story && a.status === b.status && a.story.length > 0, a.status);
+        check('and the job ends', a.status !== 'running');
+    }
+
+    console.log('\n[7] Jobs: the page cannot write the outcome');
+    {
+        const { w, cell, id } = hidden();
+        check('no job, no choice', !JS.chooseInJob(w, cell, 'pass').ok);
+        JS.startJob(w, cell, 'payroll', [cell.exile.crew[0].id]);
+        check('a choice from another scene is refused', !JS.chooseInJob(w, cell, 'crack').ok);
+        check('a made-up choice is refused', !JS.chooseInJob(w, cell, 'success').ok && cell.job.step === 0);
+        check('the worker reads only the choice id', /orderJobChoice\(world, factionId, payload\?\.choiceId\)/.test(code('scripts/game-loop.ts')));
+        check('someone who leads no cell plays no job', !UG.orderJobChoice(w, 'rebel-faction-underground-nobody', 'pass').ok);
+        check('the leader\'s order reaches the job', UG.orderJobChoice(w, id, 'pass').ok && cell.job.step === 1);
+    }
+
+    console.log('\n[8] Jobs: a job that works is the act, exactly');
+    {
+        // Every check passes: the best skill is high, cover is deep, and the seed rolls low.
+        const prime = (cell: any) => { for (const c of cell.exile.crew) for (const k of Object.keys(c.skills)) c.skills[k] = 5; cell.safeHouse.concealment = 0.95; };
+        const jobWorld = hidden();
+        prime(jobWorld.cell);
+        const before = credits(jobWorld.w, jobWorld.host);
+        const filesBefore = [...ensureCases(jobWorld.w).values()].filter((k: any) => k.cellId === jobWorld.cell.id).length;
+        const bondsBefore = jobWorld.cell.exile.crew.slice(0, 3).map((c: any) => c.bond);
+        JS.startJob(jobWorld.w, jobWorld.cell, 'payroll', jobWorld.cell.exile.crew.slice(0, 3).map((c: any) => c.id));
+        jobWorld.cell.job.seed = seedWhere([0, 1, 2], r => r < 0.9);
+        play(jobWorld.w, jobWorld.cell, ['pass', 'crack', 'quiet']);
+        check('the job worked', jobWorld.cell.job.status === 'success', jobWorld.cell.job.story.join(' / '));
+        const jobTook = before - credits(jobWorld.w, jobWorld.host);
+
+        const actWorld = hidden();
+        prime(actWorld.cell);
+        const before2 = credits(actWorld.w, actWorld.host);
+        commitAct(actWorld.w, actWorld.cell, 'heist', []);
+        const actTook = before2 - credits(actWorld.w, actWorld.host);
+        check('it took from the conqueror exactly what a heist takes', jobTook > 0 && jobTook === actTook, `${jobTook} vs ${actTook}`);
+        check('it counts as one act', jobWorld.cell.actsCommitted === actWorld.cell.actsCommitted);
+        check('and the conqueror has a file on it', [...ensureCases(jobWorld.w).values()].filter((k: any) => k.cellId === jobWorld.cell.id).length === filesBefore + 1);
+        check('the crew on it grew closer', jobWorld.cell.exile.crew.slice(0, 3).every((c: any, i: number) => c.bond === Math.min(100, bondsBefore[i] + JS.BOND_PER_SUCCESS)));
+        check('the next job waits', !!JS.jobBlocker(jobWorld.w, jobWorld.cell, JOB_BY_ID.payroll));
+    }
+
+    console.log('\n[9] Jobs: a job that fails takes nothing and costs us');
+    {
+        const { w, cell, host } = hidden();
+        const before = credits(w, host), cover = cell.safeHouse.concealment, strength = cell.strength;
+        JS.startJob(w, cell, 'payroll', [cell.exile.crew[0].id]);
+        cell.job.seed = seedWhere([1], r => r > 0.96);
+        play(w, cell, ['pass', 'crack', 'run']);
+        check('it failed', cell.job.status === 'failure', cell.job.story.join(' / '));
+        check('nothing was taken', credits(w, host) === before);
+        check('it cost cover and strength', cell.safeHouse.concealment < cover && cell.strength < strength);
+    }
+
+    console.log('\n[10] Jobs: who may go, and when');
+    {
+        const { w, cell } = hidden();
+        const ids = cell.exile.crew.map((c: any) => c.id);
+        check('a job takes no more than it can', !JS.startJob(w, cell, 'broadcast', ids.slice(0, 3)).ok);
+        cell.exile.crew[0].status = 'wounded';
+        check('only someone free can go', !JS.startJob(w, cell, 'payroll', [ids[0]]).ok);
+        check('nobody from outside the crew', !JS.startJob(w, cell, 'payroll', ['companion-stranger']).ok);
+        check('a job can start', JS.startJob(w, cell, 'payroll', [ids[1]]).ok);
+        check('one job at a time', !JS.startJob(w, cell, 'broadcast', [ids[2]]).ok);
+        const plain = (() => { const x = hidden(); x.cell.exile = null; return x; })();
+        check('a cell without a crew takes no jobs', !!JS.jobBlocker(plain.w, plain.cell, JOB_BY_ID.payroll));
+        check('every job lands as a cell act', JOBS.every(j => ['heist', 'prison_break', 'propaganda', 'sabotage', 'assassination'].includes(j.act)));
+        check('every choice leads somewhere real', JOBS.every(j => Object.values(j.scenes).every(s => s.choices.every(c =>
+            [c.success, c.failure].filter(Boolean).every((st: any) => ['success', 'partial', 'failure'].includes(st.next) || !!j.scenes[st.next])))));
+    }
+
+    console.log('\n[11] Jobs: odds are words, and the conqueror sees none of it');
+    {
+        const bands = ['long odds', 'against us', 'a coin toss', 'good odds', 'near certain'];
+        const idx = Array.from({ length: 101 }, (_, i) => bands.indexOf(oddsWord(i / 100)));
+        check('the words climb with the chance', idx.every((v, i) => v >= 0 && (i === 0 || v >= idx[i - 1])));
+        check('the easiest check with the best crew reads near certain', oddsWord(checkChance('easy', 5, 0.95)) === 'near certain');
+        const { w, cell, host } = hidden();
+        JS.startJob(w, cell, 'payroll', [cell.exile.crew[0].id]);
+        UG.refreshSeatView(w, cell);
+        const view = JSON.stringify(cell.seatView!.job);
+        check('the leader sees choices with odds words', cell.seatView!.job!.choices.some((c: any) => !!c.odds && bands.includes(c.odds)));
+        check('and never a number', !/\d\s*%/.test(view) && !/0\.\d/.test(view));
+        cell.safeHouse.knownToFactionIds.push(host); // found: so the cell itself is on the wire
+        const wire = scrubOwnerSecrets(JSON.parse(extractFactionShard(w, host)));
+        const onWire = wire.rebelCells.find((c: any) => c.id === cell.id);
+        check('the conqueror\'s wire carries no job', !!onWire && !('job' in onWire) && !('jobsRun' in onWire));
+        check('jobs are registered and handled', /REB_JOB_START/.test(code('lib/actions/registry.ts')) && /case 'REB_JOB_CHOOSE'/.test(code('scripts/game-loop.ts')));
+        for (const f of ['lib/fallen/jobs.ts', 'components/underground/UndergroundShell.tsx']) {
+            const imps = [...code(f).matchAll(/from '([^']+)'/g)].map(m => m[1]);
+            check(`${f.split('/').pop()} stays browser-safe`, !imps.some(i => /job-service|exile-service|underground-service|sponsor-service|cell-service|case-board|government|politics/.test(i)), imps.join(', '));
+        }
+    }
+
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
     process.exit(failures === 0 ? 0 : 1);
 }

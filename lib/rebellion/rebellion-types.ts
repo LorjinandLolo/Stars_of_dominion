@@ -71,6 +71,9 @@ export interface RebelCell {
     nextActAtSeconds?: number | null;
     /** Item 14: a fallen empire's people in hiding. Private like the seat: scrubbed from the host's wire. */
     exile?: ExileRecord | null;
+    /** Item 14b: the job under way, if any. Private like the seat. */
+    job?: JobRun | null;
+    jobsRun?: number;
 }
 
 /** A security crackdown on one world (REB_CRACKDOWN). */
@@ -137,6 +140,9 @@ export interface CellSeatView {
     asOfSeconds: number;
     /** Item 14: present when the leader is a fallen empire's, in hiding. */
     exile?: ExileRecord | null;
+    /** Item 14b: the job under way or just finished, and the jobs on offer. */
+    job?: JobView | null;
+    jobs?: JobBoardEntry[];
     cellId: string;
     /** 'crushed' or 'dissolved': the movement is over and the seat with it. */
     status: CellStatus;
@@ -270,3 +276,42 @@ export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
     forger: 'Forger',
     believer: 'Believer',
 };
+
+// ─── Item 14b: jobs ──────────────────────────────────────────────────────────
+
+/** A job being played, on the server. The seed and the choices decide everything. */
+export interface JobRun {
+    jobId: string;
+    seed: string;
+    crewIds: string[];
+    sceneId: string;
+    /** Choices made so far: each roll is drawn from the seed and this step. */
+    step: number;
+    noise: number;
+    /** What has happened, in words, for the page. */
+    story: string[];
+    status: 'running' | 'success' | 'partial' | 'failure';
+    startedAtSeconds: number;
+    endedAtSeconds?: number | null;
+}
+
+/** A job as its leader sees it. Odds are words, never numbers. */
+export interface JobView {
+    jobId: string;
+    title: string;
+    status: JobRun['status'];
+    crew: string[];
+    story: string[];
+    sceneText: string | null;
+    choices: { id: string; label: string; odds: string | null }[];
+    ending: string | null;
+}
+
+export interface JobBoardEntry {
+    id: string;
+    title: string;
+    pitch: string;
+    maxCrew: number;
+    open: boolean;
+    why: string | null;
+}
