@@ -59,7 +59,7 @@ Built by the worker from the run and the plan; served as JSON. It carries **only
   "contractId": "jc-<opaque>",
   "issuedAtSeconds": 1234567,             // sim seconds
   "expiresAtRealSeconds": 1790000000,     // wall clock; see "Time"
-  "minPlaySeconds": 120,                  // a report sooner than this is refused
+  "minPlaySeconds": 240,                  // the job's floor (see "Time"): a report sooner than this is refused
 
   "job": {
     "id": "vault",                        // JOB_BY_ID key
@@ -189,7 +189,13 @@ The worker turns a valid report into exactly what `finishJob` does today. The pl
 
   Then `crewAfterJob` runs as in text: loyalty, threads settled by the right job, a traitor perhaps found out, and a prison break bringing our own home.
 - **traces.** They become clues on the conqueror's file through `leaveTraces`, the same text, kin and weights as in text.
-- **epitaphs.** Stored as written, after trimming and stripping markup. The memorial is the only place the client's words reach the galaxy, and only the leader and the press (which never prints them) ever see them.
+- **epitaphs.** Allowed (decided 2026-10-09): a death the player played through deserves their own line on the memorial. The rules:
+  - only for a companion whose reported fate is death;
+  - plain text, at most 160 characters, trimmed;
+  - markup and control characters stripped;
+  - stored exactly as written once it passes.
+
+  Without one, the server writes the epitaph as text jobs do, from the scene. The memorial is the only place the client's words reach the galaxy. The dead companion's own leader reads them, and in a co-op job so does every party leader. The press reports the death but never prints the words.
 
 ## Keeping a foreign client honest
 
@@ -207,7 +213,7 @@ The action game runs on the player's machine, and anything it sends can be forge
    - a companion id not on the contract;
    - a trace kind that does not exist;
    - objectives that disagree with the ending;
-   - a report earlier than `minPlaySeconds`;
+   - a report sooner than `minPlaySeconds` after the contract was first fetched;
    - a report after expiry.
 
    It is not clamped: clamping rewards probing for the edges. A refused report leaves the contract open until it expires, so a bug in an honest client costs a retry, not a job.
@@ -223,23 +229,51 @@ The action game runs on the player's machine, and anything it sends can be forge
 
 ## Time
 
-The sim runs at 15 times real time. A contract's expiry is in **wall-clock** seconds, because a player who sits down to play a ten-minute level should not find it expired after forty real seconds of sim time.
+The sim runs at 15 times real time. A contract's times are in **wall-clock** seconds, because a player who sits down to play a ten-minute level should not find it expired after forty real seconds of sim time. Two clocks matter.
 
-Suggested defaults:
-- `expiresAtRealSeconds` is the claim time plus 24 real hours, matching the one-job-a-day pacing;
-- `minPlaySeconds` is 120.
+**Expiry.** The claim time plus 24 real hours, matching the one-job-a-day pacing. It is generous on purpose: the player claims the job in the evening and plays it the next day.
 
-The sim-time cooldown starts at claim. A text job sets it when the job ends, which in text is minutes later; for a contract that could be a day later, so it starts at claim to keep the one-job-a-day pace.
+**The minimum play time.** This is a sanity floor, nothing more. It is the shortest time in which a real person could plausibly play the level from start to finish. A report that arrives sooner than that after the contract was first fetched cannot be real play. It is a forged report, or a script that skips the level, and it is refused.
 
-## Joint jobs (14f)
+What it is **not**:
+- **Not a timer the player sees.** The level has no countdown because of it.
+- **Not a time limit.** The only limit is expiry, a day away.
+- **No reward for speed or slowness.** Playing in 5 minutes or 50 changes nothing; the outcome comes from the ending reported.
+- **Never a punishment for an honest player.** The client knows the floor (it is in the contract). If a very fast player finishes early, the client holds the report until the floor has passed, which is seconds at most, and then sends it. Only a report sent too early is refused, and the contract stays open, so even a client bug costs a retry, not the job.
 
-One contract, owned by the lead cell. Its crew lists people from every party cell (`ownerSeat: "ally"` for theirs). Any party leader may fetch it and post the report; the token is the same.
+**How long the floor is.** It is set per job on the server, never by the client. It lives on the job definition next to `maxCrew` and `minRecon` in `lib/fallen/jobs.ts` (for example `minPlayRealSeconds`), sized by how much the job is:
 
-Fates apply to each companion on their own cell's record, exactly as in a text joint job:
-- a death goes on their own leader's memorial;
-- a capture is held by the lead cell's conqueror.
+| Size | Jobs | Floor |
+|---|---|---|
+| Small: one target, two or three scenes on the shortest path | payroll, broadcast | 90 s |
+| Medium: a planned target, a fight or a chase | detention, cutter, inspector | 150 s |
+| Large: the Aldhani kind, five crew, two watches | vault | 240 s |
 
-Every party cell gets the cooldown.
+These are starting guesses. Once real levels exist, the audit trail of reports gives the true numbers: set each floor at roughly the fastest honest times seen, a little under the quickest real players. A floor set too high would refuse real speedrunners, which is worse than a floor set a little too low, since everything else in "Keeping a foreign client honest" still applies.
+
+For a co-op job the clock starts when the contract is first fetched by anyone in the party.
+
+**The cooldown.** The sim-time wait before the next job starts at claim. A text job sets it when the job ends, a few minutes after it starts. A contract may be played a day after it is claimed, so its cooldown starts at claim to keep the one-job-a-day pace.
+
+## Joint jobs and co-op (14f)
+
+Co-op is supported (decided 2026-10-09). Fellow exiles who planned a joint job can play it together in one action-game session, each as their own leader, each bringing their own people.
+
+**One contract, one session, one outcome.**
+- The contract is owned by the lead cell. Its crew lists people from every party cell (`ownerSeat: "ally"` for theirs).
+- Every party leader fetches the same contract with the same token, from their own account. A fetch marks that leader as **joined**; the server keeps the list. A party leader who never joins is still in the job, their people played by the others, exactly as in a text joint job where any leader may make the calls.
+- The action game hosts the session and decides how players meet. The contract does not care how many of the party joined, or in what order.
+- **One report** ends the job. Any joined party leader may post it, and the first valid report wins. A second report for the same contract is refused even if it says something different, so two clients that disagree cannot each apply their own ending. The action game should have its host send the report, after the session has agreed on it.
+
+**Who controls whom.** Each player plays their own leader's people where the action game allows it: `ownerSeat` tells the client whose people each crew member is (`self` for the reader, `ally` for the others). With two players on a job with three companions, the action game decides who plays the third. The report's fates do not say who played them; the server treats the session as one crew.
+
+**What lands where.** Exactly as in a text joint job:
+- every effect on the galaxy runs once, on the lead cell (its target, its conqueror);
+- fates apply to each companion on their own cell's record: a death goes on their own leader's memorial, a capture is held by the lead cell's conqueror;
+- every party cell gets the cooldown;
+- every joined leader's log says they were there ("We played it together with ..."). A leader who did not join reads how it went, as today.
+
+**Epitaphs in co-op.** Any joined player's client may write the epitaph for any companion who died, but it arrives in the one report. The action game decides how players agree on the words, for example by letting the dead companion's own leader write it.
 
 ## Sanctuary (14f)
 
@@ -250,7 +284,7 @@ Nothing in the contract changes. Staging from sanctuary already made the watches
 None of this is built. In order:
 
 1. **Split `finishJob`.** Build the report in the text resolver and apply it in `applyOutcome`. This is pure refactoring, provable by `scripts/fallen-probe.ts` staying green; after it, the text resolver is literally the reference player.
-2. **Contract status.** Add `contracted` and `abandoned` to `JobRun['status']`, plus `contractId`, `expiresAtRealSeconds` and `reportedAt`.
+2. **Contract status.** Add `contracted` and `abandoned` to `JobRun['status']`, plus `contractId`, `firstFetchedAtRealSeconds`, `expiresAtRealSeconds`, `joinedSeats` and `reportedAt`; add `minPlayRealSeconds` to each job definition.
 3. **Orders.** `REB_JOB_CONTRACT` (claim) and `REB_JOB_REPORT` (the report as the payload), both handled in `scripts/game-loop.ts` like every other `REB_JOB_*` order, and an expiry sweep in `refreshSeatViews`.
 4. **Routes and secret.**
    - `/api/rebel/contract` serves the contract, and only to the seat holder or a party member.
@@ -258,12 +292,15 @@ None of this is built. In order:
    - Contract and token stay off every wire except that route: scrub them with the rest of `job` in `lib/persistence/shard-privacy.ts`.
 5. **A "Play it in the action game" button** next to "Go" on the plan, shown only when an action client is configured.
 6. **Probe.**
-   - A report with a forged token, a reused token, an unknown companion, an ending that disagrees with its objectives, or a late report changes nothing.
+   - A report with a forged token, a reused token, an unknown companion, an ending that disagrees with its objectives, a report before the job's floor, or a late report changes nothing.
+   - In a joint job, a second party leader's report after the first is refused.
+   - An epitaph over the length, or for a companion who did not die, is refused.
    - A valid report changes the world exactly as the same text ending does.
    - An expired contract hurts nobody.
 
-## Open questions for the user
+## Decisions
 
-- **Whose words?** Should the action game be allowed to write epitaphs? The draft allows them, short and plain, because a death the player played through deserves their own line on the memorial.
-- **Who plays a joint job?** Can two friends play the same contract in one co-op session? The format allows it (one report, either may post it); the action game decides whether it supports co-op.
-- **What is the fastest legitimate level?** The `minPlaySeconds` floor of two minutes is a guess until levels exist.
+Agreed 2026-10-09:
+- **Epitaphs:** yes. The action game may write a dead companion's line, plain and short (see "The outcome report").
+- **Co-op:** yes. Party leaders of a joint job may play it together in one session; one report ends it (see "Joint jobs and co-op").
+- **Minimum play time:** a per-job sanity floor set on the server, sized by the job and tuned from real reports once levels exist; never a timer, never a limit, never a reason to refuse an honest player (see "Time").
