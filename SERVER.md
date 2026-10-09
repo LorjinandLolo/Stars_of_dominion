@@ -235,15 +235,46 @@ on the server, so the first time you restore is not the night you need it.
 
 ### Off the laptop
 
-Everything above still lives on one disk. When you care enough, copy the
-dumps somewhere else — from your Windows PC:
+Everything above lives on one disk, so the disk dying takes the galaxy and its
+backups together. A second copy on something that fails independently is what
+makes it a backup rather than a convenience. Pick at least one; they combine.
+
+**A. Pull to your Windows PC (nothing to set up on the server).**
+`scripts/pull-backups.ps1` lists the server's dumps over SSH, fetches the ones
+it lacks into `%USERPROFILE%\StardomBackups`, verifies each one decompresses
+completely, keeps 60 days, and warns in `pull.log` when the newest dump is more
+than two days old. It runs unattended, so it needs an SSH key (not a password)
+for the server. Schedule it once:
 
 ```bash
-scp logo@<server-ip>:~/backups/stardom-*.sql.gz .
+schtasks /Create /SC DAILY /ST 09:00 /TN "Stardom backup pull" /TR "powershell -ExecutionPolicy Bypass -File C:\dev\Stars_of_dominion\scripts\pull-backups.ps1"
 ```
 
-or schedule the same in reverse. A second copy on a machine that can fail
-independently is what makes it a backup rather than a convenience.
+Override the target with `STARDOM_SSH=user@host` if the server moves.
+
+**B. A second disk on the server** (USB drive, second SSD, NAS mount). Add to
+the compose `.env`:
+
+```
+OFFSITE_DIR=/mnt/backupdrive/stardom
+```
+
+`backup-db.sh` copies each verified dump there and refuses a directory on the
+same filesystem as `~/backups`, because that would only look like a copy.
+
+**C. Cloud storage via rclone** (Backblaze B2, Google Drive, any S3). Install
+rclone, run `rclone config` once, then add to `.env`:
+
+```
+RCLONE_REMOTE=b2:stardom-backups
+```
+
+The upload counts only when the remote reports the same byte size.
+
+With B or C configured, an off-disk failure makes `backup-db.sh` exit 2 and
+log `FAILED off-disk: …` (today's local dump is kept either way). With neither,
+every run logs `WARN no off-disk copy configured`, so the gap stays visible in
+`~/backups/backup.log`.
 
 ## 4. Troubleshooting
 

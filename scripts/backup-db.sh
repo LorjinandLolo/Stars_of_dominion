@@ -20,6 +20,18 @@
 #   KEEP_DAYS       prune older than this     (default: 14)
 #   PG_CONTAINER    container to dump from    (default: stardom-postgres)
 #   MIN_BYTES       reject dumps smaller than (default: 20000)
+#
+# Off-disk copies (a dump on the same disk as the database dies with it). Set
+# either or both, in the environment or in the compose .env:
+#   OFFSITE_DIR        a directory on ANOTHER disk (USB drive, second SSD, NAS
+#                      mount). Refused if it sits on the same filesystem as
+#                      BACKUP_DIR, because that would only look like a copy.
+#   RCLONE_REMOTE      an rclone destination, e.g. "b2:stardom-backups".
+#                      Needs `rclone config` run once.
+#   OFFSITE_KEEP_DAYS  prune off-disk copies older than this (default: 60)
+# With neither set, every run logs a WARN so the gap never goes quiet. The
+# Windows-side pull (scripts/pull-backups.ps1) is a third option that needs
+# nothing on the server.
 
 set -euo pipefail
 
@@ -43,8 +55,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
 if [ -f "$ENV_FILE" ]; then
     # shellcheck disable=SC2046
-    POSTGRES_USER="${POSTGRES_USER:-$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'' | tr -d '\r')}"
-    POSTGRES_DB="${POSTGRES_DB:-$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'' | tr -d '\r')}"
+    # `|| true`: under pipefail a key missing from .env would otherwise kill
+    # the script before it can log anything.
+    POSTGRES_USER="${POSTGRES_USER:-$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'' | tr -d '\r' || true)}"
+    POSTGRES_DB="${POSTGRES_DB:-$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'' | tr -d '\r' || true)}"
+    for VAR in OFFSITE_DIR RCLONE_REMOTE OFFSITE_KEEP_DAYS; do
+        if [ -z "${!VAR:-}" ]; then
+            VAL="$(grep -E "^${VAR}=" "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'' | tr -d '\r' || true)"
+            [ -n "$VAL" ] && printf -v "$VAR" '%s' "$VAL"
+        fi
+    done
 fi
 POSTGRES_USER="${POSTGRES_USER:-stars}"
 POSTGRES_DB="${POSTGRES_DB:-stars_dominion}"
@@ -88,4 +108,59 @@ log "OK $TARGET ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "${SIZE}B"))"
 DELETED="$(find "$BACKUP_DIR" -name 'stardom-*.sql.gz' -mtime "+$KEEP_DAYS" -print -delete | wc -l)"
 [ "$DELETED" -gt 0 ] && log "pruned $DELETED backup(s) older than $KEEP_DAYS days"
 
+# ── Off-disk copies ─────────────────────────────────────────────────────────
+# Today's local dump is already good here, so an off-disk failure exits 2
+# (cron mail, deploy-server.sh stops) without ever touching it.
+OFFSITE_KEEP_DAYS="${OFFSITE_KEEP_DAYS:-60}"
+OFFSITE_OK=0
+OFFSITE_FAIL=0
+NAME="$(basename "$TARGET")"
+
+if [ -n "${OFFSITE_DIR:-}" ]; then
+    if [ ! -d "$OFFSITE_DIR" ]; then
+        log "FAILED off-disk: $OFFSITE_DIR does not exist (drive unplugged or not mounted?)"
+        OFFSITE_FAIL=1
+    elif [ "$(stat -c %d "$OFFSITE_DIR")" = "$(stat -c %d "$BACKUP_DIR")" ]; then
+        log "FAILED off-disk: $OFFSITE_DIR is on the same filesystem as $BACKUP_DIR — not a second copy"
+        OFFSITE_FAIL=1
+    elif cp -f "$TARGET" "$OFFSITE_DIR/.$NAME.partial" \
+        && gzip -t "$OFFSITE_DIR/.$NAME.partial" 2>/dev/null \
+        && [ "$(stat -c%s "$OFFSITE_DIR/.$NAME.partial")" = "$SIZE" ]; then
+        mv -f "$OFFSITE_DIR/.$NAME.partial" "$OFFSITE_DIR/$NAME"
+        log "OK off-disk copy $OFFSITE_DIR/$NAME"
+        find "$OFFSITE_DIR" -name 'stardom-*.sql.gz' -mtime "+$OFFSITE_KEEP_DAYS" -delete || true
+        OFFSITE_OK=1
+    else
+        rm -f "$OFFSITE_DIR/.$NAME.partial"
+        log "FAILED off-disk: copy to $OFFSITE_DIR did not verify"
+        OFFSITE_FAIL=1
+    fi
+fi
+
+if [ -n "${RCLONE_REMOTE:-}" ]; then
+    if ! command -v rclone >/dev/null 2>&1; then
+        log "FAILED off-disk: RCLONE_REMOTE is set but rclone is not installed"
+        OFFSITE_FAIL=1
+    elif rclone copyto "$TARGET" "$RCLONE_REMOTE/$NAME" 2>>"$LOG"; then
+        # Believe the remote's own size report, not just rclone's exit code.
+        REMOTE_SIZE="$(rclone size --json "$RCLONE_REMOTE/$NAME" 2>/dev/null | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')"
+        if [ "${REMOTE_SIZE:-0}" = "$SIZE" ]; then
+            log "OK off-disk upload $RCLONE_REMOTE/$NAME"
+            rclone delete --min-age "${OFFSITE_KEEP_DAYS}d" --include 'stardom-*.sql.gz' "$RCLONE_REMOTE" 2>>"$LOG" || true
+            OFFSITE_OK=1
+        else
+            log "FAILED off-disk: remote reports ${REMOTE_SIZE:-no} bytes, local dump is $SIZE"
+            OFFSITE_FAIL=1
+        fi
+    else
+        log "FAILED off-disk: rclone upload to $RCLONE_REMOTE returned an error"
+        OFFSITE_FAIL=1
+    fi
+fi
+
+if [ "$OFFSITE_OK" -eq 0 ] && [ "$OFFSITE_FAIL" -eq 0 ]; then
+    log "WARN no off-disk copy configured (OFFSITE_DIR / RCLONE_REMOTE) — this dump dies with the disk unless scripts/pull-backups.ps1 fetches it"
+fi
+
+[ "$OFFSITE_FAIL" -eq 0 ] || exit 2
 exit 0
