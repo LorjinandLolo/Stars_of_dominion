@@ -71,8 +71,9 @@ export async function updateProductionFocusAction(resource: Resource | null) {
 
 /**
  * Place a buy/sell order on the galactic market. Settlement happens in the
- * worker at the tick's market price: buys deduct faction credits and deliver
- * goods to a planet stockpile; sells do the reverse.
+ * worker at the tick's market price. Without a planetId the goods settle
+ * against the faction treasury (where construction costs are drawn); with
+ * one, against that planet's stockpile.
  */
 export async function placeMarketOrderAction(
     playerFactionId: string,

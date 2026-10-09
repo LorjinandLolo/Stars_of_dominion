@@ -22,6 +22,8 @@
 
 import { SEASON_TICKS, bootSoakWorld, empireIds, quietConsole, seedSimulation, stepSoak } from './soak-harness';
 import { drainBuffer } from '../lib/narrative/chronicle';
+import { executeMarketOrder } from '../lib/economy/economy-service';
+import { BUILDINGS } from '../data/buildings';
 
 const ticks = Math.max(8, Number(process.argv[2]) || SEASON_TICKS);
 const seed = process.argv[3] ?? 'a';
@@ -34,7 +36,7 @@ const KEYS = ['METALS', 'CHEMICALS', 'FOOD', 'ENERGY', 'CREDITS'] as const;
  * What a fresh empire (its capital only, as every season starts) banks per real
  * day at the 0.005 rate, measured 2026-10-06. Each colony adds roughly as much.
  */
-const EXPECTED = { METALS: 6400, CREDITS: 90000 };
+const EXPECTED = { METALS: 6400, CHEMICALS: 2600, CREDITS: 90000 };
 
 let failures = 0;
 const results: string[] = [];
@@ -84,6 +86,7 @@ async function main() {
     const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
     const metals = median(idleRows.map(r => r.METALS));
     const credits = median(idleRows.map(r => r.CREDITS));
+    const chemicals = median(idleRows.map(r => r.CHEMICALS));
     check('every idle empire banks metals', idleRows.every(r => r.METALS > 0),
         idle.filter((_, i) => idleRows[i].METALS <= 0).join(', '));
     check(`median idle metals within 2x of ~${fmt(EXPECTED.METALS)}/real day`,
@@ -92,6 +95,28 @@ async function main() {
         credits > EXPECTED.CREDITS / 2 && credits < EXPECTED.CREDITS * 2, fmt(credits));
     check('a colony (1k metals, 20k credits) is under a real day of idle income',
         metals > 1000 && credits > 20000);
+    check(`median idle chemicals within 2x of ~${fmt(EXPECTED.CHEMICALS)}/real day`,
+        chemicals > EXPECTED.CHEMICALS / 2 && chemicals < EXPECTED.CHEMICALS * 2, fmt(chemicals));
+
+    // Reserves never used to outgrow the starting 3000 M / 1500 C, so the
+    // dearest structure stayed unpayable all season. It must now be within
+    // reach of idle income in a few real days.
+    const archive = BUILDINGS.find(b => b.id === 'great_archive') as any;
+    const daysForArchive = Math.max(archive.cost.metals / metals, archive.cost.chemicals / chemicals, archive.cost.credits / credits);
+    check('the dearest building (Great Archive) is affordable from idle income within 3 real days',
+        daysForArchive < 3, `${daysForArchive.toFixed(1)} real days`);
+
+    // A market buy with no planet (what the terminal sends) must land in the
+    // treasury, where construction costs are drawn — not in a planet stockpile.
+    const buyer = idle[0];
+    const before = world.economy.factions.get(buyer).reserves.METALS ?? 0;
+    const order = executeMarketOrder(world, buyer, 'buy', 'METALS' as any, 500);
+    const after = world.economy.factions.get(buyer).reserves.METALS ?? 0;
+    check('a market buy of metals lands in the treasury', order.success && after - before === 500,
+        order.success ? `+${after - before}` : order.reason);
+    const sell = executeMarketOrder(world, buyer, 'sell', 'METALS' as any, 200);
+    check('a market sell draws metals from the treasury', sell.success && (world.economy.factions.get(buyer).reserves.METALS ?? 0) === after - 200,
+        sell.success ? '' : sell.reason);
 
     console.log(`\n${results.join('\n')}`);
     console.log(failures ? `\n${failures} check(s) failed.` : '\nAll checks passed.');

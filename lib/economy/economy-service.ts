@@ -476,9 +476,15 @@ export interface MarketOrderResult {
 
 /**
  * Settle a faction buy/sell order against the galactic market at the current
- * price (plus a broker spread). Sells draw goods from a planet stockpile;
- * buys deliver to one. Order volume nudges market supply/demand so large
- * trades move the price on subsequent ticks.
+ * price (plus a broker spread). Order volume nudges market supply/demand so
+ * large trades move the price on subsequent ticks.
+ *
+ * Where the goods go: with no planetId (what the market terminal sends) they
+ * settle against the faction treasury — the reserves building costs draw on.
+ * Buys used to land in the first planet's stockpile instead, where factories
+ * and the storage clamp ate them and no construction order could reach them,
+ * so buying metals never made an unaffordable building affordable. An explicit
+ * planetId still settles against that planet's stockpile (feeding a world).
  */
 export function executeMarketOrder(
     world: GameWorldState,
@@ -503,15 +509,31 @@ export function executeMarketOrder(
 
     const qty = Math.min(Math.max(Math.floor(amount), 1), mc.maxOrderVolume);
 
-    // Settle against a specific owned planet, defaulting to the faction's first.
-    let planet = planetId ? eco.planets.get(planetId) : undefined;
-    if (planet && planet.factionId !== factionId) return fail('Planet is not controlled by your faction.');
-    if (!planet) {
-        planet = [...eco.planets.values()].find(p => p.factionId === factionId);
-    }
-    if (!planet) return fail('No owned planet available to settle goods.');
-
     const price = market.currentPrice;
+
+    if (!planetId) {
+        if (side === 'buy') {
+            const cost = qty * price * (1 + mc.orderSpread);
+            const held = faction.reserves[Resource.CREDITS] ?? 0;
+            if (held < cost) return fail(`Insufficient credits: need ${Math.ceil(cost)}, have ${Math.floor(held)}.`);
+            faction.reserves[Resource.CREDITS] = held - cost;
+            faction.reserves[resource] = (faction.reserves[resource] ?? 0) + qty;
+            market.supply = Math.max(1, market.supply - qty);
+            market.demand += qty * 0.5;
+            return { success: true, unitsFilled: qty, creditsDelta: -cost, pricePerUnit: price };
+        }
+        const held = faction.reserves[resource] ?? 0;
+        if (held < qty) return fail(`Insufficient reserves: need ${qty} ${resource}, have ${Math.floor(held)}.`);
+        faction.reserves[resource] = held - qty;
+        const proceeds = qty * price * (1 - mc.orderSpread);
+        faction.reserves[Resource.CREDITS] = (faction.reserves[Resource.CREDITS] ?? 0) + proceeds;
+        market.supply += qty;
+        return { success: true, unitsFilled: qty, creditsDelta: proceeds, pricePerUnit: price };
+    }
+
+    const planet = eco.planets.get(planetId);
+    if (!planet) return fail('Planet not found.');
+    if (planet.factionId !== factionId) return fail('Planet is not controlled by your faction.');
 
     if (side === 'buy') {
         const cost = qty * price * (1 + mc.orderSpread);
