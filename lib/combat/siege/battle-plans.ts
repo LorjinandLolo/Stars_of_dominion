@@ -9,7 +9,7 @@ import type { PlanetSurface } from '../../planet-surface/types';
 import type { DistrictWarState } from './siege-types';
 import type { Formation, FormationSide } from './formations';
 import { buildAdjacency, controllerOf, isPassable } from './district-front';
-import { legalMoves } from './formations';
+import { legalMoves, canEverEnter } from './formations';
 
 export type PlanKind = 'front' | 'offensive';
 
@@ -154,13 +154,18 @@ function stepToward(
     target: number,
     adjacency: number[][],
 ): number | null {
-    // Hop distance to the target from every district (BFS from the target).
+    // Hop distance to the target from every district (BFS from the target),
+    // over ground this formation can actually enter. Counting a mountain it can
+    // never climb as a shortcut left it parked in front of the mountain for
+    // the rest of the siege, because the way around was never "closer".
+    const enterable = (i: number) => isPassable(surface.sectors[i])
+        && (i === target || canEverEnter(formation.unitType, surface.sectors[i].terrain));
     const dist = new Map<number, number>([[target, 0]]);
     const queue = [target];
     while (queue.length) {
         const cur = queue.shift()!;
         for (const n of adjacency[cur]) {
-            if (dist.has(n) || !isPassable(surface.sectors[n])) continue;
+            if (dist.has(n) || !enterable(n)) continue;
             dist.set(n, (dist.get(cur) ?? 0) + 1);
             queue.push(n);
         }

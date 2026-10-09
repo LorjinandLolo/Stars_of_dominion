@@ -175,6 +175,7 @@ import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
+import { aiInvasionOrders, aiCommandGroundWars } from '../lib/ai/war-ai';
 import { checkCeasefireGate, recordTrophyKill } from '../lib/factions/kaerruun';
 import { administerSerum, checkSerumGate, infrastructureSpeedFor, recordConquest } from '../lib/factions/sarrak';
 import { checkAggressionGate, recordGrievance } from '../lib/factions/buthari';
@@ -757,6 +758,18 @@ async function runGameTick() {
 
         // 4.5. Real-time Conflict: Sector Combats & Air Sorties
         processSectorCombats(world);
+
+        // 4.6. AI battle groups parked on an enemy world press the invasion
+        // through the player's own handler (lib/ai/war-ai.ts decides where).
+        for (const order of aiInvasionOrders(world)) {
+            try {
+                executeOrder(world, 'MIL_INVASION_PLANET', order.payload, order.factionId);
+            } catch (e: any) {
+                console.warn(`[Tick Worker] AI invasion by ${order.factionId} failed:`, e.message);
+            }
+        }
+        // ...and command both sides' ground wars where a side is AI-run.
+        try { aiCommandGroundWars(world); } catch (e: any) { console.warn('[Tick Worker] AI ground command failed:', e.message); }
         
         // 4. Process Construction
         tickConstructionGlobal(world);
@@ -6014,7 +6027,7 @@ function capturePlanet(world: GameWorldState, planet: any, attackerId: string, l
     console.log(`[Tick Worker] ${label}: ${planet.name} taken by ${attackerId} (was ${previousOwnerId})`);
 }
 
-function processSieges(world: GameWorldState) {
+export function processSieges(world: GameWorldState) {
     for (const planet of world.construction.planets.values()) {
         const siege = planet.siege;
         if (!siege) continue;

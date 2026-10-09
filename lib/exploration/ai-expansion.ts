@@ -108,8 +108,9 @@ export function tickAIExpansion(world: GameWorldState): void {
         tickAIYardLadder(world, factionId);
 
         // ── 1. A scout to see with ──────────────────────────────────────────
+        // Battle groups (`-war-N`, lib/ai/war-ai.ts) are never the scout.
         let fleet = [...world.movement.fleets.values()]
-            .filter(f => f.factionId === factionId)
+            .filter(f => f.factionId === factionId && !/-war-d+$/.test(f.id))
             .sort((a, b) => a.id.localeCompare(b.id))[0];
         if (!fleet) {
             // Keep double the cost in hand — expansion never drains the war chest.

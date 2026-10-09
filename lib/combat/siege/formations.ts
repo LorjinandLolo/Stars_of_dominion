@@ -98,6 +98,15 @@ const TERRAIN_SENSITIVITY: Record<GroundUnitType, number> = {
 export const isHeavy = (t: GroundUnitType) => t === 'ARMOR' || t === 'ARTILLERY';
 
 /**
+ * Whether this kind of formation can enter this terrain at all, off-road: a
+ * single step costs more than its whole move budget otherwise (infantry and
+ * armor never climb mountains). Plans route around such ground.
+ */
+export function canEverEnter(unitType: GroundUnitType, terrain: TerrainType): boolean {
+    return TERRAIN_COST[terrain] * (TERRAIN_SENSITIVITY[unitType] ?? 1) <= (BASE_MOVE[unitType] ?? 2) + 1e-6;
+}
+
+/**
  * Splits an army's unit pool into board pieces, deployed on the districts that
  * side holds. Attackers come ashore at the beachhead; defenders stand on their
  * own ground, weighted toward the capital and the front.

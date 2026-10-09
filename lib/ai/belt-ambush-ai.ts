@@ -21,6 +21,11 @@ import { hasAsteroidBelt, AMBUSH_WAR_ESCALATION } from '../movement/belts';
 import { isFleetOperational, issueMoveOrder } from '../movement/movement-service';
 import { minYardTierFor, systemYardFor, type YardPlanetLike } from '../combat/shipyard-gate';
 
+/** Same test as lib/ai/war-ai.ts isWarfleetId — kept local so the two modules do not import each other. */
+function isWarfleetId(id: string): boolean {
+    return /-war-d+$/.test(id);
+}
+
 /** The world slice this module reads and writes — GameWorldState satisfies it. */
 export interface BeltAmbushWorldView {
     claimedFactionIds?: unknown;
@@ -192,7 +197,8 @@ export function beltAmbushTurn(world: BeltAmbushWorldView, factionId: string): B
         .sort((a, b) => a.id.localeCompare(b.id));
     // The expansion AI's scout is whichever own fleet sorts first — hands off.
     const scoutId = own[0]?.id ?? null;
-    const pickets = own.filter(f => f.id !== scoutId && isFleetOperational(f));
+    // Battle groups belong to the war AI (lib/ai/war-ai.ts).
+    const pickets = own.filter(f => f.id !== scoutId && !isWarfleetId(f.id) && isFleetOperational(f));
 
     const enemies = warEnemiesOf(world, factionId);
     if (enemies.size === 0) {

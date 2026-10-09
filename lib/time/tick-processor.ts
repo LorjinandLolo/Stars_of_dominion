@@ -16,6 +16,7 @@ import { materializeSystemBodies, systemHasBodies } from '../exploration/body-ge
 import { tickAIColonization } from '../exploration/colonize-service';
 import { tickAIExpansion } from '../exploration/ai-expansion';
 import { tickAIBeltAmbush } from '../ai/belt-ambush-ai';
+import { tickAIWar } from '@/lib/ai/war-ai';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_SYSTEMS_SURVEYED } from '../tech/deed-metrics';
 import { tickVictory, enlightenmentWindowLabel } from '../victory/victory-service';
@@ -866,6 +867,9 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
     try { tickAIExpansion(world); } catch (e) { console.error('[TickProcessor] tickAIExpansion failed:', e); }
     // AI factions at war lay belt ambushes on the lanes an invader must use.
     try { tickAIBeltAmbush(world as any); } catch (e) { console.error('[TickProcessor] tickAIBeltAmbush failed:', e); }
+    // AI empires declare wars, raise battle groups and send them at enemy
+    // worlds; the worker lands the troops (aiInvasionOrders, every loop).
+    try { tickAIWar(world); } catch (e) { console.error('[TickProcessor] tickAIWar failed:', e); }
 }
 
 function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {
