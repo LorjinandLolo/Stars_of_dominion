@@ -134,6 +134,10 @@ export default function UndergroundShell({ seatId, onRisen }: { seatId: string; 
 
                 {view.exile?.hunter && <HunterSection hunter={view.exile.hunter} />}
 
+                {view.exile && <FellowsSection view={view} busy={busy} onOrder={order} />}
+
+                {view.exile && <ShelterSection view={view} busy={busy} onOrder={order} />}
+
                 {view.exile && (
                     <JobsSection
                         view={view}
@@ -307,12 +311,17 @@ function JobsSection({ view, busy, onOrder, onChoose }: {
     const [waitingAt, setWaitingAt] = React.useState<number | null>(null);
     const storyLen = job?.story.length ?? 0;
     React.useEffect(() => { setWaitingAt(null); }, [storyLen, job?.status]);
-    const free = (view.exile?.crew ?? []).filter(c => c.status === 'free');
+    // 14f: our fellow exiles' people can go too.
+    const free: CrewOption[] = [
+        ...(view.exile?.crew ?? []).filter(c => c.status === 'free').map(c => ({ ...c, ownerName: null as string | null })),
+        ...(view.allyCrew ?? []).filter(c => c.status === 'free').map(c => ({ ...c, ownerName: c.ownerName })),
+    ];
 
     if (job && job.status === 'running') {
         return (
             <section className="rounded-xl border border-amber-500/50 bg-slate-900/80 p-4 space-y-3">
                 <h2 className="text-[10px] tracking-widest uppercase text-amber-300">{job.title} · {job.crew.join(', ')}</h2>
+                {view.jobLedBy && <p className="text-[11px] text-slate-400">With {view.jobLedBy}, on their plan. Either of you can make the call.</p>}
                 {job.story.length > 0 && (
                     <ol className="space-y-1.5">{job.story.map((s, i) => <li key={i} className="text-xs text-slate-400 leading-relaxed">{s}</li>)}</ol>
                 )}
@@ -340,10 +349,20 @@ function JobsSection({ view, busy, onOrder, onChoose }: {
     const board = view.jobs ?? [];
     const pv = view.plan ?? null;
     const plan = pv?.plan ?? null;
-    const crewName = (id: string | null | undefined) => (view.exile?.crew ?? []).find(c => c.id === id)?.name ?? 'someone';
+    const crewName = (id: string | null | undefined) => [...(view.exile?.crew ?? []), ...(view.allyCrew ?? [])].find(c => c.id === id)?.name ?? 'someone';
+    const allyPlans = view.allyPlans ?? [];
     return (
         <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Jobs</h2>
+            {allyPlans.map(p => (
+                <div key={p.leadCellId} className="rounded-lg border border-amber-900/50 bg-amber-950/10 p-2 space-y-1.5 text-[11px] text-slate-300">
+                    <div>{p.leaderName} plans {p.jobTitle}{p.targetLabel ? ` against ${p.targetLabel}` : ''}, with {p.ourCrew.join(' and ')} of ours.</div>
+                    {p.committed
+                        ? <div className="text-emerald-300">We have given our word. It goes when {p.leaderName} says go.</div>
+                        : <button disabled={busy} onClick={() => onOrder('REB_JOB_COMMIT', { leadCellId: p.leadCellId }, 'Our people are in.')}
+                            className={`${BTN} w-full bg-amber-600/80 hover:bg-amber-500/80 text-white`}>Commit our people</button>}
+                </div>
+            ))}
             {job && (
                 <div className="rounded-lg border border-slate-800 p-3 space-y-1">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">
@@ -388,10 +407,12 @@ function JobsSection({ view, busy, onOrder, onChoose }: {
 }
 
 /** Item 14c: choose the target, the approach, who goes and who does what. */
+type CrewOption = Companion & { ownerName: string | null };
+
 function Planner({ job, targets, free, busy, onCancel, onSave }: {
     job: JobBoardEntry;
     targets: { id: string; label: string }[];
-    free: Companion[];
+    free: CrewOption[];
     busy: boolean;
     onCancel: () => void;
     onSave: (payload: { targetId: string | null; approach: JobApproach; crewIds: string[]; roles: Partial<Record<CompanionSkill, string>> }) => void;
@@ -424,7 +445,7 @@ function Planner({ job, targets, free, busy, onCancel, onSave }: {
                     <input type="checkbox" checked={crew.includes(c.id)}
                         disabled={!crew.includes(c.id) && crew.length >= job.maxCrew}
                         onChange={e => setCrew(e.target.checked ? [...crew, c.id] : crew.filter(x => x !== c.id))} />
-                    {c.name} <span className="text-slate-500">({COMPANION_ROLE_LABEL[c.role].toLowerCase()})</span>
+                    {c.name} <span className="text-slate-500">({COMPANION_ROLE_LABEL[c.role].toLowerCase()}{c.ownerName ? `, ${c.ownerName}'s people` : ''})</span>
                 </label>
             ))}
             {chosen.length > 0 && (
@@ -464,6 +485,9 @@ function PlanPanel({ view, pv, plan, jobId, busy, crewName, onOrder }: {
     const free = (view.exile?.crew ?? []).filter(c => c.status === 'free');
     const watching = !!plan.reconUntilSeconds;
     const roleLine = (Object.entries(plan.roles) as [CompanionSkill, string][]).map(([s, id]) => `${crewName(id)} on ${SKILL_WORD[s]}`).join('; ');
+    // 14f: a joint job waits for every fellow exile with people on it.
+    const leaderOf = (cellId: string) => (view.fellows ?? []).find(f => f.cellId === cellId)?.leaderName ?? 'a fellow exile';
+    const waitingOn = (plan.party ?? []).filter(id => !(plan.commits ?? []).includes(id));
     return (
         <div className="rounded border border-amber-900/50 bg-amber-950/10 p-2 space-y-2 text-[11px] text-slate-300">
             <div>
@@ -496,8 +520,13 @@ function PlanPanel({ view, pv, plan, jobId, busy, crewName, onOrder }: {
                     </div>
                 ))}
             </div>
-            <button disabled={busy || watching} onClick={() => onOrder('REB_JOB_START', { jobId, crewIds: plan.crewIds }, 'The crew sets out.')}
-                className={`${BTN} w-full bg-red-800/80 hover:bg-red-700/80 text-white`}>{watching ? 'Wait for the watcher' : 'Go'}</button>
+            {(plan.party ?? []).length > 0 && (
+                <div className={waitingOn.length ? 'text-amber-300' : 'text-emerald-300'}>
+                    {waitingOn.length ? `Waiting on ${waitingOn.map(leaderOf).join(' and ')} to commit their people.` : 'Everyone has committed.'}
+                </div>
+            )}
+            <button disabled={busy || watching || waitingOn.length > 0} onClick={() => onOrder('REB_JOB_START', { jobId, crewIds: plan.crewIds }, 'The crew sets out.')}
+                className={`${BTN} w-full bg-red-800/80 hover:bg-red-700/80 text-white`}>{watching ? 'Wait for the watcher' : waitingOn.length ? 'Waiting on our fellow exiles' : 'Go'}</button>
         </div>
     );
 }
@@ -522,6 +551,82 @@ function HunterSection({ hunter }: { hunter: Hunter }) {
             )}
             {hunter.notes.length > 0 && (
                 <ul className="space-y-1">{hunter.notes.slice(0, 5).map((n, i) => <li key={i} className="text-[11px] text-slate-400">{n.text}</li>)}</ul>
+            )}
+        </section>
+    );
+}
+
+/** Item 14f: other fallen leaders in hiding. Join forces and their people and ours are one crew; each keeps their own seat. */
+function FellowsSection({ view, busy, onOrder }: { view: CellSeatView; busy: boolean; onOrder: OrderFn }) {
+    const fellows = view.fellows ?? [];
+    return (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+            <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Others in hiding</h2>
+            {fellows.length === 0 && <p className="text-xs text-slate-500">As far as we know, nobody else fell the way we did. We are on our own.</p>}
+            {fellows.map(f => (
+                <div key={f.cellId} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2 first:border-0 first:pt-0">
+                    <div className="text-xs text-slate-300 min-w-0">
+                        <span className="text-slate-100">{f.leaderName}</span>, of the fallen {f.fromName}, hiding on {f.planetName}.
+                        <span className="block text-[11px] text-slate-500">
+                            {f.allied ? 'We are one crew. Their people can go on our jobs, and ours on theirs.'
+                                : f.invitedUs ? 'They ask to join forces with us.'
+                                : f.invitedByUs ? 'We have asked them to join forces.' : ''}
+                        </span>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                        {!f.allied && !f.invitedByUs && (
+                            <button disabled={busy} onClick={() => onOrder('REB_CREW_JOIN', { cellId: f.cellId }, f.invitedUs ? 'We are one crew now.' : 'Word goes to them.')}
+                                className={`${BTN} bg-slate-800 hover:bg-slate-700 text-amber-200`}>{f.invitedUs ? 'Join them' : 'Ask to join'}</button>
+                        )}
+                        {(f.allied || f.invitedUs) && (
+                            <button disabled={busy} onClick={() => { if (!f.allied || window.confirm(`Go our own way? Plans with ${f.leaderName}'s people fall apart.`)) onOrder('REB_CREW_LEAVE', { cellId: f.cellId }, f.allied ? 'We go our own way.' : 'We turn them down.'); }}
+                                className={`${BTN} border border-slate-700 text-slate-400`}>{f.allied ? 'Part ways' : 'Decline'}</button>
+                        )}
+                    </div>
+                </div>
+            ))}
+        </section>
+    );
+}
+
+/** Item 14f: shelter in a friend's empire, asked for or given. */
+function ShelterSection({ view, busy, onOrder }: { view: CellSeatView; busy: boolean; onOrder: OrderFn }) {
+    const s = view.exile?.sanctuary ?? null;
+    const shelters = view.shelters ?? [];
+    const active = !!s && (s.status === 'given' || s.status === 'asked');
+    const hostName = s?.hostName ?? 'a friend';
+    return (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+            <h2 className="text-[10px] tracking-widest uppercase text-slate-400">Sanctuary</h2>
+            {s?.status === 'given' && (
+                <div className="text-xs text-slate-300 space-y-1">
+                    <p>
+                        The government in exile sits on {s.planetName ?? 'their capital'}, under the protection of <span className="text-slate-100">{hostName}</span>,
+                        {s.mode === 'open' ? ' openly: the whole galaxy knows.' : ' quietly: nobody must know.'}
+                    </p>
+                    <p className="text-[11px] text-slate-500">Those resting there heal faster and cannot be taken by {view.hostName}. Recruits come easier. Everyone travels, so watches and the wait between jobs take longer.</p>
+                    {s.demand && <p className="text-[11px] text-red-300">{view.hostName} demands we be handed over. {hostName} has not answered yet.</p>}
+                    {s.mode === 'quiet' && s.exposedAtSeconds ? <p className="text-[11px] text-amber-300">{view.hostName} has found out where we shelter.</p> : null}
+                </div>
+            )}
+            {s?.status === 'asked' && <p className="text-xs text-slate-300">We have asked {hostName} for shelter. We are waiting on an answer.</p>}
+            {s && !active && (
+                <p className="text-[11px] text-slate-500">
+                    {s.status === 'handed_over' ? `${hostName} handed us over.` : s.status === 'refused' ? `${hostName} would not take us in.` : 'We are on our own again.'}
+                </p>
+            )}
+            {active ? (
+                <button disabled={busy} onClick={() => { if (window.confirm(s!.status === 'given' ? 'Leave sanctuary? Our people come home, where they can be taken.' : 'Withdraw the request?')) onOrder('REB_SANCTUARY_LEAVE', {}, 'Done.'); }}
+                    className={`${BTN} w-full border border-slate-700 text-slate-400`}>{s!.status === 'given' ? 'Leave sanctuary' : 'Withdraw the request'}</button>
+            ) : (
+                <>
+                    {shelters.length === 0 && <p className="text-xs text-slate-500">No empire still standing is led by someone we could ask.</p>}
+                    {shelters.map(x => (
+                        <button key={x.factionId} disabled={busy} onClick={() => onOrder('REB_SANCTUARY_ASK', { factionId: x.factionId }, `We have asked ${x.name}.`)}
+                            className={`${BTN} w-full bg-slate-800 hover:bg-slate-700 text-amber-200`}>Ask {x.name} for sanctuary</button>
+                    ))}
+                    <p className="text-[11px] text-slate-500">Only an empire led by a person can take us in. They decide whether openly or quietly; {view.hostName} may demand they hand us over.</p>
+                </>
             )}
         </section>
     );

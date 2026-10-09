@@ -3,6 +3,7 @@
 // Serializes GameWorldState to JSON-safe format (Maps → Records) for Appwrite storage.
 
 import { foreignCellsFor } from '../rebellion/visibility';
+import { sanctuariesFor } from '../fallen/sanctuary-view';
 import type { GameWorldState } from '@/lib/game-world-state';
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { getEmpireStorageReport } from '@/lib/logistics/storage-service';
@@ -306,6 +307,10 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // foreign cells its service can see (a view, rebuilt every save).
         cellSponsorships: Array.from(((world as any).rebellion?.sponsorships ?? new Map()).values()).filter((s: any) => s.sponsorFactionId === factionId),
         foreignCellsView: foreignCellsFor(world, factionId),
+        // Item 14f: shelters this faction gives or is asked for, and the ones it
+        // knows hide its enemies (a view, rebuilt every save; the truth rides
+        // the exile record in the conqueror's shard).
+        sanctuaryDesk: sanctuariesFor(world, factionId),
         recruitmentJobs: (world.combat?.recruitmentJobs || []).filter(j => j.factionId === factionId),
         // Which systems this player has left to their advisors. Their setting,
         // so it rides their own shard; absent record = everything delegated
@@ -394,13 +399,14 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         (shard.rebelCells ?? []).forEach((c: any) => w.rebellion.cells.set(c.id, c));
         (shard.rebelCrackdowns ?? []).forEach((c: any) => w.rebellion.crackdowns.set(c.planetId, c));
     }
-    if (shard.cellSponsorships || shard.foreignCellsView) {
+    if (shard.cellSponsorships || shard.foreignCellsView || shard.sanctuaryDesk) {
         const w: any = world;
         if (!w.rebellion) w.rebellion = {};
         if (!(w.rebellion.sponsorships instanceof Map)) w.rebellion.sponsorships = new Map();
         (shard.cellSponsorships ?? []).forEach((s: any) => w.rebellion.sponsorships.set(s.id, s));
         // A view, not state: the page reads it, the worker rebuilds it on save.
         if (Array.isArray(shard.foreignCellsView)) w.rebellion.foreignView = shard.foreignCellsView;
+        if (Array.isArray(shard.sanctuaryDesk)) w.rebellion.sanctuaryDesk = shard.sanctuaryDesk;
     }
     if (shard.espionageCases) {
         if (!(world.espionage.cases instanceof Map)) world.espionage.cases = new Map();
@@ -485,6 +491,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     (cloned as any).rebellion?.crackdowns?.clear?.();
     (cloned as any).rebellion?.sponsorships?.clear?.();
     if ((cloned as any).rebellion) delete (cloned as any).rebellion.foreignView;
+    if ((cloned as any).rebellion) delete (cloned as any).rebellion.sanctuaryDesk;
     // A player's delegation settings are theirs: the shard carries them (and
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.

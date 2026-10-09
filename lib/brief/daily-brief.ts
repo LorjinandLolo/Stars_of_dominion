@@ -271,6 +271,10 @@ export function describeChronicleRow(row: BriefChronicleRow, factionId: string):
         case 'rebel_act': return `${facts.cellName ?? 'A rebel cell'} struck on ${facts.planetName ?? 'a world'} of ${target}.`;
         case 'crackdown': return `${actor} cracked down on ${facts.planetName ?? 'one of its worlds'}.`;
         case 'rebel_killed': return `A rebel was killed on ${facts.planetName ?? 'a world'} of ${target}.`;
+        case 'sanctuary': return facts.phase === 'handed_over' ? `${actor} handed ${facts.exileName ?? 'a government in exile'} over to ${target}.`
+            : facts.phase === 'refused' ? `${actor} refused to hand ${facts.exileName ?? 'a government in exile'} over to ${target}.`
+            : facts.phase === 'exposed' ? `${actor} was found to be secretly sheltering ${facts.exileName ?? 'a government in exile'}.`
+            : `${actor} gave sanctuary to ${facts.exileName ?? 'a government in exile'}.`;
         case 'enlightenment_transcending': return `${actor} has begun to transcend.`;
         case 'enlightenment_interrupted': return `${actor}'s Transcendence failed.`;
         case 'enlightenment_achieved': return `${actor} achieved Enlightenment.`;

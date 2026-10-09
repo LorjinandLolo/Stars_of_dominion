@@ -931,6 +931,7 @@ export function useGameSync() {
             rebelCrackdowns: Array.from((world as any).rebellion?.crackdowns?.values?.() ?? [])
                 .filter((c: any) => !playerFactionId || c.hostFactionId === playerFactionId) as any[],
             foreignCells: ((world as any).rebellion?.foreignView ?? []) as any[],
+            sanctuaries: ((world as any).rebellion?.sanctuaryDesk ?? []) as any[],
             cellSponsorships: Array.from((world as any).rebellion?.sponsorships?.values?.() ?? [])
                 .filter((s: any) => !playerFactionId || s.sponsorFactionId === playerFactionId) as any[],
         };

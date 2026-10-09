@@ -303,6 +303,32 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
                 tone: 'grave',
             };
 
+        case 'sanctuary': {
+            const exile = str(e, 'exileName', 'a government in exile');
+            const from = str(e, 'fromName', 'a fallen empire');
+            const phase = str(e, 'phase', 'given');
+            if (phase === 'handed_over') return {
+                headline: `${actor} hands ${exile} over to ${target}`,
+                body: `${actor} has handed over ${exile} to ${target}, whose forces conquered ${from}. Those who had sheltered on ${actor}'s soil are in ${target}'s custody tonight. ${actor} calls it the price of peace; the exiles' friends call it something shorter.`,
+                tone: 'grave',
+            };
+            if (phase === 'refused') return {
+                headline: `${actor} refuses to hand over ${exile}`,
+                body: `${target} demanded that ${actor} hand over ${exile}. ${actor} has said no. Relations between the two, never warm, are colder tonight.`,
+                tone: 'alarmed',
+            };
+            if (phase === 'exposed') return {
+                headline: `${actor} secretly sheltered ${exile}`,
+                body: `Papers obtained by ${target} show that ${actor} has been quietly sheltering ${exile}, the last of ${from}'s government, on its own soil. ${target} has called it an act of hostility.`,
+                tone: 'alarmed',
+            };
+            return {
+                headline: `${actor} gives sanctuary to ${exile}`,
+                body: `${actor} has openly taken in ${exile}, the government of ${from} that fell to ${target}. It sits on ${actor}'s soil now, and ${target} has been told in so many words that it will not be handed over.`,
+                tone: 'neutral',
+            };
+        }
+
         case 'civil_war_started':
             return {
                 headline: `THE EMPIRE SPLITS: ${str(e, 'rebelName', 'a breakaway state')} declares independence from ${target}`,

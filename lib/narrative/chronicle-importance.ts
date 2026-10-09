@@ -54,6 +54,7 @@ const BASE_IMPORTANCE: Record<ChronicleEventType, number> = {
     rebel_act: 32,
     crackdown: 30,
     rebel_killed: 28,
+    sanctuary: 50,
     defiance_event: 34,
     // Economy
     trade_route_opened: 16,

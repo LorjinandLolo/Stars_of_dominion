@@ -173,6 +173,39 @@ export interface CellSeatView {
     declare: { open: boolean; why: string | null };
     /** Recent news from the cell's own life, newest first. */
     log: { at: number; text: string }[];
+    // ─── 14f ───
+    /** Other fallen leaders in hiding, and where we stand with each. */
+    fellows?: FellowView[];
+    /** Fellow exiles' people we may take on a job. */
+    allyCrew?: (Companion & { ownerCellId: string; ownerName: string })[];
+    /** Plans of fellow exiles that put our people on their job. */
+    allyPlans?: AllyPlanView[];
+    /** The joint job under way is led by a fellow exile. */
+    jobLedBy?: string | null;
+    /** Empires still standing that we could ask for shelter. */
+    shelters?: { factionId: string; name: string }[];
+}
+
+export interface FellowView {
+    cellId: string;
+    leaderName: string;
+    fromName: string;
+    planetName: string;
+    allied: boolean;
+    /** They asked to join us. */
+    invitedUs: boolean;
+    /** We asked them. */
+    invitedByUs: boolean;
+}
+
+export interface AllyPlanView {
+    leadCellId: string;
+    leaderName: string;
+    jobTitle: string;
+    targetLabel: string | null;
+    /** Our people on it. */
+    ourCrew: string[];
+    committed: boolean;
 }
 
 export type CellActKind = 'heist' | 'sabotage' | 'propaganda' | 'prison_break' | 'assassination' | 'hijack' | 'ambush';
@@ -275,6 +308,8 @@ export interface Companion {
     turned?: boolean;
     /** A forged identity is good for one walk-in. */
     identityUsed?: boolean;
+    /** 14f: who holds them (a joint job can put them in another conqueror's prison). */
+    capturedByFactionId?: string | null;
 }
 
 /** A fallen empire in hiding: who it was, and who came with its leader. */
@@ -292,6 +327,81 @@ export interface ExileRecord {
     memorial?: { name: string; role: CompanionRole; diedAtSeconds: number; epitaph: string }[];
     /** Item 14e: the officer hunting us, when the conqueror is not a person. */
     hunter?: Hunter | null;
+    // ─── 14f: not alone ───
+    /** Fellow exiles' cells we have joined forces with (each side lists the other). */
+    allies?: string[];
+    /** Fellow exiles who have asked to join forces with us. */
+    invites?: { fromCellId: string; at: number }[];
+    /** Shelter in a friend's empire, asked for or given. */
+    sanctuary?: Sanctuary | null;
+}
+
+// ─── Item 14f: sanctuary ─────────────────────────────────────────────────────
+
+export type SanctuaryMode = 'open' | 'quiet';
+
+/**
+ * A friend who still holds an empire shelters a fallen government (Canada and
+ * the Dutch royal family). Lives on the exile's record, so it rides the
+ * conqueror's shard and is scrubbed from the conqueror's wire with the rest of
+ * the exile; the host and the conqueror each get a view (lib/fallen/sanctuary-view).
+ */
+export interface Sanctuary {
+    id: string;
+    hostFactionId: string;
+    hostName?: string;
+    /** Where the government in exile sits: the host's capital world. */
+    planetId: string | null;
+    planetName?: string | null;
+    /** Chosen by the host when it answers; null while asked. */
+    mode: SanctuaryMode | null;
+    status: 'asked' | 'given' | 'refused' | 'ended' | 'handed_over';
+    askedAtSeconds: number;
+    sinceSeconds?: number | null;
+    endedAtSeconds?: number | null;
+    /** A quiet sanctuary's secret leaks as covert sponsorship does (0-1). */
+    evidence: number;
+    exposedAtSeconds?: number | null;
+    /** The conqueror's demand to hand the exile over, waiting on the host's answer. */
+    demand?: { atSeconds: number; untilSeconds: number } | null;
+    lastDemandAtSeconds?: number | null;
+    demandsRefused: number;
+}
+
+/** How long the conqueror waits between demands to hand an exile over. */
+export const SANCTUARY_DEMAND_COOLDOWN_SECONDS = 15 * 86400;
+
+/** The conqueror knows: the shelter was given openly, or a quiet one has been exposed. */
+export function sanctuaryKnown(s: Sanctuary | null | undefined): boolean {
+    return !!s && s.status === 'given' && (s.mode === 'open' || !!s.exposedAtSeconds);
+}
+
+/** Shelter the exiles hold now. */
+export function inSanctuary(cell: RebelCell): boolean {
+    return cell.exile?.sanctuary?.status === 'given';
+}
+
+/** One line of the sanctuary desk on an empire's diplomacy page. */
+export interface SanctuaryDeskEntry {
+    id: string;
+    /** 'host': we shelter them (or are asked to); 'conqueror': they hide from us. */
+    role: 'host' | 'conqueror';
+    /** "the exiled government of Aglate". Never a cell, never who leads it. */
+    exileName: string;
+    /** Only the host learns who asks. */
+    leaderName: string | null;
+    conquerorId: string;
+    conquerorName: string;
+    hostId: string;
+    hostName: string;
+    planetName: string | null;
+    mode: SanctuaryMode | null;
+    status: Sanctuary['status'];
+    /** Quiet only, for the host: how much the conqueror could find, in words. */
+    exposure: string | null;
+    demandUntilSeconds: number | null;
+    /** The conqueror may demand them handed over now, or why not. */
+    canDemand: { open: boolean; why: string | null } | null;
 }
 
 export const COMPANION_ROLE_LABEL: Record<CompanionRole, string> = {
@@ -327,6 +437,8 @@ export interface JobRun {
     recon?: number;
     /** What the conqueror's people will find afterwards. */
     traces?: JobTrace[];
+    /** 14f: fellow exiles' cells with people on this job; any of them may make the choices. */
+    party?: string[];
 }
 
 /** A job as its leader sees it. Odds are words, never numbers. */
@@ -371,6 +483,9 @@ export interface JobPlan {
     reconBy?: string | null;
     reconUntilSeconds?: number | null;
     gear: string[];
+    /** 14f: fellow exiles' cells with people on this plan, and those who have committed to it. */
+    party?: string[];
+    commits?: string[];
 }
 
 /** Something a job left behind for the conqueror's investigators. */

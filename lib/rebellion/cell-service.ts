@@ -23,6 +23,8 @@ import { CRACKDOWN_CAPITAL, huntBeat, hunterLabel, noteForSeat, type Crackdown, 
 import { ReputationService } from '../reputation/reputation-service';
 import { fireNotification } from '../time/notification-hooks';
 import * as chronicle from '../narrative/chronicle';
+// Runtime-only use (crew-service reaches back here for revealCell): never call at module load.
+import { arrestAtHideout } from '../fallen/crew-service';
 
 // ─── Tuning (per strategic tick: 6 sim hours) ────────────────────────────────
 
@@ -50,6 +52,11 @@ export const CRACKDOWN_OPPRESSION = 6;
 export const CRACKDOWN_UNREST = 5;
 /** Extra hit on a cell an informant has given away (13c). */
 export const CRACKDOWN_HIT_INFORMED = 15;
+/** Item 14f: chance the conqueror's people take one of a fallen leader's companions resting at the hideout. */
+export const ARREST_ON_CRACKDOWN = 0.5;
+export const ARREST_ON_SWEEP = 0.25;
+/** Recruits come easier while the government in exile sits in a friend's sanctuary. */
+export const SANCTUARY_GROWTH = 1.25;
 
 const NON_PLAYABLE = new Set(['faction-pirates', 'faction-neutral']);
 
@@ -200,6 +207,7 @@ export function tickRebellion(world: GameWorldState, rand: () => number = Math.r
         // organising, slowly, unless they have told it to go quiet.
         if (cell.seat && !cell.lyingLow) growth = Math.max(growth, LED_MIN_GROWTH);
         if (cell.seat && cell.lyingLow) growth = Math.max(growth, 0);
+        if (growth > 0 && cell.exile?.sanctuary?.status === 'given') growth *= SANCTUARY_GROWTH;
         cell.strength = Math.max(0, Math.min(100, cell.strength + (cell.lyingLow && growth > 0 ? growth / 2 : growth)));
         cell.members = membersFor(cell.strength);
         cell.safeHouse.concealment = Math.min(MAX_CONCEALMENT, cell.safeHouse.concealment + CONCEALMENT_RECOVERY_PER_TICK * (cell.lyingLow ? 3 : 1));
@@ -247,6 +255,8 @@ export function revealCellsBySweep(world: GameWorldState, sweeperId: string, sys
                 if (hunter) huntBeat(cell, world.nowSeconds, `${hunter} led the sweep that found the safe house. From their report: "The cell is real, it is organised, and it is ours to finish."`);
             }
             cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment - 0.2);
+            // Item 14f: they came to the door. Whoever is resting there may be taken.
+            arrestAtHideout(world, cell, ARREST_ON_SWEEP, rand);
         }
     }
     return found;
@@ -283,6 +293,7 @@ export function crackdown(world: GameWorldState, factionId: string, planetId: st
         cell.members = membersFor(cell.strength);
         cell.crackdownsSurvived++;
         if (caught) cell.safeHouse.concealment = Math.max(0.2, cell.safeHouse.concealment * 0.5);
+        if (caught) arrestAtHideout(world, cell, ARREST_ON_CRACKDOWN, rand);
         noteForSeat(cell, now, caught
             ? `A crackdown on ${planet.name} found us. Members taken, the safe house burned.`
             : `Security swept ${planet.name}. They missed us, but people we knew were taken.`);

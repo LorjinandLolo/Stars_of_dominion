@@ -244,7 +244,8 @@ export async function sponsorCellAction(
 /** Item 13d: an order from a person leading a cell from hiding. */
 export async function cellOrderAction(
     factionId: string,
-    actionId: 'REB_CELL_ACT' | 'REB_CELL_LIE_LOW' | 'REB_CELL_REFUSE_SPONSOR' | 'REB_CELL_DECLARE' | 'REB_JOB_START' | 'REB_JOB_CHOOSE' | 'REB_JOB_PLAN' | 'REB_JOB_RECON' | 'REB_JOB_GEAR',
+    actionId: 'REB_CELL_ACT' | 'REB_CELL_LIE_LOW' | 'REB_CELL_REFUSE_SPONSOR' | 'REB_CELL_DECLARE' | 'REB_JOB_START' | 'REB_JOB_CHOOSE' | 'REB_JOB_PLAN' | 'REB_JOB_RECON' | 'REB_JOB_GEAR'
+        | 'REB_CREW_JOIN' | 'REB_CREW_LEAVE' | 'REB_JOB_COMMIT' | 'REB_SANCTUARY_ASK' | 'REB_SANCTUARY_LEAVE',
     payload: Record<string, unknown> = {}
 ): Promise<ActionResult> {
     return executePlayerAction({
@@ -255,6 +256,25 @@ export async function cellOrderAction(
         payload,
         timestamp: Math.floor(Date.now() / 1000)
     });
+}
+
+/** Item 14f: an empire answers a request for sanctuary or a demand, or demands an exile handed over. */
+export async function sanctuaryOrderAction(
+    factionId: string,
+    actionId: 'REB_SANCTUARY_ANSWER' | 'REB_SANCTUARY_DEMAND',
+    sanctuaryId: string,
+    answer?: 'open' | 'quiet' | 'refuse' | 'end' | 'refuse_demand' | 'hand_over'
+): Promise<ActionResult> {
+    const result = await executePlayerAction({
+        id: `sanct-${Date.now()}`,
+        actionId,
+        issuerId: factionId,
+        targetId: sanctuaryId,
+        payload: { sanctuaryId, ...(answer ? { answer } : {}) },
+        timestamp: Math.floor(Date.now() / 1000)
+    });
+    if (result.success) revalidatePath('/');
+    return result;
 }
 
 /** Stop paying a cell. */

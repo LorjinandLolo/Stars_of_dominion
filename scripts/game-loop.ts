@@ -170,6 +170,7 @@ import { fileAccusation, leakCase, pursueLead } from '../lib/espionage/case-boar
 import { crackdownBlocker, CRACKDOWN_CAPITAL } from '../lib/rebellion/cell-service';
 import { crackdownWithPrisoners, sponsorCell, cutSponsorship as cutCellSponsorship } from '../lib/rebellion/sponsor-service';
 import { declareMovement, orderCellAct, orderGear, orderJobChoice, orderJobStart, orderPlan, orderRecon, refuseSponsor, releaseOrphanSeats, setLyingLow } from '../lib/rebellion/underground-service';
+import { answerSanctuaryOrder, demandHandoverOrder, orderCrewJoin, orderCrewLeave, orderJobCommit, orderSanctuaryAsk, orderSanctuaryLeave } from '../lib/rebellion/underground-service';
 import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { establishTradeRoute } from '../lib/economy/trade-service';
@@ -3172,6 +3173,29 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 : actionId === 'REB_JOB_PLAN' ? orderPlan(world, factionId, payload)
                 : actionId === 'REB_JOB_RECON' ? orderRecon(world, factionId, payload?.companionId)
                 : orderGear(world, factionId, payload?.gearId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.message);
+                return;
+            }
+            console.log(`[Tick Worker] ${factionId} ${actionId}: ${result.message}`);
+            break;
+        }
+
+        // Item 14f: fellow exiles, and sanctuary.
+        case 'REB_CREW_JOIN':
+        case 'REB_CREW_LEAVE':
+        case 'REB_JOB_COMMIT':
+        case 'REB_SANCTUARY_ASK':
+        case 'REB_SANCTUARY_LEAVE':
+        case 'REB_SANCTUARY_ANSWER':
+        case 'REB_SANCTUARY_DEMAND': {
+            const result = actionId === 'REB_CREW_JOIN' ? orderCrewJoin(world, factionId, payload?.cellId)
+                : actionId === 'REB_CREW_LEAVE' ? orderCrewLeave(world, factionId, payload?.cellId)
+                : actionId === 'REB_JOB_COMMIT' ? orderJobCommit(world, factionId, payload?.leadCellId)
+                : actionId === 'REB_SANCTUARY_ASK' ? orderSanctuaryAsk(world, factionId, payload?.factionId)
+                : actionId === 'REB_SANCTUARY_LEAVE' ? orderSanctuaryLeave(world, factionId)
+                : actionId === 'REB_SANCTUARY_ANSWER' ? answerSanctuaryOrder(world, factionId, payload?.sanctuaryId, payload?.answer)
+                : demandHandoverOrder(world, factionId, payload?.sanctuaryId);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.message);
                 return;

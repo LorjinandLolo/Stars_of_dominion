@@ -23,7 +23,7 @@
 
 import type { GameWorldState } from '../game-world-state';
 import {
-    HELD_ACT_COOLDOWN_SECONDS,
+    HELD_ACT_COOLDOWN_SECONDS, noteForSeat,
     type Companion, type CompanionSkill, type JobApproach, type JobBoardEntry, type JobPlan,
     type JobPlanView, type JobRun, type JobTrace, type JobView, type RebelCell,
 } from '../rebellion/rebellion-types';
@@ -43,6 +43,9 @@ import { applyFate, crewAfterJob, crewCheckModifier } from './crew-service';
 import { hunterTargetBlocker, killHunter } from './hunter-service';
 import { hunterLabel } from '../rebellion/rebellion-types';
 import type { CaseClue, CovertCase } from '../espionage/espionage-types';
+import { allyCellsOf, busyIds, ownerCellOf, pooledCrew } from './fellows-service';
+import { SANCTUARY_STAGING, jobTravelEvidence } from './sanctuary-service';
+import { inSanctuary } from '../rebellion/rebellion-types';
 
 export type JobResult = { ok: true; message: string } | { ok: false; message: string };
 
@@ -58,8 +61,9 @@ export const HIJACK_MIN_FLEET_SHIPS = 2;
 const SHIP_ORDER = ['corvette', 'frigate', 'destroyer', 'cruiser', 'battlecruiser', 'battleship'];
 const SKILLS: CompanionSkill[] = ['infiltration', 'violence', 'piloting', 'talk', 'tech'];
 
-function crewOf(cell: RebelCell, ids: string[]): Companion[] {
-    const crew = cell.exile?.crew ?? [];
+/** The people on a job, from our crew and (14f) our fellow exiles'. */
+function crewOf(world: GameWorldState, cell: RebelCell, ids: string[]): Companion[] {
+    const crew = pooledCrew(world, cell);
     return ids.map(id => crew.find(c => c.id === id)).filter((c): c is Companion => !!c);
 }
 
@@ -138,21 +142,31 @@ export function jobBlocker(world: GameWorldState, cell: RebelCell, def: JobDefin
     if (cell.lyingLow) return 'We are lying low.';
     if (cell.strength < ACT_MIN_STRENGTH) return `The movement needs strength ${ACT_MIN_STRENGTH} for a job.`;
     if ((cell.nextActAtSeconds ?? 0) > world.nowSeconds) return 'Too soon after the last job: let things go quiet first.';
-    if (!cell.exile.crew.some(c => c.status === 'free')) return 'Nobody is free to go.';
+    if (!pooledCrew(world, cell).some(c => c.status === 'free')) return 'Nobody is free to go.';
     if (def.target !== 'none' && targetsFor(world, cell, def).length === 0) return def.target === 'fleet' ? 'No ship of theirs is within reach.' : 'None of their worlds is within reach.';
     if (def.act === 'ambush') return hunterTargetBlocker(world, cell);
     return null;
 }
 
-function checkCrew(cell: RebelCell, def: JobDefinition, ids: string[]): string | null {
+function checkCrew(world: GameWorldState, cell: RebelCell, def: JobDefinition, ids: string[]): string | null {
     if (ids.length === 0) return 'Choose who goes.';
     if (ids.length > def.maxCrew) return `This job takes at most ${def.maxCrew}.`;
+    const crew = pooledCrew(world, cell);
+    // A fellow exile's people out on their own job or watch are not ours to send.
+    const busy = new Set<string>();
+    for (const a of allyCellsOf(world, cell)) for (const id of busyIds(world, a)) busy.add(id);
     for (const id of ids) {
-        const c = cell.exile!.crew.find(x => x.id === id);
+        const c = crew.find(x => x.id === id);
         if (!c) return 'That person is not one of ours.';
         if (c.status !== 'free') return `${c.name} cannot go: ${c.status}.`;
+        if (busy.has(id) && !cell.exile!.crew.some(x => x.id === id)) return `${c.name} is busy with their own people.`;
     }
     return null;
+}
+
+/** The fellow exiles' cells whose people are on this crew. */
+function partyOf(world: GameWorldState, cell: RebelCell, ids: string[]): string[] {
+    return [...new Set(ids.map(id => ownerCellOf(world, cell, id).id))].filter(id => id !== cell.id);
 }
 
 /** Plan a job: target, approach, who goes, who does what. Watches and gear carry over while the target stays the same. */
@@ -163,7 +177,7 @@ export function setPlan(world: GameWorldState, cell: RebelCell, input: { jobId?:
     const approach = String(input.approach ?? 'quiet') as JobApproach;
     if (!(approach in APPROACH_LABEL)) return { ok: false, message: 'Unknown approach.' };
     const ids = Array.isArray(input.crewIds) ? [...new Set(input.crewIds.map(String))] : [];
-    const crewProblem = checkCrew(cell, def, ids);
+    const crewProblem = checkCrew(world, cell, def, ids);
     if (crewProblem) return { ok: false, message: crewProblem };
     const targetId = input.targetId ? String(input.targetId) : null;
     if (def.target !== 'none' && !targetsFor(world, cell, def).some(t => t.id === targetId)) return { ok: false, message: 'Pick a target within reach.' };
@@ -181,8 +195,12 @@ export function setPlan(world: GameWorldState, cell: RebelCell, input: { jobId?:
         reconBy: sameTarget ? old!.reconBy ?? null : null,
         reconUntilSeconds: sameTarget ? old!.reconUntilSeconds ?? null : null,
         gear: old?.gear ?? [],
+        // 14f: any change to the plan asks every fellow exile on it to commit again.
+        party: partyOf(world, cell, ids),
+        commits: [],
     };
-    return { ok: true, message: `${def.title}: planned.` };
+    const party = cell.plan.party ?? [];
+    return { ok: true, message: party.length ? `${def.title}: planned. Waiting on our fellow exiles to commit their people.` : `${def.title}: planned.` };
 }
 
 /** Send someone to watch the target. It takes a sim day, and a watcher can be noticed. */
@@ -194,7 +212,8 @@ export function startRecon(world: GameWorldState, cell: RebelCell, companionId: 
     const c = cell.exile?.crew.find(x => x.id === String(companionId ?? ''));
     if (!c || c.status !== 'free') return { ok: false, message: 'Send someone who is free.' };
     plan.reconBy = c.id;
-    plan.reconUntilSeconds = world.nowSeconds + RECON_SECONDS;
+    // 14f: from sanctuary, everyone travels: watches take longer to stage.
+    plan.reconUntilSeconds = world.nowSeconds + Math.round(RECON_SECONDS * (inSanctuary(cell) ? SANCTUARY_STAGING : 1));
     cell.safeHouse.concealment = Math.max(0.1, cell.safeHouse.concealment - RECON_COVER_COST);
     return { ok: true, message: `${c.name} goes to watch.` };
 }
@@ -243,8 +262,13 @@ export function startJob(world: GameWorldState, cell: RebelCell, jobId: string, 
     if (plan?.reconUntilSeconds) return { ok: false, message: 'Wait for the watcher to come back.' };
     if ((def.minRecon ?? 0) > (plan?.recon ?? 0)) return { ok: false, message: `We need ${def.minRecon} watches on the target first.` };
     const ids = plan ? plan.crewIds : (Array.isArray(crewIds) ? [...new Set(crewIds.map(String))] : []);
-    const crewProblem = checkCrew(cell, def, ids);
+    const crewProblem = checkCrew(world, cell, def, ids);
     if (crewProblem) return { ok: false, message: crewProblem };
+    // 14f: a joint job runs only once every fellow exile with people on it has committed.
+    const party = partyOf(world, cell, ids);
+    if (party.length && !plan) return { ok: false, message: 'A job with fellow exiles needs a plan they have agreed to.' };
+    const waiting = party.filter(id => !(plan?.commits ?? []).includes(id));
+    if (waiting.length) return { ok: false, message: `Waiting on ${waiting.map(id => allyCellsOf(world, cell).find(a => a.id === id)?.seat?.displayName ?? 'a fellow exile').join(' and ')} to commit.` };
     if (plan && def.target !== 'none' && !targetsFor(world, cell, def).some(t => t.id === plan.targetId)) return { ok: false, message: 'The target has moved on. Plan again.' };
     const approach = plan?.approach ?? null;
     if (plan) {
@@ -258,7 +282,9 @@ export function startJob(world: GameWorldState, cell: RebelCell, jobId: string, 
         sceneId: (approach && def.starts?.[approach]) || def.start, step: 0, noise: 0,
         story: [], status: 'running', startedAtSeconds: world.nowSeconds, endedAtSeconds: null,
         approach, targetId: plan?.targetId ?? null, roles: plan?.roles ?? {}, gear: plan?.gear ?? [], recon: plan?.recon ?? 0, traces,
+        party,
     };
+    for (const a of allyCellsOf(world, cell)) if (party.includes(a.id)) noteForSeat(a, world.nowSeconds, `${def.title}, with ${cell.seat?.displayName ?? 'our fellow exile'}: under way. Any of us can make the calls.`);
     if (plan) cell.plan = null;
     return { ok: true, message: `${def.title}: under way.` };
 }
@@ -281,7 +307,7 @@ export function chooseInJob(world: GameWorldState, cell: RebelCell, choiceId: un
     const choice = scene?.choices.find(c => c.id === String(choiceId));
     if (!def || !scene || !choice) return { ok: false, message: 'That is not a choice here.' };
 
-    const crew = crewOf(cell, run.crewIds);
+    const crew = crewOf(world, cell, run.crewIds);
     const ctx = jobContext(world, cell, crew, run.roles, targetPlanetOf(world, run));
     let step: JobStep = choice.success;
     if (choice.check) {
@@ -366,7 +392,13 @@ function finishJob(world: GameWorldState, cell: RebelCell, def: JobDefinition, r
     for (const line of crewAfterJob(world, cell, run, outcome)) run.story.push(line);
     run.story.push(fillTemplate(def.endings[outcome], ctx));
     cell.jobsRun = (cell.jobsRun ?? 0) + 1;
-    cell.nextActAtSeconds = world.nowSeconds + HELD_ACT_COOLDOWN_SECONDS;
+    // 14f: from sanctuary the next job takes longer to stage; a joint job rests every cell on it.
+    const party = allyCellsOf(world, cell).filter(a => (run.party ?? []).includes(a.id));
+    for (const c of [cell, ...party]) {
+        c.nextActAtSeconds = Math.max(c.nextActAtSeconds ?? 0, world.nowSeconds + Math.round(HELD_ACT_COOLDOWN_SECONDS * (inSanctuary(c) ? SANCTUARY_STAGING : 1)));
+        jobTravelEvidence(world, c);
+    }
+    for (const a of party) noteForSeat(a, world.nowSeconds, `${def.title}, with ${cell.seat?.displayName ?? 'our fellow exile'}: ${fillTemplate(def.endings[outcome], ctx)}`);
     sh.concealment = Math.max(0.1, sh.concealment - run.noise * COVER_PER_NOISE);
 
     if (outcome === 'failure') {
@@ -378,7 +410,7 @@ function finishJob(world: GameWorldState, cell: RebelCell, def: JobDefinition, r
     const kase = commitAct(world, cell, def.act, activeSponsorshipsOf(world, cell.id), Math.random, opts);
     if (kase) leaveTraces(world, cell, run, kase, ctx);
     if (outcome === 'partial') sh.concealment = Math.max(0.1, sh.concealment - PARTIAL_COVER_LOSS);
-    for (const c of crewOf(cell, run.crewIds)) c.bond = Math.min(100, c.bond + (outcome === 'success' ? BOND_PER_SUCCESS : Math.round(BOND_PER_SUCCESS / 2)));
+    for (const c of crewOf(world, cell, run.crewIds)) c.bond = Math.min(100, c.bond + (outcome === 'success' ? BOND_PER_SUCCESS : Math.round(BOND_PER_SUCCESS / 2)));
 }
 
 /**
@@ -397,7 +429,7 @@ function leaveTraces(world: GameWorldState, cell: RebelCell, run: JobRun, kase: 
     const seen = new Set<string>();
     let n = 0;
     for (const t of run.traces ?? []) {
-        const who = t.companionId ? cell.exile?.crew.find(c => c.id === t.companionId) : null;
+        const who = t.companionId ? pooledCrew(world, cell).find(c => c.id === t.companionId) : null;
         const key = `${t.kind}|${who?.id ?? ''}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -428,7 +460,7 @@ export function jobView(world: GameWorldState, cell: RebelCell): JobView | null 
     if (!run) return null;
     const def = JOB_BY_ID[run.jobId];
     if (!def) return null;
-    const crew = crewOf(cell, run.crewIds);
+    const crew = crewOf(world, cell, run.crewIds);
     const ctx = jobContext(world, cell, crew, run.roles, targetPlanetOf(world, run));
     const scene = run.status === 'running' ? def.scenes[run.sceneId] : null;
     return {

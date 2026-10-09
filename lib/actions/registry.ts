@@ -454,6 +454,53 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { gearId: "string" },
     cost: {}
   },
+  // Item 14f: fallen leaders join forces (lib/fallen/fellows-service.ts) and
+  // ask a standing empire for sanctuary (lib/fallen/sanctuary-service.ts).
+  // Issued from an underground seat; the worker checks they lead a cell.
+  REB_CREW_JOIN: {
+    id: "REB_CREW_JOIN",
+    category: "espionage",
+    params: { cellId: "string" },
+    cost: {}
+  },
+  REB_CREW_LEAVE: {
+    id: "REB_CREW_LEAVE",
+    category: "espionage",
+    params: { cellId: "string" },
+    cost: {}
+  },
+  REB_JOB_COMMIT: {
+    id: "REB_JOB_COMMIT",
+    category: "espionage",
+    params: { leadCellId: "string" },
+    cost: {}
+  },
+  REB_SANCTUARY_ASK: {
+    id: "REB_SANCTUARY_ASK",
+    category: "espionage",
+    params: { factionId: "string" },
+    cost: {}
+  },
+  REB_SANCTUARY_LEAVE: {
+    id: "REB_SANCTUARY_LEAVE",
+    category: "espionage",
+    params: {},
+    cost: {}
+  },
+  // Issued by an empire: the host's answer (open, quiet, refuse, end,
+  // refuse_demand, hand_over) and the conqueror's demand.
+  REB_SANCTUARY_ANSWER: {
+    id: "REB_SANCTUARY_ANSWER",
+    category: "diplomatic",
+    params: { sanctuaryId: "string", answer: "string" },
+    cost: {}
+  },
+  REB_SANCTUARY_DEMAND: {
+    id: "REB_SANCTUARY_DEMAND",
+    category: "diplomatic",
+    params: { sanctuaryId: "string" },
+    cost: {}
+  },
   ESP_PURSUE_LEAD: {
     id: "ESP_PURSUE_LEAD",
     category: "espionage",

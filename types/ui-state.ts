@@ -234,6 +234,8 @@ export interface EspionageState {
     rebelCrackdowns: Crackdown[];
     /** Cells in rival territory our service can see, and could sponsor (13b). */
     foreignCells: ForeignCellView[];
+    /** Item 14f: shelters we give or are asked for, and known shelters of our enemies. */
+    sanctuaries?: import('@/lib/rebellion/rebellion-types').SanctuaryDeskEntry[];
     /** What we pay, and to whom (13b). */
     cellSponsorships: CellSponsorship[];
 }

@@ -48,6 +48,8 @@ export type ChronicleEventType =
     | 'crackdown'
     // A rebel killed on a job (Item 14d): the press knows a world, rarely a name.
     | 'rebel_killed'
+    // Shelter for a fallen government (Item 14f): actor the host, target the conqueror; facts.phase given/exposed/refused/handed_over.
+    | 'sanctuary'
     | 'defiance_event'
     // Economy
     | 'trade_route_opened'

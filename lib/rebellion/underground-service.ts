@@ -31,7 +31,10 @@ import {
 } from './sponsor-service';
 import { hostReadyForMovement, movementReady, riseAsMovement, MOVEMENT_MIN_AGE_SECONDS, MOVEMENT_MIN_STRENGTH } from './movement-service';
 import { fireNotification } from '../time/notification-hooks';
-import { buyGear, chooseInJob, jobBoard, jobView, planView, setPlan, startJob, startRecon, tickRecon } from '../fallen/job-service';
+import { buyGear, chooseInJob, jobBoard, jobView, planView, setPlan, startJob, startRecon, targetsFor, tickRecon } from '../fallen/job-service';
+import { allyCellsOf, allyPlansView, commitToPlan, fellowsView, joinFellow, jointJobFor, leaveFellow } from '../fallen/fellows-service';
+import { answerSanctuary, askSanctuary, demandHandover, findSanctuary, leaveSanctuary, shelterCandidates, tickSanctuary } from '../fallen/sanctuary-service';
+import { JOB_BY_ID } from '../fallen/jobs';
 import { crewForLeader, tickCrew } from '../fallen/crew-service';
 import { ensureHunter, tickHunter } from '../fallen/hunter-service';
 import { labelFor } from '../time/notification-names';
@@ -229,6 +232,9 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
     ensureHunter(world, cell);
     const previousLog = cell.seatView?.log ?? (cell as any).pendingSeatLog ?? [];
     delete (cell as any).pendingSeatLog;
+    // 14f: a fellow exile's job with our people on it plays on our page too.
+    const ownRunning = cell.job?.status === 'running';
+    const joint = ownRunning ? null : jointJobFor(world, cell);
     const view: CellSeatView = {
         asOfSeconds: world.nowSeconds,
         cellId: cell.id,
@@ -261,9 +267,17 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
         log: previousLog,
         // 14d: the leader never sees who has turned.
         exile: cell.exile ? { ...cell.exile, crew: crewForLeader(cell.exile.crew) } : null,
-        job: jobView(world, cell),
+        job: joint ? jobView(world, joint) : jobView(world, cell),
+        jobLedBy: joint ? joint.seat?.displayName ?? 'a fellow exile' : null,
         jobs: jobBoard(world, cell),
         plan: planView(world, cell),
+        fellows: fellowsView(world, cell),
+        allyCrew: cell.exile ? allyCellsOf(world, cell).flatMap(a => crewForLeader(a.exile!.crew).map(c => ({ ...c, ownerCellId: a.id, ownerName: a.seat?.displayName ?? 'a fellow exile' }))) : [],
+        allyPlans: cell.exile ? allyPlansView(world, cell, lead => {
+            const def = JOB_BY_ID[lead.plan!.jobId];
+            return def ? targetsFor(world, lead, def).find(t => t.id === lead.plan!.targetId)?.label ?? null : null;
+        }) : [],
+        shelters: cell.exile ? shelterCandidates(world, cell) : [],
     };
     cell.seatView = view;
 }
@@ -272,6 +286,8 @@ export function refreshSeatView(world: GameWorldState, cell: RebelCell): void {
 export function refreshSeatViews(world: GameWorldState): void {
     for (const c of ensureRebellion(world).cells.values()) {
         if (!c.seat) continue;
+        // 14f: requests lapse, quiet shelters leak, the conqueror demands.
+        tickSanctuary(world, c);
         // 14d: wounds heal, prisoners are questioned, loyalty may turn.
         tickCrew(world, c);
         // 14e: the officer on the case looks for us.
@@ -295,7 +311,7 @@ function withCell(world: GameWorldState, factionId: string, fn: (cell: RebelCell
 
 /** Plan a job: target, approach, who goes, who does what. */
 export function orderPlan(world: GameWorldState, factionId: string, payload: any): SeatResult {
-    return withCell(world, factionId, cell => setPlan(world, cell, payload ?? {}));
+    return withAllies(world, factionId, cell => setPlan(world, cell, payload ?? {}));
 }
 
 /** Send someone to watch the planned job's target. */
@@ -315,7 +331,7 @@ export function orderJobStart(world: GameWorldState, factionId: string, jobId: u
     const cell = heldCellOf(world, factionId);
     if (!cell) return { ok: false, message: 'You lead no cell.' };
     const r = startJob(world, cell, String(jobId ?? ''), crewIds);
-    refreshSeatView(world, cell);
+    refreshWithAllies(world, cell);
     return r;
 }
 
@@ -323,8 +339,68 @@ export function orderJobStart(world: GameWorldState, factionId: string, jobId: u
 export function orderJobChoice(world: GameWorldState, factionId: string, choiceId: unknown): SeatResult {
     const cell = heldCellOf(world, factionId);
     if (!cell) return { ok: false, message: 'You lead no cell.' };
-    const r = chooseInJob(world, cell, choiceId);
-    if (r.ok && cell.job && cell.job.status !== 'running') seatLog(cell, world.nowSeconds, r.message);
+    // 14f: on a fellow exile's job, any of us can make the call.
+    const lead = cell.job?.status === 'running' ? cell : (jointJobFor(world, cell) ?? cell);
+    const r = chooseInJob(world, lead, choiceId);
+    if (r.ok && lead.job && lead.job.status !== 'running') seatLog(lead, world.nowSeconds, r.message);
+    refreshWithAllies(world, lead);
+    return r;
+}
+
+/** Refresh a cell's view and its fellow exiles': what one does shows on the other's page. */
+function refreshWithAllies(world: GameWorldState, cell: RebelCell): void {
     refreshSeatView(world, cell);
+    for (const a of allyCellsOf(world, cell)) refreshSeatView(world, a);
+}
+
+// ─── Item 14f: fellow exiles and sanctuary ───────────────────────────────────
+
+function withAllies(world: GameWorldState, factionId: string, fn: (cell: RebelCell) => SeatResult, alsoCellId?: unknown): SeatResult {
+    const cell = heldCellOf(world, factionId);
+    if (!cell) return { ok: false, message: 'You lead no cell.' };
+    const r = fn(cell);
+    refreshWithAllies(world, cell);
+    const other = alsoCellId ? ensureRebellion(world).cells.get(String(alsoCellId)) : undefined;
+    if (other?.seat) refreshSeatView(world, other);
+    return r;
+}
+
+/** Ask a fellow exile to join forces, or accept their asking. */
+export function orderCrewJoin(world: GameWorldState, factionId: string, cellId: unknown): SeatResult {
+    return withAllies(world, factionId, cell => joinFellow(world, cell, cellId), cellId);
+}
+
+/** Part ways with a fellow exile, or turn their offer down. */
+export function orderCrewLeave(world: GameWorldState, factionId: string, cellId: unknown): SeatResult {
+    return withAllies(world, factionId, cell => leaveFellow(world, cell, cellId), cellId);
+}
+
+/** Commit our people to a fellow exile's plan. */
+export function orderJobCommit(world: GameWorldState, factionId: string, leadCellId: unknown): SeatResult {
+    return withAllies(world, factionId, cell => commitToPlan(world, cell, leadCellId));
+}
+
+/** Ask an empire still standing for sanctuary. */
+export function orderSanctuaryAsk(world: GameWorldState, factionId: string, hostId: unknown): SeatResult {
+    return withCell(world, factionId, cell => askSanctuary(world, cell, hostId));
+}
+
+export function orderSanctuaryLeave(world: GameWorldState, factionId: string): SeatResult {
+    return withCell(world, factionId, cell => leaveSanctuary(world, cell));
+}
+
+/** An empire answers: a request for shelter, or the conqueror's demand. Issued by the host empire, not a seat. */
+export function answerSanctuaryOrder(world: GameWorldState, hostId: string, sanctuaryId: unknown, answer: unknown): SeatResult {
+    const r = answerSanctuary(world, hostId, sanctuaryId, answer);
+    const found = findSanctuary(world, String(sanctuaryId ?? ''));
+    if (found?.cell.seat) refreshSeatView(world, found.cell);
+    return r;
+}
+
+/** The conqueror demands an exile it knows of be handed over. */
+export function demandHandoverOrder(world: GameWorldState, conquerorId: string, sanctuaryId: unknown): SeatResult {
+    const r = demandHandover(world, conquerorId, sanctuaryId);
+    const found = findSanctuary(world, String(sanctuaryId ?? ''));
+    if (found?.cell.seat) refreshSeatView(world, found.cell);
     return r;
 }

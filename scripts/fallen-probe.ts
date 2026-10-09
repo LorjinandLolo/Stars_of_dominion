@@ -656,7 +656,9 @@ async function main() {
         cell.safeHouse.knownToFactionIds = cell.safeHouse.knownToFactionIds.filter((id: string) => id !== host);
         const found = sweep(w, host, cell.systemId, 1, () => 0);
         check('the conqueror\'s sweep found the cell', found.some((c: any) => c.id === cell.id));
-        check('the story has it at once, under the officer\'s name', cell.seatView.log[0]?.text.includes(label(cell)) && /sweep/.test(cell.seatView.log[0].text), cell.seatView.log[0]?.text);
+        // 14f: the same sweep may also take someone resting there; the beat is in the story the same tick either way.
+        const beat = cell.seatView.log.find((l: any) => l.at === w.nowSeconds && l.text.includes(label(cell)) && /sweep/.test(l.text));
+        check('the story has it at once, under the officer\'s name', !!beat, cell.seatView.log[0]?.text);
         check('and so does the officer\'s file', cell.exile.hunter.notes[0]?.text.includes('sweep'));
 
         const own = hidden();
@@ -675,12 +677,13 @@ async function main() {
         const { w, cell, host } = hidden();
         crackdown(w, host, cell.planetId, () => 0);
         check('a crackdown on the hideout world', cell.seatView.log.some((l: any) => l.text.includes(label(cell)) && /crackdown/.test(l.text)));
-        const c = cell.exile.crew[0];
+        // 14f: the crackdown may have taken someone; a companion still free turns.
+        const c = cell.exile.crew.find((x: any) => x.status === 'free');
         c.loyalty = 5;
         CS.tickCrew(w, cell, () => 0);
         const beat = cell.exile.hunter.notes.find((x: any) => /new source/.test(x.text));
         check('a companion turns: the leader learns someone talks, never who', !!beat && !beat.text.includes(c.name));
-        const p = cell.exile.crew[1];
+        const p = cell.exile.crew.find((x: any) => x.status === 'free' && x.id !== c.id);
         CS.captureCompanion(w, cell, p, 'the docks');
         CS.breakPrisoner(w, cell, p);
         check('an interrogation that breaks someone', cell.exile.hunter.notes.some((x: any) => x.text.includes(p.name) && /questioned/.test(x.text)));
@@ -724,6 +727,235 @@ async function main() {
         const next = HS.ensureHunter(w, cell);
         check('then a successor takes it, hotter than the last', !!next && next.generation === 2 && next.heat >= Math.min(100, first.heat + HS.SUCCESSOR_HEAT - 1) && next.name !== first.name);
         check('the hunter service stays out of the browser', !/hunter-service/.test(code('components/underground/UndergroundShell.tsx')));
+    }
+
+    // ── 14f: not alone ───────────────────────────────────────────────────────
+    const FS = await import('../lib/fallen/fellows-service');
+    const SS = await import('../lib/fallen/sanctuary-service');
+    const { sanctuariesFor } = await import('../lib/fallen/sanctuary-view');
+    const F2 = 'faction-buthari';
+    const target = (w: any, cell: any) => JS.targetsFor(w, cell, J.JOB_BY_ID.payroll)[0]?.id;
+    /** Two fallen leaders in hiding in one world: F's under K, and F2's. */
+    const twoExiles = () => {
+        const a = hidden();
+        const w = a.w;
+        const taken = new Set([...ensureRebellion(w).cells.values()].map((c: any) => c.planetId));
+        const lost: any = [...w.construction.planets.values()].find((p: any) => p.ownerId === K && !taken.has(p.id));
+        // F2 once held a world K now holds.
+        lost.ownerId = F2; tickLostWorlds(w); w.nowSeconds += 3600;
+        lost.ownerId = K; tickLostWorlds(w);
+        const h2 = { planet: lost, loss: rememberedLossesOf(w, F2)[0], reason: 'probe' } as any;
+        const b: any = exileCellAt(w, h2, F2, () => 0.5);
+        const id2 = seatIdFor(b);
+        attachExile(w, b, h2, F2, id2);
+        seatCell(w, b, id2, 'Second Exile');
+        b.strength = 40; b.nextActAtSeconds = 0;
+        for (const c of [...a.cell.exile.crew, ...b.exile.crew]) c.threadId = null;
+        return { w, a: a.cell, b, host: a.host };
+    };
+
+    console.log('\n[28] Fellow exiles join forces: one crew, two seats');
+    {
+        const { w, a, b } = twoExiles();
+        check('two fallen leaders in hiding, each with their own seat', !!a.seat && !!b.seat && a.seat.factionId !== b.seat.factionId);
+        UG.refreshSeatView(w, a);
+        check('each sees the other among the fellows in hiding', a.seatView.fellows.some((f: any) => f.cellId === b.id && !f.allied));
+        const bCrew = b.exile.crew[0].id;
+        check('nobody can borrow people before joining', !JS.setPlan(w, a, { jobId: 'payroll', approach: 'quiet', crewIds: [a.exile.crew[0].id, bCrew], targetId: target(w, a) }).ok, 'needs joining');
+        check('asking is not joining', FS.joinFellow(w, a, b.id).ok && FS.allyCellsOf(w, a).length === 0 && b.exile.invites.some((i: any) => i.fromCellId === a.id));
+        check('the other accepts', FS.joinFellow(w, b, a.id).ok && FS.allyCellsOf(w, a)[0]?.id === b.id && FS.allyCellsOf(w, b)[0]?.id === a.id);
+        UG.refreshSeatView(w, a);
+        check('the pooled crew shows on the page, with whose people they are', a.seatView.allyCrew.some((c: any) => c.id === bCrew && c.ownerCellId === b.id));
+        b.exile.crew[1].turned = true;
+        UG.refreshSeatView(w, a);
+        check('a turned companion of theirs stays hidden from us too', !a.seatView.allyCrew.some((c: any) => 'turned' in c));
+        b.exile.crew[1].turned = false;
+
+        primeCrew(a); primeCrew(b);
+        const crew = [a.exile.crew[0].id, bCrew, a.exile.crew[1].id];
+        const plan = JS.setPlan(w, a, { jobId: 'payroll', approach: 'quiet', crewIds: crew, targetId: target(w, a) });
+        check('a joint plan names the other cell as a party', plan.ok && a.plan.party.includes(b.id), plan.message);
+        const blocked = JS.startJob(w, a, 'payroll', []);
+        check('it does not run until every leader has committed', !blocked.ok && /Waiting on/.test(blocked.message), blocked.message);
+        UG.refreshSeatView(w, b);
+        check('the other leader sees the plan waiting on them', b.seatView.allyPlans.some((p: any) => p.leadCellId === a.id && !p.committed && p.ourCrew.length === 1));
+        check('they commit through their own seat', UG.orderJobCommit(w, b.seat.factionId, a.id).ok && a.plan.commits.includes(b.id));
+        const hostCredits = credits(w, a.hostFactionId);
+        check('then it runs', JS.startJob(w, a, 'payroll', []).ok && a.job.party.includes(b.id));
+        UG.refreshSeatView(w, b);
+        check('and plays on both pages', b.seatView.job?.jobId === 'payroll' && b.seatView.jobLedBy === 'Fallen Probe');
+        a.job.seed = seedPath([true, true, true, true]);
+        check('either leader can make a call', UG.orderJobChoice(w, b.seat.factionId, 'pass').ok && a.job.step === 1);
+        UG.orderJobChoice(w, a.seat.factionId, 'crack');
+        for (let i = 0; i < 4 && a.job.status === 'running'; i++) UG.orderJobChoice(w, a.seat.factionId, a.seatView.job.choices[0]?.id);
+        check('the joint job came off against the real conqueror', a.job.status !== 'failure' && credits(w, a.hostFactionId) < hostCredits, a.job.story.join(' / '));
+        check('each still holds their own seat on their own world', a.seat.factionId !== b.seat.factionId && a.planetId !== b.planetId);
+        check('every cell on it waits before the next job', (b.nextActAtSeconds ?? 0) > w.nowSeconds && (a.nextActAtSeconds ?? 0) > w.nowSeconds);
+        check('the other leader reads how it ended', b.seatView.log.some((l: any) => /The payroll ship, with Fallen Probe/.test(l.text)));
+
+        // A companion lost is lost to all of them, and remembered by their own.
+        const victim = b.exile.crew[2];
+        CS.applyFate(w, a, victim, 'death', 'the pad', 'Shot on the payroll pad.');
+        check('a death on a joint job is permanent for everyone', victim.status === 'dead' && !FS.pooledCrew(w, a).some((c: any) => c.id === victim.id && c.status !== 'dead'));
+        check('and remembered by their own people', (b.exile.memorial ?? []).some((m: any) => m.name === victim.name) && !(a.exile.memorial ?? []).some((m: any) => m.name === victim.name));
+        const taken = b.exile.crew[1];
+        CS.applyFate(w, a, taken, 'capture', 'the pad', '');
+        const held = (w.espionage.factionIntel.get(a.hostFactionId)?.prisoners ?? []).find((p: any) => p.agentId === taken.id);
+        check('one of theirs taken on our job is held by our conqueror', taken.capturedByFactionId === a.hostFactionId && !!held);
+        check('their prisoner claims their own empire', held?.claimedEmployerId === F2);
+        check('a prison break by our cell brings them home', CS.rescueCaptured(w, a).includes(taken.name) && taken.status === 'wounded');
+        check('parting ways ends the shared crew', FS.leaveFellow(w, b, a.id).ok && FS.allyCellsOf(w, a).length === 0 && FS.pooledCrew(w, a).length === a.exile.crew.length);
+        // Join again, so there is something to hide.
+        FS.joinFellow(w, a, b.id); FS.joinFellow(w, b, a.id);
+        const raw = JSON.parse(extractFactionShard(w, a.hostFactionId));
+        check('the conqueror\'s shard does hold the alliance (the save is complete)', JSON.stringify(raw.rebelCells).includes('"allies"'));
+        const priv = scrubOwnerSecrets(raw);
+        check('the conqueror\'s wire carries no allies, invites or party', !/allies|invites|"party"|allyCrew/.test(JSON.stringify(priv.rebelCells ?? [])));
+    }
+
+    console.log('\n[29] Only those in the same position may join');
+    {
+        const { w, a } = twoExiles();
+        const plain: any = [...ensureRebellion(w).cells.values()].find((c: any) => !c.exile && c.status === 'active') ?? null;
+        if (plain) check('a cell without a fallen leader cannot be joined', !FS.joinFellow(w, a, plain.id).ok);
+        check('nor can a leader join themselves', !FS.joinFellow(w, a, a.id).ok);
+        check('an empire still standing has no seat to join with', !UG.orderCrewJoin(w, 'faction-aurelian', a.id).ok);
+    }
+
+    /** F's exile asks a human empire still standing for shelter, and is given it. */
+    const sheltered = (mode: 'open' | 'quiet') => {
+        const { w, cell, host } = hidden();
+        const friend = 'faction-aurelian';
+        const ask = SS.askSanctuary(w, cell, friend);
+        const ans = SS.answerSanctuary(w, friend, cell.exile.sanctuary?.id, mode);
+        return { w, cell, host, friend, ask, ans };
+    };
+
+    console.log('\n[30] Sanctuary: asked, answered, and what it protects');
+    {
+        const { w, cell, host, ask, ans } = sheltered('open');
+        check('an exile can ask a friend\'s empire still standing', ask.ok, ask.message);
+        check('the friend takes them in', ans.ok && cell.exile.sanctuary.status === 'given' && !!cell.exile.sanctuary.planetId, ans.message);
+        UG.refreshSeatView(w, cell);
+        check('only empires held by a person are on the list to ask', cell.seatView.shelters.length > 0 && cell.seatView.shelters.every((s: any) => w.claimedFactionIds.includes(s.factionId) && s.factionId !== host));
+        check('the conqueror cannot be asked', !SS.askSanctuary(w, cell, host).ok);
+        check('only the host can answer', !SS.answerSanctuary(w, 'faction-vektori', cell.exile.sanctuary.id, 'end').ok);
+
+        // Companions resting in sanctuary cannot be taken by the conqueror's sweeps.
+        cell.safeHouse.knownToFactionIds = [];
+        cell.safeHouse.concealment = 0.2;
+        sweep(w, host, cell.systemId, 1, () => 0);
+        check('the conqueror\'s sweep finds the safe house', cell.safeHouse.knownToFactionIds.includes(host));
+        check('but takes nobody resting in sanctuary', cell.exile.crew.every((c: any) => c.status !== 'captured'));
+        crackdown(w, host, cell.planetId, () => 0);
+        check('nor does a crackdown', cell.exile.crew.every((c: any) => c.status !== 'captured'));
+        check('and the story says why', cell.seatView.log.some((l: any) => /across the border/.test(l.text)));
+
+        // Without shelter, the same sweep takes someone.
+        const bare = hidden();
+        bare.cell.safeHouse.knownToFactionIds = [];
+        sweep(bare.w, bare.host, bare.cell.systemId, 1, () => 0);
+        check('without shelter, the same sweep takes one of them', bare.cell.exile.crew.some((c: any) => c.status === 'captured'));
+        check('who is a real prisoner of the conqueror', (bare.w.espionage.factionIntel.get(bare.host)?.prisoners ?? []).some((p: any) => bare.cell.exile.crew.some((c: any) => c.id === p.agentId)));
+
+        // Healing and staging.
+        const hurt = cell.exile.crew[0];
+        CS.woundCompanion(w, hurt);
+        w.nowSeconds += CS.WOUND_SECONDS / 2 + 60;
+        CS.tickCrew(w, cell, () => 0.999);
+        check('wounds heal twice as fast in sanctuary', hurt.status === 'free');
+        JS.setPlan(w, cell, { jobId: 'payroll', approach: 'quiet', crewIds: [cell.exile.crew[1].id], targetId: target(w, cell) });
+        JS.startRecon(w, cell, cell.exile.crew[2].id);
+        check('a watch takes longer to stage from sanctuary', cell.plan.reconUntilSeconds - w.nowSeconds === Math.round(J.RECON_SECONDS * SS.SANCTUARY_STAGING));
+    }
+
+    console.log('\n[31] Open or quiet: what the conqueror learns, and what it costs');
+    {
+        const rivalry = (w: any, a: string, b: string) => w.rivalries.get(`rivalry-${a}-${b}`)?.rivalryScore ?? null;
+        const open = sheltered('open');
+        const r0 = rivalry(open.w, open.host, open.friend);
+        check('an open sanctuary raises the conqueror\'s rivalry with the host at once', r0 !== null && r0 >= 20 + SS.OPEN_RIVALRY - 0.01, String(r0));
+        const desk = sanctuariesFor(open.w, open.host);
+        check('the conqueror\'s desk shows the exiled government, never a cell or a leader', desk.length === 1 && desk[0].role === 'conqueror' && desk[0].leaderName === null && !JSON.stringify(desk).includes(open.cell.id) && !JSON.stringify(desk).includes('Fallen Probe'));
+        check('the host\'s desk names who asked', sanctuariesFor(open.w, open.friend)[0]?.leaderName === 'Fallen Probe');
+
+        const quiet = sheltered('quiet');
+        const q0 = rivalry(quiet.w, quiet.host, quiet.friend);
+        check('a quiet sanctuary costs nothing while it holds', q0 === null || q0 <= 20);
+        check('and the conqueror\'s desk knows nothing', sanctuariesFor(quiet.w, quiet.host).length === 0);
+        chronicle.drainBuffer();
+        let ticks = 0;
+        while (!quiet.cell.exile.sanctuary.exposedAtSeconds && ticks < 200) { quiet.w.nowSeconds += 6 * 3600; SS.tickSanctuary(quiet.w, quiet.cell); ticks++; }
+        check('evidence builds until it is exposed', !!quiet.cell.exile.sanctuary.exposedAtSeconds, `${ticks} ticks`);
+        const q1 = rivalry(quiet.w, quiet.host, quiet.friend);
+        check('a quiet sanctuary exposed raises the rivalry, more than the open stance would have', q1 !== null && q1 - (q0 ?? 20) >= SS.EXPOSED_RIVALRY - 0.01 && SS.EXPOSED_RIVALRY > SS.OPEN_RIVALRY, String(q1));
+        check('now the conqueror knows', sanctuariesFor(quiet.w, quiet.host).length === 1);
+        check('the press reports it', (chronicle.drainBuffer().rows as any[]).some(r => r.type === 'sanctuary' && /exposed/.test(r.facts)));
+        const fast = sheltered('quiet');
+        const e0 = fast.cell.exile.sanctuary.evidence;
+        SS.jobTravelEvidence(fast.w, fast.cell);
+        check('every job run from a quiet sanctuary leaks more', fast.cell.exile.sanctuary.evidence > e0);
+    }
+
+    console.log('\n[32] Hand them over, or refuse');
+    {
+        const rivalry = (w: any, a: string, b: string) => w.rivalries.get(`rivalry-${a}-${b}`)?.rivalryScore ?? 0;
+        // A human conqueror demands through its desk.
+        const r = sheltered('open');
+        r.w.claimedFactionIds = [...r.w.claimedFactionIds, r.host];
+        const d = UG.demandHandoverOrder(r.w, r.host, r.cell.exile.sanctuary.id);
+        check('the conqueror can demand the exile handed over', d.ok && !!r.cell.exile.sanctuary.demand, d.message);
+        check('not twice while the first waits', !UG.demandHandoverOrder(r.w, r.host, r.cell.exile.sanctuary.id).ok);
+        check('nobody else can demand it', !UG.demandHandoverOrder(r.w, 'faction-vektori', r.cell.exile.sanctuary.id).ok);
+        const before = rivalry(r.w, r.host, r.friend);
+        check('the host refuses', UG.answerSanctuaryOrder(r.w, r.friend, r.cell.exile.sanctuary.id, 'refuse_demand').ok);
+        check('and the rivalry rises', rivalry(r.w, r.host, r.friend) >= before + SS.REFUSE_RIVALRY - 0.01 && r.cell.exile.sanctuary.status === 'given');
+
+        // An AI conqueror demands on its own; the host hands them over.
+        const h = sheltered('open');
+        SS.tickSanctuary(h.w, h.cell);
+        check('an AI conqueror demands on its own', !!h.cell.exile.sanctuary.demand);
+        JS.setPlan(h.w, h.cell, { jobId: 'payroll', approach: 'quiet', crewIds: [h.cell.exile.crew[0].id], targetId: target(h.w, h.cell) });
+        JS.startRecon(h.w, h.cell, h.cell.exile.crew[1].id);
+        const away = h.cell.exile.crew[1];
+        const resting = SS.restingCompanions(h.w, h.cell).map((c: any) => c.id);
+        check('the host hands them over', UG.answerSanctuaryOrder(h.w, h.friend, h.cell.exile.sanctuary.id, 'hand_over').ok && h.cell.exile.sanctuary.status === 'handed_over');
+        const prisoners = (h.w.espionage.factionIntel.get(h.host)?.prisoners ?? []).map((p: any) => p.agentId);
+        check('everyone sheltering there is in the conqueror\'s prisons', resting.length > 0 && resting.every((id: string) => prisoners.includes(id) && byId(h.cell, id).status === 'captured'));
+        check('the one out on a watch is not', away.status !== 'captured');
+
+        // Unanswered, a demand counts as refused.
+        const u = sheltered('open');
+        SS.tickSanctuary(u.w, u.cell);
+        u.w.nowSeconds += SS.DEMAND_WINDOW_SECONDS + 60;
+        SS.tickSanctuary(u.w, u.cell);
+        check('a demand left unanswered counts as refused', !u.cell.exile.sanctuary.demand && u.cell.exile.sanctuary.demandsRefused === 1);
+
+        // An unanswered request lapses.
+        const l = hidden();
+        SS.askSanctuary(l.w, l.cell, 'faction-aurelian');
+        l.w.nowSeconds += SS.ANSWER_WINDOW_SECONDS + 60;
+        SS.tickSanctuary(l.w, l.cell);
+        check('a request nobody answers lapses', l.cell.exile.sanctuary.status === 'refused');
+
+        // The movement that wins remembers who took it in.
+        const v = sheltered('open');
+        const newId = 'faction-rebel-probe-state';
+        SS.welcomeNewState(v.w, v.cell, newId);
+        check('the new state starts on good terms with the empire that sheltered it', v.w.rivalries.has(`rivalry-${newId}-${v.friend}`) && rivalry(v.w, newId, v.friend) <= Math.max(0, 20 + SS.SHELTERED_RELATIONS) + 0.01);
+
+        // Privacy and wiring.
+        const raw = JSON.parse(extractFactionShard(v.w, v.host));
+        check('the conqueror\'s shard does hold the sanctuary (the save is complete)', JSON.stringify(raw.rebelCells).includes('sanctuary'));
+        const priv = scrubOwnerSecrets(raw);
+        check('the conqueror\'s wire carries no sanctuary record', !JSON.stringify(priv.rebelCells ?? []).includes('sanctuary'));
+        const still = sheltered('quiet');
+        const own = JSON.parse(extractFactionShard(still.w, still.friend));
+        check('the host\'s own shard carries its desk', own.sanctuaryDesk?.length === 1 && own.sanctuaryDesk[0].role === 'host');
+        const pub = projectPublicShard(own);
+        check('a rival never sees the host\'s desk', !('sanctuaryDesk' in pub));
+        check('the server-only services stay out of the browser bundle', !/sanctuary-service|fellows-service/.test(code('components/underground/UndergroundShell.tsx')) && !/sanctuary-service|fellows-service/.test(code('components/panels/DiplomacyPanel.tsx')));
+        check('the 14f orders are registered and handled', ['REB_CREW_JOIN', 'REB_CREW_LEAVE', 'REB_JOB_COMMIT', 'REB_SANCTUARY_ASK', 'REB_SANCTUARY_LEAVE', 'REB_SANCTUARY_ANSWER', 'REB_SANCTUARY_DEMAND'].every(id => code('lib/actions/registry.ts').includes(`${id}: {`) && code('scripts/game-loop.ts').includes(`case '${id}'`)));
     }
 
     console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);

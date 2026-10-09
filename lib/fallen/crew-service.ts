@@ -20,7 +20,8 @@
  */
 
 import type { GameWorldState } from '../game-world-state';
-import { HOMEGROWN, huntBeat, hunterLabel, noteForSeat, type Companion, type JobRun, type RebelCell } from '../rebellion/rebellion-types';
+import { HOMEGROWN, huntBeat, hunterLabel, inSanctuary, noteForSeat, type Companion, type JobRun, type RebelCell } from '../rebellion/rebellion-types';
+import { busyIds, ownerCellOf, pooledCrew } from './fellows-service';
 import { revealCell } from '../rebellion/cell-service';
 import { ensureCases, INFORMANT_WINDOW_SECONDS } from '../espionage/case-board';
 import { getOrCreateFactionIntel } from '../espionage/faction-intel';
@@ -73,15 +74,23 @@ function living(cell: RebelCell): Companion[] {
 
 // ─── Fates ───────────────────────────────────────────────────────────────────
 
+/**
+ * What a job step does to whoever handled it. The cell is the one running the
+ * job (14f: a fellow exile's companion may be on it): its conqueror takes
+ * them, and the dead are remembered by their own people.
+ */
 export function applyFate(world: GameWorldState, cell: RebelCell, c: Companion, kind: FateKind, where: string, how: string): void {
     if (c.status === 'dead' || c.status === 'gone') return;
+    const owner = ownerCellOf(world, cell, c.id);
     if (kind === 'wound') {
         c.status = 'wounded';
         c.woundedUntilSeconds = world.nowSeconds + WOUND_SECONDS;
+        if (owner !== cell) noteForSeat(owner, world.nowSeconds, `${c.name} was hurt on a job with our fellow exiles.`);
     } else if (kind === 'capture') {
         captureCompanion(world, cell, c, where);
     } else {
-        killCompanion(world, cell, c, how);
+        killCompanion(world, owner, c, how);
+        if (owner !== cell) noteForSeat(cell, world.nowSeconds, `${c.name}, one of ${owner.seat?.displayName ?? 'our fellow exile'}'s people, is dead. ${how}`);
     }
 }
 
@@ -97,13 +106,15 @@ export function woundCompanion(world: GameWorldState, c: Companion): void {
  */
 export function captureCompanion(world: GameWorldState, cell: RebelCell, c: Companion, where: string): void {
     const host = cell.hostFactionId;
+    const owner = ownerCellOf(world, cell, c.id);
     c.status = 'captured';
     c.capturedAtSeconds = world.nowSeconds;
+    c.capturedByFactionId = host;
     c.broke = false;
     const intel = getOrCreateFactionIntel(world, host);
     const list = (intel.prisoners ??= []);
     if (!list.some(p => p.agentId === c.id)) {
-        list.push({ agentId: c.id, codename: c.name, species: c.species, claimedEmployerId: cell.exile?.fromFactionId ?? HOMEGROWN, takenAt: world.nowSeconds, systemId: cell.systemId });
+        list.push({ agentId: c.id, codename: c.name, species: c.species, claimedEmployerId: owner.exile?.fromFactionId ?? HOMEGROWN, takenAt: world.nowSeconds, systemId: cell.systemId });
         if (list.length > 20) list.splice(0, list.length - 20);
     }
     revealCell(cell, host);
@@ -116,7 +127,32 @@ export function captureCompanion(world: GameWorldState, cell: RebelCell, c: Comp
             });
         } catch { /* tests */ }
     }
-    notifySeat(world, cell, 'TAKEN', `${c.name} was taken at ${where}. ${labelFor(host)} has them now, and will make them talk if it can.`);
+    notifySeat(world, owner, 'TAKEN', `${c.name} was taken at ${where}. ${labelFor(host)} has them now, and will make them talk if it can.`);
+    if (owner !== cell) noteForSeat(cell, world.nowSeconds, `${c.name}, one of ${owner.seat?.displayName ?? 'our fellow exile'}'s people, was taken at ${where}.`);
+}
+
+/**
+ * Item 14f: the conqueror's people come for the hideout (a crackdown that
+ * found it, a sweep that found it). Whoever is resting there may be taken,
+ * unless the government in exile sits in a friend's sanctuary across the
+ * border. Returns the name of who was taken, or null.
+ */
+export function arrestAtHideout(world: GameWorldState, cell: RebelCell, chance: number, rand: () => number = Math.random): string | null {
+    if (!cell.exile) return null;
+    const busy = busyIds(world, cell);
+    const resting = cell.exile.crew.filter(c => (c.status === 'free' || c.status === 'wounded') && !busy.has(c.id));
+    if (resting.length === 0) return null;
+    if (inSanctuary(cell)) {
+        const hunter = hunterLabel(cell);
+        const text = `They came for us, and found rooms nobody had slept in for weeks. Our people are across the border, under ${labelFor(cell.exile.sanctuary!.hostFactionId)}'s protection.`;
+        if (hunter) huntBeat(cell, world.nowSeconds, `${hunter} came for us, and found rooms nobody had slept in for weeks. Our people are across the border, under ${labelFor(cell.exile.sanctuary!.hostFactionId)}'s protection.`);
+        else noteForSeat(cell, world.nowSeconds, text);
+        return null;
+    }
+    if (rand() >= chance) return null;
+    const c = resting[Math.floor(rand() * resting.length) % resting.length];
+    captureCompanion(world, cell, c, String((world.construction?.planets?.get?.(cell.planetId) as any)?.name ?? 'the safe house'));
+    return c.name;
 }
 
 /** Dead. Permanent: no path in the game brings a companion back. */
@@ -146,7 +182,8 @@ export function killCompanion(world: GameWorldState, cell: RebelCell, c: Compani
 
 /** A prisoner breaks: the conqueror finds the cell, and the testimony goes on its files. */
 export function breakPrisoner(world: GameWorldState, cell: RebelCell, c: Companion): void {
-    const host = cell.hostFactionId;
+    // 14f: whoever holds them hears it, which after a joint job may not be our own conqueror.
+    const host = c.capturedByFactionId ?? cell.hostFactionId;
     c.broke = true;
     revealCell(cell, host);
     cell.informedUntilSeconds = world.nowSeconds + INFORMANT_WINDOW_SECONDS;
@@ -179,8 +216,11 @@ export function breakPrisoner(world: GameWorldState, cell: RebelCell, c: Compani
 export function rescueCaptured(world: GameWorldState, cell: RebelCell): string[] {
     const intel = world.espionage.factionIntel.get(cell.hostFactionId);
     const freed: string[] = [];
-    for (const c of cell.exile?.crew ?? []) {
+    // 14f: our fellow exiles' people too, when this conqueror is the one holding them.
+    for (const c of pooledCrew(world, cell)) {
         if (c.status !== 'captured') continue;
+        if ((c.capturedByFactionId ?? ownerCellOf(world, cell, c.id).hostFactionId) !== cell.hostFactionId) continue;
+        c.capturedByFactionId = null;
         c.status = 'wounded';
         c.woundedUntilSeconds = world.nowSeconds + WOUND_SECONDS;
         c.capturedAtSeconds = null;
@@ -198,7 +238,9 @@ export function tickCrew(world: GameWorldState, cell: RebelCell, rand: () => num
     if (!cell.exile) return;
     const now = world.nowSeconds;
     for (const c of cell.exile.crew) {
-        if (c.status === 'wounded' && (c.woundedUntilSeconds ?? 0) <= now) {
+        // 14f: in sanctuary, wounds heal twice as fast.
+        const healAt = (c.woundedUntilSeconds ?? 0) - (inSanctuary(cell) ? WOUND_SECONDS / 2 : 0);
+        if (c.status === 'wounded' && healAt <= now) {
             c.status = 'free';
             c.woundedUntilSeconds = null;
             noteForSeat(cell, now, `${c.name} is on their feet again.`);
@@ -240,7 +282,7 @@ export const THREAD_RESOLUTION: Record<string, { jobs: string[]; text: string }>
 /** Everything that happens to the crew when a job ends. Returns lines for the story. */
 export function crewAfterJob(world: GameWorldState, cell: RebelCell, run: JobRun, end: JobEnd, rand: () => number = Math.random): string[] {
     const lines: string[] = [];
-    const crew = (cell.exile?.crew ?? []).filter(c => run.crewIds.includes(c.id));
+    const crew = pooledCrew(world, cell).filter(c => run.crewIds.includes(c.id));
     const worked = end !== 'failure';
     for (const c of crew) {
         if (c.status === 'dead' || c.status === 'gone') continue;
@@ -269,7 +311,7 @@ export function crewAfterJob(world: GameWorldState, cell: RebelCell, run: JobRun
         if (rand() < DISCOVERY_CHANCE) {
             c.status = 'gone';
             lines.push(`${c.name} was seen meeting an officer of ${cell.exile?.conquerorName ?? labelFor(cell.hostFactionId)}. By the time you went looking for them, they were gone.`);
-            noteForSeat(cell, world.nowSeconds, `${c.name} betrayed us, and is gone.`);
+            noteForSeat(ownerCellOf(world, cell, c.id), world.nowSeconds, `${c.name} betrayed us, and is gone.`);
         }
     }
     return lines;

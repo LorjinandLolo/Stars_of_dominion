@@ -33,6 +33,7 @@ import { endCell, ensureRebellion, revealCell } from './cell-service';
 import { activeSponsorshipsOf } from './sponsor-service';
 import { fireNotification } from '../time/notification-hooks';
 import { labelFor } from '../time/notification-names';
+import { welcomeNewState } from '../fallen/sanctuary-service';
 
 /** A cell must have lived this long (sim seconds) before it can rise. */
 export const MOVEMENT_MIN_AGE_SECONDS = 30 * 86400;
@@ -233,6 +234,8 @@ function handOverSeat(world: GameWorldState, cell: RebelCell, rebelFactionId: st
         ? { fromFactionId: cell.exile.fromFactionId, eliminated: true }
         : { fromFactionId: null, eliminated: false });
     launchHiddenDock(world, cell, rebelFactionId);
+    // Item 14f: the new state remembers who sheltered its government in exile.
+    welcomeNewState(world, cell, rebelFactionId);
     cell.seat = null;
     cell.seatView = null;
 }

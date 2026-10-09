@@ -19,6 +19,7 @@ import { MessageSquare } from 'lucide-react';
 import MessageBox from '../messages/MessageBox';
 import ContactSwitcher from './diplomacy/ContactSwitcher';
 import ContactRail from './diplomacy/ContactRail';
+import SanctuaryDesk from './diplomacy/SanctuaryDesk';
 import { buildContacts, ESCALATION_LABELS } from './diplomacy/contact-model';
 import { GALACTIC_DAY_SIM_SECONDS } from '@/lib/time/time-config';
 import { formatGalacticDeadline } from '@/lib/time/galactic-time';
@@ -379,6 +380,8 @@ export default function DiplomacyPanel() {
 
                         {activeTab === 'statecraft' ? (
                             <div className="space-y-10">
+                            {/* Item 14f: governments in exile we shelter, are asked to, or hunt. */}
+                            <SanctuaryDesk />
                             {/* Third-party intervention windows (§23) */}
                             {openInterventions.length > 0 && (
                                 <div className="space-y-4">
