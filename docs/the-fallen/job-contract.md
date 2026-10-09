@@ -59,7 +59,7 @@ Built by the worker from the run and the plan; served as JSON. It carries **only
   "contractId": "jc-<opaque>",
   "issuedAtSeconds": 1234567,             // sim seconds
   "expiresAtRealSeconds": 1790000000,     // wall clock; see "Time"
-  "minPlaySeconds": 240,                  // the job's floor (see "Time"): a report sooner than this is refused
+  "minPlaySeconds": 120,                  // the floor (see "Time"): a report sooner than this is refused
 
   "job": {
     "id": "vault",                        // JOB_BY_ID key
@@ -241,15 +241,7 @@ What it is **not**:
 - **No reward for speed or slowness.** Playing in 5 minutes or 50 changes nothing; the outcome comes from the ending reported.
 - **Never a punishment for an honest player.** The client knows the floor (it is in the contract). If a very fast player finishes early, the client holds the report until the floor has passed, which is seconds at most, and then sends it. Only a report sent too early is refused, and the contract stays open, so even a client bug costs a retry, not the job.
 
-**How long the floor is.** It is set per job on the server, never by the client. It lives on the job definition next to `maxCrew` and `minRecon` in `lib/fallen/jobs.ts` (for example `minPlayRealSeconds`), sized by how much the job is:
-
-| Size | Jobs | Floor |
-|---|---|---|
-| Small: one target, two or three scenes on the shortest path | payroll, broadcast | 90 s |
-| Medium: a planned target, a fight or a chase | detention, cutter, inspector | 150 s |
-| Large: the Aldhani kind, five crew, two watches | vault | 240 s |
-
-These are starting guesses. Once real levels exist, the audit trail of reports gives the true numbers: set each floor at roughly the fastest honest times seen, a little under the quickest real players. A floor set too high would refuse real speedrunners, which is worse than a floor set a little too low, since everything else in "Keeping a foreign client honest" still applies.
+**How long the floor is.** Two minutes for every job (agreed 2026-10-09). It is set on the server, never by the client, as one constant next to the other job rules in `lib/fallen/jobs.ts` (for example `MIN_PLAY_REAL_SECONDS = 120`). If real levels later show that a job needs its own floor, the job definition can override it.
 
 For a co-op job the clock starts when the contract is first fetched by anyone in the party.
 
@@ -284,7 +276,7 @@ Nothing in the contract changes. Staging from sanctuary already made the watches
 None of this is built. In order:
 
 1. **Split `finishJob`.** Build the report in the text resolver and apply it in `applyOutcome`. This is pure refactoring, provable by `scripts/fallen-probe.ts` staying green; after it, the text resolver is literally the reference player.
-2. **Contract status.** Add `contracted` and `abandoned` to `JobRun['status']`, plus `contractId`, `firstFetchedAtRealSeconds`, `expiresAtRealSeconds`, `joinedSeats` and `reportedAt`; add `minPlayRealSeconds` to each job definition.
+2. **Contract status.** Add `contracted` and `abandoned` to `JobRun['status']`, plus `contractId`, `firstFetchedAtRealSeconds`, `expiresAtRealSeconds`, `joinedSeats` and `reportedAt`; add the two-minute `MIN_PLAY_REAL_SECONDS` to `lib/fallen/jobs.ts`.
 3. **Orders.** `REB_JOB_CONTRACT` (claim) and `REB_JOB_REPORT` (the report as the payload), both handled in `scripts/game-loop.ts` like every other `REB_JOB_*` order, and an expiry sweep in `refreshSeatViews`.
 4. **Routes and secret.**
    - `/api/rebel/contract` serves the contract, and only to the seat holder or a party member.
@@ -303,4 +295,4 @@ None of this is built. In order:
 Agreed 2026-10-09:
 - **Epitaphs:** yes. The action game may write a dead companion's line, plain and short (see "The outcome report").
 - **Co-op:** yes. Party leaders of a joint job may play it together in one session; one report ends it (see "Joint jobs and co-op").
-- **Minimum play time:** a per-job sanity floor set on the server, sized by the job and tuned from real reports once levels exist; never a timer, never a limit, never a reason to refuse an honest player (see "Time").
+- **Minimum play time:** two minutes for every job, a sanity floor set on the server; never a timer, never a limit, never a reason to refuse an honest player (see "Time").
