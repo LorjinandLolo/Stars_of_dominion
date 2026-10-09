@@ -493,7 +493,7 @@
                 "minWorlds": 3,
                 "requireArchive": true
             },
-            "_counterplay": "While an empire transcends, every rival's covert ops against it gain this much success chance, and AI services work it first.",
+            "_counterplay": "While an empire transcends, every rival's covert ops against it gain this much success chance, and AI services work it first. AI services also build dedicated cells against a seeker from half-qualified on (lib/ai/intelligence-ai-service SEEKER_FOCUS, slowed by the seeker's counter-intelligence), so they reach Burn the Archive and political ops inside the window; up to two resentful courts embargo it (diplomatic-ai-service ENLIGHTENMENT_COALITION) and up to two declare war (lib/ai/war-ai). A bid that neglects its counter-intelligence is usually broken; scripts/enlightenment-soak-probe.ts with DEFEND=1 measures a guarded one.",
             "transcendingOpSuccessBonus": 0.15,
             "culturalPressurePoints": 3,
             "reward": {

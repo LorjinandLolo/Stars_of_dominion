@@ -23,6 +23,9 @@
 //       npx tsx scripts/enlightenment-soak-probe.ts 600 b      (shorter, seed b)
 
 import { SEASON_TICKS, bootSoakWorld, empireIds, quietConsole, seedSimulation, stepSoak } from './soak-harness';
+import { computeBlocOutlook } from '../lib/politics/politics-service';
+import { ensureDiplomacyState, respondToOffer, isAtWar } from '../lib/diplomacy/offer-service';
+import { setCounterIntelPlan } from '../lib/espionage/counter-intel';
 import { drainBuffer } from '../lib/narrative/chronicle';
 import { readEnlightenmentConditions, ARCHIVE_BUILDING_ID } from '../lib/victory/victory-service';
 import { empireBuildingState, startConstruction, repairBuilding } from '../lib/construction/construction-service';
@@ -34,6 +37,14 @@ import config from '../lib/movement/movement-config.json';
 const ticks = Math.max(1, Number(process.argv[2]) || SEASON_TICKS);
 const seed = process.argv[3] ?? 'a';
 const SEEKERS = (process.env.SEEKERS ?? 'faction-aurelian,faction-covenant,faction-kaerruun,faction-buthari').split(',');
+/**
+ * DEFEND=1: seekers also do what a player guarding a bid would — fund
+ * counter-intelligence at DEFEND_BUDGET (default 60%) with full coverage of the
+ * capital system. The question it answers: is the AI counterplay beatable by
+ * someone who sees it coming, or only by luck?
+ */
+const DEFEND = process.env.DEFEND === '1';
+const DEFEND_BUDGET = Number(process.env.DEFEND_BUDGET ?? 0.6);
 const HUMAN_SEATS = 10;
 /** Completing before this sim day would make the season's other 200+ days moot. */
 const EARLIEST_DAY = 90;
@@ -92,6 +103,8 @@ function seekerTurn(world: any, factionId: string): string | null {
 }
 
 interface Track {
+    peaceAccepted?: number;
+    warTicks?: number;
     bestPassing: number;
     failing: Map<string, number>;
     phases: Set<string>;
@@ -135,9 +148,30 @@ async function main() {
         peak: { approval: 0, legitimacy: 0, cohesion: 0 },
     }]));
     const chronicleCounts: Record<string, number> = {};
+    const diag: string[] = [];
+
+    if (DEFEND) {
+        for (const id of SEEKERS) {
+            const capital = (world.economy.factions.get(id) as any)?.capitalSystemId;
+            setCounterIntelPlan(world, id, DEFEND_BUDGET, capital ? { [capital]: 1 } : {});
+        }
+    }
 
     for (let i = 1; i <= ticks; i++) {
         for (const id of SEEKERS) {
+            // A player at war takes the peace they are offered.
+            for (const offer of ensureDiplomacyState(world).offers.values() as Iterable<any>) {
+                if (offer.status === 'pending' && offer.kind === 'peace_offer' && offer.toFactionId === id) {
+                    respondToOffer(world, id, offer.id, 'accept');
+                    tracks.get(id)!.peaceAccepted = (tracks.get(id)!.peaceAccepted ?? 0) + 1;
+                }
+            }
+            for (const other of ids) {
+                if (other !== id && isAtWar(world, id, other)) {
+                    const t = tracks.get(id)!;
+                    t.warTicks = (t.warTicks ?? 0) + 1;
+                }
+            }
             const enacted = seekerTurn(world, id);
             if (enacted) tracks.get(id)!.enacted.push(`${enacted}@d${Math.floor(i / TICKS_PER_DAY)}`);
             if (seekerBuildsArchive(world, id)) tracks.get(id)!.archiveOrderedDay = Math.floor(i / TICKS_PER_DAY);
@@ -150,6 +184,18 @@ async function main() {
         }
 
         const day = Math.floor(i / TICKS_PER_DAY);
+        // DIAG=1: every 10 days, each seeker's least content bloc and what pulls on it.
+        if (process.env.DIAG === '1' && i % (TICKS_PER_DAY * Number(process.env.DIAG_EVERY ?? 10)) === 0) {
+            for (const id of SEEKERS) {
+                const posture: any = world.movement.empirePostures.get(id);
+                const least = posture?.blocs?.slice().sort((a: any, b: any) => a.satisfaction - b.satisfaction)[0];
+                if (!least) continue;
+                const outlook = computeBlocOutlook(least, posture, world, id);
+                const pulls = outlook.drivers.filter((d: any) => d.points < 0).sort((a: any, b: any) => a.points - b.points).slice(0, 4)
+                    .map((d: any) => `${d.label} ${d.points.toFixed(1)}`).join('; ');
+                diag.push(`d${day} ${id} ${world.victoryState?.enlightenmentProgress?.get(id)?.phase ?? '-'}: ${least.name} ${least.satisfaction.toFixed(0)} <- ${pulls}`);
+            }
+        }
         for (const id of SEEKERS) {
             const t = tracks.get(id)!;
             const now = empireBuildingState(world.construction.planets.values(), id, ARCHIVE_BUILDING_ID);
@@ -201,6 +247,7 @@ async function main() {
     th.minWorlds = authoredMinWorlds;
 
     console.log(`\nEnlightenment soak — ${ticks} ticks (${ticks / TICKS_PER_DAY} sim days), seed ${seed}`);
+    if (DEFEND) console.log(`DEFEND: seekers fund counter-intelligence at ${Math.round(DEFEND_BUDGET * 100)}% with their capital covered.`);
     console.log(`Seekers: ${SEEKERS.join(', ')}. World-count condition relaxed ${authoredMinWorlds} → ${Math.min(authoredMinWorlds, startWorlds)} (soak cannot colonise).\n`);
     for (const id of ids) {
         const t = tracks.get(id)!;
@@ -220,8 +267,10 @@ async function main() {
         console.log(`     failing: ${fail || 'nothing'}`);
         if (SEEKERS.includes(id)) console.log(`     treasury: ${t.treasury.join(' | ')}`);
         if (t.enacted.length) console.log(`     enacted: ${t.enacted.join(', ')}`);
+        if (t.warTicks) console.log(`     at war ${(t.warTicks / TICKS_PER_DAY).toFixed(0)} days; peace accepted ${t.peaceAccepted ?? 0}×`);
         if (Object.keys(t.opsWhileTranscending).length) console.log(`     ops against it while transcending: ${JSON.stringify(t.opsWhileTranscending)}`);
     }
+    if (diag.length) console.log(`\n${diag.join('\n')}`);
     console.log(`\nchronicle: ${JSON.stringify(chronicleCounts)}`);
     const victoryErrors = [...quiet.complaints.entries()].filter(([k]) => /victory|enlighten/i.test(k));
 
@@ -238,6 +287,15 @@ async function main() {
     check('rival services work a transcending empire',
         worked.length === 0 || worked.some(id => Object.keys(tracks.get(id)!.opsWhileTranscending).length > 0),
         worked.map(id => `${id}: ${JSON.stringify(tracks.get(id)!.opsWhileTranscending)}`).join('; '));
+    // Not just intel gathering: something that can break the attempt — the
+    // Archive burned, a political or smear op, or the window interrupted.
+    const BREAKERS = ['sabotage_archive', 'election_interference', 'incite_rebellion', 'fund_separatists', 'smear_campaign'];
+    check('rivals reach for ops that can break a transcendence',
+        worked.length === 0 || worked.some(id => {
+            const t = tracks.get(id)!;
+            return t.archiveBurned > 0 || BREAKERS.some(op => (t.opsWhileTranscending[op] ?? 0) > 0);
+        }),
+        worked.map(id => `${id}: burned ${tracks.get(id)!.archiveBurned}×`).join('; '));
     check('the victory layer never threw', victoryErrors.length === 0, victoryErrors.map(([k, n]) => `${n}× ${k}`).join('; '));
 
     console.log(results.join('\n'));

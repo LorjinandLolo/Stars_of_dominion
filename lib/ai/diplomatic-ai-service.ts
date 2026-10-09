@@ -18,9 +18,13 @@ import type { GameWorldState } from '@/lib/game-world-state';
 import { ensureDiplomacyState, respondToOffer, createOffer, isAtWar, findActiveTreaty } from '@/lib/diplomacy/offer-service';
 import { respondToGambit, pickAutoResponse, factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { intervene } from '@/lib/diplomacy/intervention-service';
-import { imposeSanctions, getSanction } from '@/lib/diplomacy/sanctions-service';
+import { imposeSanctions, getSanction, liftSanctions } from '@/lib/diplomacy/sanctions-service';
 import type { DiplomaticOffer } from '@/lib/diplomacy/diplomacy-types';
 import { condescensionPenalty } from '@/lib/factions/nexulan';
+import { aiWarWantsPeace } from '@/lib/ai/war-ai';
+
+/** Most sanctioners the Enlightenment coalition brings a transcending empire to. */
+export const ENLIGHTENMENT_COALITION = 2;
 
 /** AI acts on a pending item once it is this old (6 sim-hours = one tick). */
 const DELIBERATION_SECONDS = 6 * 3600;
@@ -73,6 +77,8 @@ export function wouldAccept(world: GameWorldState, offer: DiplomaticOffer): bool
         }
         case 'peace_offer': {
             if (world.shared.warFatigue >= 40) return true;
+            // Its own campaign has stalled or its battle groups are gone.
+            if (aiWarWantsPeace(world, me, them)) return true;
             return factionFleetPower(world, me) < factionFleetPower(world, them);
         }
         case 'tribute_demand': {
@@ -147,6 +153,52 @@ export function runDiplomaticAI(world: GameWorldState, opts: DiplomaticAIOptions
                 intervene(world, factionId, window.id, 'mediate');
             }
             // Everyone else stays neutral — silence is also a position.
+        }
+    }
+
+    // 3b. Coalition against Enlightenment: courts that already resent a
+    //     transcending empire embargo it, up to ENLIGHTENMENT_COALITION
+    //     sanctioners in all. Embargoes pull its merchants' satisfaction down
+    //     (lib/politics/politics-service, embargoedBy driver: 12 points for
+    //     one, +6 per further one, capped at 40) — the blocContent condition.
+    //     Kept small on purpose: in a soak, every court at once (or three
+    //     forced in) drained the merchants ~3 points a day and broke every
+    //     bid within a week however well it was defended — a lever with no
+    //     answer. Espionage (answered by counter-intelligence) and war
+    //     (answered by fleets) carry the counterplay; this adds pressure on
+    //     an empire that made enemies. Not chance-gated: the window is 15 days.
+    //     The embargo is about the bid, not the empire: when the window
+    //     closes (won, broken, or reset) each court that joined only for it
+    //     lifts it again — otherwise one attempt left the seeker's blocs
+    //     embargoed for the rest of the season and it could never try again.
+    const joined: Record<string, true> = ((world as any).enlightenmentEmbargoes ??= {});
+    for (const key of Object.keys(joined)) {
+        const [imposerId, targetId] = key.split('|');
+        if (world.victoryState?.enlightenmentProgress?.get(targetId)?.phase === 'transcending') continue;
+        delete joined[key];
+        if (isAIFaction(world, imposerId) && getSanction(world, imposerId, targetId)
+            && rivalryScore(world, imposerId, targetId) < 60) {
+            liftSanctions(world, imposerId, targetId);
+        }
+    }
+    for (const progress of world.victoryState?.enlightenmentProgress?.values() ?? []) {
+        if (progress.phase !== 'transcending') continue;
+        const target = progress.factionId;
+        let sanctioners = [...world.economy.factions.keys()].filter(id => getSanction(world, id, target)).length;
+        const courts = [...world.economy.factions.keys()]
+            .filter(id => id !== target && isAIFaction(world, id)
+                && !isAtWar(world, id, target) && !getSanction(world, id, target))
+            .sort((a, b) => rivalryScore(world, b, target) - rivalryScore(world, a, target) || a.localeCompare(b));
+        for (const factionId of courts) {
+            if (sanctioners >= ENLIGHTENMENT_COALITION) break;
+            // Only a court with a real quarrel joins (sanctions need escalation
+            // 2, rivalry above 40): a well-liked empire's bid draws little
+            // embargo, a resented one's draws the maximum.
+            if (rivalryScore(world, factionId, progress.factionId) <= 40) continue;
+            if (imposeSanctions(world, factionId, progress.factionId).success) {
+                joined[`${factionId}|${progress.factionId}`] = true;
+                sanctioners++;
+            }
         }
     }
 

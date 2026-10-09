@@ -241,6 +241,27 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     counterplayTags: ["source_verification", "surveillance_scan"]
   },
   {
+    // The one disinformation op that touches a government's standing. Exists
+    // so a mid-sized network (embedded, 35) has something to do against an
+    // empire racing for Enlightenment besides more intel gathering.
+    id: "smear_campaign",
+    name: "Smear Campaign",
+    category: "disinformation",
+    description: "Seed forged scandals about the ruling circle through captured outlets and paid rumour-mongers.",
+    targetTypes: ["empire"],
+    intelCost: 35,
+    creditsCost: 1500,
+    durationHoursMin: 24,
+    durationHoursMax: 48,
+    baseSuccessChance: 0.6,
+    baseExposureChance: 0.2,
+    risk: "medium",
+    effects: [
+      { type: "approval_damage", value: 2 }
+    ],
+    counterplayTags: ["counter_disinformation", "source_verification"]
+  },
+  {
     id: "incite_rebellion",
     name: "Incite Rebellion",
     category: "political",

@@ -10,6 +10,11 @@ import { getOrCreateFactionIntel } from '../espionage/faction-intel';
 import { OPERATION_CATALOG_BY_ID } from '../espionage/operation-catalog';
 import { canLaunchCategory } from '../espionage/network-stages';
 import { empireBuildingState } from '../construction/construction-service';
+import movementConfig from '../movement/movement-config.json';
+
+function econConfigEnlightenment(): unknown {
+    return (movementConfig as any)?.victory?.enlightenment;
+}
 
 export type AIIntelligenceArchetype = 
   | "paranoid_security_state"
@@ -36,6 +41,10 @@ const AI_PROFILES: Record<string, AIIntelProfile> = {
  */
 export function processEmpireIntelligenceTurn(factionId: string, world: GameWorldState) {
     const intel = getOrCreateFactionIntel(world, factionId);
+
+    // 0. Cells dedicated to whoever is racing for Enlightenment. Runs before
+    //    the capacity check: this is standing work, not a new operation.
+    focusOnSeekers(factionId, world);
 
     // 1. Don't act if at capacity or low on points
     if (intel.usedAgentCapacity >= intel.agentCapacity) return;
@@ -144,6 +153,70 @@ function identifyPotentialTargets(factionId: string, world: GameWorldState): str
     return targets;
 }
 
+/**
+ * Infiltration a service builds per strategic tick (6 sim hours) against an
+ * empire racing for Enlightenment, on top of what its operations earn.
+ *
+ * Without this the counterplay was decorative: networks only grew +5 per
+ * successful operation (one live op per target, 24-72 h each), so in a 15-day
+ * window a service climbed maybe 25 points from nothing — never to deep
+ * assets (65, sabotage) let alone a shadow government (90, political ops),
+ * and every AI "worked" a transcending empire with intel gathering only.
+ * A service starts watching once a rival's qualification bank is half full
+ * (the court can read a rival's approval and the Archive going up). From
+ * nothing, net of idle decay, it enters the window near 45 (embedded: smear
+ * campaigns), reaches deep assets (65: Burn the Archive) about three days in
+ * and a shadow government (90: political ops) about a week in — leaving time
+ * for the 3 net days of failing conditions a break needs. Successful
+ * operations add their usual +5 on top.
+ */
+export const SEEKER_FOCUS = {
+    /** Qualifying, bank at least this fraction of the requirement. */
+    watchFromFraction: 0.5,
+    perTickQualifying: 0.75,   // 3 a day
+    perTickTranscending: 1.75, // 7 a day
+    /** Intel points the dedicated cells cost per tick, per target. */
+    intelCostPerTick: 3,
+    /**
+     * The target's counter-intelligence slows the build-up: at strength S the
+     * gain is × (1 − counterIntelDamping × S/100). A bid defended at 60% keeps
+     * rival networks short of deep assets for most of its window — the
+     * difference between counterplay that punishes a careless seeker and one
+     * nobody can survive.
+     */
+    counterIntelDamping: 0.75,
+} as const;
+
+/** Empires this service should be watching for Enlightenment, and how hard. */
+export function enlightenmentSeekers(world: GameWorldState, factionId: string): Array<{ targetId: string; transcending: boolean }> {
+    const out: Array<{ targetId: string; transcending: boolean }> = [];
+    const needDays = Number((econConfigEnlightenment() as any)?.qualificationDurationDays ?? 40);
+    for (const p of world.victoryState?.enlightenmentProgress?.values() ?? []) {
+        if (p.factionId === factionId || !world.economy.factions.has(p.factionId)) continue;
+        if (p.phase === 'transcending') out.push({ targetId: p.factionId, transcending: true });
+        else if (p.phase === 'qualifying'
+            && (p.qualificationSecondsAccumulated ?? 0) >= needDays * 86400 * SEEKER_FOCUS.watchFromFraction) {
+            out.push({ targetId: p.factionId, transcending: false });
+        }
+    }
+    return out;
+}
+
+function focusOnSeekers(factionId: string, world: GameWorldState): void {
+    const seekers = enlightenmentSeekers(world, factionId);
+    if (seekers.length === 0) return;
+    const intel = getOrCreateFactionIntel(world, factionId);
+    for (const { targetId, transcending } of seekers) {
+        if (intel.intelPoints < SEEKER_FOCUS.intelCostPerTick) break;
+        intel.intelPoints -= SEEKER_FOCUS.intelCostPerTick;
+        const now = intel.infiltrationLevels[targetId] ?? 0;
+        const guard = Math.max(0, Math.min(100, world.espionage.factionIntel.get(targetId)?.counterIntelStrength ?? 0));
+        const damping = 1 - SEEKER_FOCUS.counterIntelDamping * guard / 100;
+        intel.infiltrationLevels[targetId] = Math.min(100,
+            now + damping * (transcending ? SEEKER_FOCUS.perTickTranscending : SEEKER_FOCUS.perTickQualifying));
+    }
+}
+
 /** Each archetype's signature ops, most-preferred first. */
 const ARCHETYPE_PREFERENCES: Record<AIIntelligenceArchetype, string[]> = {
     economic_subverter: ["manipulate_market", "raid_trade_route", "infiltrate_government"],
@@ -154,7 +227,7 @@ const ARCHETYPE_PREFERENCES: Record<AIIntelligenceArchetype, string[]> = {
 };
 
 /** What a service runs against an empire mid-transcendence, most-preferred first. */
-const TRANSCENDENCE_BREAKERS = ["sabotage_archive", "election_interference", "incite_rebellion", "fund_separatists"];
+const TRANSCENDENCE_BREAKERS = ["sabotage_archive", "election_interference", "incite_rebellion", "fund_separatists", "smear_campaign"];
 
 function chooseOperationForArchetype(
     archetype: AIIntelligenceArchetype,

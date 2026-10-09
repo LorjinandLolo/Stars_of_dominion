@@ -10,7 +10,12 @@ import { bootSoakWorld, quietConsole } from './soak-harness';
 import { computeCatalogSuccessChance, tickOperations } from '../lib/espionage/espionage-service';
 import { OPERATION_CATALOG_BY_ID } from '../lib/espionage/operation-catalog';
 import { getOrCreateFactionIntel } from '../lib/espionage/faction-intel';
-import { processEmpireIntelligenceTurn } from '../lib/ai/intelligence-ai-service';
+import { processEmpireIntelligenceTurn, SEEKER_FOCUS } from '../lib/ai/intelligence-ai-service';
+import { runDiplomaticAI, ENLIGHTENMENT_COALITION } from '../lib/ai/diplomatic-ai-service';
+import { getSanction } from '../lib/diplomacy/sanctions-service';
+import { getOrCreateRivalry } from '../lib/diplomacy/offer-service';
+import { canLaunchCategory } from '../lib/espionage/network-stages';
+import { warCandidates } from '../lib/ai/war-ai';
 import { ensureVictoryState, startTranscendence, readEnlightenmentConditions, ARCHIVE_BUILDING_ID } from '../lib/victory/victory-service';
 import { empireBuildingState } from '../lib/construction/construction-service';
 import config from '../lib/movement/movement-config.json';
@@ -89,6 +94,129 @@ test('with nothing left to burn, the service picks a political op instead', () =
     assert(op, `${other} launched nothing against ${TARGET}`);
     assert.notStrictEqual(op.definitionId, 'sabotage_archive');
     assert(['election_interference', 'incite_rebellion', 'fund_separatists'].includes(op.definitionId), op.definitionId);
+});
+
+// ── Can a REAL network get there? (the tests above arm it to 100) ──────────
+
+const WATCHER = 'faction-covenant';
+const TICKS_PER_DAY = 4;
+const qualDays = config.victory.enlightenment.qualificationDurationDays;
+
+/** A service with points to spend but no free agent: only the dedicated cells act. */
+function idleService(actorId: string): void {
+    const intel = getOrCreateFactionIntel(world, actorId);
+    intel.intelPoints = 1000;
+    intel.infiltrationLevels[TARGET] = 0;
+    intel.usedAgentCapacity = intel.agentCapacity;
+}
+
+test('a rival barely qualifying is not watched yet', () => {
+    const progress = ensureVictoryState(world).enlightenmentProgress.get(TARGET)!;
+    progress.phase = 'qualifying';
+    progress.qualificationSecondsAccumulated = qualDays * 86400 * 0.2;
+    idleService(WATCHER);
+    for (let t = 0; t < 8; t++) processEmpireIntelligenceTurn(WATCHER, world);
+    assert.strictEqual(getOrCreateFactionIntel(world, WATCHER).infiltrationLevels[TARGET] ?? 0, 0);
+});
+
+test('a service watching from half-qualified reaches sabotage within 5 days of the window, political before it ends', () => {
+    const progress = ensureVictoryState(world).enlightenmentProgress.get(TARGET)!;
+    progress.phase = 'qualifying';
+    progress.qualificationSecondsAccumulated = qualDays * 86400 * SEEKER_FOCUS.watchFromFraction;
+    idleService(WATCHER);
+    // The second half of qualification, with a day of idle decay (0.72) charged against every day.
+    const intel = getOrCreateFactionIntel(world, WATCHER);
+    for (let d = 0; d < qualDays * (1 - SEEKER_FOCUS.watchFromFraction); d++) {
+        for (let t = 0; t < TICKS_PER_DAY; t++) processEmpireIntelligenceTurn(WATCHER, world);
+        intel.infiltrationLevels[TARGET] = Math.max(0, intel.infiltrationLevels[TARGET] - 0.72);
+    }
+    startTranscendence(TARGET, world);
+    let sabotageDay = -1, politicalDay = -1;
+    for (let d = 1; d <= config.victory.enlightenment.transcendenceWindowDays; d++) {
+        for (let t = 0; t < TICKS_PER_DAY; t++) processEmpireIntelligenceTurn(WATCHER, world);
+        intel.infiltrationLevels[TARGET] = Math.max(0, intel.infiltrationLevels[TARGET] - 0.72);
+        const lvl = intel.infiltrationLevels[TARGET];
+        if (sabotageDay < 0 && canLaunchCategory(lvl, 'sabotage').allowed) sabotageDay = d;
+        if (politicalDay < 0 && canLaunchCategory(lvl, 'political').allowed) politicalDay = d;
+    }
+    assert(sabotageDay > 0 && sabotageDay <= 5, `sabotage stage on day ${sabotageDay}`);
+    assert(politicalDay > 0 && politicalDay < config.victory.enlightenment.transcendenceWindowDays, `political stage on day ${politicalDay}`);
+});
+
+test('a bid defended by counter-intelligence keeps the watcher short of deep assets for most of the window', () => {
+    const progress = ensureVictoryState(world).enlightenmentProgress.get(TARGET)!;
+    progress.phase = 'qualifying';
+    progress.qualificationSecondsAccumulated = qualDays * 86400 * SEEKER_FOCUS.watchFromFraction;
+    idleService(WATCHER);
+    const guard = getOrCreateFactionIntel(world, TARGET);
+    const before = guard.counterIntelStrength;
+    guard.counterIntelStrength = 60;
+    const intel = getOrCreateFactionIntel(world, WATCHER);
+    for (let d = 0; d < qualDays * (1 - SEEKER_FOCUS.watchFromFraction); d++) {
+        for (let t = 0; t < TICKS_PER_DAY; t++) processEmpireIntelligenceTurn(WATCHER, world);
+        intel.infiltrationLevels[TARGET] = Math.max(0, intel.infiltrationLevels[TARGET] - 0.72);
+    }
+    startTranscendence(TARGET, world);
+    let sabotageDay = -1;
+    for (let d = 1; d <= config.victory.enlightenment.transcendenceWindowDays; d++) {
+        for (let t = 0; t < TICKS_PER_DAY; t++) processEmpireIntelligenceTurn(WATCHER, world);
+        intel.infiltrationLevels[TARGET] = Math.max(0, intel.infiltrationLevels[TARGET] - 0.72);
+        if (sabotageDay < 0 && canLaunchCategory(intel.infiltrationLevels[TARGET], 'sabotage').allowed) sabotageDay = d;
+    }
+    guard.counterIntelStrength = before;
+    assert(sabotageDay < 0 || sabotageDay > 10, `a 60% guard still let sabotage in on day ${sabotageDay}`);
+});
+
+test('a mid-sized network runs a Smear Campaign rather than more intel gathering', () => {
+    const other = 'faction-sarrak';
+    arm(other);
+    getOrCreateFactionIntel(world, other).infiltrationLevels[TARGET] = 40; // embedded, short of deep assets
+    for (const op of liveOpsAgainst(TARGET)) if (op.actorFactionId === other) op.status = 'completed';
+    processEmpireIntelligenceTurn(other, world);
+    const op = liveOpsAgainst(TARGET).find((o: any) => o.actorFactionId === other);
+    assert(op, 'launched nothing');
+    assert.strictEqual(op.definitionId, 'smear_campaign');
+});
+
+test(`courts with a quarrel embargo a transcending empire, ${ENLIGHTENMENT_COALITION} at most`, () => {
+    world.claimedFactionIds = [TARGET];
+    const courts = [...world.economy.factions.keys()].filter((id: string) => id !== TARGET && !['faction-pirates', 'faction-neutral'].includes(id));
+    // Everyone resents the target: the cap is what holds the coalition.
+    for (const id of courts) {
+        getOrCreateRivalry(world, id, TARGET);
+        for (const key of [`rivalry-${id}-${TARGET}`, `rivalry-${TARGET}-${id}`]) {
+            const r = world.rivalries.get(key);
+            if (r) { r.rivalryScore = Math.max(r.rivalryScore, 50); r.escalationLevel = Math.max(r.escalationLevel, 2); }
+        }
+    }
+    runDiplomaticAI(world, { initiativeChance: 0 });
+    const sanctioning = courts.filter(id => getSanction(world, id, TARGET));
+    assert.strictEqual(sanctioning.length, ENLIGHTENMENT_COALITION, `${sanctioning.length} sanctioning`);
+    runDiplomaticAI(world, { initiativeChance: 0 });
+    assert.strictEqual(courts.filter(id => getSanction(world, id, TARGET)).length, ENLIGHTENMENT_COALITION, 'the coalition grew past its cap');
+    world.claimedFactionIds = [];
+});
+
+test('the coalition embargo lifts when the window closes', () => {
+    world.claimedFactionIds = [TARGET];
+    ensureVictoryState(world).enlightenmentProgress.get(TARGET)!.phase = 'qualifying';
+    runDiplomaticAI(world, { initiativeChance: 0 });
+    const courts = [...world.economy.factions.keys()].filter((id: string) => id !== TARGET && !['faction-pirates', 'faction-neutral'].includes(id));
+    const still = courts.filter(id => getSanction(world, id, TARGET) && (world.rivalries.get(`rivalry-${id}-${TARGET}`)?.rivalryScore ?? 0) < 60);
+    assert.strictEqual(still.length, 0, `still embargoing without a quarrel: ${still.join(', ')}`);
+    world.claimedFactionIds = [];
+    startTranscendence(TARGET, world);
+});
+
+test('a transcending empire is a war target at a rivalry no ordinary quarrel would trigger', () => {
+    const r = world.rivalries.get(`rivalry-${ACTOR}-${TARGET}`) ?? world.rivalries.get(`rivalry-${TARGET}-${ACTOR}`);
+    if (r) { r.rivalryScore = 55; r.escalationLevel = 2; }
+    const pool = warCandidates(world, ACTOR).map(c => c.targetId);
+    // Reach and fleet power still apply; when the target is out of reach the
+    // flag must still be what ranks it, so check the rank among candidates.
+    const c = warCandidates(world, ACTOR).find(x => x.targetId === TARGET);
+    if (c) assert.strictEqual(pool[0], TARGET, `${TARGET} should lead ${pool.join(', ')}`);
+    else console.log('        (target out of reach of the actor in the seeded galaxy — ranking not exercised)');
 });
 
 test('once the window closes, the target is no longer special', () => {
