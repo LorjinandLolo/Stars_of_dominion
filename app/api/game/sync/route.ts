@@ -17,16 +17,40 @@
 // the caller's own shard comes through scrubOwnerSecrets, everyone else's
 // through projectPublicShard. See lib/persistence/shard-privacy.ts for why the
 // split happens here rather than in extractFactionShard.
+//
+// Delta sync: a client that can apply deltas sends `delta=1`. If it still
+// holds a recent version of the snapshot (`sessionSince`) or of its own shard
+// (`ownSince`), it receives only the chunks that changed since — see
+// lib/persistence/tree-delta.ts. The late-season snapshot is ~3 MB; a typical
+// save changes a few dozen KB of it. Anyone else gets the full copy as before.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { projectShardForCaller, viewerContextFromOwnShard } from '@/lib/persistence/shard-privacy';
 import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
+import { DeltaStream, rawDeltaToJson } from '@/lib/persistence/tree-delta';
 
 export const dynamic = 'force-dynamic';
 
 const SESSION_DOC_ID = 'default-session';
+
+/**
+ * Process-wide delta history. The worker saves the snapshot at most every
+ * ~30 s, so 40 versions cover ~20 minutes: a tab that was hidden longer than
+ * that gets one full copy on return. Own shards change every worker cycle
+ * (5 s); 60 versions is five minutes per empire.
+ */
+const deltaState = (globalThis as any).__stardomSyncDelta ??= {
+    session: new DeltaStream(40),
+    shards: new Map<string, DeltaStream>(),
+};
+const sessionStream: DeltaStream = deltaState.session;
+function ownShardStream(factionId: string): DeltaStream {
+    let stream = deltaState.shards.get(factionId);
+    if (!stream) { stream = new DeltaStream(60); deltaState.shards.set(factionId, stream); }
+    return stream;
+}
 
 export async function GET(req: NextRequest) {
     try {
@@ -41,6 +65,8 @@ export async function GET(req: NextRequest) {
 
         const sessionSince = req.nextUrl.searchParams.get('sessionSince');
         const shardsSince = req.nextUrl.searchParams.get('shardsSince');
+        const wantsDelta = req.nextUrl.searchParams.get('delta') === '1';
+        const ownSince = req.nextUrl.searchParams.get('ownSince');
 
         const [sessionMeta, shards] = await Promise.all([
             // The timestamp only. The snapshot column is over a megabyte, the
@@ -65,15 +91,29 @@ export async function GET(req: NextRequest) {
 
         const sessionChanged = !sessionSince || sessionMeta.updatedAt > new Date(sessionSince);
 
-        // Only now, and only when it actually moved, read the big column.
-        // updatedAt comes back with it, so the stamp the client keeps as its
-        // next `sessionSince` always belongs to the snapshot it was sent.
-        const session = sessionChanged
-            ? await prisma.multiplayerSession.findUnique({
-                where: { id: SESSION_DOC_ID },
-                select: { snapshot: true, updatedAt: true },
-            })
-            : null;
+        // Only now, and only when it actually moved, read the big column —
+        // and only once per version for the whole process: the delta stream
+        // keeps the current snapshot. updatedAt comes back with it, so the
+        // stamp the client keeps as its next `sessionSince` always belongs to
+        // the snapshot it was sent.
+        let session: { snapshot: string; updatedAt: Date } | null = null;
+        let sessionDelta: string | null = null;
+        if (sessionChanged) {
+            const metaVersion = sessionMeta.updatedAt.toISOString();
+            if (sessionStream.currentVersion === metaVersion && sessionStream.currentJson) {
+                session = { snapshot: sessionStream.currentJson, updatedAt: sessionMeta.updatedAt };
+            } else {
+                session = await prisma.multiplayerSession.findUnique({
+                    where: { id: SESSION_DOC_ID },
+                    select: { snapshot: true, updatedAt: true },
+                });
+                if (session) sessionStream.update(session.updatedAt.toISOString(), session.snapshot);
+            }
+            if (session && wantsDelta && sessionSince && sessionStream.currentVersion === session.updatedAt.toISOString()) {
+                const delta = sessionStream.deltaFrom(sessionSince);
+                if (delta) sessionDelta = rawDeltaToJson(delta);
+            }
+        }
 
         // The caller's own shard carries their fog map (`visibility`) and fleet
         // positions — the ViewerContext every RIVAL shard's fleet list is
@@ -103,20 +143,35 @@ export async function GET(req: NextRequest) {
             humanPlayers[claim.factionId] = claim.displayName || 'Commander';
         }
 
-        return NextResponse.json({
-            humanPlayers,
-            session: session
-                ? {
-                      snapshot: session.snapshot,
-                      updatedAt: session.updatedAt.toISOString(),
-                  }
-                : null,
-            sessionUpdatedAt: (session?.updatedAt ?? sessionMeta.updatedAt).toISOString(),
-            factions: shards.map(s => ({
-                id: s.id,
-                data: projectShardForCaller(s.data, !!factionId && s.factionId === factionId, viewer),
-                updatedAt: s.updatedAt.toISOString(),
-            })),
+        // Assembled by hand so delta chunks — already JSON text — go out
+        // as-is instead of being parsed and re-encoded.
+        const factionParts = shards.map(s => {
+            const isOwn = !!factionId && s.factionId === factionId;
+            const data = projectShardForCaller(s.data, isOwn, viewer);
+            const updatedAt = s.updatedAt.toISOString();
+            if (isOwn) {
+                const stream = ownShardStream(s.factionId);
+                stream.update(updatedAt, data);
+                const delta = wantsDelta && ownSince ? stream.deltaFrom(ownSince) : null;
+                if (delta) {
+                    return `{"id":${JSON.stringify(s.id)},"base":${JSON.stringify(ownSince)},"delta":${rawDeltaToJson(delta)},"updatedAt":"${updatedAt}"}`;
+                }
+            }
+            return JSON.stringify({ id: s.id, data, updatedAt });
+        });
+
+        const sessionPart = sessionDelta && session
+            ? `{"base":${JSON.stringify(sessionSince)},"delta":${sessionDelta},"updatedAt":"${session.updatedAt.toISOString()}"}`
+            : session
+                ? JSON.stringify({ snapshot: session.snapshot, updatedAt: session.updatedAt.toISOString() })
+                : 'null';
+
+        const body = `{"humanPlayers":${JSON.stringify(humanPlayers)},`
+            + `"session":${sessionPart},`
+            + `"sessionUpdatedAt":"${(session?.updatedAt ?? sessionMeta.updatedAt).toISOString()}",`
+            + `"factions":[${factionParts.join(',')}]}`;
+        return new NextResponse(body, {
+            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
         });
     } catch (err: any) {
         console.error('[API/game/sync]', err);

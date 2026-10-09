@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
+import { applyTreeDelta, type TreeDelta } from '@/lib/persistence/tree-delta-apply';
 import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
 import { getTechModifier } from '@/lib/tech/modifiers';
 import { normalizeComposition } from '@/lib/combat/ship-registry';
@@ -148,7 +149,11 @@ export function useGameSync() {
         };
     }, []);
 
-    const deserializeWorldAsync = (snapshot: string): Promise<GameWorldState> => {
+    /**
+     * `version` lets the worker keep the parsed tree for delta sync: the next
+     * snapshot change can then arrive as a delta against it (APPLY_WORLD_DELTA).
+     */
+    const deserializeWorldAsync = (snapshot: string, version?: string): Promise<GameWorldState> => {
         const worker = workerRef.current;
         if (!worker) {
             return Promise.resolve(deserializeWorld(snapshot));
@@ -156,7 +161,18 @@ export function useGameSync() {
         const id = ++msgIdRef.current;
         return new Promise((resolve, reject) => {
             pendingRequestsRef.current.set(id, { resolve, reject });
-            worker.postMessage({ id, type: 'DESERIALIZE_WORLD', payload: snapshot });
+            worker.postMessage({ id, type: 'DESERIALIZE_WORLD', payload: snapshot, version });
+        });
+    };
+
+    /** Patch the worker's kept snapshot tree from `base` to `version`; rejects on a base mismatch. */
+    const applyWorldDeltaAsync = (base: string, version: string, delta: TreeDelta): Promise<GameWorldState> => {
+        const worker = workerRef.current;
+        if (!worker) return Promise.reject(new Error('No sync worker for deltas.'));
+        const id = ++msgIdRef.current;
+        return new Promise((resolve, reject) => {
+            pendingRequestsRef.current.set(id, { resolve, reject });
+            worker.postMessage({ id, type: 'APPLY_WORLD_DELTA', payload: { base, version, delta } });
         });
     };
 
@@ -1075,6 +1091,8 @@ export function useGameSync() {
         // Server-side change filters: only session/shards newer than these are sent.
         let sessionSince = '';
         let shardsSince = '';
+        // Version of the caller's own shard we hold, so it too can come as a delta.
+        let ownShardSince = '';
 
         const injectMappedShard = (world: GameWorldState, mappedShard: any) => {
             if (!mappedShard) return;
@@ -1143,8 +1161,21 @@ export function useGameSync() {
         };
 
         /** Parse a shard row from /api/game/sync, cache it, inject into a world. */
-        const applyShardDoc = async (row: { id: string; data: string }, world: GameWorldState | null) => {
+        const applyShardDoc = async (
+            row: { id: string; data?: string; base?: string; delta?: TreeDelta; updatedAt?: string },
+            world: GameWorldState | null,
+        ) => {
+            // The caller's own shard may arrive as a delta against the copy we hold.
+            if (row.delta) {
+                const prev = shardCacheRef.current.get(row.id);
+                if (!prev || row.base !== ownShardSince) {
+                    ownShardSince = '';   // lost the thread: next poll sends it whole
+                    return;
+                }
+                row = { ...row, data: JSON.stringify(applyTreeDelta(structuredClone(prev), row.delta)) };
+            }
             if (!row.data) return;
+            if (row.id === playerFactionId && row.updatedAt) ownShardSince = row.updatedAt;
             try {
                 const shardObj = JSON.parse(row.data);
                 const mapped = await deserializeShardAsync(row.data);
@@ -1157,8 +1188,13 @@ export function useGameSync() {
         };
 
         const fetchSync = async (withSince: boolean) => {
+            // Deltas need the worker (it keeps the snapshot tree); the
+            // main-thread fallback always takes full copies.
+            const deltaParams = workerRef.current
+                ? `&delta=1${ownShardSince ? `&ownSince=${encodeURIComponent(ownShardSince)}` : ''}`
+                : '';
             const params = withSince
-                ? `?sessionSince=${encodeURIComponent(sessionSince)}&shardsSince=${encodeURIComponent(shardsSince)}`
+                ? `?sessionSince=${encodeURIComponent(sessionSince)}&shardsSince=${encodeURIComponent(shardsSince)}${deltaParams}`
                 : '';
             const res = await fetch(`/api/game/sync${params}`, {
                 cache: 'no-store',
@@ -1225,7 +1261,7 @@ export function useGameSync() {
                 if (cancelled) return;
 
                 // 2. Initialize Authoritative World (Async worker)
-                const baseWorld = await deserializeWorldAsync(data.session.snapshot);
+                const baseWorld = await deserializeWorldAsync(data.session.snapshot, data.session.updatedAt);
                 // Worker path bypasses save-service deserializeWorld — normalize here.
                 normalizeEspionageState(baseWorld);
                 worldRef.current = baseWorld;
@@ -1273,12 +1309,25 @@ export function useGameSync() {
                 if (cancelled) return;
                 pollFailures = 0;
 
-                // Updated session snapshot → rebuild the authoritative world.
-                if (data.session?.snapshot) {
-                    const newBase = await deserializeWorldAsync(data.session.snapshot);
-                    normalizeEspionageState(newBase);
+                // Updated session snapshot → rebuild the authoritative world,
+                // from a delta against the tree the worker kept when we can.
+                let newBase: GameWorldState | null = null;
+                if (data.session?.delta) {
+                    try {
+                        newBase = await applyWorldDeltaAsync(data.session.base, data.session.updatedAt, data.session.delta);
+                    } catch (e: any) {
+                        // Base mismatch or a failed patch: next poll takes a full copy.
+                        console.warn('[GameSync] Snapshot delta not applied, resyncing:', e.message);
+                        sessionSince = '';
+                    }
+                } else if (data.session?.snapshot) {
+                    newBase = await deserializeWorldAsync(data.session.snapshot, data.session.updatedAt);
+                }
+                if (newBase) {
+                    const rebuilt = newBase;
+                    normalizeEspionageState(rebuilt);
                     // Re-inject cached MAPPED shards into new base snapshot (zero re-parsing cost)
-                    mappedShardCacheRef.current.forEach(mapped => injectMappedShard(newBase, mapped));
+                    mappedShardCacheRef.current.forEach(mapped => injectMappedShard(rebuilt, mapped));
                     worldRef.current = newBase;
                     sessionSince = data.session.updatedAt;
 
@@ -1287,7 +1336,7 @@ export function useGameSync() {
                     // authoritatively — drop its overlay.
                     useUIStore.getState().prunePendingOrders(Date.now() - PENDING_CONFIRM_LAG_MS);
                     throttledUpdate();
-                } else if (data.sessionUpdatedAt) {
+                } else if (data.sessionUpdatedAt && !data.session) {
                     sessionSince = data.sessionUpdatedAt;
                 }
 
