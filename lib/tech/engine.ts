@@ -87,6 +87,9 @@ export function applyUnlock(state: PlayerTechState, techId: string): void {
     if (!state.lockedTechIds) state.lockedTechIds = [];
 
     if (state.unlockedTechIds.includes(techId)) return; // already applied
+    // A fork option whose rival was committed first never completes. Only
+    // reachable on snapshots from before forks were decided at the start.
+    if (state.lockedTechIds.includes(techId) && tech.mutuallyExclusiveGroup) return;
     state.unlockedTechIds.push(techId);
 
     // 1. Apply Effects
@@ -113,18 +116,15 @@ export function applyUnlock(state: PlayerTechState, techId: string): void {
     }
 
     // 2. Handle Mutual Exclusivity (Identity/Branch Locking)
-    if (tech.mutuallyExclusiveGroup) {
-        // Find all other techs in this group and lock them
-        const groupConflictTechs = registry.getAll().filter(t =>
-            t.mutuallyExclusiveGroup === tech.mutuallyExclusiveGroup &&
-            t.id !== tech.id
-        );
+    if (tech.mutuallyExclusiveGroup) lockForkRivals(state, tech);
+}
 
-        for (const conflict of groupConflictTechs) {
-            if (!state.lockedTechIds.includes(conflict.id)) {
-                state.lockedTechIds.push(conflict.id);
-            }
-        }
+/** Lock every other option of tech's fork. Idempotent. */
+function lockForkRivals(state: PlayerTechState, tech: Tech): void {
+    if (!state.lockedTechIds) state.lockedTechIds = [];
+    for (const rival of registry.getAll()) {
+        if (rival.mutuallyExclusiveGroup !== tech.mutuallyExclusiveGroup || rival.id === tech.id) continue;
+        if (!state.lockedTechIds.includes(rival.id)) state.lockedTechIds.push(rival.id);
     }
 }
 
@@ -178,6 +178,12 @@ export class TechEngine {
         slot.ticksCompleted = 0;
         // A tech the faction's own conduct revealed runs as a crash programme.
         slot.ticksRequired = ticksForTech(tech, newState.emergentDiscounts?.[techId] ?? 1);
+
+        // A fork is decided when research STARTS, not when it ends: research
+        // cannot be cancelled, so this is the real point of no return, and the
+        // Research panel says so. Locking only on completion (until 2026-10-12)
+        // let two options of one fork run in two slots and both complete.
+        if (tech.mutuallyExclusiveGroup) lockForkRivals(newState, tech);
 
         return newState;
     }

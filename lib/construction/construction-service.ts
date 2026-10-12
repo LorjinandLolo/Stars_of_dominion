@@ -14,6 +14,7 @@ import { recalculatePlanetStats } from './recalculation';
 import { constructionLogisticsMultiplier } from '../logistics/distribution-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import { getTechModifier } from '../tech/modifiers';
+import { baseBuildSeconds, baseRepairSeconds } from './build-time';
 
 /**
  * Validates if a building can be built on a specific tile.
@@ -129,7 +130,7 @@ function buildSecondsFor(planet: Planet, buildingDef: BuildingDefinition, world?
     * constructionLogisticsMultiplier(planet)
     * computeInfrastructureEffects(planet).constructionSpeed
     * getTechModifier(world, planet.ownerId, 'construction_speed'));
-  return buildingDef.buildTimeSeconds / buildSpeed;
+  return baseBuildSeconds(buildingDef) / buildSpeed;
 }
 
 /**
@@ -346,7 +347,7 @@ export function repairBuilding(planet: Planet, tileId: string, now: number): boo
   const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
     * constructionLogisticsMultiplier(planet)
     * computeInfrastructureEffects(planet).constructionSpeed);
-  const repairTime = (buildingDef.repairTimeSeconds ?? buildingDef.buildTimeSeconds / 2) / buildSpeed;
+  const repairTime = baseRepairSeconds(buildingDef) / buildSpeed;
   tile.constructionState = 'under_construction';
   tile.constructionCompleteAt = now + repairTime;
 

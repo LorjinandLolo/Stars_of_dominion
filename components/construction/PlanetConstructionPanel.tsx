@@ -15,6 +15,7 @@ import { formatPercent } from '@/lib/ui/format';
 import { SURFACE_YARD_TIERS } from '@/lib/combat/shipyard-gate';
 import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { baseBuildSeconds } from '@/lib/construction/build-time';
 
 
 interface PlanetConstructionPanelProps {
@@ -462,7 +463,7 @@ export function PlanetConstructionPanel({
                                                             </div>
                                                             <div className="flex items-center gap-1 text-xs font-medium text-slate-400 bg-slate-950 px-2 py-1 rounded">
                                                                 <Clock className="w-3 h-3" />
-                                                                {formatSimAsClock(def.buildTimeSeconds)}
+                                                                {formatSimAsClock(baseBuildSeconds(def))}
                                                             </div>
                                                         </div>
 

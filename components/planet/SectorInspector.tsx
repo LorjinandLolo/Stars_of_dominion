@@ -7,6 +7,7 @@
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { baseBuildSeconds } from '@/lib/construction/build-time';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { BUILDINGS } from '@/data/buildings';
 import type { BuildingDefinition } from '@/lib/construction/construction-types';
@@ -140,7 +141,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
                                                         );
                                                     })}
                                                     <span className="text-[8px] font-mono text-slate-500 ml-auto flex items-center gap-0.5">
-                                                        <Clock size={8} />{formatSimAsClock(def.buildTimeSeconds || 3600)}
+                                                        <Clock size={8} />{formatSimAsClock(baseBuildSeconds(def) || 3600)}
                                                     </span>
                                                 </div>
                                                 {blocked && <div className="text-[7px] font-display tracking-widest text-rose-400/80 mt-1">{blocked}</div>}

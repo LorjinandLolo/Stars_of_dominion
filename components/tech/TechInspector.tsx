@@ -1,10 +1,27 @@
 "use client";
 
-import React from 'react';
-import { Check, X, AlertTriangle, Clock, Sparkles, MousePointerClick, ArrowUpRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, X, AlertTriangle, Clock, Sparkles, MousePointerClick, ArrowUpRight, Ban, Signpost } from 'lucide-react';
 import type { Tech, TechEffect } from '@/lib/tech/types';
 import { STATUS_META, type TechNodeStatus } from './TechNode';
 import { TIER_NAMES, TIER_NUMERALS } from './layout';
+import { forkLabel, type Fork, type ForkCost } from '@/lib/tech/forks';
+
+/** Everything the Research panel knows about forks for the selected tech. */
+export interface InspectorForkInfo {
+    fork: Fork | null;
+    /** What committing would close; set only while the fork is undecided. */
+    cost: ForkCost | null;
+    /** The option committed to at this tech's fork, if any. */
+    chosenInstead: Tech | null;
+    /** For a closed tech: the path not taken that closed it. */
+    closedByOption: Tech | null;
+    /** For an open tech behind an undecided fork: the option it needs. */
+    needsOption: Tech | null;
+}
+
+/** How many lost techs to name before summarising the rest. */
+const LOST_LISTED = 6;
 
 interface TechInspectorProps {
     tech: Tech | null;
@@ -20,6 +37,7 @@ interface TechInspectorProps {
     error: string | null;
     onSelect: (techId: string) => void;
     onResearch: (techId: string) => void;
+    forkInfo?: InspectorForkInfo | null;
 }
 
 const humanize = (s: string) => s.replace(/_/g, ' ');
@@ -72,7 +90,11 @@ export default function TechInspector({
     error,
     onSelect,
     onResearch,
+    forkInfo,
 }: TechInspectorProps) {
+    // A fork option takes two clicks: the first shows the price, the second
+    // commits. The panel is keyed by tech, so this resets on every selection.
+    const [confirming, setConfirming] = useState(false);
     if (!tech || !status) {
         return (
             <aside
@@ -95,11 +117,11 @@ export default function TechInspector({
                 if (slotsFull) return { label: 'All research slots busy', enabled: false };
                 return { label: busy ? 'Authorizing…' : 'Authorize Research', enabled: !busy };
             case 'researching': return { label: `In progress ${Math.round(progress)}%`, enabled: false };
-            case 'pending': return { label: 'Authorizing — awaiting the worker', enabled: false };
             // The order is queued for the worker; the next sync poll turns this into a slot.
-            case 'pending': return { label: 'Order lodged · awaiting archive sync', enabled: false };
+            case 'pending': return { label: 'Authorizing — awaiting the worker', enabled: false };
             case 'unlocked': return { label: 'Already researched', enabled: false };
-            case 'locked': return { label: 'Locked by an exclusive choice', enabled: false };
+            case 'locked': return { label: 'Path not taken', enabled: false };
+            case 'closed': return { label: 'Closed — needs a path not taken', enabled: false };
             default: return { label: 'Prerequisites not met', enabled: false };
         }
     })();
@@ -202,14 +224,88 @@ export default function TechInspector({
                     )}
                 </section>
 
-                {tech.mutuallyExclusiveGroup && (
+                {/* An undecided fork: the price, named, before anyone clicks. */}
+                {forkInfo?.fork && forkInfo.cost && (
+                    <section className="rounded border border-amber-500/40 bg-amber-950/25 p-2.5 space-y-2">
+                        <h3 className="flex items-center gap-1.5 text-[8px] font-display text-amber-300 uppercase tracking-[0.25em]">
+                            <AlertTriangle size={11} /> Point of no return · {forkLabel(forkInfo.fork)}
+                        </h3>
+                        <p className="text-[10px] text-amber-100/90 leading-relaxed">
+                            Starting this research commits you. Research cannot be cancelled, and these close for the rest of the season:
+                        </p>
+                        <div>
+                            <div className="text-[8px] uppercase tracking-widest text-slate-500 mb-1">The other path{forkInfo.cost.rivals.length === 1 ? '' : 's'}</div>
+                            <ul className="space-y-1">
+                                {forkInfo.cost.rivals.map(r => (
+                                    <li key={r.id}><TechLink tech={r} onSelect={onSelect} /></li>
+                                ))}
+                            </ul>
+                        </div>
+                        {forkInfo.cost.downstream.length > 0 && (
+                            <div>
+                                <div className="text-[8px] uppercase tracking-widest text-slate-500 mb-1">
+                                    And {forkInfo.cost.downstream.length} technolog{forkInfo.cost.downstream.length === 1 ? 'y' : 'ies'} that need them
+                                </div>
+                                <ul className="space-y-1">
+                                    {forkInfo.cost.downstream.slice(0, LOST_LISTED).map(t => (
+                                        <li key={t.id}><TechLink tech={t} onSelect={onSelect} /></li>
+                                    ))}
+                                </ul>
+                                {forkInfo.cost.downstream.length > LOST_LISTED && (
+                                    <p className="text-[9px] text-slate-500 mt-1">…and {forkInfo.cost.downstream.length - LOST_LISTED} more.</p>
+                                )}
+                            </div>
+                        )}
+                    </section>
+                )}
+
+                {/* A decided fork, seen from either side of it. */}
+                {forkInfo?.fork && forkInfo.chosenInstead && (
+                    forkInfo.chosenInstead.id === tech.id ? (
+                        <section className="rounded border border-indigo-500/30 bg-indigo-950/20 p-2.5">
+                            <h3 className="flex items-center gap-1.5 text-[8px] font-display text-indigo-300 uppercase tracking-[0.25em] mb-1">
+                                <Signpost size={11} /> Your choice · {forkLabel(forkInfo.fork)}
+                            </h3>
+                            <p className="text-[10px] text-indigo-100/80 leading-relaxed">
+                                You committed to this path. The other options at this fork are closed for the season.
+                            </p>
+                        </section>
+                    ) : (
+                        <section className="rounded border border-red-900/40 bg-red-950/20 p-2.5">
+                            <h3 className="flex items-center gap-1.5 text-[8px] font-display text-red-400 uppercase tracking-[0.25em] mb-1">
+                                <Ban size={11} /> Path not taken · {forkLabel(forkInfo.fork)}
+                            </h3>
+                            <p className="text-[10px] text-red-200/80 leading-relaxed mb-1.5">
+                                You committed to another option at this fork. This one is closed for the season.
+                            </p>
+                            <TechLink tech={forkInfo.chosenInstead} onSelect={onSelect} />
+                        </section>
+                    )
+                )}
+
+                {/* Closed further down: say which choice did it. */}
+                {forkInfo?.closedByOption && (
                     <section className="rounded border border-red-900/40 bg-red-950/20 p-2.5">
                         <h3 className="flex items-center gap-1.5 text-[8px] font-display text-red-400 uppercase tracking-[0.25em] mb-1">
-                            <AlertTriangle size={11} /> Mutually Exclusive
+                            <Ban size={11} /> Closed for good
                         </h3>
-                        <p className="text-[10px] text-red-200/80 leading-relaxed">
-                            Researching this locks out the other paths in group <span className="font-mono">{tech.mutuallyExclusiveGroup}</span>.
+                        <p className="text-[10px] text-red-200/80 leading-relaxed mb-1.5">
+                            This needs a path you did not take, so it cannot be researched this season.
                         </p>
+                        <TechLink tech={forkInfo.closedByOption} met={false} onSelect={onSelect} />
+                    </section>
+                )}
+
+                {/* Still open, but behind a fork: choosing another path there closes it. */}
+                {forkInfo?.needsOption && status !== 'unlocked' && !forkInfo.cost && (
+                    <section className="rounded border border-amber-500/25 bg-amber-950/10 p-2.5">
+                        <h3 className="flex items-center gap-1.5 text-[8px] font-display text-amber-300/90 uppercase tracking-[0.25em] mb-1">
+                            <Signpost size={11} /> Behind a fork
+                        </h3>
+                        <p className="text-[10px] text-amber-100/80 leading-relaxed mb-1.5">
+                            This needs the path below. Choosing a different option at that fork closes it for the season.
+                        </p>
+                        <TechLink tech={forkInfo.needsOption} onSelect={onSelect} />
                     </section>
                 )}
 
@@ -236,18 +332,48 @@ export default function TechInspector({
             </div>
 
             <div className="p-4 border-t border-white/5 bg-slate-950/60">
-                <button
-                    type="button"
-                    disabled={!action.enabled}
-                    onClick={() => onResearch(tech.id)}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded text-[10px] font-display uppercase tracking-[0.2em] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                        action.enabled
-                            ? 'bg-indigo-500/20 border-indigo-400/60 text-indigo-200 hover:bg-indigo-500/30 hover:border-indigo-300'
-                            : 'bg-white/[0.02] border-white/10 text-slate-500 cursor-not-allowed'
-                    }`}
-                >
-                    <Sparkles size={12} /> {action.label}
-                </button>
+                {confirming && forkInfo?.cost ? (
+                    <div className="space-y-2">
+                        <p className="text-[10px] text-amber-100 leading-snug">
+                            Commit to <span className="font-semibold">{tech.name}</span>? This closes{' '}
+                            {forkInfo.cost.rivals.length} other path{forkInfo.cost.rivals.length === 1 ? '' : 's'}
+                            {forkInfo.cost.downstream.length > 0 && ` and ${forkInfo.cost.downstream.length} technolog${forkInfo.cost.downstream.length === 1 ? 'y' : 'ies'}`} for the season.
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setConfirming(false)}
+                                className="flex-1 py-2 rounded text-[10px] font-display uppercase tracking-[0.2em] border border-white/10 text-slate-300 hover:bg-white/5"
+                            >
+                                Not yet
+                            </button>
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => { setConfirming(false); onResearch(tech.id); }}
+                                className="flex-1 py-2 rounded text-[10px] font-display uppercase tracking-[0.2em] border border-amber-400/70 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
+                            >
+                                Commit
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <button
+                        type="button"
+                        disabled={!action.enabled}
+                        onClick={() => (forkInfo?.cost ? setConfirming(true) : onResearch(tech.id))}
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded text-[10px] font-display uppercase tracking-[0.2em] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                            action.enabled
+                                ? forkInfo?.cost
+                                    ? 'bg-amber-500/15 border-amber-400/60 text-amber-200 hover:bg-amber-500/25'
+                                    : 'bg-indigo-500/20 border-indigo-400/60 text-indigo-200 hover:bg-indigo-500/30 hover:border-indigo-300'
+                                : 'bg-white/[0.02] border-white/10 text-slate-500 cursor-not-allowed'
+                        }`}
+                    >
+                        {forkInfo?.cost && action.enabled ? <Signpost size={12} /> : <Sparkles size={12} />}
+                        {forkInfo?.cost && action.enabled ? 'Choose this path…' : action.label}
+                    </button>
+                )}
                 {error && (
                     <p role="alert" className="mt-2 text-[10px] text-red-300 leading-snug">{error}</p>
                 )}

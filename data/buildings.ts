@@ -159,6 +159,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     cost: { metals: 2000, chemicals: 1000, food: 0, manpower: 800, credits: 50000 },
     upkeep: { energy: 20, credits: 60 },
     buildTimeSeconds: 45 * 86400,
+    buildTimeIsAbsolute: true,
     // A burned Archive has to come back inside a transcendence's grace
     // (transcendenceGraceDays, 3) or one successful op ends any bid. Two days.
     repairTimeSeconds: 2 * 86400,

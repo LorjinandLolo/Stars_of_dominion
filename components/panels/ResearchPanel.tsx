@@ -16,6 +16,7 @@ import {
     Minus,
     Plus,
     Maximize2,
+    Signpost,
 } from 'lucide-react';
 import { TechTreeType, TechTier, type Tech } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
@@ -24,6 +25,8 @@ import '@/lib/tech/techData';
 import TechNode, { STATUS_META, STATUS_ORDER, type TechNodeEmphasis, type TechNodeStatus } from '../tech/TechNode';
 import TechConnectors from '../tech/TechConnectors';
 import TechInspector from '../tech/TechInspector';
+import ForkRails from '../tech/ForkRails';
+import { closedBy, closedTechIds, forkChoices, forkCost, forkLabel, forksOf, requiredForkOption } from '@/lib/tech/forks';
 import {
     GUTTER_W,
     TIER_NAMES,
@@ -96,6 +99,20 @@ export default function ResearchPanel() {
     const lockedIds = useMemo(() => new Set(techState.lockedTechIds ?? []), [techState.lockedTechIds]);
     const activeSlots = useMemo(() => techState.activeSlots ?? [], [techState.activeSlots]);
 
+    // Forks of no return (lib/tech/forks.ts). A fork is decided when research
+    // starts, so an option being researched — or just authorized here — counts.
+    const forks = useMemo(() => forksOf(allTechs), [allTechs]);
+    const treeForks = useMemo(() => [...forks.values()].filter(f => f.tree === activeBranch), [forks, activeBranch]);
+    const committedIds = useMemo(() => new Set<string>([
+        ...unlockedIds,
+        ...activeSlots.map(s => s.techId).filter((id): id is string => !!id),
+        ...pendingIds,
+    ]), [unlockedIds, activeSlots, pendingIds]);
+    const choices = useMemo(() => forkChoices(forks, committedIds), [forks, committedIds]);
+    const decidedGroups = useMemo(() => new Set(choices.keys()), [choices]);
+    // Locked options plus everything that needs one: closed for the season.
+    const closedIds = useMemo(() => closedTechIds(allTechs, lockedIds), [allTechs, lockedIds]);
+
     const nodeStates = useMemo(() => {
         const out = new Map<string, NodeState>();
         for (const tech of techs) {
@@ -103,6 +120,7 @@ export default function ResearchPanel() {
             let status: TechNodeStatus;
             if (unlockedIds.has(tech.id)) status = 'unlocked';
             else if (lockedIds.has(tech.id)) status = 'locked';
+            else if (closedIds.has(tech.id)) status = 'closed';
             else if (slot) status = 'researching';
             else if (pendingIds.has(tech.id)) status = 'pending';
             else if ((tech.prerequisites ?? []).every(pid => unlockedIds.has(pid))) status = 'available';
@@ -118,7 +136,7 @@ export default function ResearchPanel() {
             out.set(tech.id, { status, progress });
         }
         return out;
-    }, [techs, activeSlots, unlockedIds, lockedIds, pendingIds]);
+    }, [techs, activeSlots, unlockedIds, lockedIds, closedIds, pendingIds]);
 
     // A pending card settles the moment the worker's slot (or unlock) shows up
     // in the synced state.
@@ -135,6 +153,24 @@ export default function ResearchPanel() {
 
     const selected = selectedId ? byId.get(selectedId) ?? null : null;
     const selectedState = selectedId ? nodeStates.get(selectedId) ?? null : null;
+
+    // What the inspector says about forks for the selected tech: the price of
+    // committing (an undecided option), what closed it (a closed tech), the
+    // option that was chosen instead (a path not taken), or the path it needs.
+    const forkInfo = useMemo(() => {
+        if (!selected) return null;
+        const group = selected.mutuallyExclusiveGroup;
+        const fork = group ? forks.get(group) ?? null : null;
+        return {
+            fork,
+            cost: fork && !decidedGroups.has(fork.group) ? forkCost(allTechs, selected.id, lockedIds) : null,
+            chosenInstead: fork ? choices.get(fork.group) ?? null : null,
+            closedByOption: closedIds.has(selected.id) && !lockedIds.has(selected.id)
+                ? closedBy(allTechs, byId, selected.id, lockedIds)
+                : null,
+            needsOption: !closedIds.has(selected.id) ? requiredForkOption(byId, selected.id, decidedGroups) : null,
+        };
+    }, [selected, forks, decidedGroups, allTechs, lockedIds, choices, closedIds, byId]);
 
     // Selected tech plus every ancestor, walked across trees so a chain that
     // dips into another branch still lights its visible segment.
@@ -200,6 +236,17 @@ export default function ResearchPanel() {
         setSelectedId(techId);
         scrollNodeIntoView(techId);
     }, [byId, scrollNodeIntoView]);
+
+    // Open each tree where the player can act, not at its empty top-left corner:
+    // at a readable zoom the canvas shows two cards of forty.
+    useEffect(() => {
+        if (selectedId) return;
+        const frontier = techs.find(t => nodeStates.get(t.id)?.status === 'researching')
+            ?? techs.find(t => nodeStates.get(t.id)?.status === 'available');
+        if (frontier) scrollNodeIntoView(frontier.id);
+        // Only on opening a tree: following every status change would yank the view.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeBranch]);
 
     const handleBranchChange = (branch: TechTreeType) => {
         setActiveBranch(branch);
@@ -388,6 +435,37 @@ export default function ResearchPanel() {
                 </div>
             </div>
 
+            {/* This tree's forks of no return, decided or not. Click to find one on the map. */}
+            {treeForks.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-6 py-1.5 border-b border-white/5 bg-amber-950/10" aria-label="Forks in this tree">
+                    <span className="flex items-center gap-1 text-[8px] uppercase tracking-widest text-amber-300/80">
+                        <Signpost size={10} /> Forks
+                    </span>
+                    {treeForks.map(fork => {
+                        const chosen = choices.get(fork.group);
+                        return (
+                            <button
+                                key={fork.group}
+                                type="button"
+                                onClick={() => {
+                                    const target = chosen ?? fork.options[0];
+                                    setSelectedId(target.id);
+                                    scrollNodeIntoView(target.id);
+                                }}
+                                className={`px-2 py-0.5 rounded-full border text-[9px] transition-colors ${
+                                    chosen
+                                        ? 'border-white/10 text-slate-400 hover:text-slate-200'
+                                        : 'border-amber-400/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                                }`}
+                            >
+                                {forkLabel(fork)}: {chosen ? <span className="text-indigo-300">{chosen.name}</span> : `undecided · ${fork.options.length} paths`}
+                            </button>
+                        );
+                    })}
+                    <span className="text-[8px] text-slate-500 ml-1">Starting research on a fork option closes the others for the season.</span>
+                </div>
+            )}
+
             {/* Legend */}
             <div className="flex items-center gap-4 px-6 py-1.5 border-b border-white/5 bg-black/20" aria-label="Legend">
                 {STATUS_ORDER.map(status => (
@@ -460,6 +538,8 @@ export default function ResearchPanel() {
                                     />
                                 </div>
 
+                                <ForkRails forks={treeForks} offset={offset} choices={choices} width={canvas.w} height={canvas.h} />
+
                                 {techs.map(tech => {
                                     const state = nodeStates.get(tech.id) ?? { status: 'unavailable' as const, progress: 0 };
                                     return (
@@ -471,6 +551,7 @@ export default function ResearchPanel() {
                                             progress={state.progress}
                                             selected={tech.id === selectedId}
                                             emphasis={emphasisFor(tech, state.status)}
+                                            fork={tech.mutuallyExclusiveGroup ? { decided: decidedGroups.has(tech.mutuallyExclusiveGroup) } : undefined}
                                             onSelect={handleNodeSelect}
                                         />
                                     );
@@ -481,6 +562,8 @@ export default function ResearchPanel() {
                 </div>
 
                 <TechInspector
+                    key={selectedId ?? 'none'}
+                    forkInfo={forkInfo}
                     tech={selected}
                     status={selectedState?.status ?? null}
                     progress={selectedState?.progress ?? 0}

@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Lock, CheckCircle2, FlaskConical, Circle, CircleDashed, Loader2 } from 'lucide-react';
+import { Lock, CheckCircle2, FlaskConical, Circle, CircleDashed, Loader2, Ban, Signpost } from 'lucide-react';
 import type { Tech } from '@/lib/tech/types';
 import type { Rect } from './layout';
 
@@ -10,7 +10,7 @@ import type { Rect } from './layout';
  * the worker has not yet reported a slot for it through the sync poll. It
  * exists so the node does not snap back to Available for the seconds in between.
  */
-export type TechNodeStatus = 'unlocked' | 'researching' | 'pending' | 'available' | 'locked' | 'unavailable';
+export type TechNodeStatus = 'unlocked' | 'researching' | 'pending' | 'available' | 'locked' | 'closed' | 'unavailable';
 export type TechNodeEmphasis = 'normal' | 'highlight' | 'dim';
 
 interface StatusMeta {
@@ -54,12 +54,22 @@ export const STATUS_META: Record<TechNodeStatus, StatusMeta> = {
         title: 'text-slate-100',
         opacity: 1,
     },
+    // A fork option another choice ruled out.
     locked: {
-        label: 'Locked out',
+        label: 'Path not taken',
         swatch: 'bg-red-950 border-red-800',
         card: 'bg-red-950/30 border-red-900/50',
-        title: 'text-red-200/70',
+        title: 'text-red-200/70 line-through decoration-red-500/50',
         opacity: 0.65,
+    },
+    // Needs a path not taken, directly or further up. Never researchable again
+    // this season — it must not look like "not yet".
+    closed: {
+        label: 'Closed for good',
+        swatch: 'bg-black border-red-900/60 border-dashed',
+        card: 'bg-black/50 border-dashed border-red-900/40',
+        title: 'text-slate-600 line-through decoration-slate-600',
+        opacity: 0.5,
     },
     unavailable: {
         label: 'Prerequisites missing',
@@ -71,7 +81,7 @@ export const STATUS_META: Record<TechNodeStatus, StatusMeta> = {
 };
 
 /** Legend order. 'pending' is deliberately absent: it lasts a few seconds and the inspector names it. */
-export const STATUS_ORDER: TechNodeStatus[] = ['available', 'researching', 'unlocked', 'unavailable', 'locked'];
+export const STATUS_ORDER: TechNodeStatus[] = ['available', 'researching', 'unlocked', 'unavailable', 'locked', 'closed'];
 
 const DIM_OPACITY = 0.35;
 
@@ -82,6 +92,7 @@ function StatusIcon({ status }: { status: TechNodeStatus }) {
         case 'pending': return <Loader2 size={13} className="text-amber-300 shrink-0 animate-spin motion-reduce:animate-none" />;
         case 'available': return <Circle size={13} className="text-slate-200 shrink-0" />;
         case 'locked': return <Lock size={13} className="text-red-400 shrink-0" />;
+        case 'closed': return <Ban size={13} className="text-red-900 shrink-0" />;
         default: return <CircleDashed size={13} className="text-slate-600 shrink-0" />;
     }
 }
@@ -93,6 +104,8 @@ interface TechNodeProps {
     progress?: number;
     selected: boolean;
     emphasis: TechNodeEmphasis;
+    /** Set on a fork option: an amber badge, so the choice is visible on the map. */
+    fork?: { decided: boolean };
     onSelect: (techId: string) => void;
 }
 
@@ -103,6 +116,7 @@ export default function TechNode({
     progress = 0,
     selected,
     emphasis,
+    fork,
     onSelect,
 }: TechNodeProps) {
     const meta = STATUS_META[status];
@@ -151,6 +165,16 @@ export default function TechNode({
                     {tech.branch && (
                         <span className="truncate text-[8px] font-mono lowercase px-1 rounded bg-white/5 text-slate-400">
                             {tech.branch.replace(/_/g, ' ')}
+                        </span>
+                    )}
+                    {fork && (
+                        <span
+                            className={`ml-auto shrink-0 inline-flex items-center gap-0.5 text-[8px] font-display uppercase tracking-wider px-1 rounded border ${
+                                fork.decided ? 'border-white/10 text-slate-500' : 'border-amber-400/60 bg-amber-500/15 text-amber-300'
+                            }`}
+                            title={fork.decided ? 'Fork already decided' : 'Fork: choose one — permanent'}
+                        >
+                            <Signpost size={9} /> Fork
                         </span>
                     )}
                 </div>

@@ -90,7 +90,12 @@ export interface BuildingDefinition {
   techRequired?: string;
   civilizationId?: string;
   upgradesFrom?: string; // ID of the building this upgrades from
-  /** Base repair time for a ruined copy; defaults to half buildTimeSeconds. */
+  /**
+   * buildTimeSeconds is used as written, not scaled by tier (lib/construction/build-time.ts).
+   * For set-piece megaprojects whose time is a design decision of its own.
+   */
+  buildTimeIsAbsolute?: boolean;
+  /** Base repair time for a ruined copy; defaults to half the (tier-scaled) build time. */
   repairTimeSeconds?: number;
 }
 
