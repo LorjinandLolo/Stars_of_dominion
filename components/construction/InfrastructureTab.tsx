@@ -15,16 +15,8 @@ import {
 import type { InfrastructureTrackId } from '@/lib/infrastructure/infrastructure-types';
 import { upgradeCost, upgradeDuration } from '@/lib/infrastructure/infrastructure-service';
 import type { Planet } from '@/lib/construction/construction-types';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 
-function formatDuration(seconds: number): string {
-    if (seconds <= 0) return 'Immediate';
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${Math.floor(seconds % 60)}s`;
-}
 
 const TRACK_ICON: Record<InfrastructureTrackId, React.ReactNode> = {
     transit: <Route className="w-4 h-4" />,
@@ -187,7 +179,7 @@ export function InfrastructureTab({ planet, layer, nowSeconds, actionLoading, on
                                     <>
                                         <div className="text-xs font-mono text-cyan-400 flex items-center gap-1.5 mb-2">
                                             <Clock className="w-3 h-3" />
-                                            Upgrading to {track?.upgrade?.targetLevel} — ETA {formatDuration(eta)}
+                                            Upgrading to {track?.upgrade?.targetLevel} — ETA {formatSimAsClock(eta)}
                                         </div>
                                         <button
                                             disabled={actionLoading}
@@ -213,7 +205,7 @@ export function InfrastructureTab({ planet, layer, nowSeconds, actionLoading, on
                                             {(cost?.chemicals ?? 0) > 0 && <span className="text-amber-300">{cost?.chemicals} Chm</span>}
                                             {(cost?.manpower ?? 0) > 0 && <span className="text-blue-300">{cost?.manpower} Man</span>}
                                             <span className="text-slate-500 flex items-center gap-1">
-                                                <Clock className="w-3 h-3" />{formatDuration(duration)}
+                                                <Clock className="w-3 h-3" />{formatSimAsClock(duration)}
                                             </span>
                                         </div>
                                         <button

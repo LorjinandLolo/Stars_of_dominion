@@ -7,6 +7,8 @@ export enum Resource {
     ENERGY = 'ENERGY',
     RARES = 'RARES',
     AMMO = 'AMMO',
+    /** Military goods, procured from the factories; every ship and army costs some (lib/economy/procurement.ts). */
+    MATERIEL = 'MATERIEL',
     CREDITS = 'CREDITS',
     /** Gabagoonian luxury resource; also a combat stimulant. */
     CAPACOLA = 'CAPACOLA',

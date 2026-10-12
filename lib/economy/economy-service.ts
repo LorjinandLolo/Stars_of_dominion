@@ -37,6 +37,10 @@ import {
     tradeThroughputUnderBlockade,
 } from '../logistics/blockade-service';
 import { blockadeThroughputFloor } from '@/lib/comeback/comeback-service';
+import { AMMO, MATERIEL, PROCURED_GOODS, PROCUREMENT_SHARE, STARTING_AMMO, STARTING_MATERIEL } from './procurement';
+
+/** Factory outputs the state procures a share of (lib/economy/procurement.ts). */
+const PROCURED_KEYS = new Set<string>(PROCURED_GOODS.map(([good]) => good));
 
 // Shared RNG instance for trade simulation (seeded deterministically)
 const tradeRng = new RNG(42);
@@ -266,7 +270,11 @@ export function tickProduction(
             planet.stockpile[inKey] = Math.max(0, (planet.stockpile[inKey] ?? 0) - draw);
             mfgDraw[inKey] = (mfgDraw[inKey] ?? 0) + draw / deltaSeconds;
         }
-        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + actual;
+        // The state procures a share of the war goods for its own reserves
+        // (lib/economy/procurement.ts); the rest stays on the planet.
+        const procured = PROCURED_KEYS.has(key) ? actual * PROCUREMENT_SHARE : 0;
+        planet.stockpile[key] = (planet.stockpile[key] ?? 0) + actual - procured;
+        if (procured > 0) planet.stateSkim[key] = (planet.stateSkim[key] ?? 0) + procured;
         planet.currentRates[key] = actual / deltaSeconds;
     }
 
@@ -408,6 +416,25 @@ export function collectFactionTaxes(
         if (credits > 0) {
             faction.reserves[Resource.CREDITS] = (faction.reserves[Resource.CREDITS] ?? 0) + credits * taxMult;
         }
+
+        // War goods go to the reserves whole — the state ordered them.
+        for (const [goodKey, reserveKey] of PROCURED_GOODS) {
+            const procured = skim[goodKey as keyof ResourceBundle] ?? 0;
+            if (procured > 0) {
+                const reserves = faction.reserves as Record<string, number>;
+                reserves[reserveKey] = (reserves[reserveKey] ?? 0) + procured;
+            }
+        }
+    }
+
+    // Every empire holds war reserves from its first economy tick, so ammo and
+    // materiel prices are enforced from the start (an untracked reserve key is
+    // never charged — that is how attacks, bombardments and invasions were free).
+    for (const faction of ecoWorld.factions.values()) {
+        const reserves = faction.reserves as Record<string, number> | undefined;
+        if (!reserves) continue;
+        if (typeof reserves[AMMO] !== 'number') reserves[AMMO] = STARTING_AMMO;
+        if (typeof reserves[MATERIEL] !== 'number') reserves[MATERIEL] = STARTING_MATERIEL;
     }
 }
 

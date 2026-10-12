@@ -30,7 +30,7 @@ const seed = process.argv[3] ?? 'a';
 const HUMAN_SEATS = 10;
 const TICKS_PER_SIM_DAY = 4;
 const SIM_DAYS_PER_REAL_DAY = 15;
-const KEYS = ['METALS', 'CHEMICALS', 'FOOD', 'ENERGY', 'CREDITS'] as const;
+const KEYS = ['METALS', 'CHEMICALS', 'FOOD', 'ENERGY', 'CREDITS', 'AMMO', 'MATERIEL'] as const;
 
 /**
  * What a fresh empire (its capital only, as every season starts) banks per real

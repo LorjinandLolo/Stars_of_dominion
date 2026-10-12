@@ -15,6 +15,8 @@ import {
     Wheat,
     Zap,
     Gem,
+    Crosshair,
+    Package,
     TrendingUp,
     TrendingDown,
     AlertTriangle,
@@ -122,6 +124,9 @@ export default function TopNav() {
                 <ResourceChip icon={<Wheat size={13} className="text-lime-400" />} label="Food" {...res(Resource.FOOD)} />
                 <ResourceChip icon={<Zap size={13} className="text-sky-400" />} label="Energy" {...res(Resource.ENERGY)} className="hidden xl:flex" />
                 <ResourceChip icon={<Gem size={13} className="text-fuchsia-400" />} label="Rares" {...res(Resource.RARES)} className="hidden xl:flex" />
+                {/* War reserves: procured from the factories, spent by attacks (ammo) and by every ship and army (materiel). */}
+                <ResourceChip icon={<Crosshair size={13} className="text-rose-400" />} label="Ammo" {...res(Resource.AMMO)} className="hidden xl:flex" />
+                <ResourceChip icon={<Package size={13} className="text-orange-300" />} label="Materiel" {...res(Resource.MATERIEL)} className="hidden xl:flex" />
             </div>
 
             {/* ── Right: stability, date, alerts, identity ────────────────── */}

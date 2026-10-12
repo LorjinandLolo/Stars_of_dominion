@@ -6,6 +6,7 @@
 // can never disagree about what a design costs or does.
 
 import unitsConfig from '../../data/combat/ground-units.json';
+import { withMateriel } from '../economy/procurement';
 import type {
     ComponentDefinition,
     DesignProfile,
@@ -548,7 +549,7 @@ export function summarizeDesign(
             hullId: (design.hullId ?? 'corvette') as ShipClassId,
             power: 0,
             ratedPower: 0,
-            cost: { CREDITS: 0, METALS: 0 },
+            cost: { CREDITS: 0, METALS: 0, MATERIEL: 0 },
             buildTime: 0,
             speedMult: 0,
             energyProduced: 0,
@@ -645,7 +646,7 @@ export function summarizeDesign(
         hullId: hull.id,
         power: netPower,
         ratedPower,
-        cost: { CREDITS: Math.round(credits), METALS: Math.round(metals) },
+        cost: withMateriel({ CREDITS: Math.round(credits), METALS: Math.round(metals) }),
         buildTime: Math.round(buildTime),
         speedMult: Math.round(speedMult * 100) / 100,
         energyProduced,
@@ -686,7 +687,7 @@ export interface RefitQuote {
     addedModuleIds: string[];
     /** Modules that come off. Scrapped: nothing is refunded. */
     removedModuleIds: string[];
-    perShipCost: { CREDITS: number; METALS: number };
+    perShipCost: { CREDITS: number; METALS: number; MATERIEL: number };
     perShipSeconds: number;
     from: { power: number; profile: DesignProfile; speedMult: number };
     to: { power: number; profile: DesignProfile; speedMult: number; brownoutPenalty: number };
@@ -718,7 +719,7 @@ export function quoteRefit(
         hullId: toSummary.hullId,
         addedModuleIds: [],
         removedModuleIds: [],
-        perShipCost: { CREDITS: 0, METALS: 0 },
+        perShipCost: { CREDITS: 0, METALS: 0, MATERIEL: 0 },
         perShipSeconds: 0,
         from: { power: fromSummary.power, profile: fromSummary.profile, speedMult: fromSummary.speedMult },
         to: { power: toSummary.power, profile: toSummary.profile, speedMult: toSummary.speedMult, brownoutPenalty: toSummary.brownoutPenalty },
@@ -759,7 +760,7 @@ export function quoteRefit(
         ok: true,
         addedModuleIds: added,
         removedModuleIds: removed,
-        perShipCost: { CREDITS: Math.round(credits), METALS: Math.round(metals) },
+        perShipCost: withMateriel({ CREDITS: Math.round(credits), METALS: Math.round(metals) }),
         perShipSeconds: Math.max(1, Math.round(seconds)),
     };
 }

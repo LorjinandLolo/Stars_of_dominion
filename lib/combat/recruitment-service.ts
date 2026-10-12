@@ -18,6 +18,7 @@ import { applyRefit, isBookKey, refittable } from './fleet-roster';
 import { fireNotification } from '../time/notification-hooks';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_SHIPS_COMMISSIONED } from '../tech/deed-metrics';
+import { materielFor } from '../economy/procurement';
 
 /** Fields a job may carry beyond the siege-types base shape. */
 export interface RecruitmentJobExtras {
@@ -78,6 +79,9 @@ export class RecruitmentService {
         for (const [k, v] of Object.entries(cost)) {
             if (typeof v === 'number' && v > 0) out[k.toUpperCase()] = v;
         }
+        // Every war machine also needs materiel, in proportion to its metals.
+        const materiel = materielFor(out.METALS ?? 0);
+        if (materiel > 0) out.MATERIEL = materiel;
         return out;
     }
 

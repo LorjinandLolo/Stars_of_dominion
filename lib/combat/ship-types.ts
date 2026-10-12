@@ -90,7 +90,7 @@ export interface DesignSummary {
     /** Power the fit is rated for with the reactor covering the draw. Equals `power` when it does. */
     ratedPower: number;
     /** Faction-reserve keys, ready for the worker's charge helper. */
-    cost: { CREDITS: number; METALS: number };
+    cost: { CREDITS: number; METALS: number; MATERIEL: number };
     buildTime: number;
     /** Sum of the fitted modules' speedMult — the design's lane-speed bonus. */
     speedMult: number;

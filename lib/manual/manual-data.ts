@@ -69,7 +69,8 @@ export const MANUAL_DATA: ManualSection[] = [
                             { resource: 'METALS', usage: 'Hull construction, infrastructure' },
                             { resource: 'CHEMICALS', usage: 'Fuel, ship systems, terraforming' },
                             { resource: 'FOOD', usage: 'Population growth, stability' },
-                            { resource: 'AMMO', usage: 'Fleet readiness, planetary defense' },
+                            { resource: 'AMMO', usage: 'Spent by every attack, bombardment and invasion. Your factories make it; the state takes a share into the treasury.' },
+                            { resource: 'MATERIEL', usage: 'Military goods. Every ship and army costs some, a tenth of its metals. Made by your factories, like ammo.' },
                             { resource: 'RARES', usage: 'Advanced tech, high-end ship components' }
                         ]
                     }

@@ -14,6 +14,7 @@ import { hasAsteroidBelt, beltLaneIndex } from '@/lib/movement/belts';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import { ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
 import { formatPercent } from '@/lib/ui/format';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 import {
     X, Globe, Users, Landmark, Heart, ShieldCheck, Wrench, AlertTriangle, Hammer, Swords, Crosshair,
 } from 'lucide-react';
@@ -695,12 +696,6 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
     const nowSeconds = useUIStore(s => s.nowSeconds);
     // garrison.fortificationLevel is a 0-10 summary — halve it for a 5-star bar.
     const defenseStars = Math.max(0, Math.min(5, Math.round((planet.garrison?.fortificationLevel ?? 0) / 2)));
-    const fmtEta = (sec: number) => {
-        if (sec <= 0) return 'due';
-        const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    };
-
     return (
         <div
             className="w-80 border-l border-slate-800/60 bg-slate-950/85 backdrop-blur-md flex flex-col flex-shrink-0 absolute inset-y-0 right-0 xl:relative xl:inset-auto"
@@ -752,7 +747,7 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
                                     <div key={q.orderId ?? i}>
                                         <div className="flex justify-between text-[9px] text-slate-300">
                                             <span className="capitalize truncate">{String(q.buildingId).replace(/_/g, ' ')}</span>
-                                            <span className="font-mono text-sky-400 flex-shrink-0">{fmtEta(left)}</span>
+                                            <span className="font-mono text-sky-400 flex-shrink-0">{formatSimAsClock(left, 'due')}</span>
                                         </div>
                                         <div className="h-1 bg-slate-800 rounded overflow-hidden mt-0.5">
                                             <div className="h-full bg-sky-500/80" style={{ width: `${pct}%` }} />

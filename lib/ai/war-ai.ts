@@ -62,6 +62,7 @@ import { CAPITAL_SECTOR } from '@/lib/combat/siege/district-front';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import type { TacticalStanceId } from '@/lib/combat/siege/siege-types';
 import groundUnits from '@/data/combat/ground-units.json';
+import { materielFor } from '../economy/procurement';
 
 const DAY = 86400;
 
@@ -251,6 +252,9 @@ export function warfleetQuote(composition: Record<string, number>): { cost: Reco
         cost.METALS += (unit.cost?.metals ?? 0) * n;
         power += (unit.power ?? 0) * n;
     }
+    // The hulls' materiel, priced the way RecruitmentService.unitCost prices it.
+    cost.MATERIEL = (cost.MATERIEL ?? 0) + Object.entries(composition).reduce((sum, [cls, n]) =>
+        sum + materielFor((groundUnits as any)[cls.toUpperCase()]?.cost?.metals ?? 0) * n, 0);
     return { cost, power };
 }
 

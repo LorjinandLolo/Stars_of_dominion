@@ -14,17 +14,8 @@ import { LogisticsTab } from './LogisticsTab';
 import { formatPercent } from '@/lib/ui/format';
 import { SURFACE_YARD_TIERS } from '@/lib/combat/shipyard-gate';
 import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 
-function formatDuration(seconds: number): string {
-    if (seconds <= 0) return 'Immediate';
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${seconds % 60}s`;
-}
 
 interface PlanetConstructionPanelProps {
     planetId: string;
@@ -471,7 +462,7 @@ export function PlanetConstructionPanel({
                                                             </div>
                                                             <div className="flex items-center gap-1 text-xs font-medium text-slate-400 bg-slate-950 px-2 py-1 rounded">
                                                                 <Clock className="w-3 h-3" />
-                                                                {formatDuration(def.buildTimeSeconds)}
+                                                                {formatSimAsClock(def.buildTimeSeconds)}
                                                             </div>
                                                         </div>
 
@@ -573,7 +564,7 @@ export function PlanetConstructionPanel({
                                                             <div className={`text-xs font-medium font-mono ${(order as any).queued ? 'text-amber-300' : 'text-slate-400'}`}>
                                                                 {(order as any).queued
                                                                     ? `Waiting for a build slot (${busySlots} / ${buildSlots} busy)`
-                                                                    : `ETA: ${formatDuration(order.completesAtSeconds - (Math.floor(Date.now() / 1000)))}`}
+                                                                    : `ETA: ${formatSimAsClock(order.completesAtSeconds - worldNowSeconds)}`}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -591,7 +582,7 @@ export function PlanetConstructionPanel({
                                                             Assembling: {order.shipType.replace(/_/g, ' ').toUpperCase()}
                                                         </div>
                                                         <div className="text-xs text-slate-400 font-medium font-mono">
-                                                            ETA: {formatDuration(order.completesAtSeconds - (Math.floor(Date.now() / 1000)))}
+                                                            ETA: {formatSimAsClock(order.completesAtSeconds - worldNowSeconds)}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -724,7 +715,7 @@ export function PlanetConstructionPanel({
                                     // force with the standard Picket Corvette chained in). The
                                     // others are listed so players know they exist, disabled
                                     // until their build path lands — the worker refuses them.
-                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', cost: `Task force 1,000 Cr / 500 Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met`, available: true },
+                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', cost: `Task force 1,000 Cr / 500 Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met / ${corvetteSummary.cost.MATERIEL.toLocaleString()} Materiel`, available: true },
                                     { id: 'trade_fleet', name: 'Trade Fleet', desc: 'Automated freighter convoy for interstellar commerce.', cost: 'Not yet available', available: false },
                                     { id: 'sensor_relay', name: 'Sensor Relay', desc: 'Static orbital node that expands system detection range.', cost: 'Not yet available', available: false },
                                     { id: 'exploration_node', name: 'Exploration Node', desc: 'Deep-space sensor array for clearing distant fog of war.', cost: 'Not yet available', available: false },

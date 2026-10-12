@@ -15,16 +15,8 @@ import type { OrbitalCategory } from '@/lib/orbital/orbital-types';
 import type { Planet } from '@/lib/construction/construction-types';
 import { hullsBuildableAt, nextHullAfter, planetYardTier } from '@/lib/combat/shipyard-gate';
 import { orbitalChargeShortfall, orbitalStructureCharge } from '@/lib/orbital/orbital-service';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 
-function formatDuration(seconds: number): string {
-    if (seconds <= 0) return 'Immediate';
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${Math.floor(seconds % 60)}s`;
-}
 
 const CATEGORY_ICON: Record<OrbitalCategory, React.ReactNode> = {
     station: <Building2 className="w-4 h-4" />,
@@ -171,7 +163,7 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
 
                                         {building ? (
                                             <div className="text-xs font-mono text-cyan-400 flex items-center gap-1.5 mb-3">
-                                                <Clock className="w-3 h-3" /> ETA {formatDuration(eta)}
+                                                <Clock className="w-3 h-3" /> ETA {formatSimAsClock(eta)}
                                             </div>
                                         ) : (
                                             <div className="mb-3">
@@ -295,7 +287,7 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
                                                         {def.cost.manpower > 0 && <span className="text-blue-300">{def.cost.manpower} Man</span>}
                                                         {(def.cost.rares ?? 0) > 0 && <span className="text-fuchsia-300">{def.cost.rares} Rx</span>}
                                                         <span className="text-slate-500 flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" />{formatDuration(def.buildTimeSeconds)}
+                                                            <Clock className="w-3 h-3" />{formatSimAsClock(def.buildTimeSeconds)}
                                                         </span>
                                                         <span className="text-slate-500">HULL {def.hullStrength}</span>
                                                     </div>

@@ -193,7 +193,7 @@ export default function FleetRefitPanel({ fleet, yardAnchor }: { fleet: any; yar
                                 {quote && quote.ok && (
                                     <div className="text-[10px] leading-relaxed text-slate-300 space-y-0.5">
                                         <div>
-                                            {n}× {row.name} → {target!.design.name} · <span className="text-amber-300">{formatCredits(quote.perShipCost.CREDITS * n)} cr / {formatCredits(quote.perShipCost.METALS * n)} mt</span> · {formatBuildTime(quote.perShipSeconds * n)} · rating <span className={quote.powerDelta >= 0 ? 'text-emerald-300' : 'text-amber-300'}>{quote.powerDelta * n >= 0 ? '+' : ''}{quote.powerDelta * n}</span>
+                                            {n}× {row.name} → {target!.design.name} · <span className="text-amber-300">{formatCredits(quote.perShipCost.CREDITS * n)} cr / {formatCredits(quote.perShipCost.METALS * n)} mt / {formatCredits(quote.perShipCost.MATERIEL * n)} mat</span> · {formatBuildTime(quote.perShipSeconds * n)} · rating <span className={quote.powerDelta >= 0 ? 'text-emerald-300' : 'text-amber-300'}>{quote.powerDelta * n >= 0 ? '+' : ''}{quote.powerDelta * n}</span>
                                         </div>
                                         {quote.addedModuleIds.length > 0 && <div className="text-slate-400">Adds {moduleList(quote.addedModuleIds)}.</div>}
                                         {quote.removedModuleIds.length > 0 && <div className="text-slate-500">Scraps {moduleList(quote.removedModuleIds)} (no refund).</div>}

@@ -192,7 +192,7 @@ export default function ShipDesignPicker({ onCommission, layout = 'row', disable
                             </div>
                             <div className="text-[8px] text-slate-500 mt-0.5 flex items-center gap-1 font-mono">
                                 <Coins size={8} className="text-emerald-500" />
-                                {formatCredits(summary.cost.CREDITS)} cr · {formatCredits(summary.cost.METALS)} mt
+                                {formatCredits(summary.cost.CREDITS)} cr · {formatCredits(summary.cost.METALS)} mt · {formatCredits(summary.cost.MATERIEL)} mat
                             </div>
                             {footer && (
                                 <div className="text-[8px] text-red-400/80 mt-1 text-center leading-tight">

@@ -554,6 +554,7 @@ function Specs({ summary, bare, standard, standardName }: {
                     <div className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-1"><Coins size={9} /> Cost</div>
                     <div className="text-white mt-1">{summary.cost.CREDITS.toLocaleString()} cr</div>
                     <div className="text-slate-400">{summary.cost.METALS.toLocaleString()} metals</div>
+                    <div className="text-slate-400" title="Military goods, procured from your factories">{summary.cost.MATERIEL.toLocaleString()} materiel</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/30 border border-white/5">
                     <div className="text-[9px] text-slate-500 uppercase tracking-widest flex items-center gap-1"><Clock size={9} /> Build</div>

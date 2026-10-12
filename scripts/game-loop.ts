@@ -1395,16 +1395,16 @@ function recalculateSystemControl(world: any) {
  * Check & deduct an action's cost from the faction's LIVE economy reserves —
  * the same numbers the player's resource bar shows. Resources the economy
  * doesn't track yet (influence, manpower, intel...) are free for now.
- * Returns false (and skips the order) if an enforced resource is short.
+ * Returns the reason (and skips the order) when an enforced resource is short; null when paid.
  */
-function chargeOrderCost(world: any, factionId: string, actionId: string): boolean {
+function chargeOrderCost(world: any, factionId: string, actionId: string): string | null {
     const def = (ACTION_DEFINITIONS as any)[actionId];
     const cost = def?.cost;
-    if (!cost || Object.keys(cost).length === 0) return true;
+    if (!cost || Object.keys(cost).length === 0) return null;
 
     const econFaction = world.economy?.factions?.get?.(factionId);
     const reserves = econFaction?.reserves;
-    if (!reserves) return true; // no economy record — don't block gameplay
+    if (!reserves) return null; // no economy record — don't block gameplay
 
     const charges: Array<[string, number]> = [];
     for (const [res, amt] of Object.entries(cost)) {
@@ -1412,12 +1412,14 @@ function chargeOrderCost(world: any, factionId: string, actionId: string): boole
         if (reserves[key] === undefined) continue; // untracked resource → free
         if ((reserves[key] ?? 0) < (amt as number)) {
             console.warn(`[Order] ${factionId} cannot afford ${actionId}: needs ${amt} ${res}, has ${Math.floor(reserves[key] ?? 0)}`);
-            return false;
+            // Name the shortfall: since ammo became a real reserve (2026-10-12),
+            // 'not enough ammo' is the usual reason an attack is refused.
+            return `Not enough ${res.toLowerCase()}: needs ${amt}, the treasury holds ${Math.floor(reserves[key] ?? 0)}.`;
         }
         charges.push([key, amt as number]);
     }
     charges.forEach(([key, amt]) => { reserves[key] = (reserves[key] ?? 0) - amt; });
-    return true;
+    return null;
 }
 
 /**
@@ -1476,7 +1478,7 @@ function perUnitShortfall(
     for (const [key, amt] of Object.entries(perUnit)) {
         if (reserves[key] === undefined) continue;
         if ((reserves[key] ?? 0) < amt * n) {
-            return `Cannot afford ${n}x ${label}: needs ${amt * n} ${key}, has ${Math.floor(reserves[key] ?? 0)}.`;
+            return `Cannot afford ${n}x ${label}: needs ${amt * n} ${key.toLowerCase()}, has ${Math.floor(reserves[key] ?? 0)}.`;
         }
     }
     return null;
@@ -1649,8 +1651,9 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
     }
 
     // Affordability gate — deducts from the live economy on success.
-    if (!chargeOrderCost(world, factionId, actionId)) {
-        recordOrderFailure(world, factionId, actionId, 'Insufficient resources in the treasury.');
+    const costShortfall = chargeOrderCost(world, factionId, actionId);
+    if (costShortfall) {
+        recordOrderFailure(world, factionId, actionId, costShortfall);
         return;
     }
 

@@ -111,3 +111,22 @@ export function formatRealAgo(at: Date | string, now: Date = new Date()): string
     if (days === 1) return 'yesterday';
     return `${days} days ago`;
 }
+
+/**
+ * A sim-clock duration as a compact real-time countdown: "2d 4h", "3h 12m",
+ * "4m 10s". For build timers, ETAs and queue rows, where the coarse words of
+ * formatRealDuration would hide progress. Building and track definitions are
+ * authored in SIM seconds; printing those raw (as the construction panels did
+ * until 2026-10-12) showed every build 15x slower than it is — the Great
+ * Archive read "1080h" for about three real days.
+ */
+export function formatSimAsClock(simSeconds: number, done = 'Immediate'): string {
+    const seconds = Math.ceil(simSeconds / SIM_SECONDS_PER_REAL_SECOND);
+    if (!Number.isFinite(seconds) || seconds <= 0) return done;
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m ${seconds % 60}s`;
+}

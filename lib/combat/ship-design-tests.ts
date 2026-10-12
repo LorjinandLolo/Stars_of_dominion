@@ -103,7 +103,7 @@ test('standard patterns are valid with NO tech and use no gated module', () => {
 test('bare hull summary equals config numbers', () => {
     const s = summarizeDesign({ hullId: 'cruiser', name: 'Bare', components: {} }, null);
     expectEq(s.power, 45);
-    expectEq(s.cost, { CREDITS: 3600, METALS: 1500 });
+    expectEq(s.cost, { CREDITS: 3600, METALS: 1500, MATERIEL: 150 }); // materiel = metals / 10 (lib/economy/procurement.ts)
     expectEq(s.buildTime, 1200);
     expectEq(s.energyDrawn, 0);
     expectTrue(s.valid);
@@ -115,7 +115,7 @@ test('modules add power, cost, build time and energy draw', () => {
         components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', c1: 'core-fission' },
     }, null);
     expectEq(s.power, Math.round(10 * (1 + 0.10 + 0.08)));
-    expectEq(s.cost, { CREDITS: 800 + 120 + 150 + 100, METALS: 300 + 40 + 60 + 80 });
+    expectEq(s.cost, { CREDITS: 800 + 120 + 150 + 100, METALS: 300 + 40 + 60 + 80, MATERIEL: 48 });
     expectEq(s.buildTime, 300 + 30 + 30 + 30);
     expectEq(s.energyDrawn, 18);
     expectEq(s.energyProduced, 10 + 40);

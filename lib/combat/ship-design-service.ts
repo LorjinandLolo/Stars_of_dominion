@@ -269,7 +269,7 @@ export function resolveRecruitSpec(
             unitPower: summary.power,
             unitProfile: summary.profile,
             unitSpeedMult: summary.speedMult,
-            cost: { CREDITS: summary.cost.CREDITS, METALS: summary.cost.METALS },
+            cost: { CREDITS: summary.cost.CREDITS, METALS: summary.cost.METALS, MATERIEL: summary.cost.MATERIEL },
             buildTime: summary.buildTime,
         },
     };

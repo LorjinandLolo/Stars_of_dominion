@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { BUILDINGS } from '@/data/buildings';
 import type { BuildingDefinition } from '@/lib/construction/construction-types';
@@ -31,13 +32,6 @@ const COST_KEYS: Array<{ key: keyof BuildingDefinition['cost']; reserve: string;
     { key: 'energy', reserve: 'ENERGY', label: 'E' },
     { key: 'rares', reserve: 'RARES', label: 'R' },
 ];
-
-function fmtDuration(sec: number): string {
-    if (sec <= 0) return 'due';
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m ${Math.floor(sec % 60)}s`;
-}
 
 export default function SectorInspector({ planet, surface, sector, occupant, onClose }: SectorInspectorProps) {
     const playerFactionId = useUIStore(s => s.playerFactionId);
@@ -146,7 +140,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
                                                         );
                                                     })}
                                                     <span className="text-[8px] font-mono text-slate-500 ml-auto flex items-center gap-0.5">
-                                                        <Clock size={8} />{fmtDuration(def.buildTimeSeconds || 3600)}
+                                                        <Clock size={8} />{formatSimAsClock(def.buildTimeSeconds || 3600)}
                                                     </span>
                                                 </div>
                                                 {blocked && <div className="text-[7px] font-display tracking-widest text-rose-400/80 mt-1">{blocked}</div>}
@@ -234,7 +228,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
                                 {occupant.state === 'pending'
                                     ? 'Order in transit…'
                                     : occupant.completesAtSeconds
-                                        ? `Completes in ${fmtDuration(occupant.completesAtSeconds - nowSeconds)}`
+                                        ? `Completes in ${formatSimAsClock(occupant.completesAtSeconds - nowSeconds, 'due')}`
                                         : 'Under construction'}
                             </div>
                         )}
