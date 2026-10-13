@@ -26,6 +26,7 @@ import {
     FLEET_REPAIR_EFFECT,
     TRADE_EFFICIENCY_EFFECT,
 } from './orbital-types';
+import { baseBuildSeconds } from '../construction/build-time';
 import type {
     OrbitalState,
     OrbitalSlot,
@@ -278,7 +279,8 @@ export function startOrbitalConstruction(
 
     // Orbital work is slowed by a wrecked layer the same way ground work is, but
     // never faster than baseline — orbit has no equivalent of a construction bonus yet.
-    const completesAt = now + def.buildTimeSeconds;
+    // Scaled by tier like surface buildings (lib/construction/build-time.ts).
+    const completesAt = now + baseBuildSeconds(def);
 
     slot.structureId = structureId;
     slot.state = 'under_construction';

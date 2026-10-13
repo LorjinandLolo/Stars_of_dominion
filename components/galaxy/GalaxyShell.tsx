@@ -12,7 +12,6 @@ import SystemContextPanel from './SystemContextPanel';
 import CrisisBottomTray from './CrisisBottomTray';
 import { ReviewPanel } from '../combat/ReviewPanel';
 import { PlanetConstructionPanel } from '../construction/PlanetConstructionPanel';
-import { Activity } from 'lucide-react';
 import SystemNode from './SystemNode';
 import StellarPhenomenon, { hasPhenomenon } from './StellarPhenomenon';
 import { STAR_CLASSES, factionColor } from './starVisuals';
@@ -61,38 +60,6 @@ function getHexCorners(size: number): string {
 }
 
 const HEX_POINTS = getHexCorners(HEX_SIZE - 1);
-
-function SimulationTimer() {
-    const nowSeconds = useUIStore(s => s.nowSeconds);
-    const tick = Math.floor(nowSeconds / 10);
-    const progress = ((nowSeconds % 10) / 10) * 100;
-    
-    return (
-        // Wide screens only: on a phone it sat on top of the overlay picker.
-        <div className="hidden md:flex absolute top-6 left-1/2 -translate-x-1/2 z-40 glass-panel px-6 py-2 rounded-full items-center gap-6 border-b-2 border-b-sky-500/50 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
-            <div className="flex flex-col">
-                <span className="text-[8px] text-sky-500/60 uppercase tracking-[0.2em] font-display">Authoritative Clock</span>
-                <span className="text-sm font-mono text-white flex items-center gap-2">
-                    <Activity size={12} className="text-sky-400 animate-pulse" />
-                    TICK {tick}
-                </span>
-            </div>
-            <div className="h-8 w-px bg-white/10" />
-            <div className="flex flex-col w-32">
-                <div className="flex justify-between text-[8px] text-slate-500 uppercase mb-1 font-display">
-                    <span>Next Update</span>
-                    <span className="text-sky-400 font-mono">{10 - (nowSeconds % 10)}s</span>
-                </div>
-                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div 
-                        className="h-full bg-sky-500 transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(14,165,233,0.5)]" 
-                        style={{ width: `${progress}%` }} 
-                    />
-                </div>
-            </div>
-        </div>
-    );
-}
 
 /** Stable identity so the selector above never churns the render loop. */
 const EMPTY_COHESION: Record<string, number> = {};
@@ -545,8 +512,6 @@ export default function GalaxyShell() {
                 <div className="absolute inset-0 gx-nebula gx-nebula-2" />
                 <div className="absolute inset-0 gx-starfield" />
             </div>
-
-            <SimulationTimer />
 
             <svg id="galaxy-map-canvas" ref={svgRef} viewBox={dynamicVb} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
                 <defs>

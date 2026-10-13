@@ -32,6 +32,8 @@ import { updatePlanetLogistics } from '../lib/logistics/distribution-service';
 import { startSpaceConstruction } from '../lib/construction/ship-production-service';
 import { hullsBuildableAt, planetYardTier } from '../lib/combat/shipyard-gate';
 import { DEFAULT_DESIGNS, summarizeDesign } from '../lib/combat/ship-registry';
+import { baseBuildSeconds } from '../lib/construction/build-time';
+import { STARTING_AMMO, STARTING_MATERIEL } from '../lib/economy/procurement';
 
 let passed = 0;
 let failed = 0;
@@ -227,10 +229,10 @@ console.log('\n4. Construction lifecycle');
         computeOrbitalRatings(planet).defensePower === 0);
 
     const def = ORBITAL_STRUCTURE_BY_ID['space_station']!;
-    processOrbitalQueue(planet, 1000 + def.buildTimeSeconds - 1);
+    processOrbitalQueue(planet, 1000 + baseBuildSeconds(def) - 1); // tier-scaled (lib/construction/build-time.ts)
     check('the queue does not finish early', slot.state === 'under_construction');
 
-    const completed = processOrbitalQueue(planet, 1000 + def.buildTimeSeconds);
+    const completed = processOrbitalQueue(planet, 1000 + baseBuildSeconds(def));
     check('the queue completes on time', completed.length === 1);
     check('the slot goes active at full integrity',
         slot.state === 'active' && slot.integrity === 100);
@@ -270,7 +272,7 @@ console.log('\n4. Construction lifecycle');
     // The ladder is priced against the starting kit: a fresh faction
     // (lib/game-world-state-singleton.ts) must afford station + spaceyard AND a
     // three-corvette starter squadron out of its opening reserves.
-    const FRESH_RESERVES: Record<string, number> = { CREDITS: 50000, METALS: 3000, CHEMICALS: 1500, FOOD: 2500, ENERGY: 5000 };
+    const FRESH_RESERVES: Record<string, number> = { CREDITS: 50000, METALS: 3000, CHEMICALS: 1500, FOOD: 2500, ENERGY: 5000, AMMO: STARTING_AMMO, MATERIEL: STARTING_MATERIEL }; // war reserves arrive on the first economy tick
     const station = ORBITAL_STRUCTURE_BY_ID['space_station']!;
     const corvette = summarizeDesign(DEFAULT_DESIGNS.find(d => d.hullId === 'corvette')!, null).cost;
     const opening: Record<string, number> = {};

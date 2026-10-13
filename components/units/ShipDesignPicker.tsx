@@ -15,6 +15,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import UnitIcon from '@/components/units/UnitIcon';
 import { DEFAULT_DESIGNS, SHIP_HULLS, getHull, summarizeDesign } from '@/lib/combat/ship-registry';
 import type { DesignSummary, ShipDesign } from '@/lib/combat/ship-types';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
 import {
     checkShipyardGate,
     hullsBuildableAt,
@@ -44,11 +45,9 @@ export function formatCredits(n: number): string {
     return String(Math.round(n));
 }
 
-export function formatBuildTime(seconds: number): string {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+/** A ship build time (sim seconds, as designs and refits quote it) in real time. */
+export function formatBuildTime(simSeconds: number): string {
+    return formatSimAsClock(simSeconds);
 }
 
 interface PickerEntry {

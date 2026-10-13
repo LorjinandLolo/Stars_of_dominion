@@ -16,6 +16,7 @@ import type { Planet } from '@/lib/construction/construction-types';
 import { hullsBuildableAt, nextHullAfter, planetYardTier } from '@/lib/combat/shipyard-gate';
 import { orbitalChargeShortfall, orbitalStructureCharge } from '@/lib/orbital/orbital-service';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { baseBuildSeconds } from '@/lib/construction/build-time';
 
 
 const CATEGORY_ICON: Record<OrbitalCategory, React.ReactNode> = {
@@ -287,7 +288,7 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
                                                         {def.cost.manpower > 0 && <span className="text-blue-300">{def.cost.manpower} Man</span>}
                                                         {(def.cost.rares ?? 0) > 0 && <span className="text-fuchsia-300">{def.cost.rares} Rx</span>}
                                                         <span className="text-slate-500 flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" />{formatSimAsClock(def.buildTimeSeconds)}
+                                                            <Clock className="w-3 h-3" />{formatSimAsClock(baseBuildSeconds(def))}
                                                         </span>
                                                         <span className="text-slate-500">HULL {def.hullStrength}</span>
                                                     </div>

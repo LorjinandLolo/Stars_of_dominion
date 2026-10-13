@@ -71,6 +71,25 @@ export function unitConfigFor(unitKey: string): UnitConfigEntry | undefined {
     return (unitsConfig as Record<string, UnitConfigEntry>)[configKeyFor(unitKey)];
 }
 
+/**
+ * How much longer each hull class takes to build than its authored time.
+ * Authored times (hull + modules) are sim seconds and, shown in real time,
+ * put a corvette at 26 seconds and a battleship at 3 minutes. Scaled by class
+ * (2026-10-12) a standard pattern takes about 10 real minutes as a corvette,
+ * 25 as a destroyer, an hour as a cruiser and three as a battleship. Refits
+ * scale by the hull being refitted, so the multiplier rides the whole quote.
+ */
+export const HULL_BUILD_TIME_MULTIPLIER: Readonly<Record<ShipClassId, number>> = {
+    corvette: 23,
+    destroyer: 30,
+    cruiser: 40,
+    battleship: 60,
+};
+
+function hullTimeMultiplier(id: ShipClassId): number {
+    return HULL_BUILD_TIME_MULTIPLIER[id] ?? 1;
+}
+
 function hullBase(id: ShipClassId) {
     const cfg = unitConfigFor(id) ?? {};
     return {
@@ -647,7 +666,7 @@ export function summarizeDesign(
         power: netPower,
         ratedPower,
         cost: withMateriel({ CREDITS: Math.round(credits), METALS: Math.round(metals) }),
-        buildTime: Math.round(buildTime),
+        buildTime: Math.round(buildTime * hullTimeMultiplier(hull.id)),
         speedMult: Math.round(speedMult * 100) / 100,
         energyProduced,
         energyDrawn,
@@ -761,7 +780,7 @@ export function quoteRefit(
         addedModuleIds: added,
         removedModuleIds: removed,
         perShipCost: withMateriel({ CREDITS: Math.round(credits), METALS: Math.round(metals) }),
-        perShipSeconds: Math.max(1, Math.round(seconds)),
+        perShipSeconds: Math.max(1, Math.round(seconds * hullTimeMultiplier(hull.id))),
     };
 }
 

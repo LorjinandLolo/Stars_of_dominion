@@ -7,7 +7,7 @@
 // The MIL_REFIT_FLEET handler itself lives in scripts/game-loop.ts and is
 // verified live; everything it calls is covered here.
 
-import { DEFAULT_DESIGNS, quoteRefit, sameFit, summarizeDesign, resolveDesign, getComponent, getHull, REFIT_HULL_TIME_FRACTION } from './ship-registry';
+import { DEFAULT_DESIGNS, quoteRefit, sameFit, summarizeDesign, resolveDesign, getComponent, getHull, REFIT_HULL_TIME_FRACTION, HULL_BUILD_TIME_MULTIPLIER } from './ship-registry';
 import { rosterByHull, refittable, applyRefit, splitRoster, reconcileBooks, mergeBooks, isBookKey } from './fleet-roster';
 import { saveDesign, deleteDesign, shipsInService } from './ship-design-service';
 import { RecruitmentService } from './recruitment-service';
@@ -41,7 +41,7 @@ console.log('\n1. The quote');
     const rail = costOf(['wpn-gauss-railgun']);
     check('a one-module swap is priced at the module that goes in', q.ok && q.perShipCost.CREDITS === rail.CREDITS && q.perShipCost.METALS === rail.METALS, JSON.stringify(q.perShipCost));
     check('the module that comes off is listed and refunds nothing', q.addedModuleIds.join() === 'wpn-gauss-railgun' && q.removedModuleIds.join() === 'wpn-pulse-laser');
-    check('time is a tenth of the hull plus the module', q.perShipSeconds === Math.round(REFIT_HULL_TIME_FRACTION * getHull('corvette')!.baseBuildTime) + rail.seconds, String(q.perShipSeconds));
+    check('time is a tenth of the hull plus the module, at the hull class rate', q.perShipSeconds === Math.round((Math.round(REFIT_HULL_TIME_FRACTION * getHull('corvette')!.baseBuildTime) + rail.seconds) * HULL_BUILD_TIME_MULTIPLIER.corvette), String(q.perShipSeconds));
     // (On a corvette a railgun rates 12.4 against the laser's 11.8: both round to 12.)
     check('the rating change is the two summaries apart', q.powerDelta === summarizeDesign(railPicket, null).power - summarizeDesign(std('corvette'), null).power, String(q.powerDelta));
 

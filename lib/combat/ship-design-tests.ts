@@ -33,7 +33,7 @@ import {
 } from './shipyard-gate';
 import { ORBITAL_STRUCTURES } from '../../data/orbital-structures';
 import { shipyardSystemIdsFor } from '../exploration/ping-cost';
-import { SHIP_CLASS_IDS } from './ship-registry';
+import { SHIP_CLASS_IDS, HULL_BUILD_TIME_MULTIPLIER } from './ship-registry';
 import type { CombatantState } from './combat-types';
 import type { ShipDesign } from './ship-types';
 import config from './combat-config.json';
@@ -104,7 +104,7 @@ test('bare hull summary equals config numbers', () => {
     const s = summarizeDesign({ hullId: 'cruiser', name: 'Bare', components: {} }, null);
     expectEq(s.power, 45);
     expectEq(s.cost, { CREDITS: 3600, METALS: 1500, MATERIEL: 150 }); // materiel = metals / 10 (lib/economy/procurement.ts)
-    expectEq(s.buildTime, 1200);
+    expectEq(s.buildTime, 1200 * HULL_BUILD_TIME_MULTIPLIER.cruiser); // authored time x the class multiplier
     expectEq(s.energyDrawn, 0);
     expectTrue(s.valid);
 });
@@ -116,7 +116,7 @@ test('modules add power, cost, build time and energy draw', () => {
     }, null);
     expectEq(s.power, Math.round(10 * (1 + 0.10 + 0.08)));
     expectEq(s.cost, { CREDITS: 800 + 120 + 150 + 100, METALS: 300 + 40 + 60 + 80, MATERIEL: 48 });
-    expectEq(s.buildTime, 300 + 30 + 30 + 30);
+    expectEq(s.buildTime, (300 + 30 + 30 + 30) * HULL_BUILD_TIME_MULTIPLIER.corvette);
     expectEq(s.energyDrawn, 18);
     expectEq(s.energyProduced, 10 + 40);
     expectEq(s.profile.energy, 1);
