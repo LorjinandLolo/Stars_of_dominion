@@ -241,6 +241,8 @@ export interface PlanetStats {
   constructionSpeedModifier: number;
   shipProductionModifier: number;
   troopRecruitmentModifier: number;
+  /** Ground-siege fortification from buildings (fortress). See lib/combat/siege/strongpoints.ts. */
+  fortification: number;
 }
 
 export interface PlacedBuilding {

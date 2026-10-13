@@ -26,11 +26,23 @@ export interface BattlePlan {
     /** Until this is true the formations dig in and prepare instead of advancing. */
     executing: boolean;
     createdAtSeconds: number;
+    /**
+     * A front plan with `focus: 'core'` holds only the part of the front
+     * nearest the capital (rings 0-2) while any of it exists — the defence
+     * contracts onto the government instead of stringing itself along the
+     * whole line while the invader masses on one point.
+     */
+    focus?: 'core';
 }
+
+/** Rings that count as the capital core for a `focus: 'core'` front. */
+export const CORE_RING = 2;
 
 export const PLAN_PREP_PER_CYCLE = 9;
 /** Combat bonus at full preparation. */
 export const PLAN_MAX_BONUS = 0.25;
+/** Organisation a formation needs before an executing plan will move it. */
+export const PLAN_MIN_ORG = 40;
 
 /** The planning bonus a formation carries into battle, 0..PLAN_MAX_BONUS. */
 export function planningBonus(plan: BattlePlan | undefined): number {
@@ -98,6 +110,10 @@ export function tickPlan(
 
     // The front moves as the war moves.
     plan.anchors = frontDistricts(surface, war, plan.side);
+    if (plan.kind === 'front' && plan.focus === 'core') {
+        const core = plan.anchors.filter(i => surface.sectors[i].ring <= CORE_RING);
+        if (core.length) plan.anchors = core;
+    }
 
     if (!plan.executing) {
         plan.preparation = Math.min(100, plan.preparation + PLAN_PREP_PER_CYCLE);
@@ -114,6 +130,11 @@ export function tickPlan(
 
     for (const f of mine) {
         if (f.moveTo != null || (f.path?.length ?? 0) > 0) continue;
+        // A formation that just broke is in no state to go back in. The plan
+        // leaves it where it rallied until it has pulled itself together;
+        // without this a broken piece would be ordered straight back into the
+        // fight it fled, break again, and ping-pong until it was dead.
+        if ((f.organization ?? 100) < PLAN_MIN_ORG) continue;
         // Head for the nearest objective by hop count over passable ground.
         const target = nearestTarget(surface, adjacency, f.sectorIndex, targets);
         if (target == null || target === f.sectorIndex) continue;

@@ -21,6 +21,7 @@ export function recalculatePlanetStats(planet: Planet, nowSeconds = 0): PlanetSt
     constructionSpeedModifier: 1.0,
     shipProductionModifier: 1.0,
     troopRecruitmentModifier: 1.0,
+    fortification: 0,
   };
 
   // 1. Process Active Buildings
@@ -84,6 +85,8 @@ function applyBuildingEffects(stats: PlanetStats, building: BuildingDefinition) 
       case 'construction_speed_percent': stats.constructionSpeedModifier += (effect.value / 100); break;
       case 'ship_production_speed': stats.shipProductionModifier += (effect.value / 100); break;
       case 'troop_recruitment_modifier': stats.troopRecruitmentModifier += (effect.value / 100); break;
+      // Ground-siege entrenchment (fortress). Read by lib/combat/siege/strongpoints.ts.
+      case 'fortification': stats.fortification += effect.value; break;
       case 'troop_capacity': /* logic for capacity might happen elsewhere but we can track it here if needed */ break;
     }
   });

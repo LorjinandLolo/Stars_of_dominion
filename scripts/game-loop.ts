@@ -74,8 +74,25 @@ import {
     capitalTaken,
     frontDefenseMultiplier,
     computeFront,
+    controllerOf,
+    digIn,
     CAPITAL_SECTOR,
+    CAPITAL_FALL_CYCLES,
 } from '../lib/combat/siege/district-front';
+import { nextMorale } from '../lib/combat/siege/army-morale';
+import { defaultGarrison, DEFAULT_GARRISON_TROOPS } from '../lib/combat/siege/garrison';
+import { pacing } from '../lib/combat/siege/siege-pacing';
+import { orbitState, orbitalFireFor, canCrossOrbit, BLOCKADE_GRACE_CYCLES, BLOCKADE_PHASEOUT_CYCLES } from '../lib/combat/siege/orbit-state';
+import {
+    computeStrongpoints, entrenchmentBonus, fortificationLevelFor, heldBy, strongpointSectors,
+    DEFENDER_MORALE_FLOOR_HALL, LEVY_PER_CYCLE, LEVY_MAX_PER_CYCLE, LEVY_MAX_TOTAL, LEVY_KINDS,
+    SAPPER_CYCLES, SAPPER_KINDS, STRONGPOINT_BUILDINGS,
+    type Strongpoint,
+} from '../lib/combat/siege/strongpoints';
+import { reportSiegeEvent } from '../lib/combat/siege/siege-events';
+import { applyDefaultDefence } from '../lib/combat/siege/defence-doctrine';
+import { isAIRunFaction } from '../lib/ai/belt-ambush-ai';
+import { STARVE_SURRENDER_CYCLES } from '../lib/combat/siege/orbit-state';
 import {
     capturedFromLosses,
     resolveDisposition,
@@ -92,6 +109,8 @@ import {
     claimUndefended,
     recoverOrganization,
     redeployRoute,
+    musterDistrict,
+    tallySide,
     type Formation,
 } from '../lib/combat/siege/formations';
 import { resolveDistrictBattle } from '../lib/combat/siege/district-battle';
@@ -1787,29 +1806,20 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
             // Phase 16: Initialize or Reinforce Ground Siege
             if (!planet.siege) {
-                const defenseState: PlanetaryDefenseState = (planet as any).garrison || {
-                    planetId: planet.id,
-                    ownerEmpireId: planet.ownerId,
-                    garrisonTroops: 500,
-                    unitComposition: { INFANTRY: 400, MILITIA: 100 } as any,
-                    fortificationLevel: 2,
-                    fortificationLayers: { orbitalSuppressed: true, outerDefenses: 100, innerDefenses: 100, commandBunkers: 100 },
-                    supply: 1000,
-                    maxSupply: 1000,
-                    morale: 100,
-                    maxMorale: 100,
-                    cohesion: 100,
-                    maxCohesion: 100,
-                    resistance: 10,
-                    stability: planet.stability,
-                    infrastructureIntegrity: 100,
-                    militiaAvailable: true,
-                    occupationProgress: 0,
-                    isUnderSiege: true
-                };
+                const defenseState: PlanetaryDefenseState = (planet as any).garrison
+                    || defaultGarrison(planet, planet.ownerId, DEFAULT_GARRISON_TROOPS);
+                defenseState.ownerEmpireId = planet.ownerId;
+                defenseState.isUnderSiege = true;
 
                 // What is aboard is what comes ashore. See landingComposition.
                 const landing = landingComposition(world, fleet);
+
+                // The world the defender built in peacetime is the battlefield:
+                // its fortification level comes from its buildings, and the
+                // strongpoints it holds start the war already dug in.
+                const landingSurface = generateSurface(planet.id, planet.planetType, planet.tags);
+                defenseState.fortificationLevel = fortificationLevelFor(planet);
+                const peacetimePoints = computeStrongpoints(landingSurface, planet, { control: {} });
 
                 planet.siege = {
                     siegeId: `siege-${payload.planetId}-${Date.now()}`,
@@ -1819,7 +1829,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                     phase: 'LANDING',
                     tickCount: 0,
                     cycleCount: 0,
-                    cycleLengthTicks: 4, // User Choice: 4 ticks
+                    cycleLengthTicks: pacing.cycleLengthTicks,
                     currentFrontage: 500,
                     maxFrontage: 1000,
                     attackerState: {
@@ -1848,11 +1858,17 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                     // board: the invasion establishes a beachhead and has to
                     // fight its way inward from there.
                     districts: initDistrictWar(
-                        generateSurface(planet.id, planet.planetType, planet.tags),
-                        defenseState.fortificationLevel ?? 2,
+                        landingSurface,
+                        defenseState.fortificationLevel ?? 0,
                         Number.isInteger(payload.landingSector) ? payload.landingSector : null,
+                        entrenchmentBonus(landingSurface, peacetimePoints),
                     ),
                 };
+                // The field armies standing on this world are part of its
+                // defence — and part of the invasion, if the attacker already
+                // had men down. They join their side's pool before the pieces
+                // are cut.
+                absorbStationedArmies(world, planet, planet.siege);
                 // Break both armies into pieces on the board — the invasion is
                 // fought district by district from here on.
                 {
@@ -1862,7 +1878,21 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                         ...seedFormations(surf, war, 'attacker', planet.siege.attackerState.unitComposition, `f-a-${world.nowSeconds}`),
                         ...seedFormations(surf, war, 'defender', defenseState.unitComposition, `f-d-${world.nowSeconds}`),
                     ];
+                    // The front exists from the first tick, so orbital fire
+                    // has somewhere to land before the first cycle resolves.
+                    war.contested = computeFront(surf, war);
+                    war.strongpoints = computeStrongpoints(surf, planet, war);
+                    // The garrison mans the capital and the strongpoints and
+                    // holds the line from the first cycle, until the defending
+                    // player gives an order of their own. Without this a
+                    // defender who had not logged in had its pieces scattered
+                    // wherever they were seeded while the invasion walked in.
+                    war.defenderAuto = true;
+                    applyDefaultDefence(surf, war, war.formations, war.strongpoints, world.nowSeconds);
                 }
+                // Both sides hear about it — the defender used to find out by
+                // noticing the planet had changed colour.
+                reportSiegeEvent(world, planet, planet.siege, 'landing', {}, (id) => empireName(world, id));
                 (planet as any).garrison = defenseState;
                 // Ashore now, so no longer aboard. Skipping this would let the
                 // same army land on a second world and would double-count its
@@ -1878,7 +1908,12 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             } else if (planet.siege.attackerEmpireId === factionId) {
                 // Reinforce. Same rule as the landing: reinforce with what is
                 // actually aboard, and only fall back to raw fleet power when
-                // nothing is.
+                // nothing is. And only through an orbit the invader holds —
+                // a relief fleet overhead means nothing more comes down.
+                if (!canCrossOrbit(planet.siege.orbit, 'attacker')) {
+                    recordOrderFailure(world, factionId, actionId, `The orbit over ${planet.name} is contested — reinforcements cannot land.`);
+                    break;
+                }
                 const reinforcement = landingComposition(world, fleet);
                 const comp = planet.siege.attackerState.unitComposition as any;
                 if (reinforcement.derived) {
@@ -1930,6 +1965,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, 'You are not a belligerent here.');
                 break;
             }
+            // The defender has taken command: the default doctrine stands down.
+            if (side === 'defender' && siege.districts.defenderAuto) siege.districts.defenderAuto = false;
             const formation = siege.districts.formations.find((f: Formation) => f.id === payload.formationId);
             if (!formation || formation.side !== side) {
                 recordOrderFailure(world, factionId, actionId, 'That formation is not yours to command.');
@@ -1995,6 +2032,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, 'You are not a belligerent here.');
                 break;
             }
+            // The defender has taken command: the default doctrine stands down.
+            if (side === 'defender' && siege.districts.defenderAuto) siege.districts.defenderAuto = false;
             const war = siege.districts;
             war.plans = war.plans ?? [];
             const surf = generateSurface(planet.id, planet.planetType, planet.tags);
@@ -2127,8 +2166,17 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         case 'MIL_LEAVE_SIEGE': {
              const planet = world.construction.planets.get(payload.planetId);
              if (planet && planet.siege && planet.siege.attackerEmpireId === factionId) {
-                 console.log(`[Tick Worker] Siege of ${planet.name} ABANDONED by ${factionId}`);
-                 planet.siege = null;
+                 // Survivors lift off aboard a friendly fleet parked overhead —
+                 // if the orbit is the invader's. Otherwise there is no way up,
+                 // and the men left on the beach are the defender's prisoners.
+                 const canLift = canCrossOrbit(planet.siege.orbit, 'attacker');
+                 const lift = canLift
+                     ? [...world.movement.fleets.values()].find((f: any) =>
+                         f.factionId === factionId && f.currentSystemId === planet.systemId
+                         && !f.destinationSystemId && isFleetOperational(f))
+                     : undefined;
+                 console.log(`[Tick Worker] Siege of ${planet.name} ABANDONED by ${factionId}${lift ? '' : ' — no fleet to lift the survivors'}`);
+                 endSiegeDefenderHolds(world, planet, planet.siege, 'RETREAT', lift);
              }
              break;
         }
@@ -2290,32 +2338,88 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
         case 'MIL_EMBARK_ARMY': {
             // payload: { armyId, fleetId }
+            // An army boards a fleet parked over the planet it stands on. This
+            // used to check nothing about where either of them was: an army on
+            // one side of the galaxy boarded a fleet on the other.
             const army = world.movement.armies.get(payload.armyId);
             const fleet = world.movement.fleets.get(payload.fleetId);
-            if (army && fleet && army.factionId === factionId && fleet.factionId === factionId) {
-                army.transportFleetId = fleet.id;
-                army.currentPlanetId = null;
-                if (!fleet.transportedArmyIds) fleet.transportedArmyIds = [];
-                if (!fleet.transportedArmyIds.includes(army.id)) {
-                    fleet.transportedArmyIds.push(army.id);
-                }
-                console.log(`[Order] Faction ${factionId} embarked army ${payload.armyId} onto fleet ${payload.fleetId}`);
+            if (!army || !fleet || army.factionId !== factionId || fleet.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'Army or fleet not found.');
+                break;
             }
+            if (army.transportFleetId) {
+                recordOrderFailure(world, factionId, actionId, 'That army is already aboard a fleet.');
+                break;
+            }
+            const planet = army.currentPlanetId ? world.construction.planets.get(army.currentPlanetId) : undefined;
+            if (!planet) {
+                recordOrderFailure(world, factionId, actionId, 'That army is not standing on a planet.');
+                break;
+            }
+            if (!fleet.currentSystemId || fleet.destinationSystemId || fleet.currentSystemId !== planet.systemId) {
+                recordOrderFailure(world, factionId, actionId, `${fleet.name ?? 'The fleet'} is not parked in ${planet.name}'s system.`);
+                break;
+            }
+            if (planet.siege) {
+                const side = planet.siege.attackerEmpireId === factionId ? 'attacker' : 'defender';
+                if (!canCrossOrbit(planet.siege.orbit, side)) {
+                    recordOrderFailure(world, factionId, actionId, `The orbit over ${planet.name} is blockaded — nothing gets off the surface.`);
+                    break;
+                }
+            }
+            army.transportFleetId = fleet.id;
+            army.currentPlanetId = null;
+            army.currentSystemId = fleet.currentSystemId;
+            if (!fleet.transportedArmyIds) fleet.transportedArmyIds = [];
+            if (!fleet.transportedArmyIds.includes(army.id)) {
+                fleet.transportedArmyIds.push(army.id);
+            }
+            console.log(`[Order] Faction ${factionId} embarked army ${payload.armyId} onto fleet ${payload.fleetId}`);
             break;
         }
 
         case 'MIL_DISEMBARK_ARMY': {
             // payload: { armyId, planetId }
+            // Troops come down from a fleet parked over the world, onto a world
+            // they have business on — their own, or one they are fighting for —
+            // and only through an orbit that is not the enemy's (or under a
+            // planetary shield). Used to be: any army, any planet, any time.
             const army = world.movement.armies.get(payload.armyId);
-            if (army && army.factionId === factionId && army.transportFleetId) {
-                const fleet = world.movement.fleets.get(army.transportFleetId);
-                if (fleet) {
-                    fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
-                }
-                army.transportFleetId = null;
-                army.currentPlanetId = payload.planetId;
-                console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
+            if (!army || army.factionId !== factionId || !army.transportFleetId) {
+                recordOrderFailure(world, factionId, actionId, 'That army is not aboard a fleet.');
+                break;
             }
+            const fleet = world.movement.fleets.get(army.transportFleetId);
+            const planet = world.construction.planets.get(payload.planetId);
+            if (!fleet || !planet) {
+                recordOrderFailure(world, factionId, actionId, 'Transport or planet not found.');
+                break;
+            }
+            if (!fleet.currentSystemId || fleet.destinationSystemId || fleet.currentSystemId !== planet.systemId) {
+                recordOrderFailure(world, factionId, actionId, `${fleet.name ?? 'The transport'} is not parked in ${planet.name}'s system.`);
+                break;
+            }
+            const siege = planet.siege;
+            const belligerent = planet.ownerId === factionId
+                || (siege && (siege.attackerEmpireId === factionId || siege.defenderEmpireId === factionId));
+            if (!belligerent) {
+                recordOrderFailure(world, factionId, actionId, `You have no footing on ${planet.name} — invade it, or land on your own worlds.`);
+                break;
+            }
+            if (siege) {
+                const side = siege.attackerEmpireId === factionId ? 'attacker' : 'defender';
+                if (!canCrossOrbit(siege.orbit, side)) {
+                    recordOrderFailure(world, factionId, actionId, side === 'attacker'
+                        ? `The orbit over ${planet.name} is contested — reinforcements cannot land.`
+                        : `The enemy holds the orbit over ${planet.name} — break the blockade or raise the shield.`);
+                    break;
+                }
+            }
+            fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
+            army.transportFleetId = null;
+            army.currentPlanetId = payload.planetId;
+            army.currentSystemId = planet.systemId;
+            console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
             break;
         }
         
@@ -5994,6 +6098,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
  */
 function capturePlanet(world: GameWorldState, planet: any, attackerId: string, label: string) {
     const previousOwnerId = planet.ownerId;
+    const siege: GroundSiegeState | null = planet.siege ?? null;
 
     // Taking a world takes its archives (diffusion: conquest). Must run before
     // ownerId is overwritten — the previous owner is what makes spoils meaningful.
@@ -6001,6 +6106,42 @@ function capturePlanet(world: GameWorldState, planet: any, attackerId: string, l
 
     planet.ownerId = attackerId;
     planet.isOccupied = false;
+
+    // The winner's survivors garrison the world they took; the loser's
+    // remnant is marched off as prisoners. This used to leave `planet.garrison`
+    // untouched — the LOSER's garrison object, with the loser's ownerEmpireId
+    // and leftover pool — while the invader's surviving formations simply
+    // evaporated. The next invasion of a conquered world was then fought by
+    // the previous owner's remnant on the new owner's behalf.
+    {
+        const formations = (siege?.districts?.formations ?? []) as Formation[];
+        const positional = formations.length > 0;
+        const survivors = positional ? tallySide(formations, 'attacker').comp : (siege?.attackerState.unitComposition ?? {});
+        const beaten = positional ? tallySide(formations, 'defender').comp : (siege?.defenderState.unitComposition ?? {});
+        if (siege) {
+            siege.winner = attackerId;
+            siege.endReason = 'OCCUPATION';
+            const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
+            for (const [unitType, count] of Object.entries(beaten)) {
+                if (!count || count <= 0) continue;
+                ledger.groups.push({
+                    id: `pow-${planet.id}-capture-${unitType}-${world.nowSeconds}`,
+                    ownerEmpireId: previousOwnerId,
+                    captorEmpireId: attackerId,
+                    planetId: planet.id,
+                    planetName: planet.name,
+                    unitType: unitType as any,
+                    count: Math.floor(count as number),
+                    capturedAtSeconds: world.nowSeconds,
+                });
+            }
+        }
+        planet.garrison = defaultGarrison(planet, attackerId, survivors, siege?.defenderState.fortificationLevel ?? 0);
+    }
+    if (siege) {
+        reportSiegeEvent(world, planet, siege, 'planet_lost',
+            { surfaceHeld: Math.round(siege.defenderState.occupationProgress ?? 100) }, id => empireName(world, id));
+    }
     planet.siege = null;
     planet.stability = Math.max(10, (planet.stability || 60) - 40);
 
@@ -6030,12 +6171,203 @@ function capturePlanet(world: GameWorldState, planet: any, attackerId: string, l
     console.log(`[Tick Worker] ${label}: ${planet.name} taken by ${attackerId} (was ${previousOwnerId})`);
 }
 
+/**
+ * The siege ends with the defender still standing: the invasion collapsed,
+ * or the invader withdrew. The defender's formations are already the
+ * garrison pool (the siege's defenderState IS planet.garrison); this clears
+ * the siege flags on it and records the outcome. `withdrawingFleet`, when
+ * given, takes the invader's survivors off-world as one army; without it the
+ * survivors are prisoners of the defender.
+ */
+function endSiegeDefenderHolds(
+    world: GameWorldState,
+    planet: any,
+    siege: GroundSiegeState,
+    reason: 'ATTACKER_COLLAPSE' | 'RETREAT',
+    withdrawingFleet?: any,
+): void {
+    siege.winner = siege.defenderEmpireId;
+    siege.endReason = reason;
+    const formations = (siege.districts?.formations ?? []) as Formation[];
+    const survivors = formations.length
+        ? tallySide(formations, 'attacker').comp
+        : (siege.attackerState.unitComposition ?? {});
+    const men = Object.values(survivors).reduce((s, n) => s + (n ?? 0), 0);
+    if (men > 0 && withdrawingFleet) {
+        if (!world.movement.armies) world.movement.armies = new Map();
+        const armyId = `army-${siege.attackerEmpireId}-evac-${planet.id}-${world.nowSeconds}`;
+        world.movement.armies.set(armyId, {
+            id: armyId,
+            factionId: siege.attackerEmpireId,
+            name: `Survivors of ${planet.name}`,
+            currentPlanetId: null,
+            currentSystemId: planet.systemId,
+            transportFleetId: withdrawingFleet.id,
+            composition: { ...survivors },
+            stance: 'fortified',
+            strength: 1.0,
+            basePower: 100,
+            supplyLevel: 1.0,
+            morale: Math.max(0, siege.attackerState.morale ?? 50),
+            leaderId: undefined,
+        } as any);
+        withdrawingFleet.transportedArmyIds = [...(withdrawingFleet.transportedArmyIds ?? []), armyId];
+        console.log(`[Tick Worker] ${men} invaders lift off ${planet.name} aboard ${withdrawingFleet.name ?? withdrawingFleet.id}`);
+    } else if (men > 0) {
+        const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
+        for (const [unitType, count] of Object.entries(survivors)) {
+            if (!count || count <= 0) continue;
+            ledger.groups.push({
+                id: `pow-${planet.id}-${reason.toLowerCase()}-${unitType}-${world.nowSeconds}`,
+                ownerEmpireId: siege.attackerEmpireId,
+                captorEmpireId: siege.defenderEmpireId,
+                planetId: planet.id,
+                planetName: planet.name,
+                unitType: unitType as any,
+                count: Math.floor(count as number),
+                capturedAtSeconds: world.nowSeconds,
+            });
+        }
+    }
+    const garrison: any = planet.garrison ?? siege.defenderState;
+    garrison.isUnderSiege = false;
+    garrison.siegeId = undefined;
+    garrison.blockadedCycles = 0;
+    planet.garrison = garrison;
+    reportSiegeEvent(world, planet, siege, 'invasion_collapsed', { men: withdrawingFleet ? 0 : men }, id => empireName(world, id));
+    planet.siege = null;
+}
+
+/** Display name for an empire id, for notifications. */
+function empireName(world: GameWorldState, id: string): string {
+    const f: any = world.economy?.factions?.get?.(id);
+    return f?.name ?? String(id).replace(/^faction-/, '').replace(/[-_]/g, ' ');
+}
+
+/**
+ * What the invader actually has in orbit THIS tick, as fire support for the
+ * ground war. Used to be set once at the landing from the landing fleet's
+ * power and never touched again: a fleet that left, died or was driven off
+ * kept bombarding for the rest of the siege, and a second fleet arriving
+ * added nothing. Now it is the operational, stationary attacker fleets in the
+ * planet's system — and nothing at all while a hostile fleet contests the
+ * orbit or the planet's own orbital defences are back up.
+ */
+function orbitalSupportFor(world: GameWorldState, planet: any, siege: GroundSiegeState): number {
+    const shieldUp = heldBy(siege.districts?.strongpoints ?? [], 'shield', 'defender');
+    siege.orbit = orbitState({
+        fleets: world.movement.fleets.values() as Iterable<any>,
+        systemId: planet.systemId,
+        attackerEmpireId: siege.attackerEmpireId,
+        defenderEmpireId: siege.defenderEmpireId,
+        suppressed: isOrbitSuppressed(planet),
+        shieldUp,
+        isAtWar: (a, b) => isAtWar(world, a, b),
+        isFleetOperational,
+    });
+    return orbitalFireFor(siege.orbit);
+}
+
+/**
+ * Field armies standing on a world fight for it. An army of a belligerent
+ * that is on the planet and not aboard a transport is folded into that side's
+ * pool and removed from the army ledger — it is on the board now.
+ *
+ * Before this, a defender who had raised two thousand infantry at home met an
+ * invasion with the planet's 500-man default garrison while the two thousand
+ * watched from the ledger. Returns the men absorbed per side.
+ */
+function absorbStationedArmies(world: GameWorldState, planet: any, siege: GroundSiegeState): Record<'attacker' | 'defender', number> {
+    const absorbed = { attacker: 0, defender: 0 };
+    const armies: Map<string, any> | undefined = (world as any).movement?.armies;
+    if (!armies) return absorbed;
+    for (const [id, army] of armies) {
+        if (army.currentPlanetId !== planet.id || army.transportFleetId) continue;
+        const side = army.factionId === siege.attackerEmpireId ? 'attacker'
+            : army.factionId === siege.defenderEmpireId ? 'defender' : null;
+        if (!side) continue;
+        const pool: any = side === 'attacker' ? siege.attackerState : siege.defenderState;
+        let men = 0;
+        for (const [type, n] of Object.entries(army.composition ?? {})) {
+            const count = Math.max(0, Math.floor(Number(n) || 0));
+            if (count <= 0) continue;
+            const key = String(type).toUpperCase();
+            pool.unitComposition[key] = (pool.unitComposition[key] ?? 0) + count;
+            men += count;
+        }
+        if (side === 'attacker') pool.totalLandedTroops = (pool.totalLandedTroops ?? 0) + men;
+        else pool.garrisonTroops = (pool.garrisonTroops ?? 0) + men;
+        absorbed[side] += men;
+        armies.delete(id);
+        if (men > 0) console.log(`[Tick Worker] ${army.name ?? id} (${army.factionId}) joins the ${side === 'attacker' ? 'invasion of' : 'defence of'} ${planet.name}: ${men} men`);
+    }
+    return absorbed;
+}
+
+/**
+ * Men in a side's pool that have no piece on the board come ashore as new
+ * formations. The pool is rewritten FROM the formations every cycle, so any
+ * surplus is an arrival since then: a garrison recruit completing mid-siege,
+ * prisoners who took the oath, an army that just disembarked. Attackers
+ * muster at the beachhead, defenders at the capital. Before this the recruit
+ * was added to the pool and the next tally erased it — paid for, never fought.
+ */
+function seedArrivals(
+    world: GameWorldState,
+    surface: ReturnType<typeof generateSurface>,
+    siege: GroundSiegeState,
+    side: 'attacker' | 'defender',
+    /** Districts to muster at first — the defender's held barracks/airbase. */
+    preferred: number[] = [],
+): number {
+    const war = siege.districts;
+    if (!war?.formations) return 0;
+    const pool: any = side === 'attacker' ? siege.attackerState : siege.defenderState;
+    const onBoard: Record<string, number> = {};
+    for (const f of war.formations) {
+        if (f.side !== side || f.strength <= 0) continue;
+        onBoard[f.unitType] = (onBoard[f.unitType] ?? 0) + f.strength;
+    }
+    const arriving: Partial<Record<GroundUnitType, number>> = {};
+    let men = 0;
+    for (const [type, n] of Object.entries(pool.unitComposition ?? {})) {
+        const surplus = Math.floor((Number(n) || 0) - (onBoard[type] ?? 0));
+        if (surplus <= 0) continue;
+        arriving[type as GroundUnitType] = surplus;
+        men += surplus;
+    }
+    if (men <= 0) return 0;
+    const at = musterDistrict(surface, war, side, preferred);
+    if (at == null) return 0;
+    const added = seedFormations(surface, war, side, arriving, `f-${side[0]}-m-${world.nowSeconds}-${siege.tickCount}`, [at]);
+    war.formations.push(...added);
+    return men;
+}
+
 export function processSieges(world: GameWorldState) {
     for (const planet of world.construction.planets.values()) {
         const siege = planet.siege;
         if (!siege) continue;
 
         const cycleBefore = siege.cycleCount;
+
+        const nameOfEmpire = (id: string) => empireName(world, id);
+
+        // What is in orbit decides what falls on the board this tick — and
+        // whether the beachhead eats. A change of hands overhead is news to
+        // both sides.
+        if (siege.districts?.formations?.length) {
+            const holderBefore = siege.orbit?.holder;
+            siege.attackerState.orbitalSupportPower = orbitalSupportFor(world, planet, siege);
+            const holderAfter = siege.orbit?.holder;
+            if (holderAfter !== holderBefore) {
+                if (holderAfter === 'attacker') {
+                    reportSiegeEvent(world, planet, siege, 'blockade_established', { power: siege.orbit?.attackerPower }, nameOfEmpire);
+                } else if (holderBefore === 'attacker') {
+                    reportSiegeEvent(world, planet, siege, 'blockade_broken', { power: siege.orbit?.defenderPower }, nameOfEmpire);
+                }
+            }
+        }
 
         // Resolve common per-tick logic (attrition, cycle checks)
         const updatedSiege = GroundSiegeEngine.resolveTick(siege);
@@ -6074,6 +6406,13 @@ export function processSieges(world: GameWorldState) {
                 attacker: {} as Record<string, number>,
                 defender: {} as Record<string, number>,
             };
+            // Men who broke with nowhere to go — prisoners to the last man.
+            const surrendered = {
+                attacker: {} as Record<string, number>,
+                defender: {} as Record<string, number>,
+            };
+            // Districts where a battle resolved this cycle.
+            const fought = new Set<number>();
 
             if (Array.isArray(war.formations) && war.formations.length) {
                 // Woundedness is measured against maxStrength, and every
@@ -6096,12 +6435,102 @@ export function processSieges(world: GameWorldState) {
                     attacker: updatedSiege.attackerState.morale ?? 100,
                     defender: updatedSiege.defenderState.morale ?? 100,
                 };
+                // The cycle's stance reads, scored by the engine, as multipliers.
+                const reads = {
+                    attacker: GroundSiegeEngine.readMultiplier(updatedSiege.reads?.attacker),
+                    defender: GroundSiegeEngine.readMultiplier(updatedSiege.reads?.defender),
+                };
+
+                // ── Strongpoints ──────────────────────────────────────────
+                // The districts worth holding, recomputed from the tiles so
+                // ruins and captures both show. Snapshot the holders first
+                // so a change of hands this cycle can be reported.
+                const pointsBefore: Strongpoint[] = war.strongpoints ?? computeStrongpoints(surface, planet, war);
+                const ruinStrongpoint = (sp: Strongpoint, why: string) => {
+                    const tile = (planet.tiles ?? []).find((t: any) => t.tileId === sp.tileId);
+                    if (!tile || tile.constructionState !== 'active') return false;
+                    tile.constructionState = 'ruined';
+                    updatedSiege.attackerState.devastationCaused += 10;
+                    res.log.push(`${why}: the ${sp.buildingId?.replace(/_/g, ' ')} in district ${sp.sectorIndex} is destroyed.`);
+                    return true;
+                };
+                // Sappers: a shield or fortress the invader has held for
+                // SAPPER_CYCLES is demolished. One cycle is not enough — a
+                // fast counter-attack saves it.
+                const held = war.strongpointHeldCycles ?? (war.strongpointHeldCycles = {});
+                for (const sp of pointsBefore) {
+                    if (!sp.active || !SAPPER_KINDS.includes(sp.kind)) continue;
+                    if (controllerOf(war, sp.sectorIndex) === 'attacker') {
+                        held[sp.sectorIndex] = (held[sp.sectorIndex] ?? 0) + 1;
+                        if (held[sp.sectorIndex] >= SAPPER_CYCLES && ruinStrongpoint(sp, 'Sappers finish their work')) {
+                            delete held[sp.sectorIndex];
+                            if (sp.kind === 'shield') reportSiegeEvent(world, planet, updatedSiege, 'shield_down', { strongpoint: sp }, nameOfEmpire);
+                        }
+                    } else {
+                        delete held[sp.sectorIndex];
+                    }
+                }
+                // A shield that has taken a fleet's whole weight for long enough fails.
+                for (const sp of pointsBefore) {
+                    if (sp.kind !== 'shield' || !sp.active) continue;
+                    if ((war.strongpointDamage?.[sp.sectorIndex] ?? 0) >= 100 && ruinStrongpoint(sp, 'The generator overloads under bombardment')) {
+                        reportSiegeEvent(world, planet, updatedSiege, 'shield_down', { strongpoint: sp }, nameOfEmpire);
+                    }
+                }
+                war.strongpoints = computeStrongpoints(surface, planet, war);
+                const points = war.strongpoints;
+                updatedSiege.defenderState.fortificationLevel = fortificationLevelFor(planet);
+
+                // ── Militia levy ──────────────────────────────────────────
+                // While the defender holds a barracks or a fortress, the
+                // population keeps sending men. Added to the POOL, so the
+                // arrivals pass below turns them into pieces.
+                {
+                    const feeding = points.filter(p => p.active && p.holder === 'defender' && LEVY_KINDS.includes(p.kind)).length;
+                    const def: any = updatedSiege.defenderState;
+                    const soFar = def.leviedTotal ?? 0;
+                    const levy = Math.min(LEVY_MAX_PER_CYCLE, feeding * LEVY_PER_CYCLE, Math.max(0, LEVY_MAX_TOTAL - soFar));
+                    if (levy > 0) {
+                        def.unitComposition.MILITIA = (def.unitComposition.MILITIA ?? 0) + levy;
+                        def.garrisonTroops = (def.garrisonTroops ?? 0) + levy;
+                        def.leviedTotal = soFar + levy;
+                        res.log.push(`${levy} militia answer the call.`);
+                    }
+                }
+
+                // Arrivals: armies standing on the world, recruits that
+                // completed since the last cycle, turned prisoners, the levy.
+                // They are pieces before anything moves this cycle. Defenders
+                // muster at the barracks, then the airbase, then the capital.
+                absorbStationedArmies(world, planet, updatedSiege);
+                const musterAt = strongpointSectors(points, 'defender', ['barracks', 'airbase']);
+                for (const side of ['attacker', 'defender'] as const) {
+                    const landed = seedArrivals(world, surface, updatedSiege, side, side === 'defender' ? musterAt : []);
+                    if (landed > 0) {
+                        res.log.push(`${landed} ${side === 'attacker' ? 'reinforcements come ashore' : 'fresh troops muster'}.`);
+                        if (landed >= 200) reportSiegeEvent(world, planet, updatedSiege, 'reinforcements_landed', { men: landed }, nameOfEmpire);
+                    }
+                }
+
+                // A defender who has given no orders runs the default doctrine:
+                // the capital and the strongpoints manned, the rest on the line.
+                if (war.defenderAuto && !isAIRunFaction(world as any, updatedSiege.defenderEmpireId)) {
+                    applyDefaultDefence(surface, war, war.formations, points, world.nowSeconds);
+                }
 
                 // Standing plans move their formations before manual orders,
                 // so a commander can set a plan and let it run.
                 for (const plan of (war.plans ?? [])) {
                     res.log.push(...tickPlan(surface, war, plan, war.formations));
                 }
+
+                // Who is standing still this cycle — they are the ones digging in.
+                const stillIds = new Set(war.formations
+                    .filter(f => f.strength > 0 && f.moveTo == null && !(f.path?.length) && !f.redeploying)
+                    .map(f => f.id));
+                // Strength each side brought into the cycle, for the morale maths.
+                const menBefore = { attacker: 0, defender: 0 };
+                for (const f of war.formations) if (f.strength > 0) menBefore[f.side] += f.strength;
 
                 res.log.push(...resolveMoves(surface, war, war.formations));
 
@@ -6144,8 +6573,9 @@ export function processSieges(world: GameWorldState) {
                         dealt: districtTraits.defender.dealt
                             * painMultiplier(world, planet.ownerId, war.formations as any, 'defender', idx),
                     };
-                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits);
+                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits, reads);
                     if (!outcome) continue;
+                    fought.add(idx);
                     if (outcome.captured) {
                         (outcome.holder === 'attacker' ? res.captured : res.liberated).push(idx);
                     }
@@ -6153,6 +6583,9 @@ export function processSieges(world: GameWorldState) {
                     for (const side of ['attacker', 'defender'] as const) {
                         for (const [t, n] of Object.entries(outcome.lossesBySide[side])) {
                             battleLosses[side][t] = (battleLosses[side][t] ?? 0) + (n as number);
+                        }
+                        for (const [t, n] of Object.entries(outcome.surrenderedBySide[side])) {
+                            surrendered[side][t] = (surrendered[side][t] ?? 0) + (n as number);
                         }
                     }
                 }
@@ -6174,30 +6607,109 @@ export function processSieges(world: GameWorldState) {
                 }
 
                 war.formations = pruneFormations(war.formations);
-                res.log.push(...updateSupply(surface, war, war.formations));
+                // ── Supply, and who holds the sky ─────────────────────────
+                // The beachhead is fed from orbit. Lose the orbit for longer
+                // than the grace and the landing zones feed nobody; starve
+                // long enough and the formations lay down their arms. A long
+                // blockade works the other way on the defender: supply
+                // shrinks to the capital core and the strongpoints it mans.
+                const orbitHolder = updatedSiege.orbit?.holder;
+                const cutOff = orbitHolder !== 'attacker';
+                const att: any = updatedSiege.attackerState;
+                const def: any = updatedSiege.defenderState;
+                att.cutOffCycles = cutOff ? (att.cutOffCycles ?? 0) + 1 : 0;
+                def.blockadedCycles = orbitHolder === 'attacker' ? (def.blockadedCycles ?? 0) + 1 : 0;
+                if (cutOff && att.cutOffCycles === BLOCKADE_GRACE_CYCLES + 1) {
+                    res.log.push('The beachhead is cut off from orbit — the invaders fight on what they carry.');
+                }
+                const phasedOut = (def.blockadedCycles ?? 0) >= BLOCKADE_PHASEOUT_CYCLES;
+                if (phasedOut && def.blockadedCycles === BLOCKADE_PHASEOUT_CYCLES) {
+                    res.log.push('The blockade bites: only the capital core and the manned strongpoints are still supplied.');
+                }
+                const supplyResult = updateSupply(surface, war, war.formations, {
+                    attackerBaseSupplied: att.cutOffCycles <= BLOCKADE_GRACE_CYCLES,
+                    defenderSources: phasedOut
+                        ? [...surface.sectors.filter(s => s.ring <= 1).map(s => s.index), ...strongpointSectors(points, 'defender')]
+                        : undefined,
+                    starveSurrenderCycles: STARVE_SURRENDER_CYCLES,
+                });
+                res.log.push(...supplyResult.log);
+                for (const side of ['attacker', 'defender'] as const) {
+                    for (const [t, n] of Object.entries(supplyResult.surrendered[side])) {
+                        surrendered[side][t] = (surrendered[side][t] ?? 0) + (n as number);
+                    }
+                }
                 // Formations that stood still and are fed pull themselves back
-                // together; the redeployed and the encircled do not.
-                recoverOrganization(war.formations);
+                // together; the redeployed, the encircled and the ones that
+                // just fought do not.
+                recoverOrganization(war.formations, fought);
+
+                // Shovels: a formation that neither moved nor fought this
+                // cycle, standing on ground its side holds, digs in.
+                {
+                    const holding = new Set<number>();
+                    for (const f of war.formations) {
+                        if (!stillIds.has(f.id) || fought.has(f.sectorIndex)) continue;
+                        if (controllerOf(war, f.sectorIndex) !== f.side) continue;
+                        holding.add(f.sectorIndex);
+                    }
+                    digIn(surface, war, holding, updatedSiege.defenderState.fortificationLevel ?? 0,
+                        entrenchmentBonus(surface, points.filter(p => p.holder === 'defender')));
+                }
 
                 // Army pools follow the pieces, so the HUD and the old engine
-                // keep seeing a consistent picture.
-                const tally = (side: 'attacker' | 'defender') => {
-                    const comp: Record<string, number> = {};
-                    let total = 0;
-                    for (const f of war.formations!.filter(x => x.side === side)) {
-                        comp[f.unitType] = (comp[f.unitType] ?? 0) + f.strength;
-                        total += f.strength;
-                    }
-                    return { comp, total };
-                };
-                const a = tally('attacker');
-                const d = tally('defender');
+                // keep seeing a consistent picture. Supply and cohesion on the
+                // HUD are the formations' own averages, 0-100.
+                const a = tallySide(war.formations, 'attacker');
+                const d = tallySide(war.formations, 'defender');
                 updatedSiege.attackerState.unitComposition = a.comp as any;
                 updatedSiege.attackerState.totalLandedTroops = a.total;
+                updatedSiege.attackerState.supply = a.supply;
+                updatedSiege.attackerState.maxSupply = 100;
+                updatedSiege.attackerState.cohesion = a.org;
+                updatedSiege.attackerState.maxCohesion = 100;
                 updatedSiege.defenderState.unitComposition = d.comp as any;
                 updatedSiege.defenderState.garrisonTroops = d.total;
+                updatedSiege.defenderState.supply = d.supply;
+                updatedSiege.defenderState.maxSupply = 100;
+                updatedSiege.defenderState.cohesion = d.org;
+                updatedSiege.defenderState.maxCohesion = 100;
+
+                // Morale moves with what the army can see: ground won and
+                // lost, the share of it that died, men marched off as
+                // prisoners, and whether it is fed.
+                const menLost = (side: 'attacker' | 'defender') =>
+                    Object.values(battleLosses[side]).reduce((s, n) => s + n, 0)
+                    + Object.values(surrendered[side]).reduce((s, n) => s + n, 0);
+                const sides = { attacker: a, defender: d };
+                for (const side of ['attacker', 'defender'] as const) {
+                    const st: any = side === 'attacker' ? updatedSiege.attackerState : updatedSiege.defenderState;
+                    st.morale = nextMorale(st.morale ?? 100, st.maxMorale ?? 100, {
+                        captured: side === 'attacker' ? res.captured.length : res.liberated.length,
+                        lost: side === 'attacker' ? res.liberated.length : res.captured.length,
+                        lossShare: menBefore[side] > 0 ? menLost(side) / menBefore[side] : 0,
+                        surrendered: Object.values(surrendered[side]).reduce((s, n) => s + n, 0),
+                        encircledShare: sides[side].encircledShare,
+                        fought: fought.size > 0,
+                    });
+                }
+                // The Hall of Triumphs: a people reminded of what it has
+                // survived does not break while the hall still stands.
+                if (heldBy(points, 'hall', 'defender')) {
+                    updatedSiege.defenderState.morale = Math.max(updatedSiege.defenderState.morale, DEFENDER_MORALE_FLOOR_HALL);
+                }
 
                 war.contested = computeFront(surface, war);
+
+                // Strongpoints that changed hands this cycle.
+                war.strongpoints = computeStrongpoints(surface, planet, war);
+                for (const now of war.strongpoints) {
+                    const before = pointsBefore.find(p => p.sectorIndex === now.sectorIndex && p.kind === now.kind);
+                    if (!before || before.holder === now.holder) continue;
+                    reportSiegeEvent(world, planet, updatedSiege,
+                        now.holder === 'attacker' ? 'strongpoint_fallen' : 'strongpoint_retaken',
+                        { strongpoint: now }, nameOfEmpire);
+                }
             } else {
                 const abstract = advanceFront(surface, war, swing, rng);
                 res.captured.push(...abstract.captured);
@@ -6258,10 +6770,35 @@ export function processSieges(world: GameWorldState) {
                 (last as any)?.attackerMoraleAtImpact ?? updatedSiege.attackerState.morale,
                 updatedSiege.attackerEmpireId, updatedSiege.defenderEmpireId,
             );
-            if (defTaken || attTaken) {
+            // Surrenders are not casualties: every man who laid down his arms
+            // with nowhere to run is a prisoner, whatever his type's capture
+            // rate says about men who were merely beaten.
+            const takeSurrendered = (byType: Record<string, number>, ownerEmpireId: string, captorEmpireId: string) => {
+                let total = 0;
+                for (const [unitType, count] of Object.entries(byType)) {
+                    if (!count) continue;
+                    total += count;
+                    ledger.groups.push({
+                        id: `pow-${planet.id}-${updatedSiege.cycleCount}-${unitType}-${captorEmpireId}-s`,
+                        ownerEmpireId,
+                        captorEmpireId,
+                        planetId: planet.id,
+                        planetName: planet.name,
+                        unitType: unitType as any,
+                        count,
+                        capturedAtSeconds: world.nowSeconds,
+                    });
+                }
+                return total;
+            };
+            const defSurrendered = takeSurrendered(surrendered.defender, updatedSiege.defenderEmpireId, updatedSiege.attackerEmpireId);
+            const attSurrendered = takeSurrendered(surrendered.attacker, updatedSiege.attackerEmpireId, updatedSiege.defenderEmpireId);
+            if (defTaken || attTaken || defSurrendered || attSurrendered) {
                 const parts: string[] = [];
                 if (defTaken) parts.push(`${defTaken} defenders taken prisoner`);
                 if (attTaken) parts.push(`${attTaken} attackers captured`);
+                if (defSurrendered) parts.push(`${defSurrendered} defenders surrender, cut off`);
+                if (attSurrendered) parts.push(`${attSurrendered} invaders surrender, cut off`);
                 updatedSiege.battleLog.push({
                     cycle: updatedSiege.cycleCount,
                     message: `${parts.join('; ')}.`,
@@ -6271,8 +6808,15 @@ export function processSieges(world: GameWorldState) {
 
             // Overrun development is wrecked: the world the defender built is
             // the world the attacker breaks taking it.
+            // Looked up through the occupancy map so legacy tiles that were
+            // auto-placed (no stored sectorIndex) ruin like any other. Shields
+            // and fortresses are exempt: they fall to sappers, not to the
+            // first man through the door.
+            const occupancy = computeSectorOccupancy(planet as any, surface);
             for (const idx of res.captured) {
-                const tile = (planet.tiles ?? []).find((t: any) => t.sectorIndex === idx && t.buildingId);
+                const occ = occupancy.get(idx);
+                const tile = occ?.tileId ? (planet.tiles ?? []).find((t: any) => t.tileId === occ.tileId) : undefined;
+                if (tile?.buildingId && SAPPER_KINDS.includes((STRONGPOINT_BUILDINGS as any)[tile.buildingId])) continue;
                 if (tile && tile.constructionState === 'active' && rng() < 0.45) {
                     tile.constructionState = 'ruined';
                     updatedSiege.attackerState.devastationCaused += 5;
@@ -6290,8 +6834,26 @@ export function processSieges(world: GameWorldState) {
             }
             if (updatedSiege.phase === 'LANDING' && share > 12) updatedSiege.phase = 'ACTIVE_SIEGE';
 
-            // Capital falls → the government collapses and the planet changes hands.
+            // Capital falls → the government collapses and the planet changes
+            // hands — once the invader has HELD it for CAPITAL_FALL_CYCLES.
+            // The first cycle the enemy is in the capital the government is
+            // in the bunkers and the garrison has one chance to throw them
+            // out; a counter-attack that retakes it in time saves the world.
+            // With no defender formation left on the board there is nobody to
+            // counter-attack, and it falls at once.
             if (capitalTaken(war)) {
+                war.capitalHeldCycles = (war.capitalHeldCycles ?? 0) + 1;
+            } else {
+                war.capitalHeldCycles = 0;
+            }
+            const defendersLeft = (war.formations ?? []).some(f => f.side === 'defender' && f.strength > 0);
+            if (capitalTaken(war) && war.capitalHeldCycles < CAPITAL_FALL_CYCLES && defendersLeft) {
+                updatedSiege.battleLog.push({
+                    cycle: updatedSiege.cycleCount,
+                    message: 'The capital district is in enemy hands. The government holds out in the bunkers — retake it, or the world falls.',
+                    event: 'CAPITAL_BESIEGED',
+                });
+            } else if (capitalTaken(war)) {
                 // capturePlanet owns the whole transfer: tech absorption while
                 // the previous owner is still on the record (diffusion:
                 // conquest), the ownership flip, siege teardown, stability hit,
@@ -6341,7 +6903,7 @@ export function processSieges(world: GameWorldState) {
             }
         } else if (updatedSiege.attackerState.totalLandedTroops <= 0) {
             console.log(`[Tick Worker] INVASION COLLAPSED: Attackers on ${planet.name} eliminated.`);
-            planet.siege = null;
+            endSiegeDefenderHolds(world, planet, updatedSiege, 'ATTACKER_COLLAPSE');
         }
     }
 }

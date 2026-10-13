@@ -56,9 +56,10 @@ export function capturedFromLosses(
      * 0..1 — the share of would-be prisoners this force simply does not yield.
      *
      * The Infernoids are the only thing in the game that moves this number.
-     * Note that ground morale saturates near zero on the first resolved cycle
-     * and never recovers, so every other faction sits permanently at the maximum
-     * ×1.6 capture rate; resistance is the only counterweight that exists.
+     * Morale is a live quantity on positional sieges (see army-morale.ts), so
+     * an army that is winning yields fewer prisoners than one being routed.
+     * Men who surrender because they are cut off are not routed through here
+     * at all — every one of them is taken (see district-battle.ts).
      */
     captureResistance = 0,
 ): Partial<UnitComposition> {

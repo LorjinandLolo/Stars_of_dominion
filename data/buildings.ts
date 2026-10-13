@@ -252,6 +252,23 @@ export const BUILDINGS: BuildingDefinition[] = [
     techRequired: 'mil_t1_8',
   },
   {
+    id: 'fortress',
+    name: 'Fortress',
+    description: 'A hardened bastion. Troops dig in deepest here and in the districts around it; while it stands, the militia keeps mustering and an invasion has to crack it before the capital is in reach.',
+    category: 'defense',
+    tier: 3,
+    allowedDistricts: ['military', 'any'],
+    infrastructureRequired: 3,
+    cost: { metals: 500, chemicals: 100, food: 0, manpower: 120, credits: 900 },
+    upkeep: { manpower: 40, credits: 30 },
+    buildTimeSeconds: 1200,
+    // `fortification` raises the planet's fortification level (ground siege
+    // entrenchment, lib/combat/siege/strongpoints.ts); several may be built.
+    effects: [{ type: 'fortification', value: 3 }, { type: 'troop_capacity', value: 300 }],
+    tags: ['defense', 'fortification', 'strongpoint'],
+    techRequired: 'mil_t1_8',
+  },
+  {
     id: 'administrative_center',
     name: 'Administrative Center',
     description: 'Bureaucratic hub ensuring laws are enforced and taxes collected.',

@@ -559,6 +559,31 @@ function destroyFleet(world: GameWorldState, state: CombatState, fleet: Fleet, k
         }
     }
 
+    // Armies aboard go down with the ship. These used to be orphaned in the
+    // army ledger — aboard a fleet that no longer existed, unlandable and
+    // uncountable, forever.
+    const aboard = (fleet.transportedArmyIds ?? []).filter(id => world.movement.armies?.has(id));
+    if (aboard.length) {
+        let men = 0;
+        for (const id of aboard) {
+            const army: any = world.movement.armies.get(id);
+            men += Object.values(army?.composition ?? {}).reduce((s: number, n: any) => s + (Number(n) || 0), 0);
+            world.movement.armies.delete(id);
+        }
+        fireNotification({
+            id: `army-lost-${fleet.id}-${world.nowSeconds}`,
+            factionId: fleet.factionId,
+            category: 'combat',
+            priority: 'urgent',
+            title: 'ARMY LOST WITH ITS TRANSPORTS',
+            body: `${fleet.name ?? fleet.id} was destroyed with ${men.toLocaleString()} troops aboard (${aboard.length} ${aboard.length === 1 ? 'army' : 'armies'}).`,
+            createdAt: new Date().toISOString(),
+            read: false,
+            linkToTab: 'map',
+            payload: { fleetId: fleet.id, systemId: fleet.currentSystemId, armyIds: aboard },
+        } as any);
+    }
+
     world.movement.fleets.delete(fleet.id);
 }
 

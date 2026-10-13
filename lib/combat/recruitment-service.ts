@@ -8,6 +8,7 @@
  */
 
 import { GroundUnitType, UnitComposition, PlanetaryDefenseState, RecruitmentJob } from './siege/siege-types';
+import { defaultGarrison } from './siege/garrison';
 import { addProfile, normalizeComposition, normalizeUnitKey, unitConfigFor } from './ship-registry';
 import { blendSpeedBonus, shipCountOf } from './fleet-speed';
 import { blendExperience } from './veterancy';
@@ -265,21 +266,7 @@ export class RecruitmentService {
 
         // Ensure defense state exists
         if (!planet.garrison) {
-            planet.garrison = {
-                planetId: planet.id,
-                ownerEmpireId: job.factionId,
-                garrisonTroops: 0,
-                unitComposition: {} as UnitComposition,
-                fortificationLevel: 0,
-                fortificationLayers: { orbitalSuppressed: false, outerDefenses: 0, innerDefenses: 0, commandBunkers: 0 },
-                supply: 1000,
-                maxSupply: 1000,
-                morale: 100,
-                maxMorale: 100,
-                cohesion: 100,
-                maxCohesion: 100,
-                resistance: 0
-            };
+            planet.garrison = defaultGarrison(planet, job.factionId);
         }
 
         const defenseState = planet.garrison as PlanetaryDefenseState;

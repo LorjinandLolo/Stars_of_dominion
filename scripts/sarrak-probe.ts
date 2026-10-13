@@ -289,7 +289,7 @@ console.log('\n[7] Wiring');
     check('the worker handles the serum order',
         /case 'SAR_ADMINISTER_SERUM'/.test(src('scripts/game-loop.ts')));
     check('the district battle receives the trait multiplier',
-        /resolveDistrictBattle\([\s\S]{0,140}districtTraits\)/.test(src('scripts/game-loop.ts')));
+        /resolveDistrictBattle\([\s\S]{0,140}districtTraits(, reads)?\)/.test(src('scripts/game-loop.ts')));
     check('the infrastructure order passes the speed multiplier',
         /canUpgradeTrack\(planet, payload\.trackId, infraSpeed\)/.test(src('scripts/game-loop.ts')));
     check('capture goes through one helper',

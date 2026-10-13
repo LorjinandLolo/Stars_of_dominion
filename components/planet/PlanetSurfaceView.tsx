@@ -578,6 +578,7 @@ export default function PlanetSurfaceView() {
                                 attackerColor={factionColor(planet.siege.attackerEmpireId)}
                                 defenderColor={factionColor(planet.siege.defenderEmpireId)}
                                 playerIsAttacker={planet.siege.attackerEmpireId === playerFactionId}
+                                shieldUp={!!planet.siege.orbit?.shieldUp}
                             />
                         )}
 

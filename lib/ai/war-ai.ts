@@ -59,8 +59,11 @@ import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
 import { CivilizationRegistry } from '@/lib/civilization/registry';
 import { createPlan, type BattlePlan } from '@/lib/combat/siege/battle-plans';
 import { CAPITAL_SECTOR } from '@/lib/combat/siege/district-front';
+import { canEverEnter, type Formation } from '@/lib/combat/siege/formations';
+import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
+import { applyDefaultDefence } from '@/lib/combat/siege/defence-doctrine';
 import { generateSurface } from '@/lib/planet-surface/generator';
-import type { TacticalStanceId } from '@/lib/combat/siege/siege-types';
+import type { TacticalStanceId, GroundUnitType } from '@/lib/combat/siege/siege-types';
 import groundUnits from '@/data/combat/ground-units.json';
 import { materielFor } from '../economy/procurement';
 
@@ -132,6 +135,12 @@ export const WAR = {
     /** Reinforce while the landing holds less than this multiple of the defenders' strength. */
     reinforceBelowRatio: 1.5,
     /**
+     * A relief fleet is sent to a besieged own world only when it is at
+     * least this strong relative to the blockading power; nobody flies into
+     * a blockade twice their size.
+     */
+    reliefMinPowerRatio: 0.8,
+    /**
      * Sim days an AI's battle groups muster after IT declares, before they
      * sail (~5 real hours): the defender hears the declaration first and has
      * time to answer. Wars declared on the AI get no such pause.
@@ -166,6 +175,8 @@ export interface AIWarMission {
     /** Best share of the surface held in this siege, and when it was reached. */
     bestShare?: number;
     bestShareAt?: number;
+    /** A relief mission: break the blockade over one of our own besieged worlds. */
+    relief?: boolean;
 }
 
 interface AIWarRecord {
@@ -574,10 +585,58 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
     // we declared on once musterDays have passed.
     const campaignEnemies = new Set([...enemies].filter(id =>
         world.nowSeconds - (rec.declared[id] ?? -Infinity) >= WAR.musterDays * DAY));
+
+    // ── 3a. Relief ──────────────────────────────────────────────────────────
+    // A besieged own world comes before any campaign: the strongest idle
+    // warfleet that can match the blockade goes to break it. The ground war
+    // below decides the rest — with the orbit lost the beachhead starves and
+    // the garrison can be reinforced.
+    const relieved = new Set<string>();
+    for (const planet of planetsOf(world, factionId)) {
+        const siege = planet.siege;
+        if (!siege || siege.defenderEmpireId !== factionId) continue;
+        const covered = fleets.some(f => (f.currentSystemId === planet.systemId && !f.destinationSystemId)
+            || f.destinationSystemId === planet.systemId
+            || missionOf(f)?.targetPlanetId === planet.id);
+        if (covered) continue;
+        const blockade = Number(siege.orbit?.attackerPower ?? 0);
+        const candidates = fleets
+            .filter(f => isFleetOperational(f) && (f.strength ?? 1) >= WAR.retreatStrength && !f.destinationSystemId && !relieved.has(f.id))
+            .filter(f => (f.basePower ?? 0) * (f.strength ?? 1) >= blockade * WAR.reliefMinPowerRatio)
+            .sort((a, b) => (b.basePower ?? 0) * (b.strength ?? 1) - (a.basePower ?? 0) * (a.strength ?? 1));
+        const relief = candidates[0];
+        if (!relief) continue;
+        const sent = setMission(world, relief, {
+            targetPlanetId: planet.id,
+            targetSystemId: planet.systemId,
+            enemyId: siege.attackerEmpireId,
+            assignedAt: world.nowSeconds,
+            relief: true,
+        });
+        if (sendTo(world, sent, planet.systemId, planet.id)) {
+            relieved.add(relief.id);
+            turn.missions.push({ fleetId: relief.id, planetId: planet.id });
+            console.log(`[War AI] ${factionId} sends ${(relief as any).name ?? relief.id} to relieve ${planet.name}.`);
+        } else {
+            setMission(world, world.movement.fleets.get(relief.id)!, null);
+        }
+    }
+    fleets = warfleetsOf(world, factionId);
+
     for (const f0 of fleets) {
         let f = f0;
         if (!isFleetOperational(f)) continue;
         const mission = missionOf(f);
+        // A relief fleet stays on station over its world while the siege
+        // lasts, whatever the campaign wants.
+        if (mission?.relief) {
+            const home = world.construction.planets.get(mission.targetPlanetId) as any;
+            if (home?.siege && home.siege.defenderEmpireId === factionId) {
+                if (!f.destinationSystemId && f.currentSystemId !== mission.targetSystemId) sendTo(world, f, mission.targetSystemId, mission.targetPlanetId);
+                continue;
+            }
+            f = setMission(world, f, null);
+        }
 
         // Mauled → home to refit, mission dropped.
         if ((f.strength ?? 1) < WAR.retreatStrength) {
@@ -741,6 +800,8 @@ const ATTACK_TACTICS: TacticalStanceId[] = ['AGGRESSIVE_ASSAULT', 'AGGRESSIVE_AS
 const DEFEND_TACTICS: TacticalStanceId[] = ['DEFENSIVE_HOLD', 'DEFENSIVE_HOLD', 'MANEUVER_AMBUSH', 'AGGRESSIVE_ASSAULT'];
 /** Preparation an AI offensive waits for before it goes (the cap is 100). */
 export const AI_PLAN_LAUNCH_PREPARATION = 54;
+/** Chance per cycle that an AI commander makes a stance read. */
+const AI_READ_CHANCE = 0.5;
 
 /**
  * The ground war is positional: formations only move when ordered or assigned
@@ -765,23 +826,63 @@ export function aiCommandGroundWars(world: GameWorldState): void {
         ];
         for (const [side, factionId] of sides) {
             if (!factionId || !isAIRunFaction(world as any, factionId)) continue;
-            const pick = side === 'attacker' ? ATTACK_TACTICS : DEFEND_TACTICS;
-            const tactic = pick[Math.floor(Math.random() * pick.length)];
-            if (side === 'attacker') {
-                if (!siege.attackerState.activeAttackerTactic) siege.attackerState.activeAttackerTactic = tactic;
-            } else if (!siege.defenderState.activeDefenderTactic) {
-                siege.defenderState.activeDefenderTactic = tactic;
+            // Stances persist across cycles on a positional siege, so "set it
+            // if unset" would lock the AI into its first roll for the whole
+            // war. Re-roll once per cycle instead, and make a stance read
+            // about half the time — a read is a gamble (right ×1.3, wrong
+            // ×0.85), and an AI that always guessed would just be noise.
+            const memo: Record<string, number> = (siege as any).aiCommandCycle ?? ((siege as any).aiCommandCycle = {});
+            if (memo[side] !== siege.cycleCount) {
+                memo[side] = siege.cycleCount;
+                const pick = side === 'attacker' ? ATTACK_TACTICS : DEFEND_TACTICS;
+                const tactic = pick[Math.floor(Math.random() * pick.length)];
+                const guessPool = side === 'attacker' ? DEFEND_TACTICS : ATTACK_TACTICS;
+                const guess = Math.random() < AI_READ_CHANCE
+                    ? guessPool[Math.floor(Math.random() * guessPool.length)]
+                    : undefined;
+                if (side === 'attacker') {
+                    siege.attackerState.activeAttackerTactic = tactic;
+                    siege.attackerState.attackerPrediction = guess;
+                } else {
+                    siege.defenderState.activeDefenderTactic = tactic;
+                    siege.defenderState.defenderPrediction = guess;
+                }
             }
 
             const war = siege.districts;
             if (!war || !Array.isArray(war.formations) || war.formations.length === 0) continue;
             war.plans = war.plans ?? [];
+            const points: Strongpoint[] = war.strongpoints ?? [];
             let plan: BattlePlan | undefined = war.plans.find((p: BattlePlan) => p.side === side);
             if (!plan) {
                 const surface = generateSurface(planet.id, planet.planetType, planet.tags);
                 plan = createPlan(surface, war, side, side === 'attacker' ? 'offensive' : 'front',
                     side === 'attacker' ? [CAPITAL_SECTOR] : [], world.nowSeconds);
                 war.plans.push(plan);
+            }
+            // The defender runs the shared doctrine: capital and strongpoints
+            // manned, everything else on the line (the same code a human
+            // defender gets until they give an order).
+            if (side === 'defender') {
+                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+                applyDefaultDefence(surface, war, war.formations, points, world.nowSeconds);
+                continue;
+            }
+            // The invader's objectives, in order: the shield (so the fleet
+            // can fire and the defender cannot land), the barracks (so the
+            // levy stops), then the capital. Refreshed every loop so a
+            // strongpoint that falls drops off the list and the next one
+            // becomes the target. A district none of our pieces can ever
+            // enter (a shield built in the mountains, and no airborne) is not
+            // an objective — it is the fleet's problem.
+            {
+                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+                const ownTypes = new Set<GroundUnitType>(war.formations.filter((f: Formation) => f.side === 'attacker' && f.strength > 0).map((f: Formation) => f.unitType));
+                const reachable = (idx: number) => [...ownTypes].some(t => canEverEnter(t, surface.sectors[idx].terrain));
+                const next = (kind: 'shield' | 'barracks') =>
+                    points.filter(p => p.kind === kind && p.active && p.holder === 'defender' && reachable(p.sectorIndex)).map(p => p.sectorIndex);
+                const objective = next('shield')[0] ?? next('barracks')[0] ?? CAPITAL_SECTOR;
+                if (plan.objectives[0] !== objective) plan.objectives = [objective];
             }
             for (const f of war.formations) {
                 if (f.side === side && f.strength > 0 && f.planId !== plan.id) {
@@ -790,7 +891,7 @@ export function aiCommandGroundWars(world: GameWorldState): void {
                     f.path = [];
                 }
             }
-            if (!plan.executing && (side === 'defender' || plan.preparation >= AI_PLAN_LAUNCH_PREPARATION)) {
+            if (!plan.executing && plan.preparation >= AI_PLAN_LAUNCH_PREPARATION) {
                 plan.executing = true;
             }
         }

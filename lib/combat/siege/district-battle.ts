@@ -9,6 +9,7 @@ import type { PlanetSurface, TerrainType } from '../../planet-surface/types';
 import type { GroundUnitType, TacticalStanceId, DistrictWarState } from './siege-types';
 import type { Formation, FormationSide } from './formations';
 import { formationsAt } from './formations';
+import { buildAdjacency, controllerOf, isPassable } from './district-front';
 
 /** Raw fighting value per man, by unit type. One Elder is not a man. */
 const UNIT_POWER: Record<GroundUnitType, number> = {
@@ -65,10 +66,21 @@ export interface DistrictBattleResult {
     /** Whether the district changed hands. */
     captured: boolean;
     lossesBySide: Record<FormationSide, Partial<Record<GroundUnitType, number>>>;
+    /**
+     * Men who broke with nowhere to fall back to and laid down their arms.
+     * Every one of them is a prisoner; none of them is in `lossesBySide`.
+     */
+    surrenderedBySide: Record<FormationSide, Partial<Record<GroundUnitType, number>>>;
+    /** Formations that broke and fell back to friendly ground. */
+    retreatedBySide: Record<FormationSide, number>;
     /** Morale at the moment losses landed — drives prisoner counts. */
     moraleBySide: Record<FormationSide, number>;
     log: string;
 }
+
+/** Army-wide morale as a strength multiplier: 0.6 at zero, 1.1 at full. */
+export const moraleMultiplier = (morale: number) =>
+    0.6 + 0.5 * Math.max(0, Math.min(100, morale)) / 100;
 
 function sideStrength(
     formations: Formation[],
@@ -214,10 +226,20 @@ export function resolveDistrictBattle(
         attacker: { dealt: 1, taken: 1, detonation: 0 },
         defender: { dealt: 1, taken: 1, detonation: 0 },
     },
+    /**
+     * The cycle's stance reads, as strength multipliers: a commander who
+     * guessed the enemy's posture fights above weight this cycle, one who
+     * guessed wrong below it. 1 when no read was made.
+     */
+    reads: Record<FormationSide, number> = { attacker: 1, defender: 1 },
 ): DistrictBattleResult | null {
     const attackers = formationsAt(formations, sectorIndex, 'attacker');
     const defenders = formationsAt(formations, sectorIndex, 'defender');
     if (!attackers.length || !defenders.length) return null;
+    // Snapshots for the organisation maths below: what each side brought,
+    // before any of it died.
+    const attackersBefore = attackers.map(f => ({ strength: f.strength, unitType: f.unitType }));
+    const defendersBefore = defenders.map(f => ({ strength: f.strength, unitType: f.unitType }));
 
     const sector = surface.sectors[sectorIndex];
     const terrain = sector.terrain;
@@ -238,6 +260,15 @@ export function resolveDistrictBattle(
     // A rehearsed plan pays off on the day.
     aStr *= 1 + (planning.attacker ?? 0);
     dStr *= 1 + (planning.defender ?? 0);
+
+    // An army that believes it is winning fights like it; one that has been
+    // bled and pushed back for cycles does not.
+    aStr *= moraleMultiplier(morale.attacker);
+    dStr *= moraleMultiplier(morale.defender);
+
+    // The commander who read the enemy's posture right this cycle.
+    aStr *= reads.attacker ?? 1;
+    dStr *= reads.defender ?? 1;
 
     // Who is fighting, and on what ground. The Sarrak hit harder in wet terrain
     // and worse on dry; the Divine Serum rides the same multiplier.
@@ -298,8 +329,25 @@ export function resolveDistrictBattle(
     const attackerBlast = detonate(attackerLosses, defenders, traits.attacker?.detonation ?? 0);
     const defenderBlast = detonate(defenderLosses, attackers, traits.defender?.detonation ?? 0);
 
-    const aLeft = attackers.reduce((s, f) => s + Math.max(0, f.strength), 0);
-    const dLeft = defenders.reduce((s, f) => s + Math.max(0, f.strength), 0);
+    // ── Organisation under fire ──────────────────────────────────────────
+    // Casualties are only half of what a battle does to a formation; the other
+    // half is what it does to its order. Each side's organisation drops by a
+    // flat cost for standing in a fight plus a share proportional to the
+    // fraction of its fighting power that just died. A formation ground down
+    // to BREAK_ORG breaks: it falls back to friendly ground if it has any, and
+    // surrenders where it stands if it has none. That is what makes a battle
+    // decisive without annihilating the loser, and what makes encirclement
+    // lethal rather than merely uncomfortable.
+    const aPowerBefore = rawPower(attackersBefore);
+    const dPowerBefore = rawPower(defendersBefore);
+    drainOrganization(attackers, lostPower(attackerLosses) / Math.max(1, aPowerBefore), STANCE[aStance].taken);
+    drainOrganization(defenders, lostPower(defenderLosses) / Math.max(1, dPowerBefore), STANCE[dStance].taken);
+
+    const aBreak = breakFormations(surface, war, formations, attackers, sectorIndex);
+    const dBreak = breakFormations(surface, war, formations, defenders, sectorIndex);
+
+    const aLeft = formationsAt(formations, sectorIndex, 'attacker').reduce((s, f) => s + Math.max(0, f.strength), 0);
+    const dLeft = formationsAt(formations, sectorIndex, 'defender').reduce((s, f) => s + Math.max(0, f.strength), 0);
 
     // The ground goes to whoever still has men on it. A tie leaves the
     // original holder in place — you must actually push the enemy out.
@@ -311,21 +359,181 @@ export function resolveDistrictBattle(
     if (captured) {
         if (holder === 'attacker') war.control[sectorIndex] = 'attacker';
         else delete war.control[sectorIndex];
+        // The works were built facing the other way. Whoever takes a district
+        // inherits a fraction of its entrenchment and has to dig the rest.
+        (war.entrenchment ??= {})[sectorIndex] = Math.round(entrench * CAPTURED_ENTRENCHMENT_KEEP);
     }
 
     const name = `${sector.terrain} district ${sectorIndex}`;
     const blast = attackerBlast + defenderBlast;
+    const retreated = aBreak.retreated + dBreak.retreated;
+    const surrendered = countOf(aBreak.surrendered) + countOf(dBreak.surrendered);
     const log = (captured
         ? `${holder === 'attacker' ? 'Invaders storm' : 'Defenders retake'} the ${name}.`
         : `Fighting rages in the ${name} — the line holds.`)
-        + (blast > 0 ? ` The fallen ignite — ${blast.toFixed(0)} answered in fire.` : '');
+        + (blast > 0 ? ` The fallen ignite — ${blast.toFixed(0)} answered in fire.` : '')
+        + (retreated > 0 ? ` ${retreated} formation${retreated > 1 ? 's' : ''} break${retreated > 1 ? '' : 's'} and fall${retreated > 1 ? '' : 's'} back.` : '')
+        + (surrendered > 0 ? ` ${surrendered} cut off and taken.` : '');
 
     return {
         sectorIndex,
         holder,
         captured,
         lossesBySide: { attacker: attackerLosses, defender: defenderLosses },
+        surrenderedBySide: { attacker: aBreak.surrendered, defender: dBreak.surrendered },
+        retreatedBySide: { attacker: aBreak.retreated, defender: dBreak.retreated },
         moraleBySide: { attacker: morale.attacker, defender: morale.defender },
         log,
     };
+}
+
+// ─── Organisation, breaking and retreat ──────────────────────────────────────
+
+/** Organisation at or below which a formation breaks and leaves the fight. */
+export const BREAK_ORG = 20;
+/** Flat organisation cost of standing in a battle for a cycle. */
+const ORG_BATTLE_COST = 6;
+/** Organisation lost per 100% of the side's fighting power killed. */
+const ORG_PER_LOSS_SHARE = 110;
+/** Share of a district's entrenchment the new holder inherits. */
+const CAPTURED_ENTRENCHMENT_KEEP = 0.4;
+
+const rawPower = (forms: Array<Pick<Formation, 'strength' | 'unitType'>>) =>
+    forms.reduce((s, f) => s + Math.max(0, f.strength) * UNIT_POWER[f.unitType], 0);
+
+const lostPower = (losses: Partial<Record<GroundUnitType, number>>) =>
+    (Object.entries(losses) as Array<[GroundUnitType, number]>)
+        .reduce((s, [t, n]) => s + (n ?? 0) * UNIT_POWER[t], 0);
+
+const countOf = (losses: Partial<Record<GroundUnitType, number>>) =>
+    Object.values(losses).reduce((s, n) => s + (n ?? 0), 0);
+
+function drainOrganization(formations: Formation[], lossShare: number, stanceTaken: number): void {
+    // A side that chose an exposed stance pays more order for the same blood.
+    const drain = (ORG_BATTLE_COST + ORG_PER_LOSS_SHARE * Math.min(1, Math.max(0, lossShare))) * stanceTaken;
+    for (const f of formations) {
+        if (f.strength <= 0) continue;
+        f.organization = Math.max(0, (f.organization ?? 100) - drain);
+    }
+}
+
+/**
+ * Where a broken formation can fall back to: an adjacent, passable district
+ * its own side holds with no enemy standing in it. Prefers the district with
+ * the most friendly strength already there (rally on the main body), then the
+ * one with the deepest friendly ring. Null when it has nowhere to go.
+ */
+export function retreatDistrict(
+    surface: PlanetSurface,
+    war: DistrictWarState,
+    formations: Formation[],
+    formation: Formation,
+): number | null {
+    const adjacency = buildAdjacency(surface);
+    const enemy: FormationSide = formation.side === 'attacker' ? 'defender' : 'attacker';
+    let best: number | null = null;
+    let bestScore = -Infinity;
+    for (const n of adjacency[formation.sectorIndex] ?? []) {
+        const sec = surface.sectors[n];
+        if (!isPassable(sec)) continue;
+        if (controllerOf(war, n) !== formation.side) continue;
+        if (formationsAt(formations, n, enemy).length) continue;
+        const friendly = formationsAt(formations, n, formation.side).reduce((s, f) => s + f.strength, 0);
+        // Attackers rally toward the beachhead (outer rings), defenders toward
+        // the capital (inner rings).
+        const depth = formation.side === 'attacker' ? sec.ring : -sec.ring;
+        const score = friendly + depth * 50 + (war.entrenchment?.[n] ?? 0);
+        if (score > bestScore) { bestScore = score; best = n; }
+    }
+    return best;
+}
+
+function breakFormations(
+    surface: PlanetSurface,
+    war: DistrictWarState,
+    all: Formation[],
+    side: Formation[],
+    sectorIndex: number,
+): { retreated: number; surrendered: Partial<Record<GroundUnitType, number>> } {
+    let retreated = 0;
+    const surrendered: Partial<Record<GroundUnitType, number>> = {};
+    for (const f of side) {
+        if (f.strength <= 0) continue;
+        if ((f.organization ?? 100) > BREAK_ORG) continue;
+        const to = retreatDistrict(surface, war, all, f);
+        if (to != null) {
+            f.sectorIndex = to;
+            f.moveTo = null;
+            f.path = [];
+            f.redeploying = false;
+            retreated++;
+        } else {
+            // Nowhere to run. Men who cannot fight and cannot flee lay down
+            // their arms — every one of them is a prisoner, not a casualty.
+            surrendered[f.unitType] = (surrendered[f.unitType] ?? 0) + f.strength;
+            f.strength = 0;
+        }
+    }
+    void sectorIndex;
+    return { retreated, surrendered };
+}
+
+// ─── Orbital fire ────────────────────────────────────────────────────────────
+
+/** Power-points of casualties per point of orbital support, per tick. */
+const BOMBARD_KILL_PER_POWER = 0.05;
+/** Entrenchment shed per point of orbital support, per tick. */
+const BOMBARD_ENTRENCH_PER_POWER = 0.004;
+/** Organisation shed per point of orbital support, per tick (suppression). */
+const BOMBARD_ORG_PER_POWER = 0.004;
+
+export interface BombardmentResult {
+    /** Fighting men killed, by type. */
+    losses: Partial<Record<GroundUnitType, number>>;
+    /** Districts whose entrenchment was worked over. */
+    districts: number[];
+}
+
+/**
+ * Orbital bombardment against the pieces on the board. Fire falls on the
+ * defender's forward districts — the ones that touch attacker ground, plus
+ * any the attacker is standing in — and does three things there: it kills,
+ * it flattens entrenchment, and it suppresses (organisation). Orbital fire is
+ * heavy by definition, so an Elder is as exposed to it as anything else.
+ *
+ * Pure over `war`; the worker decides what `power` is from what is actually
+ * in orbit this tick.
+ */
+export function bombardFormations(
+    war: DistrictWarState,
+    formations: Formation[],
+    power: number,
+    forwardDistricts: number[],
+): BombardmentResult {
+    const out: BombardmentResult = { losses: {}, districts: [] };
+    if (power <= 0) return out;
+    const targets = new Set<number>(forwardDistricts);
+    for (const f of formations) {
+        if (f.side === 'attacker' && f.strength > 0) targets.add(f.sectorIndex);
+    }
+    const exposed = formations.filter(f => f.side === 'defender' && f.strength > 0 && targets.has(f.sectorIndex));
+    for (const idx of targets) {
+        if (controllerOf(war, idx) !== 'defender') continue;
+        const cur = war.entrenchment?.[idx] ?? 0;
+        if (cur <= 0) continue;
+        (war.entrenchment ??= {})[idx] = Math.max(0, cur - power * BOMBARD_ENTRENCH_PER_POWER);
+        out.districts.push(idx);
+    }
+    if (!exposed.length) return out;
+    const total = rawPower(exposed) || 1;
+    const damage = power * BOMBARD_KILL_PER_POWER;
+    for (const f of exposed) {
+        const share = (Math.max(0, f.strength) * UNIT_POWER[f.unitType]) / total;
+        const lost = applyLosses([f], damage * share);
+        for (const [t, n] of Object.entries(lost) as Array<[GroundUnitType, number]>) {
+            out.losses[t] = (out.losses[t] ?? 0) + n;
+        }
+        f.organization = Math.max(0, (f.organization ?? 100) - power * BOMBARD_ORG_PER_POWER);
+    }
+    return out;
 }

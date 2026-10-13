@@ -53,6 +53,8 @@ export interface Formation {
     planId?: string | null;
     /** True when the formation has no path home: encircled and starving. */
     encircled?: boolean;
+    /** Consecutive cycles at zero supply; at STARVE_SURRENDER_CYCLES it lays down its arms. */
+    starvedCycles?: number;
 }
 
 export const ORG_MAX = 100;
@@ -117,13 +119,22 @@ export function seedFormations(
     side: FormationSide,
     composition: Partial<Record<GroundUnitType, number>>,
     idPrefix: string,
+    /**
+     * Where the pieces appear, overriding the side's default spread. Used for
+     * mid-siege arrivals: a reinforcement comes ashore at the beachhead, a
+     * garrison recruit musters at the capital — not scattered along a front
+     * that may already be collapsing.
+     */
+    at?: number[],
 ): Formation[] {
     const home = surface.sectors
         .filter(s => isPassable(s) && controllerOf(war, s.index) === (side as DistrictController))
         .map(s => s.index);
-    const anchor = side === 'attacker'
-        ? (war.landingZones.length ? war.landingZones : home)
-        : (home.length ? home : [0]);
+    const anchor = at?.length
+        ? at
+        : side === 'attacker'
+            ? (war.landingZones.length ? war.landingZones : home)
+            : (home.length ? home : [0]);
     if (!anchor.length) return [];
 
     const out: Formation[] = [];
@@ -317,14 +328,49 @@ export function resolveMoves(
     return log;
 }
 
-/** Formations that held still and are in supply pull themselves back together. */
-export function recoverOrganization(formations: Formation[]): void {
+/**
+ * Formations that held still and are in supply pull themselves back together.
+ * `fighting` is the set of districts where a battle resolved this cycle: a
+ * formation standing in one is not resting, whatever its orders say.
+ */
+export function recoverOrganization(formations: Formation[], fighting?: Set<number>): void {
     for (const f of formations) {
         if (f.strength <= 0) continue;
         const moving = f.redeploying || (f.path?.length ?? 0) > 0 || f.moveTo != null;
         if (moving || f.encircled) continue;
+        if (fighting?.has(f.sectorIndex)) continue;
         f.organization = Math.min(ORG_MAX, (f.organization ?? ORG_MAX) + ORG_RECOVERY * (f.supply / 100));
     }
+}
+
+/**
+ * Where a side's reinforcements come ashore mid-siege: the beachhead for the
+ * attacker, the deepest-held district (the capital while it stands) for the
+ * defender. Null when the side holds nothing — there is nowhere to land.
+ */
+export function musterDistrict(
+    surface: PlanetSurface,
+    war: DistrictWarState,
+    side: FormationSide,
+    /**
+     * Districts to muster at before the default, in order of preference —
+     * the defender's barracks, then airbase (strongpoints.ts). Each must be
+     * passable and held by `side`, or it is skipped.
+     */
+    preferred: number[] = [],
+): number | null {
+    for (const idx of preferred) {
+        const sec = surface.sectors[idx];
+        if (sec && isPassable(sec) && controllerOf(war, idx) === (side as DistrictController)) return idx;
+    }
+    if (side === 'attacker') {
+        const held = war.landingZones.filter(i => controllerOf(war, i) === 'attacker');
+        if (held.length) return held[0];
+    }
+    const own = surface.sectors
+        .filter(s => isPassable(s) && controllerOf(war, s.index) === (side as DistrictController))
+        .sort((a, b) => side === 'defender' ? a.ring - b.ring : b.ring - a.ring);
+    return own.length ? own[0].index : null;
 }
 
 /**
@@ -332,18 +378,45 @@ export function recoverOrganization(formations: Formation[]): void {
  * operations — the beachhead for an invader, the capital for a defender.
  * Anything cut off starts starving, which is how encirclement kills.
  */
+export interface SupplyOptions {
+    /**
+     * Whether the beachhead is a supply source at all. False once the invader
+     * has lost the orbit for longer than the blockade grace: with nothing
+     * coming down from above, the landing zones feed nobody.
+     */
+    attackerBaseSupplied?: boolean;
+    /**
+     * Districts the defender draws supply from. Defaults to its own ground in
+     * rings 0-1 (the capital core); a long blockade shrinks this to the core
+     * plus the strongpoints it still mans.
+     */
+    defenderSources?: number[];
+    /** Cycles at zero supply before a formation surrenders where it stands. */
+    starveSurrenderCycles?: number;
+}
+
+export interface SupplyResult {
+    log: string[];
+    /** Men who starved into surrender this cycle, by side and type. Prisoners to the last man. */
+    surrendered: Record<FormationSide, Partial<Record<GroundUnitType, number>>>;
+}
+
 export function updateSupply(
     surface: PlanetSurface,
     war: DistrictWarState,
     formations: Formation[],
-): string[] {
+    options: SupplyOptions = {},
+): SupplyResult {
     const adjacency = buildAdjacency(surface);
     const log: string[] = [];
+    const surrendered: SupplyResult['surrendered'] = { attacker: {}, defender: {} };
 
     const reachable = (side: FormationSide): Set<number> => {
         const sources = side === 'attacker'
-            ? war.landingZones.filter(i => controllerOf(war, i) === 'attacker')
-            : surface.sectors.filter(s => isPassable(s) && controllerOf(war, s.index) === 'defender' && s.ring <= 1).map(s => s.index);
+            ? (options.attackerBaseSupplied === false ? [] : war.landingZones.filter(i => controllerOf(war, i) === 'attacker'))
+            : (options.defenderSources
+                ?? surface.sectors.filter(s => isPassable(s) && controllerOf(war, s.index) === 'defender' && s.ring <= 1).map(s => s.index))
+                .filter(i => isPassable(surface.sectors[i]) && controllerOf(war, i) === 'defender');
         const seen = new Set<number>(sources);
         const queue = [...sources];
         while (queue.length) {
@@ -361,6 +434,7 @@ export function updateSupply(
 
     const supplied = { attacker: reachable('attacker'), defender: reachable('defender') };
 
+    const surrenderAt = options.starveSurrenderCycles ?? Infinity;
     for (const f of formations) {
         if (f.strength <= 0) continue;
         const inSupply = supplied[f.side].has(f.sectorIndex);
@@ -368,14 +442,26 @@ export function updateSupply(
         f.encircled = !inSupply;
         if (inSupply) {
             f.supply = Math.min(100, f.supply + 20);
+            f.starvedCycles = 0;
         } else {
             f.supply = Math.max(0, f.supply - 25);
-            // Starving formations bleed out.
-            if (f.supply <= 0) f.strength = Math.max(0, Math.round(f.strength * 0.9));
             if (!was) log.push(`${f.unitType} in district ${f.sectorIndex} is cut off.`);
+            if (f.supply <= 0) {
+                f.starvedCycles = (f.starvedCycles ?? 0) + 1;
+                if (f.starvedCycles >= surrenderAt) {
+                    // Men who have not eaten in this long do not fight; they
+                    // lay down their arms where they stand.
+                    surrendered[f.side][f.unitType] = (surrendered[f.side][f.unitType] ?? 0) + f.strength;
+                    log.push(`${f.strength} ${f.unitType} in district ${f.sectorIndex}, starved out, surrender.`);
+                    f.strength = 0;
+                    continue;
+                }
+                // Starving formations bleed out.
+                f.strength = Math.max(0, Math.round(f.strength * 0.9));
+            }
         }
     }
-    return log;
+    return { log, surrendered };
 }
 
 /**
@@ -410,6 +496,32 @@ export function claimUndefended(
         }
     }
     return { captured, liberated };
+}
+
+/**
+ * One side's pieces summed back into an army pool. The pool on the siege
+ * state is a DISPLAY of the formations and is rewritten from this every
+ * cycle; the same sum decides what a winner keeps when a world changes hands.
+ */
+export function tallySide(formations: Formation[], side: FormationSide): {
+    comp: Partial<Record<GroundUnitType, number>>;
+    total: number;
+    supply: number;
+    org: number;
+    encircledShare: number;
+} {
+    const comp: Partial<Record<GroundUnitType, number>> = {};
+    let total = 0, supply = 0, org = 0, n = 0, encircled = 0;
+    for (const f of formations) {
+        if (f.side !== side || f.strength <= 0) continue;
+        comp[f.unitType] = (comp[f.unitType] ?? 0) + f.strength;
+        total += f.strength;
+        supply += f.supply ?? 100;
+        org += f.organization ?? 100;
+        if (f.encircled) encircled++;
+        n++;
+    }
+    return { comp, total, supply: n ? supply / n : 100, org: n ? org / n : 100, encircledShare: n ? encircled / n : 0 };
 }
 
 /** Formations standing in a district, optionally filtered to one side. */

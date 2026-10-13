@@ -21,6 +21,14 @@ import { isAtWar } from '../lib/diplomacy/offer-service';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { factionFleetPower } from '../lib/diplomacy/gambit-service';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
+import { pacing } from '../lib/combat/siege/siege-pacing';
+
+// This harness runs LOOPS siege ticks per 6-sim-hour strategic tick, so at
+// the live 60-tick cycle a cycle would be 15 sim hours here (vs 75 sim
+// minutes in the worker) and WAR's day-based cadences would stop meaning what
+// they mean live. Run sieges at the old 4-tick cycle so the sim-time ratios
+// this probe was tuned against are unchanged.
+pacing.cycleLengthTicks = 4;
 
 const ticks = Math.max(8, Number(process.argv[2]) || 480);
 const seed = process.argv[3] ?? 'war';

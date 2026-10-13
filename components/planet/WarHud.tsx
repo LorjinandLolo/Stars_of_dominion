@@ -11,6 +11,8 @@ import type { PlanetSurface } from '@/lib/planet-surface/types';
 import { occupationShare } from '@/lib/combat/siege/district-front';
 import { Swords, Shield, Wind, ScrollText, LogOut, Crosshair, Users, Map, Play, X } from 'lucide-react';
 import { controllerOf } from '@/lib/combat/siege/district-front';
+import { SIEGE_CYCLE_TICKS, TICK_REAL_SECONDS, cycleRealSeconds } from '@/lib/combat/siege/siege-pacing';
+import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
 import PrisonerPanel from './PrisonerPanel';
 
 const STANCES = [
@@ -74,8 +76,10 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
     }, [war, surface, isAttacker]);
 
     const log = (siege.battleLog ?? []).slice(-6).reverse();
-    const cycleTicks = siege.cycleLengthTicks || 4;
+    const cycleTicks = siege.cycleLengthTicks || SIEGE_CYCLE_TICKS;
     const untilCycle = cycleTicks - (siege.tickCount % cycleTicks);
+    const untilSeconds = untilCycle * TICK_REAL_SECONDS;
+    const countdown = `${Math.floor(untilSeconds / 60)}:${String(untilSeconds % 60).padStart(2, '0')}`;
 
     return (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 w-[min(92%,760px)] rounded-lg border border-red-500/40 bg-slate-950/92 backdrop-blur-md shadow-[0_-8px_32px_rgba(0,0,0,0.6)]">
@@ -85,7 +89,9 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
                     <Swords size={13} className="animate-pulse" /> GROUND WAR
                 </span>
                 <span className="text-[9px] font-display tracking-[0.15em] text-slate-500 uppercase">{siege.phase}</span>
-                <span className="text-[9px] font-mono text-slate-500">CYCLE {siege.cycleCount} · next in {untilCycle}t</span>
+                <span className="text-[9px] font-mono text-slate-500" title={`One tactical cycle every ${Math.round(cycleRealSeconds(cycleTicks) / 60)} min`}>
+                    CYCLE {siege.cycleCount} · next in {countdown}
+                </span>
 
                 {/* Territory bar: attacker share of the surface */}
                 <div className="flex-1 min-w-[90px] flex items-center gap-2">
@@ -131,12 +137,70 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
                         <span className="font-mono text-[10px]" style={{ color }}>{Math.round(Number(value) || 0).toLocaleString()}</span>
                     </span>
                 ))}
+                {/* Orbital fire: what the invader has overhead this tick, and what it did last tick. */}
+                <span
+                    className="flex items-center gap-1.5"
+                    title={(siege.attackerState.orbitalSupportPower ?? 0) > 0
+                        ? `Fleet power in orbit supporting the invasion. Last tick: ${siege.bombardment?.killed ?? 0} killed, ${siege.bombardment?.districts ?? 0} district(s) shelled.`
+                        : 'No fleet in orbit — nothing is bombarding the surface.'}
+                >
+                    Orbital
+                    <span className="font-mono text-[10px]" style={{ color: (siege.attackerState.orbitalSupportPower ?? 0) > 0 ? (isAttacker ? '#fbbf24' : '#f87171') : '#475569' }}>
+                        {Math.round(siege.attackerState.orbitalSupportPower ?? 0).toLocaleString()}
+                    </span>
+                </span>
                 <span className="ml-auto flex items-center gap-1.5">
                     Enemy troops
                     <span className="font-mono text-[10px] text-rose-300">
                         {Math.round((isAttacker ? foe.garrisonTroops : foe.totalLandedTroops) || 0).toLocaleString()}
                     </span>
                 </span>
+            </div>
+
+            {/* The sky and the ground worth holding */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 border-b border-slate-900/80 text-[8px] font-display tracking-[0.12em] uppercase text-slate-500">
+                {(() => {
+                    const orbit = siege.orbit;
+                    const holder = orbit?.holder ?? 'none';
+                    const mine = (isAttacker && holder === 'attacker') || (isDefender && holder === 'defender');
+                    const color = holder === 'contested' ? '#fbbf24' : holder === 'none' ? '#64748b' : mine ? '#4ade80' : '#f87171';
+                    const label = holder === 'attacker' ? 'BLOCKADE' : holder === 'defender' ? 'DEFENDER HOLDS ORBIT' : holder === 'contested' ? 'ORBIT CONTESTED' : 'ORBIT EMPTY';
+                    const cutOff = siege.attackerState.cutOffCycles ?? 0;
+                    return (
+                        <span className="flex items-center gap-1.5" title={`Attacker ${orbit?.attackerPower ?? 0} / defender ${orbit?.defenderPower ?? 0} fleet power parked in the system`}>
+                            Orbit
+                            <span className="font-mono text-[10px]" style={{ color }}>
+                                {label} · {orbit?.attackerPower ?? 0}/{orbit?.defenderPower ?? 0}
+                            </span>
+                            {orbit?.shieldUp && <span className="font-mono text-[10px] text-sky-300">SHIELD UP</span>}
+                            {holder !== 'attacker' && cutOff > 0 && (
+                                <span className="font-mono text-[10px] text-amber-300">beachhead unsupplied {cutOff}c</span>
+                            )}
+                        </span>
+                    );
+                })()}
+                {(war?.strongpoints ?? []).length > 0 && (
+                    <span className="flex items-center gap-1 flex-wrap">
+                        Strongpoints
+                        {((war?.strongpoints ?? []) as Strongpoint[]).map((sp: Strongpoint) => {
+                            const mine = (isAttacker && sp.holder === 'attacker') || (isDefender && sp.holder === 'defender');
+                            return (
+                                <span
+                                    key={`${sp.sectorIndex}-${sp.kind}`}
+                                    className="px-1 rounded border font-mono text-[9px] normal-case tracking-normal"
+                                    style={{
+                                        color: sp.active ? (mine ? '#4ade80' : '#f87171') : '#64748b',
+                                        borderColor: sp.active ? (mine ? '#4ade8055' : '#f8717155') : '#47556955',
+                                        textDecoration: sp.active ? undefined : 'line-through',
+                                    }}
+                                    title={`${sp.kind} in district ${sp.sectorIndex} — held by the ${sp.holder}${sp.active ? '' : ' (ruined)'}`}
+                                >
+                                    {sp.kind.replace('_', ' ')} {sp.sectorIndex}
+                                </span>
+                            );
+                        })}
+                    </span>
+                )}
             </div>
 
             {/* Orders for the next cycle */}

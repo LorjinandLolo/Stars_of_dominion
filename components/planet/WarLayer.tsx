@@ -20,7 +20,22 @@ interface WarLayerProps {
     defenderColor: string;
     /** True when the viewing player is the invader (frames the front line). */
     playerIsAttacker: boolean;
+    /** The defender's planetary shield is up (siege.orbit.shieldUp). */
+    shieldUp?: boolean;
 }
+
+/** One-character marks for the strongpoint counters. */
+const STRONGPOINT_GLYPH: Record<string, string> = {
+    capital: '★',
+    chokepoint: '⋀',
+    shield: '◠',
+    barracks: '▣',
+    airbase: '✈',
+    orbital_defense: '◎',
+    hall: '♜',
+    fortress: '▲',
+    bunker: '▪',
+};
 
 const EPS = 0.6;
 const near = (p: Pt, q: Pt) => Math.abs(p[0] - q[0]) < EPS && Math.abs(p[1] - q[1]) < EPS;
@@ -36,7 +51,7 @@ function sharedEdges(a: Pt[], b: Pt[]): Array<[Pt, Pt]> {
     return out;
 }
 
-export default function WarLayer({ surface, geo, war, attackerColor, defenderColor, playerIsAttacker }: WarLayerProps) {
+export default function WarLayer({ surface, geo, war, attackerColor, defenderColor, playerIsAttacker, shieldUp = false }: WarLayerProps) {
     const front = React.useMemo(() => computeFront(surface, war), [surface, war]);
     const frontSet = React.useMemo(() => new Set(front), [front]);
 
@@ -102,6 +117,30 @@ export default function WarLayer({ surface, geo, war, attackerColor, defenderCol
                 </g>
             ))}
 
+            {/* Strongpoints: the districts worth holding, coloured by who holds them */}
+            {(war.strongpoints ?? []).map(sp => {
+                const [x, y] = geo.centroids[sp.sectorIndex];
+                const color = sp.holder === 'attacker' ? attackerColor : defenderColor;
+                const glyph = STRONGPOINT_GLYPH[sp.kind] ?? '●';
+                // Stack several strongpoints in one district (a chokepoint with a fortress on it).
+                const stack = (war.strongpoints ?? []).filter(p => p.sectorIndex === sp.sectorIndex);
+                const slot = stack.indexOf(sp);
+                const ox = (slot - (stack.length - 1) / 2) * 14;
+                const isShield = sp.kind === 'shield';
+                return (
+                    <g key={`sp-${sp.sectorIndex}-${sp.kind}`} transform={`translate(${x + ox}, ${y - 16})`} opacity={sp.active ? 1 : 0.45}>
+                        {isShield && sp.active && shieldUp && (
+                            <circle cx={0} cy={16} r={26} fill={defenderColor} fillOpacity={0.12} stroke={defenderColor}
+                                strokeWidth={1.4} strokeDasharray="3 3" className="war-shield" style={{ transformOrigin: `0px 16px` }} />
+                        )}
+                        <rect x={-7} y={-7} width={14} height={14} rx={3} fill="#0b1220" fillOpacity={0.9} stroke={color} strokeWidth={1.4} />
+                        <text x={0} y={3.6} textAnchor="middle" fontSize={9} fill={sp.active ? color : '#64748b'} fontFamily="monospace" fontWeight={700}>
+                            {sp.active ? glyph : '×'}
+                        </text>
+                    </g>
+                );
+            })}
+
             {/* Beachheads: where the invasion came down */}
             {war.landingZones.map(idx => {
                 const [x, y] = geo.centroids[idx];
@@ -124,8 +163,10 @@ export default function WarLayer({ surface, geo, war, attackerColor, defenderCol
                 @keyframes war-clash { 0%,100% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.1); opacity: 1; } }
                 .war-lz { animation: war-lz 3.2s ease-out infinite; }
                 @keyframes war-lz { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(1.25); opacity: 0; } }
+                .war-shield { animation: war-shield 2.4s ease-in-out infinite; }
+                @keyframes war-shield { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
                 @media (prefers-reduced-motion: reduce) {
-                    .war-front, .war-contested, .war-clash, .war-lz { animation: none; }
+                    .war-front, .war-contested, .war-clash, .war-lz, .war-shield { animation: none; }
                 }
             `}</style>
         </g>

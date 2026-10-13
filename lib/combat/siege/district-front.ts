@@ -10,6 +10,11 @@ import type { DistrictWarState, DistrictController, GroundSiegeState } from './s
 
 /** The capital district — losing it is losing the war. */
 export const CAPITAL_SECTOR = 0;
+/**
+ * Consecutive cycles the invader must hold the capital before the government
+ * falls. One cycle in the bunkers is the garrison's chance to retake it.
+ */
+export const CAPITAL_FALL_CYCLES = 2;
 
 /** Terrain an invasion cannot land on or fight through conventionally. */
 const IMPASSABLE: TerrainType[] = ['ocean'];
@@ -101,13 +106,16 @@ export function initDistrictWar(
     surface: PlanetSurface,
     fortificationLevel: number,
     preferredLanding?: number | null,
+    /** Per-district starting bonus from the defender's strongpoints (strongpoints.ts). */
+    capBonus: Record<number, number> = {},
 ): DistrictWarState {
     const landingZones = selectLandingZones(surface, preferredLanding);
     const control: Record<number, DistrictController> = {};
     for (const lz of landingZones) control[lz] = 'attacker';
 
     // Entrenchment: terrain hardness plus the planet's fortification level,
-    // concentrated toward the core where the defences were built.
+    // concentrated toward the core where the defences were built, plus the
+    // works around any strongpoint the defender built in peacetime.
     const entrenchment: Record<number, number> = {};
     for (const s of surface.sectors) {
         if (!isPassable(s)) continue;
@@ -118,6 +126,7 @@ export function initDistrictWar(
                 + coreness * 25
                 + fortificationLevel * 4
                 + (s.chokepoint ? 15 : 0)
+                + Math.max(0, capBonus[s.index] ?? 0)
             )
         );
     }
@@ -255,6 +264,48 @@ export function occupationShare(surface: PlanetSurface, war: DistrictWarState): 
 /** The capital has fallen — the government's last district is taken. */
 export const capitalTaken = (war: DistrictWarState) =>
     controllerOf(war, CAPITAL_SECTOR) === 'attacker';
+
+/** Entrenchment gained per cycle by a formation that holds still on own ground. */
+export const DIG_IN_PER_CYCLE = 3;
+
+/**
+ * The most a district can ever be dug in: the terrain's own hardness, the
+ * planet's fortifications, and a bonus the men themselves add with shovels.
+ * Mirrors initDistrictWar's starting value plus DIG_IN_HEADROOM.
+ */
+export function entrenchmentCap(sector: SurfaceSector, fortificationLevel: number, bonus = 0): number {
+    const coreness = 1 - sector.ring / 7;
+    const base = TERRAIN_DEFENSE[sector.terrain] * 18 + coreness * 25 + fortificationLevel * 4 + (sector.chokepoint ? 15 : 0);
+    return Math.min(100, Math.round(base + DIG_IN_HEADROOM + Math.max(0, bonus)));
+}
+const DIG_IN_HEADROOM = 30;
+
+/**
+ * Formations that stood still this cycle on ground their side holds dig in,
+ * raising the district's entrenchment toward its cap. `holding` is the set of
+ * districts with at least one such formation; the caller decides what "stood
+ * still" means (not moving, not fighting). Returns the districts that gained.
+ */
+export function digIn(
+    surface: PlanetSurface,
+    war: DistrictWarState,
+    holding: Iterable<number>,
+    fortificationLevel: number,
+    /** Per-district cap bonus from held strongpoints (strongpoints.ts). */
+    capBonus: Record<number, number> = {},
+): number[] {
+    const gained: number[] = [];
+    for (const idx of holding) {
+        const sec = surface.sectors[idx];
+        if (!sec || !isPassable(sec)) continue;
+        const cap = entrenchmentCap(sec, fortificationLevel, capBonus[idx] ?? 0);
+        const cur = war.entrenchment[idx] ?? 0;
+        if (cur >= cap) continue;
+        war.entrenchment[idx] = Math.min(cap, cur + DIG_IN_PER_CYCLE);
+        gained.push(idx);
+    }
+    return gained;
+}
 
 /**
  * Terrain-weighted defensive bonus for the districts currently under attack.
