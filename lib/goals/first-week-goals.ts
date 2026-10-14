@@ -1,10 +1,13 @@
 // lib/goals/first-week-goals.ts
-// Stars of Dominion — the first week, as five things to do.
+// Stars of Dominion — the first week, as six things to do.
 //
 // A new player does not need eighteen tutorial steps; they need to know the one
-// thing that moves their empire forward next. Five goals, in order: warships,
-// charts, a second world, a Spaceyard in orbit, and a first contact. Each
-// has one line of hint and a deep link that opens the panel that does it.
+// thing that moves their empire forward next. Six goals, in order: warships,
+// a first research choice, charts, a second world, a Spaceyard in orbit, and a
+// first contact. Each has one line of hint, how long it takes in real time,
+// something worth doing while it runs, and a deep link that opens the panel
+// that does it. While the goal's work is under way the card counts it down
+// (goalWait), so a player who just ordered warships knows they are coming.
 //
 // Completion is read from the deed ledger (lib/tech/deed-metrics.ts), the
 // counters the simulation already bumps where each deed happens — never from
@@ -21,10 +24,31 @@ import {
     DEED_SHIPYARDS_BUILT,
     DEED_TREATIES_SIGNED,
     DEED_ENVOYS_SENT,
+    DEED_RESEARCH_STARTED,
 } from '@/lib/tech/deed-metrics';
+import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
+import { baseBuildSeconds } from '@/lib/construction/build-time';
+import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
+
+// Real-time figures for the "takes" lines, read from the catalogs so a tuning
+// pass on build times cannot leave the goal card quoting old numbers.
+// Whole minutes: "9m 58s" is false precision for an estimate.
+function simClockOf(seconds: number): string {
+    const minutes = Math.max(1, Math.round(seconds / SIM_SECONDS_PER_REAL_SECOND / 60));
+    return minutes < 60 ? `${minutes} minutes` : formatSimAsClock(minutes * 60 * SIM_SECONDS_PER_REAL_SECOND);
+}
+const corvetteDesign = defaultDesignFor('corvette');
+const CORVETTE_TIME = corvetteDesign ? simClockOf(summarizeDesign(corvetteDesign, null).buildTime) : 'a few minutes';
+const STATION_DEF = ORBITAL_STRUCTURE_BY_ID['space_station'];
+const SPACEYARD_DEF = ORBITAL_STRUCTURE_BY_ID['spaceyard'];
+const STATION_TIME = STATION_DEF ? simClockOf(baseBuildSeconds(STATION_DEF as any)) : 'a while';
+const SPACEYARD_TIME = SPACEYARD_DEF ? simClockOf(baseBuildSeconds(SPACEYARD_DEF as any)) : 'a while longer';
 
 export type GoalId =
     | 'commission_ships'
+    | 'start_research'
     | 'survey_three'
     | 'settle_world'
     | 'build_shipyard'
@@ -47,6 +71,10 @@ export interface GoalDef {
     title: string;
     /** One line: what to do, and where. */
     hint: string;
+    /** How long the work takes once ordered, in real time. */
+    takes: string;
+    /** Worth doing while it runs. Builds take real time; the player should not stare at a bar. */
+    meanwhile: string;
     /** Metrics that count toward it; their sum is the progress. */
     metrics: string[];
     target: number;
@@ -57,21 +85,39 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
         id: 'commission_ships',
         title: 'Commission your first warships',
-        hint: 'Open your capital and commission a task force from Space Construction (build a Shipyard first if that tab is missing). Every survey, colony and defence starts with hulls.',
+        hint: 'Open your capital, go to Space Construction and requisition an Escort Corvette. Every survey, colony and defence starts with hulls.',
+        takes: `About ${CORVETTE_TIME} for a corvette`,
+        meanwhile: 'Look around the map: your scanners have already found the systems next door.',
         metrics: [DEED_SHIPS_COMMISSIONED],
+        target: 1,
+    },
+    {
+        // RESEARCH unlocks with the first warships (dock-unlocks.ts). Until
+        // then the research council keeps the slot busy, but never on a fork:
+        // the player's order takes the council's slot over.
+        id: 'start_research',
+        title: 'Choose your first research',
+        hint: 'Open Research and start a technology you want. Amber "Fork" cards are permanent choices: starting one closes the other path for the season.',
+        takes: 'Starts at once; a tier I project runs a few hours',
+        meanwhile: 'Research runs on its own. When it finishes, your research council picks the next one unless you do.',
+        metrics: [DEED_RESEARCH_STARTED],
         target: 1,
     },
     {
         id: 'survey_three',
         title: 'Survey three systems',
         hint: 'Select a system you have scanned and send a fleet to survey it. Only surveyed worlds can be settled.',
+        takes: 'A few minutes per system, travel included',
+        meanwhile: 'Open your capital and queue a building: they take 10 minutes to a few hours, so keep one going.',
         metrics: [DEED_SYSTEMS_SURVEYED],
         target: 3,
     },
     {
         id: 'settle_world',
         title: 'Settle a second world',
-        hint: 'Pick a surveyed, unclaimed planet and settle it. Your empire starts with one world; this is the second.',
+        hint: 'Pick a surveyed, unclaimed planet and settle it (20,000 credits). Your empire starts with one world; this is the second.',
+        takes: 'Instant once you can pay',
+        meanwhile: 'Short on credits? Taxes arrive every cycle (24 minutes); your daily brief shows the treasury.',
         metrics: [DEED_COLONIES_FOUNDED],
         target: 1,
     },
@@ -80,7 +126,9 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         // Not the ground "Orbital Shipyard" building every capital starts with:
         // the orbital LAYER's yard, which is what lays cruisers and up.
         title: 'Raise a Spaceyard in orbit',
-        hint: 'Your ground yard lays corvettes; cruisers and bigger need a Spaceyard in orbit. Build one from your capital’s Orbital tab.',
+        hint: 'Your ground yard lays corvettes; bigger hulls need a Spaceyard in orbit. In your capital 19s Orbital tab, build a Space Station first, then the Spaceyard.',
+        takes: `Station ${STATION_TIME}, then the yard ${SPACEYARD_TIME}`,
+        meanwhile: 'This is a check-back-later goal. Queue it, then go and meet your neighbours in Diplomacy.',
         metrics: [DEED_SHIPYARDS_BUILT],
         target: 1,
     },
@@ -88,12 +136,19 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         id: 'reach_out',
         title: 'Reach out to a neighbour',
         hint: 'Send an envoy or sign a pact in Diplomacy. Nobody holds a galaxy alone.',
+        takes: 'Instant',
+        meanwhile: 'Your daily brief will tell you how they answer.',
         metrics: [DEED_TREATIES_SIGNED, DEED_ENVOYS_SENT],
         target: 1,
     },
 ];
 
-/** What rides the shard. Index of the goal being worked on; FIRST_WEEK_GOALS.length = all done. */
+/**
+ * What rides the shard. Index of the goal being worked on; FIRST_WEEK_GOALS.length = all done.
+ * The index is re-derived from completedAt on every read (goalStateOf), so a
+ * goal inserted into the list later lands in front of records that already
+ * passed its position instead of shifting them onto the wrong goal.
+ */
 export interface GoalState {
     index: number;
     /** Sim-clock second each goal was completed, for the record and the brief. */
@@ -113,7 +168,15 @@ export function goalProgress(world: WorldLike, factionId: string, goal: GoalDef)
 
 function goalStateOf(world: WorldLike, factionId: string): GoalState {
     const stored = world?.firstWeekGoals?.get?.(factionId) ?? world?.firstWeekGoals?.[factionId];
-    return stored ? { index: Number(stored.index) || 0, completedAt: { ...(stored.completedAt ?? {}) } } : emptyGoalState();
+    if (!stored) return emptyGoalState();
+    const completedAt: GoalState['completedAt'] = { ...(stored.completedAt ?? {}) };
+    // First goal without a completion stamp. A record from before stamps
+    // existed has none at all; its stored index is all there is.
+    const stamped = FIRST_WEEK_GOALS.findIndex(g => completedAt[g.id] === undefined);
+    const index = Object.keys(completedAt).length
+        ? (stamped === -1 ? FIRST_WEEK_GOALS.length : stamped)
+        : Number(stored.index) || 0;
+    return { index, completedAt };
 }
 
 export interface GoalAdvance {
@@ -140,6 +203,8 @@ export function tickFirstWeekGoals(world: WorldLike): GoalAdvance[] {
         let moved = false;
         while (state.index < FIRST_WEEK_GOALS.length) {
             const goal = FIRST_WEEK_GOALS[state.index];
+            // Met before a goal was inserted in front of it: already announced.
+            if (state.completedAt[goal.id] !== undefined) { state.index += 1; continue; }
             if (goalProgress(world, factionId, goal) < goal.target) break;
             state.completedAt[goal.id] = Number(world.nowSeconds ?? 0);
             state.index += 1;
@@ -159,16 +224,25 @@ export function completedGoals(world: WorldLike, factionId: string): GoalId[] {
 
 export interface CurrentGoal {
     goal: GoalDef;
-    /** 1-based, for "Goal 2 of 5". */
+    /** 1-based, for "Goal 2 of 6". */
     number: number;
     total: number;
     progress: number;
     deepLink: GoalDeepLink;
+    /** The goal's work already under way, if any: what, and when it lands. */
+    waiting: GoalWait | null;
+}
+
+export interface GoalWait {
+    /** "Corvette commissioning", "Survey of Kepler-9". */
+    label: string;
+    /** Sim-clock second it finishes; the card counts down to it. */
+    completesAt: number;
 }
 
 /**
  * The goal the player is on, with progress and a deep link resolved against
- * this world. Null when all five are done. Reads the stored index, so the
+ * this world. Null when every goal is done. Reads the stored index, so the
  * card and the brief move exactly when the worker says the goal moved.
  */
 export function currentGoal(world: WorldLike, factionId: string): CurrentGoal | null {
@@ -181,7 +255,77 @@ export function currentGoal(world: WorldLike, factionId: string): CurrentGoal | 
         total: FIRST_WEEK_GOALS.length,
         progress: Math.min(goal.target, goalProgress(world, factionId, goal)),
         deepLink: deepLinkFor(world, factionId, goal.id),
+        waiting: goalWait(world, factionId, goal.id),
     };
+}
+
+// ─── Work under way ───────────────────────────────────────────────────────────
+
+function soonest(waits: GoalWait[]): GoalWait | null {
+    let best: GoalWait | null = null;
+    for (const w of waits) {
+        if (!Number.isFinite(w.completesAt)) continue;
+        if (!best || w.completesAt < best.completesAt) best = w;
+    }
+    return best;
+}
+
+function systemName(world: WorldLike, systemId: string | null | undefined): string {
+    if (!systemId) return 'a system';
+    const system = world?.movement?.systems?.get?.(systemId) ?? world?.movement?.systems?.[systemId];
+    return system?.name ?? systemId;
+}
+
+/**
+ * What the player has already set in motion toward this goal, soonest first.
+ * Builds take real time (a corvette ~10 minutes, a Spaceyard hours), and a
+ * goal card that keeps saying "commission your warships" after the order went
+ * in reads as if the order was lost.
+ */
+export function goalWait(world: WorldLike, factionId: string, goalId: GoalId): GoalWait | null {
+    const now = Number(world?.nowSeconds ?? 0);
+    switch (goalId) {
+        case 'commission_ships': {
+            // Ship jobs carry a hull class; ground armies do not. A refit is not a new hull.
+            const jobs = (world?.combat?.recruitmentJobs ?? []).filter((j: any) =>
+                j?.factionId === factionId && j.classKey && !j.refitFrom);
+            return soonest(jobs.map((j: any) => ({
+                label: `${j.designName ?? j.classKey} commissioning`,
+                completesAt: Number(j.completesAt),
+            })));
+        }
+        case 'survey_three': {
+            const surveys = (world?.movement?.explorationOrders ?? [])
+                .filter((o: any) => o?.factionId === factionId && o.mode === 'survey')
+                .map((o: any) => ({
+                    label: `Survey of ${systemName(world, o.targetSystemId)}`,
+                    completesAt: Date.parse(o.completesAt) / 1000,
+                }));
+            // A fleet still on its way, ETA as of this snapshot.
+            const arrivals = mapValues(world?.movement?.fleets)
+                .filter((f: any) => f?.factionId === factionId && f.destinationSystemId && Number(f.etaSeconds) > 0)
+                .map((f: any) => ({
+                    label: `${f.name ?? 'Fleet'} reaching ${systemName(world, f.destinationSystemId)}`,
+                    completesAt: now + Number(f.etaSeconds),
+                }));
+            return soonest([...surveys, ...arrivals]);
+        }
+        case 'build_shipyard': {
+            // The station is the first half of this goal, so it counts too.
+            const waits: GoalWait[] = [];
+            for (const planet of mapValues(world?.construction?.planets)) {
+                if (planet?.ownerId !== factionId) continue;
+                for (const order of planet.orbital?.buildQueue ?? []) {
+                    const def = ORBITAL_STRUCTURE_BY_ID[order?.structureId];
+                    if (def?.category !== 'shipyard' && def?.category !== 'station') continue;
+                    waits.push({ label: `${def.name} in orbit`, completesAt: Number(order.completesAtSeconds) });
+                }
+            }
+            return soonest(waits);
+        }
+        default:
+            return null;
+    }
 }
 
 // ─── Deep links ───────────────────────────────────────────────────────────────
@@ -253,6 +397,8 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
             const capital = capitalPlanet(world, factionId);
             return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, label: 'Open your capital' };
         }
+        case 'start_research':
+            return { tab: 'tech', label: 'Open Research' };
         case 'reach_out':
             return { tab: 'diplomacy', label: 'Open Diplomacy' };
     }

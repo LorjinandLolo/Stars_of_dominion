@@ -134,8 +134,10 @@ export class StrategicAIService {
      * deterministically (sorted by tier, then id).
      */
     // Public because a human faction's delegated research council runs exactly
-    // this (lib/delegation/delegation-runner.ts) — one picker, not two.
-    static manageResearch(factionId: string, world: GameWorldState): void {
+    // this (lib/delegation/delegation-runner.ts) — one picker, not two. The
+    // council passes avoidForks: a fork of no return closes part of the tree
+    // for the season, and that is the player's decision, never an advisor's.
+    static manageResearch(factionId: string, world: GameWorldState, opts: { avoidForks?: boolean } = {}): void {
         let techState = world.tech.get(factionId);
         if (!techState) {
             // Same lazy init the player path uses (app/actions/tech.ts) — no
@@ -149,6 +151,7 @@ export class StrategicAIService {
         const done = new Set(techState.unlockedTechIds ?? []);
         const candidates = registry.getAll()
             .filter(t => !done.has(t.id))
+            .filter(t => !(opts.avoidForks && t.mutuallyExclusiveGroup))
             .sort((a, b) => (a.tier - b.tier) || a.id.localeCompare(b.id));
 
         for (const tech of candidates.slice(0, 12)) {

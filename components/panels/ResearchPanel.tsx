@@ -21,6 +21,7 @@ import {
 import { TechTreeType, TechTier, type Tech } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
 import { startResearchAction } from '@/app/actions/tech';
+import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 import '@/lib/tech/techData';
 import TechNode, { STATUS_META, STATUS_ORDER, type TechNodeEmphasis, type TechNodeStatus } from '../tech/TechNode';
 import TechConnectors from '../tech/TechConnectors';
@@ -67,6 +68,9 @@ const TIER_STYLE: Record<TechTier, { band: string; label: string }> = {
 };
 
 interface NodeState { status: TechNodeStatus; progress: number }
+
+/** uiPrefs.opened id for the one-time fork explainer. */
+const FORK_EXPLAINER_ID = 'research-forks';
 
 export default function ResearchPanel() {
     // Narrow selectors: the whole-store subscription re-rendered ~44 nodes and
@@ -207,7 +211,19 @@ export default function ResearchPanel() {
         return 'normal';
     }, [selectedId, chainIds, unlockIds, query, matches, availableOnly]);
 
-    const slotsFull = activeSlots.length > 0 && activeSlots.every(s => s.techId);
+    // A slot the research council filled is the player's to take over (the
+    // worker's TECH_START_RESEARCH does), so it does not count as busy.
+    const councilSlot = activeSlots.find(s => s.techId && s.startedBy === 'council');
+    const allBusy = activeSlots.length > 0 && activeSlots.every(s => s.techId);
+    const slotsFull = allBusy && !councilSlot;
+    const replacesCouncil = allBusy && councilSlot?.techId
+        ? (byId.get(councilSlot.techId)?.name ?? councilSlot.techId)
+        : null;
+
+    // The first visit explains forks once; "opened" in the player's prefs
+    // remembers it across devices, like the dock's first-open prompts.
+    const uiPrefs = useUIStore(s => s.uiPrefs);
+    const showForkExplainer = !!uiPrefs && !uiPrefs.opened.includes(FORK_EXPLAINER_ID);
 
     const scrollNodeIntoView = useCallback((techId: string) => {
         // Defer a frame so a branch switch has painted the node before we look for it.
@@ -435,6 +451,31 @@ export default function ResearchPanel() {
                 </div>
             </div>
 
+            {showForkExplainer && (
+                <div id="fork-explainer" className="flex items-start gap-3 px-6 py-3 border-b border-amber-400/30 bg-amber-950/40">
+                    <Signpost size={16} className="text-amber-300 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0 space-y-1">
+                        <p className="text-[10px] font-display uppercase tracking-[0.2em] text-amber-200">Forks of no return</p>
+                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                            Every tree splits twice, at tier II and tier IV. Fork options carry an amber <span className="text-amber-300">Fork</span> badge
+                            and hang from a dashed amber rail. The moment you <em>start</em> one, the other options close for the season,
+                            and so does everything that needs them. Closed cards turn red and struck through.
+                        </p>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Everything else is safe to try. Your research council never picks a fork for you, and a project
+                            it started gives way to the one you choose.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => { void patchUiPrefs({ opened: [FORK_EXPLAINER_ID] }); }}
+                        className="shrink-0 px-3 py-1.5 rounded-lg border border-amber-400/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-100 text-[10px] font-semibold transition-colors"
+                    >
+                        Got it
+                    </button>
+                </div>
+            )}
+
             {/* This tree's forks of no return, decided or not. Click to find one on the map. */}
             {treeForks.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 px-6 py-1.5 border-b border-white/5 bg-amber-950/10" aria-label="Forks in this tree">
@@ -571,6 +612,7 @@ export default function ResearchPanel() {
                     unlockedIds={unlockedIds}
                     unlocks={unlocks}
                     slotsFull={slotsFull}
+                    replacesCouncil={replacesCouncil}
                     busy={busy}
                     error={error}
                     onSelect={handleInspectorSelect}

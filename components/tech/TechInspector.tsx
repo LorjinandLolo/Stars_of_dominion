@@ -33,6 +33,8 @@ interface TechInspectorProps {
     /** Techs that list the selected tech as a prerequisite. */
     unlocks: Tech[];
     slotsFull: boolean;
+    /** Every slot is busy, but this project was the research council's: starting replaces it. */
+    replacesCouncil?: string | null;
     busy: boolean;
     error: string | null;
     onSelect: (techId: string) => void;
@@ -86,6 +88,7 @@ export default function TechInspector({
     unlockedIds,
     unlocks,
     slotsFull,
+    replacesCouncil,
     busy,
     error,
     onSelect,
@@ -373,6 +376,12 @@ export default function TechInspector({
                         {forkInfo?.cost && action.enabled ? <Signpost size={12} /> : <Sparkles size={12} />}
                         {forkInfo?.cost && action.enabled ? 'Choose this path…' : action.label}
                     </button>
+                )}
+                {replacesCouncil && status === 'available' && (
+                    <p className="mt-2 text-[10px] text-slate-400 leading-snug">
+                        Your research council started <span className="text-slate-200">{replacesCouncil}</span>. Starting this
+                        takes its slot; the council&apos;s progress is set aside.
+                    </p>
                 )}
                 {error && (
                     <p role="alert" className="mt-2 text-[10px] text-red-300 leading-snug">{error}</p>

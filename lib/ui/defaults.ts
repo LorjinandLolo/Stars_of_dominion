@@ -89,6 +89,9 @@ export const defaultPoliticsState: PoliticsState = {
 
 export const defaultTechState: TechState = {
     unlockedTechIds: [],
+    // An empire with no tech record yet gets one on its first research order
+    // (TechEngine.initPlayerState: one empty slot). Show that slot, not "0 / 0".
+    activeSlots: [{ slotId: 'slot-1', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' }],
     hardLocks: [],
     activeEffects: [],
     burnedCosts: [],

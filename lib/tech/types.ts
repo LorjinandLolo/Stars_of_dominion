@@ -178,6 +178,12 @@ export interface ResearchSlot {
     status: 'researching' | 'complete' | 'paused' | 'empty';
     isBoosted?: boolean;
     boostValue?: number;
+    /**
+     * Set when the research council (lib/delegation) picked this project. A
+     * player's own order may take such a slot over; a project the player chose
+     * is never replaced.
+     */
+    startedBy?: 'council';
 }
 
 export interface PlayerTechState {

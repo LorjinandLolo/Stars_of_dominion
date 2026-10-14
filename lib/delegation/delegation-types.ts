@@ -76,6 +76,6 @@ export const DELEGATION_LABELS: Record<DelegatedSystem, { title: string; detail:
     },
     research: {
         title: 'Research council',
-        detail: 'When a project finishes, the cheapest technology in your current focus is started.',
+        detail: 'When a project finishes, the cheapest technology in your current focus is started. It never picks a fork of no return, and a project you choose replaces its pick.',
     },
 };

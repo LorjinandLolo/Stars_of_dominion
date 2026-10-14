@@ -378,7 +378,7 @@ function mergeRepeats(decisions: BriefDecision[]): BriefDecision[] {
 
 /**
  * The player's current first-week goal (lib/goals/first-week-goals.ts). Once
- * all five are done, or for a faction the worker keeps no goal record for: a
+ * every goal is done, or for a faction the worker keeps no goal record for: a
  * fleet, then charts, then a world.
  */
 export function pickSuggestion(input: BriefInput): BriefSuggestion | null {
@@ -386,7 +386,7 @@ export function pickSuggestion(input: BriefInput): BriefSuggestion | null {
     const factionId = input.factionId;
 
     // The first-week goal, when the player is on one (Item 4). The fallback
-    // rules below only speak once all five are done.
+    // rules below only speak once every goal is done.
     const goal = world?.firstWeekGoals?.has?.(factionId) ? currentGoal(world, factionId) : null;
     if (goal) {
         return {

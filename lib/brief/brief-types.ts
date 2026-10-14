@@ -94,7 +94,7 @@ export interface BriefSuggestion {
     title: string;
     detail: string;
     action: BriefAction;
-    /** Present when the suggestion is a first-week goal: "Goal 2 of 5", 1/3 done. */
+    /** Present when the suggestion is a first-week goal: "Goal 2 of 6", 1/3 done. */
     goal?: { number: number; total: number; progress: number; target: number };
 }
 

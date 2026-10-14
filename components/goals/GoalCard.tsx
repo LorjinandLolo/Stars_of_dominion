@@ -3,16 +3,40 @@
 // components/goals/GoalCard.tsx
 // Stars of Dominion — the first-week goal, on the map.
 //
-// A small card above the Command Dock: which of the five goals the player is
-// on, how far along, one line of hint, and a button that opens the panel that
-// does it. It collapses to a pill and remembers that per browser. Gone once all
-// five are done — depth players never see it again.
+// A small card above the Command Dock: which of the first-week goals the
+// player is on, how far along, one line of hint, how long it takes, and a
+// button that opens the panel that does it. Once the goal's work is under way
+// (warships on the slip, a survey running, a station in orbit) the card counts
+// it down and says what is worth doing meanwhile, because builds take real
+// time. It collapses to a pill and remembers that per browser. Gone once every
+// goal is done — depth players never see it again.
 
 import React from 'react';
-import { Target, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Target, ChevronDown, ChevronUp, Check, Hourglass, Clock } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { followGoalLink } from '@/lib/goals/follow-goal-link';
 import { unlocksForGoal } from '@/lib/goals/dock-unlocks';
+import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
+
+/**
+ * The sim clock, moving between syncs. The store's nowSeconds only changes
+ * when a snapshot lands, so a countdown read from it jumps in 15x steps; this
+ * runs it forward from the moment the snapshot arrived, once a second, and
+ * only while something is being counted down.
+ */
+function useLiveSimNow(active: boolean): number {
+    const synced = useUIStore(s => s.nowSeconds);
+    const [receivedAt, setReceivedAt] = React.useState(() => Date.now());
+    const [, setTick] = React.useState(0);
+    React.useEffect(() => { setReceivedAt(Date.now()); }, [synced]);
+    React.useEffect(() => {
+        if (!active) return;
+        const id = window.setInterval(() => setTick(t => t + 1), 1000);
+        return () => window.clearInterval(id);
+    }, [active]);
+    return synced + ((Date.now() - receivedAt) / 1000) * SIM_SECONDS_PER_REAL_SECOND;
+}
 
 const COLLAPSE_KEY = 'sod-goal-card-collapsed';
 
@@ -31,6 +55,7 @@ export default function GoalCard() {
     // the card sits on; while either is open it IS where the goal gets done.
     const systemPanelOpen = useUIStore(s => !!(s.selectedSystemId || s.systemViewId || s.constructionPlanetId));
     const showEverything = useUIStore(s => s.uiPrefs?.showEverything ?? true);
+    const nowSeconds = useLiveSimNow(!!current?.waiting);
     const [collapsed, setCollapsed] = React.useState(false);
 
     React.useEffect(() => { setCollapsed(readCollapsed()); }, []);
@@ -38,7 +63,8 @@ export default function GoalCard() {
     // Only over the open map: every panel already has the player's attention.
     if (!current || activeTab !== 'galaxy' || briefOpen || systemPanelOpen) return null;
 
-    const { goal, number, total, progress, deepLink } = current;
+    const { goal, number, total, progress, deepLink, waiting } = current;
+    const remaining = waiting ? formatSimAsClock(waiting.completesAt - nowSeconds, 'any moment') : null;
     // What finishing it adds to the dock — shown only while it is still locked.
     const unlocks = showEverything ? [] : unlocksForGoal(goal.id);
     const toggle = () => {
@@ -62,7 +88,11 @@ export default function GoalCard() {
                         <span className="text-[9px] font-display tracking-[0.18em] uppercase text-sky-300 shrink-0">
                             Goal {number}/{total}
                         </span>
-                        {collapsed && <span className="text-[11px] text-slate-200 truncate">{goal.title}</span>}
+                        {collapsed && (
+                            <span className="text-[11px] text-slate-200 truncate">
+                                {waiting ? `${waiting.label} · ${remaining}` : goal.title}
+                            </span>
+                        )}
                     </span>
                     {collapsed ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
                 </button>
@@ -75,7 +105,7 @@ export default function GoalCard() {
                                 <span className="text-[10px] font-mono text-sky-300 whitespace-nowrap">{progress}/{goal.target}</span>
                             )}
                         </div>
-                        {/* Five pips: done, current, ahead. */}
+                        {/* One pip per goal: done, current, ahead. */}
                         <div className="flex gap-1" aria-label={`Goal ${number} of ${total}`}>
                             {Array.from({ length: total }, (_, i) => (
                                 <span
@@ -86,7 +116,29 @@ export default function GoalCard() {
                                 />
                             ))}
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-relaxed">{goal.hint}</p>
+                        {waiting ? (
+                            // Under way: the countdown replaces the instructions, and
+                            // "meanwhile" says what to do instead of watching it.
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 space-y-1">
+                                <p className="flex items-center justify-between gap-2 text-[11px] text-amber-100">
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                        <Hourglass size={12} className="text-amber-300 shrink-0" />
+                                        <span className="truncate">{waiting.label}</span>
+                                    </span>
+                                    <span className="font-mono text-amber-300 whitespace-nowrap">{remaining}</span>
+                                </p>
+                                <p className="text-[11px] text-slate-300 leading-relaxed">
+                                    <span className="text-amber-300/90 font-semibold">Meanwhile: </span>{goal.meanwhile}
+                                </p>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-[11px] text-slate-400 leading-relaxed">{goal.hint}</p>
+                                <p className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                                    <Clock size={11} className="shrink-0" /> {goal.takes}
+                                </p>
+                            </>
+                        )}
                         {unlocks.length > 0 && (
                             <p className="text-[10px] font-mono text-amber-300/90">
                                 Unlocks {unlocks.map(u => u.label).join(' + ')}

@@ -12,7 +12,7 @@ import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
 import { bumpMetric } from '../lib/tech/history-ledger';
-import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST, DEED_ENVOYS_SENT } from '../lib/tech/deed-metrics';
+import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST, DEED_ENVOYS_SENT, DEED_RESEARCH_STARTED } from '../lib/tech/deed-metrics';
 import { registry as techRegistryForOrders } from '../lib/tech/engine';
 import {
     addBlueprint,
@@ -1052,7 +1052,7 @@ async function runGameTick() {
                     category: 'system',
                     priority: 'normal',
                     title: `Goal complete: ${advance.completed.title}`,
-                    body: unlockLine + (next ? `Next: ${next.title}. ${next.hint}` : 'All five first-week goals are done. The galaxy is yours to shape.'),
+                    body: unlockLine + (next ? `Next: ${next.title}. ${next.hint}` : 'Every first-week goal is done. The galaxy is yours to shape.'),
                     createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                     read: false,
                 });
@@ -2826,13 +2826,21 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             if (techState) {
                 try {
-                    const emptySlot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null);
-                    if (emptySlot) {
-                        const newState = TechEngine.assignResearch(techState, emptySlot.slotId, payload.techId, world.nowSeconds);
-                        world.tech.set(factionId, newState);
+                    // A free slot first; failing that, one the research council
+                    // filled (lib/delegation) — the player's own pick outranks
+                    // an advisor's. A slot the player chose is never replaced.
+                    const slot = techState.activeSlots.find((s: any) => s.status === 'empty' || s.techId === null)
+                        ?? techState.activeSlots.find((s: any) => s.startedBy === 'council');
+                    if (!slot) {
+                        recordOrderFailure(world, factionId, actionId, 'Every research slot is busy with a project you chose.');
+                        break;
                     }
+                    const newState = TechEngine.assignResearch(techState, slot.slotId, payload.techId, world.nowSeconds);
+                    world.tech.set(factionId, newState);
+                    bumpMetric(world, factionId, DEED_RESEARCH_STARTED);
                 } catch (e: any) {
                     console.error(`[Tick Worker] Tech start failed:`, e.message);
+                    recordOrderFailure(world, factionId, actionId, `Research could not start: ${e.message}`);
                 }
             }
             break;

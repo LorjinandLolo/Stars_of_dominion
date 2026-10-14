@@ -273,19 +273,21 @@ function runExploration(world: GameWorldState, factionId: string, deltaSeconds: 
  * Keep the research slot warm with the cheapest thing the engine will accept —
  * the same picker the AI empires use, so a delegated council is never better
  * informed than an AI rival, only never idle.
+ *
+ * Two limits make it an advisor rather than a ruler: it never starts a fork
+ * option (that choice closes part of the tree for good), and the slot it fills
+ * is tagged so the player's own research order can take it over.
  */
 function runResearch(world: GameWorldState, factionId: string, _delta: number, reports: DelegationReport[]): void {
     const before = world.tech.get(factionId);
-    const activeBefore = countActive(before);
-    StrategicAIService.manageResearch(factionId, world);
+    const busyBefore = new Set<string>(
+        (before?.activeSlots ?? []).filter((s: any) => s?.techId).map((s: any) => s.slotId));
+    StrategicAIService.manageResearch(factionId, world, { avoidForks: true });
     const after = world.tech.get(factionId);
-    if (countActive(after) > activeBefore) {
-        const started = (after as any)?.activeSlots?.find((s: any) => s?.techId)?.techId;
-        reports.push({ factionId, system: 'research', action: `started ${started ?? 'a project'}` });
+    const started = (after?.activeSlots ?? []).filter((s: any) => s?.techId && !busyBefore.has(s.slotId));
+    for (const slot of started) {
+        slot.startedBy = 'council';
+        reports.push({ factionId, system: 'research', action: `started ${slot.techId}` });
     }
 }
 
-function countActive(techState: any): number {
-    if (!techState?.activeSlots) return 0;
-    return techState.activeSlots.filter((s: any) => s?.techId && s.status !== 'empty').length;
-}

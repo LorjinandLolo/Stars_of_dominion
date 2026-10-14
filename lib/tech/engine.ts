@@ -173,6 +173,8 @@ export class TechEngine {
         // requirement as "not ready" forever.
         slot.techId = techId;
         slot.status = 'researching';
+        // Whoever assigns marks it afterwards; the council's runner tags its own.
+        delete slot.startedBy;
         slot.startTime = now;
         slot.progressHours = 0;
         slot.ticksCompleted = 0;

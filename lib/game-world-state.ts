@@ -238,7 +238,7 @@ export interface GameWorldState {
     delegation?: Map<string, DelegationState>;
 
     /**
-     * Each human faction's place in the five first-week goals
+     * Each human faction's place in the first-week goals
      * (lib/goals/first-week-goals.ts), keyed by faction id. Advanced by the
      * worker from the deed ledger; rides the owner's shard.
      */

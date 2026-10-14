@@ -38,6 +38,12 @@ export const DEED_SHIPS_COMMISSIONED = 'mil.shipsCommissioned';
 export const DEED_SHIPYARDS_BUILT = 'mil.shipyardsBuilt';
 /** Envoys sent (DIP_SEND_ENVOY in the worker). */
 export const DEED_ENVOYS_SENT = 'dip.envoysSent';
+/**
+ * Research the player started themselves (TECH_START_RESEARCH in the worker).
+ * The research council's picks go through the delegation runner and never
+ * count: the first-week goal reads this, and it is the player's choice.
+ */
+export const DEED_RESEARCH_STARTED = 'sci.researchStarted';
 
 export interface DeedDef {
     metric: string;
@@ -62,4 +68,5 @@ export const DEED_DEFS: readonly DeedDef[] = [
     { metric: DEED_DEBATES_SETTLED, label: 'Debates settled' },
     { metric: DEED_SHIPS_COMMISSIONED, label: 'Warships commissioned' },
     { metric: DEED_SHIPYARDS_BUILT, label: 'Spaceyards raised in orbit' },
+    { metric: DEED_RESEARCH_STARTED, label: 'Research programmes chosen' },
 ];
