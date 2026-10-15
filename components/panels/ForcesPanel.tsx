@@ -36,7 +36,7 @@ const STATUS_STYLE: Record<ForceStatusKind, string> = {
 };
 
 const VETERANCY_STYLE: Record<number, string> = {
-    1: 'text-slate-400', 2: 'text-sky-300', 3: 'text-violet-300', 4: 'text-amber-300',
+    1: 'text-slate-400', 2: 'text-slate-300', 3: 'text-sky-300', 4: 'text-violet-300', 5: 'text-amber-300',
 };
 
 const fmt = (n: number) => n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString();

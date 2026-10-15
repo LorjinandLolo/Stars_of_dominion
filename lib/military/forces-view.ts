@@ -7,6 +7,8 @@
 // 16rem wide, desktop only). Armies had no list at all: a player found them by
 // clicking planets one by one.
 
+import { veterancyRank } from '../combat/veterancy';
+
 export type ForceStatusKind = 'combat' | 'refit' | 'moving' | 'lurking' | 'orbit' | 'holding' | 'aboard' | 'sieging' | 'stationed' | 'empty';
 
 export interface ForceStatus {
@@ -74,13 +76,12 @@ export interface ForcesView {
     totals: { fleets: number; ships: number; armies: number; troops: number; power: number };
 }
 
-/** Veterancy bands over fleet.experience (0..0.25, lib/combat/veterancy.ts). */
+const RANK_ORDER = ['Green', 'Regular', 'Seasoned', 'Veteran', 'Elite'] as const;
+
+/** The game's own veterancy rank (lib/combat/veterancy.ts), with its place in the order (1-5). */
 export function veterancyOf(experience: number | undefined): { label: string; rank: number } {
-    const xp = experience ?? 0;
-    if (xp >= 0.15) return { label: 'Elite', rank: 4 };
-    if (xp >= 0.08) return { label: 'Veteran', rank: 3 };
-    if (xp >= 0.03) return { label: 'Blooded', rank: 2 };
-    return { label: 'Green', rank: 1 };
+    const label = veterancyRank(experience);
+    return { label, rank: RANK_ORDER.indexOf(label) + 1 };
 }
 
 const CLASS_ORDER = ['battleship', 'cruiser', 'destroyer', 'corvette'];

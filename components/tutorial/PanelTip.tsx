@@ -49,10 +49,16 @@ export default function PanelTip() {
                     <li key={i} className="text-[11px] text-slate-300 leading-relaxed">{line}</li>
                 ))}
             </ul>
-            <div className="px-3 pb-3 pt-1">
+            <div className="px-3 pb-3 pt-1 flex gap-2">
+                <button
+                    onClick={() => { const s = useUIStore.getState(); s.setActiveManualSection(tip.manual); s.setShowManual(true); }}
+                    className="flex-1 min-h-[36px] rounded-lg border border-slate-700 hover:border-slate-500 text-slate-300 text-[11px] font-semibold transition-colors"
+                >
+                    Read more
+                </button>
                 <button
                     onClick={dismiss}
-                    className="w-full min-h-[36px] rounded-lg border border-amber-400/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-100 text-[11px] font-semibold transition-colors"
+                    className="flex-1 min-h-[36px] rounded-lg border border-amber-400/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-100 text-[11px] font-semibold transition-colors"
                 >
                     Got it
                 </button>

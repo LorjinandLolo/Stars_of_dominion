@@ -21,7 +21,8 @@ export default function ManualGuidebook() {
 
     if (!showManual) return null;
 
-    const section = MANUAL_DATA.find(s => s.id === activeManualSectionId);
+    // An id from an older edition (or a typo in a link) opens the first chapter, not nothing.
+    const section = MANUAL_DATA.find(s => s.id === activeManualSectionId) ?? MANUAL_DATA[0];
     if (!section) return null;
 
     return (

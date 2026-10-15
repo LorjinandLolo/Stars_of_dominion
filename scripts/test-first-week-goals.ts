@@ -11,6 +11,7 @@ import { StrategicAIService } from '../lib/ai/strategic-ai-service';
 import { bumpMetric } from '../lib/tech/history-ledger';
 import { DEED_POLICIES_PROPOSED, DEED_RESEARCH_STARTED, DEED_SHIPS_COMMISSIONED, DEED_TROOPS_RAISED } from '../lib/tech/deed-metrics';
 import { PANEL_TIPS } from '../lib/tutorial/panel-tips';
+import { MANUAL_DATA } from '../lib/manual/manual-data';
 import { FIRST_WEEK_GOALS, currentGoal, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 
 let passed = 0;
@@ -171,6 +172,7 @@ test('every panel tip is short, and none duplicates the research fork explainer'
     for (const tip of PANEL_TIPS) {
         assert.ok(tip.lines.length >= 2 && tip.lines.length <= 3, `${tip.tab}: 2-3 lines`);
         for (const line of tip.lines) assert.ok(line.length <= 200, `${tip.tab}: line too long (${line.length})`);
+        assert.ok(MANUAL_DATA.some(sec => sec.id === tip.manual), `${tip.tab}: "Read more" points at missing chapter ${tip.manual}`);
     }
 });
 

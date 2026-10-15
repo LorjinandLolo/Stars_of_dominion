@@ -705,7 +705,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Manual ──
     showManual: false,
     setShowManual: (show) => set({ showManual: show }),
-    activeManualSectionId: 'intro',
+    activeManualSectionId: 'start',
     setActiveManualSection: (id) => set({ activeManualSectionId: id }),
 
     // ── Daily brief ──

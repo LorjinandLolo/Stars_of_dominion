@@ -15,11 +15,14 @@ export interface PanelTip {
     tab: string;
     title: string;
     lines: string[];
+    /** The guidebook chapter (lib/manual/manual-data.ts id) "Read more" opens. */
+    manual: string;
 }
 
 export const PANEL_TIPS: readonly PanelTip[] = [
     {
         tab: 'government',
+        manual: 'government',
         title: 'Governing',
         lines: [
             'Approval, legitimacy and cohesion decide whether your worlds follow you. Watch them here.',
@@ -29,6 +32,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'intelligence',
+        manual: 'espionage',
         title: 'Espionage',
         lines: [
             'Agents build networks inside other empires; operations need a network deep enough to reach their target.',
@@ -38,6 +42,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'economy',
+        manual: 'economy',
         title: 'The economy',
         lines: [
             'Your worlds produce every cycle (24 minutes) and the state takes a share as taxes. The top bar is your treasury.',
@@ -47,6 +52,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'military',
+        manual: 'fleets',
         title: 'Your forces',
         lines: [
             'Every fleet and army you have, where it is and what it is doing. Locate takes the camera there with it selected.',
@@ -56,6 +62,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'war',
+        manual: 'ground',
         title: 'The war room',
         lines: [
             'Every battle your fleets fight shows here while it lasts: momentum, morale, and the button to break off.',
@@ -65,6 +72,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'diplomacy',
+        manual: 'diplomacy',
         title: 'Diplomacy',
         lines: [
             'Trust is earned slowly. Envoys open doors; pacts (non-aggression, defence, research, open borders) keep them open.',
@@ -74,6 +82,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'saga',
+        manual: 'victory',
         title: 'Your saga',
         lines: [
             'What your empire has done, as history will tell it, and how close you are to each victory.',
@@ -83,6 +92,7 @@ export const PANEL_TIPS: readonly PanelTip[] = [
     },
     {
         tab: 'designer',
+        manual: 'fleets',
         title: 'Ship designer',
         lines: [
             'A design is a hull plus modules. The price, power and build time update as you fit it.',

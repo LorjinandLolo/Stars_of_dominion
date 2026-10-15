@@ -52,7 +52,7 @@ test('only my fleets, strongest first, with status and locator system', () => {
     assert.strictEqual(raiders.systemId, 's2', 'a fleet in transit is located at its next hop');
     assert.strictEqual(raiders.originSystemId, 's1', 'can turn back');
     assert.strictEqual(raiders.armiesAboard, 1);
-    assert.strictEqual(raiders.veterancy.label, 'Veteran');
+    assert.strictEqual(raiders.veterancy.label, 'Seasoned');
     assert.strictEqual(view.fleets[1].status.text, 'In orbit of Aglate');
 });
 
@@ -95,7 +95,7 @@ test('a battle in the system outranks every other status', () => {
 });
 
 test('veterancy bands', () => {
-    assert.deepStrictEqual([0, 0.03, 0.08, 0.15, 0.25].map(x => veterancyOf(x).label), ['Green', 'Blooded', 'Veteran', 'Elite', 'Elite']);
+    assert.deepStrictEqual([0, 0.02, 0.06, 0.12, 0.25].map(x => veterancyOf(x).label), ['Green', 'Regular', 'Seasoned', 'Veteran', 'Elite']);
 });
 
 console.log(`\n${passed} passed, ${failed} failed.`);

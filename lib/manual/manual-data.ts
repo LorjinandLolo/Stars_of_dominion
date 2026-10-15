@@ -1,280 +1,579 @@
 // lib/manual/manual-data.ts
-// Stars of Dominion — Complete 15-Section Manual Data
+// Stars of Dominion — the player's guidebook (GUIDE on the command dock).
+//
+// Rewritten 2026-10-15 against the code: every rule below was checked in the
+// source it describes, and the chapters run in the order a player meets
+// things. The previous edition described systems that never existed (an
+// "Economic Hegemony" victory, an administrative burden per planet) and an
+// old ground war. When a rule changes, change it here too; the panel tips
+// (lib/tutorial/panel-tips.ts) link into these chapters by id.
 
 import type { ManualSection } from './types';
 
 export const MANUAL_DATA: ManualSection[] = [
     {
-        id: 'intro',
-        title: 'Section 1: Introduction',
-        icon: 'book',
+        id: 'start',
+        title: 'Getting Started',
+        icon: 'Rocket',
+        introduction: 'You lead one empire in a galaxy that keeps running whether you are logged in or not. You start with a single world. Everything else you win, build, or talk your way into.',
         subsections: [
             {
-                id: 'concept',
-                title: 'Core Concept',
-                blocks: [
-                    {
-                        type: 'paragraph',
-                        content: 'Stars of Dominion is a real-time asynchronous grand strategy game. Unlike traditional RTS games, "real-time" here means calculations happen continuously on the server, but strategic updates (production, construction, research) trigger in 6-hour cycles called "Ticks".'
-                    },
-                    {
-                        type: 'strategy_tip',
-                        title: 'Commander\'s Role',
-                        content: 'As an Empire Commander, you don\'t micromanage individual units. You set high-level doctrines, manage economic flows, and respond to crises. Your power comes from influence, reputation, and control of the galaxy\'s vital resources.'
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'loop',
-        title: 'Section 2: Core Gameplay Loop',
-        icon: 'repeat',
-        subsections: [
-            {
-                id: 'expand',
-                title: 'The Strategic Cycle',
+                id: 'first-day',
+                title: 'Your first day',
                 blocks: [
                     {
                         type: 'bullet_list',
                         content: [
-                            'EXPAND: You start with one capital. Commission a fleet (capital → UNITS → Space tab — your capital\'s Orbital Shipyard lays corvettes and destroyers; cruisers need an Advanced Spaceyard or Fleet Drydock, battleships a Capital Spaceyard), then PING → SCAN → SURVEY unexplored systems from the system panel — a fleet in or next to the target is required for scans and surveys. A survey charts the system\'s worlds; unowned UNSETTLED ones can be settled for 20,000 credits + 1,000 metals + 1,000 food. Your own home system holds your first settlement targets.',
-                            'DEVELOP: Build infrastructure and specialize planets.',
-                            'INTERACT: Trade, spy, or negotiate with rivals.',
-                            'RESPOND: Counter enemy sabotages and military incursions.',
-                            'ADAPT: Re-evaluate doctrines as the galactic situation changes.'
-                        ]
+                            'A short tour shows the map, the command dock along the bottom, and the daily brief. The ? button in the top bar replays it.',
+                            'The goal card (bottom left of the map) gives you one thing to do at a time: commission warships, choose your first research, survey three systems, settle a second world, raise a Spaceyard in orbit, and reach out to a neighbour. Each goal says how long it takes and has a button that opens the right screen. While its work is under way the card counts it down and suggests what to do meanwhile.',
+                            'After the first week come three next steps: set a policy, raise ground troops, and grow to three worlds.',
+                            'Finishing goals unlocks more of the command dock. Until a system is unlocked your advisors run it for you. "Show everything now" on the lock button unlocks it all at once.',
+                            'The first time you open a big screen, a short tip explains what it is for.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'time',
+                title: 'Time and cycles',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'The galaxy runs on a clock fifteen times faster than real time: one real day is fifteen days in the galaxy. Every timer in the game is shown in real time.',
                     },
                     {
-                        type: 'warning',
-                        title: 'Event interruptions',
-                        content: 'While Ticks are predictable, Crises (sabotage, blockade, invasion) are not. They open timed response windows that require immediate strategic decisions.'
-                    }
-                ]
-            }
-        ]
+                        type: 'bullet_list',
+                        content: [
+                            'Every 24 real minutes the galaxy resolves a cycle: taxes are collected, research advances, governments, ministers and governors take their turn, and the AI empires act.',
+                            'Orders you give (build, move, recruit, appoint) are picked up within seconds.',
+                            'Builds take real time: basic buildings tens of minutes, tier 4 buildings several hours. Ships take longer the bigger the hull: about 10 minutes for a corvette and three hours for a battleship.',
+                            'A ground battle moves in cycles of 5 real minutes, so a hard-fought world takes hours.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'brief',
+                title: 'The daily brief and notifications',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'BRIEF in the top bar opens what happened while you were away, what is waiting on your answer, and one suggested next move. Anything that needs you stays open for at least a full day. The bell holds notifications; an order the server refused says why there, and on the order\'s own chip.',
+                    },
+                ],
+            },
+            {
+                id: 'advisors',
+                title: 'Advisors',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Six systems can be left to advisors: the Cabinet (debates, defiance, a corrupt minister), the Board liaison (charter company demands), the Press office, Patrol command (pirates), the Survey office (idle fleets keep charting nearby systems) and the Research council (starts the next project when one finishes). Advisors act cautiously, never ambitiously. Take a system back under Empire → Government → Advisors and every decision there is yours again.',
+                    },
+                    {
+                        type: 'strategy_tip',
+                        title: 'The research council never closes a door',
+                        content: 'The council never starts a fork option (see Research), and any project you choose replaces the one it started.',
+                    },
+                ],
+            },
+        ],
     },
     {
         id: 'economy',
-        title: 'Section 3: Resources & Economy',
-        icon: 'coins',
+        title: 'Economy',
+        icon: 'Coins',
+        introduction: 'Your worlds produce; the state takes a share. The treasury pays for buildings, ships, colonies and armies.',
         subsections: [
             {
-                id: 'trade_res',
-                title: 'Trade Resources',
-                blocks: [
-                    {
-                        type: 'table',
-                        content: [
-                            { resource: 'METALS', usage: 'Hull construction, infrastructure' },
-                            { resource: 'CHEMICALS', usage: 'Fuel, ship systems, terraforming' },
-                            { resource: 'FOOD', usage: 'Population growth, stability' },
-                            { resource: 'AMMO', usage: 'Spent by every attack, bombardment and invasion. Your factories make it; the state takes a share into the treasury.' },
-                            { resource: 'MATERIEL', usage: 'Military goods. Every ship and army costs some, a tenth of its metals. Made by your factories, like ammo.' },
-                            { resource: 'RARES', usage: 'Advanced tech, high-end ship components' }
-                        ]
-                    }
-                ]
-            },
-            {
-                id: 'socio_econ',
-                title: 'Socio-Economic Foundation',
-                blocks: [
-                    {
-                        type: 'strategy_tip',
-                        title: 'Energy as Capacity',
-                        content: 'ENERGY is not a stockpile. It is a capacity vs upkeep system. Every building and service consumes a portion of your current Energy output. If consumption exceeds output, your empire enters a partial blackout, reducing all efficiency by 50%.'
-                    },
-                    {
-                        type: 'paragraph',
-                        content: 'CREDITS (local currency) are used for instant tasks, recruitment, and upkeep. HAPPINESS (stability) affects worker productivity and rebellion risk.'
-                    }
-                ]
-            },
-            {
-                id: 'derived',
-                title: 'Derived Outputs',
+                id: 'income',
+                title: 'Where money comes from',
                 blocks: [
                     {
                         type: 'bullet_list',
                         content: [
-                            'MILITARY: Generated by bases, used for fleet maintenance.',
-                            'RESEARCH: Generated by labs, used for tech progression.',
-                            'CULTURAL: Generated by monuments, used for influence and council votes.'
-                        ]
-                    }
-                ]
-            }
-        ]
+                            'Each cycle the state skims a small share of what your worlds extract. Half of it arrives as goods (metals, chemicals, food, energy, rares) in your reserves; the other half is sold at galactic prices and arrives as credits.',
+                            'A small share of factory output becomes war goods: Ammo and Materiel.',
+                            'The Economy panel shows last cycle\'s income and which worlds paid it. The small numbers under each resource in the top bar are last cycle\'s income too.',
+                            'Production focus (Economy panel) makes every world produce 25% more of one resource and 10% less of everything else.',
+                            'The market (Economy → Buy & sell) trades against your treasury at galactic prices.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'resources',
+                title: 'Resources',
+                blocks: [
+                    {
+                        type: 'table',
+                        content: [
+                            { resource: 'Credits', use: 'Almost everything: buildings, ships, colonies (20,000 each), market buys.' },
+                            { resource: 'Metals', use: 'Buildings, hulls and orbital structures.' },
+                            { resource: 'Chemicals', use: 'Buildings and advanced structures.' },
+                            { resource: 'Food', use: 'Feeds your people; colonies cost 1,000.' },
+                            { resource: 'Energy', use: 'Powers worlds. A world short of power or food loses happiness.' },
+                            { resource: 'Rares', use: 'High-end buildings and components.' },
+                            { resource: 'Ammo', use: 'Spent by every attack, bombardment and invasion.' },
+                            { resource: 'Materiel', use: 'Every ship and army costs some: a tenth of its metals.' },
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'world-economy',
+                title: 'A world\'s economy',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Storage: every world has warehouse space. Goods made past capacity are wasted; the Economy panel warns when a world\'s storage is full.',
+                            'Haulage: population, buildings and the build queue need haulage. A world short of it is bottlenecked and its output suffers (Logistics tab of the world).',
+                            'Blockade: hostile fleets holding a world\'s approaches cut it off; its stores run down.',
+                            'Happiness: one number per world. Steady goods lift it, shortages of food or power drag it down, and governors and stability move it too. Unhappy worlds drift away from you (see Government).',
+                        ],
+                    },
+                ],
+            },
+        ],
     },
     {
-        id: 'planets',
-        title: 'Section 4: Planetary Development',
-        icon: 'globe',
+        id: 'worlds',
+        title: 'Worlds and Building',
+        icon: 'Globe',
+        introduction: 'Every world is a board of 64 districts with its own terrain, and everything you build stands on one of them.',
         subsections: [
+            {
+                id: 'surface',
+                title: 'The surface',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'SURFACE on a world shows its districts. Terrain follows a climate: seas in the lowlands, mountain chains along the ridges, ice at the poles, jungle where it is hot and wet, desert where it is hot and dry. A world\'s type (continental, arid, oceanic, frozen, volcanic, toxic, garden, mountain, swamp, jungle, city-world) decides how much of each terrain it has. Terrain matters for building and for ground war: mountains are passes and walls, open ground is where armies move.',
+                    },
+                ],
+            },
+            {
+                id: 'building',
+                title: 'Building',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Open a world you own (BUILD on its card) for Planetary Construction.',
+                            'A world works two building sites at a time; each Builder Outpost adds one, up to five more. Orders beyond that wait in the queue.',
+                            'Buildings come in tiers. Higher tiers take much longer: from tens of minutes for tier 1 to several hours for tier 4. Upgrades replace the building they grow from.',
+                            'A card names what you are short of instead of just greying out.',
+                            'Infrastructure (its own tab) is five networks under the buildings: transit, power grid, communications, water and freight. They raise what the world can support.',
+                            'Orbital (its own tab) holds what you build in orbit. A Space Station comes first; everything else docks to it. A Spaceyard is the first orbital shipyard.',
+                        ],
+                    },
+                ],
+            },
             {
                 id: 'specialization',
-                title: 'Building & Specialization',
+                title: 'Specialization',
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Planets are the backbone of your power. Each planet has limited slots for buildings. Strategy revolves around specialization to maximize tile bonuses.'
+                        content: 'A world that qualifies can take a role: Mining, Forge, Agricultural, Research, Trade, Fortress, Shipyard or Capital world. Each role needs the right buildings and pays off in its field. The Logistics & Role tab shows which roles a world qualifies for and what it still needs.',
                     },
-                    {
-                        type: 'table',
-                        content: [
-                            { type: 'Industrial', benefit: 'High Metal/Chemical output.' },
-                            { type: 'Research', benefit: 'Core science generation.' },
-                            { type: 'Agricultural', benefit: 'Food and massive population capacity.' },
-                            { type: 'Fortress', benefit: 'High defense and military projection.' }
-                        ]
-                    },
-                    {
-                        type: 'warning',
-                        title: 'Over-expansion',
-                        content: 'Each planet adds an "Administrative Burden". Expanding too fast without stabilizing your core will lead to a Stability Collapse.'
-                    }
-                ]
-            }
-        ]
+                ],
+            },
+        ],
     },
     {
-        id: 'military',
-        title: 'Section 5: Military System',
-        icon: 'sword',
+        id: 'expansion',
+        title: 'Exploring and Settling',
+        icon: 'Telescope',
+        introduction: 'The galaxy starts dark. You chart it system by system, and only charted worlds can be settled.',
         subsections: [
             {
-                id: 'phases',
-                title: 'Two-Phase Combat',
+                id: 'charting',
+                title: 'Ping, scan, survey',
                 blocks: [
                     {
                         type: 'bullet_list',
                         content: [
-                            '1. ORBITAL: Fleets clash for system control. Victory here allows bombardment or ground assault.',
-                            '2. GROUND: Advanced planetary siege. Involves unit composition, tactical cycles, and morale attrition.'
-                        ]
+                            'Ping: charts an unknown star. A relay ping needs no fleet: it costs 250 credits plus 150 for every jump from your nearest shipyard (or your capital if you have none).',
+                            'Scan and survey: need a fleet in the system or one hyperlane away, and cost 500 credits each. A survey reveals the system\'s worlds; the first survey of a system can turn up an anomaly.',
+                            'If your scout is destroyed before it finishes, the cost is refunded.',
+                            'Your Survey office (an advisor) keeps idle fleets charting nearby systems unless you take it back.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'settling',
+                title: 'Settling a world',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'A new colony costs 20,000 credits, 1,000 metals and 1,000 food. The world must be unowned, habitable and in a system you have surveyed (or where your fleet is parked). Use Settle on the world\'s card in the system panel. A colony starts small and grows. A world someone else owns can only be taken by invasion.',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'research',
+        title: 'Research',
+        icon: 'Atom',
+        introduction: 'Five technology trees: espionage, military, economy, diplomacy and infrastructure, about forty technologies each, in four tiers.',
+        subsections: [
+            {
+                id: 'slots',
+                title: 'Projects and speed',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'You research one project at a time. The Research Hub Integration technology (Infrastructure) opens a second slot.',
+                            'A tier I project takes a few hours. The Science minister\'s skill and research charter companies speed it up.',
+                            'Research cannot be cancelled once started.',
+                            'Some technologies are hidden until your empire\'s own history reveals them.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'forks',
+                title: 'Forks of no return',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Every tree splits twice, at tier II and at tier IV, into two or three options. You can only ever have one. The moment you START an option, the others close for the season, and so does every technology that needs them. Fork options carry an amber Fork badge and hang from a dashed amber rail; the panel tells you exactly what a choice closes before you commit.',
                     },
                     {
                         type: 'strategy_tip',
-                        title: 'Orbital Superiority',
-                        content: 'Bombardment is essential to strip enemy fortifications and suppress garrisons. Use "FORTIFICATION BOMBARDMENT" to reduce defense layers before landing your troops.'
-                    }
-                ]
-            },
-            {
-                id: 'units',
-                title: 'Ground Unit Roles',
-                blocks: [
-                    {
-                        type: 'table',
-                        content: [
-                            { unit: 'INFANTRY', role: 'Foundation of any army. High morale, good all-rounder.' },
-                            { unit: 'ARMOR', role: 'Punching through defenses. Strong vs Infantry, weak vs Anti-Armor.' },
-                            { unit: 'ANTI_ARMOR', role: 'Specialized tank hunters. Essential for breaking armored pushes.' },
-                            { unit: 'ARTILLERY', role: 'Support fire. High damage but fragile and supply-intensive.' },
-                            { unit: 'SPECIAL_OPS', role: 'Disruption & Assassination. Can bypass frontlines to hit command bunkers.' }
-                        ]
+                        title: 'Your advisors never decide a fork',
+                        content: 'The research council only ever picks ordinary technologies. Every fork is your call.',
                     },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'government',
+        title: 'Government',
+        icon: 'Landmark',
+        introduction: 'Your people judge you through four numbers: approval, legitimacy, cohesion and the mood of the interest groups. Political capital is what governing costs.',
+        subsections: [
+            {
+                id: 'standing',
+                title: 'Approval, legitimacy and interest groups',
+                blocks: [
                     {
-                        type: 'paragraph',
-                        content: 'Recruiting units requires specific military infrastructure (Barracks and Foundries for ground units; a shipyard in the fleet\'s system for ships — bigger hulls need a bigger yard) and consumes MANPOWER and CREDITS in a real-time production queue.'
-                    }
-                ]
+                        type: 'bullet_list',
+                        content: [
+                            'Approval is how your people feel about the government right now. It follows the interest groups, public trust (moved by the press) and your policies.',
+                            'Legitimacy is your right to rule. Elections and some constitutional policies raise it; decrees and violent successions cost it.',
+                            'Nine interest groups (Military Command, Merchant Guilds, Labour Unions, Temple Orders, Academies, Border Worlds and others) each want things. A group held far below what it wants pulls approval down and can turn on you.',
+                        ],
+                    },
+                ],
             },
             {
-                id: 'siege_cycle',
-                title: 'The Tactical Cycle',
+                id: 'capital',
+                title: 'Political capital',
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Ground combat is resolved in 4-tick "Tactical Cycles". Every 4 ticks, the simulation evaluates stances, calculates attrition, and reports losses.'
+                        content: 'Political capital (PC) refills every day. It refills faster with high approval, high legitimacy and a skilled head of state, and stops at a ceiling set by how strong the executive is (100 plus half its power). It never converts to or from credits.',
                     },
                     {
                         type: 'bullet_list',
                         content: [
-                            'STANCE: Choose between Aggressive, Defensive, or Maneuver.',
-                            'PREDICTION: Predict the enemy stance for a 35% effectiveness bonus.',
-                            'RESOLUTION: At the end of the cycle, the clash is resolved based on Rock-Paper-Scissors modifiers.'
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'leadership',
-        title: 'Section 6: Leadership System',
-        icon: 'users',
-        subsections: [
+                            'Policies: each costs PC to enact, and you hold at most three at a time (a bill waiting in the chamber takes a slot too).',
+                            'Acts of state: declaring war 30, breaking a treaty 20, sanctions 15, purging a faction 25.',
+                            'People: appointing a minister or governor 5, dismissing a minister 10.',
+                            'Answering defiance and secession demands costs PC, sometimes credits as well.',
+                        ],
+                    },
+                ],
+            },
             {
-                id: 'leaders',
-                title: 'Admirals, Generals, Governors',
+                id: 'policies',
+                title: 'Policies and the chamber',
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Leaders provide massive bonuses to fleets, armies, and planets. They gain XP through tasks and develop dynamic Traits over time.'
+                        content: 'Thirteen policies, from Universal Provision to Permanent Martial Law, each pleasing some groups and angering others. Where the chamber is strong (senate power 40 or more), enacting a policy tables a bill instead: parties vote, you can lobby them, and only a passed bill takes effect. A decree bypasses the chamber for one and a half times the capital, at a cost in legitimacy and with the officers watching. Elected governments face an election every 20 galaxy days (about 32 real hours).',
                     },
-                    {
-                        type: 'example',
-                        title: 'Governor Loyalty',
-                        content: 'A Governor with high Deception but low Loyalty might start skimming credits or, in extreme cases, hand the planet to a rival during a Crisis.'
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'doctrine',
-        title: 'Section 7: Doctrine System',
-        icon: 'shield',
-        subsections: [
+                ],
+            },
             {
-                id: 'domains',
-                title: 'Strategic Domains',
+                id: 'coups',
+                title: 'Coups',
                 blocks: [
-                    {
-                        type: 'paragraph',
-                        content: 'Doctrines represent your empire\'s identity. You can have one active doctrine per domain: Military, Economic, Intelligence.'
-                    },
                     {
                         type: 'warning',
-                        title: 'Doctrine Switching',
-                        content: 'Switching a doctrine triggers a 48-hour cooldown and a temporary reputation hit. Choose your identity wisely—it defines your bonuses and automated crisis responses.'
-                    }
-                ]
-            }
-        ]
+                        title: 'Watch the officer corps',
+                        content: 'Coup pressure rises with an unhappy military, low legitimacy, corruption, unrest and a disloyal Defence Minister. The Government page shows it and warns you as it climbs. A coup replaces you.',
+                    },
+                ],
+            },
+        ],
     },
     {
-        id: 'diplomacy',
-        title: 'Section 8: Diplomacy & Reputation',
-        icon: 'handshake',
+        id: 'people',
+        title: 'Leaders',
+        icon: 'Users',
+        introduction: 'Empire → Leadership shows everyone who runs your empire: the head of state, six ministers, a governor on each world, and the bench of candidates.',
         subsections: [
             {
-                id: 'metrics',
-                title: 'Reputation Metrics',
+                id: 'characters',
+                title: 'Who they are',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Skill tiers: Novice, Capable (35), Seasoned (55), Expert (70), Legendary (85). A head of state is ranked on political skill.',
+                            'Career: a fleet veteran, a merchant house, an academic, a career diplomat and so on. A minister whose career fits the seat (a diplomat at Foreign Affairs) counts 10 points of skill higher there.',
+                            'Temperament, read from loyalty, ambition and corruption: a Schemer wants your chair, a Loyalist stands by you, a Venal one skims.',
+                            'Growth: ministers and governors get better while they hold a post, about one tier a real week, up to a potential each has. Some are at their peak; a few can become Legendary.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'posts',
+                title: 'Ministers and governors',
                 blocks: [
                     {
                         type: 'table',
                         content: [
-                            { metric: 'Aggression', effect: 'Affects threat level and alliance cost.' },
-                            { metric: 'Reliability', effect: 'Affects lease success and trade trust.' },
-                            { metric: 'Deception', effect: 'Affects espionage detection chance.' },
-                            { metric: 'Trade Influence', effect: 'Affects market manipulation strength.' }
-                        ]
+                            { seat: 'Defence', drives: 'Military upkeep (and coup risk when disloyal)' },
+                            { seat: 'Economy', drives: 'Production and tax income' },
+                            { seat: 'Science', drives: 'Research speed' },
+                            { seat: 'Intelligence', drives: 'Your spy service, and keeping the other ministers honest' },
+                            { seat: 'Interior', drives: 'Approval' },
+                            { seat: 'Foreign Affairs', drives: 'Legitimacy' },
+                        ],
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Loyalty follows how well your government is doing; the ambitious sour fastest. A minister whose loyalty runs out may resign, costing legitimacy.',
+                            'Corruption creeps up unless a capable Intelligence minister is watching.',
+                            'A governor steadies their world when competent and honest, and wears it down when not. A disloyal, ambitious governor lets unrest grow and can openly defy you.',
+                            'Replace anyone from the bench (5 PC); dismissing a minister costs 10 PC and their loyalty.',
+                        ],
                     },
                     {
                         type: 'paragraph',
-                        content: 'Reputation is dynamic. Attacking an ally destroys Reliability, while successful trade improves Trade Influence.'
-                    }
-                ]
-            }
-        ]
+                        content: 'The head of state ages, wears down and eventually dies, retires or is overthrown. Succession costs legitimacy, more when it is violent, and halves your political capital.',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'fleets',
+        title: 'Fleets and Space War',
+        icon: 'Rocket',
+        introduction: 'Military → Forces lists every fleet and army you have, where it is and what it is doing. Locate takes the camera there with it selected.',
+        subsections: [
+            {
+                id: 'shipyards',
+                title: 'Building ships',
+                blocks: [
+                    {
+                        type: 'table',
+                        content: [
+                            { hull: 'Corvette', yard: 'Any shipyard', time: 'about 10 minutes' },
+                            { hull: 'Destroyer', yard: 'Any shipyard', time: 'about 25 minutes' },
+                            { hull: 'Cruiser', yard: 'Fleet Drydock (ground) or Advanced Spaceyard (orbit)', time: 'about 1 hour' },
+                            { hull: 'Battleship', yard: 'Capital Spaceyard (orbit)', time: 'about 3 hours' },
+                        ],
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Every capital starts with an Orbital Shipyard on the ground. Ships cost credits, metals and materiel.',
+                            'Commission ships from a world with a shipyard: its Shipyard tab in Planetary Construction, or UNITS on the world\'s card.',
+                            'The Ship Designer (Military) builds your own patterns: a hull plus weapons, utility modules and a reactor core. Modules add power and draw energy; a design may overdraw its reactor by up to 25%, losing combat power for every percent over. Better modules come from research.',
+                            'A design that ships are using cannot be changed (it can be renamed). To upgrade ships already built, save a new design and refit them at a yard: you pay only for what is added, and they fight with the old fit until the refit is done.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'moving',
+                title: 'Moving fleets',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Select a fleet (Forces → Locate, or the Fleet Command list on the map), then click a system: JUMP TO SYSTEM, or JUMP & ORBIT on a world to take orbit on arrival.',
+                            'Fleets travel along hyperlanes; the slowest hull aboard sets the pace. Thrusters and Afterburners modules make a design faster.',
+                            'A fleet under way can be turned back. Two fleets parked in the same system can be merged (drag one onto the other in Fleet Command); a parked fleet can be split.',
+                            'In a system with an asteroid belt, a parked fleet can lurk in the belt: hidden from anyone who has not surveyed the system and kept a fleet there, and it ambushes enemies passing through.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'battle',
+                title: 'Space battles',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Fleets of two empires at war in the same system fight. The later arrival attacks; a side with armed worlds or stations in the system defends, and those fight with it. A battle runs six rounds; power, veterancy, stance and luck decide it, and it ends early if one side is destroyed or routed. The War Room shows every battle while it lasts.',
+                    },
+                    {
+                        type: 'table',
+                        content: [
+                            { stance: 'Blitz', note: 'Beats Shock and Feint; loses to Entrench and Withdraw.' },
+                            { stance: 'Shock', note: 'Beats Entrench and Sabotage; loses to Blitz and Feint. The attacker\'s default.' },
+                            { stance: 'Entrench', note: 'Beats Blitz and Feint; loses to Shock and Sabotage. The defender\'s default.' },
+                            { stance: 'Feint', note: 'Beats Shock and Sabotage; loses to Blitz and Entrench.' },
+                            { stance: 'Sabotage', note: 'Beats Entrench and Blitz; loses to Shock and Withdraw.' },
+                            { stance: 'Withdraw', note: 'Your fleets break off and head home.' },
+                        ],
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Predict the enemy\'s stance correctly for a further bonus.',
+                            'After the battle: Consolidate (supply and morale), Orderly retreat (organisation), Pillage (supply, attacker only), Pursue (fleeing enemies lose strength).',
+                            'Veterancy: every battle survived adds experience, more for a win, up to +25% combat power. Ranks run Green, Regular, Seasoned, Veteran, Elite.',
+                            'Attacking a fleet directly costs 10 ammo; bombarding a world costs 50 and an invasion 100. Bombardment hits a world\'s orbital defences first; once they are down it hurts stability and infrastructure below.',
+                        ],
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'ground',
+        title: 'Ground War',
+        icon: 'Swords',
+        introduction: 'A world is taken on the ground, district by district, and only while your fleet holds the sky above it. A well-held world lasts hours, long enough for help to arrive.',
+        subsections: [
+            {
+                id: 'landing',
+                title: 'Landing',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Raise troops on a world you own: select it, press UNITS and recruit (infantry, armour, anti-armour, artillery, special operations). Troops cost credits and materiel.',
+                            'Load armies onto a fleet, fly it to the target and take orbit over the world. INVASION lands the troops.',
+                            'Landing needs the orbit. Whoever holds the orbit decides who can land, who is supplied and who can be bombarded.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'cycles',
+                title: 'The battle',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'The battle moves in cycles of 5 real minutes. Both sides\' troops stand on the world\'s districts as formations; each cycle they fight where they touch and the front moves.',
+                            'Each side picks a stance: Assault hits hard and takes losses, Hold takes the least damage, Ambush is even. Assault beats Hold, Hold beats Ambush, Ambush beats Assault, each by 15%.',
+                            'Battle plans: put formations on a front to hold, or draw an offensive at objectives. Formations on a plan dig in and build up a preparation bonus until you execute it.',
+                            'A formation whose organisation breaks retreats to friendly ground, or surrenders if it is cut off. Prisoners are taken.',
+                            'A defender who gives no orders defends on a sensible default doctrine. Your first order takes over.',
+                            'Both sides are told when anything important happens: a landing, a strongpoint falling, the orbit changing hands.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'strongpoints',
+                title: 'Strongpoints',
+                blocks: [
+                    {
+                        type: 'table',
+                        content: [
+                            { strongpoint: 'Capital', effect: 'The world falls when the attacker holds it for 2 cycles, or when no defender is left.' },
+                            { strongpoint: 'Shield generator', effect: 'Blocks orbital fire and lets the defender land reinforcements. Falls to sappers after 2 cycles held, or wears down under heavy bombardment.' },
+                            { strongpoint: 'Barracks / Fortress', effect: 'Raise a militia every cycle while they stand, and are where new recruits muster. A Fortress makes troops dig in deepest there and around it.' },
+                            { strongpoint: 'Chokepoints', effect: 'Passes in the terrain. Holding them raises how deep your troops can dig in.' },
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'blockade',
+                title: 'Blockade and relief',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'An invader who loses the orbit is cut off: after 3 cycles their beachhead starts to starve, and after 6 their formations surrender.',
+                            'A relief fleet that drives the invader\'s fleet away wins the orbit back; transports waiting nearby can then land fresh troops, who muster at the barracks.',
+                            'Troops can never enter some terrain (infantry and armour cannot cross mountains), so a strongpoint in the mountains can only be worn down from orbit.',
+                        ],
+                    },
+                    {
+                        type: 'strategy_tip',
+                        title: 'Rules of thumb',
+                        content: 'Equal forces with the invader holding the orbit: the invasion usually breaks within two hours. An attacker needs about half again the defender\'s strength, or the defender cut off from the sky.',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'collapse',
+        title: 'When Empires Come Apart',
+        icon: 'AlertTriangle',
+        introduction: 'Worlds do not rebel overnight. Each one drifts slowly toward how it feels about you, so a falling number is your early warning.',
+        subsections: [
+            {
+                id: 'cohesion',
+                title: 'Cohesion',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Every world has a cohesion between 0 and 100 that drifts toward a target built from named causes: happiness, distance from the capital, the governor, war, oppression and more. The Government page lists your weakest worlds and why.',
+                    },
+                    {
+                        type: 'table',
+                        content: [
+                            { stage: 'Integrated (60+)', meaning: 'Loyal.' },
+                            { stage: 'Strained (40–59)', meaning: 'Grumbling.' },
+                            { stage: 'Defiant (20–39)', meaning: 'Its governor may refuse orders; you are asked to answer.' },
+                            { stage: 'Separatist (under 20)', meaning: 'Wants out.' },
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'secession',
+                title: 'Secession and civil war',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Two or more separatist worlds near each other form a secession crisis. You have at least a real day to answer: grant concessions (lower taxes, resource rights, no conscription, a local parliament, autonomy, each permanent), bribe, threaten, replace the governor, or send the military.',
+                            'Ignore it and the region breaks away as a new empire a few hours later, taking its worlds, a share of the treasury and any fleets that defect. A new player can take over a breakaway state.',
+                            'Rivals can make it worse: funding separatists, smuggling weapons and bribing governors are espionage operations.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'fallen',
+                title: 'If you are conquered',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Losing every world to conquest is not the end. You can go into hiding on one of your lost worlds, with the people who would still follow you, and play on as a resistance: pick jobs against the conqueror (a payroll ship, a detention block, a broadcast, bigger planned heists), choose who goes and how, and live with what happens. Odds are shown as words, not numbers. Your people can be wounded, captured or killed for good, and the conqueror hunts you. Other exiles can join your crew, and an empire that still stands can give you sanctuary. A world forgets its old rulers after about eight real days, and with nothing remembered there is nowhere to hide.',
+                    },
+                ],
+            },
+        ],
     },
     {
         id: 'espionage',
-        title: 'Section 9: Intelligence & Espionage',
-        icon: 'eye',
+        title: 'Espionage',
+        icon: 'Eye',
+        introduction: 'Agents, networks and operations abroad; counter-intelligence, case files and rebel cells at home.',
         subsections: [
             {
                 id: 'agents',
@@ -337,144 +636,162 @@ export const MANUAL_DATA: ManualSection[] = [
         ]
     },
     {
-        id: 'crisis',
-        title: 'Section 10: Crisis System (Core)',
-        icon: 'alert-triangle',
+        id: 'diplomacy',
+        title: 'Diplomacy',
+        icon: 'Handshake',
+        introduction: 'Every pair of empires has a rivalry between 0 and 100. Low rivalry opens deals; high rivalry ends in war.',
         subsections: [
             {
-                id: 'response',
-                title: 'The Strategy Window',
-                blocks: [
-                    {
-                        type: 'paragraph',
-                        content: 'When an operation is launched against you, a Crisis Window opens. You do not know EXACTLY what the enemy chose, but you must respond.'
-                    },
-                    {
-                        type: 'strategy_tip',
-                        title: 'The Ground Siege Stance Game',
-                        content: 'Aggressive beats Maneuver, Maneuver beats Defensive, and Defensive beats Aggressive. If you predict the enemy correctly AND have the winning stance, you will inflict massive losses while taking minimal damage.'
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'government',
-        title: 'Section 11: Government & Society',
-        icon: 'crown',
-        subsections: [
-            {
-                id: 'ideology',
-                title: 'The Spectrum of Power',
+                id: 'rivalry',
+                title: 'Rivalry',
                 blocks: [
                     {
                         type: 'bullet_list',
                         content: [
-                            'CAPITALIST: Focus on market manipulation and trade.',
-                            'SOCIALIST: Focus on stability and resource efficiency.',
-                            'IMPERIAL: Focus on leadership control and construction speed.',
-                            'TECHNOCRATIC: Focus on research and automation.',
-                            'MILITARIST: Focus on fleet strength and orbital control.'
-                        ]
+                            'Envoys (100 credits) lower rivalry with an empire by 15. Treaties, trade pacts and peace lower it further; rejected offers, broken treaties, sanctions and gambits raise it.',
+                            'Rivalry climbs through escalation levels; at the top the two empires are at war.',
+                            'The AI answers your offers after a few hours, mostly on rivalry: a non-aggression pact is accepted below 60, a mutual defence treaty only below 30, a trade pact below 50.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'deals',
+                title: 'Deals',
+                blocks: [
+                    {
+                        type: 'table',
+                        content: [
+                            { deal: 'Non-aggression pact', effect: 'Lowers rivalry. Attacking a partner breaks it and brands you an oathbreaker in the press.' },
+                            { deal: 'Mutual defence', effect: 'If anyone attacks your partner, you join the war, and the other way round. Buthari and Infernoids sign none.' },
+                            { deal: 'Research sharing, intelligence cooperation, open borders', effect: 'Lower rivalry; no further effect yet.' },
+                            { deal: 'Trade pact', effect: 'A standing trade in one resource at market price, free of tariffs. Lowers rivalry.' },
+                            { deal: 'Tribute', effect: 'Demand a payment every cycle. The AI pays only an empire much stronger than itself, and only a little.' },
+                            { deal: 'Peace', effect: 'Ends a war if accepted. The AI accepts when war-weary, losing, or outgunned.' },
+                        ],
+                    },
+                    {
+                        type: 'paragraph',
+                        content: 'An offer stands for a real day. You can withdraw it; after it is answered the same proposal waits a while before it can be made again. While two empires are at war, only peace and tribute can be offered.',
+                    },
+                ],
+            },
+            {
+                id: 'pressure',
+                title: 'Pressure short of war',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Sanctions (15 PC) end all trade between you and drain the target\'s treasury every cycle, more when several empires sanction together. They cost you a little too, and last until lifted or until war.',
+                            'Gambits: an ultimatum demanding credits, a public espionage accusation, or a show of force. The target answers within a day. Predict the answer correctly for more leverage. A false accusation costs you.',
+                            'Breaking a treaty (20 PC) raises rivalry sharply, costs you in reputation and makes the press.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'war',
+                title: 'War',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Declaring war costs 30 political capital. Rivalry goes to 100, every treaty, trade pact and tribute between you ends, and the victim\'s allies under mutual defence join in.',
+                            'Fighting without declaring counts as the same act of war.',
+                            'Peace has to be offered and accepted.',
+                        ],
+                    },
+                    {
+                        type: 'paragraph',
+                        content: 'Your record is kept: aggression, reliability, deception, trade influence, oppression and honour, earned by what you do in diplomacy and slowly fading back to normal.',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'companies',
+        title: 'Companies and the Press',
+        icon: 'Building2',
+        introduction: 'Two powers inside your empire that you do not fully control: the charter companies you create, and the press that reports on you.',
+        subsections: [
+            {
+                id: 'charters',
+                title: 'Charter companies',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Economy → Corporate. Charter a company once you have researched Trade Route Initialization and your legitimacy is 25 or more.',
+                            'You choose its mission (mining, colonization, trade, banking, logistics, shipbuilding, research or extraction), its territory, its rights, who owns it, and the state\'s share of profit (up to 60%). Founding capital is at least 20,000 credits; the treasury pays the state\'s stake. Political capital pays for the territory and rights: the wider the charter, the dearer.',
+                            'A charter runs 3, 5 or 8 galaxy days and then comes up for renewal. A short leash makes a company less loyal.',
+                            'It pays the state its profit share every cycle. A trade company also pays 100 credits and a little political capital for each working trade station.',
+                        ],
                     },
                     {
                         type: 'warning',
-                        title: 'Internal Factions',
-                        content: 'Factions within your own society will pressure you to follow their interests. Ignoring them for too long leads to strikes or civil war.'
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'economic_war',
-        title: 'Section 12: Economic Warfare',
-        icon: 'trending-down',
-        subsections: [
+                        title: 'Companies go rogue',
+                        content: 'Companies make demands (lower taxes, monopoly protection, a seat in the senate and more), which you accept, reject or negotiate. One whose autonomy reaches 80 goes rogue: you have one real day to nationalise it or bring it back to heel. Otherwise it breaks away, taking the worlds it governs, its fleet, or a slice of the treasury with it. Revoking a charter early in that countdown stops the break; past halfway it only hastens it.',
+                    },
+                ],
+            },
             {
-                id: 'disruption',
-                title: 'Weaponizing the Economy',
-                blocks: [
-                    {
-                        type: 'bullet_list',
-                        content: [
-                            'Trade Disruption: Raiding hyperlanes to starve an enemy of specific resources.',
-                            'Energy Collapse: Sabotaging core power plants during a battle.',
-                            'Credit Destabilization: Flooding the market to devalue a rival\'s reserves.'
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'collapse',
-        title: 'Section 13: Collapse System',
-        icon: 'shredder',
-        subsections: [
-            {
-                id: 'triggers',
-                title: 'Imperial Decay',
+                id: 'press',
+                title: 'The press',
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Total defeat is rare. Usually, an empire "Collapses". This happens when stability reaches zero or debt becomes unpayable.'
+                        content: 'Comms → Press. Outlets (state, neutral, rebel, sensational) cover what your empire does, and public trust in your government feeds approval. Journalists investigate; when one digs into you, you can cooperate, obstruct, sacrifice an official or publish first. Your Press office (an advisor) answers on your behalf unless you take it back. The Gazette shows the galaxy\'s papers to anyone.',
                     },
-                    {
-                        type: 'strategy_tip',
-                        title: 'Controlled Collapse',
-                        content: 'Advanced players may trigger a "Controlled Collapse"—intentionally letting a rebellious frontier region break away to save the core empire\'s economic integrity.'
-                    }
-                ]
-            }
-        ]
+                ],
+            },
+        ],
     },
     {
         id: 'victory',
-        title: 'Section 14: Victory Conditions',
-        icon: 'trophy',
+        title: 'Victory',
+        icon: 'Trophy',
+        introduction: 'A season ends when one empire wins. There are two ways. Empire → Saga shows how close you are to each.',
         subsections: [
             {
-                id: 'paths',
-                title: 'Galactic Dominance',
+                id: 'conquest',
+                title: 'Conquest',
                 blocks: [
                     {
-                        type: 'bullet_list',
-                        content: [
-                            'CONQUEST: Control 60% of the strategic systems in the galaxy.',
-                            'ENLIGHTENMENT: Govern so well that nobody wants to leave: high approval, legitimacy and cohesion, no interest group dominant or neglected, at least three worlds, and a Great Archive standing (about three real days to build). Hold it for about three real days to begin Transcendence (slipping drains progress rather than erasing it), then one more day through a window the whole galaxy is told about, while every rival service works against you and may burn the Archive. Progress is on the SAGA tab.',
-                            'ECONOMIC HEGEMONY: Control over 75% of total galactic trade volume.'
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: 'beginner',
-        title: 'Section 15: Beginner Strategy',
-        icon: 'star',
-        subsections: [
+                        type: 'paragraph',
+                        content: 'Hold at least 60% of all the systems in the galaxy while no other empire holds any at all. Unclaimed systems may remain. A conqueror then faces mounting pressure to hold what was taken.',
+                    },
+                ],
+            },
             {
-                id: 'priorities',
-                title: 'The First 48 Hours',
+                id: 'enlightenment',
+                title: 'Enlightenment',
                 blocks: [
                     {
-                        type: 'bullet_list',
-                        content: [
-                            'Focus on ENERGY. You cannot build anything without a stable power grid.',
-                            'Claim 3-5 systems early before rivals block you.',
-                            'Assign Governors immediately—XP is precious.',
-                            'Don\'t neglect AMMO. A large fleet without ammo is just a target.'
-                        ]
+                        type: 'paragraph',
+                        content: 'Govern so well that nobody wants to leave. All of these at once:',
                     },
                     {
-                        type: 'example',
-                        title: 'Common Mistake',
-                        content: 'Building research labs on planets with high metal bonuses. Match your buildings to the planet\'s natural strengths!'
-                    }
-                ]
-            }
-        ]
-    }
+                        type: 'bullet_list',
+                        content: [
+                            'Approval 65 or more, legitimacy 75 or more, cohesion 75 or more.',
+                            'No interest group above 40% of influence, and the least content group at 45 or more.',
+                            'At least three worlds.',
+                            'A Great Archive standing: one per empire, about three real days to build.',
+                        ],
+                    },
+                    {
+                        type: 'paragraph',
+                        content: 'Hold them for about two and a half real days to qualify, then one more real day of Transcendence. Slipping while you qualify drains your progress twice as fast as it built; a slip during Transcendence gets a short grace, and a broken attempt keeps half its progress.',
+                    },
+                    {
+                        type: 'warning',
+                        title: 'Everyone will see it coming',
+                        content: 'Rivals work against an empire racing for Enlightenment: their spies target you first and can burn the Archive, resentful courts embargo you, and some may declare war. Guard your counter-intelligence.',
+                    },
+                ],
+            },
+        ],
+    },
 ];
