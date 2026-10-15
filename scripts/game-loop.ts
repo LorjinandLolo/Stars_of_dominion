@@ -1552,15 +1552,29 @@ function queueFormationRecruit(
  */
 function refundOrderCost(world: any, factionId: string, actionId: string): void {
     const def = (ACTION_DEFINITIONS as any)[actionId];
-    const cost = def?.cost;
-    if (!cost || Object.keys(cost).length === 0) return;
-    const reserves = world.economy?.factions?.get?.(factionId)?.reserves;
-    if (!reserves) return;
+    const cost = def?.cost ?? {};
+    const reserves = world.economy?.factions?.get?.(factionId)?.reserves ?? {};
     for (const [res, amt] of Object.entries(cost)) {
         const key = res.toUpperCase();
         if (reserves[key] === undefined) continue; // was never charged
         reserves[key] = (reserves[key] ?? 0) + (amt as number);
     }
+    refundPoliticalCapital(world, factionId, actionId);
+}
+
+/**
+ * The political capital the authority gate took for the order being executed,
+ * so a failed order can give it back exactly once (refundOrderCost or
+ * recordOrderFailure, whichever runs first). Reset by executeOrder.
+ */
+let pendingPoliticalCharge: { factionId: string; actionId: string; amount: number } | null = null;
+
+function refundPoliticalCapital(world: any, factionId: string, actionId: string): void {
+    const charge = pendingPoliticalCharge;
+    if (!charge || charge.factionId !== factionId || charge.actionId !== actionId) return;
+    pendingPoliticalCharge = null;
+    const gov = getGovernment(world, factionId);
+    if (gov) gov.politicalCapital = Math.min(gov.politicalCapitalCap ?? Infinity, (gov.politicalCapital ?? 0) + charge.amount);
 }
 
 /**
@@ -1578,6 +1592,8 @@ function systemNameFor(world: any, systemId: string | null | undefined): string 
 }
 
 function recordOrderFailure(world: any, factionId: string, actionId: string, reason: string): void {
+    // A refused order costs no political capital.
+    refundPoliticalCapital(world, factionId, actionId);
     const econFaction = world.economy?.factions?.get?.(factionId);
     if (!econFaction) return;
     econFaction.lastOrderError = {
@@ -1600,6 +1616,33 @@ const POLITICAL_CAPITAL_COSTS: Record<string, number> = {
     DIP_BREAK_TREATY: 20,
     DIP_IMPOSE_SANCTIONS: 15,
     INTERNAL_PURGE_FACTION: 25,
+    // Until 2026-10-15 these listed an "influence" cost in lib/actions/registry,
+    // and influence is not a reserve, so chargeOrderCost let them through free:
+    // diplomacy, economic policy, company deals and discourse cost nothing.
+    // Influence IS political capital in this game, so they cost that now,
+    // scaled to a currency that refills around 75 a real day at par.
+    DIP_SEND_ENVOY: 2,
+    DIP_PROPOSE_TREATY: 5,
+    DIP_TRADE_PACT: 3,
+    DIP_DEMAND_TRIBUTE: 8,
+    DIP_OFFER_CONTRACT: 2,
+    DIP_LAUNCH_GAMBIT: 5,
+    DIP_LIFT_SANCTIONS: 3,
+    DIP_MAKE_PROMISE: 2,
+    DIP_INTERVENE: 5,
+    DIP_PLANT_RUMOR: 4,
+    ECON_SET_FOCUS: 5,
+    ECON_UPDATE_POLICY: 10,
+    ECON_ESTABLISH_COMPANY: 20,
+    ECON_LIQUIDATE_COMPANY: 10,
+    ECON_GRANT_MONOPOLY: 20,
+    CORP_HOSTILE_TAKEOVER: 10,
+    CORP_MERGE: 15,
+    CORP_SET_HOST_POLICY: 5,
+    DISCOURSE_POST_OPINION: 2,
+    DISCOURSE_VOTE_OPINION: 1,
+    DISCOURSE_CENSOR_OPINION: 10,
+    // Peace is deliberately free: nobody should be priced out of ending a war.
 };
 
 /**
@@ -1692,8 +1735,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
     // Authority gate — acts of state cost political capital, not credits.
     // Factions without a government (AI shells, pirates) are never gated.
+    pendingPoliticalCharge = null;
     const politicalCost = POLITICAL_CAPITAL_COSTS[actionId];
     if (politicalCost) {
+        const hadGovernment = !!getGovernment(world, factionId);
         if (!spendPoliticalCapital(world, factionId, politicalCost, `order ${actionId}`)) {
             const held = Math.floor(getGovernment(world, factionId)?.politicalCapital ?? 0);
             recordOrderFailure(
@@ -1704,6 +1749,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             );
             return;
         }
+        if (hadGovernment) pendingPoliticalCharge = { factionId, actionId, amount: politicalCost };
     }
 
     switch (actionId) {

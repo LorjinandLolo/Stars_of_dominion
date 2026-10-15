@@ -95,7 +95,7 @@ export const MANUAL_DATA: ManualSection[] = [
                             'Each cycle the state skims a small share of what your worlds extract. Half of it arrives as goods (metals, chemicals, food, energy, rares) in your reserves; the other half is sold at galactic prices and arrives as credits.',
                             'A small share of factory output becomes war goods: Ammo and Materiel.',
                             'The Economy panel shows last cycle\'s income and which worlds paid it. The small numbers under each resource in the top bar are last cycle\'s income too.',
-                            'Production focus (Economy panel) makes every world produce 25% more of one resource and 10% less of everything else.',
+                            'Production focus (Economy panel, 5 political capital to change) makes every world produce 25% more of one resource and 10% less of everything else.',
                             'The market (Economy → Buy & sell) trades against your treasury at galactic prices.',
                         ],
                     },
@@ -286,6 +286,8 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             'Policies: each costs PC to enact, and you hold at most three at a time (a bill waiting in the chamber takes a slot too).',
                             'Acts of state: declaring war 30, breaking a treaty 20, sanctions 15, purging a faction 25.',
+                            'Diplomacy: an envoy 2, a treaty or trade pact proposal 5 and 3, a tribute demand 8, a gambit 5, lifting sanctions 3. Offering peace is free.',
+                            'Economy: changing production focus 5. A refused order gives its capital back.',
                             'People: appointing a minister or governor 5, dismissing a minister 10.',
                             'Answering defiance and secession demands costs PC, sometimes credits as well.',
                         ],
@@ -436,7 +438,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         type: 'bullet_list',
                         content: [
                             'Predict the enemy\'s stance correctly for a further bonus.',
-                            'After the battle: Consolidate (supply and morale), Orderly retreat (organisation), Pillage (supply, attacker only), Pursue (fleeing enemies lose strength).',
+                            'After the battle: Consolidate (supply and morale), Orderly retreat (organisation), Pillage (supply, attacker only), Pursue (fleeing enemies lose strength), Exploit (a winner spends supply to press the advantage and learns twice as much from the victory).',
                             'Veterancy: every battle survived adds experience, more for a win, up to +25% combat power. Ranks run Green, Regular, Seasoned, Veteran, Elite.',
                             'Attacking a fleet directly costs 10 ammo; bombarding a world costs 50 and an invasion 100. Bombardment hits a world\'s orbital defences first; once they are down it hurts stability and infrastructure below.',
                         ],
@@ -648,7 +650,7 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'Envoys (100 credits) lower rivalry with an empire by 15. Treaties, trade pacts and peace lower it further; rejected offers, broken treaties, sanctions and gambits raise it.',
+                            'Envoys (100 credits and 2 political capital) lower rivalry with an empire by 15. Treaties, trade pacts and peace lower it further; rejected offers, broken treaties, sanctions and gambits raise it.',
                             'Rivalry climbs through escalation levels; at the top the two empires are at war.',
                             'The AI answers your offers after a few hours, mostly on rivalry: a non-aggression pact is accepted below 60, a mutual defence treaty only below 30, a trade pact below 50.',
                         ],

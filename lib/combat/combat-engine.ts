@@ -605,9 +605,17 @@ export function checkAnnihilation(
     return { annihilatedFactionId: null };
 }
 
-export function applyPostBattleDirective(state: CombatState) {
+/** Supply a fleet spends pressing a won battle (the 'exploit' directive). */
+export const EXPLOIT_SUPPLY_COST = 0.10;
+
+/** The directive a side ends the battle with: the player's choice, else its default. */
+export function directiveOf(c: CombatantState) {
+    return c.selectedDirective || c.currentDirective;
+}
+
+export function applyPostBattleDirective(state: CombatState, winnerId: string | null = null) {
     const processDirective = (c: CombatantState) => {
-        const activeDirective = c.selectedDirective || c.currentDirective;
+        const activeDirective = directiveOf(c);
         switch (activeDirective) {
             case 'consolidate':
                 c.supply = clamp(c.supply + 0.15, 0, 1);
@@ -619,6 +627,15 @@ export function applyPostBattleDirective(state: CombatState) {
             case 'pillage':
                 if (c.role === 'attacker' && state.territoryControl > 0.5) {
                     c.supply = clamp(c.supply + 0.30, 0, 1);
+                }
+                break;
+            case 'exploit':
+                // Pressing the advantage: the winner drives its crews on while
+                // the enemy is reeling. It costs supply, and pays in experience
+                // (combat-manager adds a second victory's worth). It had no case
+                // at all until 2026-10-15, so choosing it did nothing.
+                if (winnerId && c.factionId === winnerId) {
+                    c.supply = clamp(c.supply - EXPLOIT_SUPPLY_COST, 0, 1);
                 }
                 break;
             case 'pursue':

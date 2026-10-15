@@ -191,37 +191,37 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DIP_DECLARE_WAR",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   },
   DIP_OFFER_PEACE: {
     id: "DIP_OFFER_PEACE",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { influence: 20 }
+    cost: {}
   },
   DIP_PROPOSE_TREATY: {
     id: "DIP_PROPOSE_TREATY",
     category: "diplomatic",
     params: { targetFactionId: "id", treatyType: "string" },
-    cost: { influence: 30 }
+    cost: {}
   },
   DIP_DEMAND_TRIBUTE: {
     id: "DIP_DEMAND_TRIBUTE",
     category: "diplomatic",
     params: { targetFactionId: "id", amount: "number" },
-    cost: { influence: 40 }
+    cost: {}
   },
   DIP_SEND_ENVOY: {
     id: "DIP_SEND_ENVOY",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { credits: 100, influence: 10 }
+    cost: { credits: 100 }
   },
   DIP_TRADE_PACT: {
     id: "DIP_TRADE_PACT",
     category: "diplomatic",
     params: { targetFactionId: "id", resource: "string", volume: "number" },
-    cost: { influence: 15 }
+    cost: {}
   },
   // Kaer'Ruun only — the proposer check lives in createOffer, not here, so the
   // refusal reaches the player as an order failure with a reason.
@@ -229,7 +229,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DIP_OFFER_CONTRACT",
     category: "diplomatic",
     params: { targetFactionId: "id", retainerPerTick: "number", termSeconds: "number" },
-    cost: { influence: 5 }
+    cost: {}
   },
   // Sarrak only — the civilization check lives in checkSerumGate so a refusal
   // reaches the player with a reason. The COST is not optional: chargeOrderCost
@@ -301,13 +301,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DIP_BREAK_TREATY",
     category: "diplomatic",
     params: { treatyId: "id" },
-    cost: { influence: 25 }
+    cost: {}
   },
   DIP_LAUNCH_GAMBIT: {
     id: "DIP_LAUNCH_GAMBIT",
     category: "diplomatic",
     params: { targetFactionId: "id", kind: "string" },
-    cost: { influence: 25 }
+    cost: {}
   },
   DIP_RESPOND_GAMBIT: {
     id: "DIP_RESPOND_GAMBIT",
@@ -319,19 +319,19 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DIP_IMPOSE_SANCTIONS",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { influence: 30 }
+    cost: {}
   },
   DIP_LIFT_SANCTIONS: {
     id: "DIP_LIFT_SANCTIONS",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { influence: 10 }
+    cost: {}
   },
   DIP_MAKE_PROMISE: {
     id: "DIP_MAKE_PROMISE",
     category: "diplomatic",
     params: { targetFactionId: "id", kind: "string" },
-    cost: { influence: 10 }
+    cost: {}
   },
   DIP_FULFILL_PROMISE: {
     id: "DIP_FULFILL_PROMISE",
@@ -344,13 +344,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DIP_INTERVENE",
     category: "diplomatic",
     params: { windowId: "id", stance: "string" },
-    cost: { influence: 15 }
+    cost: {}
   },
   DIP_PLANT_RUMOR: {
     id: "DIP_PLANT_RUMOR",
     category: "diplomatic",
     params: { targetFactionId: "id" },
-    cost: { influence: 20 }
+    cost: {}
   },
 
   // --- Espionage Actions ---
@@ -583,13 +583,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "ECON_UPDATE_POLICY",
     category: "economic",
     params: { factionId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   },
   ECON_SET_FOCUS: {
     id: "ECON_SET_FOCUS",
     category: "economic",
     params: { resource: "string" },
-    cost: { influence: 10 }
+    cost: {}
   },
   PLANET_SET_LOGISTICS_PRIORITY: {
     id: "PLANET_SET_LOGISTICS_PRIORITY",
@@ -652,7 +652,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "ECON_ESTABLISH_COMPANY",
     category: "economic",
     params: { baseName: "string", headquartersSystemId: "id" },
-    cost: { credits: 5000, influence: 100 }
+    cost: { credits: 5000 }
   },
   ECON_INVEST_COMPANY: {
     id: "ECON_INVEST_COMPANY",
@@ -664,13 +664,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "ECON_LIQUIDATE_COMPANY",
     category: "economic",
     params: { companyId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   },
   ECON_GRANT_MONOPOLY: {
     id: "ECON_GRANT_MONOPOLY",
     category: "economic",
     params: { companyId: "id", resource: "string", systemIds: "object" },
-    cost: { influence: 100 }
+    cost: {}
   },
   ECON_ISSUE_SHARES: {
     id: "ECON_ISSUE_SHARES",
@@ -765,19 +765,19 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "CORP_HOSTILE_TAKEOVER",
     category: "economic",
     params: { companyId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   },
   CORP_MERGE: {
     id: "CORP_MERGE",
     category: "economic",
     params: { survivorId: "id", absorbedId: "id" },
-    cost: { influence: 75 }
+    cost: {}
   },
   CORP_SET_HOST_POLICY: {
     id: "CORP_SET_HOST_POLICY",
     category: "diplomatic",
     params: { companyId: "id", stance: "string", tariffRate: "number" },
-    cost: { influence: 25 }
+    cost: {}
   },
   CORP_NATIONALIZE: {
     id: "CORP_NATIONALIZE",
@@ -877,7 +877,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "IDEO_ENACT_POLICY",
     category: "internal",
     params: { policyId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   },
   // Government Phase 1: policies are paid for in political capital, charged by
   // the worker inside the policy service — no resource cost here.
@@ -977,7 +977,7 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "INTERNAL_PURGE_FACTION",
     category: "internal",
     params: { targetFactionId: "id" },
-    cost: { influence: 100 }
+    cost: {}
   },
   LEADER_RECRUIT: {
     id: "LEADER_RECRUIT",
@@ -1025,18 +1025,18 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     id: "DISCOURSE_POST_OPINION",
     category: "cultural",
     params: { content: "string", topic: "string" },
-    cost: { influence: 20 }
+    cost: {}
   },
   DISCOURSE_VOTE_OPINION: {
     id: "DISCOURSE_VOTE_OPINION",
     category: "cultural",
     params: { opinionId: "id", support: "boolean" },
-    cost: { influence: 5 }
+    cost: {}
   },
   DISCOURSE_CENSOR_OPINION: {
     id: "DISCOURSE_CENSOR_OPINION",
     category: "cultural",
     params: { opinionId: "id" },
-    cost: { influence: 50 }
+    cost: {}
   }
 };

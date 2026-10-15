@@ -9,6 +9,7 @@ import {
     advanceRound,
     checkAnnihilation,
     applyPostBattleDirective,
+    directiveOf,
 } from './combat-engine';
 import config from './combat-config.json';
 import { getTechModifiers } from '../tech/modifiers';
@@ -39,7 +40,7 @@ import {
 } from './engagement-rules';
 import { areAtWar as factionsAtWar } from './war-status';
 import { orbitalDamageScale } from '../orbital/orbital-service';
-import { experienceMultiplier, gainExperience } from './veterancy';
+import { experienceMultiplier, gainExperience, EXPERIENCE_CAP, EXPERIENCE_FOR_VICTORY } from './veterancy';
 import { commandingAdmiral, admiralPowerBonus, admiralBattleXp, ADMIRAL_PREDICTION_POINTS } from './admiralty';
 import { LeadershipService } from '../leadership/leadership-service';
 
@@ -682,7 +683,7 @@ function finishBattle(
         attacker: { supply: state.attacker.supply, morale: state.attacker.morale },
         defender: { supply: state.defender.supply, morale: state.defender.morale },
     };
-    applyPostBattleDirective(state);
+    applyPostBattleDirective(state, winnerId);
     carryDirectiveToFleets(world, state.attacker, before.attacker, attackerFleets);
     carryDirectiveToFleets(world, state.defender, before.defender, defenderFleets);
 
@@ -699,6 +700,11 @@ function finishBattle(
                 const fleet = world.movement.fleets.get(stale.id);
                 if (!fleet || fleet.strength <= 0) continue;
                 fleet.experience = gainExperience(fleet.experience, winnerId === factionId);
+                // Exploit: a winner that pressed the advantage learns a second victory's worth.
+                const side = factionId === state.attacker.factionId ? state.attacker : state.defender;
+                if (winnerId === factionId && directiveOf(side) === 'exploit') {
+                    fleet.experience = Math.min(EXPERIENCE_CAP, (fleet.experience ?? 0) + EXPERIENCE_FOR_VICTORY);
+                }
             }
         }
         // The admirals learned too — far more than the 50 XP a quiet tick pays.
