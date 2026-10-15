@@ -65,6 +65,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", planetId: "id" },
     cost: {}
   },
+  MIL_RENAME_FORMATION: {
+    id: "MIL_RENAME_FORMATION",
+    category: "military",
+    // A player's own name for one of their fleets or armies.
+    params: { formationId: "id", name: "string" },
+    cost: {}
+  },
   MIL_FLEET_STANCE: {
     id: "MIL_FLEET_STANCE",
     category: "military",

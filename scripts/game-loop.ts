@@ -2246,6 +2246,22 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'MIL_RENAME_FORMATION': {
+            // payload: { formationId, name } — a fleet or army of the caller's.
+            const formation: any = world.movement.fleets.get(payload.formationId) ?? world.movement.armies.get(payload.formationId);
+            if (!formation || formation.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such fleet or army under your command.');
+                return;
+            }
+            const name = String(payload.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+            if (!name) {
+                recordOrderFailure(world, factionId, actionId, 'A name needs at least one letter.');
+                return;
+            }
+            formation.name = name;
+            break;
+        }
+
         case 'MIL_FLEET_STANCE': {
             // payload: { fleetId, stance: 'open' | 'belt' } — how a parked fleet
             // holds the system. 'belt' lurks in the asteroid belt: hidden from

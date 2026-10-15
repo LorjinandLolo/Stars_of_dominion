@@ -59,7 +59,13 @@ export default function BattleCommandPanel() {
                     <Shield size={32} className="text-slate-600" />
                 </div>
                 <h2 className="font-display text-lg tracking-widest text-slate-400">NO ACTIVE ENGAGEMENTS</h2>
-                <p className="text-sm text-slate-500 max-w-xs">Deployment of tactical overrides requires an ongoing combat engagement.</p>
+                <p className="text-sm text-slate-500 max-w-xs">Battles your fleets are fighting appear here while they last. To see where your forces are, open Forces.</p>
+                <button
+                    onClick={() => useUIStore.getState().setActiveTab('military' as any)}
+                    className="px-4 py-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-xs text-red-200"
+                >
+                    Open Forces
+                </button>
             </div>
         );
     }

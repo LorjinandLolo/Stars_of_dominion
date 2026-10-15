@@ -46,6 +46,15 @@ export const PANEL_TIPS: readonly PanelTip[] = [
         ],
     },
     {
+        tab: 'military',
+        title: 'Your forces',
+        lines: [
+            'Every fleet and army you have, where it is and what it is doing. Locate takes the camera there with it selected.',
+            'Contacts lists foreign fleets inside your space; In production counts down what your yards are building.',
+            'Click the pencil next to a name to rename a fleet or army.',
+        ],
+    },
+    {
         tab: 'war',
         title: 'The war room',
         lines: [

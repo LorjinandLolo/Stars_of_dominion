@@ -64,6 +64,7 @@ const CorporateLedgerPanel = dynamic(() => import('@/components/panels/Corporate
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-emerald-400/80 animate-pulse border border-emerald-900/20 bg-slate-950 rounded shadow-2xl">RETRIEVING LEDGER ARCHIVES...</div>
 });
+const ForcesPanel = dynamic(() => import('@/components/panels/ForcesPanel'), { ssr: false });
 const BattleCommandPanel = dynamic(() => import('@/components/panels/BattleCommandPanel'), {
     ssr: false,
     loading: () => <div className="p-6 text-xs font-mono text-rose-500/80 animate-pulse border border-rose-900/20 bg-slate-950 rounded shadow-2xl">INITIALIZING STRATEGIC WARMAP...</div>
@@ -129,6 +130,7 @@ const PANEL_MAP = {
     history: <HistoryPanel />,
     corporate: <CorporateLedgerPanel />,
     war: <BattleCommandPanel />,
+    military: <ForcesPanel />,
     diplomacy: <DiplomacyPanel />,
     designer: <ShipDesignerPanel />,
 } as const;

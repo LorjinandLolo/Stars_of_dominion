@@ -29,6 +29,7 @@ import {
     Zap,
     Flame,
     BookOpen,
+    Rocket,
 } from 'lucide-react';
 
 /**
@@ -98,6 +99,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
         accent: '#f87171',
         tier: 'core',
         tabs: [
+            { tab: 'military', label: 'FORCES', icon: <Rocket size={13} /> },
             { tab: 'war', label: 'WAR ROOM', icon: <Sword size={13} /> },
             { tab: 'designer', label: 'SHIP DESIGNER', icon: <Shield size={13} />, tier: 'advanced' },
         ],
