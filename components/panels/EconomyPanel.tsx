@@ -1,248 +1,268 @@
-import React, { useState } from 'react';
-import { useUIStore } from '@/lib/store/ui-store';
-import { TrendingUp, TrendingDown, Package, Zap, AlertCircle, Shield, Gavel, Globe, Truck } from 'lucide-react';
-import { updateEconomicPolicyAction } from '@/app/actions/economy';
-import { Resource } from '@/types/ui-state';
+"use client";
 
-function MetricCard({
-    label, value, unit = '', trend, color = '#f59e0b'
-}: { label: string; value: number | string; unit?: string; trend?: 'up' | 'down'; color?: string }) {
-    return (
-        <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-3">
-            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-1">{label}</div>
-            <div className="flex items-end gap-1">
-                <span className="text-xl font-mono font-bold" style={{ color }}>{value}</span>
-                {unit && <span className="text-xs text-slate-500 mb-0.5">{unit}</span>}
-                {trend === 'up' && <TrendingUp size={14} className="text-green-400 mb-0.5 ml-auto" />}
-                {trend === 'down' && <TrendingDown size={14} className="text-red-400 mb-0.5 ml-auto" />}
-            </div>
-        </div>
-    );
+// components/panels/EconomyPanel.tsx
+// Stars of Dominion — the empire's own economy.
+//
+// What the treasury took in last cycle and from where, what each world makes
+// and what it is short of, and production focus: the one empire-wide
+// economic lever that changes output. Built from the synced world
+// (lib/economy/economy-view.ts); the old panel showed galaxy-wide trade
+// figures nothing writes and tariff buttons that were never accepted.
+
+import React from 'react';
+import { useUIStore } from '@/lib/store/ui-store';
+import { Zap, Coins, Package, AlertTriangle, Crosshair, ChevronRight, Info } from 'lucide-react';
+import { getSyncedWorld } from '@/hooks/useGameSync';
+import { buildEconomyView, FOCUS_OPTIONS, type EconomyView } from '@/lib/economy/economy-view';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
+
+const RESOURCE_LABEL: Record<string, string> = {
+    CREDITS: 'Credits', METALS: 'Metals', CHEMICALS: 'Chemicals', FOOD: 'Food', ENERGY: 'Energy',
+    RARES: 'Rares', AMMO: 'Ammo', MATERIEL: 'Materiel', CAPACOLA: 'Capacola', SACRED_FLORA: 'Sacred flora',
+};
+const label = (key: string) => RESOURCE_LABEL[key] ?? key.charAt(0) + key.slice(1).toLowerCase();
+
+/** 12,345 → "12.3k"; small numbers keep one decimal. */
+function compact(n: number): string {
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (abs >= 10_000) return `${Math.round(n / 1000)}k`;
+    if (abs >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    if (abs >= 10) return Math.round(n).toString();
+    return n.toFixed(1);
 }
 
-function PolicyBureau() {
-    const { corporateState } = useUIStore();
-    const [loading, setLoading] = useState(false);
-
-    const handleUpdateTariff = async (res: Resource, value: number) => {
-        setLoading(true);
-        await updateEconomicPolicyAction({ tariffs: [{ resource: res, value }] });
-        setLoading(false);
-    };
-
-    const handleUpdateSubsidy = async (res: Resource, value: number) => {
-        setLoading(true);
-        await updateEconomicPolicyAction({ subsidies: [{ resource: res, value }] });
-        setLoading(false);
-    };
-
+function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: string }) {
     return (
-        <div className="space-y-6">
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex gap-3">
-                <Gavel className="text-amber-500 shrink-0" size={18} />
-                <div>
-                    <div className="text-[10px] font-display font-bold text-amber-500 tracking-wider">FISCAL SOVEREIGNTY</div>
-                    <div className="text-[10px] text-slate-400 leading-relaxed mt-1">
-                        Adjust tariffs to tax imports or subsidize critical goods to maintain supply.
-                    </div>
-                </div>
-            </div>
-
-            {/* Tariffs & Subsidies */}
-            <div className="space-y-3">
-                <div className="text-[10px] font-display tracking-widest text-slate-500 flex items-center gap-2">
-                    <Truck size={10} /> RESOURCE POLICIES
-                </div>
-                {corporateState.markets.map(m => (
-                    <div key={m.resource} className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <div className="p-1 bg-slate-800 rounded">
-                                    <Package size={12} className="text-blue-400" />
-                                </div>
-                                <span className="text-xs font-bold text-slate-200">{m.resource}</span>
-                            </div>
-                            <span className="font-mono text-[10px] text-slate-400">{m.currentPrice} MC/u</span>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <div className="text-[9px] text-slate-500 mb-1 flex justify-between">
-                                    <span>TARIFF RATE</span>
-                                    <span className="text-amber-400">15%</span>
-                                </div>
-                                <div className="flex gap-1">
-                                    {[0, 0.1, 0.25, 0.5].map(v => (
-                                        <button 
-                                            key={v}
-                                            disabled={loading}
-                                            onClick={() => handleUpdateTariff(m.resource, v)}
-                                            className="flex-1 bg-slate-800 hover:bg-amber-600/20 border border-slate-700 text-[9px] py-1 rounded transition-colors"
-                                        >
-                                            {v * 100}%
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[9px] text-slate-500 mb-1 flex justify-between">
-                                    <span>SUBSIDY</span>
-                                    <span className="text-green-400">2.5c</span>
-                                </div>
-                                <div className="flex gap-1">
-                                    {[0, 2, 5, 10].map(v => (
-                                        <button 
-                                            key={v}
-                                            disabled={loading}
-                                            onClick={() => handleUpdateSubsidy(m.resource, v)}
-                                            className="flex-1 bg-slate-800 hover:bg-green-600/20 border border-slate-700 text-[9px] py-1 rounded transition-colors"
-                                        >
-                                            {v}c
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Embargoes */}
-            <div>
-                <div className="text-[10px] font-display tracking-widest text-slate-500 flex items-center gap-2 mb-2">
-                    <Shield size={10} /> SANCTIONS & EMBARGOES
-                </div>
-                <div className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-4 text-center">
-                    <AlertCircle size={20} className="mx-auto text-slate-600 mb-2" />
-                    <div className="text-xs text-slate-400 mb-3">No active embargoes against foreign factions.</div>
-                    <button className="text-[10px] font-display tracking-widest text-blue-400 p-2 hover:bg-blue-400/10 rounded-lg border border-blue-400/30 transition-all">
-                        ISSUE NEW TRADE EMBARGO
-                    </button>
-                </div>
-            </div>
+        <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-display tracking-[0.2em] uppercase text-slate-500">{children}</h3>
+            {hint && <span className="text-[10px] text-slate-600">{hint}</span>}
         </div>
     );
 }
 
 export default function EconomyPanel() {
-    const { regions, crisisEvents, setShowEconomicTerminal } = useUIStore();
-    const [tab, setTab] = useState<'metrics' | 'policy'>('metrics');
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const setShowEconomicTerminal = useUIStore(s => s.setShowEconomicTerminal);
+    // Recompute whenever a sync lands (the store's planet list is rebuilt each time).
+    const syncTick = useUIStore(s => s.planets);
+    const [view, setView] = React.useState<EconomyView | null>(null);
+    const [pendingFocus, setPendingFocus] = React.useState<string | null | undefined>(undefined);
 
-    const totalVolume = regions.reduce((s, r) => s + r.metrics.tradeVolume, 0);
-    const avgStability = regions.length
-        ? Math.round(regions.reduce((s, r) => s + r.metrics.stabilityIndex, 0) / regions.length)
-        : 0;
-    const tradeEvents = crisisEvents.filter((e) => e.type === 'trade_war' && !e.resolved);
+    React.useEffect(() => {
+        const world = getSyncedWorld();
+        if (world && playerFactionId) setView(buildEconomyView(world, playerFactionId));
+    }, [syncTick, playerFactionId]);
+
+    // The worker confirms the focus on the next sync; until then show the choice.
+    const focus = pendingFocus !== undefined && pendingFocus !== view?.focus ? pendingFocus : view?.focus ?? null;
+    React.useEffect(() => { if (pendingFocus !== undefined && pendingFocus === view?.focus) setPendingFocus(undefined); }, [view?.focus, pendingFocus]);
+
+    const setFocus = async (resource: string | null) => {
+        if (!playerFactionId) return;
+        setPendingFocus(resource);
+        await dispatchOrder({
+            actionId: 'ECON_SET_FOCUS',
+            factionId: playerFactionId,
+            payload: { resource },
+            label: resource ? `Production focus: ${label(resource)}` : 'Production focus cleared',
+        });
+    };
+
+    const openWorld = (planetId: string, systemId: string) => {
+        const store = useUIStore.getState();
+        store.setActiveTab('galaxy' as any);
+        store.setSystemView(null);
+        store.setSelectedSystem(systemId);
+        store.setConstructionPlanet(planetId);
+    };
+
+    if (!view) {
+        return (
+            <div className="h-full flex items-center justify-center text-xs text-slate-500">Reading the treasury…</div>
+        );
+    }
+
+    const income = view.income ?? {};
+    const credits = income.CREDITS ?? 0;
+    const goods = Object.entries(income).filter(([k, v]) => k !== 'CREDITS' && k !== 'AMMO' && k !== 'MATERIEL' && v > 0.05);
+    const warGoods = Object.entries(income).filter(([k, v]) => (k === 'AMMO' || k === 'MATERIEL') && v > 0.05);
+    const troubled = view.worlds.filter(w => w.problems.length > 0);
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-700/40 flex justify-between items-center">
-                <div>
-                    <h2 className="font-display text-sm tracking-widest text-amber-400 flex items-center gap-2">
-                        {tab === 'metrics' ? <Globe size={16} /> : <Gavel size={16} />}
-                        {tab === 'metrics' ? 'ECONOMY' : 'POLICY BUREAU'}
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                        {tab === 'metrics' ? 'Trade flows & regional volumes' : 'Fiscal tools & strategic trade control'}
-                    </p>
-                </div>
-                <div className="flex bg-slate-900/80 p-1 rounded-lg border border-slate-700/50">
-                    <button 
-                        onClick={() => setTab('metrics')}
-                        className={`px-3 py-1 text-[10px] font-display tracking-wider rounded transition-all ${tab === 'metrics' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        METRICS
-                    </button>
-                    <button 
-                        onClick={() => setTab('policy')}
-                        className={`px-3 py-1 text-[10px] font-display tracking-wider rounded transition-all ${tab === 'policy' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        POLICY
-                    </button>
-                </div>
+            <div className="px-6 py-4 border-b border-slate-700/40">
+                <h2 className="font-display text-sm tracking-widest text-amber-400 flex items-center gap-2">
+                    <Coins size={16} /> ECONOMY
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Your treasury, your worlds, and what they make. One cycle is 24 real minutes.</p>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {tab === 'metrics' ? (
-                    <>
-                        {/* Global metrics */}
-                        <div>
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-2">GLOBAL INDICATORS</div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <MetricCard label="TOTAL TRADE VOLUME" value={totalVolume.toLocaleString()} unit="units" trend="up" />
-                                <MetricCard label="AVG STABILITY" value={avgStability} unit="/ 100" color="#22c55e" />
-                                <MetricCard label="ACTIVE TRADE WARS" value={tradeEvents.length} color={tradeEvents.length > 0 ? '#ef4444' : '#22c55e'} />
-                                <MetricCard label="TRADE ROUTES" value={220} />
-                            </div>
-                        </div>
-
-                        {/* Regional breakdown */}
-                        <div>
-                            <div className="text-[10px] font-display tracking-widest text-slate-500 mb-2">REGIONAL TRADE</div>
-                            <div className="space-y-2">
-                                {regions.map((r) => (
-                                    <div key={r.id} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
-                                                <span className="text-xs font-display text-slate-200">{r.name}</span>
-                                            </div>
-                                            <span className="text-[10px] font-display px-1.5 py-0.5 rounded"
-                                                style={{
-                                                    color: r.status === 'stable' ? '#22c55e' : r.status === 'emerging' ? '#a855f7' : '#f59e0b',
-                                                    backgroundColor: r.status === 'stable' ? '#22c55e18' : r.status === 'emerging' ? '#a855f718' : '#f59e0b18',
-                                                }}
-                                            >
-                                                {r.status.toUpperCase()}
-                                            </span>
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-2 text-[10px]">
-                                            <div>
-                                                <div className="text-slate-500">VOLUME</div>
-                                                <div className="font-mono text-amber-400">{r.metrics.tradeVolume.toLocaleString()}</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-slate-500">PIRATE%</div>
-                                                <div className="font-mono text-red-400">{Math.round(r.metrics.pirateShare * 100)}%</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-slate-500">STRENGTH</div>
-                                                <div className="font-mono text-slate-300">{r.metrics.strengthScore}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Active trade crises */}
-                        {tradeEvents.length > 0 && (
-                            <div>
-                                <div className="text-[10px] font-display tracking-widest text-red-400 mb-2 flex items-center gap-1">
-                                    <AlertCircle size={10} /> ACTIVE TRADE DISPUTES
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                {/* Income */}
+                <section>
+                    <SectionTitle hint="last cycle">Income</SectionTitle>
+                    {view.income === null ? (
+                        <p className="text-xs text-slate-500">The first figures arrive after the next cycle.</p>
+                    ) : (
+                        <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-4 space-y-3">
+                            <div className="flex items-end justify-between gap-3">
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Taxes</div>
+                                    <div className="text-2xl font-mono font-bold text-amber-300">+{compact(credits)} <span className="text-xs text-slate-500 font-sans">credits</span></div>
                                 </div>
-                                {tradeEvents.map((e) => (
-                                    <div key={e.id} className="bg-red-950/30 border border-red-800/40 rounded p-2 text-xs text-slate-300 mb-1">
-                                        <span className="font-display text-red-400">{e.type.replace('_', ' ').toUpperCase()}</span>
-                                        &nbsp;· {e.targetFactionId.replace('faction-', '')} · {e.severity}
-                                    </div>
-                                ))}
+                                <div className="text-right text-[10px] text-slate-500">
+                                    Treasury <span className="font-mono text-slate-300">{compact(view.reserves.CREDITS ?? 0)}</span>
+                                </div>
                             </div>
-                        )}
-                    </>
-                ) : (
-                    <PolicyBureau />
+                            {goods.length > 0 && (
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Goods paid in kind</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {goods.map(([k, v]) => (
+                                            <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">
+                                                +{compact(v)} {label(k)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {warGoods.length > 0 && (
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">War goods procured</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {warGoods.map(([k, v]) => (
+                                            <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-200">
+                                                +{compact(v)} {label(k)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+
+                {/* Attention */}
+                {troubled.length > 0 && (
+                    <section>
+                        <SectionTitle>Needs attention</SectionTitle>
+                        <div className="space-y-1.5">
+                            {troubled.map(w => (
+                                <button
+                                    key={w.planetId}
+                                    onClick={() => openWorld(w.planetId, w.systemId)}
+                                    className="w-full flex items-start gap-2 text-left rounded-lg border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-2 transition-colors"
+                                >
+                                    <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
+                                    <span className="text-xs text-slate-200 flex-1">
+                                        <span className="font-semibold">{w.name}</span>
+                                        <span className="text-amber-200/80"> · {w.problems.join(' · ')}</span>
+                                    </span>
+                                    <ChevronRight size={13} className="text-slate-500 mt-0.5 shrink-0" />
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Worlds */}
+                <section>
+                    <SectionTitle hint={`${view.worlds.length} ${view.worlds.length === 1 ? 'world' : 'worlds'}`}>Your worlds</SectionTitle>
+                    <div className="space-y-2">
+                        {view.worlds.map(w => (
+                            <button
+                                key={w.planetId}
+                                onClick={() => openWorld(w.planetId, w.systemId)}
+                                className="w-full text-left rounded-xl border border-slate-700/50 bg-slate-900/50 hover:border-slate-600 px-3 py-2.5 transition-colors"
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-sm font-semibold text-slate-100 truncate">
+                                        {w.name}{w.isCapital && <span className="ml-1.5 text-[9px] uppercase tracking-wider text-amber-400">capital</span>}
+                                    </span>
+                                    <span className="text-xs font-mono text-amber-300 shrink-0" title="Taxes last cycle">{view.income === null ? "—" : `+${compact(w.creditsLastCycle)} cr`}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500">
+                                    <span>{w.population}M people</span>
+                                    <span className={w.happiness < 40 ? 'text-red-400' : ''}>Happiness {w.happiness}%</span>
+                                    {w.instability > 0 && <span className={w.instability >= 50 ? 'text-red-400' : ''}>Instability {w.instability}%</span>}
+                                </div>
+                                {w.topOutputs.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                        {w.topOutputs.map(o => (
+                                            <span key={o.label} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                                                {o.label} {compact(o.perCycle)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Production focus */}
+                <section>
+                    <SectionTitle>Production focus</SectionTitle>
+                    <p className="text-[11px] text-slate-500 mb-2 flex items-start gap-1.5">
+                        <Crosshair size={12} className="mt-0.5 shrink-0" />
+                        Every world makes 25% more of the chosen resource and 10% less of everything else.
+                    </p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                        <button
+                            onClick={() => setFocus(null)}
+                            className={`py-1.5 rounded-lg border text-[11px] transition-colors ${focus === null ? 'border-sky-400/60 bg-sky-500/15 text-sky-200' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
+                        >
+                            Balanced
+                        </button>
+                        {FOCUS_OPTIONS.map(o => (
+                            <button
+                                key={o.resource}
+                                onClick={() => setFocus(o.resource)}
+                                className={`py-1.5 rounded-lg border text-[11px] transition-colors ${focus === o.resource ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
+                            >
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Prices */}
+                {view.prices.length > 0 && (
+                    <section>
+                        <SectionTitle hint="galactic market">Prices</SectionTitle>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                            {view.prices.map(p => {
+                                const delta = p.basePrice ? (p.price - p.basePrice) / p.basePrice : 0;
+                                return (
+                                    <div key={p.resource} className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-800 px-2.5 py-1.5">
+                                        <span className="text-[11px] text-slate-300 flex items-center gap-1"><Package size={11} className="text-slate-500" />{label(p.resource)}</span>
+                                        <span className="text-[11px] font-mono text-slate-200">
+                                            {p.price.toFixed(1)}
+                                            {Math.abs(delta) >= 0.05 && (
+                                                <span className={delta > 0 ? 'text-red-400 ml-1' : 'text-emerald-400 ml-1'}>
+                                                    {delta > 0 ? '▲' : '▼'}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[10px] text-slate-600 mt-1.5 flex items-center gap-1">
+                            <Info size={10} /> Taxes are paid at these prices; arrows compare with the normal price.
+                        </p>
+                    </section>
                 )}
             </div>
 
-            {/* Terminal Entry Point */}
-            <div className="p-6 border-t border-slate-700/40">
-                <button 
+            <div className="px-6 py-4 border-t border-slate-700/40">
+                <button
                     onClick={() => setShowEconomicTerminal(true)}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-display text-[10px] tracking-widest font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-display text-[10px] tracking-widest font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                     <Zap size={14} />
-                    OPEN GLOBAL MARKET FEED
+                    BUY &amp; SELL ON THE MARKET
                 </button>
             </div>
         </div>

@@ -91,6 +91,17 @@ const PORTFOLIO_LABELS: Record<string, string> = {
     foreign: 'Foreign Affairs',
 };
 
+/**
+ * The live world this browser last synced, for panels that need more than the
+ * store's flattened slices (the construction panel builds its whole view from
+ * it). Null until the first snapshot. Read-only by convention: mutating it
+ * changes nothing on the server and is overwritten by the next sync.
+ */
+let syncedWorld: GameWorldState | null = null;
+export function getSyncedWorld(): GameWorldState | null {
+    return syncedWorld;
+}
+
 export function useGameSync() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const observer = useUIStore(s => s.observer);
@@ -110,6 +121,8 @@ export function useGameSync() {
     const worldRef = useRef<GameWorldState | null>(null);
     const shardCacheRef = useRef<Map<string, any>>(new Map());
     const mappedShardCacheRef = useRef<Map<string, any>>(new Map());
+    /** Worker order failures already matched to a pending chip, so each fails one chip once. */
+    const handledFailureIdsRef = useRef<Set<string>>(new Set());
     const updatePendingRef = useRef(false);
     /** A store rebuild was skipped because the tab was hidden; run it on return. */
     const rebuildOwedRef = useRef(false);
@@ -229,6 +242,7 @@ export function useGameSync() {
     const updateStoreFromWorld = () => {
         const world = worldRef.current;
         if (!world) return;
+        syncedWorld = world;
 
         // 1. Convert MAPS to ARRAYS/RECORDS for the Zustand UI Store
         const systemList = Array.from(world.movement.systems.values()).map(sys => ({
@@ -365,6 +379,17 @@ export function useGameSync() {
         // failure fires exactly once even though this runs on every snapshot.
         if (playerFactionId) {
             const failure = factionMap[playerFactionId]?.lastOrderError;
+            if (failure?.id && failure?.reason && !handledFailureIdsRef.current.has(failure.id)) {
+                handledFailureIdsRef.current.add(failure.id);
+                // The order's own chip says it was refused, and why: it used to
+                // spin "syncing" until the 45 s safety net, while the reason sat
+                // in the bell. Oldest waiting chip of that action is the one.
+                const store = useUIStore.getState();
+                const chip = store.pendingOrders
+                    .filter(o => o.actionId === failure.actionId && o.status !== 'failed')
+                    .sort((a, b) => a.createdAt - b.createdAt)[0];
+                if (chip) store.updatePendingOrder(chip.localId, { status: 'failed', error: failure.reason, createdAt: Date.now() });
+            }
             if (failure?.id && failure?.reason) {
                 useNotificationStore.getState().addNotification({
                     id: failure.id,
@@ -1347,6 +1372,13 @@ export function useGameSync() {
                     }
                     bumpShardsSince(data.factions);
                     throttledUpdate();
+                    // Most orders only change the caller's shard, and a quiet
+                    // cycle saves no new snapshot: confirm here too, or the
+                    // chip spins until the safety net. After the rebuild (≤250 ms),
+                    // so a refusal riding this shard marks its chip failed first
+                    // instead of being pruned as confirmed.
+                    const confirmBefore = Date.now() - PENDING_CONFIRM_LAG_MS;
+                    setTimeout(() => useUIStore.getState().prunePendingOrders(confirmBefore), 400);
                 }
 
                 setError(null);

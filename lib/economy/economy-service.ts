@@ -15,7 +15,7 @@ import type {
 } from './economy-types';
 import type { GameWorldState } from '../game-world-state';
 import { clampShared, recomputeInfraIntegrity } from '../game-world-state';
-import { Resource } from '../trade-system/types';
+import { Resource, type FactionIncome } from '../trade-system/types';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { calculateBiosphereModifiers } from './biosphere-traits';
@@ -394,12 +394,25 @@ export function collectFactionTaxes(
     // recruitment spend.
     const IN_KIND_SHARE = econ.taxation.inKindShare;
 
+    // This tick's income, per faction (Faction.lastIncome). The economy ticks
+    // once per strategic cycle, so one call is one cycle's worth.
+    const income = new Map<string, FactionIncome>();
+    const incomeOf = (factionId: string): FactionIncome => {
+        let rec = income.get(factionId);
+        if (!rec) { rec = { total: {}, creditsByPlanet: {} }; income.set(factionId, rec); }
+        return rec;
+    };
+    const add = (rec: FactionIncome, key: string, amount: number) => {
+        rec.total[key] = (rec.total[key] ?? 0) + amount;
+    };
+
     for (const planet of ecoWorld.planets.values()) {
         const skim = planet.stateSkim;
         planet.stateSkim = undefined;
         const faction = ecoWorld.factions.get(planet.factionId);
         if (!faction || !skim) continue;
         const taxMult = modsByFaction?.get(planet.factionId)?.tax ?? 1;
+        const rec = incomeOf(planet.factionId);
 
         let credits = 0;
         for (const [resKey, marketRes] of TAXABLE_RESOURCES) {
@@ -408,6 +421,7 @@ export function collectFactionTaxes(
 
             const inKind = taken * IN_KIND_SHARE;
             faction.reserves[marketRes] = (faction.reserves[marketRes] ?? 0) + inKind;
+            add(rec, marketRes, inKind);
 
             const price = ecoWorld.markets.get(`galactic:${marketRes}`)?.currentPrice ?? 10;
             credits += (taken - inKind) * price;
@@ -415,6 +429,8 @@ export function collectFactionTaxes(
 
         if (credits > 0) {
             faction.reserves[Resource.CREDITS] = (faction.reserves[Resource.CREDITS] ?? 0) + credits * taxMult;
+            add(rec, Resource.CREDITS, credits * taxMult);
+            rec.creditsByPlanet[planet.planetId] = (rec.creditsByPlanet[planet.planetId] ?? 0) + credits * taxMult;
         }
 
         // War goods go to the reserves whole — the state ordered them.
@@ -423,8 +439,15 @@ export function collectFactionTaxes(
             if (procured > 0) {
                 const reserves = faction.reserves as Record<string, number>;
                 reserves[reserveKey] = (reserves[reserveKey] ?? 0) + procured;
+                add(rec, reserveKey, procured);
             }
         }
+    }
+
+    // A faction whose worlds produced nothing this tick still gets a record,
+    // so the panel reads zero rather than last cycle's figures.
+    for (const [factionId, faction] of ecoWorld.factions) {
+        faction.lastIncome = income.get(factionId) ?? { total: {}, creditsByPlanet: {} };
     }
 
     // Every empire holds war reserves from its first economy tick, so ammo and
@@ -860,6 +883,14 @@ export function tickEconomy(
     // 0. Construction Tick (Global) — surface, orbital and space queues
     tickConstructionGlobal(world, deltaSeconds);
 
+    // One happiness per world. The economy record used to keep its own
+    // (moved only by supply) beside the world record's (moved by governors,
+    // stability, defiance), and the two drifted apart: Aglate read 93 in
+    // politics and 48 in the economy. The world record is the real one. The
+    // economy starts each tick from it, and whatever supply does to happiness
+    // this tick is written back to it at the end (settleHappiness).
+    const happinessAtStart = adoptWorldHappiness(world);
+
     // Markets must exist before taxation prices the skim. Merge in any market
     // added since the snapshot was written (e.g. AMMO on pre-phase-3 saves).
     if (!eco.markets || eco.markets.size === 0) {
@@ -941,6 +972,31 @@ export function tickEconomy(
     //    megaprojects.
     if (world.corporate) {
         tickAllCompanies(world.corporate, world, deltaSeconds);
+    }
+
+    settleHappiness(world, happinessAtStart);
+}
+
+/** Copy each world's happiness onto its economy record; returns the starting values. */
+function adoptWorldHappiness(world: GameWorldState): Map<string, number> {
+    const start = new Map<string, number>();
+    for (const eco of world.economy.planets.values()) {
+        const planet = world.construction?.planets?.get(eco.planetId);
+        if (planet && typeof planet.happiness === 'number') eco.happiness = planet.happiness;
+        start.set(eco.planetId, eco.happiness);
+    }
+    return start;
+}
+
+/** Write this tick's supply effect on happiness back to the world record, and re-align the two. */
+function settleHappiness(world: GameWorldState, start: Map<string, number>): void {
+    for (const eco of world.economy.planets.values()) {
+        const planet = world.construction?.planets?.get(eco.planetId);
+        if (!planet) continue;
+        const before = start.get(eco.planetId) ?? eco.happiness;
+        const delta = eco.happiness - before;
+        planet.happiness = Math.max(0, Math.min(100, (planet.happiness ?? before) + delta));
+        eco.happiness = planet.happiness;
     }
 }
 

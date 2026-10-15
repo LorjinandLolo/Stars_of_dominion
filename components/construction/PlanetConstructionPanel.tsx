@@ -15,7 +15,13 @@ import { formatPercent } from '@/lib/ui/format';
 import { SURFACE_YARD_TIERS } from '@/lib/combat/shipyard-gate';
 import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
+import { getSyncedWorld } from '@/hooks/useGameSync';
+import { buildConstructionView } from '@/lib/construction/construction-view';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
+import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
+
+/** What MIL_BUILD_FLEET itself charges, before the corvette chained into it. */
+const TASK_FORCE_COST = { credits: ACTION_DEFINITIONS.MIL_BUILD_FLEET.cost?.credits ?? 0, metals: ACTION_DEFINITIONS.MIL_BUILD_FLEET.cost?.metals ?? 0 };
 
 
 interface PlanetConstructionPanelProps {
@@ -28,8 +34,18 @@ interface PlanetConstructionPanelProps {
     factionEnergy: number;
     factionRares: number;
     factionManpower?: number;
+    /** Undefined on a world from before materiel existed: not checked here, the worker decides. */
+    factionMateriel?: number;
     onClose: () => void;
 }
+
+const TAB_ACTIVE: Record<string, string> = {
+    indigo: 'border-indigo-500 text-indigo-300 bg-indigo-500/10',
+    cyan: 'border-cyan-500 text-cyan-300 bg-cyan-500/10',
+    fuchsia: 'border-fuchsia-500 text-fuchsia-300 bg-fuchsia-500/10',
+    amber: 'border-amber-500 text-amber-300 bg-amber-500/10',
+    emerald: 'border-emerald-500 text-emerald-300 bg-emerald-500/10',
+};
 
 export function PlanetConstructionPanel({
     planetId,
@@ -41,6 +57,7 @@ export function PlanetConstructionPanel({
     factionEnergy,
     factionRares,
     factionManpower = 0,
+    factionMateriel,
     onClose
 }: PlanetConstructionPanelProps) {
     const { playerFactionId, diplomacyState } = useUIStore();
@@ -62,42 +79,36 @@ export function PlanetConstructionPanel({
         return map;
     }, []);
 
-    const loadData = async () => {
-        setLoading(true);
+    // Built from the world this browser already syncs (lib/construction/
+    // construction-view.ts). It used to come from /api/game-construction,
+    // which read a freshly initialised galaxy on the Next server instead of the
+    // live game: built buildings and the queue never showed. Recomputed on
+    // every sync, so a finished building appears without reopening the panel.
+    const syncTick = useUIStore(s => s.planets);
+    const loadData = React.useCallback(async () => {
+        const world = getSyncedWorld();
+        if (!world) return; // first snapshot not in yet; the next sync calls this again
         try {
-            const response = await fetch(`/api/game-construction?systemId=${systemId}`);
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Server error (${response.status}): ${text.slice(0, 100)}...`);
-            }
-            const res = await response.json();
-            if (res.success && res.data) {
-                // Filter to just this planet for the panel view
-                const p = res.data.planets.find((p: any) => p.id === planetId);
-                setPlanet(p || null);
-                setBuildings(res.data.buildings.filter((b: any) => b.planetId === planetId));
-                setQueue(res.data.queue.filter((q: any) => q.planetId === planetId));
-                if ('spaceBuildQueue' in res.data) {
-                    setSpaceQueue(res.data.spaceBuildQueue.filter((q: any) => q.planetId === planetId));
-                }
-                // Planet-layer detail (orbital ratings, infrastructure effects,
-                // storage, haulage, blockade, specialization qualification).
-                setPlanetLayer(res.data.planetLayers?.[planetId] ?? null);
-                if (typeof res.data.nowSeconds === 'number') setWorldNowSeconds(res.data.nowSeconds);
-                setError(null);
-            } else if (!res.success) {
-                setError(res.error || 'Failed to load construction data');
-            }
+            const data = buildConstructionView(world, systemId);
+            const p = data.planets.find((p: any) => p.id === planetId);
+            setPlanet(p || null);
+            setBuildings(data.buildings.filter((b: any) => b.planetId === planetId));
+            setQueue(data.queue.filter((q: any) => q.planetId === planetId));
+            setSpaceQueue(data.spaceBuildQueue.filter((q: any) => q.planetId === planetId));
+            // Planet-layer detail (orbital ratings, infrastructure effects,
+            // storage, haulage, blockade, specialization qualification).
+            setPlanetLayer(data.planetLayers?.[planetId] ?? null);
+            setWorldNowSeconds(data.nowSeconds);
         } catch (err: any) {
-            setError(err.message || 'Failed to load construction data');
+            setError(err.message || 'Failed to read construction data');
         } finally {
             setLoading(false);
         }
-    };
+    }, [planetId, systemId]);
 
     useEffect(() => {
-        loadData();
-    }, [planetId, systemId]);
+        void loadData();
+    }, [loadData, syncTick]);
 
     const handleQueueBuilding = async (type: string) => {
         setActionLoading(true);
@@ -191,6 +202,31 @@ export function PlanetConstructionPanel({
         return true;
     };
 
+    // What a building costs, part by part, and which parts the treasury is short of.
+    const costParts = (def: any) => {
+        const parts = [
+            { label: 'Cr', title: 'credits', amount: def.cost.credits ?? 0, have: factionCredits },
+            { label: 'Met', title: 'metals', amount: def.cost.metals ?? 0, have: factionMetals },
+            { label: 'Chm', title: 'chemicals', amount: def.cost.chemicals ?? 0, have: factionChemicals },
+            { label: 'Nrg', title: 'energy', amount: def.cost.energy ?? 0, have: factionEnergy },
+            { label: 'Man', title: 'manpower', amount: def.cost.manpower ?? 0, have: factionManpower },
+            { label: 'Rx', title: 'rare materials', amount: def.cost.rares ?? 0, have: factionRares },
+        ].filter(p => p.amount > 0);
+        return parts.map(p => ({ ...p, short: p.have < p.amount }));
+    };
+    // The button names the first shortfall instead of greying out unexplained.
+    const shortfallText = (def: any): string | null => {
+        const short = costParts(def).find(p => p.short);
+        return short ? `Need ${Math.ceil(short.amount - short.have).toLocaleString()} ${short.title}` : null;
+    };
+    // "metals_output" 20 -> "Metals output +20"; fractions read as percentages.
+    const effectLabel = (e: any): string => {
+        const words = String(e.type).replace(/_percent$/, '').replace(/_/g, ' ');
+        const pct = /_percent$/.test(e.type) || (Math.abs(e.value) < 1 && e.value !== 0);
+        const n = pct && Math.abs(e.value) < 1 ? Math.round(e.value * 100) : e.value;
+        return `${words.charAt(0).toUpperCase()}${words.slice(1)} ${n > 0 ? '+' : ''}${n}${pct ? '%' : ''}`;
+    };
+
     // Helper: Is this an upgrade button?
     const getUpgradePrereq = (type: string) => {
         const def = buildingMap[type];
@@ -232,6 +268,18 @@ export function PlanetConstructionPanel({
     // What the corvette card actually costs: the worker prices the chained hull
     // from the standard pattern, never from a hard-coded string.
     const corvetteSummary = summarizeDesign(defaultDesignFor('corvette')!, null);
+    // The whole price of a new task force, as the worker charges it: the
+    // MIL_BUILD_FLEET registry cost, then the chained corvette. The button
+    // names the first shortfall instead of letting the worker refuse it.
+    const corvetteShortfall = (() => {
+        const need = [
+            { label: 'credits', need: TASK_FORCE_COST.credits + corvetteSummary.cost.CREDITS, have: factionCredits },
+            { label: 'metals', need: TASK_FORCE_COST.metals + corvetteSummary.cost.METALS, have: factionMetals },
+            { label: 'materiel', need: corvetteSummary.cost.MATERIEL, have: factionMateriel },
+        ];
+        const short = need.find(n => n.have !== undefined && n.have < n.need);
+        return short ? `Need ${Math.ceil(short.need - (short.have ?? 0)).toLocaleString()} more ${short.label}` : null;
+    })();
 
     // Build slots mirror lib/construction/construction-service.ts buildSlotsFor:
     // two per world, +1 per operational Builder Outpost, at most five extra.
@@ -274,37 +322,38 @@ export function PlanetConstructionPanel({
                 style={{ borderTopColor: ownerColor }}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
+                <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
                             <Hammer className="w-5 h-5" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
-                                PLANETARY CONSTRUCTION
+                            <h2 className="text-lg font-bold text-white tracking-wide flex items-center gap-2 leading-tight">
+                                {planet?.name ?? 'Planetary construction'}
                                 {planet && (
-                                    <span className="text-xs font-mono font-normal bg-slate-800 px-2 py-0.5 rounded text-indigo-300 uppercase">
-                                        {planet.planetType} WORLD
+                                    <span className="text-[10px] font-mono font-normal bg-slate-800 px-2 py-0.5 rounded text-indigo-300 uppercase">
+                                        {planet.planetType} world
                                     </span>
                                 )}
                             </h2>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Planetary construction</div>
                             {planet && (
-                                <div className="flex gap-4 mt-1">
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Users className="w-3 h-3 text-blue-400" />
-                                        <span className="font-mono text-slate-200">POP {(planet.population || 0).toFixed(1)}M / {planet.popCapacity || 20}M</span>
+                                        <span className="font-mono text-slate-200">{Math.round(planet.population || 0)}M / {planet.popCapacity || 20}M people</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Heart className="w-3 h-3 text-rose-400" />
-                                        <span className="font-mono text-slate-200">HAP {formatPercent(planet.happiness || 80, 1)}</span>
+                                        <span className="font-mono text-slate-200">Happiness {formatPercent(planet.happiness || 80, 0)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Zap className="w-3 h-3 text-amber-400" />
-                                        <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>UNR {formatPercent(planet.unrest || 0, 1)}</span>
+                                        <span className={`font-mono ${planet.unrest > 50 ? 'text-red-400' : 'text-slate-200'}`}>Unrest {formatPercent(planet.unrest || 0, 0)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-xs">
                                         <Shield className="w-3 h-3 text-cyan-400" />
-                                        <span className={`font-mono ${planet.stability < 40 ? 'text-red-400' : 'text-slate-200'}`}>STA {formatPercent(planet.stability || 0, 3)}</span>
+                                        <span className={`font-mono ${planet.stability < 40 ? 'text-red-400' : 'text-slate-200'}`}>Stability {formatPercent(planet.stability || 0, 0)}</span>
                                     </div>
                                 </div>
                             )}
@@ -318,82 +367,30 @@ export function PlanetConstructionPanel({
                     </button>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex gap-1 px-6 pt-4 border-b border-slate-800 bg-slate-900/50">
-                    <button
-                        onClick={() => setActiveTab('BUILD')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'BUILD'
-                            ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        BUILD OPTIONS
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('QUEUE')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'QUEUE'
-                            ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        ACTIVE QUEUE & STRUCTURES
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('INFRA')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'INFRA'
-                            ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        <Route className="w-3.5 h-3.5" />
-                        INFRASTRUCTURE
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('ORBITAL')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'ORBITAL'
-                            ? 'border-fuchsia-500 text-fuchsia-400 bg-fuchsia-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        <Satellite className="w-3.5 h-3.5" />
-                        ORBITAL
-                        {planet?.orbital?.orbitControlLost && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('LOGISTICS')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 flex items-center gap-1.5 ${activeTab === 'LOGISTICS'
-                            ? 'border-amber-500 text-amber-400 bg-amber-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        <Truck className="w-3.5 h-3.5" />
-                        LOGISTICS & ROLE
-                        {(planetLayer?.blockade?.active || planetLayer?.logistics?.congested) && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('SOCIETY')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'SOCIETY'
-                            ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        SOCIETY & DEMOGRAPHICS
-                    </button>
-                    {hasShipyard && (
+                {/* Tabs — short names on one line; it scrolls sideways when narrow */}
+                <div className="shrink-0 flex gap-1 px-4 pt-2 border-b border-slate-800 bg-slate-900/50 overflow-x-auto whitespace-nowrap">
+                    {([
+                        { id: 'BUILD', label: 'Build', icon: <Hammer className="w-3.5 h-3.5" />, accent: 'indigo' },
+                        { id: 'QUEUE', label: `Structures${queue.length ? ` · ${queue.length} building` : ''}`, icon: <Building className="w-3.5 h-3.5" />, accent: 'cyan' },
+                        { id: 'INFRA', label: 'Infrastructure', icon: <Route className="w-3.5 h-3.5" />, accent: 'cyan' },
+                        { id: 'ORBITAL', label: 'Orbital', icon: <Satellite className="w-3.5 h-3.5" />, accent: 'fuchsia', alert: !!planet?.orbital?.orbitControlLost },
+                        { id: 'LOGISTICS', label: 'Logistics', icon: <Truck className="w-3.5 h-3.5" />, accent: 'amber', alert: !!(planetLayer?.blockade?.active || planetLayer?.logistics?.congested) },
+                        { id: 'SOCIETY', label: 'Society', icon: <Users className="w-3.5 h-3.5" />, accent: 'emerald' },
+                        ...(hasShipyard ? [{ id: 'SPACE', label: 'Shipyard', icon: <Navigation className="w-3.5 h-3.5" />, accent: 'fuchsia' }] : []),
+                    ] as Array<{ id: typeof activeTab; label: string; icon: React.ReactNode; accent: string; alert?: boolean }>).map(t => (
                         <button
-                            onClick={() => setActiveTab('SPACE')}
-                            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${activeTab === 'SPACE'
-                                ? 'border-fuchsia-500 text-fuchsia-400 bg-fuchsia-500/10'
+                            key={t.id}
+                            onClick={() => setActiveTab(t.id)}
+                            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === t.id
+                                ? TAB_ACTIVE[t.accent]
                                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                                }`}
+                            }`}
                         >
-                            SPACE CONSTRUCTION
+                            {t.icon}
+                            {t.label}
+                            {t.alert && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
                         </button>
-                    )}
+                    ))}
                 </div>
 
                 {/* Content */}
@@ -434,8 +431,8 @@ export function PlanetConstructionPanel({
                                         <div className="h-px bg-slate-800 flex-1" />
                                     </h3>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {(Object.entries(BUILDING_DEFS) as [BuildingType, any][])
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {(BUILDING_DEFS.map(d => [d.id, d]) as [BuildingType, any][])
                                             .filter(([_, def]) => def.category === cat)
                                             .map(([type, def]) => {
                                                 const afford = canAfford(type);
@@ -449,84 +446,58 @@ export function PlanetConstructionPanel({
                                                 return (
                                                     <div
                                                         key={type}
-                                                        className={`p-4 rounded-xl border transition-all duration-200 flex flex-col
-                                                            ${afford && reqsMet ? 'bg-slate-900 border-slate-700 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10' : 'bg-slate-900/50 border-slate-800/50 opacity-75'}
+                                                        className={`p-3 rounded-xl border transition-colors flex flex-col gap-2
+                                                            ${afford && reqsMet ? 'bg-slate-900 border-slate-700/80 hover:border-indigo-500/50' : 'bg-slate-900/40 border-slate-800/70'}
                                                         `}
                                                     >
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div>
-                                                                <h4 className="text-slate-200 font-semibold flex items-center gap-2">
-                                                                    {isUpgrade ? <ArrowUpCircle className="w-4 h-4 text-emerald-400" /> : <Building className="w-4 h-4 text-slate-400" />}
-                                                                    {def.name}
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0">
+                                                                <h4 className="text-sm text-slate-100 font-semibold flex items-center gap-1.5 leading-tight">
+                                                                    {isUpgrade ? <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Building className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                                                                    <span className="truncate">{def.name}</span>
                                                                 </h4>
-                                                                <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">Tier {def.tier}</div>
+                                                                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1" title={def.description}>{def.description}</p>
                                                             </div>
-                                                            <div className="flex items-center gap-1 text-xs font-medium text-slate-400 bg-slate-950 px-2 py-1 rounded">
-                                                                <Clock className="w-3 h-3" />
-                                                                {formatSimAsClock(baseBuildSeconds(def))}
-                                                            </div>
-                                                        </div>
-
-                                                        <p className="text-sm text-slate-400 mb-4 flex-1 line-clamp-2">{def.description}</p>
-
-                                                        {/* Costs */}
-                                                        <div className="bg-slate-950/50 rounded p-2 mb-4">
-                                                            <div className="text-[10px] uppercase text-slate-500 font-bold mb-1.5 tracking-wider">Construction Cost</div>
-                                                            <div className="flex flex-wrap gap-2 text-xs">
-                                                                <span className={factionCredits >= def.cost.credits ? 'text-emerald-400' : 'text-red-400'}>
-                                                                    {def.cost.credits} Cr
+                                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                                <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">T{def.tier}</span>
+                                                                <span className="flex items-center gap-1 text-[10px] text-slate-400" title="Build time, real time">
+                                                                    <Clock className="w-3 h-3" />
+                                                                    {formatSimAsClock(baseBuildSeconds(def))}
                                                                 </span>
-                                                                {def.cost.metals > 0 && (
-                                                                    <span className={factionMetals >= def.cost.metals ? 'text-slate-300' : 'text-red-400'}>
-                                                                        {def.cost.metals} Met
-                                                                    </span>
-                                                                )}
-                                                                {def.cost.chemicals > 0 && (
-                                                                    <span className={factionChemicals >= def.cost.chemicals ? 'text-amber-300' : 'text-red-400'}>
-                                                                        {def.cost.chemicals} Chm
-                                                                    </span>
-                                                                )}
-                                                                {def.cost.energy && def.cost.energy > 0 && (
-                                                                    <span className={factionEnergy >= def.cost.energy ? 'text-sky-300' : 'text-red-400'}>
-                                                                        {def.cost.energy} Nrg
-                                                                    </span>
-                                                                )}
-                                                                {def.cost.manpower > 0 && (
-                                                                    <span className="text-blue-300">
-                                                                        {def.cost.manpower} Man
-                                                                    </span>
-                                                                )}
-                                                                {def.cost.rares && def.cost.rares > 0 && (
-                                                                    <span className={factionRares >= def.cost.rares ? 'text-fuchsia-300' : 'text-red-400'}>
-                                                                        {def.cost.rares} Rx
-                                                                    </span>
-                                                                )}
                                                             </div>
                                                         </div>
 
-                                                        {/* Yields Preview */}
                                                         {def.effects.length > 0 && (
-                                                            <div className="mb-4 text-xs font-medium text-emerald-400/80 bg-emerald-500/5 px-2 py-1.5 rounded">
-                                                                Effects: {def.effects.map((e: any, idx: number) => (
-                                                                    <span key={idx} className="mr-2">
-                                                                        {e.type.replace(/_/g, ' ')}: +{e.value}
-                                                                        {idx < def.effects.length - 1 ? ',' : ''}
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {def.effects.map((e: any, idx: number) => (
+                                                                    <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300/90">
+                                                                        {effectLabel(e)}
                                                                     </span>
                                                                 ))}
                                                             </div>
                                                         )}
 
-                                                        <button
-                                                            disabled={!afford || !reqsMet || actionLoading}
-                                                            onClick={() => handleQueueBuilding(type)}
-                                                            className={`w-full py-2.5 rounded-lg text-sm font-medium tracking-wide transition-all mt-auto
-                                                                ${(!afford || !reqsMet)
-                                                                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                                                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'}
-                                                            `}
-                                                        >
-                                                            {isUpgrade ? 'COMMENCE UPGRADE' : 'QUEUE CONSTRUCTION'}
-                                                        </button>
+                                                        <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                                                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-mono">
+                                                                {costParts(def).map(part => (
+                                                                    <span key={part.label} className={part.short ? 'text-red-400' : 'text-slate-300'} title={part.title}>
+                                                                        {part.amount.toLocaleString()} {part.label}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                            <button
+                                                                disabled={!afford || !reqsMet || actionLoading}
+                                                                onClick={() => handleQueueBuilding(type)}
+                                                                title={!reqsMet ? 'Needs the building it upgrades' : !afford ? shortfallText(def) ?? undefined : undefined}
+                                                                className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors
+                                                                    ${(!afford || !reqsMet)
+                                                                        ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed'
+                                                                        : 'bg-indigo-600 hover:bg-indigo-500 text-white'}
+                                                                `}
+                                                            >
+                                                                {!afford ? (shortfallText(def) ?? 'Cannot afford') : isUpgrade ? 'Upgrade' : busySlots >= buildSlots ? 'Queue' : 'Build'}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -716,7 +687,7 @@ export function PlanetConstructionPanel({
                                     // force with the standard Picket Corvette chained in). The
                                     // others are listed so players know they exist, disabled
                                     // until their build path lands — the worker refuses them.
-                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', cost: `Task force 1,000 Cr / 500 Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met / ${corvetteSummary.cost.MATERIEL.toLocaleString()} Materiel`, available: true },
+                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', shortfall: corvetteShortfall, cost: `Task force ${TASK_FORCE_COST.credits.toLocaleString()} Cr / ${TASK_FORCE_COST.metals.toLocaleString()} Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met / ${corvetteSummary.cost.MATERIEL.toLocaleString()} Materiel`, available: true },
                                     { id: 'trade_fleet', name: 'Trade Fleet', desc: 'Automated freighter convoy for interstellar commerce.', cost: 'Not yet available', available: false },
                                     { id: 'sensor_relay', name: 'Sensor Relay', desc: 'Static orbital node that expands system detection range.', cost: 'Not yet available', available: false },
                                     { id: 'exploration_node', name: 'Exploration Node', desc: 'Deep-space sensor array for clearing distant fog of war.', cost: 'Not yet available', available: false },
@@ -730,10 +701,10 @@ export function PlanetConstructionPanel({
                                         <div className="text-[10px] font-mono text-fuchsia-400 mb-4">{ship.cost}</div>
                                         <button
                                             onClick={() => handleQueueSpaceConstruction(ship.id)}
-                                            disabled={actionLoading || !ship.available}
+                                            disabled={actionLoading || !ship.available || !!(ship as any).shortfall}
                                             className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-fuchsia-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            {ship.available ? 'REQUISITION' : 'UNAVAILABLE'}
+                                            {!ship.available ? 'UNAVAILABLE' : ((ship as any).shortfall ?? 'REQUISITION')}
                                         </button>
                                     </div>
                                 ))}

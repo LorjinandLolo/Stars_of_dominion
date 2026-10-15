@@ -10,6 +10,7 @@ import type { Leader } from '@/lib/leadership/types';
 import type { CabinetAdvice, CabinetPortfolio, GovernmentState } from './types';
 import { CABINET_PORTFOLIOS } from './types';
 import { generateLeader, seedFromString } from '@/lib/leadership/leader-generator';
+import { seatSkill, fitsSeat } from '@/lib/leadership/character';
 import { RNG } from '@/lib/trade-system/rng';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
@@ -101,7 +102,8 @@ function appointMinisterInternal(
     for (let i = 0; i < pool.length; i++) {
         const candidate = pool[i];
         if (candidate.factionId !== gov.factionId) continue;
-        const roleBonus = fit.indexOf(candidate.role) >= 0 ? 25 - fit.indexOf(candidate.role) * 5 : 0;
+        const roleBonus = (fit.indexOf(candidate.role) >= 0 ? 25 - fit.indexOf(candidate.role) * 5 : 0)
+            + (fitsSeat(candidate, portfolio) ? 15 : 0);
         const score = (candidate.competence ?? 50) + candidate.loyalty * 0.4 + roleBonus - (candidate.corruption ?? 0) * 0.5;
         if (score > bestScore) { bestScore = score; bestIndex = i; }
     }
@@ -416,7 +418,9 @@ export function getCabinetModifiers(world: GameWorldState, factionId: string): R
 
     const skill = (portfolio: CabinetPortfolio) => {
         const minister = getMinister(world, factionId, portfolio);
-        return minister ? ((minister.competence ?? 50) - 50) / 100 : 0; // -0.5..+0.5
+        // A minister whose career fits the seat counts SEAT_FIT_BONUS higher
+        // (lib/leadership/character.ts): a career diplomat at Foreign Affairs.
+        return minister ? (seatSkill(minister, portfolio) - 50) / 100 : 0; // -0.5..+0.6
     };
 
     // Corruption is a tax on the treasury before anything else touches it.

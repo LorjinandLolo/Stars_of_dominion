@@ -9,7 +9,8 @@ import '../lib/tech/techData';
 import { registry, TechEngine } from '../lib/tech/engine';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
 import { bumpMetric } from '../lib/tech/history-ledger';
-import { DEED_RESEARCH_STARTED, DEED_SHIPS_COMMISSIONED } from '../lib/tech/deed-metrics';
+import { DEED_POLICIES_PROPOSED, DEED_RESEARCH_STARTED, DEED_SHIPS_COMMISSIONED, DEED_TROOPS_RAISED } from '../lib/tech/deed-metrics';
+import { PANEL_TIPS } from '../lib/tutorial/panel-tips';
 import { FIRST_WEEK_GOALS, currentGoal, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 
 let passed = 0;
@@ -130,6 +131,47 @@ test('a player assignment clears the council tag', () => {
     state.activeSlots[0].startedBy = 'council';
     const next = TechEngine.assignResearch(state, 'slot-1', first.id, 0);
     assert.strictEqual(next.activeSlots[0].startedBy, undefined);
+});
+
+test('three next steps follow the first week: a policy, troops, a third world', () => {
+    const next = FIRST_WEEK_GOALS.filter(g => g.phase === 'next').map(g => g.id);
+    assert.deepStrictEqual(next, ['enact_policy', 'raise_troops', 'three_worlds']);
+    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-3).map(g => g.id), next, 'next steps come last');
+});
+
+test('next steps advance on a policy, on troops, and on owning three worlds', () => {
+    const world = freshWorld();
+    const firstWeek = Object.fromEntries(FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').map(g => [g.id, 1]));
+    world.firstWeekGoals.set(F, { index: 0, completedAt: firstWeek });
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'enact_policy');
+    assert.strictEqual(currentGoal(world, F)!.deepLink.tab, 'government');
+    bumpMetric(world, F, DEED_POLICIES_PROPOSED);
+    tickFirstWeekGoals(world);
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'raise_troops');
+    bumpMetric(world, F, DEED_TROOPS_RAISED, 5);
+    tickFirstWeekGoals(world);
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds');
+    world.construction.planets.set('a', { id: 'a', ownerId: F });
+    world.construction.planets.set('b', { id: 'b', ownerId: F });
+    world.construction.planets.set('x', { id: 'x', ownerId: 'someone-else' });
+    assert.strictEqual(currentGoal(world, F)!.progress, 2);
+    tickFirstWeekGoals(world);
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds', 'two worlds is not three');
+    world.construction.planets.set('c', { id: 'c', ownerId: F });
+    const done = tickFirstWeekGoals(world);
+    assert.deepStrictEqual(done.map(a => a.completed.id), ['three_worlds']);
+    assert.strictEqual(done[0].next, null);
+    assert.strictEqual(currentGoal(world, F), null);
+});
+
+test('every panel tip is short, and none duplicates the research fork explainer', () => {
+    const tabs = PANEL_TIPS.map(t => t.tab);
+    assert.strictEqual(new Set(tabs).size, tabs.length, 'one tip per tab');
+    assert.ok(!tabs.includes('tech'));
+    for (const tip of PANEL_TIPS) {
+        assert.ok(tip.lines.length >= 2 && tip.lines.length <= 3, `${tip.tab}: 2-3 lines`);
+        for (const line of tip.lines) assert.ok(line.length <= 200, `${tip.tab}: line too long (${line.length})`);
+    }
 });
 
 console.log(`\n${passed} passed, ${failed} failed.`);

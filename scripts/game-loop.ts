@@ -12,7 +12,7 @@ import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
 import { checkOrderTechGate } from '../lib/tech/order-gates';
 import { bumpMetric } from '../lib/tech/history-ledger';
-import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST, DEED_ENVOYS_SENT, DEED_RESEARCH_STARTED } from '../lib/tech/deed-metrics';
+import { DEED_WARS_DECLARED, DEED_WARS_DECLARED_ON_US, DEED_FLEETS_DESTROYED, DEED_FLEETS_LOST, DEED_ENVOYS_SENT, DEED_RESEARCH_STARTED, DEED_POLICIES_PROPOSED } from '../lib/tech/deed-metrics';
 import { registry as techRegistryForOrders } from '../lib/tech/engine';
 import {
     addBlueprint,
@@ -1046,13 +1046,16 @@ async function runGameTick() {
                 // What this goal opened on the dock (Item 5), said once, here.
                 const unlocked = unlocksForGoal(advance.completed.id).map(u => u.label);
                 const unlockLine = unlocked.length ? `Unlocked: ${unlocked.join(' and ')}. ` : '';
+                // The first week ends here; the three next steps follow.
+                const weekLine = next?.phase === 'next' && advance.completed.phase !== 'next'
+                    ? 'Your first week is done. ' : '';
                 fireNotification({
                     id: `goal-${advance.factionId}-${advance.completed.id}`,
                     factionId: advance.factionId,
                     category: 'system',
                     priority: 'normal',
                     title: `Goal complete: ${advance.completed.title}`,
-                    body: unlockLine + (next ? `Next: ${next.title}. ${next.hint}` : 'Every first-week goal is done. The galaxy is yours to shape.'),
+                    body: unlockLine + weekLine + (next ? `Next: ${next.title}. ${next.hint}` : 'Every goal is done. The galaxy is yours to shape.'),
                     createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                     read: false,
                 });
@@ -2856,6 +2859,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                     recordOrderFailure(world, factionId, actionId, result.message ?? 'Policy rejected.');
                     break;
                 }
+                bumpMetric(world, factionId, DEED_POLICIES_PROPOSED);
                 console.log(result.tabled
                     ? `[Order] ${factionId} tabled policy ${payload.policyId} before the chamber (${result.cost} political capital)`
                     : `[Order] ${factionId} enacted policy ${payload.policyId} for ${result.cost} political capital`);

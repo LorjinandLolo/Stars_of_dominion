@@ -71,13 +71,43 @@ body {
 .hyperlane-anim { animation: hyperlane-pulse 20s linear infinite; }
 .animate-glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
 
-/* Custom Scrollbar */
+/* Scrollbars, everywhere: a faint thin thumb, no track, no arrow buttons.
+   Panels that never opted into .custom-scrollbar drew the OS default, a
+   white bar with arrows across a dark UI. Firefox only for the standard
+   properties: Chromium honours them too, but then drops the webkit rules and
+   draws its own bar with arrow buttons. */
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  }
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* The narrower variant for tight lists. */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);

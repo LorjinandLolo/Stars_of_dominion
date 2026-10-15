@@ -41,7 +41,7 @@ interface ResourceChipProps {
 
 function ResourceChip({ icon, label, value, rate, className = '' }: ResourceChipProps) {
     return (
-        <div className={`flex items-center gap-2 px-3 h-full border-r border-slate-800/40 last:border-r-0 group ${className}`} title={label}>
+        <div className={`flex items-center gap-2 px-3 h-full border-r border-slate-800/40 last:border-r-0 group ${className}`} title={`${label}: +${Math.round(rate).toLocaleString()} last cycle (24 min)`}>
             <span className="text-slate-500 group-hover:text-slate-300 transition-colors">{icon}</span>
             <div className="flex flex-col leading-none">
                 <span className="text-[12px] font-mono font-bold text-slate-100 tracking-tight">
@@ -49,7 +49,7 @@ function ResourceChip({ icon, label, value, rate, className = '' }: ResourceChip
                 </span>
                 <span className={`text-[8px] font-mono flex items-center gap-0.5 mt-0.5 ${rate >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                     {rate >= 0 ? <TrendingUp size={7} /> : <TrendingDown size={7} />}
-                    {Math.abs(rate).toFixed(1)}
+                    {Math.abs(rate) >= 1000 ? `${(Math.abs(rate) / 1000).toFixed(1)}k` : Math.round(Math.abs(rate))}
                 </span>
             </div>
         </div>
@@ -64,7 +64,10 @@ export default function TopNav() {
 
     const faction = playerFactionId ? factions[playerFactionId] : null;
     const reserves = (faction as any)?.reserves || {};
-    const production = (faction as any)?.production || {};
+    // What the state took in last cycle (economy-service collectFactionTaxes).
+    // The chips read faction.production, which nothing writes, so every rate
+    // showed 0.0.
+    const production = (faction as any)?.lastIncome?.total || {};
     const stability = (faction as any)?.stability || 0;
 
     // No crisis chip here: `crisisWindows` is never written by useGameSync, so

@@ -18,7 +18,8 @@ import {
     ShieldOff as ShieldSlash
 } from 'lucide-react';
 import { Resource, Market, TradeAgreement, TradeRoute, Faction } from '@/lib/trade-system/types';
-import { proposeTradeAgreementAction, updateEconomicPolicyAction, updateProductionFocusAction, placeMarketOrderAction, assignEscortsAction } from '@/app/actions/economy';
+import { placeMarketOrderAction, assignEscortsAction } from '@/app/actions/economy';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { Zap, Factory, Shield, Atom, Users, Landmark, AlertTriangle } from 'lucide-react';
 
 interface EconomicTerminalProps {
@@ -152,13 +153,20 @@ export default function EconomicTerminal({
                             agreements={agreements} 
                             factions={factions}
                             playerFactionId={playerFactionId}
-                            onPropose={proposeTradeAgreementAction}
+                            // Through the order queue as the player's own faction. The old
+                            // server actions sent "PLAYER_FACTION", which the queue refuses.
+                            onPropose={(targetFactionId: string, resource: Resource, volume: number) => dispatchOrder({
+                                actionId: 'DIP_TRADE_PACT',
+                                factionId: playerFactionId,
+                                payload: { targetFactionId, resource, volume },
+                                label: `Proposing a ${resource} trade pact`,
+                            })}
                         />
                     )}
                     {activeTab === 'warfare' && (
-                        <WarfarePanel 
-                            factions={factions} 
-                            onUpdatePolicy={updateEconomicPolicyAction}
+                        <WarfarePanel
+                            factions={factions}
+                            playerFactionId={playerFactionId}
                         />
                     )}
                     {activeTab === 'routes' && <RoutesPanel routes={routes} playerFactionId={playerFactionId} />}
@@ -200,8 +208,11 @@ function MarketDashboard({
         ? policies.find(([id]: [string, any]) => id === playerFactionId)?.[1]
         : null;
 
+    // Sent with the player's own faction: updateProductionFocusAction issued it as
+    // "PLAYER_FACTION", which the order queue refuses, so focus never changed.
     const handleFocusChange = async (res: Resource | null) => {
-        await updateProductionFocusAction(res);
+        const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+        await dispatchOrder({ actionId: 'ECON_SET_FOCUS', factionId: playerFactionId, payload: { resource: res }, label: res ? `Production focus: ${res}` : 'Production focus cleared' });
     };
 
     const [orderQty, setOrderQty] = useState<Record<string, number>>({});
@@ -561,7 +572,16 @@ function AgreementsPanel({
     );
 }
 
-function WarfarePanel({ factions, onUpdatePolicy }: { factions: Faction[], onUpdatePolicy: any }) {
+function WarfarePanel({ factions, playerFactionId }: { factions: Faction[], playerFactionId: string }) {
+    // Sanctions are the real trade-cutting mechanic (lib/diplomacy/sanctions-service,
+    // 15 political capital). The old Embargo and Sanction buttons wrote a
+    // policy record nothing reads, and were sent as "PLAYER_FACTION" anyway.
+    const sanction = (targetFactionId: string, name: string) => dispatchOrder({
+        actionId: 'DIP_IMPOSE_SANCTIONS',
+        factionId: playerFactionId,
+        payload: { targetFactionId },
+        label: `Sanctions on ${name}`,
+    });
     const [selectedFaction, setSelectedFaction] = useState(factions[0]?.id || '');
 
     return (
@@ -573,21 +593,15 @@ function WarfarePanel({ factions, onUpdatePolicy }: { factions: Faction[], onUpd
                     </h3>
                     
                     <div className="space-y-4">
-                        {factions.filter(f => f.id !== 'faction-aurelian').map(f => (
+                        {factions.filter(f => f.id !== playerFactionId).map(f => (
                             <div key={f.id} className="flex items-center justify-between p-4 bg-[#0a0c10] border border-[#1e293b] rounded-xl group hover:border-red-500/50 transition-all">
                                 <span className="font-bold text-slate-300">{f.name}</span>
                                 <div className="flex gap-2">
-                                    <ActionButton 
-                                        icon={<Lock size={14} />} 
-                                        label="Embargo" 
-                                        color="red" 
-                                        onClick={() => onUpdatePolicy({ embargoes: [{ factionId: f.id, resources: [Resource.METALS] }] })} 
-                                    />
-                                    <ActionButton 
-                                        icon={<ShieldSlash size={14} />} 
-                                        label="Sanction" 
-                                        color="amber" 
-                                        onClick={() => onUpdatePolicy({ sanctions: [f.id] })} 
+                                    <ActionButton
+                                        icon={<ShieldSlash size={14} />}
+                                        label="Sanction · 15 PC"
+                                        color="amber"
+                                        onClick={() => sanction(f.id, f.name)}
                                     />
                                 </div>
                             </div>

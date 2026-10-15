@@ -18,7 +18,7 @@ import { factionDesigns } from './ship-design-service';
 import { applyRefit, isBookKey, refittable } from './fleet-roster';
 import { fireNotification } from '../time/notification-hooks';
 import { bumpMetric } from '../tech/history-ledger';
-import { DEED_SHIPS_COMMISSIONED } from '../tech/deed-metrics';
+import { DEED_SHIPS_COMMISSIONED, DEED_TROOPS_RAISED } from '../tech/deed-metrics';
 import { materielFor } from '../economy/procurement';
 
 /** Fields a job may carry beyond the siege-types base shape. */
@@ -255,6 +255,7 @@ export class RecruitmentService {
                     const currentCount = army.composition[job.unitType] || 0;
                     army.composition[job.unitType] = currentCount + job.count;
                     army.basePower += job.count * unitPower;
+                    bumpMetric(world, job.factionId ?? army.factionId, DEED_TROOPS_RAISED, job.count);
                     console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} for Army ${army.name}`);
                 }
             }
@@ -277,6 +278,7 @@ export class RecruitmentService {
 
         // Update total troop count summary
         defenseState.garrisonTroops += job.count;
+        bumpMetric(world, job.factionId, DEED_TROOPS_RAISED, job.count);
 
         console.log(`[Recruitment] Completed ${job.count}x ${job.unitType} on ${planet.name}`);
     }

@@ -110,7 +110,8 @@ export function inferArchetype(planetId: string, typeHint?: string, tags?: strin
     return 'gaia';
 }
 
-// Weighted terrain pools per archetype (blob seeds draw from these).
+// Terrain shares per archetype: how much of the board each terrain gets
+// (terrainQuotas). Where it goes is the climate model's job (generateTerrain).
 // Geography identity per class: continental worlds are 70-80% LAND (seas are
 // features, not the default); ocean worlds invert that; frozen worlds carry
 // ice sheets instead of open water; deserts get scattered lakes at most.
@@ -118,59 +119,25 @@ const ARCHETYPE_TERRAIN: Record<PlanetArchetype, Array<[TerrainType, number]>> =
     // Standing water threaded through dense growth — the water is everywhere and
     // shallow rather than gathered into seas. Jungle-dominant, which is what
     // makes Sarrak biome affinity bite on their own homeworld instead of by luck.
-    swamp:       [['jungle', 32], ['ocean', 24], ['forest', 14], ['plains', 12], ['toxic', 10], ['ruins', 4], ['mountains', 4]],
+    swamp:       [['jungle', 46], ['ocean', 24], ['forest', 9], ['plains', 8], ['toxic', 8], ['ruins', 2], ['mountains', 3]],
     // Canopy deathworld: almost no open ground and almost no open water.
-    jungle:      [['jungle', 40], ['forest', 20], ['plains', 14], ['mountains', 10], ['ocean', 10], ['ruins', 3], ['toxic', 3]],
+    jungle:      [['jungle', 62], ['forest', 13], ['plains', 8], ['mountains', 6], ['ocean', 6], ['ruins', 2], ['toxic', 3]],
     // A built world. There is no natural surface left to speak of.
-    arcology:    [['urban', 46], ['ruins', 18], ['plains', 12], ['mountains', 10], ['toxic', 8], ['desert', 6]],
+    arcology:    [['urban', 74], ['ruins', 9], ['plains', 6], ['mountains', 5], ['toxic', 4], ['desert', 2]],
     continental: [['plains', 28], ['forest', 21], ['mountains', 14], ['ocean', 23], ['jungle', 8], ['desert', 7], ['frozen', 5]],
-    arid:        [['desert', 40], ['plains', 20], ['mountains', 22], ['ocean', 6], ['volcanic', 6], ['ruins', 6]],
-    oceanic:     [['ocean', 52], ['plains', 15], ['forest', 10], ['jungle', 11], ['mountains', 7], ['frozen', 5]],
-    frozen:      [['frozen', 52], ['mountains', 22], ['plains', 10], ['ocean', 4], ['forest', 6], ['ruins', 6]],
+    arid:        [['desert', 42], ['plains', 20], ['mountains', 21], ['ocean', 5], ['volcanic', 6], ['ruins', 6]],
+    oceanic:     [['ocean', 64], ['plains', 9], ['forest', 7], ['jungle', 8], ['mountains', 7], ['frozen', 5]],
+    frozen:      [['frozen', 58], ['mountains', 20], ['plains', 8], ['ocean', 4], ['forest', 5], ['ruins', 5]],
     volcanic:    [['volcanic', 37], ['mountains', 27], ['desert', 15], ['plains', 10], ['toxic', 9], ['ruins', 2]],
     toxic:       [['toxic', 42], ['desert', 18], ['mountains', 16], ['volcanic', 12], ['plains', 10], ['ruins', 2]],
     gaia:        [['plains', 26], ['forest', 25], ['jungle', 15], ['ocean', 21], ['mountains', 12], ['ruins', 6]],
-    montane:     [['mountains', 46], ['plains', 16], ['frozen', 12], ['forest', 11], ['desert', 8], ['ocean', 4], ['ruins', 3]],
+    montane:     [['mountains', 65], ['plains', 9], ['frozen', 8], ['forest', 8], ['desert', 4], ['ocean', 3], ['ruins', 3]],
 };
-
-// Blob size modifier per terrain and archetype family: water on land-worlds
-// forms lakes and inland seas (small pull); water on ocean worlds forms real
-// oceans (large pull).
-function terrainPullModifier(terrain: TerrainType, archetype: PlanetArchetype): number {
-    // Swamp water is broad and shallow: many spreading pools, not one sea.
-    if (terrain === 'ocean') {
-        if (archetype === 'oceanic') return 1.45;
-        if (archetype === 'montane') return 0.5;
-        if (archetype === 'swamp') return 1.15;
-        if (archetype === 'jungle' || archetype === 'arcology') return 0.6;
-        return 0.95;
-    }
-    if (terrain === 'frozen' && archetype === 'frozen') return 1.3; // ice sheets
-    // Growth runs together into unbroken cover; a built world runs together
-    // into unbroken sprawl. Both leave few clear districts, which is the point.
-    if (archetype === 'swamp') return terrain === 'jungle' ? 1.3 : 0.85;
-    if (archetype === 'jungle') return terrain === 'jungle' ? 1.4 : 0.8;
-    if (archetype === 'arcology') return terrain === 'urban' ? 1.5 : 0.7;
-    // Highland ranges run in long chains; the valleys between them stay small,
-    // which is what turns them into passes.
-    if (archetype === 'montane') return terrain === 'mountains' ? 1.35 : 0.75;
-    return 1;
-}
 
 const TERRAIN_HABITABILITY: Record<TerrainType, number> = {
     plains: 85, forest: 75, jungle: 60, urban: 95, ocean: 25,
     mountains: 45, desert: 40, frozen: 30, toxic: 15, volcanic: 20, ruins: 55,
 };
-
-function weightedPick(rand: () => number, pool: Array<[TerrainType, number]>): TerrainType {
-    const total = pool.reduce((s, [, w]) => s + w, 0);
-    let roll = rand() * total;
-    for (const [t, w] of pool) {
-        roll -= w;
-        if (roll <= 0) return t;
-    }
-    return pool[0][0];
-}
 
 // ─── Seed points ─────────────────────────────────────────────────────────────
 // Jittered phyllotaxis spiral: even coverage of the disc with zero iteration,
@@ -202,68 +169,213 @@ function wedgeOf(x: number, y: number): number {
     return Math.round(norm / (Math.PI * 2 / SURFACE_WEDGES)) % SURFACE_WEDGES;
 }
 
+// ─── Noise ───────────────────────────────────────────────────────────────────
+// Smooth value noise on a hashed lattice. Deterministic per planet and cheap
+// enough to evaluate at 64 points: the board only ever samples it at seeds.
+
+function latticeValue(seed: number, ix: number, iy: number): number {
+    let h = (seed ^ Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263)) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+}
+
+function valueNoise(seed: number, x: number, y: number): number {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = latticeValue(seed, ix, iy), b = latticeValue(seed, ix + 1, iy);
+    const c = latticeValue(seed, ix, iy + 1), d = latticeValue(seed, ix + 1, iy + 1);
+    const top = a + (b - a) * sx, bottom = c + (d - c) * sx;
+    return (top + (bottom - top) * sy) * 2 - 1; // -1..1
+}
+
+/** Fractal noise: a few octaves, coarse features first. Roughly -1..1. */
+function fbm(seed: number, x: number, y: number, octaves: number, frequency: number): number {
+    let sum = 0, amp = 1, norm = 0, f = frequency;
+    for (let o = 0; o < octaves; o++) {
+        sum += valueNoise(seed + o * 1013, x * f, y * f) * amp;
+        norm += amp;
+        amp *= 0.5;
+        f *= 2;
+    }
+    return sum / norm;
+}
+
 // ─── Terrain generation ─────────────────────────────────────────────────────
+// A small climate model instead of random blobs. Every district gets an
+// elevation (fractal noise, with the settled heart raised into a continent),
+// a ridge value (ridged noise: long mountain chains rather than square
+// massifs), a latitude (north and south are the poles, with a little axial
+// tilt per world) and a moisture that rises near the sea. The archetype's pool
+// still decides HOW MUCH of each terrain a world has; the climate decides
+// WHERE it goes: seas fill the lowlands, ranges follow the ridges, ice caps
+// sit at the poles, jungle is hot and wet, desert hot and dry. Until 2026-10
+// an ice sheet could sit beside a temperate capital and the share of sea on a
+// continental world swung from none to a third on the luck of nine blobs.
+
+/** Land-world capitals keep their seas to coastal waters: the settled continent is the showpiece. */
+const CAPITAL_SEA_FACTOR = 0.45;
+/** How many districts the settled capital core takes (the heart plus its best neighbours). */
+const CAPITAL_CORE_SIZE = 4;
+
+/**
+ * Whole-district counts per terrain from the archetype pool (largest remainder).
+ *
+ * Each world jitters the pool first. Without it every continental world had
+ * the same mix to the district, which read as one planet copied fourteen
+ * times; the jitter is wide for the minor terrains and narrow for the
+ * archetype's defining one, so a jungle world is always a jungle world but
+ * one temperate world can be rugged and the next a breadbasket.
+ */
+function terrainQuotas(rand: () => number, archetype: PlanetArchetype, landBias: boolean): Map<TerrainType, number> {
+    const base = ARCHETYPE_TERRAIN[archetype];
+    const top = Math.max(...base.map(([, w]) => w));
+    const pool = base.map(([t, w]) => [t, w * (w === top ? 0.85 + rand() * 0.3 : 0.4 + rand() * 1.3)] as [TerrainType, number]);
+    // Never against an archetype defined by its water: an authored ocean or
+    // swamp homeworld must not be drained because every capital is passed
+    // the `capital` hint (Aeiralux generated 7 ocean districts of 64 that way).
+    const waterDefined = archetype === 'oceanic' || archetype === 'swamp';
+    if (landBias && !waterDefined) {
+        const ocean = pool.find(([t]) => t === 'ocean');
+        if (ocean) {
+            const moved = ocean[1] * (1 - CAPITAL_SEA_FACTOR);
+            ocean[1] -= moved;
+            const plains = pool.find(([t]) => t === 'plains');
+            if (plains) plains[1] += moved; else pool.push(['plains', moved]);
+        }
+    }
+    const total = pool.reduce((s, [, w]) => s + w, 0);
+    const exact = pool.map(([t, w]) => ({ t, x: (w / total) * SURFACE_SECTOR_COUNT }));
+    const quotas = new Map<TerrainType, number>(exact.map(e => [e.t, Math.floor(e.x)]));
+    let left = SURFACE_SECTOR_COUNT - [...quotas.values()].reduce((s, n) => s + n, 0);
+    for (const e of [...exact].sort((a, b) => (b.x % 1) - (a.x % 1))) {
+        if (left <= 0) break;
+        quotas.set(e.t, (quotas.get(e.t) ?? 0) + 1);
+        left--;
+    }
+    return quotas;
+}
+
+/**
+ * Who claims land first, and what each terrain looks for. Ocean is not here:
+ * it always takes the lowest ground first. Plains take whatever is left.
+ */
+const CLAIM_ORDER: TerrainType[] = ['mountains', 'volcanic', 'frozen', 'desert', 'jungle', 'forest', 'toxic', 'ruins', 'urban'];
 
 function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean): TerrainType[] {
-    const pool = ARCHETYPE_TERRAIN[archetype];
+    const noiseSeed = Math.floor(rand() * 0xffffffff);
+    const ox = rand() * 50, oy = rand() * 50;
+    const tilt = (rand() - 0.5) * 0.7; // radians: the poles are roughly north and south
+    const sample = (field: number, x: number, y: number, octaves: number, freq: number) =>
+        fbm(noiseSeed + field * 7919, x + ox, y + oy, octaves, freq);
 
-    // Seed 9-12 terrain blobs at random districts; every district takes the
-    // terrain of its nearest blob (euclidean on seed points → organic patches).
-    const blobCount = 9 + Math.floor(rand() * 4);
-    const blobs: Array<{ x: number; y: number; terrain: TerrainType; pull: number }> = [];
-    for (let i = 0; i < blobCount; i++) {
-        const at = seeds[Math.floor(rand() * seeds.length)];
-        const terrain = weightedPick(rand, pool);
-        // Capitals/homeworlds are showcase worlds: their seas shrink to
-        // coastal waters so the settled continent dominates the view.
-        //
-        // But NEVER against an archetype that is defined by its water. Every
-        // capital passes `capital` as its type hint, so without this guard an
-        // authored ocean or swamp homeworld is silently drained — Aeiralux, a
-        // world of floating spires above a storm-torn sea, generated ocean 7 of
-        // 64. That is the same class of defect as the all-continental capitals
-        // this guard sits next to: a generic rule quietly beating authored intent.
-        const waterDefined = archetype === 'oceanic' || archetype === 'swamp';
-        const bias = landBias && !waterDefined && terrain === 'ocean' ? 0.32 : 1;
-        blobs.push({
-            x: at.x, y: at.y,
-            terrain,
-            pull: (0.75 + rand() * 0.6) * terrainPullModifier(terrain, archetype) * bias,
-        });
-    }
-
-    const terrain: TerrainType[] = seeds.map(s => {
-        let best = blobs[0];
-        let bestD = Infinity;
-        for (const b of blobs) {
-            const d = dist(s, b) / b.pull;
-            if (d < bestD) { bestD = d; best = b; }
+    const n = seeds.length;
+    // Fields are sampled at only 64 points, so neighbouring districts can
+    // disagree sharply; two rounds of averaging with the six nearest turn
+    // that into regions instead of confetti.
+    const near6 = seeds.map((s, i) => seeds
+        .map((o, j) => ({ j, d: i === j ? Infinity : dist(s, o) }))
+        .sort((a, b) => a.d - b.d).slice(0, 6).map(x => x.j));
+    const smooth = (field: number[], rounds = 2): number[] => {
+        let cur = field;
+        for (let r = 0; r < rounds; r++) {
+            cur = cur.map((v, i) => v * 0.5 + (near6[i].reduce((s2, j) => s2 + cur[j], 0) / near6[i].length) * 0.5);
         }
-        return best.terrain;
+        return cur;
+    };
+    const elevation = smooth(seeds.map(s => {
+        const r = Math.hypot(s.x, s.y);
+        // The settled heart sits on high, dry ground; the rim falls away.
+        const heart = settled ? (landBias ? 0.45 : 0.2) * (1 - r) : 0;
+        return sample(1, s.x, s.y, 2, 1.3) + heart;
+    }));
+    // Ridged noise peaks along lines, which is what reads as a range.
+    const ridge = smooth(seeds.map(s => 1 - Math.abs(sample(2, s.x, s.y, 2, 1.6))), 1);
+    const latitude = seeds.map(s => Math.min(1, Math.abs(s.y * Math.cos(tilt) - s.x * Math.sin(tilt)) * 1.05));
+    const moistureBase = smooth(seeds.map(s => sample(3, s.x, s.y, 2, 1.4)));
+    const blotch = (field: number) => smooth(seeds.map(s => sample(field, s.x, s.y, 2, 1.8)));
+    const toxicField = blotch(4), ruinField = blotch(5), urbanField = blotch(6), hotspot = blotch(7);
+
+    const quotas = terrainQuotas(rand, archetype, landBias);
+    const terrain: Array<TerrainType | null> = new Array(n).fill(null);
+    const claim = (t: TerrainType, score: (i: number) => number) => {
+        let want = quotas.get(t) ?? 0;
+        if (want <= 0) return;
+        const order = [...Array(n).keys()].filter(i => terrain[i] === null).sort((a, b) => score(b) - score(a));
+        for (const i of order) {
+            if (want-- <= 0) break;
+            terrain[i] = t;
+        }
+    };
+
+    // 1. Seas fill the lowest ground, so coastlines follow the elevation.
+    //    A settled heart is never drowned.
+    claim('ocean', i => -elevation[i] - (settled && i === 0 ? 10 : 0));
+
+    // Moisture: the base field, plus how close the sea is.
+    const seaSeeds = seeds.filter((_, i) => terrain[i] === 'ocean');
+    const moisture = seeds.map((s, i) => {
+        let d = Infinity;
+        for (const o of seaSeeds) d = Math.min(d, dist(s, o));
+        const coastal = seaSeeds.length ? Math.exp(-d / 0.3) : 0;
+        return moistureBase[i] * 0.6 + coastal * 0.8;
     });
+    const heat = (i: number) => 1 - latitude[i] - Math.max(0, elevation[i]) * 0.25;
+
+    const scores: Partial<Record<TerrainType, (i: number) => number>> = {
+        mountains: i => ridge[i] * 0.9 + elevation[i] * 0.6,
+        volcanic: i => hotspot[i] * 0.7 + ridge[i] * 0.4,
+        frozen: i => latitude[i] * 1.6 + elevation[i] * 0.3 + moistureBase[i] * 0.1,
+        desert: i => heat(i) - moisture[i],
+        jungle: i => heat(i) + moisture[i],
+        forest: i => moisture[i] - Math.abs(heat(i) - 0.45) * 0.8,
+        toxic: i => toxicField[i] - moisture[i] * 0.3,
+        ruins: i => ruinField[i],
+        urban: i => urbanField[i] - Math.hypot(seeds[i].x, seeds[i].y) * 0.6,
+    };
+    for (const t of CLAIM_ORDER) {
+        const score = scores[t];
+        if (score) claim(t, score);
+    }
+    const out: TerrainType[] = terrain.map(t => t ?? 'plains');
+
+    // Lone districts: a single cell of one terrain inside another reads as
+    // noise, not geography. It joins its surroundings when most of its six
+    // nearest agree. Seas and the capital are left alone (coastlines matter).
+    const lonely = out.map((t, i) => {
+        if (t === 'ocean' || (settled && i === 0)) return t;
+        const around = near6[i].map(j => out[j]);
+        if (around.includes(t)) return t;
+        const tally = new Map<TerrainType, number>();
+        for (const a of around) tally.set(a, (tally.get(a) ?? 0) + 1);
+        const [best, count] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+        return count >= 4 && best !== 'ocean' ? best : t;
+    });
+    for (let i = 0; i < n; i++) out[i] = lonely[i];
 
     // An UNSETTLED world has no cities. A body tagged colonizable/dead_matter
     // was rendering an urban capital core and metropolitan sprawl before
-    // anyone had ever landed — remap any urban blob to wilderness (ruins on an
+    // anyone had ever landed — remap any urban to wilderness (ruins on an
     // arcology: dead megastructure is the fiction, not a living city) and skip
     // the capital-core seeding entirely. The surface cache keys on tags, so
     // the moment settlement flips the tags, the settled surface takes over.
     if (!settled) {
-        for (let i = 0; i < terrain.length; i++) {
-            if (terrain[i] === 'urban') terrain[i] = archetype === 'arcology' ? 'ruins' : 'plains';
+        for (let i = 0; i < out.length; i++) {
+            if (out[i] === 'urban') out[i] = archetype === 'arcology' ? 'ruins' : 'plains';
         }
-        return terrain;
+        return out;
     }
 
     // Capital core: the innermost district is always settled ground. Make the
     // heart urban along with its most hospitable neighbours.
-    terrain[0] = 'urban';
+    out[0] = 'urban';
     const coreNeighbors = [...neighbors[0]].sort(
-        (a, b) => TERRAIN_HABITABILITY[terrain[b]] - TERRAIN_HABITABILITY[terrain[a]]
+        (a, b) => TERRAIN_HABITABILITY[out[b]] - TERRAIN_HABITABILITY[out[a]]
     );
-    for (const n of coreNeighbors.slice(0, 3)) terrain[n] = 'urban';
+    for (const nb of coreNeighbors.slice(0, CAPITAL_CORE_SIZE - 1)) out[nb] = 'urban';
 
-    return terrain;
+    return out;
 }
 
 // ─── Region generation ──────────────────────────────────────────────────────

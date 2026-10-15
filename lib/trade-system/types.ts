@@ -37,6 +37,14 @@ export enum FractureOutcome {
     PIRATE_HAVEN = 'PIRATE_HAVEN'
 }
 
+/** One economy tick's income for a faction (see Faction.lastIncome). */
+export interface FactionIncome {
+    /** Everything that reached the reserves, by Resource key. */
+    total: Record<string, number>;
+    /** Credits each world's taxes produced, by planet id. */
+    creditsByPlanet: Record<string, number>;
+}
+
 export interface Faction {
     id: string;
     name: string;
@@ -44,6 +52,14 @@ export interface Faction {
     backingRatioPolicy: number; // e.g. 0.5 means 50% backing required
     reserves: { [key in Resource]?: number }; // Quantity of each resource held in reserve
     production?: { [key in Resource]?: number }; // Current production rate per tick
+    /**
+     * What the state took in during the last economy tick, which runs once per
+     * strategic cycle (6 sim hours, 24 real minutes): credits from the tax skim,
+     * goods from the in-kind tithe, and procured war goods, all keyed by
+     * Resource. Written by collectFactionTaxes; the TopNav rates and the
+     * Economy panel read it. Absent until the first tick after 2026-10-15.
+     */
+    lastIncome?: FactionIncome;
     creditSupply: number;
     liquidity: number;
     debt: number;

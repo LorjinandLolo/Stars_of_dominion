@@ -44,6 +44,10 @@ export const DEED_ENVOYS_SENT = 'dip.envoysSent';
  * count: the first-week goal reads this, and it is the player's choice.
  */
 export const DEED_RESEARCH_STARTED = 'sci.researchStarted';
+/** Policies the player put forward, enacted or tabled before the chamber (GOV_ENACT_POLICY). */
+export const DEED_POLICIES_PROPOSED = 'pol.policiesProposed';
+/** Ground troops delivered by a completed recruitment job (lib/combat/recruitment-service), by unit count. */
+export const DEED_TROOPS_RAISED = 'mil.troopsRaised';
 
 export interface DeedDef {
     metric: string;
@@ -69,4 +73,6 @@ export const DEED_DEFS: readonly DeedDef[] = [
     { metric: DEED_SHIPS_COMMISSIONED, label: 'Warships commissioned' },
     { metric: DEED_SHIPYARDS_BUILT, label: 'Spaceyards raised in orbit' },
     { metric: DEED_RESEARCH_STARTED, label: 'Research programmes chosen' },
+    { metric: DEED_POLICIES_PROPOSED, label: 'Policies put forward' },
+    { metric: DEED_TROOPS_RAISED, label: 'Troops raised' },
 ];

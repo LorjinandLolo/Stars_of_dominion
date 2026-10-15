@@ -4,7 +4,7 @@ import React from 'react';
 import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
-import { X, Tag, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer } from 'lucide-react';
+import { X, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer } from 'lucide-react';
 import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
 import { hasAsteroidBelt } from '@/lib/movement/belts';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
@@ -12,6 +12,7 @@ import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatPercent } from '@/lib/ui/format';
+import { classifyStar, factionColor } from './starVisuals';
 
 
 function StatBar({ value, color }: { value: number; color: string }) {
@@ -57,8 +58,7 @@ const PLANET_TYPE_ICONS: Record<string, { icon: string; color: string }> = {
     desert:      { icon: '🏜️', color: '#ca8a04' },
 };
 
-// ── Orbit distance / size for visual layout ───────────────────────────────────
-const ORBIT_SIZES = [26, 19, 15, 12];
+// ── Orbit colours: each world's stripe marks its place around the star ──────
 const ORBIT_COLORS = ['#38bdf8', '#818cf8', '#34d399', '#fb923c'];
 
 /** Display names for internal planet tags — the ids feed the engine, the
@@ -69,6 +69,15 @@ const TAG_DISPLAY: Record<string, string> = {
     dead_matter: 'dead matter',
     settled_core: 'settled core',
 };
+
+/** "nullward_fringe" → "Nullward fringe": engine ids read as words. */
+function tagLabel(raw: string): string {
+    const words = TAG_DISPLAY[raw] ?? raw.replace(/_/g, ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** How many system tags show before "+N more". */
+const SYSTEM_TAG_LIMIT = 6;
 
 interface PlanetCardProps {
     planet: any;
@@ -154,6 +163,47 @@ function PlanetCard({
     const stability = planet.stability ?? 75;
     const unrest = planet.unrest ?? 0;
 
+    // An unsettled world with nothing happening around it needs one line: what
+    // it is and whether you can settle it. The full card (stability of nobody,
+    // a UNITS button with no units) made a six-world system a long scroll.
+    const compact = isNeutral && !selectedFleetId && !planet.siege && !isOrbitedByFleet && armiesPresent === 0;
+    if (compact) {
+        return (
+            <div className="flex items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-900/30 hover:border-slate-700 px-2.5 py-2 transition-colors">
+                <span className="text-sm leading-none shrink-0">{typeInfo.icon}</span>
+                <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-slate-200 truncate leading-tight">{planet.name}</div>
+                    <div className="text-[10px] capitalize leading-tight" style={{ color: typeInfo.color }}>{planet.planetType}</div>
+                </div>
+                <button
+                    onClick={(e) => { e.stopPropagation(); onSurface(planet.id); }}
+                    title="Look at the surface"
+                    aria-label={`Surface of ${planet.name}`}
+                    className="shrink-0 p-1.5 rounded-md border border-slate-700/60 text-slate-400 hover:text-emerald-300 hover:border-emerald-500/40 transition-colors"
+                >
+                    <Globe size={12} />
+                </button>
+                {canColonize ? (
+                    <button
+                        disabled={actionBusy === 'claim'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
+                        }}
+                        title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
+                        className="shrink-0 px-2.5 py-1.5 rounded-md bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/40 text-[10px] text-sky-300 font-semibold transition-colors disabled:opacity-50"
+                    >
+                        {actionBusy === 'claim' ? 'Settling…' : 'Settle · 20k'}
+                    </button>
+                ) : (
+                    <span className="shrink-0 text-[10px] text-slate-500">
+                        {planet.tags?.includes('dead_matter') ? 'Uninhabitable' : 'Survey to settle'}
+                    </span>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div
             className={`relative rounded-xl border transition-all duration-200 overflow-hidden ${
@@ -177,7 +227,7 @@ function PlanetCard({
                         <span className="text-sm leading-none">{typeInfo.icon}</span>
                         <div className="min-w-0">
                             <div className="text-xs font-bold text-slate-200 truncate leading-tight">{planet.name}</div>
-                            <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: typeInfo.color }}>
+                            <div className="text-[10px] capitalize mt-0.5" style={{ color: typeInfo.color }}>
                                 {planet.planetType}
                             </div>
                         </div>
@@ -212,19 +262,19 @@ function PlanetCard({
                     framing ("colony" → "settlement"). */}
                 {planet.tags && planet.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
-                        {planet.tags.slice(0, 2).map((raw: string) => TAG_DISPLAY[raw] ?? raw).map((tag: string) => (
+                        {planet.tags.slice(0, 2).map((raw: string) => tagLabel(raw)).map((tag: string) => (
                             <span
                                 key={tag}
-                                className="flex items-center gap-0.5 text-[9px] font-display px-1 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/50"
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400"
                             >
-                                <Tag size={7} />
                                 {tag}
                             </span>
                         ))}
                     </div>
                 )}
 
-                {/* Stats mini-bars */}
+                {/* Stats mini-bars — only a world somebody runs has a stability */}
+                {!isNeutral && (
                 <div className="space-y-1 mb-2.5">
                     <div className="flex items-center gap-2">
                         <span className="text-[9px] text-slate-500 w-12 uppercase tracking-wider">Stability</span>
@@ -234,7 +284,7 @@ function PlanetCard({
                                 style={{ width: `${stability}%`, backgroundColor: stability > 60 ? '#22c55e' : stability > 30 ? '#f59e0b' : '#ef4444' }}
                             />
                         </div>
-                        <span className="text-[9px] font-mono text-slate-400">{formatPercent(stability, 3)}</span>
+                        <span className="text-[9px] font-mono text-slate-400">{formatPercent(stability, 0)}</span>
                     </div>
                     {unrest > 0 && (
                         <div className="flex items-center gap-2">
@@ -245,10 +295,11 @@ function PlanetCard({
                                     style={{ width: `${unrest}%` }}
                                 />
                             </div>
-                            <span className="text-[9px] font-mono text-orange-400">{formatPercent(unrest, 1)}</span>
+                            <span className="text-[9px] font-mono text-orange-400">{formatPercent(unrest, 0)}</span>
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* Action buttons */}
                 <div className="flex gap-1.5 mt-2">
@@ -507,8 +558,8 @@ function PlanetCard({
                     </div>
                 )}
 
-                {/* Recruitment Interface */}
-                {isOwnedByPlayer && (
+                {/* Units in production on this world */}
+                {isOwnedByPlayer && activeJobs.length > 0 && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-700/30">
                         {/* Active Progress Bars */}
                         {activeJobs.length > 0 && (
@@ -830,6 +881,11 @@ function SystemContextPanel() {
     const loadingPlanets = false; // Now handled by global sync
     const [activeTab, setActiveTab] = React.useState<'system' | 'planets'>('system');
     const [recruitingOnPlanet, setRecruitingOnPlanet] = React.useState<string | null>(null);
+    const [showAllTags, setShowAllTags] = React.useState(false);
+    React.useEffect(() => { setShowAllTags(false); }, [selectedSystemId]);
+    // Each tab and each system starts at the top, not wherever the last one was scrolled.
+    const bodyRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [activeTab, selectedSystemId]);
 
     React.useEffect(() => {
         if (selectedSystemId) {
@@ -856,6 +912,13 @@ function SystemContextPanel() {
     const fleetOrbitPlanetId: string | null = fleetInSystem ? (selectedFleet.orbitingPlanetId ?? null) : null;
 
     const region = regions.find((r) => r.systemIds.includes(system.id));
+    // An unknown system has no worlds tab; never strand the player on it.
+    const shownTab = revealStage === 'unknown' ? 'system' : activeTab;
+    const star = classifyStar(system);
+    const ownerId: string | undefined = system.ownerFactionId || (system as any).ownerId || undefined;
+    const ownerName = ownerId
+        ? ((storeFactions as any)?.[ownerId]?.name ?? ownerId.replace('faction-', '').replace(/[-_]/g, ' '))
+        : null;
 
     const statusColor = (v: number) =>
         v < 33 ? '#22c55e' : v < 66 ? '#f59e0b' : '#ef4444';
@@ -1048,23 +1111,42 @@ function SystemContextPanel() {
     };
 
     return (
-        <div 
-            className="absolute top-24 left-4 z-30 w-76 pointer-events-auto" 
-            style={{ width: '300px' }}
+        <div
+            className="absolute top-24 left-4 z-30 pointer-events-auto flex flex-col"
+            // Stops above the Command Dock (4rem + gap) instead of running
+            // under it: the old 75vh cut the last planet card in half.
+            style={{ width: '320px', maxHeight: 'calc(100% - 6rem - 5rem)' }}
             onWheel={(e) => e.stopPropagation()}
         >
-            <div className="bg-slate-950/95 backdrop-blur-md border border-slate-700/60 rounded-lg shadow-2xl overflow-hidden">
-                {/* Header */}
-                <div className="flex items-start justify-between px-4 py-3 border-b border-slate-700/60">
-                    <div>
-                        <h3 className="font-display text-sm text-amber-400 tracking-widest truncate">{system.name}</h3>
-                        <div className="text-xs text-slate-500 font-mono mt-0.5">
-                            [{system.q}, {system.r}]
+            <div className="flex flex-col min-h-0 bg-slate-950/95 backdrop-blur-md border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden">
+                {/* Header: the star, what is in it, who holds it */}
+                <div className="flex items-start gap-3 px-4 py-3 border-b border-slate-800">
+                    <span
+                        className="mt-1 w-3.5 h-3.5 rounded-full shrink-0"
+                        style={{ backgroundColor: star.core, boxShadow: `0 0 10px 2px ${star.glow}` }}
+                        aria-hidden="true"
+                    />
+                    <div className="min-w-0 flex-1">
+                        <h3 className="font-display text-base text-amber-300 tracking-widest truncate leading-tight">{system.name}</h3>
+                        <div className="text-[11px] text-slate-500 mt-0.5 truncate" title={`Grid ${system.q}, ${system.r}`}>
+                            {[
+                                star.label,
+                                revealStage !== 'unknown' && planets.length > 0 ? `${planets.length} ${planets.length === 1 ? 'world' : 'worlds'}` : null,
+                                hasAsteroidBelt(system.id) ? 'Asteroid belt' : null,
+                            ].filter(Boolean).join(' · ')}
                         </div>
+                        {revealStage !== 'unknown' && ownerId && (
+                            <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-300 min-w-0">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: factionColor(ownerId) }} />
+                                <span className="truncate">{ownerName}</span>
+                                {ownerId === playerFactionId && <span className="text-emerald-400/80 shrink-0">· yours</span>}
+                            </div>
+                        )}
                     </div>
                     <button
                         onClick={() => setSelectedSystem(null)}
-                        className="text-slate-500 hover:text-slate-200 transition-colors mt-0.5"
+                        aria-label="Close"
+                        className="shrink-0 p-1 -mr-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
                     >
                         <X size={15} />
                     </button>
@@ -1084,54 +1166,48 @@ function SystemContextPanel() {
                 {revealStage !== 'unknown' && (
                     <button
                         onClick={() => useUIStore.getState().setSystemView(system.id)}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 border-b border-slate-700/60 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-[10px] font-display tracking-[0.2em] transition-all"
+                        className="mx-3 mt-3 flex items-center justify-center gap-2 py-2 rounded-lg border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-[10px] font-display tracking-[0.2em] transition-colors"
                     >
                         <Globe size={12} /> ENTER SYSTEM
                     </button>
                 )}
 
-                {/* Tab Bar (if planets available) */}
-                {planets.length > 0 && (
-                    <div className="flex border-b border-slate-700/60">
-                        <button
-                            onClick={() => setActiveTab('system')}
-                            className={`flex-1 py-2 text-[10px] font-display tracking-widest uppercase transition-colors ${
-                                activeTab === 'system'
-                                    ? 'text-amber-400 bg-slate-800/50 border-b-2 border-amber-500'
-                                    : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                        >
-                            System
-                        </button>
-                        {/* Planets Tab - hidden if unknown */}
-                        {revealStage !== 'unknown' && (
+                {/* Tab Bar (if planets available) — a segmented control */}
+                {planets.length > 0 && revealStage !== 'unknown' && (
+                    <div className="mx-3 mt-3 grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-900/80 border border-slate-800">
+                        {([
+                            { id: 'system', label: 'Overview' },
+                            { id: 'planets', label: `Worlds (${planets.length})` },
+                        ] as const).map(t => (
                             <button
-                                onClick={() => setActiveTab('planets')}
-                                className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-display uppercase tracking-widest transition-colors flex-1 justify-center ${
-                                    activeTab === 'planets'
-                                        ? 'text-sky-400 bg-slate-800/50 border-b-2 border-sky-500'
+                                key={t.id}
+                                onClick={() => setActiveTab(t.id)}
+                                className={`py-1.5 rounded-md text-[10px] font-display tracking-widest uppercase transition-colors ${
+                                    activeTab === t.id
+                                        ? 'bg-slate-700/70 text-white shadow-sm'
                                         : 'text-slate-500 hover:text-slate-300'
                                 }`}
                             >
-                                <Globe size={10} />
-                                Planets ({planets.length})
+                                {t.label}
                             </button>
-                        )}
+                        ))}
                     </div>
                 )}
 
                 {/* Body */}
-                <div className="px-4 py-3 space-y-4 max-h-[75vh] overflow-y-auto scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-700">
+                <div ref={bodyRef} className="flex-1 min-h-0 px-4 py-3 space-y-4 overflow-y-auto overscroll-contain custom-scrollbar">
 
-                    {activeTab === 'system' && (
+                    {shownTab === 'system' && (
                         <>
                             {/* Asteroid belt: a place to lurk and a place to be ambushed */}
                             {hasAsteroidBelt(system.id) && (
-                                <div className="flex items-start gap-2 p-2 rounded-lg bg-stone-900/50 border border-stone-600/40">
-                                    <span className="text-stone-400 text-[10px] leading-none mt-0.5">◌</span>
-                                    <p className="text-[10px] text-stone-300/90 leading-relaxed">
-                                        <strong className="text-stone-200">Asteroid belt.</strong> A parked fleet can lurk here (system view → LURK IN BELT):
-                                        unseen unless you have surveyed the system and hold a fleet in it, and it ambushes enemies passing through.
+                                <div
+                                    className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-stone-900/40 border border-stone-700/40"
+                                    title="Enter the system and choose LURK IN BELT. A lurking fleet is unseen unless the enemy has surveyed the system and holds a fleet in it."
+                                >
+                                    <span className="text-stone-400 text-[11px] leading-none mt-0.5">◌</span>
+                                    <p className="text-[11px] text-stone-300/90 leading-snug">
+                                        A parked fleet can hide in the belt and ambush enemies passing through.
                                     </p>
                                 </div>
                             )}
@@ -1143,9 +1219,9 @@ function SystemContextPanel() {
                                         className="w-2 h-2 rounded-full flex-shrink-0"
                                         style={{ backgroundColor: region.color }}
                                     />
-                                    <span className="text-xs text-slate-300 font-display tracking-wide">{region.name}</span>
+                                    <span className="text-[11px] text-slate-300 leading-snug min-w-0">{region.name}</span>
                                     <span
-                                        className="ml-auto text-[10px] font-display px-1.5 py-0.5 rounded"
+                                        className="ml-auto shrink-0 text-[9px] font-display tracking-widest px-1.5 py-0.5 rounded"
                                         style={{
                                             color: region.color,
                                             backgroundColor: `${region.color}22`,
@@ -1157,26 +1233,28 @@ function SystemContextPanel() {
                                 </div>
                             )}
 
-                            {/* Owner */}
-                            {revealStage !== 'unknown' && (system.ownerFactionId || (system as any).ownerId) && (
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                    <Users size={12} className="text-slate-500" />
-                                    <span className="text-slate-300">{(system.ownerFactionId || (system as any).ownerId).replace('faction-', '').toUpperCase()}</span>
-                                </div>
-                            )}
-
-                            {/* Tags */}
+                            {/* Traits — the owner moved up into the header */}
                             {system.tags.length > 0 && revealStage !== 'unknown' && (
-                                <div className="flex flex-wrap gap-1">
-                                    {system.tags.map((tag) => (
-                                        <span
-                                            key={tag}
-                                            className="flex items-center gap-1 text-[10px] font-display px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
-                                        >
-                                            <Tag size={9} />
-                                            {tag}
-                                        </span>
-                                    ))}
+                                <div>
+                                    <span className="text-[10px] text-slate-500 font-display tracking-widest block mb-1.5">TRAITS</span>
+                                    <div className="flex flex-wrap gap-1">
+                                        {(showAllTags ? system.tags : system.tags.slice(0, SYSTEM_TAG_LIMIT)).map((tag) => (
+                                            <span
+                                                key={tag}
+                                                className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-300 border border-slate-700/60"
+                                            >
+                                                {tagLabel(tag)}
+                                            </span>
+                                        ))}
+                                        {system.tags.length > SYSTEM_TAG_LIMIT && (
+                                            <button
+                                                onClick={() => setShowAllTags(v => !v)}
+                                                className="text-[10px] px-2 py-0.5 rounded-full text-sky-400 hover:text-sky-300"
+                                            >
+                                                {showAllTags ? 'Less' : `+${system.tags.length - SYSTEM_TAG_LIMIT} more`}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -1337,14 +1415,24 @@ function SystemContextPanel() {
 
                             {/* Stats */}
                             {revealStage !== 'unknown' ? (
-                                <div className="space-y-2.5">
-                                    <StatRow label="SECURITY" value={system.security} color={statusColor(100 - system.security)} />
-                                    <StatRow label="TRADE VALUE" value={system.tradeValue} color="#f59e0b" />
-                                    <StatRow label="INSTABILITY" value={system.instability} color={statusColor(system.instability)} />
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[
+                                            { label: 'Security', value: system.security, color: statusColor(100 - system.security) },
+                                            { label: 'Trade', value: system.tradeValue, color: '#f59e0b' },
+                                            { label: 'Instability', value: system.instability, color: statusColor(system.instability) },
+                                        ].map(stat => (
+                                            <div key={stat.label} className="rounded-lg bg-slate-900/60 border border-slate-800 px-2 py-1.5">
+                                                <div className="text-[9px] text-slate-500 uppercase tracking-wider">{stat.label}</div>
+                                                <div className="text-sm font-mono leading-tight mb-1" style={{ color: stat.color }}>{Math.round(stat.value)}</div>
+                                                <StatBar value={stat.value} color={stat.color} />
+                                            </div>
+                                        ))}
+                                    </div>
                                     <div className="space-y-1">
-                                        <div className="flex justify-between items-center text-xs">
-                                            <span className="text-slate-400 font-display tracking-wide flex items-center gap-1">
-                                                <Zap size={10} /> ESCALATION
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                                <Zap size={10} /> Escalation
                                             </span>
                                             <span className="font-mono text-orange-400">{system.escalationLevel}/10</span>
                                         </div>
@@ -1401,48 +1489,8 @@ function SystemContextPanel() {
                     )}
 
                     {/* ── Planets Tab ────────────────────────────────────────────────────── */}
-                    {activeTab === 'planets' && (
+                    {shownTab === 'planets' && (
                         <div className="space-y-3">
-                            {/* Mini orbit visual */}
-                            <div className="flex items-center justify-center py-2">
-                                <div className="relative flex items-center justify-center" style={{ width: 80, height: 80 }}>
-                                    {/* Star */}
-                                    <div className="absolute w-6 h-6 rounded-full bg-amber-400 shadow-[0_0_12px_4px_rgba(251,191,36,0.4)] z-10" />
-                                    {/* Orbit rings */}
-                                    {planets.map((_, i) => (
-                                        <div
-                                            key={i}
-                                            className="absolute rounded-full border border-slate-700/40"
-                                            style={{
-                                                width: (ORBIT_SIZES[i % ORBIT_SIZES.length] * 2) + 24,
-                                                height: (ORBIT_SIZES[i % ORBIT_SIZES.length] * 2) + 24,
-                                            }}
-                                        />
-                                    ))}
-                                    {/* Planet dots on orbits */}
-                                    {planets.map((planet, i) => {
-                                        const angle = (i / planets.length) * Math.PI * 2 - Math.PI / 2;
-                                        const radius = ORBIT_SIZES[i % ORBIT_SIZES.length] + 12;
-                                        const x = Math.cos(angle) * radius;
-                                        const y = Math.sin(angle) * radius;
-                                        const isOrbited = fleetOrbitPlanetId === planet.id;
-                                        return (
-                                            <div
-                                                key={planet.id}
-                                                className={`absolute w-2.5 h-2.5 rounded-full border transition-all ${isOrbited ? 'scale-150 shadow-[0_0_6px_2px_rgba(99,102,241,0.6)]' : ''}`}
-                                                style={{
-                                                    backgroundColor: ORBIT_COLORS[i % ORBIT_COLORS.length],
-                                                    borderColor: isOrbited ? '#818cf8' : 'transparent',
-                                                    transform: `translate(calc(${x}px - 5px), calc(${y}px - 5px))`,
-                                                    left: '50%',
-                                                    top: '50%',
-                                                }}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
                             {/* Contested Legend */}
                             {isContested && (
                                 <div className="flex items-start gap-2 p-2.5 rounded-lg bg-orange-950/40 border border-orange-500/20">
@@ -1481,7 +1529,20 @@ function SystemContextPanel() {
                                     No settled worlds in this system
                                 </div>
                             ) : (
-                                planets.map((planet, i) => (
+                                // Yours first, then other empires', then the unsettled
+                                // worlds as one-line rows. Orbit order (the card's colour
+                                // stripe) stays each world's place around the star.
+                                ([
+                                    { key: 'yours', label: 'Your worlds', list: planets.filter(p => p.ownerId === playerFactionId) },
+                                    { key: 'others', label: 'Other empires', list: planets.filter(p => p.ownerId && p.ownerId !== playerFactionId && p.ownerId !== 'faction-neutral') },
+                                    { key: 'free', label: 'Unsettled', list: planets.filter(p => !p.ownerId || p.ownerId === 'faction-neutral') },
+                                ]).filter(g => g.list.length > 0).map(group => (
+                                    <section key={group.key} className="space-y-1.5">
+                                        <h4 className="flex items-center justify-between text-[10px] text-slate-500 font-display tracking-widest uppercase">
+                                            <span>{group.label}</span>
+                                            <span className="font-mono">{group.list.length}</span>
+                                        </h4>
+                                        {group.list.map(planet => { const i = planets.indexOf(planet); return (
                                     <PlanetCard
                                         key={planet.id}
                                         planet={planet}
@@ -1505,6 +1566,8 @@ function SystemContextPanel() {
                                         orbitIndex={i}
                                         canColonize={revealStage === 'surveyed' && !!planet.tags?.includes('colonizable')}
                                     />
+                                        ); })}
+                                    </section>
                                 ))
                             )}
 

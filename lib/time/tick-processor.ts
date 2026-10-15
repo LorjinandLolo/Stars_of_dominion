@@ -55,6 +55,7 @@ import { tickGovernments } from '../government/government-service';
 import { tickLeadership } from '../government/succession-service';
 import { tickCabinets } from '../government/cabinet-service';
 import { tickGovernors } from '../government/governor-service';
+import { tickLeaderGrowth } from '../leadership/leader-growth';
 import { tickParliament } from '../government/parliament-service';
 import { tickCoups } from '../government/coup-service';
 import { tickIdeologyDrift } from '../government/ideology-drift';
@@ -200,6 +201,8 @@ export async function runStrategicTick(
     // their worlds (stability, unrest, skimming).
     try { tickCabinets(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCabinets failed:', e); }
     try { tickGovernors(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickGovernors failed:', e); }
+    // Ministers and governors grow into the job, up to their potential.
+    try { tickLeaderGrowth(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickLeaderGrowth failed:', e); }
     // 9f-5: The chamber divides on tabled bills, terms expire into elections,
     // and the officer corps decides how it feels about all of it.
     try { tickParliament(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickParliament failed:', e); }

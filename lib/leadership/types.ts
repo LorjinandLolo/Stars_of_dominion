@@ -75,6 +75,12 @@ export interface Leader {
     ambitionDrive?: number;
     /** Cabinet seat held, if any (a CabinetPortfolio id). */
     portfolio?: string;
+
+    // ── Character (2026-10-15) — lib/leadership/character.ts ────────────────
+    /** Career they came up through (a BACKGROUNDS id). Derived from id + role when absent. */
+    background?: string;
+    /** Highest competence they can grow to in office. Written on first growth tick. */
+    potential?: number;
 }
 
 export interface LeadershipWorldState {

@@ -1,10 +1,13 @@
 // lib/goals/first-week-goals.ts
-// Stars of Dominion — the first week, as six things to do.
+// Stars of Dominion — the first week, as six things to do, then three next steps.
 //
 // A new player does not need eighteen tutorial steps; they need to know the one
 // thing that moves their empire forward next. Six goals, in order: warships,
 // a first research choice, charts, a second world, a Spaceyard in orbit, and a
-// first contact. Each has one line of hint, how long it takes in real time,
+// first contact. Then three "next steps" that point at the systems the first
+// week never touches: a policy (slots and political capital), ground troops
+// (materiel and ammo), and a third world (the gate to every victory). Each has
+// one line of hint, how long it takes in real time,
 // something worth doing while it runs, and a deep link that opens the panel
 // that does it. While the goal's work is under way the card counts it down
 // (goalWait), so a player who just ordered warships knows they are coming.
@@ -25,6 +28,8 @@ import {
     DEED_TREATIES_SIGNED,
     DEED_ENVOYS_SENT,
     DEED_RESEARCH_STARTED,
+    DEED_POLICIES_PROPOSED,
+    DEED_TROOPS_RAISED,
 } from '@/lib/tech/deed-metrics';
 import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
@@ -52,7 +57,10 @@ export type GoalId =
     | 'survey_three'
     | 'settle_world'
     | 'build_shipyard'
-    | 'reach_out';
+    | 'reach_out'
+    | 'enact_policy'
+    | 'raise_troops'
+    | 'three_worlds';
 
 /** Where a goal's button takes the player. The client resolves it against its store. */
 export interface GoalDeepLink {
@@ -77,6 +85,10 @@ export interface GoalDef {
     meanwhile: string;
     /** Metrics that count toward it; their sum is the progress. */
     metrics: string[];
+    /** Progress read from the world instead of the deed ledger (a state, not a deed). */
+    measure?: (world: WorldLike, factionId: string) => number;
+    /** 'next' goals come after the first week; the card labels them "Next step". */
+    phase?: 'next';
     target: number;
 }
 
@@ -126,7 +138,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         // Not the ground "Orbital Shipyard" building every capital starts with:
         // the orbital LAYER's yard, which is what lays cruisers and up.
         title: 'Raise a Spaceyard in orbit',
-        hint: 'Your ground yard lays corvettes; bigger hulls need a Spaceyard in orbit. In your capital 19s Orbital tab, build a Space Station first, then the Spaceyard.',
+        hint: 'Your ground yard lays corvettes and destroyers. A Spaceyard in orbit builds faster, repairs fleets, and is the first rung to the yards that lay cruisers. In your capital’s Orbital tab, build a Space Station first, then the Spaceyard.',
         takes: `Station ${STATION_TIME}, then the yard ${SPACEYARD_TIME}`,
         meanwhile: 'This is a check-back-later goal. Queue it, then go and meet your neighbours in Diplomacy.',
         metrics: [DEED_SHIPYARDS_BUILT],
@@ -140,6 +152,38 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         meanwhile: 'Your daily brief will tell you how they answer.',
         metrics: [DEED_TREATIES_SIGNED, DEED_ENVOYS_SENT],
         target: 1,
+    },
+    // ── Next steps: what the first week never touched ──
+    {
+        id: 'enact_policy',
+        phase: 'next',
+        title: 'Set your first policy',
+        hint: 'In Empire → Government, enact a policy. You hold three policy slots, and each policy costs political capital, which grows with approval and legitimacy. Pick what your people want.',
+        takes: 'Instant; a reform before the chamber waits for its vote',
+        meanwhile: 'Approval moves slowly. Your daily brief shows where it is heading.',
+        metrics: [DEED_POLICIES_PROPOSED],
+        target: 1,
+    },
+    {
+        id: 'raise_troops',
+        phase: 'next',
+        title: 'Raise ground troops',
+        hint: 'Ships hold the sky; troops take and hold worlds. Select your capital, press UNITS on it and recruit infantry. Every army and ship costs Materiel and every attack spends Ammo: both sit in the top bar, refilled by your factories each cycle.',
+        takes: 'Seconds to minutes per unit',
+        meanwhile: 'A world falls when your troops hold its strongpoints and its capital, and only while your fleet holds the sky above it.',
+        metrics: [DEED_TROOPS_RAISED],
+        target: 1,
+    },
+    {
+        id: 'three_worlds',
+        phase: 'next',
+        title: 'Grow to three worlds',
+        hint: 'Enlightenment, the peaceful victory, needs at least three worlds; conquest needs most of the galaxy. Settle or take a third world, then read your paths in Empire → Saga.',
+        takes: 'As fast as your credits allow',
+        meanwhile: 'Saga shows how close you are to each victory, and what your rivals are racing for.',
+        metrics: [],
+        measure: (world, factionId) => mapValues(world?.construction?.planets).filter((p: any) => p?.ownerId === factionId).length,
+        target: 3,
     },
 ];
 
@@ -163,6 +207,7 @@ type WorldLike = Record<string, any>;
 
 /** Progress toward one goal, straight from the deed ledger. */
 export function goalProgress(world: WorldLike, factionId: string, goal: GoalDef): number {
+    if (goal.measure) return goal.measure(world, factionId);
     return goal.metrics.reduce((sum, metric) => sum + getMetric(world as any, factionId, metric), 0);
 }
 
@@ -399,6 +444,18 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
         }
         case 'start_research':
             return { tab: 'tech', label: 'Open Research' };
+        case 'enact_policy':
+            return { tab: 'government', label: 'Open Government' };
+        case 'raise_troops': {
+            const capital = capitalPlanet(world, factionId);
+            return { tab: 'galaxy', selectSystemId: capital.systemId, label: 'Show me my capital' };
+        }
+        case 'three_worlds': {
+            const systemId = settleTarget(world, factionId);
+            return systemId
+                ? { tab: 'galaxy', selectSystemId: systemId, label: 'Show me a world to settle' }
+                : { tab: 'saga', label: 'Open Saga' };
+        }
         case 'reach_out':
             return { tab: 'diplomacy', label: 'Open Diplomacy' };
     }

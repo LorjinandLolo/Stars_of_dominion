@@ -998,6 +998,7 @@ export default function GalaxyShell() {
                     factionEnergy={reserves['ENERGY'] || 0}
                     factionRares={reserves['RARES'] || 0}
                     factionManpower={reserves['FOOD'] || 0}
+                    factionMateriel={reserves['MATERIEL']}
                     onClose={() => setConstructionPlanet(null)}
                 />
             )}

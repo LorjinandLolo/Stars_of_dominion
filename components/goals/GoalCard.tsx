@@ -16,6 +16,10 @@ import { Target, ChevronDown, ChevronUp, Check, Hourglass, Clock } from 'lucide-
 import { useUIStore } from '@/lib/store/ui-store';
 import { followGoalLink } from '@/lib/goals/follow-goal-link';
 import { unlocksForGoal } from '@/lib/goals/dock-unlocks';
+import { FIRST_WEEK_GOALS } from '@/lib/goals/first-week-goals';
+
+/** How many goals make the first week; the rest are "next steps", counted on their own. */
+const FIRST_WEEK_COUNT = FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').length;
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 
@@ -64,6 +68,11 @@ export default function GoalCard() {
     if (!current || activeTab !== 'galaxy' || briefOpen || systemPanelOpen) return null;
 
     const { goal, number, total, progress, deepLink, waiting } = current;
+    // Two stretches, each counted from 1: "Goal 3/6", then "Next step 2/3".
+    const next = goal.phase === 'next';
+    const stepNumber = next ? number - FIRST_WEEK_COUNT : number;
+    const stepTotal = next ? total - FIRST_WEEK_COUNT : Math.min(total, FIRST_WEEK_COUNT);
+    const stepLabel = next ? 'Next step' : 'Goal';
     const remaining = waiting ? formatSimAsClock(waiting.completesAt - nowSeconds, 'any moment') : null;
     // What finishing it adds to the dock — shown only while it is still locked.
     const unlocks = showEverything ? [] : unlocksForGoal(goal.id);
@@ -86,7 +95,7 @@ export default function GoalCard() {
                     <span className="flex items-center gap-2 min-w-0">
                         <Target size={13} className="text-sky-400 shrink-0" />
                         <span className="text-[9px] font-display tracking-[0.18em] uppercase text-sky-300 shrink-0">
-                            Goal {number}/{total}
+                            {stepLabel} {stepNumber}/{stepTotal}
                         </span>
                         {collapsed && (
                             <span className="text-[11px] text-slate-200 truncate">
@@ -106,12 +115,12 @@ export default function GoalCard() {
                             )}
                         </div>
                         {/* One pip per goal: done, current, ahead. */}
-                        <div className="flex gap-1" aria-label={`Goal ${number} of ${total}`}>
-                            {Array.from({ length: total }, (_, i) => (
+                        <div className="flex gap-1" aria-label={`${stepLabel} ${stepNumber} of ${stepTotal}`}>
+                            {Array.from({ length: stepTotal }, (_, i) => (
                                 <span
                                     key={i}
                                     className={`h-1 flex-1 rounded-full ${
-                                        i < number - 1 ? 'bg-emerald-500' : i === number - 1 ? 'bg-sky-400' : 'bg-slate-700'
+                                        i < stepNumber - 1 ? 'bg-emerald-500' : i === stepNumber - 1 ? 'bg-sky-400' : 'bg-slate-700'
                                     }`}
                                 />
                             ))}
