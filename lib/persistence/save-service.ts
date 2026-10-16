@@ -328,6 +328,11 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // shared snapshot) and the public projection in shard-privacy.ts is an
         // allow-list, so rivals never see them on the wire.
         shipDesigns: Array.from(world.shipDesigns?.values() ?? []).filter(d => d.factionId === factionId),
+        // Outposts (lib/outposts) are their owner's business: crises, prisoners,
+        // what is in the warehouse. They ride here, not in the shared snapshot.
+        outposts: Array.from(world.construction.planets.values())
+            .filter((p: any) => p.ownerId === factionId && p.outpost)
+            .map((p: any) => ({ planetId: p.id, state: p.outpost })),
         // Planet-layer rollups. The per-planet detail already rides along in the
         // snapshot; these are the empire-wide aggregates the UI would otherwise
         // have to recompute on every poll.
@@ -377,6 +382,7 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!(world.shipDesigns instanceof Map)) world.shipDesigns = new Map();
         shard.shipDesigns.forEach((d: any) => { if (d?.id) world.shipDesigns!.set(d.id, d); });
     }
+    injectOutposts(world, shard);
     if (shard.economy) world.economy.factions.set(shard.factionId, shard.economy);
     if (shard.tech) world.tech.set(shard.factionId, shard.tech);
     if (shard.espionageAgents) {
@@ -474,8 +480,23 @@ export function applyPiracySnapshot(world: GameWorldState, snapshot: string | nu
     normalizeEspionageState(world);
 }
 
+/**
+ * Put a shard's outposts back on their planets. Only onto a world the shard's
+ * faction still owns: a shard written before a capture must not hand the
+ * outpost back to the loser.
+ */
+export function injectOutposts(world: GameWorldState, shard: any): void {
+    if (!Array.isArray(shard?.outposts)) return;
+    for (const entry of shard.outposts) {
+        const planet: any = world.construction.planets.get(entry?.planetId);
+        if (planet && entry.state && planet.ownerId === shard.factionId) planet.outpost = entry.state;
+    }
+}
+
 export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     const cloned = recordsToMaps(mapsToRecords(world)) as GameWorldState;
+    // Outposts ride in their owner's shard (extractFactionShard).
+    for (const p of cloned.construction.planets.values() as Iterable<any>) delete p.outpost;
     cloned.movement.fleets.clear();
     cloned.economy.factions.clear();
     cloned.tech.clear();

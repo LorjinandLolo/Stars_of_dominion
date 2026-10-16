@@ -12,6 +12,8 @@ import { computeBalance, runShift } from '../lib/outposts/outpost-sim';
 import { CELL_COUNT, CENTER_CELL, cellOpen, MODULES, terrainOk } from '../lib/outposts/outpost-catalog';
 import { tickOutposts, shipOutpostWarehouses, outpostSightSystems, prisonersHeld, outpostBombarded, outpostCaptured } from '../lib/outposts/outpost-service';
 import { fortificationLevelFor } from '../lib/combat/siege/strongpoints';
+import { extractFactionShard, cleanWorldForSave, injectOutposts } from '../lib/persistence/save-service';
+import { projectShardForCaller } from '../lib/persistence/shard-privacy';
 import { expireCrises, rollCrisis, CRISIS_KINDS } from '../lib/outposts/crises';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
 import { RNG } from '../lib/trade-system/rng';
@@ -346,6 +348,28 @@ test('captured: crises end, the conqueror’s own people go free, others change 
     assert.strictEqual(p.outpost.crises.length, 0);
     assert.strictEqual(p.outpost.charter, 'settlement');
     assert.ok(p.outpost.colonists < 20, 'some fled');
+    world.construction.planets.delete(p.id);
+});
+
+// ─── Privacy ─────────────────────────────────────────────────────────────────
+
+test('an outpost rides in its owner’s shard, not the shared snapshot, and never in a rival’s view', () => {
+    const p = warWorld('privacy-outpost', [[7, 'cell_block']]);
+    const shard = JSON.parse(extractFactionShard(world, A));
+    assert.ok(shard.outposts.some((o: any) => o.planetId === p.id), 'in the owner’s shard');
+    const cleaned: any = cleanWorldForSave(world);
+    assert.ok(!cleaned.construction.planets.get(p.id).outpost, 'stripped from the shared snapshot');
+    const rival = JSON.parse(projectShardForCaller(extractFactionShard(world, A), false));
+    assert.strictEqual(rival.outposts, undefined, 'not in the public projection');
+    // Restored on load, but only onto a world the shard's faction still owns.
+    const state = p.outpost;
+    delete p.outpost;
+    injectOutposts(world, { factionId: A, outposts: [{ planetId: p.id, state }] });
+    assert.strictEqual(p.outpost, state);
+    delete p.outpost;
+    p.ownerId = B;
+    injectOutposts(world, { factionId: A, outposts: [{ planetId: p.id, state }] });
+    assert.strictEqual(p.outpost, undefined, 'a pre-capture shard does not hand it back');
     world.construction.planets.delete(p.id);
 });
 

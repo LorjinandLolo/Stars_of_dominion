@@ -3,7 +3,7 @@ import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { shipyardSystemIdsFor } from '@/lib/exploration/ping-cost';
 import { useUIStore } from '@/lib/store/ui-store';
 import { applyTreeDelta, type TreeDelta } from '@/lib/persistence/tree-delta-apply';
-import { deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
+import { injectOutposts, deserializeWorld, injectFactionShard, recordsToMaps, normalizeEspionageState } from '@/lib/persistence/save-service';
 import { getTechModifier } from '@/lib/tech/modifiers';
 import { normalizeComposition } from '@/lib/combat/ship-registry';
 import { applyPendingOrderOverlays } from '@/lib/multiplayer/optimistic';
@@ -1133,6 +1133,8 @@ export function useGameSync() {
                 if (!(world.shipDesigns instanceof Map)) world.shipDesigns = new Map();
                 mappedShard.shipDesigns.forEach((d: any) => { if (d?.id) world.shipDesigns!.set(d.id, d); });
             }
+            // Own outposts only: the public projection of a rival shard never carries them.
+            injectOutposts(world, mappedShard);
             if (mappedShard.economy) world.economy.factions.set(mappedShard.factionId, mappedShard.economy);
             if (mappedShard.tech) world.tech.set(mappedShard.factionId, mappedShard.tech);
             if (mappedShard.espionageAgents) {
