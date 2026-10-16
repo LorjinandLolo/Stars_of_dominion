@@ -7,7 +7,9 @@ export type CellTerrain = 'flat' | 'ore' | 'ice' | 'vent' | 'rock' | 'ruin';
 export type ModuleId =
     | 'hub' | 'habitat' | 'solar' | 'reactor' | 'geothermal' | 'life_support' | 'hydroponics'
     | 'mine' | 'warehouse' | 'dock' | 'commons' | 'medbay' | 'bunker'
-    | 'cell_block' | 'test_lab' | 'sensor_mast' | 'fuel_depot';
+    | 'cell_block' | 'test_lab' | 'sensor_mast' | 'fuel_depot'
+    // Military base only (OutpostState.base):
+    | 'barracks_module' | 'drydock' | 'battery' | 'command_post';
 
 export type CharterId = 'settlement' | 'mining' | 'prison' | 'research' | 'listening' | 'depot';
 
@@ -88,6 +90,14 @@ export interface OutpostState {
     experimentReadyShift: number;
     /** Set when the outpost became a colony: the grid freezes, functions keep running. */
     graduated?: boolean;
+    /**
+     * Set when the settlement grew into a military base instead of a colony:
+     * it keeps its grid, its shifts and its crises, and unlocks the military
+     * modules (barracks, drydock, battery, command post).
+     */
+    base?: boolean;
+    /** Garrison troops the base's barracks have drilled so far (capped per barracks). */
+    drilled?: number;
     /** Running totals for the panel. */
     stats: { shipped: Record<string, number>; experiments: number; deaths: number; crisesFaced: number };
 }

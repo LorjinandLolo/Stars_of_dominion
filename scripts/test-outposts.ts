@@ -12,6 +12,10 @@ import { computeBalance, runShift } from '../lib/outposts/outpost-sim';
 import { CELL_COUNT, CENTER_CELL, cellOpen, MODULES, terrainOk } from '../lib/outposts/outpost-catalog';
 import { tickOutposts, shipOutpostWarehouses, outpostSightSystems, prisonersHeld, outpostBombarded, outpostCaptured } from '../lib/outposts/outpost-service';
 import { fortificationLevelFor } from '../lib/combat/siege/strongpoints';
+import { planetYardTier } from '../lib/combat/shipyard-gate';
+import { adminStatus } from '../lib/government/admin-capacity';
+import { outpostAdvice } from '../lib/outposts/outpost-advice';
+import { BARRACKS_TROOP_CAP, BASE_FORTIFICATION, BATTERY_FORTIFICATION } from '../lib/outposts/outpost-catalog';
 import { extractFactionShard, cleanWorldForSave, injectOutposts } from '../lib/persistence/save-service';
 import { projectShardForCaller } from '../lib/persistence/shard-privacy';
 import { expireCrises, rollCrisis, CRISIS_KINDS } from '../lib/outposts/crises';
@@ -374,6 +378,63 @@ test('an outpost rides in its owner’s shard, not the shared snapshot, and neve
     injectOutposts(world, { factionId: A, outposts: [{ planetId: p.id, state }] });
     assert.strictEqual(p.outpost, undefined, 'a pre-capture shard does not hand it back');
     world.construction.planets.delete(p.id);
+});
+
+// ─── Military base ───────────────────────────────────────────────────────────
+
+test('a settlement can become a military base instead of a colony', () => {
+    rich();
+    const p = warWorld('base-world', [[7, 'habitat'], [11, 'hydroponics'], [13, 'life_support'], [17, 'solar'], [6, 'bunker'], [8, 'dock']]);
+    const s = p.outpost;
+    s.tier = 2; s.colonists = 16; s.morale = 60;
+    s.cells[16].terrain = 'flat';
+    silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'build', cell: 16, module: 'barracks_module' }, A));
+    assert.match(lastError(), /military base/, `military modules wait for the base: ${lastError()}`);
+    silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'advance', path: 'base' }, A));
+    assert.ok(s.base, lastError());
+    assert.strictEqual(s.tier, 3);
+    assert.ok(!s.graduated, 'a base is not a colony');
+    assert.ok(p.tags.includes('outpost'), 'the surface stays closed');
+    assert.ok(adminStatus([p], A).systems === 1, 'a base counts as a holding');
+    world.construction.planets.delete(p.id);
+});
+
+test('barracks drill a garrison each shift, to a cap, never under siege', () => {
+    rich();
+    const p = warWorld('base-barracks', [[7, 'habitat'], [11, 'hydroponics'], [13, 'life_support'], [17, 'solar'], [16, 'solar'], [18, 'barracks_module']]);
+    const s = p.outpost;
+    s.tier = 3; s.base = true; s.drilled = 0; s.colonists = 20;
+    world.nowSeconds = s.nextShiftAt; silently(() => tickOutposts(world)); s.crises = [];
+    const t1 = p.garrison?.unitComposition?.INFANTRY ?? 0;
+    assert.ok(t1 > 0, 'troops drilled');
+    s.drilled = BARRACKS_TROOP_CAP;
+    world.nowSeconds = s.nextShiftAt; silently(() => tickOutposts(world)); s.crises = [];
+    assert.strictEqual(p.garrison.unitComposition.INFANTRY, t1, 'capped');
+    s.drilled = 0; p.siege = { attackerEmpireId: B };
+    world.nowSeconds = s.nextShiftAt; silently(() => tickOutposts(world)); s.crises = [];
+    assert.strictEqual(p.garrison.unitComposition.INFANTRY, t1, 'not under siege');
+    world.construction.planets.delete(p.id);
+});
+
+test('drydocks make the base a shipyard; batteries and the base dig in', () => {
+    const p = warWorld('base-yard', [[7, 'drydock']]);
+    p.outpost.base = true; p.outpost.tier = 3;
+    assert.strictEqual(planetYardTier(p), 1);
+    p.outpost.cells[8].module = 'drydock'; p.outpost.cells[8].terrain = 'flat';
+    assert.strictEqual(planetYardTier(p), 2, 'two drydocks build cruisers');
+    const before = fortificationLevelFor({ ...p, outpost: { ...p.outpost, base: false, cells: [] } });
+    p.outpost.cells[11].module = 'battery'; p.outpost.cells[11].terrain = 'flat';
+    assert.strictEqual(fortificationLevelFor(p), before + BASE_FORTIFICATION + BATTERY_FORTIFICATION);
+    world.construction.planets.delete(p.id);
+});
+
+test('the advisor says what matters most', () => {
+    const s = createOutpostState({ id: 'advice' }, 0);
+    assert.match(outpostAdvice(s, computeBalance(s)).title, /Hydroponics/, 'food first on a fresh outpost');
+    s.crises = [{ id: 'x', kind: 'sickness' } as any];
+    assert.match(outpostAdvice(s, computeBalance(s)).title, /crisis/i);
+    s.crises = []; s.colonists = 0;
+    assert.match(outpostAdvice(s, computeBalance(s)).title, /Nobody/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed.`);

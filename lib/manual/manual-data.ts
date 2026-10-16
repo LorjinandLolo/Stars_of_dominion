@@ -205,6 +205,8 @@ export const MANUAL_DATA: ManualSection[] = [
                             'The charter is the outpost\'s job: settlement, mining, penal colony, proving ground, listening post or fleet depot. Its function runs half again as well.',
                             'Prisoners can be moved to cell blocks (needs a landing dock) and stay ransomable. A test lab pushes your current research; using prisoners as subjects doubles it, and their homeland hears of it.',
                             'Grow: 10 colonists, morale 50, a habitat, life support and hydroponics make a settlement (3,000 Cr) and open the whole grid. 30 colonists, morale 60, a dock and a warehouse make a colony (10,000 Cr): the world gets its full surface for districts and the old modules keep working.',
+                            'Or make a settlement a military base (15 colonists, morale 50, a bunker and a dock; 8,000 Cr). It stays an outpost and unlocks barracks (a garrison drilled every shift), drydocks (warships built there), defence batteries and a command post.',
+                            'The outpost screen has a How to play walkthrough and an advisor that always names the next thing to do.',
                         ],
                     },
                 ],

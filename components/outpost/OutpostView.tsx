@@ -19,8 +19,11 @@ import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import {
     X, Home, BedDouble, Sun, Atom, Flame, Wind, Sprout, Pickaxe, Warehouse, Anchor, Coffee, HeartPulse, Shield, Lock,
     FlaskConical, Radar, Fuel, Users, Zap, Utensils, Smile, AlertTriangle, Package, ChevronUp, Power, Trash2, Hammer,
-    Mountain, Clock, Sparkles, Skull,
+    Mountain, Clock, Sparkles, Skull, Swords, Rocket, Crosshair, Flag, Lightbulb, CircleHelp, ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { tierName, BASE_REQUIREMENTS, BARRACKS_TROOP_CAP, drydockYardTier } from '@/lib/outposts/outpost-catalog';
+import { outpostAdvice } from '@/lib/outposts/outpost-advice';
+import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 /** How a crisis reads: an opportunity, a danger, or something that can kill. */
 const CRISIS_TONE: Record<string, 'chance' | 'danger' | 'deadly'> = {
@@ -37,10 +40,11 @@ const ICON: Record<ModuleId, React.ComponentType<{ size?: number; className?: st
     hub: Home, habitat: BedDouble, solar: Sun, reactor: Atom, geothermal: Flame, life_support: Wind,
     hydroponics: Sprout, mine: Pickaxe, warehouse: Warehouse, dock: Anchor, commons: Coffee, medbay: HeartPulse,
     bunker: Shield, cell_block: Lock, test_lab: FlaskConical, sensor_mast: Radar, fuel_depot: Fuel,
+    barracks_module: Swords, drydock: Rocket, battery: Crosshair, command_post: Flag,
 };
 
 /** What a module is for, by colour: the grid reads at a glance. */
-type Role = 'life' | 'food' | 'power' | 'industry' | 'civic' | 'security' | 'science' | 'logistics';
+type Role = 'life' | 'food' | 'power' | 'industry' | 'civic' | 'security' | 'science' | 'logistics' | 'military';
 const ROLE: Record<ModuleId, Role> = {
     hub: 'life', habitat: 'life', life_support: 'life', medbay: 'life',
     hydroponics: 'food',
@@ -49,14 +53,15 @@ const ROLE: Record<ModuleId, Role> = {
     commons: 'civic',
     bunker: 'security', cell_block: 'security',
     test_lab: 'science', sensor_mast: 'science',
+    barracks_module: 'military', drydock: 'military', battery: 'military', command_post: 'military',
 };
 const ROLE_COLOR: Record<Role, string> = {
     life: '#38bdf8', food: '#4ade80', power: '#fbbf24', industry: '#fb923c',
-    civic: '#f472b6', security: '#f87171', science: '#a78bfa', logistics: '#2dd4bf',
+    civic: '#f472b6', security: '#f87171', science: '#a78bfa', logistics: '#2dd4bf', military: '#e11d48',
 };
 const ROLE_LABEL: Record<Role, string> = {
     life: 'Living', food: 'Food', power: 'Power', industry: 'Industry',
-    civic: 'Morale', security: 'Security', science: 'Science', logistics: 'Logistics',
+    civic: 'Morale', security: 'Security', science: 'Science', logistics: 'Logistics', military: 'Military',
 };
 
 /** Ground, painted: each terrain has its own texture so the map reads without labels. */
@@ -251,6 +256,97 @@ function Legend() {
     );
 }
 
+/** uiPrefs.opened id for the outpost walkthrough (shown once, reopened from "How to play"). */
+const TUTORIAL_ID = 'outpost-tutorial';
+
+const TUTORIAL_STEPS: Array<{ title: string; lines: string[]; Icon: React.ComponentType<{ size?: number; className?: string }> }> = [
+    { title: 'Your outpost', Icon: Home, lines: [
+        'A few colonists on a 5×5 patch of ground. Keep them alive and it grows: first a settlement, then a colony (a city on the full surface) or a military base.',
+        'Everything here is done from this screen.' ] },
+    { title: 'It runs in shifts', Icon: Clock, lines: [
+        'Every five minutes is a shift: colonists breathe, eat and work, modules make and use power, new people arrive or leave.',
+        'The clock at the top shows when the next one runs. You do not have to watch it; it keeps going while you are away.' ] },
+    { title: 'Read the gauges', Icon: Wind, lines: [
+        'Air and food say how many shifts they will last. Run out of air and people die; run out of food and they starve.',
+        'Power: every module draws it. Short of power, the least important modules go dark first.',
+        'Morale: at 40 or more newcomers arrive; under 25 colonists start leaving.' ] },
+    { title: 'Build on the grid', Icon: Hammer, lines: [
+        'Tap a square to build. The ground matters: most modules need flat ground, extractors need ore, ice or a vent, and rock must be cleared first.',
+        'A good start: Hydroponics (food), Life Support (air), a Solar Array (power), then a Habitat Dome (room for four more).',
+        'Domes glow when they work and pulse red when they lack crew or power. Each takes a shift or two to build.' ] },
+    { title: 'Answer crises', Icon: AlertTriangle, lines: [
+        'Storms, meteors, fever, strikes, raiders: a crisis card appears with two or three answers, each with a price, and two shifts to choose.',
+        'Say nothing and the crew picks the passive answer. A governor on the world picks a sensible one instead.' ] },
+    { title: 'Give it a purpose, then grow', Icon: ChevronUp, lines: [
+        'The charter is its job: mining, a penal colony, a proving ground for research, a listening post, a fleet depot. Its function runs half again as well.',
+        'Extractors fill a warehouse that ships to your reserves every cycle.',
+        'A settlement can become a colony, or a military base with barracks, drydocks and gun batteries. The advisor box always says what to do next.' ] },
+];
+
+function OutpostTutorial({ onClose }: { onClose: () => void }) {
+    const [step, setStep] = React.useState(0);
+    const s = TUTORIAL_STEPS[step];
+    const last = step === TUTORIAL_STEPS.length - 1;
+    return (
+        <div className="fixed inset-0 z-[46] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4" onClick={onClose}>
+            <div role="dialog" aria-label="How to play outposts" className="w-full max-w-md rounded-2xl border border-emerald-500/40 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-emerald-400/80">How to play · {step + 1} of {TUTORIAL_STEPS.length}</div>
+                    <button onClick={onClose} aria-label="Close the walkthrough" className="text-slate-500 hover:text-white"><X size={16} /></button>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shrink-0"><s.Icon size={18} /></span>
+                    <h3 className="text-lg font-display font-bold text-slate-50">{s.title}</h3>
+                </div>
+                <div className="space-y-2">
+                    {s.lines.map((l, i) => <p key={i} className="text-sm text-slate-300 leading-relaxed">{l}</p>)}
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                    <div className="flex gap-1.5">
+                        {TUTORIAL_STEPS.map((_, i) => <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-5 bg-emerald-400' : 'w-1.5 bg-slate-700'}`} />)}
+                    </div>
+                    <div className="flex gap-2">
+                        {step > 0 && <button onClick={() => setStep(step - 1)} className="px-3 py-1.5 rounded-md border border-slate-700 text-xs text-slate-300 hover:text-white flex items-center gap-1"><ChevronLeft size={12} /> Back</button>}
+                        <button onClick={() => (last ? onClose() : setStep(step + 1))} className="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1">
+                            {last ? 'Start building' : <>Next <ChevronRight size={12} /></>}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+type Req = { colonists: number; morale: number; modules: ModuleId[]; cost: Record<string, number> };
+
+/** What still stands between this outpost and a requirement set, for the growth cards. */
+function blockersFor(state: OutpostState, req: Req, reserves: Record<string, number>, besieged: boolean): string[] {
+    const out: string[] = [];
+    if (state.colonists < req.colonists) out.push(`${req.colonists} colonists (${state.colonists})`);
+    if (state.morale < req.morale) out.push(`morale ${req.morale} (${state.morale})`);
+    for (const m of req.modules) if (!state.cells.some((c, i) => c.module === m && moduleBuilt(state, i))) out.push(`a ${MODULES[m].name}`);
+    if (besieged) out.push('the siege lifted');
+    for (const [k, v] of Object.entries(req.cost)) if ((reserves[k] ?? 0) < v) out.push(`${v.toLocaleString()} ${k.toLowerCase()}`);
+    return out;
+}
+
+function GrowthCard({ title, blurb, blockers, cost, accent, busy, onGrow, Icon }: {
+    title: string; blurb: string; blockers: string[]; cost: Record<string, number>; accent: 'emerald' | 'rose';
+    busy: boolean; onGrow: () => void; Icon: React.ComponentType<{ size?: number }>;
+}) {
+    const box = accent === 'emerald' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5';
+    const head = accent === 'emerald' ? 'text-emerald-400/80' : 'text-rose-300/90';
+    const btn = accent === 'emerald' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-700 hover:bg-rose-600';
+    return (
+        <div className={`rounded-xl border ${box} p-3 space-y-2`}>
+            <div className={`text-[10px] uppercase tracking-widest ${head} flex items-center gap-1`}><Icon size={11} /> {title}</div>
+            <p className="text-[10px] text-slate-400">{blurb}</p>
+            {blockers.length ? <ul className="text-[11px] text-slate-400 list-disc pl-4">{blockers.map(b => <li key={b}>{b}</li>)}</ul> : <p className="text-[11px] text-emerald-200">Ready.</p>}
+            <button disabled={busy || blockers.length > 0} onClick={onGrow} className={`w-full py-2 rounded-md ${btn} text-xs font-bold text-white disabled:opacity-40`}>Grow · {fmtCost(cost)}</button>
+        </div>
+    );
+}
+
 export default function OutpostView() {
     const planetId = useUIStore(s => s.outpostPlanetId);
     const setOutpostPlanet = useUIStore(s => s.setOutpostPlanet);
@@ -263,6 +359,16 @@ export default function OutpostView() {
     const reserves: Record<string, number> = (factions as any)?.[playerFactionId ?? '']?.reserves ?? {};
 
     const [selected, setSelected] = React.useState<number | null>(null);
+    const uiPrefs = useUIStore(s => s.uiPrefs);
+    const [tutorialOpen, setTutorialOpen] = React.useState(false);
+    // First visit: the walkthrough opens by itself, once per player (any device).
+    React.useEffect(() => {
+        if (uiPrefs && !uiPrefs.opened?.includes(TUTORIAL_ID)) setTutorialOpen(true);
+    }, [uiPrefs]);
+    const closeTutorial = () => {
+        setTutorialOpen(false);
+        if (uiPrefs && !uiPrefs.opened?.includes(TUTORIAL_ID)) void patchUiPrefs({ opened: [TUTORIAL_ID] });
+    };
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
@@ -326,14 +432,17 @@ export default function OutpostView() {
                     <div className="relative flex items-start justify-between gap-3">
                         <div className="min-w-0 space-y-1">
                             <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.2em]">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{state.graduated ? 'Colony' : tierDef.name}</span>
+                                <span className={`px-1.5 py-0.5 rounded border ${state.base ? 'bg-rose-500/15 text-rose-200 border-rose-500/40' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'}`}>{tierName(state)}</span>
                                 <span className="px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/25">{CHARTERS[state.charter].name}</span>
                                 {state.crises.length > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-200 border border-amber-500/40 animate-pulse">{state.crises.length} crisis{state.crises.length === 1 ? '' : 'es'}</span>}
                             </div>
                             <h2 className="text-2xl font-display font-bold text-slate-50 truncate">{planet.name}</h2>
                             {!state.graduated && <ShiftClock nextShiftAt={state.nextShiftAt} shift={state.shift} />}
                         </div>
-                        <button onClick={() => setOutpostPlanet(null)} aria-label="Close outpost" className="p-2 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-400 hover:text-white shrink-0"><X size={16} /></button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => setTutorialOpen(true)} className="px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white text-[11px] flex items-center gap-1"><CircleHelp size={14} /> How to play</button>
+                            <button onClick={() => setOutpostPlanet(null)} aria-label="Close outpost" className="p-2 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-400 hover:text-white"><X size={16} /></button>
+                        </div>
                     </div>
                     {next && !state.graduated && (
                         <div className="relative mt-3">
@@ -400,6 +509,29 @@ export default function OutpostView() {
                     <Gauge color="#fb923c" icon={<Package size={11} />} label="Warehouse" value={balance.storage ? `${Math.round(heldInWarehouse)} / ${balance.storage}` : 'none'} fill={balance.storage ? heldInWarehouse / balance.storage : undefined}
                         sub={Object.keys(balance.output).length ? Object.entries(balance.output).map(([k, v]) => `+${v} ${k.toLowerCase()}`).join(', ') : balance.storage ? 'nothing coming in' : 'build one to keep output'} />
                 </div>
+
+                {/* Advisor: the one thing to do next, from the same rules the AI plays by */}
+                {(() => {
+                    const a = outpostAdvice(state, balance, { besieged, reserves });
+                    const tone = a.tone === 'urgent' ? 'border-amber-500/50 bg-amber-500/10' : a.tone === 'good' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-sky-500/30 bg-sky-500/5';
+                    return (
+                        <div className={`rounded-xl border ${tone} px-3 py-2.5 flex items-start gap-3`}>
+                            <Lightbulb size={16} className={`shrink-0 mt-0.5 ${a.tone === 'urgent' ? 'text-amber-300' : a.tone === 'good' ? 'text-emerald-300' : 'text-sky-300'}`} />
+                            <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-slate-100">{a.title}</div>
+                                <div className="text-xs text-slate-400">{a.text}</div>
+                            </div>
+                            {a.build && mine && (
+                                <div className="flex gap-1.5 shrink-0">
+                                    <button onClick={() => setSelected(a.build!.cell)} className="px-2 py-1 rounded-md border border-slate-600 text-[11px] text-slate-300 hover:text-white">Show me</button>
+                                    <button disabled={busy || Object.entries(MODULES[a.build.module].cost).some(([k, v]) => (reserves[k] ?? 0) < v)}
+                                        onClick={() => send({ op: 'build', cell: a.build!.cell, module: a.build!.module }, `Build ${MODULES[a.build!.module].name}`)}
+                                        className="px-2 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-[11px] font-bold text-white disabled:opacity-40">Build it</button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
                     {/* Grid */}
@@ -499,21 +631,40 @@ export default function OutpostView() {
                             )}
                         </div>
 
-                        {/* Growth */}
-                        {next && !state.graduated && (
-                            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
-                                <div className="text-[10px] uppercase tracking-widest text-emerald-400/80 flex items-center gap-1"><ChevronUp size={11} /> Grow into a {TIERS[(state.tier + 1) as 2 | 3].name.toLowerCase()}</div>
-                                {blockers.length ? (
-                                    <ul className="text-[11px] text-slate-400 list-disc pl-4">{blockers.map(b => <li key={b}>{b}</li>)}</ul>
-                                ) : <p className="text-[11px] text-emerald-200">Ready.</p>}
-                                <p className="text-[10px] text-slate-500">{state.tier === 1 ? 'Opens the whole plain.' : 'The world becomes a colony with a full surface for districts; these modules keep working.'}</p>
-                                <button disabled={busy || !mine || blockers.length > 0} onClick={() => send({ op: 'advance' }, 'Grow outpost')} className="w-full py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white disabled:opacity-40">
-                                    Grow · {fmtCost(next.cost)}
-                                </button>
-                            </div>
+                        {/* Growth: settlement, then colony or military base */}
+                        {!state.graduated && !state.base && state.tier === 1 && next && (
+                            <GrowthCard title="Grow into a settlement" blurb="Opens the whole plain to build on." Icon={ChevronUp} accent="emerald"
+                                blockers={blockersFor(state, next, reserves, besieged)} cost={next.cost} busy={busy || !mine}
+                                onGrow={() => send({ op: 'advance' }, 'Grow into a settlement')} />
                         )}
+                        {!state.graduated && !state.base && state.tier === 2 && next && (
+                            <>
+                                <GrowthCard title="Grow into a colony" blurb="A city: the world gets its full surface for districts, and these domes become its first buildings. Crises end." Icon={Home} accent="emerald"
+                                    blockers={blockersFor(state, next, reserves, besieged)} cost={next.cost} busy={busy || !mine}
+                                    onGrow={() => send({ op: 'advance', path: 'colony' }, 'Grow into a colony')} />
+                                <GrowthCard title="Or a military base" blurb="A fortress: the grid keeps running and unlocks barracks (a garrison), drydocks (warships built here), defence batteries and a command post." Icon={Swords} accent="rose"
+                                    blockers={blockersFor(state, BASE_REQUIREMENTS, reserves, besieged)} cost={BASE_REQUIREMENTS.cost} busy={busy || !mine}
+                                    onGrow={() => { if (window.confirm('Make this a military base? It will not become a colony.')) send({ op: 'advance', path: 'base' }, 'Grow into a military base'); }} />
+                            </>
+                        )}
+                        {state.base && (() => {
+                            const barracks = balance.running.filter(i => state.cells[i].module === 'barracks_module').length;
+                            const docks = state.cells.filter((c, i) => c.module === 'drydock' && moduleBuilt(state, i) && !c.off && !((c.downUntilShift ?? 0) > state.shift)).length;
+                            const yard = drydockYardTier(docks);
+                            const batteries = state.cells.filter((c, i) => c.module === 'battery' && moduleBuilt(state, i)).length;
+                            return (
+                                <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 space-y-1.5 text-[11px] text-slate-300">
+                                    <div className="text-[10px] uppercase tracking-widest text-rose-300/90 flex items-center gap-1"><Swords size={11} /> Military base</div>
+                                    <div>Garrison drilled: {state.drilled ?? 0} / {barracks * BARRACKS_TROOP_CAP}{barracks === 0 ? ' (build a Barracks)' : besieged ? ' (paused: under siege)' : ''}</div>
+                                    <div>Shipyard: {yard === 0 ? 'none (build a Drydock)' : yard === 1 ? 'corvettes and destroyers' : 'up to cruisers'}</div>
+                                    <div>Defence batteries: {batteries}{bunkers ? ` · bunkers ${bunkers}` : ''}</div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
+
+                {tutorialOpen && <OutpostTutorial onClose={closeTutorial} />}
 
                 {/* Log */}
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
@@ -536,7 +687,10 @@ function BuildList({ state, cellIndex, reserves, busy, onBuild }: {
 }) {
     const cell = state.cells[cellIndex];
     if (state.graduated) return <p className="text-xs text-slate-500">This is a colony now: build on its surface.</p>;
-    const options = BUILDABLE_MODULES.filter(m => terrainOk(m, cell.terrain) && (cell.terrain !== 'rock' || m === 'bunker'));
+    const options = BUILDABLE_MODULES.filter(m => terrainOk(m, cell.terrain) && (cell.terrain !== 'rock' || m === 'bunker' || m === 'battery'))
+        // Military modules sort last, and only show once a settlement could become a base.
+        .filter(m => !MODULES[m].baseOnly || state.base || state.tier >= 2)
+        .sort((a, b) => Number(!!MODULES[a].baseOnly) - Number(!!MODULES[b].baseOnly));
     if (!options.length) return <p className="text-xs text-slate-500">Nothing can be built on this ground.</p>;
     return (
         <div className="space-y-1">
@@ -544,7 +698,8 @@ function BuildList({ state, cellIndex, reserves, busy, onBuild }: {
             <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
                 {options.map(m => {
                     const def = MODULES[m];
-                    const locked = (def.minTier ?? 1) > state.tier;
+                    const baseLocked = !!def.baseOnly && !state.base;
+                    const locked = (def.minTier ?? 1) > state.tier || baseLocked;
                     const short = Object.entries(def.cost).find(([k, v]) => (reserves[k] ?? 0) < v);
                     const Icon = ICON[m];
                     return (
@@ -553,7 +708,7 @@ function BuildList({ state, cellIndex, reserves, busy, onBuild }: {
                             <span className="min-w-0 flex-1">
                                 <span className="flex justify-between gap-2 text-xs text-slate-100"><span>{def.name}</span><span className="text-[10px] text-slate-500 shrink-0">{def.buildShifts} shift{def.buildShifts === 1 ? '' : 's'}</span></span>
                                 <span className="block text-[10px] text-slate-400 leading-snug">{def.blurb}</span>
-                                <span className={`block text-[10px] ${short ? 'text-red-300' : 'text-fuchsia-300/80'}`}>{locked ? `Needs a ${TIERS[def.minTier!].name.toLowerCase()}` : fmtCost(def.cost)}</span>
+                                <span className={`block text-[10px] ${short ? 'text-red-300' : 'text-fuchsia-300/80'}`}>{baseLocked ? 'Military base only' : locked ? `Needs a ${TIERS[def.minTier!].name.toLowerCase()}` : fmtCost(def.cost)}</span>
                             </span>
                         </button>
                     );

@@ -17,6 +17,7 @@
 // so a ship paid for at a yard is delivered wherever the fleet has sailed.
 
 import { computeOrbitalRatings } from '../orbital/orbital-service';
+import { drydockYardTier } from '../outposts/outpost-catalog';
 import { ORBITAL_STRUCTURE_BY_ID } from '../../data/orbital-structures';
 import type { OrbitalState } from '../orbital/orbital-types';
 import { SHIP_CLASS_IDS, getHull, normalizeUnitKey } from './ship-registry';
@@ -112,6 +113,14 @@ export function planetYardSource(planet: YardPlanetLike | undefined | null, nowS
             planetName: planet.name ?? null,
             structureName: slot?.structureId ? (ORBITAL_STRUCTURE_BY_ID[slot.structureId]?.name ?? slot.structureId) : 'Spaceyard',
         };
+    }
+
+    // A military base's drydocks (lib/outposts): one is a tier 1 yard, two tier 2.
+    const outpost: any = (planet as any).outpost;
+    if (outpost?.base && !(outpost.colonists <= 0)) {
+        const docks = (outpost.cells ?? []).filter((c: any) => c?.module === 'drydock' && c.buildDoneShift === undefined && !c.off && !((c.downUntilShift ?? 0) > outpost.shift)).length;
+        const tier = drydockYardTier(docks);
+        if (tier > best.tier) best = { tier, planetId: planet.id, planetName: planet.name ?? null, structureName: 'Drydock' };
     }
 
     for (const tile of planet.tiles ?? []) {

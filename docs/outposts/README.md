@@ -109,3 +109,26 @@ and take it.
 
 The Outposts tab (Economy) lists every outpost, worst news first; outpost
 notifications open the outpost's screen.
+
+## Military base
+
+The other way out of a settlement (`OUTPOST_ORDER {op: 'advance', path:
+'base'}`): 15 colonists, morale 50, a bunker and a dock, 8,000 Cr. A base
+keeps its grid, shifts and crises (it does not become a colony; the surface
+stays closed) and unlocks four military modules (`baseOnly`):
+
+- **Barracks**: +5 infantry a shift into the world's garrison, up to 150 per
+  barracks (`state.drilled`); never while besieged.
+- **Drydock**: the world is a shipyard (`planetYardSource`): one drydock
+  lays corvettes and destroyers, two lay cruisers.
+- **Defence Battery**: +3 fortification each; the base itself +2.
+- **Command Post**: sight two jumps out, +5 morale.
+
+A base counts as a holding for administrative capacity.
+
+## Teaching
+
+A six-step walkthrough opens the first time a player opens an outpost
+(`uiPrefs.opened` 'outpost-tutorial') and again from "How to play". The
+advisor (`outpost-advice.ts`) names the most pressing thing to do, with
+Show me / Build it; the AI builds from the same `nextModuleFor`.

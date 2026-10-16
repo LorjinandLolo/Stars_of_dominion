@@ -18,7 +18,8 @@
 
 import type { GameWorldState } from '../game-world-state';
 import type { ModuleId, OutpostState } from '../outposts/outpost-types';
-import { MODULES, TIERS, cellOpen, terrainOk } from '../outposts/outpost-catalog';
+import { MODULES, cellOpen } from '../outposts/outpost-catalog';
+import { nextModuleFor, spotFor } from '../outposts/outpost-advice';
 import { computeBalance } from '../outposts/outpost-sim';
 import { outpostOrder, prisonersHeld } from '../outposts/outpost-service';
 import { CIVILIAN_SHIPS, OUTPOST_COST, civilianCount } from '../combat/civilian-ships';
@@ -157,33 +158,12 @@ export function tickAIOutposts(world: GameWorldState): void {
 
 // ─── Running an outpost ──────────────────────────────────────────────────────
 
-/** The first open, empty cell this module can stand on, or -1. */
-function spotFor(state: OutpostState, m: ModuleId): number {
-    return state.cells.findIndex((c, i) => cellOpen(i, state.tier) && !c.module && c.clearingUntilShift === undefined
-        && (c.terrain === 'rock' ? m === 'bunker' : terrainOk(m, c.terrain)));
-}
-
 function rockToClear(state: OutpostState): number {
     return state.cells.findIndex((c, i) => cellOpen(i, state.tier) && c.terrain === 'rock' && !c.module && c.clearingUntilShift === undefined);
 }
 
-/** What this outpost should build next, in the order a careful player would. */
-export function aiNextModule(state: OutpostState, prisoners = 0): ModuleId | null {
-    const b = computeBalance(state, { prisoners });
-    const has = (m: ModuleId) => state.cells.some(c => c.module === m);
-    const want: ModuleId[] = [];
-    if (b.foodMade < b.foodUsed + 1) want.push('hydroponics');
-    if (b.airMade < b.airUsed + 1) want.push('life_support');
-    if (b.powerMade - b.powerUsed < 1) want.push('solar', 'geothermal');
-    for (const m of TIERS[state.tier].next?.modules ?? []) if (!has(m)) want.push(m);
-    if (state.colonists >= b.housing - 1) want.push('habitat');
-    if (state.morale < 62 && state.cells.filter(c => c.module === 'commons').length < 2) want.push('commons');
-    if (!has('warehouse')) want.push('warehouse');
-    if (!has('mine')) want.push('mine');
-    if (state.tier >= 2 && !has('bunker')) want.push('bunker');
-    for (const m of want) if (spotFor(state, m) >= 0) return m;
-    return null;
-}
+/** What this outpost should build next: the same advice the outpost screen gives a player. */
+export const aiNextModule = nextModuleFor;
 
 /**
  * Each worker cycle, at most one action per outpost per shift. Uses the

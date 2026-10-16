@@ -35,11 +35,12 @@ export const UPKEEP_OVEREXTENSION_MAX = 3;
 /** Stability lost on every colony in a cycle the upkeep could not be paid in full. */
 export const UNPAID_UPKEEP_STABILITY = 3;
 
-type PlanetLike = { id: string; ownerId?: string | null; systemId: string; outpost?: { graduated?: boolean } | null; tiles?: any[] };
+type PlanetLike = { id: string; ownerId?: string | null; systemId: string; outpost?: { graduated?: boolean; base?: boolean } | null; tiles?: any[] };
 
 /** A world that counts for administration: owned, and not an outpost still growing. */
 export function countsAsHolding(p: PlanetLike, factionId: string): boolean {
-    return p.ownerId === factionId && !(p.outpost && !p.outpost.graduated);
+    // A military base is a holding like a colony; an outpost still growing is not.
+    return p.ownerId === factionId && !(p.outpost && !p.outpost.graduated && !p.outpost.base);
 }
 
 export interface AdminStatus {

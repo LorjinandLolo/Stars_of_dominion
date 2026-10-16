@@ -59,6 +59,8 @@ export interface ModuleDef {
     priority: number;
     /** Not buildable (the hub comes with the outpost). */
     fixed?: boolean;
+    /** Only a military base can build it. */
+    baseOnly?: boolean;
 }
 
 const FLAT: CellTerrain[] = ['flat'];
@@ -81,6 +83,10 @@ export const MODULES: Record<ModuleId, ModuleDef> = {
     test_lab: { id: 'test_lab', name: 'Test Lab', blurb: 'Experiments that push your current research, at a risk.', cost: { CREDITS: 1500, METALS: 500 }, buildShifts: 2, workers: 2, power: -2, terrain: ['flat', 'ruin'], priority: 11 },
     sensor_mast: { id: 'sensor_mast', name: 'Sensor Mast', blurb: 'Shows fleets in this system and one jump out.', cost: { CREDITS: 700, METALS: 300 }, buildShifts: 1, workers: 1, power: -1, priority: 12 },
     fuel_depot: { id: 'fuel_depot', name: 'Fuel Depot', blurb: 'Your fleets parked here resupply and slowly repair.', cost: { CREDITS: 900, METALS: 500 }, buildShifts: 1, workers: 1, power: 0, priority: 13 },
+    barracks_module: { id: 'barracks_module', name: 'Barracks', blurb: `Drills a garrison: +${5} infantry a shift, up to ${150} per barracks. Not while besieged.`, cost: { CREDITS: 1200, METALS: 800 }, buildShifts: 2, workers: 3, power: -1, priority: 14, baseOnly: true },
+    drydock: { id: 'drydock', name: 'Drydock', blurb: 'Lays down warships here: one drydock builds corvettes and destroyers, two build cruisers.', cost: { CREDITS: 2500, METALS: 1500 }, buildShifts: 3, workers: 3, power: -2, priority: 15, baseOnly: true },
+    battery: { id: 'battery', name: 'Defence Battery', blurb: 'Guns dug into the rock: the defenders dig in deeper (+3 fortification each).', cost: { CREDITS: 1500, METALS: 1200 }, buildShifts: 2, workers: 2, power: -1, terrain: ['flat', 'rock'], priority: 16, baseOnly: true },
+    command_post: { id: 'command_post', name: 'Command Post', blurb: 'Sees two jumps out and steadies the crew (+5 morale).', cost: { CREDITS: 1800, METALS: 700 }, buildShifts: 2, workers: 2, power: -1, priority: 17, baseOnly: true },
 };
 
 export const BUILDABLE_MODULES: ModuleId[] = (Object.keys(MODULES) as ModuleId[]).filter(id => !MODULES[id].fixed);
@@ -128,6 +134,30 @@ export const TIERS: Record<OutpostTier, TierDef> = {
     2: { tier: 2, name: 'Settlement', next: { colonists: 30, morale: 60, modules: ['dock', 'warehouse'], cost: { CREDITS: 10000 } } },
     3: { tier: 3, name: 'Colony' },
 };
+
+/**
+ * The other way out of a settlement: a military base. Keeps the grid and the
+ * shifts, unlocks the military modules. Checked against tier 2 like the colony.
+ */
+export const BASE_REQUIREMENTS = { colonists: 15, morale: 50, modules: ['bunker', 'dock'] as ModuleId[], cost: { CREDITS: 8000 } as Record<string, number> };
+/** Garrison drilled per barracks per shift, and the most one barracks keeps. */
+export const BARRACKS_TROOPS_PER_SHIFT = 5;
+export const BARRACKS_TROOP_CAP = 150;
+/** Fortification from being a base, and from each battery (fortificationLevelFor). */
+export const BASE_FORTIFICATION = 2;
+export const BATTERY_FORTIFICATION = 3;
+/** Shipyard tier from drydocks: one is tier 1, two or more tier 2. */
+export function drydockYardTier(drydocks: number): number {
+    return drydocks >= 2 ? 2 : drydocks >= 1 ? 1 : 0;
+}
+
+/** What to call where an outpost stands. */
+export function tierName(state: { tier: OutpostTier; base?: boolean; graduated?: boolean }): string {
+    if (state.base) return 'Military Base';
+    if (state.graduated) return 'Colony';
+    return TIERS[state.tier].name;
+}
+
 
 /** Cells open at a tier: the centre 3×3 at tier 1, all 25 after. */
 export function cellOpen(index: number, tier: OutpostTier): boolean {

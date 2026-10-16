@@ -127,6 +127,7 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
 
     let moraleTarget = 50
         + 8 * runs('commons').length
+        + 5 * runs('command_post').length
         + (state.charter === 'settlement' ? 5 : 0)
         - (state.colonists > housing ? 12 : 0)
         - 5 * coldDomes

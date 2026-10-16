@@ -13,8 +13,10 @@ import {
     MODULES, CHARTERS, TIERS, cellOpen, terrainOk, SHIFT_SIM_SECONDS, CLEAR_ROCK_COST, CLEAR_ROCK_SHIFTS,
     SUPPLY_DROP, CHARTER_BONUS, CHARTER_LOCK_SHIFTS, EXPERIMENT_SHARE, EXPERIMENT_MIN_HOURS,
     EXPERIMENT_COOLDOWN_SHIFTS, EXPERIMENT_ACCIDENT_CHANCE, SUBJECT_GAIN, SUBJECT_DEATH_SHARE,
-    DEPOT_REPAIR_PER_SHIFT, START_COLONISTS,
+    DEPOT_REPAIR_PER_SHIFT, START_COLONISTS, BASE_REQUIREMENTS, BARRACKS_TROOPS_PER_SHIFT, BARRACKS_TROOP_CAP,
 } from './outpost-catalog';
+import { defaultGarrison } from '../combat/siege/garrison';
+import { fortificationLevelFor } from '../combat/siege/strongpoints';
 import { createOutpostState } from './outpost-map';
 import { computeBalance, countModules, log, moduleActive, runShift } from './outpost-sim';
 import { expireCrises, openCrisisOfKind, resolveCrisis, rollCrisis, type CrisisContext } from './crises';
@@ -210,6 +212,23 @@ function runOneShift(world: GameWorldState, planet: AnyPlanet, state: OutpostSta
 
 /** What the outpost does for the empire each shift: depot repairs. */
 function runFunctions(world: GameWorldState, planet: AnyPlanet, state: OutpostState): void {
+    // A base's barracks drill a garrison, but never into a siege: men added to
+    // the pool mid-siege are seeded as formations by the siege's own rules, and
+    // a base that drills under fire would be a free army.
+    if (state.base && !outpostBesieged(planet) && state.colonists > 0) {
+        const b = computeBalance(state, balanceCtx(world, planet, state));
+        const barracks = b.running.filter(i => state.cells[i].module === 'barracks_module').length;
+        const room = barracks * BARRACKS_TROOP_CAP - (state.drilled ?? 0);
+        const add = Math.max(0, Math.min(room, barracks * BARRACKS_TROOPS_PER_SHIFT));
+        if (add > 0) {
+            if (!planet.garrison) planet.garrison = defaultGarrison(planet, planet.ownerId, {}, fortificationLevelFor(planet));
+            const g = planet.garrison;
+            g.unitComposition = g.unitComposition ?? {};
+            g.unitComposition.INFANTRY = (g.unitComposition.INFANTRY ?? 0) + add;
+            g.garrisonTroops = (g.garrisonTroops ?? 0) + add;
+            state.drilled = (state.drilled ?? 0) + add;
+        }
+    }
     const depots = countModules(state, 'fuel_depot');
     if (depots > 0 && state.colonists > 0) {
         const repair = DEPOT_REPAIR_PER_SHIFT * depots * (state.charter === 'depot' ? 2 : 1);
@@ -227,8 +246,8 @@ export function outpostSightSystems(world: GameWorldState, factionId: string): S
     for (const planet of world.construction.planets.values() as Iterable<AnyPlanet>) {
         const state: OutpostState | undefined = planet.outpost;
         if (!state || planet.ownerId !== factionId || state.colonists <= 0 && !state.graduated) continue;
-        if (countModules(state, 'sensor_mast') === 0) continue;
-        const hops = state.charter === 'listening' ? 2 : 1;
+        if (countModules(state, 'sensor_mast') === 0 && countModules(state, 'command_post') === 0) continue;
+        const hops = state.charter === 'listening' || countModules(state, 'command_post') > 0 ? 2 : 1;
         let frontier = [planet.systemId as string];
         out.add(planet.systemId);
         for (let h = 0; h < hops; h++) {
@@ -270,7 +289,7 @@ export type OutpostOp =
     | { op: 'demolish'; cell: number }
     | { op: 'resolve'; crisisId: string; option: string }
     | { op: 'charter'; charter: CharterId }
-    | { op: 'advance' }
+    | { op: 'advance'; path?: 'colony' | 'base' }
     | { op: 'supply' }
     | { op: 'resettle' }
     | { op: 'experiment'; subjects: 'volunteers' | 'prisoners' }
@@ -303,6 +322,7 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
             if (cell.terrain === 'rock' && def.id !== 'bunker') return fail('Clear the rock first.');
             if (!terrainOk(def.id, cell.terrain === 'rock' ? 'rock' : cell.terrain)) return fail(`${def.name} cannot stand on ${cell.terrain}.`);
             if ((def.minTier ?? 1) > state.tier) return fail(`${def.name} needs a ${TIERS[def.minTier!].name.toLowerCase()}.`);
+            if (def.baseOnly && !state.base) return fail(`${def.name} is built only at a military base.`);
             const short = shortfall(world, factionId, def.cost);
             if (short) return fail(short);
             chargeReserves(world, factionId, def.cost);
@@ -350,7 +370,7 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
             log(state, `New charter: ${CHARTERS[order.charter].name}.`, 'neutral');
             return { ok: true };
         }
-        case 'advance': return advance(world, planet, state);
+        case 'advance': return advance(world, planet, state, order.path === 'base' ? 'base' : 'colony');
         case 'supply': {
             if (outpostBesieged(planet)) return fail('Enemy troops hold the ground around the landing site: no supply ship will come down.');
             const cost = Object.fromEntries(Object.entries(SUPPLY_DROP.cost).map(([k, v]) => [k, countModules(state, 'dock') > 0 ? v : v * 2]));
@@ -424,9 +444,11 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
 }
 
 /** What still stands between this outpost and its next tier, as player-facing lines (empty = ready). */
-export function advanceBlockers(state: OutpostState, reserves: Record<string, number> | undefined, besieged = false): string[] {
-    const next = TIERS[state.tier].next;
+export function advanceBlockers(state: OutpostState, reserves: Record<string, number> | undefined, besieged = false, path: 'colony' | 'base' = 'colony'): string[] {
+    if (state.base) return ['Already a military base.'];
+    const next = path === 'base' && state.tier === 2 ? BASE_REQUIREMENTS : TIERS[state.tier].next;
     if (!next) return ['Already a colony.'];
+    if (path === 'base' && state.tier !== 2) return ['a settlement first'];
     const out: string[] = [];
     if (state.colonists < next.colonists) out.push(`${next.colonists} colonists (${state.colonists} now)`);
     if (state.morale < next.morale) out.push(`morale ${next.morale} (${state.morale} now)`);
@@ -436,12 +458,21 @@ export function advanceBlockers(state: OutpostState, reserves: Record<string, nu
     return out;
 }
 
-function advance(world: GameWorldState, planet: AnyPlanet, state: OutpostState): OpResult {
-    const next = TIERS[state.tier].next;
-    if (!next) return fail('Already a colony.');
-    const blockers = advanceBlockers(state, reservesOf(world, planet.ownerId), outpostBesieged(planet));
+function advance(world: GameWorldState, planet: AnyPlanet, state: OutpostState, path: 'colony' | 'base' = 'colony'): OpResult {
+    const blockers = advanceBlockers(state, reservesOf(world, planet.ownerId), outpostBesieged(planet), path);
     if (blockers.length) return fail(`Not yet. Still needs: ${blockers.join(', ')}.`);
+    const next = path === 'base' && state.tier === 2 ? BASE_REQUIREMENTS : TIERS[state.tier].next!;
     chargeReserves(world, planet.ownerId, next.cost);
+    if (path === 'base') {
+        // The other way out of a settlement: the grid keeps running, the
+        // military modules open. Not a colony: the surface stays closed.
+        state.tier = 3;
+        state.base = true;
+        state.drilled = 0;
+        log(state, `${planet.name} is a military base now. Barracks, drydocks, batteries and a command post can be built.`, 'good');
+        notify(world, planet.ownerId, `outpost-base-${planet.id}`, `${planet.name} is a military base`, 'Build barracks for a garrison, drydocks to lay warships, batteries to dig in.', 'normal', planet.id);
+        return { ok: true };
+    }
     state.tier = (state.tier + 1) as 1 | 2 | 3;
     if (state.tier === 2) {
         log(state, `${planet.name} is a settlement now. The whole plain is open to build on.`, 'good');
@@ -545,6 +576,7 @@ export function outpostCaptured(world: GameWorldState, planet: AnyPlanet, previo
     state.crises = [];
     state.prisonLabour = false;
     state.charter = 'settlement';
+    state.drilled = 0;
     state.charterSetShift = state.shift;
     if (!state.graduated) {
         const fled = Math.floor(state.colonists * 0.3);

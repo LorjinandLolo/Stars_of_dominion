@@ -13,6 +13,7 @@
 // DistrictWarState.strongpoints for the client.
 
 import type { PlanetSurface, SurfaceSector } from '../../planet-surface/types';
+import { BASE_FORTIFICATION, BATTERY_FORTIFICATION } from '../../outposts/outpost-catalog';
 import { computeSectorOccupancy } from '../../planet-surface/occupancy';
 import { BUILDINGS } from '../../../data/buildings';
 import type { DistrictController, DistrictWarState } from './siege-types';
@@ -177,8 +178,12 @@ export function fortificationLevelFor(planet: { tiles?: any[] }): number {
         if (t.buildingId === 'orbital_defense_platform' || t.buildingId === 'shield_generator') level += 1;
     }
     // An outpost's bunkers dig its defenders in (lib/outposts): depth, not men.
-    for (const c of (planet as any).outpost?.cells ?? []) {
-        if (c?.module === 'bunker' && c.buildDoneShift === undefined) level += 2;
+    const outpost = (planet as any).outpost;
+    for (const c of outpost?.cells ?? []) {
+        if (c?.buildDoneShift !== undefined) continue;
+        if (c?.module === 'bunker') level += 2;
+        if (c?.module === 'battery') level += BATTERY_FORTIFICATION;
     }
+    if (outpost?.base) level += BASE_FORTIFICATION;
     return Math.max(0, Math.min(10, Math.round(level)));
 }
