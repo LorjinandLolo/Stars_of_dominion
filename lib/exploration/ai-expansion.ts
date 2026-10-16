@@ -14,6 +14,7 @@ import { issueMoveOrder } from '../movement/movement-service';
 import { SURFACE_YARD_TIERS, systemYardFor } from '../combat/shipyard-gate';
 import { repairBuilding } from '../construction/construction-service';
 import { tickAIYardLadder } from '../ai/yard-ladder-ai';
+import { CIVILIAN_SHIPS, EXPLORER_TIME_FACTOR, civilianCount, scanReachFrom } from '../combat/civilian-ships';
 
 /**
  * Queue repairs on any ruined surface yard this faction owns in `systemId`.
@@ -36,8 +37,8 @@ function repairRuinedYards(world: GameWorldState, factionId: string, systemId: s
     }
 }
 
-/** What the scout hull costs — mirrors the MIL_BUILD_FLEET registry cost. */
-const SCOUT_FLEET_COST: Record<string, number> = { CREDITS: 1000, METALS: 500 };
+/** The scout is an Exploration Ship (lib/combat/civilian-ships.ts), priced as a player pays. */
+const SCOUT_FLEET_COST: Record<string, number> = CIVILIAN_SHIPS.explorer.cost;
 /** Survey fee, mirroring the EXPLORE_ISSUE_ORDER registry cost players pay. */
 const SURVEY_COST: Record<string, number> = { CREDITS: 500 };
 
@@ -108,10 +109,23 @@ export function tickAIExpansion(world: GameWorldState): void {
         tickAIYardLadder(world, factionId);
 
         // ── 1. A scout to see with ──────────────────────────────────────────
-        // Battle groups (`-war-N`, lib/ai/war-ai.ts) are never the scout.
+        // The survey wing, or failing that any fleet that is not a battle
+        // group (`-war-N`, lib/ai/war-ai.ts) or another civilian ship (a
+        // builder belongs to the outpost AI).
         let fleet = [...world.movement.fleets.values()]
-            .filter(f => f.factionId === factionId && !/-war-\d+$/.test(f.id))
-            .sort((a, b) => a.id.localeCompare(b.id))[0];
+            .filter(f => f.factionId === factionId && /-scout-/.test(f.id))
+            .sort((a, b) => a.id.localeCompare(b.id))[0]
+            ?? [...world.movement.fleets.values()]
+                .filter(f => f.factionId === factionId && !/-war-\d+$/.test(f.id)
+                    && civilianCount(f.composition, 'builder') === 0 && civilianCount(f.composition, 'freighter') === 0
+                    && civilianCount(f.composition, 'spy') === 0)
+                .sort((a, b) => a.id.localeCompare(b.id))[0];
+        // Survey wings from before the exploration ship were empty 100-power
+        // shells; they become the exploration ship they were standing in for.
+        if (fleet && /-scout-/.test(fleet.id) && !Object.values(fleet.composition ?? {}).some(n => Number(n) > 0)) {
+            fleet.composition = { explorer: 1 };
+            fleet.basePower = 0;
+        }
         if (!fleet) {
             // Keep double the cost in hand — expansion never drains the war chest.
             if (!canAfford(reserves, SCOUT_FLEET_COST, 2)) continue;
@@ -146,8 +160,8 @@ export function tickAIExpansion(world: GameWorldState): void {
                 },
                 postureId: 'Expansionist',
                 strength: 1.0,
-                basePower: 100,
-                composition: {},
+                basePower: 0,
+                composition: { explorer: 1 },
                 hyperdriveProfile: {
                     hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
                     trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
@@ -170,13 +184,16 @@ export function tickAIExpansion(world: GameWorldState): void {
         const hereNode = world.movement.systems.get(here);
         if (!hereNode) continue;
 
-        // ── 2. Survey something adjacent (or right here) ────────────────────
-        const candidates = [here, ...[...(hereNode.hyperlaneNeighbors ?? [])].sort()]
+        // ── 2. Survey something in reach (or right here) ────────────────────
+        // One jump, two with an exploration ship, which also works twice as fast.
+        const reach = scanReachFrom(here, fleet.composition, id => world.movement.systems.get(id)?.hyperlaneNeighbors);
+        const candidates = [here, ...[...reach].filter(id => id !== here).sort()]
             .filter(id => !isSurveyedBy(world, factionId, id));
         if (candidates.length > 0) {
             if (!canAfford(reserves, SURVEY_COST, 2)) continue;
             charge(reserves!, SURVEY_COST);
-            issueExploreOrder(fleet.id, candidates[0], 'survey', world.movement);
+            const factor = civilianCount(fleet.composition, 'explorer') > 0 ? EXPLORER_TIME_FACTOR : 1;
+            issueExploreOrder(fleet.id, candidates[0], 'survey', world.movement, factor);
             continue;
         }
 
@@ -184,7 +201,10 @@ export function tickAIExpansion(world: GameWorldState): void {
         const hop = firstHopTowardUnexplored(world, factionId, here);
         if (hop) {
             try {
-                issueMoveOrder(fleet as any, hop, 'hyperlane', world.movement);
+                // issueMoveOrder returns the moving fleet; it does not change
+                // the one passed in. Dropping the result left every AI scout
+                // parked at home for the whole season.
+                world.movement.fleets.set(fleet.id, issueMoveOrder(fleet as any, hop, 'hyperlane', world.movement) as any);
             } catch (e: any) {
                 console.warn(`[AI Expansion] ${factionId} scout could not move to ${hop}: ${e.message}`);
             }

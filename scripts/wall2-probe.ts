@@ -101,12 +101,13 @@ console.log('\n[3] AI expansion loop');
     tickAIExpansion(world);
     const scout = [...world.movement.fleets.values()].find(f => f.factionId === A);
     check(`turn 1: scout commissioned`, !!scout, undefined);
-    check(`scout paid for`, faction.reserves.CREDITS === 100000 - 1000 && faction.reserves.METALS === 10000 - 500);
+    // The scout is an Exploration Ship (300 Cr / 100 Met).
+    check(`scout paid for`, faction.reserves.CREDITS === 100000 - 300 && faction.reserves.METALS === 10000 - 100);
 
     tickAIExpansion(world);
     const order = world.movement.explorationOrders.find(o => o.factionId === A);
     check(`turn 2: survey order issued`, !!order, JSON.stringify(world.movement.explorationOrders.map(o => o.factionId)));
-    check(`survey fee charged`, faction.reserves.CREDITS === 100000 - 1000 - 500);
+    check(`survey fee charged`, faction.reserves.CREDITS === 100000 - 300 - 500);
 
     tickAIExpansion(world);
     check(`in-flight order blocks a second survey`, world.movement.explorationOrders.filter(o => o.factionId === A).length === 1);

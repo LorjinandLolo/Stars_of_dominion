@@ -5,6 +5,7 @@
 
 import { tickCivilianShips } from '../combat/civilian-service';
 import { shipOutpostWarehouses } from '../outposts/outpost-service';
+import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
 import { tickEconomy } from '../economy/economy-service';
 import { tickConstructionGlobal, getBuildingsForSystem } from '../construction/construction-service';
@@ -872,6 +873,8 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
     // only settle what a faction can SEE, and before this nothing ever widened
     // an AI's visibility past its home system.
     try { tickAIExpansion(world); } catch (e) { console.error('[TickProcessor] tickAIExpansion failed:', e); }
+    // And plant outposts on what colonisation skips (lib/ai/outpost-ai.ts).
+    try { tickAIOutposts(world); } catch (e) { console.error('[TickProcessor] tickAIOutposts failed:', e); }
     // AI factions at war lay belt ambushes on the lanes an invader must use.
     try { tickAIBeltAmbush(world as any); } catch (e) { console.error('[TickProcessor] tickAIBeltAmbush failed:', e); }
     // AI empires declare wars, raise battle groups and send them at enemy
