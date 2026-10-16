@@ -23,6 +23,7 @@ import { formatSimAsClock } from '@/lib/time/galactic-time';
 type Tab = 'fleets' | 'armies' | 'contacts' | 'production';
 
 const STATUS_STYLE: Record<ForceStatusKind, string> = {
+    trade: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
     combat: 'text-red-300 bg-red-500/15 border-red-500/30',
     sieging: 'text-red-300 bg-red-500/15 border-red-500/30',
     moving: 'text-sky-300 bg-sky-500/10 border-sky-500/30',
@@ -82,6 +83,53 @@ function Name({ id, name, onRename }: { id: string; name: string; onRename: (id:
     );
 }
 
+type World = { id: string; name: string };
+
+/** A freighter's standing route between two of your worlds (CIV_SET_TRADE_ROUTE). */
+function TradeRoute({ f, worlds, onSet }: {
+    f: FleetRow; worlds: World[];
+    onSet: (f: FleetRow, route: { fromPlanetId: string; toPlanetId: string } | null) => void;
+}) {
+    const [from, setFrom] = React.useState(f.tradeRoute?.fromPlanetId ?? worlds[0]?.id ?? '');
+    const [to, setTo] = React.useState(f.tradeRoute?.toPlanetId ?? worlds[1]?.id ?? '');
+    if (f.tradeRoute) {
+        return (
+            <div className="flex items-center gap-2 text-[10px] text-emerald-200 bg-emerald-500/5 border border-emerald-500/20 rounded-md px-2 py-1.5">
+                <Package size={11} className="shrink-0" />
+                <span className="flex-1 min-w-0 truncate">
+                    {f.tradeRoute.fromName} ⇄ {f.tradeRoute.toName}
+                    {f.tradeRoute.delivered > 0 ? ` · ${fmt(f.tradeRoute.delivered)} delivered` : ''}
+                </span>
+                <button onClick={() => onSet(f, null)} className="text-slate-400 hover:text-white shrink-0">End route</button>
+            </div>
+        );
+    }
+    if (worlds.length < 2) {
+        return <p className="text-[10px] text-slate-500 italic">A trade route needs two of your worlds. Docked at one, it adds 5% to its taxes; at a trade partner&apos;s world it earns credits for you both.</p>;
+    }
+    const select = 'min-w-0 flex-1 bg-slate-950 border border-slate-700 rounded px-1 py-1 text-[10px] text-slate-200';
+    return (
+        <div className="flex items-center gap-1.5">
+            <select aria-label="Load at" value={from} onChange={e => setFrom(e.target.value)} className={select}>
+                {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <span className="text-slate-500 text-[10px]">⇄</span>
+            <select aria-label="Deliver to" value={to} onChange={e => setTo(e.target.value)} className={select}>
+                {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <button
+                disabled={!from || !to || from === to}
+                onClick={() => onSet(f, { fromPlanetId: from, toPlanetId: to })}
+                className="px-2 py-1 rounded-md bg-emerald-600/25 hover:bg-emerald-600/40 border border-emerald-500/40 text-[10px] text-emerald-100 disabled:opacity-40 shrink-0"
+            >
+                Run route
+            </button>
+        </div>
+    );
+}
+
+const CIVILIAN_LABEL: Record<string, string> = { explorer: 'exploration ship', freighter: 'freighter', spy: 'spy ship', builder: 'builder ship' };
+
 /** Owns the 1 Hz clock, so a ticking ETA re-renders one span, not the panel. */
 function Eta({ etaSeconds, receivedAt }: { etaSeconds: number; receivedAt: number }) {
     const [now, setNow] = React.useState(() => Date.now());
@@ -92,8 +140,10 @@ function Eta({ etaSeconds, receivedAt }: { etaSeconds: number; receivedAt: numbe
     return <>{formatFleetEta(etaSeconds, now - receivedAt) ?? 'arriving'}</>;
 }
 
-function FleetCard({ f, displayName, receivedAt, onRename, onLocate, onReturn }: {
+function FleetCard({ f, displayName, receivedAt, onRename, onLocate, onReturn, worlds, onSetRoute }: {
     f: FleetRow; displayName: string; receivedAt: number;
+    worlds: World[];
+    onSetRoute: (f: FleetRow, route: { fromPlanetId: string; toPlanetId: string } | null) => void;
     onRename: (id: string, name: string) => void;
     onLocate: (f: FleetRow) => void;
     onReturn: (f: FleetRow) => void;
@@ -105,13 +155,15 @@ function FleetCard({ f, displayName, receivedAt, onRename, onLocate, onReturn }:
                     <Rocket size={14} className="text-indigo-300 shrink-0" />
                     <Name id={f.id} name={displayName} onRename={onRename} />
                 </div>
-                <span className="text-[11px] font-mono text-slate-300 shrink-0" title="Combat power">{fmt(f.power)} pw</span>
+                {f.civilian
+                    ? <span className="text-[10px] uppercase tracking-wider text-emerald-400/80 shrink-0" title="Unarmed: never joins a battle, and an enemy at war takes it if it is caught alone">Unarmed</span>
+                    : <span className="text-[11px] font-mono text-slate-300 shrink-0" title="Combat power">{fmt(f.power)} pw</span>}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${STATUS_STYLE[f.status.kind]}`}>
                     {f.status.text}{f.etaSeconds ? <> · <Eta etaSeconds={f.etaSeconds} receivedAt={receivedAt} /></> : null}
                 </span>
-                <span className={`text-[10px] ${VETERANCY_STYLE[f.veterancy.rank]}`} title="Veterancy: earned in battle, raises combat power">{f.veterancy.label}</span>
+                {!f.civilian && <span className={`text-[10px] ${VETERANCY_STYLE[f.veterancy.rank]}`} title="Veterancy: earned in battle, raises combat power">{f.veterancy.label}</span>}
                 {f.armiesAboard > 0 && (
                     <span className="text-[10px] text-indigo-300 flex items-center gap-0.5"><Users size={10} /> {f.armiesAboard} {f.armiesAboard === 1 ? 'army' : 'armies'} aboard</span>
                 )}
@@ -119,10 +171,11 @@ function FleetCard({ f, displayName, receivedAt, onRename, onLocate, onReturn }:
             {f.ships.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                     {f.ships.map(s => (
-                        <span key={s.cls} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">{s.count} {s.cls}{s.count === 1 ? '' : 's'}</span>
+                        <span key={s.cls} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">{s.count} {CIVILIAN_LABEL[s.cls] ?? s.cls}{s.count === 1 ? '' : 's'}</span>
                     ))}
                 </div>
             )}
+            {f.freighters > 0 && <TradeRoute f={f} worlds={worlds} onSet={onSetRoute} />}
             <div className="flex gap-1.5 pt-0.5">
                 <button onClick={() => onLocate(f)} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-indigo-600/25 hover:bg-indigo-600/40 border border-indigo-500/40 text-[11px] text-indigo-100">
                     <MapPin size={12} /> Locate &amp; command
@@ -224,6 +277,15 @@ export default function ForcesPanel() {
         if (opts.planetId) store.setSelectedPlanet(opts.planetId);
     };
 
+    const setRoute = async (f: FleetRow, route: { fromPlanetId: string; toPlanetId: string } | null) => {
+        if (!playerFactionId) return;
+        await dispatchOrder({
+            actionId: 'CIV_SET_TRADE_ROUTE', factionId: playerFactionId,
+            payload: route ? { fleetId: f.id, ...route } : { fleetId: f.id, clear: true },
+            label: route ? `${f.name}: trade route` : `${f.name}: route ended`,
+        });
+    };
+
     const returnFleet = async (f: FleetRow) => {
         if (!playerFactionId || !f.originSystemId) return;
         await dispatchOrder({ actionId: 'MIL_MOVE_FLEET', factionId: playerFactionId, payload: { fleetId: f.id, destinationId: f.originSystemId }, label: `${f.name} turning back` });
@@ -304,9 +366,9 @@ export default function ForcesPanel() {
                     fleetsShown.length === 0 ? <Empty text={view.fleets.length ? 'No fleet matches.' : 'No fleets yet. Commission ships from a shipyard world (Build → Shipyard).'} />
                     : bySystem ? group(fleetsShown).map(g => (
                         <GroupBlock key={g.name} name={g.name} count={g.rows.length} onLocate={g.systemId ? () => locate(g.systemId) : undefined}>
-                            {g.rows.map(f => <FleetCard key={f.id} f={f} displayName={pendingNames[f.id] ?? f.name} receivedAt={receivedAt} onRename={rename} onLocate={(x) => locate(x.systemId, { fleetId: x.id })} onReturn={returnFleet} />)}
+                            {g.rows.map(f => <FleetCard key={f.id} f={f} displayName={pendingNames[f.id] ?? f.name} receivedAt={receivedAt} onRename={rename} onLocate={(x) => locate(x.systemId, { fleetId: x.id })} onReturn={returnFleet} worlds={view.worlds} onSetRoute={setRoute} />)}
                         </GroupBlock>
-                    )) : fleetsShown.map(f => <FleetCard key={f.id} f={f} displayName={pendingNames[f.id] ?? f.name} receivedAt={receivedAt} onRename={rename} onLocate={(x) => locate(x.systemId, { fleetId: x.id })} onReturn={returnFleet} />)
+                    )) : fleetsShown.map(f => <FleetCard key={f.id} f={f} displayName={pendingNames[f.id] ?? f.name} receivedAt={receivedAt} onRename={rename} onLocate={(x) => locate(x.systemId, { fleetId: x.id })} onReturn={returnFleet} worlds={view.worlds} onSetRoute={setRoute} />)
                 )}
 
                 {tab === 'armies' && (

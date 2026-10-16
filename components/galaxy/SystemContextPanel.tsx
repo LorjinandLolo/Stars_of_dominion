@@ -12,6 +12,7 @@ import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatPercent } from '@/lib/ui/format';
+import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
 
 
@@ -104,6 +105,8 @@ interface PlanetCardProps {
     /** Worker-rule mirror: colonization needs a surveyed system and a
      *  'colonizable' body — the button must never offer what the worker refuses. */
     canColonize?: boolean;
+    /** An own builder ship parked in this system (civilian-ships.ts): it can plant an outpost on a surveyed, unowned world. */
+    outpostFleetId?: string | null;
 }
 
 function PlanetCard({
@@ -128,6 +131,7 @@ function PlanetCard({
     activeJobs = [],
     orbitIndex,
     canColonize = false,
+    outpostFleetId = null,
 }: PlanetCardProps) {
     const [expanded, setExpanded] = React.useState(false);
     const [recruiting, setRecruiting] = React.useState(false);
@@ -152,6 +156,9 @@ function PlanetCard({
             setActionBusy(null);
         }
     };
+
+    const canOutpost = isNeutral && !!outpostFleetId;
+    const foundOutpost = () => runPlanetAction('outpost', 'CIV_FOUND_OUTPOST', { fleetId: outpostFleetId, planetId: planet.id }, `Outpost on ${planet.name}`);
 
     const typeInfo = PLANET_TYPE_ICONS[planet.planetType] || { icon: '🪐', color: '#94a3b8' };
     const ownerColor = isOwnedByPlayer
@@ -183,6 +190,16 @@ function PlanetCard({
                 >
                     <Globe size={12} />
                 </button>
+                {canOutpost && (
+                    <button
+                        disabled={actionBusy === 'outpost'}
+                        onClick={(e) => { e.stopPropagation(); foundOutpost(); }}
+                        title={`Spend one builder ship to plant an outpost here (${OUTPOST_COST.CREDITS.toLocaleString()} credits). Outposts can stand on dead worlds.`}
+                        className="shrink-0 px-2.5 py-1.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-[10px] text-emerald-300 font-semibold transition-colors disabled:opacity-50"
+                    >
+                        {actionBusy === 'outpost' ? 'Building…' : 'Outpost · 2k'}
+                    </button>
+                )}
                 {canColonize ? (
                     <button
                         disabled={actionBusy === 'claim'}
@@ -419,7 +436,17 @@ function PlanetCard({
                                 {actionBusy === 'claim' ? 'SETTLING…' : 'SETTLE · 20k cr'}
                             </button>
                         )}
-                        {isNeutral && !canColonize && (
+                        {canOutpost && (
+                            <button
+                                disabled={actionBusy === 'outpost'}
+                                onClick={(e) => { e.stopPropagation(); foundOutpost(); }}
+                                title={`Spend one builder ship to plant an outpost here (${OUTPOST_COST.CREDITS.toLocaleString()} credits). Outposts can stand on dead worlds.`}
+                                className="flex-1 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/30 rounded text-[9px] text-emerald-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                            >
+                                {actionBusy === 'outpost' ? 'BUILDING…' : 'OUTPOST · 2k cr'}
+                            </button>
+                        )}
+                        {isNeutral && !canColonize && !canOutpost && (
                             <div className="flex-1 py-1.5 border border-slate-700/40 rounded text-[9px] text-slate-500 font-bold flex items-center justify-center gap-1">
                                 <Globe size={10} />
                                 {planet.tags?.includes('dead_matter') ? 'DEAD MATTER — UNINHABITABLE' : 'SURVEY SYSTEM TO SETTLE'}
@@ -910,6 +937,10 @@ function SystemContextPanel() {
     const selectedFleet = selectedFleetId ? (fleets as any[]).find(f => f.id === selectedFleetId) ?? null : null;
     const fleetInSystem = !!selectedFleet && selectedFleet.currentSystemId === system.id && !selectedFleet.destinationSystemId;
     const fleetOrbitPlanetId: string | null = fleetInSystem ? (selectedFleet.orbitingPlanetId ?? null) : null;
+    // An own builder ship parked here can plant outposts (CIV_FOUND_OUTPOST).
+    const builderFleetId: string | null = ((fleets as any[]) ?? []).find((f: any) =>
+        f.factionId === playerFactionId && f.currentSystemId === system.id && !f.destinationSystemId
+        && civilianCount(f.composition, 'builder') > 0)?.id ?? null;
 
     const region = regions.find((r) => r.systemIds.includes(system.id));
     // An unknown system has no worlds tab; never strand the player on it.
@@ -1279,18 +1310,21 @@ function SystemContextPanel() {
                             )}
 
                             {/* Exploration: ping → scan → survey, issued as a real order.
-                                Scan/survey need a fleet in-system or one hyperlane out
-                                (the worker enforces the same rule). */}
+                                Scan/survey need a fleet in-system or one hyperlane out, two
+                                with an exploration ship (the worker enforces the same rule). */}
                             {revealStage !== 'surveyed' && (() => {
                                 const nextMode: 'ping' | 'scan' | 'survey' =
                                     revealStage === 'unknown' ? 'ping' :
                                     revealStage === 'pinged' ? 'scan' : 'survey';
                                 const playerFleets = ((fleets as any[]) ?? []).filter((f: any) => f.factionId === playerFactionId);
-                                const neighbors: string[] = (system as any).hyperlaneNeighbors ?? [];
+                                const neighborsOf = (id: string) => (systems.find(s => s.id === id) as any)?.hyperlaneNeighbors as string[] | undefined;
+                                const reaches = (f: any) => !!f.currentSystemId && !f.destinationSystemId
+                                    && scanReachFrom(f.currentSystemId, f.composition, neighborsOf).has(system.id);
+                                // An exploration ship goes first: it works twice as fast.
                                 const eligibleFleet = nextMode === 'ping'
                                     ? playerFleets[0]
-                                    : playerFleets.find((f: any) =>
-                                        f.currentSystemId === system.id || neighbors.includes(f.currentSystemId));
+                                    : (playerFleets.find((f: any) => reaches(f) && civilianCount(f.composition, 'explorer') > 0)
+                                        ?? playerFleets.find(reaches));
                                 const labels = { ping: 'PING SYSTEM', scan: 'SCAN SYSTEM', survey: 'SURVEY SYSTEM' } as const;
                                 // Order underway: the reveal only lands when the worker's
                                 // sim clock reaches completesAt (30s/120s/480s) — show
@@ -1385,7 +1419,7 @@ function SystemContextPanel() {
                                         <p className="text-[9px] text-slate-500 mt-2 text-center italic">
                                             {eligibleFleet
                                                 ? 'Scanners restricted. Full data unavailable until surveyed.'
-                                                : 'Move a fleet within one hyperlane to scan or survey.'}
+                                                : 'Move a fleet within one hyperlane (an exploration ship: two) to scan or survey.'}
                                         </p>
                                     </div>
                                 );
@@ -1565,6 +1599,7 @@ function SystemContextPanel() {
                                         activeJobs={recruitmentJobs.filter(j => j.planetId === planet.id)}
                                         orbitIndex={i}
                                         canColonize={revealStage === 'surveyed' && !!planet.tags?.includes('colonizable')}
+                                        outpostFleetId={revealStage === 'surveyed' ? builderFleetId : null}
                                     />
                                         ); })}
                                     </section>

@@ -33,7 +33,7 @@ import {
 } from '@/lib/tech/deed-metrics';
 import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
-import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
+import { CIVILIAN_SHIPS } from '@/lib/combat/civilian-ships';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 
@@ -44,8 +44,7 @@ function simClockOf(seconds: number): string {
     const minutes = Math.max(1, Math.round(seconds / SIM_SECONDS_PER_REAL_SECOND / 60));
     return minutes < 60 ? `${minutes} minutes` : formatSimAsClock(minutes * 60 * SIM_SECONDS_PER_REAL_SECOND);
 }
-const corvetteDesign = defaultDesignFor('corvette');
-const CORVETTE_TIME = corvetteDesign ? simClockOf(summarizeDesign(corvetteDesign, null).buildTime) : 'a few minutes';
+const EXPLORER_TIME = simClockOf(CIVILIAN_SHIPS.explorer.buildSeconds);
 const STATION_DEF = ORBITAL_STRUCTURE_BY_ID['space_station'];
 const SPACEYARD_DEF = ORBITAL_STRUCTURE_BY_ID['spaceyard'];
 const STATION_TIME = STATION_DEF ? simClockOf(baseBuildSeconds(STATION_DEF as any)) : 'a while';
@@ -96,15 +95,16 @@ export interface GoalDef {
 export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
         id: 'commission_ships',
-        title: 'Commission your first warships',
-        hint: 'Open your capital, go to Space Construction and requisition an Escort Corvette. Every survey, colony and defence starts with hulls.',
-        takes: `About ${CORVETTE_TIME} for a corvette`,
+        // Any ship counts (DEED_SHIPS_COMMISSIONED); the cheap, quick explorer is the one to suggest.
+        title: 'Commission an exploration ship',
+        hint: 'Open your capital, go to the Shipyard tab and lay down an Exploration Ship. It surveys twice as fast as a warship, from two jumps away.',
+        takes: `About ${EXPLORER_TIME}`,
         meanwhile: 'Look around the map: your scanners have already found the systems next door.',
         metrics: [DEED_SHIPS_COMMISSIONED],
         target: 1,
     },
     {
-        // RESEARCH unlocks with the first warships (dock-unlocks.ts). Until
+        // RESEARCH unlocks with the first ship (dock-unlocks.ts). Until
         // then the research council keeps the slot busy, but never on a fork:
         // the player's order takes the council's slot over.
         id: 'start_research',
@@ -118,7 +118,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
         id: 'survey_three',
         title: 'Survey three systems',
-        hint: 'Select a system you have scanned and send a fleet to survey it. Only surveyed worlds can be settled.',
+        hint: 'Select a system you have scanned and survey it with your exploration ship (or any fleet). Only surveyed worlds can be settled.',
         takes: 'A few minutes per system, travel included',
         meanwhile: 'Open your capital and queue a building: they take 10 minutes to a few hours, so keep one going.',
         metrics: [DEED_SYSTEMS_SURVEYED],

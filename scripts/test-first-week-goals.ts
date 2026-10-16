@@ -47,11 +47,11 @@ test('research is goal 2, right after the first warships', () => {
 test('takes lines are read from the catalogs, not left as placeholders', () => {
     const ships = FIRST_WEEK_GOALS.find(g => g.id === 'commission_ships')!;
     const yard = FIRST_WEEK_GOALS.find(g => g.id === 'build_shipyard')!;
-    assert.match(ships.takes, /^About \d+ minutes for a corvette$/, ships.takes);
+    assert.strictEqual(ships.takes, 'About 2 minutes', 'the exploration ship is the first ship');
     assert.match(yard.takes, /^Station \d+ minutes, then the yard \dh \d+m$/, yard.takes);
 });
 
-test('warships, then a research choice, advance in order', () => {
+test('a first ship, then a research choice, advance in order', () => {
     const world = freshWorld();
     tickFirstWeekGoals(world);
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'commission_ships');

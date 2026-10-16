@@ -1,4 +1,5 @@
 // lib/combat/combat-manager.ts
+import { isCivilianFleet } from './civilian-ships';
 import { GameWorldState } from '../game-world-state';
 import { Fleet } from '../movement/types';
 import { notifyTitleMetric, COUNTER_FLEET_POWER_DESTROYED } from '../titles/metrics';
@@ -72,6 +73,9 @@ export function processSectorCombats(world: GameWorldState) {
     for (const fleet of world.movement.fleets.values()) {
         if (!fleet.currentSystemId) continue; // In transit
         if (fleet.destinationSystemId) continue; // Departing
+        // Unarmed ships never join a battle; an enemy that finds them alone
+        // takes them in civilian-service.tickCivilianShips instead.
+        if (isCivilianFleet(fleet)) continue;
         const list = systemsWithFleets.get(fleet.currentSystemId) || [];
         list.push(fleet);
         systemsWithFleets.set(fleet.currentSystemId, list);

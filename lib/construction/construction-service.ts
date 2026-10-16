@@ -111,7 +111,9 @@ export const MAX_EXTRA_BUILD_SLOTS = 5;
 
 export function buildSlotsFor(planet: Planet): number {
   const yards = planet.tiles.filter(t => t.buildingId === BUILD_SLOT_BUILDING_ID && t.constructionState === 'active').length;
-  return BASE_BUILD_SLOTS + Math.min(MAX_EXTRA_BUILD_SLOTS, yards);
+  // A docked builder ship (lib/combat/civilian-ships.ts) works one more site.
+  const builders = planet.dockedCivilians?.builders ?? 0;
+  return BASE_BUILD_SLOTS + Math.min(MAX_EXTRA_BUILD_SLOTS, yards) + builders;
 }
 
 /** Orders whose clock is running (not waiting for a slot). */

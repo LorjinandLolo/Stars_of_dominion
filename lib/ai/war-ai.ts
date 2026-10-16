@@ -44,6 +44,7 @@
 // Warfleet ids end in `-war-N`: the expansion AI and the belt AI leave them
 // alone (isWarfleetId), and they sort after the scout.
 
+import { isCivilianFleet } from '../combat/civilian-ships';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Fleet } from '@/lib/movement/types';
 import { registerActOfWar, isAtWar, createOffer, findActiveTreaty } from '@/lib/diplomacy/offer-service';
@@ -779,7 +780,7 @@ export function aiInvasionOrders(world: GameWorldState): AIInvasionOrder[] {
         } else if (mission.lastVolleyAt && world.nowSeconds - mission.lastVolleyAt < WAR.volleyEverySeconds) continue;
         const hostileHere = [...world.movement.fleets.values()].some(o =>
             o.factionId !== f.factionId && o.currentSystemId === f.currentSystemId && !o.destinationSystemId
-            && isFleetOperational(o) && isAtWar(world, f.factionId, o.factionId));
+            && isFleetOperational(o) && !isCivilianFleet(o) && isAtWar(world, f.factionId, o.factionId));
         if (hostileHere) continue;
         mission.lastVolleyAt = world.nowSeconds;
         out.push({ factionId: f.factionId, payload: { fleetId: f.id, planetId: planet.id, systemId: mission.targetSystemId } });

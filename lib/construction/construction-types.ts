@@ -225,6 +225,12 @@ export interface Planet {
     /** Build-speed multiplier after the priority split. */
     constructionMultiplier: number;
   };
+
+  /**
+   * Freighters and builder ships docked here (civilian-ships.ts), capped;
+   * refreshed by the worker every cycle. Absent when none are.
+   */
+  dockedCivilians?: { freighters: number; builders: number };
 }
 
 export interface PlanetStats {

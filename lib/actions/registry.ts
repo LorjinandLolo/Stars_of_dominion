@@ -65,6 +65,27 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", planetId: "id" },
     cost: {}
   },
+  MIL_BUILD_CIVILIAN: {
+    id: "MIL_BUILD_CIVILIAN",
+    category: "military",
+    // An unarmed ship (lib/combat/civilian-ships.ts); the handler charges its price.
+    params: { planetId: "id", shipType: "string" },
+    cost: {}
+  },
+  CIV_SET_TRADE_ROUTE: {
+    id: "CIV_SET_TRADE_ROUTE",
+    category: "military",
+    // A freighter's standing route between two of the owner's worlds, or clear: true.
+    params: { fleetId: "id", fromPlanetId: "id", toPlanetId: "id" },
+    cost: {}
+  },
+  CIV_FOUND_OUTPOST: {
+    id: "CIV_FOUND_OUTPOST",
+    category: "military",
+    // Spend a builder ship to claim an empty world; the handler charges OUTPOST_COST.
+    params: { fleetId: "id", planetId: "id" },
+    cost: {}
+  },
   MIL_RENAME_FORMATION: {
     id: "MIL_RENAME_FORMATION",
     category: "military",

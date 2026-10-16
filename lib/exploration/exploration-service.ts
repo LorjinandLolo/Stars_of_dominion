@@ -49,13 +49,15 @@ export function issueExploreOrder(
     fleetId: string,
     targetSystemId: string,
     mode: 'ping' | 'scan' | 'survey',
-    world: MovementWorldState
+    world: MovementWorldState,
+    /** Explorer ships aboard work faster (lib/combat/civilian-ships.ts). */
+    durationFactor = 1
 ): ExplorationOrder | null {
     const fleet = world.fleets.get(fleetId);
     if (!fleet) return null;
 
     const now = world.nowSeconds;
-    const duration = STAGE_DURATIONS[mode];
+    const duration = Math.round(STAGE_DURATIONS[mode] * durationFactor);
 
     const order: ExplorationOrder = {
         fleetId,

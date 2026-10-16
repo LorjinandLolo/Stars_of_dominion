@@ -6,6 +6,7 @@
  * No random() calls except in generateRecruitPool (acceptable for variety).
  */
 
+import { hasParkedCivilian, SPY_NETWORK_GROWTH } from '../combat/civilian-ships';
 import {
     SpyAgent,
     AgentTraitId,
@@ -311,7 +312,9 @@ export function tickAgentNetworks(world: GameWorldState, deltaSeconds: number): 
             const verifiedAgents = network.agentIds.length;
             if (verifiedAgents > 0) {
                 // Each active agent contributes to the network's growth
-                const growthRate = verifiedAgents * NETWORK_BUILD_RATE_PER_HOUR * hours;
+                // A spy ship parked in the system speeds it (lib/combat/civilian-ships.ts).
+                const shipBoost = hasParkedCivilian(world.movement.fleets.values(), network.ownerFactionId, network.systemId, 'spy') ? SPY_NETWORK_GROWTH : 1;
+                const growthRate = verifiedAgents * NETWORK_BUILD_RATE_PER_HOUR * hours * shipBoost;
                 network.strength = Math.min(1.0, network.strength + growthRate);
                 network.activeUntil = now + 30 * 24 * 3600; // refresh window
 

@@ -2,6 +2,7 @@
 // Pillar 3 — Flow-Based Economy: local production, network trade flow,
 // commodity distribution, and drift-based collapse.
 
+import { FREIGHTER_TAX_BONUS } from '../combat/civilian-ships';
 import type {
     EconomyWorldState,
     PlanetProduction,
@@ -411,7 +412,9 @@ export function collectFactionTaxes(
         planet.stateSkim = undefined;
         const faction = ecoWorld.factions.get(planet.factionId);
         if (!faction || !skim) continue;
-        const taxMult = modsByFaction?.get(planet.factionId)?.tax ?? 1;
+        // Docked freighters (lib/combat/civilian-ships.ts) move the goods that pay the tax.
+        const taxMult = (modsByFaction?.get(planet.factionId)?.tax ?? 1)
+            * (1 + FREIGHTER_TAX_BONUS * (planet.dockedFreighters ?? 0));
         const rec = incomeOf(planet.factionId);
 
         let credits = 0;

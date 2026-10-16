@@ -85,6 +85,8 @@ export interface PlanetProduction {
      * anything produced past the warehouse capacity is wasted, not banked.
      */
     stockpile: ResourceBundle;
+    /** Freighters docked here (capped), mirrored by the worker each cycle; each adds to the world's taxes. */
+    dockedFreighters?: number;
     /**
      * The state's cut of this tick's raw extraction, taken off the stockpile
      * before the factories draw their inputs; collectFactionTaxes delivers it

@@ -196,6 +196,10 @@ export function viewerContextFromOwnShard(shardJson: string | null | undefined):
             ? parsed.fleets.map((f: any) => f?.currentSystemId).filter(Boolean)
             : []
     );
+    // Spy ships see their system and one jump around (civilian-service.refreshDockedCivilians).
+    for (const id of Array.isArray(parsed?.economy?.spySight) ? parsed.economy.spySight : []) {
+        if (typeof id === 'string') presenceSystems.add(id);
+    }
     return { visibility, presenceSystems };
 }
 

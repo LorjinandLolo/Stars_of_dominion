@@ -1,6 +1,7 @@
 // lib/espionage/espionage-service.ts
 // Pillar 6 — Espionage & Subversion: operations, attribution, shadow economy.
 
+import { hasParkedCivilian, SPY_TRACE_FACTOR } from '../combat/civilian-ships';
 import type {
     EspionageWorldState,
     EspionageOperation,
@@ -957,7 +958,10 @@ export function computeAttributionProbability(
     const agent = operationAgent(op, world);
     const avoidance = agent ? agentAttributionAvoidance(agent.traitIds) : 0;
 
-    return Math.max(0, Math.min(1, rawScore + deepNetworkBonus - avoidance));
+    // A spy ship of the actor's parked in the target system muddies the trail.
+    const shipCover = hasParkedCivilian(world.movement.fleets.values(), op.actorFactionId, op.targetRegionId, 'spy') ? SPY_TRACE_FACTOR : 1;
+
+    return Math.max(0, Math.min(1, (rawScore + deepNetworkBonus - avoidance) * shipCover));
 }
 
 // ─── Apply operation effects ──────────────────────────────────────────────────

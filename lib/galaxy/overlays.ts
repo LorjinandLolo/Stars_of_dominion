@@ -32,6 +32,7 @@ import {
     type RelayPingQuote,
 } from '../exploration/ping-cost';
 import { hexDistance } from '../government/capital-distance';
+import { scanReachFrom } from '../combat/civilian-ships';
 import { COLONY_COST } from '../exploration/colonize-service';
 import { hasAsteroidBelt } from '../movement/belts';
 import config from '../movement/movement-config.json';
@@ -261,7 +262,7 @@ export interface OverlayInputSystem {
     instability?: number; unrest?: number; security?: number; escalationLevel?: number; siege?: unknown;
 }
 export interface OverlayInputVisibilityEntry { revealStage: RevealStage; lastSeenAt?: string; visibleTags?: string[] }
-export interface OverlayInputFleet { id: string; factionId: string; currentSystemId?: string | null; destinationSystemId?: string | null }
+export interface OverlayInputFleet { id: string; factionId: string; currentSystemId?: string | null; destinationSystemId?: string | null; composition?: Record<string, number> }
 export interface OverlayInputPlanet { id: string; systemId: string; ownerId?: string | null; tags?: string[] }
 export interface OverlayInputFaction { name?: string; capitalSystemId?: string; reserves?: Record<string, number> }
 export interface OverlayInputDiplomacy {
@@ -400,7 +401,7 @@ export function stanceByFaction(playerFactionId: string | null, diplomacy: Overl
 
 /**
  * Systems a fleet can scan or survey without moving: where an own fleet is
- * stationed, plus one hyperlane jump out — the same rule SystemContextPanel
+ * stationed, plus one hyperlane jump out (two with an exploration ship) — the same rule SystemContextPanel
  * uses to pick an eligible fleet and the worker enforces on EXPLORE_ISSUE_ORDER.
  */
 export function scanReachSystemIds(systems: OverlayInputSystem[], fleets: OverlayInputFleet[], playerFactionId: string | null): Set<string> {
@@ -410,8 +411,7 @@ export function scanReachSystemIds(systems: OverlayInputSystem[], fleets: Overla
     for (const s of systems) byId.set(s.id, s);
     for (const f of fleets) {
         if (f.factionId !== playerFactionId || !f.currentSystemId) continue;
-        out.add(f.currentSystemId);
-        for (const n of byId.get(f.currentSystemId)?.hyperlaneNeighbors ?? []) out.add(n);
+        for (const id of scanReachFrom(f.currentSystemId, f.composition, s => byId.get(s)?.hyperlaneNeighbors)) out.add(id);
     }
     return out;
 }

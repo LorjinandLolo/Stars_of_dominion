@@ -19,6 +19,7 @@ import { getSyncedWorld } from '@/hooks/useGameSync';
 import { buildConstructionView } from '@/lib/construction/construction-view';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
+import { CIVILIAN_SHIPS, CIVILIAN_SHIP_IDS, type CivilianShipId } from '@/lib/combat/civilian-ships';
 
 /** What MIL_BUILD_FLEET itself charges, before the corvette chained into it. */
 const TASK_FORCE_COST = { credits: ACTION_DEFINITIONS.MIL_BUILD_FLEET.cost?.credits ?? 0, metals: ACTION_DEFINITIONS.MIL_BUILD_FLEET.cost?.metals ?? 0 };
@@ -156,6 +157,31 @@ export function PlanetConstructionPanel({
         }
     };
 
+    // An unarmed ship in a fleet of its own (lib/combat/civilian-ships.ts).
+    const [civNotice, setCivNotice] = useState<string | null>(null);
+    const handleBuildCivilian = async (shipType: CivilianShipId) => {
+        setActionLoading(true);
+        setError(null);
+        setCivNotice(null);
+        try {
+            const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+            const res = await dispatchOrder({
+                actionId: 'MIL_BUILD_CIVILIAN',
+                factionId,
+                payload: { planetId, shipType },
+                label: `Laying down ${CIVILIAN_SHIPS[shipType].name}`,
+            });
+            if (!res.success) throw new Error(res.error || 'Failed to lay down the ship');
+            const def = CIVILIAN_SHIPS[shipType];
+            setCivNotice(`${def.name} laid down: ready in about ${Math.round(def.buildSeconds / 15 / 60)} minutes. It will appear in Military → Forces.`);
+            await loadData();
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     /**
      * Shared dispatcher for the planet-layer tabs. They all follow the same
      * shape — fire the order, surface the rejection reason, reload — so the
@@ -285,7 +311,7 @@ export function PlanetConstructionPanel({
     // two per world, +1 per operational Builder Outpost, at most five extra.
     // Orders past the cap are accepted and wait; the worker promotes them.
     const outposts = buildings.filter(b => b.type === 'construction_yard' && b.status === 'operational').length;
-    const buildSlots = 2 + Math.min(5, outposts);
+    const buildSlots = 2 + Math.min(5, outposts) + ((planet as any)?.dockedCivilians?.builders ?? 0);
     const busySlots = queue.filter(q => !(q as any).queued).length;
     const waitingOrders = queue.filter(q => (q as any).queued).length;
 
@@ -679,18 +705,51 @@ export function PlanetConstructionPanel({
                         <div className="space-y-6">
                             <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-4 flex items-center gap-2">
                                 <Navigation className="w-4 h-4 text-fuchsia-500" />
-                                SPACE CONSTRUCTION OPTIONS
+                                Civilian Ships
+                            </h3>
+                            {civNotice && (
+                                <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">{civNotice}</div>
+                            )}
+                            {/* Unarmed ships: each in a fleet of its own, laid down by any yard. */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {CIVILIAN_SHIP_IDS.map(id => {
+                                    const def = CIVILIAN_SHIPS[id];
+                                    const short = [
+                                        { label: 'credits', need: def.cost.CREDITS ?? 0, have: factionCredits },
+                                        { label: 'metals', need: def.cost.METALS ?? 0, have: factionMetals },
+                                    ].find(n => n.have < n.need);
+                                    const realMinutes = Math.round(def.buildSeconds / 15 / 60);
+                                    return (
+                                        <div key={id} id={`civilian-card-${id}`} className="p-4 bg-slate-900 border border-slate-700 rounded-xl flex flex-col">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="font-bold text-slate-200">{def.name}</h4>
+                                                <div className="text-[10px] font-bold text-emerald-500/80 uppercase tracking-widest">Unarmed · {realMinutes} min</div>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mb-4 flex-1">{def.role}</p>
+                                            <div className="text-[10px] font-mono text-fuchsia-400 mb-4">
+                                                {(def.cost.CREDITS ?? 0).toLocaleString()} Cr / {(def.cost.METALS ?? 0).toLocaleString()} Met
+                                            </div>
+                                            <button
+                                                onClick={() => handleBuildCivilian(id)}
+                                                disabled={actionLoading || !!short}
+                                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {short ? `Need ${Math.ceil(short.need - short.have).toLocaleString()} more ${short.label}` : 'LAY DOWN'}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase pt-2 flex items-center gap-2">
+                                <Shield className="w-4 h-4 text-fuchsia-500" />
+                                Warships
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {[
                                     // Only the corvette has a real production path (a new task
-                                    // force with the standard Picket Corvette chained in). The
-                                    // others are listed so players know they exist, disabled
-                                    // until their build path lands — the worker refuses them.
+                                    // force with the standard Picket Corvette chained in); bigger
+                                    // hulls are recruited from the Units panel.
                                     { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', shortfall: corvetteShortfall, cost: `Task force ${TASK_FORCE_COST.credits.toLocaleString()} Cr / ${TASK_FORCE_COST.metals.toLocaleString()} Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met / ${corvetteSummary.cost.MATERIEL.toLocaleString()} Materiel`, available: true },
-                                    { id: 'trade_fleet', name: 'Trade Fleet', desc: 'Automated freighter convoy for interstellar commerce.', cost: 'Not yet available', available: false },
-                                    { id: 'sensor_relay', name: 'Sensor Relay', desc: 'Static orbital node that expands system detection range.', cost: 'Not yet available', available: false },
-                                    { id: 'exploration_node', name: 'Exploration Node', desc: 'Deep-space sensor array for clearing distant fog of war.', cost: 'Not yet available', available: false },
                                 ].map(ship => (
                                     <div key={ship.id} className={`p-4 bg-slate-900 border border-slate-700 rounded-xl flex flex-col ${ship.available ? '' : 'opacity-60'}`}>
                                         <div className="flex justify-between items-start mb-2">

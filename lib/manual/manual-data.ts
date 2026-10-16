@@ -401,6 +401,32 @@ export const MANUAL_DATA: ManualSection[] = [
                 ],
             },
             {
+                id: 'civilian-ships',
+                title: 'Civilian ships',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'Four unarmed ships, laid down at any shipyard from the Shipyard tab. Each one flies in a fleet of its own: civilian ships never join a battle and cannot be merged with warships. An enemy at war that finds one in a system without your warships destroys it.',
+                    },
+                    {
+                        type: 'table',
+                        content: [
+                            { ship: 'Exploration Ship', cost: '300 Cr, 100 Met', time: '2 minutes', use: 'Scans and surveys in half the time, from up to two jumps away. Fast.' },
+                            { ship: 'Freighter', cost: '1,500 Cr, 600 Met', time: '6 minutes', use: 'Parked at your world: +5% of its taxes (three count). On a trade route between two of your worlds: carries goods each cycle, 0.5 Cr per unit delivered. Parked at a trade-pact partner\'s world: 250 Cr a cycle for you, 125 for them.' },
+                            { ship: 'Spy Ship', cost: '2,500 Cr, 400 Met', time: '10 minutes', use: 'Shows every fleet in its system and one jump around. Your spy network there grows 50% faster and operations there are harder to trace. In another empire\'s space it may be caught (about 4% a cycle).' },
+                            { ship: 'Builder Ship', cost: '2,000 Cr, 1,200 Met', time: '8 minutes', use: 'Parked at your world: one more building site (two count) and orbital work 25% faster. Or spend it on an empty surveyed world for an outpost (2,000 Cr), even a dead rock no colony could take.' },
+                        ],
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Set a trade route from the freighter\'s card in Military → Forces.',
+                            'Plant an outpost from the system panel: with a builder ship parked in a surveyed system, each empty world shows an Outpost button.',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'moving',
                 title: 'Moving fleets',
                 blocks: [

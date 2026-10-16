@@ -16,6 +16,8 @@
 // before this (no designSpeedBonus) still get the hull factor, which is what
 // makes an old battleship fleet slow rather than "unknown".
 
+import { CIVILIAN_SHIPS } from './civilian-ships';
+
 /** Relative lane speed per hull class. Wings (interceptor/bomber) ride inside hulls and do not count. */
 export const HULL_SPEED_FACTORS: Record<string, number> = {
     corvette: 1.2,
@@ -26,6 +28,12 @@ export const HULL_SPEED_FACTORS: Record<string, number> = {
 };
 
 type CompositionLike = Record<string, number | undefined> | null | undefined;
+
+/** Civilian ships (civilian-ships.ts) set the pace like hulls but are not counted as warships. */
+function paceOf(key: string): number | undefined {
+    const k = key.toLowerCase();
+    return HULL_SPEED_FACTORS[k] ?? CIVILIAN_SHIPS[k as keyof typeof CIVILIAN_SHIPS]?.speed;
+}
 
 /** Hull ships aboard (wings excluded), tolerant of legacy UPPERCASE keys. */
 export function shipCountOf(composition: CompositionLike): number {
@@ -42,7 +50,7 @@ export function hullSpeedFactor(composition: CompositionLike): number {
     let slowest = Infinity;
     for (const [key, count] of Object.entries(composition ?? {})) {
         if (!(Number(count) > 0)) continue;
-        const factor = HULL_SPEED_FACTORS[key.toLowerCase()];
+        const factor = paceOf(key);
         if (factor !== undefined && factor < slowest) slowest = factor;
     }
     return Number.isFinite(slowest) ? slowest : 1;

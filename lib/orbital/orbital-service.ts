@@ -6,6 +6,7 @@
 // of its job, which is what makes bombarding the layer worth an attacker's time
 // before committing to a landing.
 
+import { BUILDER_ORBITAL_TIME_FACTOR } from '../combat/civilian-ships';
 import type { Planet as ConstructionPlanet } from '../construction/construction-types';
 import type { GameWorldState } from '../game-world-state';
 import { ORBITAL_STRUCTURE_BY_ID } from '../../data/orbital-structures';
@@ -280,7 +281,9 @@ export function startOrbitalConstruction(
     // Orbital work is slowed by a wrecked layer the same way ground work is, but
     // never faster than baseline — orbit has no equivalent of a construction bonus yet.
     // Scaled by tier like surface buildings (lib/construction/build-time.ts).
-    const completesAt = now + baseBuildSeconds(def);
+    // A docked builder ship (lib/combat/civilian-ships.ts) speeds orbital work.
+    const builderFactor = (planet.dockedCivilians?.builders ?? 0) > 0 ? BUILDER_ORBITAL_TIME_FACTOR : 1;
+    const completesAt = now + Math.round(baseBuildSeconds(def) * builderFactor);
 
     slot.structureId = structureId;
     slot.state = 'under_construction';

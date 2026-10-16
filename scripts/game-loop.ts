@@ -30,6 +30,8 @@ import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-manager';
 import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
+import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
+import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-service';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -777,6 +779,9 @@ async function runGameTick() {
 
         // 4.5. Real-time Conflict: Sector Combats & Air Sorties
         processSectorCombats(world);
+
+        // 4.55. Civilian ships: who is docked where, and what spy ships see.
+        try { refreshDockedCivilians(world); } catch (e: any) { console.warn('[Tick Worker] refreshDockedCivilians failed:', e.message); }
 
         // 4.6. AI battle groups parked on an enemy world press the invasion
         // through the player's own handler (lib/ai/war-ai.ts decides where).
@@ -4575,6 +4580,137 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'MIL_BUILD_CIVILIAN': {
+            // payload: { planetId, shipType: 'explorer' | 'freighter' | 'spy' | 'builder' }
+            // An unarmed ship in a fleet of its own (lib/combat/civilian-ships.ts).
+            // Any yard lays one; the price is the ship's, charged here.
+            const planet = world.construction.planets.get(payload?.planetId);
+            const shipType = String(payload?.shipType ?? '').toLowerCase();
+            if (!isCivilianShip(shipType)) {
+                recordOrderFailure(world, factionId, actionId, `${shipType || 'That'} is not a civilian ship.`);
+                return;
+            }
+            const def = CIVILIAN_SHIPS[shipType];
+            if (!planet || planet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'You do not control the selected planet.');
+                return;
+            }
+            const gate = checkShipyardGate(
+                world.construction.planets.values(), factionId,
+                { systemId: planet.systemId, systemName: systemNameFor(world, planet.systemId), holding: true },
+                null, world.nowSeconds,
+            );
+            if (!gate.ok) {
+                recordOrderFailure(world, factionId, actionId, gate.reason.replace('A task force', `A ${def.name}`));
+                return;
+            }
+            const shortfall = perUnitShortfall(world, factionId, def.cost, 1, def.name);
+            if (shortfall) {
+                recordOrderFailure(world, factionId, actionId, shortfall);
+                return;
+            }
+            const fleetId = `fleet-${factionId}-${Date.now()}-${shipType}`;
+            const sameKind = [...world.movement.fleets.values()].filter((f: any) => f.factionId === factionId && civilianCount(f.composition, shipType) > 0).length;
+            world.movement.fleets.set(fleetId, {
+                id: fleetId,
+                factionId,
+                name: `${def.name.replace(' Ship', '')} ${sameKind + 1}`,
+                currentSystemId: planet.systemId,
+                arrivedAtSeconds: world.nowSeconds,
+                orbitingPlanetId: planet.id,
+                destinationSystemId: null,
+                activeLayer: null,
+                transitProgress: 0,
+                etaSeconds: 0,
+                plannedPath: [],
+                orders: [],
+                doctrine: {
+                    type: 'Defensive',
+                    deviationFromPosture: 0,
+                    preferredLayers: ['hyperlane', 'gate'],
+                    retreatThreshold: 1,
+                    logisticsStrain: 0,
+                    moraleDrift: 0,
+                    supplyLevel: 1.0
+                },
+                postureId: 'Expansionist',
+                strength: 1.0,
+                basePower: 0,
+                composition: {},
+                hyperdriveProfile: {
+                    hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+                    trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
+                    corridor: { speedMultiplier: 2.0, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 },
+                    gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
+                    deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
+                },
+                isDetectable: true,
+                transportedArmyIds: [],
+                leaderId: undefined
+            } as any);
+            if (chargePerUnitCost(world, factionId, def.cost, 1, actionId, def.name)) {
+                queueFormationRecruit(world, factionId, fleetId, true, {
+                    unitType: shipType.toUpperCase(),
+                    classKey: shipType as any,
+                    unitPower: 0,
+                    cost: def.cost,
+                    buildTime: def.buildSeconds,
+                    designName: def.name,
+                }, 1);
+                console.log(`[Order] ${factionId} laid down an order for ${def.name} at ${planet.name}.`);
+            } else {
+                world.movement.fleets.delete(fleetId);
+            }
+            break;
+        }
+
+        case 'CIV_SET_TRADE_ROUTE': {
+            // payload: { fleetId, fromPlanetId, toPlanetId } or { fleetId, clear: true }
+            const fleet = world.movement.fleets.get(payload?.fleetId);
+            if (!fleet || fleet.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such fleet under your command.');
+                return;
+            }
+            if (payload.clear) {
+                fleet.tradeRoute = undefined;
+                break;
+            }
+            if (civilianCount(fleet.composition, 'freighter') < 1) {
+                recordOrderFailure(world, factionId, actionId, 'Only freighters run trade routes.');
+                return;
+            }
+            const from = world.construction.planets.get(payload.fromPlanetId);
+            const to = world.construction.planets.get(payload.toPlanetId);
+            if (!from || !to || from.ownerId !== factionId || to.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'A trade route runs between two of your own worlds.');
+                return;
+            }
+            if (from.id === to.id) {
+                recordOrderFailure(world, factionId, actionId, 'Pick two different worlds.');
+                return;
+            }
+            fleet.tradeRoute = { fromPlanetId: from.id, toPlanetId: to.id };
+            // Head for the loading end now; the strategic tick runs it from there.
+            if (fleet.currentSystemId !== from.systemId && !fleet.destinationSystemId) {
+                const moved = changeFleetCourse(fleet, from.systemId, 'hyperlane', world.movement);
+                moved.arrivalOrbitPlanetId = from.id;
+                moved.tradeRoute = fleet.tradeRoute;
+                world.movement.fleets.set(fleet.id, moved);
+            }
+            break;
+        }
+
+        case 'CIV_FOUND_OUTPOST': {
+            // payload: { fleetId, planetId } — spends one builder ship.
+            const result = foundOutpost(world, factionId, payload?.fleetId, payload?.planetId);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason ?? 'The outpost could not be founded.');
+                return;
+            }
+            console.log(`[Order] ${factionId} founded an outpost on ${payload.planetId}.`);
+            break;
+        }
+
         case 'MIL_CREATE_ARMY': {
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet) {
@@ -4627,6 +4763,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 return;
             }
 
+            if (isFleet && isCivilianFleet(formation)) {
+                recordOrderFailure(world, factionId, actionId, `${formation.name} is a civilian fleet and cannot take warships.`);
+                return;
+            }
             const count = Math.max(1, Math.min(50, Math.floor(Number(payload.count) || 1)));
             const resolved = resolveRecruitSpec(world, factionId, payload, isFleet ? 'fleet' : 'ground');
             if (!resolved.ok) {
@@ -5082,6 +5222,12 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             if (src.destinationSystemId || tgt.destinationSystemId) {
                 console.warn(`[Order] MERGE rejected: fleets in transit cannot merge.`);
+                return;
+            }
+            // Civilian ships fly with civilian ships only (lib/combat/civilian-ships.ts).
+            const armed = (f: any) => Object.entries(f.composition ?? {}).some(([k, n]) => Number(n) > 0 && !isCivilianShip(k));
+            if ((isCivilianFleet(src) && armed(tgt)) || (isCivilianFleet(tgt) && armed(src))) {
+                recordOrderFailure(world, factionId, actionId, 'Civilian ships and warships fly in separate fleets.');
                 return;
             }
 
@@ -5984,11 +6130,15 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
              }
              // Scans and surveys need the fleet on-site or one hyperlane hop
              // out; a ping can reach anywhere sensors do.
+             // An exploration ship aboard reaches two hops.
+             const hasExplorer = civilianCount(fleet.composition, 'explorer') > 0;
              if (mode !== 'ping') {
                  const inSystem = fleet.currentSystemId === targetSystemId;
                  const adjacent = (target.hyperlaneNeighbors ?? []).includes(fleet.currentSystemId);
-                 if (!inSystem && !adjacent) {
-                     refuse(`${target.name ?? targetSystemId} is beyond ${fleet.name ?? 'the fleet'}'s sensor reach — move within one hyperlane first.`);
+                 const twoHops = hasExplorer && !!fleet.currentSystemId && (target.hyperlaneNeighbors ?? []).some((n: string) =>
+                     (world.movement.systems.get(n)?.hyperlaneNeighbors ?? []).includes(fleet.currentSystemId!));
+                 if (!inSystem && !adjacent && !twoHops) {
+                     refuse(`${target.name ?? targetSystemId} is beyond ${fleet.name ?? 'the fleet'}'s sensor reach — move within ${hasExplorer ? 'two hyperlanes' : 'one hyperlane'} first.`);
                      return;
                  }
              }
@@ -6002,7 +6152,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                  refuse(`An exploration order for ${target.name ?? targetSystemId} is already underway.`);
                  return;
              }
-             const order = issueExploreOrder(fleetId, targetSystemId, mode, world.movement);
+             const order = issueExploreOrder(fleetId, targetSystemId, mode, world.movement, hasExplorer ? EXPLORER_TIME_FACTOR : 1);
              if (!order) {
                  refuse('Could not issue exploration order.');
                  return;

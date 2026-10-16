@@ -8,8 +8,9 @@
 // clicking planets one by one.
 
 import { veterancyRank } from '../combat/veterancy';
+import { isCivilianFleet, civilianCount } from '../combat/civilian-ships';
 
-export type ForceStatusKind = 'combat' | 'refit' | 'moving' | 'lurking' | 'orbit' | 'holding' | 'aboard' | 'sieging' | 'stationed' | 'empty';
+export type ForceStatusKind = 'trade' | 'combat' | 'refit' | 'moving' | 'lurking' | 'orbit' | 'holding' | 'aboard' | 'sieging' | 'stationed' | 'empty';
 
 export interface ForceStatus {
     kind: ForceStatusKind;
@@ -32,6 +33,11 @@ export interface FleetRow {
     etaSeconds: number | null;
     originSystemId: string | null;
     armiesAboard: number;
+    /** Unarmed ships only (lib/combat/civilian-ships.ts). */
+    civilian: boolean;
+    /** Freighters aboard: they can run a trade route. */
+    freighters: number;
+    tradeRoute: { fromPlanetId: string; toPlanetId: string; fromName: string; toName: string; cargo: string | null; delivered: number } | null;
 }
 
 export interface ArmyRow {
@@ -74,6 +80,8 @@ export interface ForcesView {
     contacts: ContactRow[];
     production: ProductionRow[];
     totals: { fleets: number; ships: number; armies: number; troops: number; power: number };
+    /** The empire's own worlds, for picking a trade route's ends. */
+    worlds: Array<{ id: string; name: string }>;
 }
 
 const RANK_ORDER = ['Green', 'Regular', 'Seasoned', 'Veteran', 'Elite'] as const;
@@ -84,7 +92,7 @@ export function veterancyOf(experience: number | undefined): { label: string; ra
     return { label, rank: RANK_ORDER.indexOf(label) + 1 };
 }
 
-const CLASS_ORDER = ['battleship', 'cruiser', 'destroyer', 'corvette'];
+const CLASS_ORDER = ['battleship', 'carrier', 'cruiser', 'destroyer', 'corvette', 'builder', 'freighter', 'spy', 'explorer'];
 
 const pretty = (key: string) => {
     const words = key.toLowerCase().replace(/_/g, ' ');
@@ -132,8 +140,12 @@ export function buildForcesView(input: ForcesInput): ForcesView {
             const moving = !!f.destinationSystemId;
             const nextHop = Array.isArray(f.plannedPath) && f.plannedPath.length > 1 ? f.plannedPath[1] : null;
             const systemId = f.currentSystemId ?? nextHop ?? f.destinationSystemId ?? null;
+            const route = f.tradeRoute ?? null;
+            const towards = f.destinationSystemId ? sysName(f.destinationSystemId) : null;
             let status: ForceStatus;
-            if (shipCount === 0) status = { kind: 'empty', text: `No ships · at ${sysName(f.currentSystemId)}` };
+            if (shipCount === 0) status = { kind: 'empty', text: `No ships yet · at ${sysName(f.currentSystemId)}` };
+            else if (route && moving) status = { kind: 'trade', text: route.cargo ? `Hauling ${Math.round(route.cargo.amount)} ${route.cargo.resource} to ${towards}` : `Trade run to ${towards}` };
+            else if (route) status = { kind: 'trade', text: `Loading at ${sysName(f.currentSystemId)}` };
             else if (f.currentSystemId && combatSystems.has(f.currentSystemId)) status = { kind: 'combat', text: `In battle at ${sysName(f.currentSystemId)}` };
             else if (inRefit.has(f.id)) status = { kind: 'refit', text: `Refitting at ${sysName(f.currentSystemId)}` };
             else if (moving) status = { kind: 'moving', text: `En route to ${sysName(f.destinationSystemId)}` };
@@ -154,9 +166,20 @@ export function buildForcesView(input: ForcesInput): ForcesView {
                 etaSeconds: moving ? Number(f.etaSeconds ?? 0) : null,
                 originSystemId: moving ? f.originSystemId ?? null : null,
                 armiesAboard: (f.transportedArmyIds ?? []).length,
+                civilian: isCivilianFleet(f),
+                freighters: civilianCount(f.composition, 'freighter'),
+                tradeRoute: route ? {
+                    fromPlanetId: route.fromPlanetId,
+                    toPlanetId: route.toPlanetId,
+                    fromName: planetName(route.fromPlanetId),
+                    toName: planetName(route.toPlanetId),
+                    cargo: route.cargo ? `${Math.round(route.cargo.amount)} ${route.cargo.resource}` : null,
+                    delivered: Math.round(route.delivered ?? 0),
+                } : null,
             };
         })
-        .sort((a, b) => b.power - a.power);
+        // Warships by power first, then the civilian ships.
+        .sort((a, b) => Number(a.civilian) - Number(b.civilian) || b.power - a.power);
 
     const armies: ArmyRow[] = input.armies
         .filter((a: any) => a.factionId === me)
@@ -216,7 +239,10 @@ export function buildForcesView(input: ForcesInput): ForcesView {
             label: j.kind === 'refit'
                 ? `Refit: ${j.count}× ${j.designName ?? j.classKey ?? 'ships'}`
                 : `${j.count}× ${j.designName ?? (j.classKey ? pretty(j.classKey) : pretty(String(j.unitType ?? 'unit')))}`,
-            planetName: planetName(j.planetId),
+            // Fleet recruits carry 'formation-<fleetId>' as their planet.
+            planetName: String(j.planetId ?? '').startsWith('formation-')
+                ? (fleetById.get(String(j.planetId).slice('formation-'.length))?.name ?? 'a fleet')
+                : planetName(j.planetId),
             completesAt: Number(j.completesAt ?? 0),
         }))
         .sort((a, b) => a.completesAt - b.completesAt);
@@ -226,6 +252,7 @@ export function buildForcesView(input: ForcesInput): ForcesView {
         armies,
         contacts,
         production,
+        worlds: input.planets.filter((p: any) => p?.ownerId === me).map((p: any) => ({ id: p.id, name: p.name ?? p.id })),
         totals: {
             fleets: fleets.length,
             ships: fleets.reduce((s, f) => s + f.shipCount, 0),

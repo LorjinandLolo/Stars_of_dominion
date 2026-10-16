@@ -359,6 +359,18 @@ export interface Fleet {
     /** Orbit to take the moment the current move order arrives (orbit on arrival). */
     arrivalOrbitPlanetId?: string | null;
     /**
+     * Freighters only: a standing route between two of the owner's worlds,
+     * run by lib/combat/civilian-service.ts each strategic cycle.
+     */
+    tradeRoute?: {
+        fromPlanetId: string;
+        toPlanetId: string;
+        /** What is aboard, loaded at one end and delivered at the other. */
+        cargo?: { resource: string; amount: number; loadedAt?: string };
+        /** Units delivered over the route's life. */
+        delivered?: number;
+    };
+    /**
      * Sim seconds when the fleet last entered currentSystemId (stamped on
      * arrival and at spawn). Sector combat makes the later arrival the
      * attacker. Absent on fleets from before the stamp, which count as having
