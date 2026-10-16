@@ -231,6 +231,9 @@ export interface Planet {
    * refreshed by the worker every cycle. Absent when none are.
    */
   dockedCivilians?: { freighters: number; builders: number };
+
+  /** An outpost's own small grid and its shifts (lib/outposts); kept, frozen, once it is a colony. */
+  outpost?: import('../outposts/outpost-types').OutpostState;
 }
 
 export interface PlanetStats {

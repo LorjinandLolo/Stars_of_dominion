@@ -4,6 +4,7 @@
 // Called by tick-scheduler.ts on every 6-hour strategic tick.
 
 import { tickCivilianShips } from '../combat/civilian-service';
+import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { getGameWorldState } from '../game-world-state-singleton';
 import { tickEconomy } from '../economy/economy-service';
 import { tickConstructionGlobal, getBuildingsForSystem } from '../construction/construction-service';
@@ -165,6 +166,7 @@ export async function runStrategicTick(
     // 9b: Diplomacy — expire lapsed offers/treaties, prune initiative cooldowns
     try { tickDiplomacy(world); } catch (e) { console.error('[TickProcessor] tickDiplomacy failed:', e); }
     try { tickCivilianShips(world); } catch (e) { console.error('[TickProcessor] tickCivilianShips failed:', e); }
+    try { shipOutpostWarehouses(world); } catch (e) { console.error('[TickProcessor] shipOutpostWarehouses failed:', e); }
     // 9c: Gambits — doctrine auto-resolve for overdue confrontations
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }
     // 9d: Organic pressure — rivalry drifts toward its ideological baseline

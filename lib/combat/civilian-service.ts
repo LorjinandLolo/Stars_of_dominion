@@ -23,13 +23,17 @@ import { changeFleetCourse } from '../movement/movement-service';
 import { colonizePlanet } from '../exploration/colonize-service';
 import { fireNotification } from '../time/notification-hooks';
 import { RNG, seedFromString } from '../trade-system/rng';
+import { createOutpostState } from '../outposts/outpost-map';
+import { outpostSightSystems } from '../outposts/outpost-service';
+import { CHARTERS } from '../outposts/outpost-catalog';
+import type { CharterId } from '../outposts/outpost-types';
 
 const parked = (f: Fleet) => !!f.currentSystemId && !f.destinationSystemId;
 
 function notify(world: GameWorldState, factionId: string, id: string, title: string, body: string): void {
     try {
         fireNotification({
-            id, factionId, category: 'military', priority: 'normal', title, body,
+            id, factionId, category: 'combat', priority: 'normal', title, body,
             createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false,
         } as any);
     } catch { /* notification queue absent in probes */ }
@@ -69,6 +73,9 @@ export function refreshDockedCivilians(world: GameWorldState): void {
         if (eco) eco.dockedFreighters = capped?.freighters ?? 0;
     }
     for (const [factionId, faction] of world.economy.factions) {
+        // Outpost sensor masts see too (lib/outposts).
+        const masts = outpostSightSystems(world, factionId);
+        if (masts.size) { const set = sight.get(factionId) ?? new Set<string>(); for (const id of masts) set.add(id); sight.set(factionId, set); }
         const set = sight.get(factionId);
         (faction as any).spySight = set ? [...set] : undefined;
     }
@@ -229,7 +236,7 @@ export function tickCivilianShips(world: GameWorldState): void {
 export interface OutpostResult { ok: boolean; reason?: string }
 
 /** Spend one builder ship from fleetId to claim planetId as an outpost. Charges OUTPOST_COST. */
-export function foundOutpost(world: GameWorldState, factionId: string, fleetId: string, planetId: string): OutpostResult {
+export function foundOutpost(world: GameWorldState, factionId: string, fleetId: string, planetId: string, charter: CharterId = 'settlement'): OutpostResult {
     const fleet = world.movement.fleets.get(fleetId);
     if (!fleet || fleet.factionId !== factionId) return { ok: false, reason: 'No such fleet under your command.' };
     if (civilianCount(fleet.composition, 'builder') < 1) return { ok: false, reason: 'That fleet has no builder ship.' };
@@ -256,6 +263,8 @@ export function foundOutpost(world: GameWorldState, factionId: string, fleetId: 
     planet.popCapacity = 5;
     const eco = world.economy.planets.get(planetId);
     if (eco) { eco.demographics.population = 1; eco.demographics.housingCapacity = 5; }
+    // The outpost itself: a small grid run by shifts until it grows into a colony.
+    (planet as any).outpost = createOutpostState(planet, world.nowSeconds, CHARTERS[charter] ? charter : 'settlement');
 
     const left = civilianCount(fleet.composition, 'builder') - 1;
     for (const key of Object.keys(fleet.composition)) if (key.toLowerCase() === 'builder') delete fleet.composition[key];

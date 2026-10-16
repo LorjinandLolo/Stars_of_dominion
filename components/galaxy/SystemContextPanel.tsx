@@ -4,7 +4,7 @@ import React from 'react';
 import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
-import { X, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer } from 'lucide-react';
+import { X, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer, Home } from 'lucide-react';
 import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
 import { hasAsteroidBelt } from '@/lib/movement/belts';
 import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
@@ -344,7 +344,17 @@ function PlanetCard({
 
                     {/* Planetary construction — where building actually happens.
                         Was labelled SYSTEMS, which nobody read as "build here". */}
-                    {isOwnedByPlayer && (
+                    {isOwnedByPlayer && planet.outpost && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); useUIStore.getState().setOutpostPlanet(planet.id); }}
+                            title="The outpost: its grid, its colonists and their crises"
+                            className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${planet.outpost.crises?.length ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 animate-pulse' : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/40 text-emerald-300'}`}
+                        >
+                            <Home size={10} />
+                            {planet.outpost.crises?.length ? 'CRISIS' : 'OUTPOST'}
+                        </button>
+                    )}
+                    {isOwnedByPlayer && !(planet.outpost && !planet.outpost.graduated) && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onConstruct(planet.id); }}
                             title="Planetary construction — buildings, orbital structures, infrastructure, logistics"

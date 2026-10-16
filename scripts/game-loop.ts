@@ -32,6 +32,7 @@ import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
 import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-service';
+import { outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -779,6 +780,9 @@ async function runGameTick() {
 
         // 4.5. Real-time Conflict: Sector Combats & Air Sorties
         processSectorCombats(world);
+
+        // 4.54. Outposts run their shifts (lib/outposts).
+        try { tickOutposts(world); } catch (e: any) { console.warn('[Tick Worker] tickOutposts failed:', e.message); }
 
         // 4.55. Civilian ships: who is docked where, and what spy ships see.
         try { refreshDockedCivilians(world); } catch (e: any) { console.warn('[Tick Worker] refreshDockedCivilians failed:', e.message); }
@@ -2502,6 +2506,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             // deterministic auto-placement.
             const planet = world.construction.planets.get(payload.planetId);
             if (!planet) { recordOrderFailure(world, factionId, actionId, 'Planet not found.'); break; }
+            if (surfaceLocked(planet)) {
+                recordOrderFailure(world, factionId, actionId, `${planet.name} is still an outpost: build in its outpost screen until it grows into a colony.`);
+                break;
+            }
             if (planet.ownerId !== factionId) {
                 console.error(`[Security] Unauthorized BUILD from ${factionId} on planet ${payload.planetId} (Owner: ${planet.ownerId})`);
                 // Also surface it: the usual cause is a stale client whose target
@@ -4700,9 +4708,20 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'OUTPOST_ORDER': {
+            // payload: { planetId, op, ... } — every outpost action (lib/outposts/outpost-service.ts).
+            const { planetId, ...op } = payload ?? {};
+            const result = outpostOrder(world, factionId, planetId, op as any);
+            if (!result.ok) {
+                recordOrderFailure(world, factionId, actionId, result.reason ?? 'The outpost could not do that.');
+                return;
+            }
+            break;
+        }
+
         case 'CIV_FOUND_OUTPOST': {
             // payload: { fleetId, planetId } — spends one builder ship.
-            const result = foundOutpost(world, factionId, payload?.fleetId, payload?.planetId);
+            const result = foundOutpost(world, factionId, payload?.fleetId, payload?.planetId, payload?.charter);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.reason ?? 'The outpost could not be founded.');
                 return;

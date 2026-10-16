@@ -88,6 +88,7 @@ const PlanetSurfaceView = dynamic(() => import('@/components/planet/PlanetSurfac
     ssr: false,
     loading: () => <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80 text-xs font-mono text-emerald-400/80 animate-pulse">ENTERING ORBIT...</div>
 });
+const OutpostView = dynamic(() => import('@/components/outpost/OutpostView'), { ssr: false });
 const SystemOrbitalView = dynamic(() => import('@/components/planet/SystemOrbitalView'), {
     ssr: false,
     loading: () => <div className="absolute inset-0 z-[38] flex items-center justify-center bg-slate-950/80 text-xs font-mono text-sky-400/80 animate-pulse">APPROACHING SYSTEM...</div>
@@ -288,6 +289,7 @@ export default function GameShell() {
                     board on top of it — each dive stacks over the galaxy */}
                 <SystemViewGate />
                 <PlanetSurfaceGate />
+                <OutpostGate />
 
                 {/* Contextual workspace expands UP from the Command Dock */}
                 {activePanel && (
@@ -529,6 +531,13 @@ function PlanetSurfaceGate() {
     const surfacePlanetId = useUIStore(s => s.surfacePlanetId);
     if (!surfacePlanetId) return null;
     return <PlanetSurfaceView />;
+}
+
+/** Same narrow-subscription trick for an outpost's screen. */
+function OutpostGate() {
+    const outpostPlanetId = useUIStore(s => s.outpostPlanetId);
+    if (!outpostPlanetId) return null;
+    return <OutpostView />;
 }
 
 /** Same narrow-subscription trick for the system orbital view. */

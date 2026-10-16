@@ -189,6 +189,27 @@ export const MANUAL_DATA: ManualSection[] = [
         introduction: 'The galaxy starts dark. You chart it system by system, and only charted worlds can be settled.',
         subsections: [
             {
+                id: 'outposts',
+                title: 'Outposts',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'A builder ship spent on an empty surveyed world plants an outpost: three colonists, a landing hub and a 5×5 patch of ground. You run it from its own screen (OUTPOST on the world\'s card) until it is big enough to become a colony. Dead worlds can take one.',
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Every 5 minutes is a shift. Colonists breathe (life support), eat (hydroponics, supply drops) and need power for every module. Short of air or food, people die; miserable, they leave.',
+                            'Squares have ground: flat, ore, ice, vents, rock (clear it first), and sometimes ruins. Extractors dig what the ground holds into a warehouse, which ships to your reserves every cycle.',
+                            'Things go wrong: storms, meteors, breaches, fever, strikes, riots, raiders. Each crisis gives you two shifts to choose. Say nothing and the crew picks the passive answer; a governor on the world picks the sensible one.',
+                            'The charter is the outpost\'s job: settlement, mining, penal colony, proving ground, listening post or fleet depot. Its function runs half again as well.',
+                            'Prisoners can be moved to cell blocks (needs a landing dock) and stay ransomable. A test lab pushes your current research; using prisoners as subjects doubles it, and their homeland hears of it.',
+                            'Grow: 10 colonists, morale 50, a habitat, life support and hydroponics make a settlement (3,000 Cr) and open the whole grid. 30 colonists, morale 60, a dock and a warehouse make a colony (10,000 Cr): the world gets its full surface for districts and the old modules keep working.',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'charting',
                 title: 'Ping, scan, survey',
                 blocks: [
@@ -414,7 +435,7 @@ export const MANUAL_DATA: ManualSection[] = [
                             { ship: 'Exploration Ship', cost: '300 Cr, 100 Met', time: '2 minutes', use: 'Scans and surveys in half the time, from up to two jumps away. Fast.' },
                             { ship: 'Freighter', cost: '1,500 Cr, 600 Met', time: '6 minutes', use: 'Parked at your world: +5% of its taxes (three count). On a trade route between two of your worlds: carries goods each cycle, 0.5 Cr per unit delivered. Parked at a trade-pact partner\'s world: 250 Cr a cycle for you, 125 for them.' },
                             { ship: 'Spy Ship', cost: '2,500 Cr, 400 Met', time: '10 minutes', use: 'Shows every fleet in its system and one jump around. Your spy network there grows 50% faster and operations there are harder to trace. In another empire\'s space it may be caught (about 4% a cycle).' },
-                            { ship: 'Builder Ship', cost: '2,000 Cr, 1,200 Met', time: '8 minutes', use: 'Parked at your world: one more building site (two count) and orbital work 25% faster. Or spend it on an empty surveyed world for an outpost (2,000 Cr), even a dead rock no colony could take.' },
+                            { ship: 'Builder Ship', cost: '2,000 Cr, 1,200 Met', time: '8 minutes', use: 'Parked at your world: one more building site (two count) and orbital work 25% faster. Or spend it on an empty surveyed world for an outpost (2,000 Cr), even a dead rock no colony could take: see Exploring and Settling → Outposts.' },
                         ],
                     },
                     {

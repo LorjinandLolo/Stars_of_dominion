@@ -111,6 +111,9 @@ export interface UIStore {
     /** Planet whose 64-sector surface board is open (Layer 2 planet view). */
     surfacePlanetId: string | null;
     setSurfacePlanet: (id: string | null) => void;
+    /** Planet whose outpost screen is open (components/outpost/OutpostView.tsx). */
+    outpostPlanetId: string | null;
+    setOutpostPlanet: (id: string | null) => void;
     /** System whose orbital view is open (galaxy → system → planet → surface). */
     systemViewId: string | null;
     setSystemView: (id: string | null) => void;
@@ -408,6 +411,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setConstructionPlanet: (id: string | null) => set({ constructionPlanetId: id }),
     surfacePlanetId: null,
     setSurfacePlanet: (id: string | null) => set({ surfacePlanetId: id }),
+    outpostPlanetId: null,
+    setOutpostPlanet: (id: string | null) => set({ outpostPlanetId: id }),
     systemViewId: null,
     setSystemView: (id: string | null) => set({ systemViewId: id }),
 

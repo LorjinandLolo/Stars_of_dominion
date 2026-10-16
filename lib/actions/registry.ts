@@ -86,6 +86,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", planetId: "id" },
     cost: {}
   },
+  OUTPOST_ORDER: {
+    id: "OUTPOST_ORDER",
+    category: "economic",
+    // Every outpost action (lib/outposts/outpost-service.ts): op = build | clear |
+    // toggle | demolish | resolve | charter | advance | supply | resettle |
+    // experiment | transfer_prisoners | labour. Costs are charged by the op.
+    params: { planetId: "id", op: "string" },
+    cost: {}
+  },
   MIL_RENAME_FORMATION: {
     id: "MIL_RENAME_FORMATION",
     category: "military",
