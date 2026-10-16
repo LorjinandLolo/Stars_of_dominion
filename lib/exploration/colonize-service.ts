@@ -4,6 +4,7 @@
 // expansion tick, so player and AI colonies are identical by construction.
 
 import type { GameWorldState } from '../game-world-state';
+import { armiesOnGround } from '../combat/siege/contested-ground';
 import type { PlanetProduction } from '../economy/economy-types';
 import { initializePlanetServices } from '../economy/services/service-engine';
 import { bumpMetric } from '../tech/history-ledger';
@@ -47,6 +48,12 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     const constr = world.construction.planets.get(planetId);
     if (!constr) return { ok: false, reason: 'No such planet.' };
     if (!isUnowned(constr.ownerId)) return { ok: false, reason: `${constr.name} is already owned.` };
+    // Contested ground (lib/combat/siege/contested-ground.ts): nobody settles a battlefield,
+    // or ground someone else's troops are standing on.
+    if ((constr as any).siege) return { ok: false, reason: `${constr.name} is a battlefield. Win the ground first.` };
+    if (armiesOnGround(world, planetId).some(a => a.factionId !== factionId)) {
+        return { ok: false, reason: `Foreign troops hold the ground on ${constr.name}. Drive them off first.` };
+    }
     if (constr.tags?.includes('dead_matter')) {
         return { ok: false, reason: `${constr.name} cannot support a settlement.` };
     }

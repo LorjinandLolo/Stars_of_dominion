@@ -4,6 +4,7 @@
 // Called by tick-scheduler.ts on every 6-hour strategic tick.
 
 import { tickCivilianShips } from '../combat/civilian-service';
+import { tickStagingArmies } from '../combat/siege/contested-ground';
 import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
@@ -168,6 +169,8 @@ export async function runStrategicTick(
     // 9b: Diplomacy — expire lapsed offers/treaties, prune initiative cooldowns
     try { tickDiplomacy(world); } catch (e) { console.error('[TickProcessor] tickDiplomacy failed:', e); }
     try { tickCivilianShips(world); } catch (e) { console.error('[TickProcessor] tickCivilianShips failed:', e); }
+    // Armies on ground they do not own dig in and live off their supply.
+    try { tickStagingArmies(world); } catch (e) { console.error('[TickProcessor] tickStagingArmies failed:', e); }
     try { shipOutpostWarehouses(world); } catch (e) { console.error('[TickProcessor] shipOutpostWarehouses failed:', e); }
     // 9c: Gambits — doctrine auto-resolve for overdue confrontations
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }

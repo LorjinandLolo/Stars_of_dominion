@@ -386,10 +386,11 @@ function PlanetCard({
                     {isOrbitedByFleet && !isOwnedByPlayer && !planet.siege && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onSiege(planet.id); }}
+                            title={isNeutral ? 'Land the troops aboard on this empty world. If an enemy army already stands here, the ground is contested.' : 'Invade this world'}
                             className="flex-1 py-1 bg-red-700/20 hover:bg-red-700/35 border border-red-500/30 rounded text-[9px] text-red-400 font-bold transition-all flex items-center justify-center gap-1 animate-pulse hover:animate-none"
                         >
                             <Swords size={9} />
-                            INVASION
+                            {isNeutral ? 'LAND TROOPS' : 'INVASION'}
                         </button>
                     )}
 
@@ -429,6 +430,13 @@ function PlanetCard({
                 </div>
 
                 {/* Second action row: expansion & covert operations */}
+                {/* Empty worlds as battlefields and staging grounds (contested-ground.ts) */}
+                {isNeutral && (planet.siege?.contested || armiesPresent > 0) && (
+                    <div className={`mt-1.5 rounded px-2 py-1 text-[9px] font-bold tracking-wider flex items-center gap-1 ${planet.siege?.contested ? 'bg-red-500/15 border border-red-500/40 text-red-300' : 'bg-amber-500/10 border border-amber-500/30 text-amber-300'}`}>
+                        <Swords size={9} />
+                        {planet.siege?.contested ? 'CONTESTED GROUND: A FIELD BATTLE IS ON' : `${armiesPresent} ARMY${armiesPresent === 1 ? '' : ' GROUPS'} ON THE GROUND`}
+                    </div>
+                )}
                 {(isNeutral || isOwnedByPlayer || isEnemyOwned) && (
                     <div className="flex gap-1.5 mt-1.5">
                         {/* Found a colony — only where the worker would accept it */}

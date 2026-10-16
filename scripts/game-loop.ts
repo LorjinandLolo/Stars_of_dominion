@@ -85,6 +85,8 @@ import {
 } from '../lib/combat/siege/district-front';
 import { nextMorale } from '../lib/combat/siege/army-morale';
 import { defaultGarrison, DEFAULT_GARRISON_TROOPS } from '../lib/combat/siege/garrison';
+import { isEmptyWorld, armiesOnGround, groundHolder, digInFortification, CONTEST_DECISION_CYCLES, CONTEST_WIN_SHARE } from '../lib/combat/siege/contested-ground';
+import { canSeeSystem } from '../lib/exploration/colonize-service';
 import { pacing } from '../lib/combat/siege/siege-pacing';
 import { orbitState, orbitalFireFor, canCrossOrbit, BLOCKADE_GRACE_CYCLES, BLOCKADE_PHASEOUT_CYCLES } from '../lib/combat/siege/orbit-state';
 import {
@@ -1838,6 +1840,15 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!planet || !fleet || fleet.factionId !== factionId) return;
             if (planet.ownerId === factionId) return; // Already owner
 
+            // Nobody owns it: there is nobody to besiege. The troops aboard go
+            // down onto open ground (lib/combat/siege/contested-ground.ts), and
+            // if an enemy army already stands there, the ground is contested.
+            if (isEmptyWorld(planet)) {
+                const landed = landOnEmptyWorld(world, factionId, fleet, planet);
+                if (!landed.ok) recordOrderFailure(world, factionId, actionId, landed.reason!);
+                break;
+            }
+
             // Invasion never calls registerActOfWar, so this is the only place
             // the victim learns who landed on them. Without it a Buthari player
             // who is invaded but never formally declared upon would stay
@@ -2477,10 +2488,14 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 break;
             }
             const siege = planet.siege;
-            const belligerent = planet.ownerId === factionId
+            // Open ground: any empty world this empire has surveyed.
+            const openGround = !siege && isEmptyWorld(planet) && canSeeSystem(world, factionId, planet.systemId);
+            const belligerent = planet.ownerId === factionId || openGround
                 || (siege && (siege.attackerEmpireId === factionId || siege.defenderEmpireId === factionId));
             if (!belligerent) {
-                recordOrderFailure(world, factionId, actionId, `You have no footing on ${planet.name} — invade it, or land on your own worlds.`);
+                recordOrderFailure(world, factionId, actionId, siege
+                    ? `${planet.name} is a battlefield between others; you have no side in it.`
+                    : `You have no footing on ${planet.name}: invade it, land on your own worlds, or on an empty world you have surveyed.`);
                 break;
             }
             if (siege) {
@@ -2496,7 +2511,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             army.transportFleetId = null;
             army.currentPlanetId = payload.planetId;
             army.currentSystemId = planet.systemId;
+            army.stationedAt = world.nowSeconds;
+            army.dugIn = 0;
             console.log(`[Order] Faction ${factionId} disembarking army ${payload.armyId} to planet ${payload.planetId}`);
+            if (openGround) maybeStartContest(world, planet, factionId);
             break;
         }
         
@@ -6332,6 +6350,11 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
  * fourteen factions and every conquest since the siege system was written.
  */
 function capturePlanet(world: GameWorldState, planet: any, attackerId: string, label: string) {
+    // A field battle on empty ground takes the field, not the planet.
+    if (planet.siege?.contested || isEmptyWorld(planet)) {
+        contestWon(world, planet, attackerId);
+        return;
+    }
     const previousOwnerId = planet.ownerId;
     const siege: GroundSiegeState | null = planet.siege ?? null;
 
@@ -6466,6 +6489,16 @@ function endSiegeDefenderHolds(
             });
         }
     }
+    if (siege.contested) {
+        // No world to garrison: the holder's survivors stand as a field army.
+        const held = formations.length ? tallySide(formations, 'defender').comp : (siege.defenderState.unitComposition ?? {});
+        standAsArmy(world, planet, siege.defenderEmpireId, held, `Holders of ${planet.name}`);
+        delete planet.garrison;
+        notifyContest(world, planet, siege.defenderEmpireId, siege.attackerEmpireId, `${planet.name}: the ground is held`,
+            `The attack on our position at ${planet.name} collapsed.`, `Our landing at ${planet.name} was thrown back.`);
+        planet.siege = null;
+        return;
+    }
     const garrison: any = planet.garrison ?? siege.defenderState;
     garrison.isUnderSiege = false;
     garrison.siegeId = undefined;
@@ -6473,6 +6506,183 @@ function endSiegeDefenderHolds(
     planet.garrison = garrison;
     reportSiegeEvent(world, planet, siege, 'invasion_collapsed', { men: withdrawingFleet ? 0 : men }, id => empireName(world, id));
     planet.siege = null;
+}
+
+// ─── Contested ground (lib/combat/siege/contested-ground.ts) ────────────────
+
+/** Put men on a world as a stationed field army (a contest's survivors). */
+function standAsArmy(world: GameWorldState, planet: any, factionId: string, comp: Record<string, number | undefined>, name: string): void {
+    const composition: Record<string, number> = {};
+    let men = 0;
+    for (const [type, n] of Object.entries(comp)) {
+        const count = Math.max(0, Math.floor(Number(n) || 0));
+        if (count > 0) { composition[type] = count; men += count; }
+    }
+    if (men <= 0) return;
+    if (!world.movement.armies) world.movement.armies = new Map();
+    const id = `army-${factionId}-field-${planet.id}-${world.nowSeconds}`;
+    world.movement.armies.set(id, {
+        id, factionId, name, currentPlanetId: planet.id, currentSystemId: planet.systemId, transportFleetId: null,
+        composition, stance: 'fortified', strength: 1.0, basePower: 100, supplyLevel: 0.5, morale: 60,
+        stationedAt: world.nowSeconds, dugIn: 0.3,
+    } as any);
+}
+
+function notifyContest(world: GameWorldState, planet: any, a: string, b: string, title: string, toA: string, toB: string): void {
+    const at = new Date(world.nowSeconds * 1000).toISOString();
+    for (const [who, body] of [[a, toA], [b, toB]] as const) {
+        if (!who) continue;
+        try {
+            fireNotification({ id: `contest-${planet.id}-${who}-${world.nowSeconds}`, factionId: who, category: 'combat', priority: 'urgent', title, body, createdAt: at, read: false } as any);
+        } catch { /* probes run without the queue */ }
+    }
+}
+
+/**
+ * Land everything aboard `fleet` on an empty world. Unopposed, the troops
+ * just stand there (staging); with an enemy army at war already on the
+ * ground, the ground is contested.
+ */
+function landOnEmptyWorld(world: GameWorldState, factionId: string, fleet: any, planet: any): { ok: boolean; reason?: string } {
+    if (!canSeeSystem(world, factionId, planet.systemId)) return { ok: false, reason: `${planet.name} has not been surveyed: you cannot land blind.` };
+    if (!fleet.currentSystemId || fleet.destinationSystemId || fleet.currentSystemId !== planet.systemId) return { ok: false, reason: `${fleet.name ?? 'The fleet'} is not parked in ${planet.name}'s system.` };
+    if (planet.siege) {
+        const side = planet.siege.attackerEmpireId === factionId ? 'attacker' : planet.siege.defenderEmpireId === factionId ? 'defender' : null;
+        if (!side) return { ok: false, reason: `${planet.name} is a battlefield between others; you have no side in it.` };
+    }
+    const aboard: string[] = (fleet.transportedArmyIds ?? []).filter((id: string) => world.movement.armies?.get(id)?.factionId === factionId);
+    if (!aboard.length) return { ok: false, reason: `${fleet.name ?? 'The fleet'} carries no troops to land.` };
+    for (const id of aboard) {
+        const army: any = world.movement.armies!.get(id)!;
+        army.transportFleetId = null;
+        army.currentPlanetId = planet.id;
+        army.currentSystemId = planet.systemId;
+        army.stationedAt = world.nowSeconds;
+        army.dugIn = 0;
+    }
+    fleet.transportedArmyIds = (fleet.transportedArmyIds ?? []).filter((id: string) => !aboard.includes(id));
+    console.log(`[Order] ${factionId} landed ${aboard.length} army(ies) on open ground at ${planet.name}.`);
+    // Mid-battle, the reinforcements are absorbed into their side by the siege tick.
+    if (!planet.siege) maybeStartContest(world, planet, factionId);
+    return { ok: true };
+}
+
+/** Enemy armies at war on the same empty world: the ground is contested. */
+function maybeStartContest(world: GameWorldState, planet: any, arrivingFactionId: string): void {
+    if (planet.siege || !isEmptyWorld(planet)) return;
+    const enemies = [...new Set(armiesOnGround(world, planet.id).map(a => a.factionId))]
+        .filter(id => id !== arrivingFactionId && isAtWar(world, id, arrivingFactionId));
+    if (!enemies.length) return;
+    const holder = groundHolder(world, planet.id, enemies)!;
+    startContest(world, planet, holder, arrivingFactionId);
+}
+
+/**
+ * A field battle on the planet's own 64-district board, built the way an
+ * invasion is: both sides' stationed armies are absorbed into their pools and
+ * cut into formations. The holder defends, dug in by how long it has stood
+ * there; nobody's world, so no buildings, no shield, no levy.
+ */
+function startContest(world: GameWorldState, planet: any, holderId: string, attackerId: string): void {
+    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+    const fort = digInFortification(world, planet.id, holderId);
+    const defenseState: PlanetaryDefenseState = defaultGarrison(planet, holderId, {}, fort);
+    defenseState.isUnderSiege = true;
+    const siegeId = `contest-${planet.id}-${world.nowSeconds}`;
+    const overhead = [...world.movement.fleets.values()].filter((f: any) => f.factionId === attackerId && f.currentSystemId === planet.systemId && !f.destinationSystemId);
+    planet.siege = {
+        siegeId,
+        planetId: planet.id,
+        attackerEmpireId: attackerId,
+        defenderEmpireId: holderId,
+        contested: true,
+        phase: 'LANDING',
+        tickCount: 0,
+        cycleCount: 0,
+        cycleLengthTicks: pacing.cycleLengthTicks,
+        currentFrontage: 500,
+        maxFrontage: 1000,
+        attackerState: {
+            siegeId,
+            attackerEmpireId: attackerId,
+            sourceFleetIds: overhead.map((f: any) => f.id),
+            totalLandedTroops: 0,
+            reserveTroops: 0,
+            unitComposition: {} as any,
+            supply: 1000, maxSupply: 1000, morale: 100, maxMorale: 100, cohesion: 100, maxCohesion: 100,
+            orbitalSupportPower: overhead.reduce((s: number, f: any) => s + (f.basePower ?? 0), 0),
+            retreatRequested: false,
+            reinforcementQueue: [],
+            occupationControl: 0,
+            devastationCaused: 0,
+        },
+        defenderState: defenseState,
+        battleLog: [],
+        lastResolvedCycle: 0,
+        districts: initDistrictWar(surface, fort, null, entrenchmentBonus(surface, [])),
+    } as any;
+    absorbStationedArmies(world, planet, planet.siege);
+    const war = planet.siege.districts!;
+    war.formations = [
+        ...seedFormations(surface, war, 'attacker', planet.siege.attackerState.unitComposition, `f-a-${world.nowSeconds}`),
+        ...seedFormations(surface, war, 'defender', defenseState.unitComposition, `f-d-${world.nowSeconds}`),
+    ];
+    war.contested = computeFront(surface, war);
+    war.strongpoints = computeStrongpoints(surface, planet, war);
+    war.defenderAuto = true;
+    applyDefaultDefence(surface, war, war.formations, war.strongpoints, world.nowSeconds);
+    planet.garrison = defenseState;
+    notifyContest(world, planet, holderId, attackerId, `Battle for ${planet.name}`,
+        `Enemy troops have landed on ${planet.name}, where our army stands. We hold the ground${fort ? ', dug in' : ''}; the fight is on.`,
+        `Our troops are down on ${planet.name}, but the enemy got there first and holds the ground. The fight is on.`);
+    console.log(`[Tick Worker] CONTESTED GROUND at ${planet.name}: ${attackerId} attacks ${holderId}'s position (fortification ${fort}).`);
+}
+
+/** Returns true when the contest ended this cycle. */
+function resolveContestCycle(world: GameWorldState, planet: any, siege: GroundSiegeState): boolean {
+    const formations = (siege.districts?.formations ?? []) as Formation[];
+    const men = (side: 'attacker' | 'defender') => formations.filter(f => f.side === side).reduce((n, f) => n + Math.max(0, f.strength), 0);
+    const lift = () => [...world.movement.fleets.values()].find((f: any) =>
+        f.factionId === siege.attackerEmpireId && f.currentSystemId === planet.systemId && !f.destinationSystemId && isFleetOperational(f));
+    if (men('defender') <= 0) { contestWon(world, planet, siege.attackerEmpireId); return true; }
+    if (men('attacker') <= 0) { endSiegeDefenderHolds(world, planet, siege, 'ATTACKER_COLLAPSE'); return true; }
+    if (siege.cycleCount < CONTEST_DECISION_CYCLES) return false;
+    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+    const share = siege.districts ? occupationShare(surface, siege.districts) : 0;
+    if (share >= CONTEST_WIN_SHARE) contestWon(world, planet, siege.attackerEmpireId);
+    else endSiegeDefenderHolds(world, planet, siege, 'RETREAT', lift());
+    return true;
+}
+
+/** The attacker took the field. The world stays empty; the survivors stand on it. */
+function contestWon(world: GameWorldState, planet: any, attackerId: string): void {
+    const siege: GroundSiegeState | null = planet.siege ?? null;
+    const formations = (siege?.districts?.formations ?? []) as Formation[];
+    const survivors = formations.length ? tallySide(formations, 'attacker').comp : (siege?.attackerState.unitComposition ?? {});
+    const beaten = formations.length ? tallySide(formations, 'defender').comp : (siege?.defenderState.unitComposition ?? {});
+    const loser = siege?.defenderEmpireId;
+    if (siege && loser) {
+        siege.winner = attackerId;
+        siege.endReason = 'OCCUPATION';
+        const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
+        for (const [unitType, count] of Object.entries(beaten)) {
+            if (!count || count <= 0) continue;
+            ledger.groups.push({
+                id: `pow-${planet.id}-field-${unitType}-${world.nowSeconds}`,
+                ownerEmpireId: loser, captorEmpireId: attackerId, planetId: planet.id, planetName: planet.name,
+                unitType: unitType as any, count: Math.floor(count as number), capturedAtSeconds: world.nowSeconds,
+            });
+        }
+    }
+    standAsArmy(world, planet, attackerId, survivors, `Victors of ${planet.name}`);
+    delete planet.garrison;
+    planet.siege = null;
+    if (loser) {
+        notifyContest(world, planet, attackerId, loser, `${planet.name}: the field is taken`,
+            `Our troops broke the enemy at ${planet.name}. The ground is ours to settle, plant an outpost on, or strike onward from.`,
+            `Our position at ${planet.name} was overrun.`);
+    }
+    console.log(`[Tick Worker] CONTESTED GROUND at ${planet.name} won by ${attackerId}.`);
 }
 
 /** Display name for an empire id, for notifications. */
@@ -6716,7 +6926,8 @@ export function processSieges(world: GameWorldState) {
                 }
                 war.strongpoints = computeStrongpoints(surface, planet, war);
                 const points = war.strongpoints;
-                updatedSiege.defenderState.fortificationLevel = fortificationLevelFor(planet);
+                // A contest has no buildings: the holder's dig-in, set at the start, stands.
+                updatedSiege.defenderState.fortificationLevel = updatedSiege.contested ? (updatedSiege.defenderState.fortificationLevel ?? 0) : fortificationLevelFor(planet);
 
                 // ── Militia levy ──────────────────────────────────────────
                 // While the defender holds a barracks or a fortress, the
@@ -6792,7 +7003,7 @@ export function processSieges(world: GameWorldState) {
                     const terrain = surface.sectors[idx]?.terrain ?? 'plains';
                     const districtTraits = {
                         attacker: districtTraitsFor(world, updatedSiege.attackerEmpireId, terrain, planet),
-                        defender: districtTraitsFor(world, planet.ownerId, terrain, planet),
+                        defender: districtTraitsFor(world, updatedSiege.defenderEmpireId ?? planet.ownerId, terrain, planet),
                     };
                     // Pain is Honor: the more of an Infernoid stack is dead, the
                     // harder the survivors hit. Folded in HERE rather than inside
@@ -6808,7 +7019,7 @@ export function processSieges(world: GameWorldState) {
                     districtTraits.defender = {
                         ...districtTraits.defender,
                         dealt: districtTraits.defender.dealt
-                            * painMultiplier(world, planet.ownerId, war.formations as any, 'defender', idx),
+                            * painMultiplier(world, updatedSiege.defenderEmpireId ?? planet.ownerId, war.formations as any, 'defender', idx),
                     };
                     const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits, reads);
                     if (!outcome) continue;
@@ -7104,6 +7315,10 @@ export function processSieges(world: GameWorldState) {
                 continue;
             }
         }
+
+        // Contested ground ends on its own terms: one side gone, or the field
+        // decided by who holds more of it after CONTEST_DECISION_CYCLES.
+        if (updatedSiege.contested && updatedSiege.cycleCount > cycleBefore && resolveContestCycle(world, planet, updatedSiege)) continue;
 
         // Resolve Phase transitions
         if (updatedSiege.defenderState.garrisonTroops <= 0) {

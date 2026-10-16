@@ -156,6 +156,12 @@ export interface GroundSiegeState {
     planetId: string;
     attackerEmpireId: string;
     defenderEmpireId: string;
+    /**
+     * A field battle on a world nobody owns (lib/combat/siege/contested-ground.ts):
+     * the defender is whoever held the ground first, and winning takes the
+     * field, not the planet.
+     */
+    contested?: boolean;
     phase: SiegePhase;
     tickCount: number;
     cycleCount: number;

@@ -518,6 +518,23 @@ export const MANUAL_DATA: ManualSection[] = [
         introduction: 'A world is taken on the ground, district by district, and only while your fleet holds the sky above it. A well-held world lasts hours, long enough for help to arrive.',
         subsections: [
             {
+                id: 'empty-worlds',
+                title: 'Empty worlds: battlefields and staging grounds',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Troops can land on any empty world you have surveyed (LAND TROOPS on the world, with your transport in orbit). Nobody owns it, so nobody besieges it: they just stand there.',
+                            'An army on ground it does not own digs in a little every cycle, and lives off its supply. A fleet of yours parked overhead keeps it supplied; without one the supply runs down, and an army with none left wastes away.',
+                            'Use it as a forward base: re-embark and strike the next system from there.',
+                            'If an enemy you are at war with lands on the same world, the ground is contested: a field battle on its surface. Whoever was there first defends, as dug in as they have had time to get.',
+                            'It ends when one side is gone, or after two hours: whoever holds more of the surface takes the field. A losing attacker lifts off if a fleet of theirs is overhead, and is taken prisoner if not.',
+                            'Winning takes the field, not the world: it stays empty, and your survivors stand on it. Nobody can settle it or plant an outpost while foreign troops are on it.',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'landing',
                 title: 'Landing',
                 blocks: [
