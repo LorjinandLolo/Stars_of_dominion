@@ -34,6 +34,7 @@ import {
 import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
 import { CIVILIAN_SHIPS } from '@/lib/combat/civilian-ships';
+import { heldSystemCount } from '@/lib/government/admin-capacity';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 
@@ -191,12 +192,13 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
         id: 'three_worlds',
         phase: 'next',
-        title: 'Grow to three worlds',
-        hint: 'Enlightenment, the peaceful victory, needs at least three worlds; conquest needs most of the galaxy. Settle or take a third world, then read your paths in Empire → Saga.',
+        title: 'Hold three star systems',
+        hint: 'Enlightenment, the peaceful victory, needs colonies in at least three star systems (worlds in your home system count once); conquest needs most of the galaxy. Settle beyond home, then read your paths in Empire → Saga.',
         takes: 'As fast as your credits allow',
         meanwhile: 'Saga shows how close you are to each victory, and what your rivals are racing for.',
         metrics: [],
-        measure: (world, factionId) => mapValues(world?.construction?.planets).filter((p: any) => p?.ownerId === factionId).length,
+        // Star systems, as Enlightenment counts them (lib/government/admin-capacity.ts).
+        measure: (world, factionId) => heldSystemCount(mapValues(world?.construction?.planets) as any, factionId),
         target: 3,
     },
 ];

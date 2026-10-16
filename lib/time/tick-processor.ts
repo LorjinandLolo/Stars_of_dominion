@@ -8,6 +8,7 @@ import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
 import { tickEconomy } from '../economy/economy-service';
+import { tickEmpireUpkeep } from '../government/empire-upkeep';
 import { tickConstructionGlobal, getBuildingsForSystem } from '../construction/construction-service';
 import { tickForwardBases } from '../movement/forward-base-service';
 import { fireNotification } from './notification-hooks';
@@ -352,6 +353,8 @@ export async function runStrategicTick(
 function step1_economy(world: ReturnType<typeof getGameWorldState>, delta: number) {
     try {
         tickEconomy(world, delta);
+        // What size costs: colony upkeep, heavier far out and overextended.
+        try { tickEmpireUpkeep(world); } catch (e) { console.error('[TickProcessor] tickEmpireUpkeep failed:', e); }
     } catch (e) {
         console.error('[TickProcessor] step1_economy failed:', e);
     }

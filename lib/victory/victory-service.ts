@@ -9,6 +9,7 @@
 // - Territory ownership is never automatically reset.
 
 import type { GameWorldState } from '../game-world-state';
+import { heldSystemCount } from '../government/admin-capacity';
 import { clampShared } from '../game-world-state';
 import type {
     ConquestState,
@@ -263,12 +264,13 @@ export interface EnlightenmentCondition {
 /** The monument every transcending empire must keep standing (data/buildings.ts). */
 export const ARCHIVE_BUILDING_ID = 'great_archive';
 
+/**
+ * Star systems with a colony (lib/government/admin-capacity.ts). It counted
+ * planets, and a home system alone has half a dozen settleable bodies, so
+ * the bar asked for no expansion at all.
+ */
 function ownedWorldCount(world: GameWorldState, factionId: string): number {
-    let n = 0;
-    for (const planet of (world as any).construction?.planets?.values?.() ?? []) {
-        if (planet?.ownerId === factionId) n++;
-    }
-    return n;
+    return heldSystemCount((world as any).construction?.planets?.values?.() ?? [], factionId);
 }
 
 /**
@@ -303,7 +305,7 @@ export function readEnlightenmentConditions(
         { id: 'cohesion', label: 'Empire cohesion', value: gov ? gov.cohesion : null, target: th.cohesion, bound: 'min', unit: 'points', passing: min(gov ? gov.cohesion : null, th.cohesion) },
         { id: 'blocBalance', label: 'Largest interest group', value: topShare, target: th.maxBlocDominance, bound: 'max', unit: 'percent', passing: topShare !== null && topShare <= th.maxBlocDominance },
         { id: 'blocContent', label: 'Least content interest group', value: leastContent, target: th.minBlocSatisfaction, bound: 'min', unit: 'points', passing: min(leastContent, th.minBlocSatisfaction) },
-        { id: 'worlds', label: 'Worlds held', value: worlds, target: th.minWorlds, bound: 'min', unit: 'count', passing: worlds >= th.minWorlds },
+        { id: 'worlds', label: 'Star systems held', value: worlds, target: th.minWorlds, bound: 'min', unit: 'count', passing: worlds >= th.minWorlds },
     ];
     // The monument. Optional in config so a galaxy can switch it off; a
     // standing (operational) Archive is what counts — one under construction

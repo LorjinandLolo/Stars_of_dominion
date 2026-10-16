@@ -21,6 +21,7 @@ import { warFatigueResistance } from '../factions/civ-ids';
 // government-service reaches politics/registry, which reads from `fs`.
 import { distancesFromCapital, getPlanetCohesion } from './capital-distance';
 import type { CapitalDistances } from './capital-distance';
+import { adminStatus, overextensionCohesion, type AdminStatus } from './admin-capacity';
 export { distancesFromCapital, getPlanetCohesion };
 export type { CapitalDistances };
 
@@ -111,6 +112,15 @@ export function computeCohesionDrivers(
     } else if (hops < 0) {
         // Cut off from the capital entirely — worse than merely distant.
         push('distance', 'No route to the capital', -scale.max * scale.costPerUnit);
+    }
+
+    // ── Size: systems past what the administration can run ──────────────────
+    // Cached on the per-faction distances object the tick loops share, so a
+    // cycle computes it once per empire, not once per world.
+    const cached = resolved as CapitalDistances & { admin?: AdminStatus };
+    const admin = cached.admin ?? (cached.admin = adminStatus(world.construction.planets.values() as any, factionId));
+    if (admin.over > 0) {
+        push('overextension', `${admin.systems} systems for an administration built for ${admin.capacity}`, overextensionCohesion(admin));
     }
 
     // ── Concessions already made ─────────────────────────────────────────────

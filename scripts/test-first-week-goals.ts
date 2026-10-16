@@ -140,7 +140,7 @@ test('next steps follow the first week: a policy, troops, an outpost, a third wo
     assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-4).map(g => g.id), next, 'next steps come last');
 });
 
-test('next steps advance on a policy, on troops, on an outpost, and on owning three worlds', () => {
+test('next steps advance on a policy, on troops, on an outpost, and on holding three star systems', () => {
     const world = freshWorld();
     const firstWeek = Object.fromEntries(FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').map(g => [g.id, 1]));
     world.firstWeekGoals.set(F, { index: 0, completedAt: firstWeek });
@@ -152,15 +152,16 @@ test('next steps advance on a policy, on troops, on an outpost, and on owning th
     bumpMetric(world, F, DEED_TROOPS_RAISED, 5);
     tickFirstWeekGoals(world);
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'found_outpost');
-    world.construction.planets.set('a', { id: 'a', ownerId: F, outpost: { tier: 1 } });
+    world.construction.planets.set('a', { id: 'a', ownerId: F, systemId: 's1', outpost: { tier: 3, graduated: true } });
     tickFirstWeekGoals(world);
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds');
-    world.construction.planets.set('b', { id: 'b', ownerId: F });
-    world.construction.planets.set('x', { id: 'x', ownerId: 'someone-else' });
+    world.construction.planets.set('b', { id: 'b', ownerId: F, systemId: 's2' });
+    world.construction.planets.set('b2', { id: 'b2', ownerId: F, systemId: 's2' }); // same system: counts once
+    world.construction.planets.set('x', { id: 'x', ownerId: 'someone-else', systemId: 's9' });
     assert.strictEqual(currentGoal(world, F)!.progress, 2);
     tickFirstWeekGoals(world);
-    assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds', 'two worlds is not three');
-    world.construction.planets.set('c', { id: 'c', ownerId: F });
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds', 'two systems is not three');
+    world.construction.planets.set('c', { id: 'c', ownerId: F, systemId: 's3' });
     const done = tickFirstWeekGoals(world);
     assert.deepStrictEqual(done.map(a => a.completed.id), ['three_worlds']);
     assert.strictEqual(done[0].next, null);

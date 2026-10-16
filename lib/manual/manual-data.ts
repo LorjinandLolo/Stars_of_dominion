@@ -26,7 +26,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             'A short tour shows the map, the command dock along the bottom, and the daily brief. The ? button in the top bar replays it.',
                             'The goal card (bottom left of the map) gives you one thing to do at a time: commission warships, choose your first research, survey three systems, settle a second world, raise a Spaceyard in orbit, and reach out to a neighbour. Each goal says how long it takes and has a button that opens the right screen. While its work is under way the card counts it down and suggests what to do meanwhile.',
-                            'After the first week come three next steps: set a policy, raise ground troops, and grow to three worlds.',
+                            'After the first week come the next steps: set a policy, raise ground troops, found an outpost, and hold three star systems.',
                             'Finishing goals unlocks more of the command dock. Until a system is unlocked your advisors run it for you. "Show everything now" on the lock button unlocks it all at once.',
                             'The first time you open a big screen, a short tip explains what it is for.',
                         ],
@@ -290,6 +290,21 @@ export const MANUAL_DATA: ManualSection[] = [
                             'Approval is how your people feel about the government right now. It follows the interest groups, public trust (moved by the press) and your policies.',
                             'Legitimacy is your right to rule. Elections and some constitutional policies raise it; decrees and violent successions cost it.',
                             'Nine interest groups (Military Command, Merchant Guilds, Labour Unions, Temple Orders, Academies, Border Worlds and others) each want things. A group held far below what it wants pulls approval down and can turn on you.',
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 'administration',
+                title: 'Administration and upkeep',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Your government runs six star systems cleanly, plus three for every Administrative Center you build (one per world; it upgrades a Habitat Block). Government → Empire Cohesion shows where you stand.',
+                            'Past that you are overextended: every world loses cohesion, a little for a few systems too many and up to 15 for a sprawling empire. Far worlds below 20 cohesion start demanding to leave.',
+                            'Every colony outside your home system costs credits each cycle: more the further it is from the capital, up to three times more while overextended. If the treasury cannot pay, every colony loses stability.',
+                            'Outposts still growing count for neither; they pay their own way.',
                         ],
                     },
                 ],
@@ -826,7 +841,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             'Approval 65 or more, legitimacy 75 or more, cohesion 75 or more.',
                             'No interest group above 40% of influence, and the least content group at 45 or more.',
-                            'At least three worlds.',
+                            'Colonies in at least three star systems (any number of worlds in one system counts once).',
                             'A Great Archive standing: one per empire, about three real days to build.',
                         ],
                     },

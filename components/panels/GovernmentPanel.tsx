@@ -20,6 +20,44 @@ import type { PolicyOption } from '@/types/ui-state';
 import { formatPercent } from '@/lib/ui/format';
 import AdvisorsCard from '@/components/government/AdvisorsCard';
 import { formatGalacticDeadline, isUrgentDeadline } from '@/lib/time/galactic-time';
+import { adminStatus, overextensionCohesion, ADMIN_PER_CENTER } from '@/lib/government/admin-capacity';
+
+/**
+ * How many star systems the administration runs, and what the rest cost
+ * (lib/government/admin-capacity.ts, lib/government/empire-upkeep.ts).
+ */
+function AdministrationCard() {
+    const planets = useUIStore(s => s.planets);
+    const factions = useUIStore(s => s.factions);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const status = React.useMemo(() => adminStatus(planets as any, playerFactionId ?? ''), [planets, playerFactionId]);
+    const upkeep: any = (factions as any)?.[playerFactionId ?? '']?.lastUpkeep;
+    const over = status.over > 0;
+    const fill = Math.min(100, (status.systems / Math.max(1, status.capacity)) * 100);
+    return (
+        <div className={`mb-4 rounded-lg border p-3 ${over ? 'border-orange-500/40 bg-orange-950/20' : 'border-slate-800 bg-slate-950/40'}`}>
+            <div className="flex items-center justify-between text-[10px] font-display tracking-widest text-slate-400 mb-2">
+                <span>ADMINISTRATION</span>
+                <span className={`font-mono ${over ? 'text-orange-300' : 'text-slate-300'}`}>{status.systems} / {status.capacity} systems</span>
+            </div>
+            <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden mb-2">
+                <div className="h-full" style={{ width: `${fill}%`, background: over ? '#f97316' : '#22d3ee' }} />
+            </div>
+            <p className="text-[10px] text-slate-500 leading-snug">
+                {over
+                    ? <>Overextended by {status.over}: every world loses {Math.abs(overextensionCohesion(status)).toFixed(1)} cohesion and colonies cost more to keep. </>
+                    : <>Within what your administration can run. </>}
+                Each Administrative Center adds {ADMIN_PER_CENTER} systems{status.centers ? ` (you have ${status.centers})` : ''}.
+            </p>
+            {upkeep && (
+                <p className={`text-[10px] mt-1 ${upkeep.paid < upkeep.credits ? 'text-rose-400' : 'text-slate-500'}`}>
+                    Colony upkeep last cycle: {Math.round(upkeep.credits).toLocaleString()} credits for {upkeep.colonies} {upkeep.colonies === 1 ? 'colony' : 'colonies'}
+                    {upkeep.paid < upkeep.credits ? `; only ${Math.round(upkeep.paid).toLocaleString()} paid, and every colony lost stability` : ''}.
+                </p>
+            )}
+        </div>
+    );
+}
 
 const CATEGORY_ICON: Record<string, React.ReactNode> = {
     military: <ShieldCheck size={14} />,
@@ -619,6 +657,8 @@ export default function GovernmentPanel() {
                                 style={{ width: `${gov.cohesion}%`, backgroundColor: cohesionColor(gov.cohesion) }}
                             />
                         </div>
+
+                        <AdministrationCard />
 
                         {gov.cohesionDrivers.length > 0 && (
                             <div className="space-y-1 mb-3">
