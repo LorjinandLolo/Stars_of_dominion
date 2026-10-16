@@ -14,6 +14,8 @@ export interface BalanceContext {
     rareWorld?: boolean;
     /** Prisoners held here right now. */
     prisoners?: number;
+    /** An enemy army is on the ground: nobody comes, morale sinks. */
+    besieged?: boolean;
 }
 
 /** Built, open, not switched off, not knocked out. */
@@ -132,6 +134,7 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
         - (state.air <= 0 ? 20 : 0)
         - (state.food <= 0 ? 15 : 0)
         - (state.prisonLabour ? 4 : 0)
+        - (ctx.besieged ? 15 : 0)
         + effectSum(state, 'morale');
     moraleTarget = Math.max(0, Math.min(100, moraleTarget));
 
@@ -219,7 +222,7 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
         departures = 1;
         state.colonists -= 1;
         log(state, 'A colonist took the supply shuttle home and did not come back.', 'bad');
-    } else if (state.colonists < balance.housing && state.food > 0 && state.air > 0 && state.morale >= 40) {
+    } else if (!ctx.besieged && state.colonists < balance.housing && state.food > 0 && state.air > 0 && state.morale >= 40) {
         arrivals = 1
             + (countModules(state, 'dock') > 0 ? 1 : 0)
             + (countModules(state, 'medbay') > 0 ? 1 : 0)

@@ -12,6 +12,7 @@ import {
     type DockVisibilityContext,
 } from '@/lib/goals/dock-unlocks';
 import {
+    Home,
     Landmark,
     BarChart3,
     Atom,
@@ -79,6 +80,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
         tier: 'core',
         tabs: [
             { tab: 'economy', label: 'ECONOMY', icon: <BarChart3 size={13} /> },
+            { tab: 'outposts', label: 'OUTPOSTS', icon: <Home size={13} /> },
             { tab: 'corporate', label: 'CORPORATE', icon: <Building2 size={13} />, tier: 'advanced' },
         ],
     },

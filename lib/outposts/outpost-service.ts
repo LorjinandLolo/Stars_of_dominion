@@ -50,9 +50,12 @@ function shortfall(world: GameWorldState, factionId: string, cost: Record<string
     return null;
 }
 
-function notify(world: GameWorldState, factionId: string, id: string, title: string, body: string, priority: 'urgent' | 'normal' = 'normal'): void {
+function notify(world: GameWorldState, factionId: string, id: string, title: string, body: string, priority: 'urgent' | 'normal' = 'normal', outpostPlanetId?: string): void {
     try {
-        fireNotification({ id, factionId, category: 'crisis', priority, title, body, createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false } as any);
+        fireNotification({
+            id, factionId, category: 'crisis', priority, title, body, createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false,
+            linkToTab: 'outposts', payload: outpostPlanetId ? { outpostPlanetId } : undefined,
+        } as any);
     } catch { /* probes run without the notification queue */ }
 }
 
@@ -128,8 +131,18 @@ function contextFor(world: GameWorldState, planet: AnyPlanet, state: OutpostStat
     };
 }
 
+/** An enemy army is on this world's ground. */
+export function outpostBesieged(planet: AnyPlanet): boolean {
+    const s = planet?.siege;
+    return !!s && !!s.attackerEmpireId && s.attackerEmpireId !== planet.ownerId && !s.winner;
+}
+
 function balanceCtx(world: GameWorldState, planet: AnyPlanet, state: OutpostState) {
-    return { rareWorld: (planet.tags ?? []).some((t: string) => /rare/.test(t)), prisoners: prisonersHeld(world, state) };
+    return {
+        rareWorld: (planet.tags ?? []).some((t: string) => /rare/.test(t)),
+        prisoners: prisonersHeld(world, state),
+        besieged: outpostBesieged(planet),
+    };
 }
 
 // ─── Every worker cycle ──────────────────────────────────────────────────────
@@ -175,16 +188,20 @@ function runOneShift(world: GameWorldState, planet: AnyPlanet, state: OutpostSta
     if (state.colonists <= 0) { state.shift += 1; return; } // derelict until resettled
     const ctx = contextFor(world, planet, state);
     expireCrises(state, ctx);
-    const result = runShift(state, balanceCtx(world, planet, state));
+    const bctx = balanceCtx(world, planet, state);
+    if (bctx.besieged && !state.log.some(l => l.shift === state.shift && /siege/.test(l.text))) {
+        log(state, 'Enemy troops are on the ground. Nobody lands; everyone waits.', 'bad');
+    }
+    const result = runShift(state, bctx);
     runFunctions(world, planet, state);
     const crisis = rollCrisis(state, contextFor(world, planet, state));
-    if (crisis) notify(world, owner, `outpost-${planet.id}-${crisis.id}`, `${planet.name}: ${crisis.title}`, `${crisis.text} Answer within ${crisis.deadlineShift - state.shift} shifts or the crew decides.`);
+    if (crisis) notify(world, owner, `outpost-${planet.id}-${crisis.id}`, `${planet.name}: ${crisis.title}`, `${crisis.text} Answer within ${crisis.deadlineShift - state.shift} shifts or the crew decides.`, 'normal', planet.id);
     planet.population = Math.max(1, Math.round(state.colonists / 10)); // in millions; keeps the world's card honest
     if (result.abandoned || state.colonists <= 0) {
         state.colonists = 0;
         state.crises = [];
         log(state, 'Nobody is left. The domes stand empty.', 'bad');
-        notify(world, owner, `outpost-lost-${planet.id}-${state.shift}`, `${planet.name} is empty`, 'The last colonists are gone. Land a new crew to restart it.', 'urgent');
+        notify(world, owner, `outpost-lost-${planet.id}-${state.shift}`, `${planet.name} is empty`, 'The last colonists are gone. Land a new crew to restart it.', 'urgent', planet.id);
     }
 }
 
@@ -332,6 +349,7 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
         }
         case 'advance': return advance(world, planet, state);
         case 'supply': {
+            if (outpostBesieged(planet)) return fail('Enemy troops hold the ground around the landing site: no supply ship will come down.');
             const cost = Object.fromEntries(Object.entries(SUPPLY_DROP.cost).map(([k, v]) => [k, countModules(state, 'dock') > 0 ? v : v * 2]));
             const short = shortfall(world, factionId, cost);
             if (short) return fail(short);
@@ -403,13 +421,14 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
 }
 
 /** What still stands between this outpost and its next tier, as player-facing lines (empty = ready). */
-export function advanceBlockers(state: OutpostState, reserves: Record<string, number> | undefined): string[] {
+export function advanceBlockers(state: OutpostState, reserves: Record<string, number> | undefined, besieged = false): string[] {
     const next = TIERS[state.tier].next;
     if (!next) return ['Already a colony.'];
     const out: string[] = [];
     if (state.colonists < next.colonists) out.push(`${next.colonists} colonists (${state.colonists} now)`);
     if (state.morale < next.morale) out.push(`morale ${next.morale} (${state.morale} now)`);
     for (const m of next.modules) if (countModules(state, m, false) === 0) out.push(`a ${MODULES[m].name}`);
+    if (besieged) out.push('the siege lifted');
     for (const [k, v] of Object.entries(next.cost)) if ((reserves?.[k] ?? 0) < v) out.push(`${v.toLocaleString()} ${k.toLowerCase()}`);
     return out;
 }
@@ -417,7 +436,7 @@ export function advanceBlockers(state: OutpostState, reserves: Record<string, nu
 function advance(world: GameWorldState, planet: AnyPlanet, state: OutpostState): OpResult {
     const next = TIERS[state.tier].next;
     if (!next) return fail('Already a colony.');
-    const blockers = advanceBlockers(state, reservesOf(world, planet.ownerId));
+    const blockers = advanceBlockers(state, reservesOf(world, planet.ownerId), outpostBesieged(planet));
     if (blockers.length) return fail(`Not yet. Still needs: ${blockers.join(', ')}.`);
     chargeReserves(world, planet.ownerId, next.cost);
     state.tier = (state.tier + 1) as 1 | 2 | 3;
@@ -448,10 +467,88 @@ export function graduate(world: GameWorldState, planet: AnyPlanet, state: Outpos
     const eco = world.economy.planets.get(planet.id);
     if (eco) { eco.demographics.population = planet.population; eco.demographics.housingCapacity = 50; }
     log(state, `${planet.name} is a colony. ${wasDead ? 'Under the domes, a' : 'A'} city begins.`, 'good');
-    notify(world, planet.ownerId, `outpost-colony-${planet.id}`, `${planet.name} is a colony`, 'The outpost has grown into a full colony. Its surface is open for districts, and its old modules keep working.');
+    notify(world, planet.ownerId, `outpost-colony-${planet.id}`, `${planet.name} is a colony`, 'The outpost has grown into a full colony. Its surface is open for districts, and its old modules keep working.', 'normal', planet.id);
 }
 
 /** Building on the 64-district surface waits until the outpost is a colony. */
 export function surfaceLocked(planet: AnyPlanet): boolean {
     return !!planet?.outpost && !planet.outpost.graduated;
+}
+
+// ─── War ─────────────────────────────────────────────────────────────────────
+
+/** Built bunkers: each one digs the defenders in (fortificationLevelFor) and shelters colonists. */
+export function outpostBunkers(planet: AnyPlanet): number {
+    const state: OutpostState | undefined = planet?.outpost;
+    if (!state) return 0;
+    return state.cells.filter(c => c.module === 'bunker' && c.buildDoneShift === undefined).length;
+}
+
+/**
+ * Shells landing on an outpost: modules are knocked out or wrecked and
+ * colonists die, unless there is a bunker to shelter in (then the modules
+ * still take it, but nobody dies and nothing is flattened).
+ */
+export function outpostBombarded(world: GameWorldState, planet: AnyPlanet, attackerId: string): void {
+    const state: OutpostState | undefined = planet?.outpost;
+    if (!state || state.graduated || state.colonists <= 0) return;
+    const rng = new RNG(seedFromString(`${planet.id}|bombard|${world.nowSeconds}`));
+    const sheltered = outpostBunkers(planet) > 0;
+    const targets = state.cells.map((c, i) => (c.module && c.module !== 'hub' && c.module !== 'bunker' ? i : -1)).filter(i => i >= 0);
+    const hits = Math.min(targets.length, sheltered ? 1 : 2);
+    const names: string[] = [];
+    for (let h = 0; h < hits; h++) {
+        const pick = targets.splice(rng.nextInt(0, targets.length - 1), 1)[0];
+        const cell = state.cells[pick];
+        names.push(MODULES[cell.module!].name);
+        if (!sheltered && rng.check(0.4)) {
+            delete cell.module; delete cell.off; delete cell.downUntilShift; delete cell.buildDoneShift;
+        } else {
+            cell.downUntilShift = Math.max(cell.downUntilShift ?? 0, state.shift + 3);
+        }
+    }
+    const dead = sheltered ? 0 : Math.min(state.colonists, 1 + Math.floor(state.colonists * 0.1));
+    state.colonists -= dead;
+    state.stats.deaths += dead;
+    state.effects.push({ kind: 'morale', value: -10, untilShift: state.shift + 3 });
+    const what = names.length ? `${names.join(' and ')} hit` : 'the domes rattled';
+    log(state, sheltered ? `Bombardment: everyone was in the bunker. ${what}.` : `Bombardment: ${what}, ${dead} dead.`, 'bad');
+    notify(world, planet.ownerId, `outpost-bombard-${planet.id}-${world.nowSeconds}`, `${planet.name} under bombardment`,
+        sheltered ? `The colonists sheltered in the bunker. ${what}.` : `${what}. ${dead} colonist${dead === 1 ? '' : 's'} killed. A bunker would have sheltered them.`, 'urgent', planet.id);
+    void attackerId;
+}
+
+/**
+ * The world changed hands (capturePlanet). The new owner inherits the domes
+ * and whoever stayed; open crises end with the old administration; the
+ * charter goes back to settlement; prisoners held here are freed if they are
+ * the conqueror's own people, and change keepers otherwise.
+ */
+export function outpostCaptured(world: GameWorldState, planet: AnyPlanet, previousOwnerId: string, attackerId: string): void {
+    const state: OutpostState | undefined = planet?.outpost;
+    if (!state) return;
+    const ledger = ensureLedger((world as any).combat ?? ((world as any).combat = { recruitmentJobs: [] }));
+    let freed = 0, kept = 0;
+    for (const g of ledger.groups as any[]) {
+        if (!state.prisonerGroupIds.includes(g.id) || g.resolved || !(g.count > 0)) continue;
+        if (g.ownerEmpireId === attackerId) { freed += g.count; g.resolved = 'freed'; }
+        else { kept += g.count; g.captorEmpireId = attackerId; }
+    }
+    state.prisonerGroupIds = state.prisonerGroupIds.filter(id => {
+        const g: any = ledger.groups.find((x: any) => x.id === id);
+        return g && !g.resolved && g.count > 0;
+    });
+    state.crises = [];
+    state.prisonLabour = false;
+    state.charter = 'settlement';
+    state.charterSetShift = state.shift;
+    if (!state.graduated) {
+        const fled = Math.floor(state.colonists * 0.3);
+        state.colonists -= fled;
+        state.morale = Math.min(state.morale, 30);
+        log(state, `The outpost changed hands. ${fled} colonist${fled === 1 ? '' : 's'} fled with the old administration.`, 'bad');
+    }
+    const prisonerNote = freed ? ` ${freed} of your own people were freed from its cells.` : kept ? ` ${kept} prisoners there are now yours to keep.` : '';
+    notify(world, attackerId, `outpost-taken-${planet.id}-${world.nowSeconds}`, `${planet.name} outpost taken`, `The outpost and its modules are yours now.${prisonerNote}`, 'normal', planet.id);
+    notify(world, previousOwnerId, `outpost-lost-war-${planet.id}-${world.nowSeconds}`, `${planet.name} outpost lost`, `The outpost fell with the world${freed ? `, and the ${freed} prisoners held there went free` : ''}.`, 'urgent');
 }

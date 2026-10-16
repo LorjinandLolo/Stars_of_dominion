@@ -1,5 +1,6 @@
 "use client";
 
+import { isCivilianFleet } from '@/lib/combat/civilian-ships';
 import React, { useMemo } from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { UnitCard } from './UnitCard';
@@ -200,6 +201,9 @@ function ReviewPanelInner() {
 
     const isSpaceTheme = activeData.type === 'fleet' || activeData.type === 'orbital';
     const isOwner = selectedPlanet?.ownerId === playerFactionId || selectedFleet?.factionId === playerFactionId;
+    // Unarmed fleets (lib/combat/civilian-ships.ts) take no warships; the worker refuses them, so offer none.
+    const civilianSelected = isSpaceTheme && !!selectedFleet && isCivilianFleet(selectedFleet);
+    const canRecruit = isOwner && !civilianSelected;
 
     // In-production queue for THIS panel's context. Fleet-bound jobs carry
     // targetFormationId (their planetId is a `formation-` spoof, which is why
@@ -330,7 +334,7 @@ function ReviewPanelInner() {
                         )}
 
                         {/* Manage / Recruit Toggle */}
-                        {isOwner && (isSpaceTheme ? (!!selectedFleetId || !!selectedPlanet) : viewLayer === 'ground') && (
+                        {canRecruit && (isSpaceTheme ? (!!selectedFleetId || !!selectedPlanet) : viewLayer === 'ground') && (
                             <div className="flex gap-1 bg-slate-900 rounded p-0.5 border border-slate-700/50">
                                 <button 
                                     onClick={() => setPanelMode('manage')}
@@ -372,9 +376,9 @@ function ReviewPanelInner() {
                 </div>
 
                 {/* Unit Tray or Recruitment View */}
-                {panelMode === 'manage' ? (
+                {(panelMode === 'manage' || civilianSelected) ? (
                     <div className="w-[80vw] max-w-5xl overflow-x-auto p-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-600 flex gap-3 items-center min-h-[160px]">
-                        {isOwner && (isSpaceTheme ? (!!selectedFleetId || !!selectedPlanet) : viewLayer === 'ground') && (
+                        {canRecruit && (isSpaceTheme ? (!!selectedFleetId || !!selectedPlanet) : viewLayer === 'ground') && (
                             <button
                                 onClick={() => setPanelMode('recruit')}
                                 className="w-24 h-36 flex-shrink-0 rounded-md border border-dashed border-slate-700 bg-slate-900/60 hover:bg-slate-800 hover:border-amber-500/50 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-amber-400 transition-all"

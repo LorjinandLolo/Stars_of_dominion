@@ -10,7 +10,8 @@ import { executeOrder } from './game-loop';
 import { createOutpostState, generateOutpostGround } from '../lib/outposts/outpost-map';
 import { computeBalance, runShift } from '../lib/outposts/outpost-sim';
 import { CELL_COUNT, CENTER_CELL, cellOpen, MODULES, terrainOk } from '../lib/outposts/outpost-catalog';
-import { tickOutposts, shipOutpostWarehouses, outpostSightSystems, prisonersHeld } from '../lib/outposts/outpost-service';
+import { tickOutposts, shipOutpostWarehouses, outpostSightSystems, prisonersHeld, outpostBombarded, outpostCaptured } from '../lib/outposts/outpost-service';
+import { fortificationLevelFor } from '../lib/combat/siege/strongpoints';
 import { expireCrises, rollCrisis, CRISIS_KINDS } from '../lib/outposts/crises';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
 import { RNG } from '../lib/trade-system/rng';
@@ -278,6 +279,73 @@ test('an outpost that loses everyone stays yours and can be resettled', () => {
     rich();
     silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'resettle' }, A));
     assert.strictEqual(p.outpost.colonists, 3, lastError());
+    world.construction.planets.delete(p.id);
+});
+
+// ─── War ─────────────────────────────────────────────────────────────────────
+
+/** A fresh outpost world owned by A, for the war tests. */
+function warWorld(id: string, modules: Array<[number, string]> = []): any {
+    const p: any = { ...site, id, name: id, ownerId: A, tags: ['outpost'], siege: null, outpost: createOutpostState({ id }, world.nowSeconds) };
+    for (const [cell, m] of modules) { p.outpost.cells[cell].module = m; p.outpost.cells[cell].terrain = 'flat'; }
+    p.outpost.colonists = 20;
+    world.construction.planets.set(p.id, p);
+    return p;
+}
+
+test('bombardment wrecks domes and kills colonists; a bunker shelters them', () => {
+    const open = warWorld('war-open', [[7, 'habitat'], [11, 'hydroponics'], [13, 'life_support']]);
+    silently(() => outpostBombarded(world, open, B));
+    assert.ok(open.outpost.colonists < 20, 'people died');
+    assert.ok(open.outpost.cells.filter((c: any) => c.module && c.module !== 'hub' && !(c.downUntilShift > open.outpost.shift)).length < 3, 'modules hit');
+    const safe = warWorld('war-safe', [[7, 'habitat'], [11, 'hydroponics'], [13, 'bunker']]);
+    silently(() => outpostBombarded(world, safe, B));
+    assert.strictEqual(safe.outpost.colonists, 20, 'nobody dies in the bunker');
+    assert.strictEqual(safe.outpost.cells.filter((c: any) => c.module).length, 4, 'nothing flattened');
+    world.construction.planets.delete(open.id); world.construction.planets.delete(safe.id);
+});
+
+test('a bunker digs the defenders in: fortification, not men', () => {
+    const p = warWorld('war-fort');
+    const before = fortificationLevelFor(p);
+    p.outpost.cells[7].module = 'bunker';
+    assert.strictEqual(fortificationLevelFor(p), before + 2);
+    world.construction.planets.delete(p.id);
+});
+
+test('under siege nobody arrives, no supply ship lands, morale sinks, and it cannot grow', () => {
+    rich();
+    const p = warWorld('war-siege', [[7, 'habitat'], [11, 'hydroponics'], [13, 'life_support'], [17, 'solar']]);
+    p.outpost.colonists = 4;
+    const free = computeBalance(p.outpost, {}).moraleTarget;
+    p.siege = { attackerEmpireId: B };
+    assert.ok(computeBalance(p.outpost, { besieged: true }).moraleTarget < free);
+    world.nowSeconds = p.outpost.nextShiftAt;
+    silently(() => tickOutposts(world));
+    assert.strictEqual(p.outpost.colonists, 4, 'no arrivals');
+    silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'supply' }, A));
+    assert.match(lastError(), /no supply ship/);
+    silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'advance' }, A));
+    assert.match(lastError(), /siege lifted/);
+    world.construction.planets.delete(p.id);
+});
+
+test('captured: crises end, the conqueror’s own people go free, others change keepers', () => {
+    const p = warWorld('war-capture', [[7, 'cell_block']]);
+    const ledger = ensureLedger(world.combat);
+    ledger.groups.push({ id: 'pow-mine', ownerEmpireId: B, captorEmpireId: A, planetId: p.id, planetName: p.name, unitType: 'INFANTRY', count: 10, capturedAtSeconds: 0 });
+    ledger.groups.push({ id: 'pow-third', ownerEmpireId: 'faction-third', captorEmpireId: A, planetId: p.id, planetName: p.name, unitType: 'INFANTRY', count: 5, capturedAtSeconds: 0 });
+    p.outpost.prisonerGroupIds = ['pow-mine', 'pow-third'];
+    p.outpost.crises = [{ id: 'x', kind: 'sickness' }];
+    p.outpost.charter = 'prison';
+    p.ownerId = B;
+    silently(() => outpostCaptured(world, p, A, B));
+    assert.strictEqual(ledger.groups.find((g: any) => g.id === 'pow-mine')!.resolved, 'freed');
+    assert.strictEqual(ledger.groups.find((g: any) => g.id === 'pow-third')!.captorEmpireId, B);
+    assert.deepStrictEqual(p.outpost.prisonerGroupIds, ['pow-third']);
+    assert.strictEqual(p.outpost.crises.length, 0);
+    assert.strictEqual(p.outpost.charter, 'settlement');
+    assert.ok(p.outpost.colonists < 20, 'some fled');
     world.construction.planets.delete(p.id);
 });
 

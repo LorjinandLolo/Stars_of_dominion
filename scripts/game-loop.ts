@@ -32,7 +32,7 @@ import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
 import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-service';
-import { outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
+import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -2251,6 +2251,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             // Bombardment also bypasses registerActOfWar — same reason as the
             // invasion handler: the victim must learn who is shelling them.
             recordGrievance(world, planet.ownerId, factionId, 'attacked');
+            // Shells on an outpost wreck domes and kill colonists unless they shelter (lib/outposts).
+            try { outpostBombarded(world, planet, factionId); } catch (e: any) { console.warn('[Order] outpostBombarded failed:', e.message); }
             // History: a gunnery doctrine is written by the crews who fly it.
             bumpMetric(world, factionId, 'mil.bombardmentsConducted');
             // Orbital structures are shot at before the surface is. While the
@@ -6349,6 +6351,8 @@ function capturePlanet(world: GameWorldState, planet: any, attackerId: string, l
 
     planet.ownerId = attackerId;
     planet.isOccupied = false;
+    // An outpost goes with its world: crises end, prisoners there go free or change keepers.
+    try { outpostCaptured(world, planet, previousOwnerId, attackerId); } catch (e: any) { console.warn('[Tick Worker] outpostCaptured failed:', e.message); }
 
     // The winner's survivors garrison the world they took; the loser's
     // remnant is marched off as prisoners. This used to leave `planet.garrison`

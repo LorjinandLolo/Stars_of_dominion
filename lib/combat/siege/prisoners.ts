@@ -25,8 +25,8 @@ export interface PrisonerGroup {
     unitType: GroundUnitType;
     count: number;
     capturedAtSeconds: number;
-    /** Set once a disposition has been carried out. */
-    resolved?: PrisonerDisposition;
+    /** Set once a disposition has been carried out ('freed': their own side took the prison). */
+    resolved?: PrisonerDisposition | 'freed';
 }
 
 export interface PrisonerLedger {

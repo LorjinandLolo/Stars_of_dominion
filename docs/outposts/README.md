@@ -86,3 +86,26 @@ and crises lean toward it.
   10,000 Cr. The world becomes a colony (dead worlds become domed colonies)
   with a normal surface and build panel. The outpost's functions keep running
   in the colony; its crises end.
+
+## War
+
+An outpost is a planet like any other: an enemy can bombard it, besiege it
+and take it.
+
+- **Bombardment** (`outpostBombarded`, from `MIL_BOMBARD_PLANET`): up to two
+  modules knocked out for 3 shifts (40% chance each is wrecked), a tenth of
+  the colonists plus one killed, morale −10. With a bunker: one module
+  knocked out, nobody dies, nothing wrecked.
+- **Siege** (`outpostBesieged`: an enemy army on the ground): no arrivals,
+  no supply drops, morale target −15, and the outpost cannot grow.
+- **Bunkers** add 2 each to `fortificationLevelFor`, which deepens the
+  defenders' entrenchment caps. Depth, not men: nothing is added to the
+  siege's troop pools, which are rebuilt from formations every cycle.
+- **Capture** (`outpostCaptured`, from `capturePlanet`): open crises end,
+  prison labour stops, the charter resets to settlement, 30% of the
+  colonists flee and morale drops to at most 30. Prisoners held there who
+  belong to the conqueror go free (`resolved: 'freed'`); anyone else's
+  change keepers. Both sides are told.
+
+The Outposts tab (Economy) lists every outpost, worst news first; outpost
+notifications open the outpost's screen.

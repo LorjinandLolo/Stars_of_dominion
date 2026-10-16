@@ -301,6 +301,8 @@ export default function OutpostView() {
     const foodFlow = balance.foodMade - balance.foodUsed;
     const powerShort = balance.idle.some(x => x.reason === 'power');
     const derelict = state.colonists <= 0 && !state.graduated;
+    const besieged = !!planet.siege && !!planet.siege.attackerEmpireId && planet.siege.attackerEmpireId !== planet.ownerId && !planet.siege.winner;
+    const bunkers = state.cells.filter((c, i) => c.module === 'bunker' && moduleBuilt(state, i)).length;
     const capturable = (prisonerGroups ?? []).filter((g: any) => !g.resolved && g.captorEmpireId === playerFactionId && !(state.prisonerGroupIds ?? []).includes(g.id));
     const hasLab = balance.running.some(i => state.cells[i].module === 'test_lab');
     const hasDock = balance.running.some(i => state.cells[i].module === 'dock');
@@ -309,6 +311,7 @@ export default function OutpostView() {
         if (state.colonists < next.colonists) blockers.push(`${next.colonists} colonists (${state.colonists})`);
         if (state.morale < next.morale) blockers.push(`morale ${next.morale} (${state.morale})`);
         for (const m of next.modules) if (!state.cells.some((c, i) => c.module === m && moduleBuilt(state, i))) blockers.push(`a ${MODULES[m].name}`);
+        if (besieged) blockers.push('the siege lifted');
         for (const [k, v] of Object.entries(next.cost)) if ((reserves[k] ?? 0) < v) blockers.push(`${v.toLocaleString()} ${k.toLowerCase()}`);
     }
 
@@ -351,6 +354,16 @@ export default function OutpostView() {
                     <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 flex items-center justify-between gap-3">
                         <div className="text-sm text-red-200">Nobody is left. The domes stand empty.</div>
                         <button disabled={busy || !mine} onClick={() => send({ op: 'resettle' }, 'Resettle outpost')} className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50">Land a new crew · 1,000 Cr</button>
+                    </div>
+                )}
+
+                {besieged && (
+                    <div className="rounded-xl border border-red-500/50 bg-gradient-to-r from-red-950/70 to-slate-950/60 p-4 flex items-start gap-3">
+                        <Skull size={18} className="text-red-300 shrink-0 mt-0.5" />
+                        <div className="text-sm text-red-100 space-y-1">
+                            <div className="font-bold">Under siege</div>
+                            <div className="text-xs text-red-200/80">Enemy troops are on the ground. No colonists arrive, no supply ship lands, and morale sinks every shift. Bombardment wrecks domes and kills colonists unless they shelter in a bunker{bunkers ? ` (you have ${bunkers}; they also dig your defenders in)` : ''}.</div>
+                        </div>
                     </div>
                 )}
 

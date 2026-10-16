@@ -24,6 +24,9 @@ export default function NotificationFeed() {
     const handleNotificationClick = (n: typeof notifications[0]) => {
         markRead(n.id);
         if (n.linkToTab) setActiveTab(n.linkToTab as NavTab);
+        // An outpost's news opens that outpost (lib/outposts).
+        const outpostId = (n.payload as any)?.outpostPlanetId;
+        if (typeof outpostId === 'string') useUIStore.getState().setOutpostPlanet(outpostId);
         setFeedOpen(false);
     };
 

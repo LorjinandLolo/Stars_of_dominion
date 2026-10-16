@@ -176,5 +176,9 @@ export function fortificationLevelFor(planet: { tiles?: any[] }): number {
         }
         if (t.buildingId === 'orbital_defense_platform' || t.buildingId === 'shield_generator') level += 1;
     }
+    // An outpost's bunkers dig its defenders in (lib/outposts): depth, not men.
+    for (const c of (planet as any).outpost?.cells ?? []) {
+        if (c?.module === 'bunker' && c.buildDoneShift === undefined) level += 2;
+    }
     return Math.max(0, Math.min(10, Math.round(level)));
 }

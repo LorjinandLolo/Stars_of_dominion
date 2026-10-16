@@ -23,6 +23,8 @@ export type NavTab =
     | 'leadership'
     | 'designer'
     | 'military'
+    /** Every outpost you run (components/panels/OutpostsPanel.tsx). */
+    | 'outposts'
     | 'guide';
 
 import { Resource, CharterPower } from '@/lib/economy/corporate/company-types';
