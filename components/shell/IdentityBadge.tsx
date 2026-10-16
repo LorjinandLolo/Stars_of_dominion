@@ -5,14 +5,14 @@
 //
 // Permanently answers the two questions every playtester eventually screams:
 // WHICH ACCOUNT am I signed into, and WHICH FACTION am I playing?
-// Lives in the top nav; hover for details and a proper account switch.
+// Lives in the top nav; click (or hover) for details, the lobby and signing out.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUIStore } from '@/lib/store/ui-store';
 import { authService } from '@/lib/auth-service';
 import { factionColor } from '@/components/galaxy/starVisuals';
-import { ChevronDown, LogOut, UserCircle2 } from 'lucide-react';
+import { ChevronDown, LogOut, UserCircle2, DoorOpen } from 'lucide-react';
 import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 export default function IdentityBadge() {
@@ -36,13 +36,24 @@ export default function IdentityBadge() {
         : 'No faction';
     const color = playerFactionId ? factionColor(playerFactionId) : '#64748b';
 
-    // Hover opens it for a mouse; a touch screen toggles on tap instead.
+    // Hover opens it for a mouse and a click pins it open; a touch screen
+    // toggles on tap. Leaving closes it only after a short grace, so the
+    // pointer can cross from the badge to the menu: it used to close the
+    // moment the pointer left the badge, before it reached Sign out.
     const rootRef = useRef<HTMLDivElement>(null);
+    const closeTimer = useRef<number | null>(null);
+    const [pinned, setPinned] = useState(false);
     const canHover = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+    const cancelClose = () => { if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null; } };
+    const scheduleClose = () => {
+        cancelClose();
+        closeTimer.current = window.setTimeout(() => { setOpen(false); closeTimer.current = null; }, 400);
+    };
+    useEffect(() => () => cancelClose(), []);
     useEffect(() => {
         if (!open) return;
         const close = (e: PointerEvent) => {
-            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) { setOpen(false); setPinned(false); }
         };
         window.addEventListener('pointerdown', close);
         return () => window.removeEventListener('pointerdown', close);
@@ -57,14 +68,17 @@ export default function IdentityBadge() {
         <div
             ref={rootRef}
             className="relative shrink-0"
-            onMouseEnter={() => { if (canHover()) setOpen(true); }}
-            onMouseLeave={() => { if (canHover()) setOpen(false); }}
+            onMouseEnter={() => { if (canHover()) { cancelClose(); setOpen(true); } }}
+            onMouseLeave={() => { if (canHover() && !pinned) scheduleClose(); }}
         >
             <button
                 id="identity-badge"
                 // A finger has no hover: on a touch screen the badge opens and
                 // closes on tap (and closes on a tap anywhere else).
-                onClick={() => { if (!canHover()) setOpen(o => !o); }}
+                onClick={() => {
+                    cancelClose();
+                    if (pinned) { setPinned(false); setOpen(false); } else { setPinned(true); setOpen(true); }
+                }}
                 title="Your account and empire"
                 className="flex items-center gap-2.5 min-h-[40px] px-3 rounded-lg border bg-slate-900/80 hover:bg-slate-900 transition-all"
                 style={{
@@ -92,7 +106,8 @@ export default function IdentityBadge() {
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full mt-1 w-60 max-w-[calc(100vw-1rem)] rounded-lg border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl shadow-2xl p-3 z-[80]">
+                <div className="absolute right-0 top-full pt-1 w-60 max-w-[calc(100vw-1rem)] z-[80]">
+                    <div className="rounded-lg border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl shadow-2xl p-3">
                     <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
                         <UserCircle2 size={16} className="text-slate-500 flex-shrink-0" />
                         <div className="min-w-0">
@@ -125,12 +140,20 @@ export default function IdentityBadge() {
                         />
                     </label>
                     <button
+                        onClick={() => router.push('/lobby')}
+                        className="mt-2 w-full min-h-[40px] flex items-center justify-center gap-1.5 rounded border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-[9px] font-bold tracking-widest text-sky-200 uppercase transition-all"
+                    >
+                        <DoorOpen size={10} />
+                        Lobby · invite a friend
+                    </button>
+                    <button
                         onClick={handleSwitch}
                         className="mt-2 w-full min-h-[40px] flex items-center justify-center gap-1.5 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-[9px] font-bold tracking-widest text-slate-300 uppercase transition-all"
                     >
                         <LogOut size={10} />
                         Sign out / switch account
                     </button>
+                    </div>
                 </div>
             )}
         </div>
