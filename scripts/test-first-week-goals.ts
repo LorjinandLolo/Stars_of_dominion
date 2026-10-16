@@ -134,13 +134,13 @@ test('a player assignment clears the council tag', () => {
     assert.strictEqual(next.activeSlots[0].startedBy, undefined);
 });
 
-test('three next steps follow the first week: a policy, troops, a third world', () => {
+test('next steps follow the first week: a policy, troops, an outpost, a third world', () => {
     const next = FIRST_WEEK_GOALS.filter(g => g.phase === 'next').map(g => g.id);
-    assert.deepStrictEqual(next, ['enact_policy', 'raise_troops', 'three_worlds']);
-    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-3).map(g => g.id), next, 'next steps come last');
+    assert.deepStrictEqual(next, ['enact_policy', 'raise_troops', 'found_outpost', 'three_worlds']);
+    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-4).map(g => g.id), next, 'next steps come last');
 });
 
-test('next steps advance on a policy, on troops, and on owning three worlds', () => {
+test('next steps advance on a policy, on troops, on an outpost, and on owning three worlds', () => {
     const world = freshWorld();
     const firstWeek = Object.fromEntries(FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').map(g => [g.id, 1]));
     world.firstWeekGoals.set(F, { index: 0, completedAt: firstWeek });
@@ -151,8 +151,10 @@ test('next steps advance on a policy, on troops, and on owning three worlds', ()
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'raise_troops');
     bumpMetric(world, F, DEED_TROOPS_RAISED, 5);
     tickFirstWeekGoals(world);
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'found_outpost');
+    world.construction.planets.set('a', { id: 'a', ownerId: F, outpost: { tier: 1 } });
+    tickFirstWeekGoals(world);
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'three_worlds');
-    world.construction.planets.set('a', { id: 'a', ownerId: F });
     world.construction.planets.set('b', { id: 'b', ownerId: F });
     world.construction.planets.set('x', { id: 'x', ownerId: 'someone-else' });
     assert.strictEqual(currentGoal(world, F)!.progress, 2);

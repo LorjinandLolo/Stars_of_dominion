@@ -4,6 +4,9 @@
 // have (reserves, research, prisoners, fleets, sight), the OUTPOST_ORDER ops,
 // and growing into a colony. Worker-side: imports world services.
 
+import { generateSurface, autoPlaceBuilding } from '../planet-surface/generator';
+import { computeSectorOccupancy } from '../planet-surface/occupancy';
+import { BUILDINGS } from '../../data/buildings';
 import type { GameWorldState } from '../game-world-state';
 import type { CharterId, ModuleId, OutpostState } from './outpost-types';
 import {
@@ -466,7 +469,8 @@ export function graduate(world: GameWorldState, planet: AnyPlanet, state: Outpos
     planet.popCapacity = 50;
     const eco = world.economy.planets.get(planet.id);
     if (eco) { eco.demographics.population = planet.population; eco.demographics.housingCapacity = 50; }
-    log(state, `${planet.name} is a colony. ${wasDead ? 'Under the domes, a' : 'A'} city begins.`, 'good');
+    const carried = carryModulesToSurface(planet, state);
+    log(state, `${planet.name} is a colony. ${wasDead ? 'Under the domes, a' : 'A'} city begins.${carried.length ? ` The first districts stand on the old domes: ${carried.join(', ')}.` : ''}`, 'good');
     notify(world, planet.ownerId, `outpost-colony-${planet.id}`, `${planet.name} is a colony`, 'The outpost has grown into a full colony. Its surface is open for districts, and its old modules keep working.', 'normal', planet.id);
 }
 
@@ -551,4 +555,55 @@ export function outpostCaptured(world: GameWorldState, planet: AnyPlanet, previo
     const prisonerNote = freed ? ` ${freed} of your own people were freed from its cells.` : kept ? ` ${kept} prisoners there are now yours to keep.` : '';
     notify(world, attackerId, `outpost-taken-${planet.id}-${world.nowSeconds}`, `${planet.name} outpost taken`, `The outpost and its modules are yours now.${prisonerNote}`, 'normal', planet.id);
     notify(world, previousOwnerId, `outpost-lost-war-${planet.id}-${world.nowSeconds}`, `${planet.name} outpost lost`, `The outpost fell with the world${freed ? `, and the ${freed} prisoners held there went free` : ''}.`, 'urgent');
+}
+
+// ─── Graduation: the outpost's modules become the colony's first districts ──
+
+/** The surface building each module turns into, when the colony takes up its 64 districts. */
+const MODULE_TO_BUILDING: Partial<Record<ModuleId, (terrain: string) => string | null>> = {
+    habitat: () => 'habitat_block',
+    hydroponics: () => 'hydroponic_farm',
+    mine: t => (t === 'ore' ? 'metal_mine' : t === 'ice' ? 'chemical_plant' : t === 'vent' ? 'fusion_reactor' : null),
+    reactor: () => 'fusion_reactor',
+    geothermal: () => 'fusion_reactor',
+    warehouse: () => 'warehouse_complex',
+    dock: () => 'logistics_depot',
+    cell_block: () => 'max_security_block',
+    test_lab: () => 'research_lab',
+};
+/** Each surface building at most this many times; the outpost's grid keeps working regardless. */
+const MAX_CARRIED_PER_BUILDING = 2;
+
+/**
+ * Lay finished buildings on the surface for the modules the outpost grew,
+ * so the jump to a colony continues the city instead of starting from bare
+ * ground. Placed by the same auto-placement a build order without a sector
+ * uses. Returns the building names laid down.
+ */
+export function carryModulesToSurface(planet: AnyPlanet, state: OutpostState): string[] {
+    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+    const occupied = new Set<number>(computeSectorOccupancy(planet, surface).keys());
+    const counts = new Map<string, number>();
+    const laid: string[] = [];
+    if (!Array.isArray(planet.tiles)) planet.tiles = [];
+    for (const cell of state.cells) {
+        if (!cell.module || cell.buildDoneShift !== undefined) continue;
+        const buildingId = MODULE_TO_BUILDING[cell.module]?.(cell.terrain);
+        if (!buildingId || !BUILDINGS.some(b => b.id === buildingId)) continue;
+        if ((counts.get(buildingId) ?? 0) >= MAX_CARRIED_PER_BUILDING) continue;
+        const sector = autoPlaceBuilding(surface, buildingId, occupied);
+        if (sector === null) break;
+        occupied.add(sector);
+        counts.set(buildingId, (counts.get(buildingId) ?? 0) + 1);
+        planet.tiles.push({
+            tileId: `${planet.id}-s${sector}`,
+            districtType: 'any',
+            buildingId,
+            constructionState: 'active',
+            constructionCompleteAt: null,
+            sectorIndex: sector,
+        });
+        laid.push(BUILDINGS.find(b => b.id === buildingId)!.name);
+    }
+    return laid;
 }

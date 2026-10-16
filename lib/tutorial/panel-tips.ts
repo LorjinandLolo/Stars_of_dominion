@@ -21,6 +21,16 @@ export interface PanelTip {
 
 export const PANEL_TIPS: readonly PanelTip[] = [
     {
+        tab: 'outposts',
+        manual: 'expansion',
+        title: 'Outposts',
+        lines: [
+            'An outpost is a few colonists on a small grid. Every five minutes is a shift: they need air, food and power, or they leave or die.',
+            'Crises give you two shifts to answer. Say nothing and the crew picks the passive answer; a governor on the world picks a sensible one.',
+            'Grow it to a settlement, then a colony: the world gets its full surface and the old domes become its first districts.',
+        ],
+    },
+    {
         tab: 'government',
         manual: 'government',
         title: 'Governing',

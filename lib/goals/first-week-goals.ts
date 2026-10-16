@@ -59,6 +59,7 @@ export type GoalId =
     | 'reach_out'
     | 'enact_policy'
     | 'raise_troops'
+    | 'found_outpost'
     | 'three_worlds';
 
 /** Where a goal's button takes the player. The client resolves it against its store. */
@@ -172,6 +173,19 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         takes: 'Seconds to minutes per unit',
         meanwhile: 'A world falls when your troops hold its strongpoints and its capital, and only while your fleet holds the sky above it.',
         metrics: [DEED_TROOPS_RAISED],
+        target: 1,
+    },
+    {
+        // Outposts (lib/outposts): a builder ship spent on a world no colony
+        // could take, run through its crises until it grows.
+        id: 'found_outpost',
+        phase: 'next',
+        title: 'Found an outpost',
+        hint: 'Lay down a Builder Ship at your shipyard, fly it to a surveyed system and spend it on an empty world (OUTPOST on the world). Dead rock works too.',
+        takes: `About ${simClockOf(CIVILIAN_SHIPS.builder.buildSeconds)} for the ship, then the flight`,
+        meanwhile: 'Outposts live in shifts of five minutes: open it from Economy → Outposts and answer its crises.',
+        metrics: [],
+        measure: (world, factionId) => mapValues(world?.construction?.planets).filter((p: any) => p?.ownerId === factionId && p?.outpost).length,
         target: 1,
     },
     {
@@ -458,5 +472,9 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
         }
         case 'reach_out':
             return { tab: 'diplomacy', label: 'Open Diplomacy' };
+        case 'found_outpost': {
+            const capital = capitalPlanet(world, factionId);
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, label: 'Open your shipyard' };
+        }
     }
 }

@@ -261,6 +261,9 @@ test('a colony: the outpost graduates, the surface opens, the functions keep run
     assert.ok(s.graduated, lastError());
     assert.ok(!site.tags.includes('outpost'));
     assert.ok(site.population >= 10);
+    const carried = (site.tiles ?? []).filter((t: any) => t.constructionState === 'active' && ['habitat_block', 'hydroponic_farm', 'warehouse_complex', 'logistics_depot'].includes(t.buildingId));
+    assert.ok(carried.length >= 3, `the domes became districts: ${carried.map((t: any) => t.buildingId).join(', ')}`);
+    assert.strictEqual(new Set(carried.map((t: any) => t.sectorIndex)).size, carried.length, 'one building per sector');
     build('habitat');
     assert.match(lastError(), /colony now/);
     const before = { ...s.warehouse };
