@@ -316,7 +316,7 @@ export default function OutpostView() {
     }
 
     return (
-        <div className="fixed inset-0 z-40 bg-slate-950/95 backdrop-blur-sm overflow-y-auto pt-16 pb-24" onClick={() => setSelected(null)}>
+        <div className="fixed inset-0 z-[45] bg-slate-950/95 backdrop-blur-sm overflow-y-auto pt-16 pb-24" onClick={() => setSelected(null)}>
             <div className="max-w-5xl mx-auto px-4 py-4 space-y-4" onClick={e => e.stopPropagation()}>
                 {/* Header: the world on the horizon, what the outpost is, and the shift clock */}
                 <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 px-4 py-3">

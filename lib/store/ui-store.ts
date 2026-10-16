@@ -412,7 +412,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
     surfacePlanetId: null,
     setSurfacePlanet: (id: string | null) => set({ surfacePlanetId: id }),
     outpostPlanetId: null,
-    setOutpostPlanet: (id: string | null) => set({ outpostPlanetId: id }),
+    // An outpost's screen sits over the map: opening one (from the Outposts
+    // tab or a notification) closes the workspace it would otherwise open behind.
+    setOutpostPlanet: (id: string | null) => set(id ? { outpostPlanetId: id, activeTab: 'galaxy' } : { outpostPlanetId: null }),
     systemViewId: null,
     setSystemView: (id: string | null) => set({ systemViewId: id }),
 
