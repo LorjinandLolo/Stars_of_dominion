@@ -23,7 +23,7 @@ import { minYardTierFor, systemYardFor, type YardPlanetLike } from '../combat/sh
 
 /** Same test as lib/ai/war-ai.ts isWarfleetId — kept local so the two modules do not import each other. */
 function isWarfleetId(id: string): boolean {
-    return /-war-d+$/.test(id);
+    return /-war-\d+$/.test(id);
 }
 
 /** The world slice this module reads and writes — GameWorldState satisfies it. */

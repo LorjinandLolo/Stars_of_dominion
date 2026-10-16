@@ -195,7 +195,6 @@ import { declareMovement, orderCellAct, orderGear, orderJobChoice, orderJobStart
 import { answerSanctuaryOrder, demandHandoverOrder, orderCrewJoin, orderCrewLeave, orderJobCommit, orderSanctuaryAsk, orderSanctuaryLeave } from '../lib/rebellion/underground-service';
 import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
-import { establishTradeRoute } from '../lib/economy/trade-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
 import { aiInvasionOrders, aiCommandGroundWars } from '../lib/ai/war-ai';
 import { checkCeasefireGate, recordTrophyKill } from '../lib/factions/kaerruun';
@@ -5644,14 +5643,14 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
-        case 'ECON_ESTABLISH_ROUTE': {
-             try {
-                 establishTradeRoute(world, factionId, payload);
-                 console.log(`[Order] Faction ${factionId} established Trade Route to ${payload.targetFactionId}`);
-             } catch (e: any) {
-                 console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
-             }
-             break;
+        case 'ECON_ESTABLISH_ROUTE':
+        case 'TRADE_ESTABLISH_ROUTE': {
+            // Old route orders: they deleted the fleet they named and built
+            // nothing. Routes are run by freighters now (CIV_SET_TRADE_ROUTE).
+            refundOrderCost(world, factionId, actionId);
+            recordOrderFailure(world, factionId, actionId,
+                'Trade routes are run by freighters: build one at a shipyard and set its route from its card in Military → Forces.');
+            return;
         }
 
         case 'MIL_ESTABLISH_GARRISON': {
@@ -6230,17 +6229,6 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
         case 'DISCOURSE_VOTE_OPINION': {
              console.log(`[Order] Faction ${factionId} voted on discourse ${payload.opinionId}`);
              break;
-        }
-
-        case 'TRADE_ESTABLISH_ROUTE': {
-            // Deduct freighter amount from faction's fleet and establish a background route
-            try {
-                establishTradeRoute(world, factionId, payload);
-                console.log(`[Tick Worker] Established Trade Route from ${payload.startSystemId} to ${payload.endSystemId}`);
-            } catch (e: any) {
-                console.warn('[Tick Worker] establishTradeRoute failed:', e.message);
-            }
-            break;
         }
 
         case 'AIR_LAUNCH_SORTIE': {

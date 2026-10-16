@@ -2,6 +2,7 @@
 // Progressive reveal (Ping/Scan/Survey), anomaly attachment,
 // frontier expansion phases, and doctrine-based automation.
 
+import { civilianCount, scanReachFrom, EXPLORER_TIME_FACTOR } from '../combat/civilian-ships';
 import type {
     MovementWorldState,
     ExplorationOrder,
@@ -467,13 +468,29 @@ export function tickAutomation(
     const newOrders: ExplorationOrder[] = [];
     const slotsAvailable = maxScouts - activeAutoOrders.length;
 
-    for (let i = 0; i < Math.min(slotsAvailable, idleScouts.length, prioritized.length); i++) {
-        const fleet = idleScouts[i];
-        const target = prioritized[i];
+    // Each scout takes the first target it can actually work on. A ping
+    // reaches anywhere; a scan or survey needs the target within one jump
+    // (two with an exploration ship), the same rule EXPLORE_ISSUE_ORDER
+    // enforces on a player's order. Automation used to survey across the map.
+    const taken = new Set(world.explorationOrders.map(o => o.targetSystemId));
+    const neighborsOf = (id: string) => world.systems.get(id)?.hyperlaneNeighbors;
+    for (const fleet of idleScouts) {
+        if (newOrders.length >= slotsAvailable) break;
+        if (!fleet.currentSystemId) continue;
+        const reach = scanReachFrom(fleet.currentSystemId, fleet.composition, neighborsOf);
+        const target = prioritized.find(sys => {
+            if (taken.has(sys.id)) return false;
+            const stage = factionVis[sys.id]?.revealStage;
+            const needsPing = !stage || stage === 'unknown';
+            return needsPing || reach.has(sys.id);
+        });
+        if (!target) continue;
+        taken.add(target.id);
         const existingVis = factionVis[target.id];
         const mode: 'ping' | 'scan' | 'survey' =
             !existingVis || existingVis.revealStage === 'unknown' ? 'ping' :
                 existingVis.revealStage === 'pinged' ? 'scan' : 'survey';
+        const factor = civilianCount(fleet.composition, 'explorer') > 0 ? EXPLORER_TIME_FACTOR : 1;
 
         const now = world.nowSeconds;
         const order: ExplorationOrder = {
@@ -482,7 +499,7 @@ export function tickAutomation(
             mode,
             isAutomated: true,
             issuedAt: toISO(now),
-            completesAt: toISO(now + STAGE_DURATIONS[mode]),
+            completesAt: toISO(now + Math.round(STAGE_DURATIONS[mode] * factor)),
         };
         world.explorationOrders.push(order);
         newOrders.push(order);

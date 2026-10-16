@@ -159,7 +159,7 @@ const WARFLEET_BY_TIER: Array<{ tier: number; composition: Record<string, number
 ];
 /** The shell MIL_BUILD_FLEET charges and its base power (FLEET_SHELL_POWER). */
 const SHELL_COST = { CREDITS: 1000, METALS: 500 };
-const SHELL_POWER = 100;
+const SHELL_POWER = 10; // scripts/game-loop.ts FLEET_SHELL_POWER
 
 const NON_EMPIRES = new Set(['faction-pirates', 'faction-neutral']);
 

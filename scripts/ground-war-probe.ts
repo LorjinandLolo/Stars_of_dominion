@@ -531,7 +531,10 @@ console.log('\n[3] Blockade and strongpoints');
         say(`             invaders:  ${every5(off.enemy)}   → ${off.outcome} after ${off.ended} cycles (${hours(off.ended)} h)`);
         say(`  1.5× invader, levy on — defenders: ${every5(big.trace)}`);
         say(`             invaders:  ${every5(big.enemy)}   → ${big.outcome} after ${big.ended} cycles (${hours(big.ended)} h)`);
-        check('with barracks and fortress an equal defence under blockade stands two real hours (cycle 24)', on.trace[23] > 0 && on.held, `${on.trace[23]} men at cycle 24`);
+        // Stands = not lost inside two hours. The trace reads 0 once the siege is
+        // over either way, so a defence that BEATS the invasion early (the invasion
+        // collapses) must count as standing, not as wiped out.
+        check('with barracks and fortress an equal defence under blockade stands two real hours (cycle 24)', on.held && (on.trace[23] > 0 || on.outcome.startsWith('invasion')), `${on.outcome} after ${on.ended} cycles, ${on.trace[23]} men at cycle 24`);
         check('and outlasts the same defence without them', on.ended > off.ended || (on.held && !off.held), `${on.ended} vs ${off.ended} cycles`);
     }
 
