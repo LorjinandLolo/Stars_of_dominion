@@ -85,7 +85,8 @@ import {
 } from '../lib/combat/siege/district-front';
 import { nextMorale } from '../lib/combat/siege/army-morale';
 import { defaultGarrison, DEFAULT_GARRISON_TROOPS } from '../lib/combat/siege/garrison';
-import { isEmptyWorld, armiesOnGround, groundHolder, digInFortification, CONTEST_DECISION_CYCLES, CONTEST_WIN_SHARE } from '../lib/combat/siege/contested-ground';
+import { isEmptyWorld, armiesOnGround, groundHolder, digInFortification, payContestUpkeep } from '../lib/combat/siege/contested-ground';
+import { blockadeRunGetsThrough } from '../lib/combat/siege/blockade-runners';
 import { canSeeSystem } from '../lib/exploration/colonize-service';
 import { pacing } from '../lib/combat/siege/siege-pacing';
 import { orbitState, orbitalFireFor, canCrossOrbit, BLOCKADE_GRACE_CYCLES, BLOCKADE_PHASEOUT_CYCLES } from '../lib/combat/siege/orbit-state';
@@ -6631,6 +6632,9 @@ function startContest(world: GameWorldState, planet: any, holderId: string, atta
     war.strongpoints = computeStrongpoints(surface, planet, war);
     war.defenderAuto = true;
     applyDefaultDefence(surface, war, war.formations, war.strongpoints, world.nowSeconds);
+    // The holder's camp: where its men stood when the fight began. Its supply
+    // comes in there, for as long as that ground is still its own.
+    (planet.siege as any).contestCamp = [...new Set(war.formations.filter((f: Formation) => f.side === 'defender').map((f: Formation) => f.sectorIndex))];
     planet.garrison = defenseState;
     notifyContest(world, planet, holderId, attackerId, `Battle for ${planet.name}`,
         `Enemy troops have landed on ${planet.name}, where our army stands. We hold the ground${fort ? ', dug in' : ''}; the fight is on.`,
@@ -6638,20 +6642,55 @@ function startContest(world: GameWorldState, planet: any, holderId: string, atta
     console.log(`[Tick Worker] CONTESTED GROUND at ${planet.name}: ${attackerId} attacks ${holderId}'s position (fortification ${fort}).`);
 }
 
-/** Returns true when the contest ended this cycle. */
+/**
+ * Returns true when the contest ended this cycle: one side has no men left on
+ * the board (killed, or starved into surrender). There is no clock; a
+ * contest both sides keep paying for goes on (see contestSupply).
+ */
 function resolveContestCycle(world: GameWorldState, planet: any, siege: GroundSiegeState): boolean {
     const formations = (siege.districts?.formations ?? []) as Formation[];
     const men = (side: 'attacker' | 'defender') => formations.filter(f => f.side === side).reduce((n, f) => n + Math.max(0, f.strength), 0);
-    const lift = () => [...world.movement.fleets.values()].find((f: any) =>
-        f.factionId === siege.attackerEmpireId && f.currentSystemId === planet.systemId && !f.destinationSystemId && isFleetOperational(f));
     if (men('defender') <= 0) { contestWon(world, planet, siege.attackerEmpireId); return true; }
     if (men('attacker') <= 0) { endSiegeDefenderHolds(world, planet, siege, 'ATTACKER_COLLAPSE'); return true; }
-    if (siege.cycleCount < CONTEST_DECISION_CYCLES) return false;
-    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
-    const share = siege.districts ? occupationShare(surface, siege.districts) : 0;
-    if (share >= CONTEST_WIN_SHARE) contestWon(world, planet, siege.attackerEmpireId);
-    else endSiegeDefenderHolds(world, planet, siege, 'RETREAT', lift());
-    return true;
+    return false;
+}
+
+/**
+ * A contest's supply, decided each cycle: a side is fed if it paid this
+ * cycle's upkeep and the enemy does not hold the sky over the world. The
+ * holder draws from the camp it dug when the fight began; the attacker from
+ * its landing zones. Unpaid or blockaded, a side's sources are gone and
+ * updateSupply starves it. Each side is told once when its supply fails, and
+ * once when it is restored.
+ */
+function contestSupply(world: GameWorldState, planet: any, siege: GroundSiegeState, formations: Formation[]): { attacker: boolean; defender: boolean; trickle: { attacker: boolean; defender: boolean }; log: string[] } {
+    const log: string[] = [];
+    const holder = siege.orbit?.holder;
+    const result = { attacker: false, defender: false, trickle: { attacker: false, defender: false }, log };
+    for (const side of ['attacker', 'defender'] as const) {
+        const empire = side === 'attacker' ? siege.attackerEmpireId : siege.defenderEmpireId;
+        const men = formations.filter(f => f.side === side).reduce((n, f) => n + Math.max(0, f.strength), 0);
+        const paid = payContestUpkeep(world, empire, men);
+        const blockaded = holder === (side === 'attacker' ? 'defender' : 'attacker');
+        const fed = paid && !blockaded;
+        // Paid but blockaded: a lone ship may slip something through.
+        if (paid && blockaded && blockadeRunGetsThrough(world, empire, planet, siege.cycleCount)) {
+            result.trickle[side] = true;
+            log.push(`A runner slipped supplies past the blockade to ${empireName(world, empire)}'s men.`);
+        }
+        const state: any = side === 'attacker' ? siege.attackerState : siege.defenderState;
+        if (!fed && state.contestFed !== false) {
+            const why = !paid ? 'the treasury cannot pay to supply them' : 'the enemy holds the sky and nothing gets down';
+            log.push(`${empireName(world, empire)}'s men on ${planet.name} are cut off: ${why}.`);
+            notifyContest(world, planet, empire, '', `${planet.name}: our troops are cut off`,
+                `Our men on ${planet.name} are going hungry: ${why}. Starving formations bleed, then surrender.`, '');
+        } else if (fed && state.contestFed === false) {
+            log.push(`${empireName(world, empire)}'s supply lines to ${planet.name} are open again.`);
+        }
+        state.contestFed = fed;
+        result[side] = fed;
+    }
+    return result;
 }
 
 /** The attacker took the field. The world stays empty; the survivors stand on it. */
@@ -7074,12 +7113,30 @@ export function processSieges(world: GameWorldState) {
                 if (phasedOut && def.blockadedCycles === BLOCKADE_PHASEOUT_CYCLES) {
                     res.log.push('The blockade bites: only the capital core and the manned strongpoints are still supplied.');
                 }
-                const supplyResult = updateSupply(surface, war, war.formations, {
+                // A contest on empty ground runs on upkeep, not on an owner's
+                // home districts (lib/combat/siege/contested-ground.ts).
+                const contest = updatedSiege.contested ? contestSupply(world, planet, updatedSiege, war.formations) : null;
+                if (contest) res.log.push(...contest.log);
+                // Blockade runners (lib/combat/siege/blockade-runners.ts): a
+                // starving side with a lone ship nearby may get a little through.
+                const runnerTrickle = contest ? contest.trickle : {
+                    attacker: att.cutOffCycles > BLOCKADE_GRACE_CYCLES && blockadeRunGetsThrough(world, updatedSiege.attackerEmpireId, planet, updatedSiege.cycleCount),
+                    defender: phasedOut && blockadeRunGetsThrough(world, updatedSiege.defenderEmpireId, planet, updatedSiege.cycleCount),
+                };
+                if (!contest && runnerTrickle.attacker) res.log.push('A runner slipped supplies down to the cut-off beachhead.');
+                if (!contest && runnerTrickle.defender) res.log.push('A runner slipped past the blockade with supplies for the defenders.');
+                const supplyResult = updateSupply(surface, war, war.formations, contest ? {
+                    attackerBaseSupplied: contest.attacker,
+                    defenderSources: contest.defender ? ((updatedSiege as any).contestCamp ?? []) : [],
+                    starveSurrenderCycles: STARVE_SURRENDER_CYCLES,
+                    trickle: runnerTrickle,
+                } : {
                     attackerBaseSupplied: att.cutOffCycles <= BLOCKADE_GRACE_CYCLES,
                     defenderSources: phasedOut
                         ? [...surface.sectors.filter(s => s.ring <= 1).map(s => s.index), ...strongpointSectors(points, 'defender')]
                         : undefined,
                     starveSurrenderCycles: STARVE_SURRENDER_CYCLES,
+                    trickle: runnerTrickle,
                 });
                 res.log.push(...supplyResult.log);
                 for (const side of ['attacker', 'defender'] as const) {
@@ -7316,8 +7373,7 @@ export function processSieges(world: GameWorldState) {
             }
         }
 
-        // Contested ground ends on its own terms: one side gone, or the field
-        // decided by who holds more of it after CONTEST_DECISION_CYCLES.
+        // Contested ground ends when one side has no men left (killed or starved).
         if (updatedSiege.contested && updatedSiege.cycleCount > cycleBefore && resolveContestCycle(world, planet, updatedSiege)) continue;
 
         // Resolve Phase transitions

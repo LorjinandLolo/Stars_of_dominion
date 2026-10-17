@@ -17,7 +17,10 @@
 //               world, a field battle starts on its 64-district board
 //               (scripts/game-loop.ts startContest): whoever held the ground
 //               first defends, dug in by how long they have been there.
-//               Winning takes the field, not the planet: the survivors stand
+//               There is no clock: it lasts while both sides pay their
+//               upkeep and can get supply down (CONTEST_UPKEEP_PER_100), and
+//               ends when one side is gone, starved into surrender, or the
+//               attacker withdraws. Winning takes the field, not the planet: the survivors stand
 //               as a stationed army and the world stays empty, there to be
 //               settled or to plant an outpost on.
 //
@@ -35,15 +38,34 @@ export const STAGING_SUPPLY_REFILL = 0.25;
 /** An army out of supply loses this much strength and 5 morale each cycle. */
 export const STARVING_STRENGTH_LOSS = 0.03;
 /**
- * A field battle that neither side finishes is decided after this many siege
- * cycles (two real hours): whoever holds more of the surface takes the field.
- * An empty world's centre is wherever the generator put it (often mountains no
- * infantry can enter), so the capital-district rule invasions end on cannot
- * decide a contest.
+ * There is no clock on a contest. It lasts as long as both sides pay to keep
+ * their men in the field: every siege cycle (5 real minutes) each side pays
+ * this much per 100 men on the board. A side that cannot pay, or whose
+ * supply cannot land because the enemy holds the sky, is cut off; cut-off
+ * formations go hungry, bleed, and surrender (formations.updateSupply). Two
+ * empires that keep paying can grind on for days, the way a front does.
  */
-export const CONTEST_DECISION_CYCLES = 24;
-/** The attacker's share of the surface, in percent, that takes the field at the decision. */
-export const CONTEST_WIN_SHARE = 50;
+export const CONTEST_UPKEEP_PER_100: Record<string, number> = { CREDITS: 12, MATERIEL: 2 };
+
+/** One cycle's bill for this many men. */
+export function contestUpkeep(men: number): Record<string, number> {
+    const hundreds = Math.max(0, men) / 100;
+    return Object.fromEntries(Object.entries(CONTEST_UPKEEP_PER_100).map(([k, v]) => [k, Math.ceil(v * hundreds)]));
+}
+
+/**
+ * Pay one cycle of a side's upkeep from its reserves, all or nothing (an
+ * untracked reserve key is free, as everywhere else). Returns whether it paid.
+ */
+export function payContestUpkeep(world: GameWorldState, factionId: string, men: number): boolean {
+    if (men <= 0) return true;
+    const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
+    if (!reserves) return false;
+    const bill = contestUpkeep(men);
+    for (const [k, v] of Object.entries(bill)) if (reserves[k] !== undefined && reserves[k] < v) return false;
+    for (const [k, v] of Object.entries(bill)) if (reserves[k] !== undefined) reserves[k] -= v;
+    return true;
+}
 
 type PlanetLike = { id: string; ownerId?: string | null; systemId: string; siege?: any; outpost?: unknown };
 

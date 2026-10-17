@@ -393,6 +393,12 @@ export interface SupplyOptions {
     defenderSources?: number[];
     /** Cycles at zero supply before a formation surrenders where it stands. */
     starveSurrenderCycles?: number;
+    /**
+     * Sides whose cut-off men got a little through the blockade this cycle
+     * (a lone ship that slipped past, lib/combat/siege/blockade-runners.ts):
+     * they go hungry slower, but they still go hungry.
+     */
+    trickle?: Partial<Record<FormationSide, boolean>>;
 }
 
 export interface SupplyResult {
@@ -400,6 +406,9 @@ export interface SupplyResult {
     /** Men who starved into surrender this cycle, by side and type. Prisoners to the last man. */
     surrendered: Record<FormationSide, Partial<Record<GroundUnitType, number>>>;
 }
+
+/** Supply a cut-off formation loses per cycle when a blockade runner got through (25 without). */
+export const TRICKLE_SUPPLY_LOSS = 10;
 
 export function updateSupply(
     surface: PlanetSurface,
@@ -444,7 +453,8 @@ export function updateSupply(
             f.supply = Math.min(100, f.supply + 20);
             f.starvedCycles = 0;
         } else {
-            f.supply = Math.max(0, f.supply - 25);
+            const trickle = !!options.trickle?.[f.side];
+            f.supply = Math.max(0, f.supply - (trickle ? TRICKLE_SUPPLY_LOSS : 25));
             if (!was) log.push(`${f.unitType} in district ${f.sectorIndex} is cut off.`);
             if (f.supply <= 0) {
                 f.starvedCycles = (f.starvedCycles ?? 0) + 1;
@@ -456,8 +466,8 @@ export function updateSupply(
                     f.strength = 0;
                     continue;
                 }
-                // Starving formations bleed out.
-                f.strength = Math.max(0, Math.round(f.strength * 0.9));
+                // Starving formations bleed out (slower on what the runners bring).
+                f.strength = Math.max(0, Math.round(f.strength * (options.trickle?.[f.side] ? 0.95 : 0.9)));
             }
         }
     }

@@ -12,6 +12,8 @@ import { tickStagingArmies, armiesOnGround, DIG_IN_PER_CYCLE, DIG_IN_MAX_FORTIFI
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
 import { aiCommandGroundWars } from '../lib/ai/war-ai';
+import { blockadeRunGetsThrough } from '../lib/combat/siege/blockade-runners';
+import { updateSupply, TRICKLE_SUPPLY_LOSS } from '../lib/combat/siege/formations';
 
 let passed = 0;
 let failed = 0;
@@ -119,23 +121,59 @@ test('at war: the ground is contested, and the first army there defends, dug in'
     assert.ok(!r.ok && /battlefield/.test(r.reason ?? ''));
 });
 
-test('the battle runs to an end: the world stays empty and the survivors hold the field', () => {
+const step = () => { world.nowSeconds += 15; silently(() => { aiCommandGroundWars(world); processSieges(world); }); };
+const rich = (f: string) => { const r = world.economy.factions.get(f).reserves; r.CREDITS = 1e7; r.MATERIEL = 1e6; };
+
+test('no clock: while both sides pay their upkeep, the battle grinds on', () => {
     const siege = ground.siege;
     siege.cycleLengthTicks = 1;
-    for (let i = 0; i < 400 && ground.siege; i++) { world.nowSeconds += 15; silently(() => { aiCommandGroundWars(world); processSieges(world); }); }
-    const tally = (side: string) => (siege.districts?.formations ?? []).filter((f: any) => f.side === side).reduce((n: number, f: any) => n + f.strength, 0);
-    assert.ok(!ground.siege, `the battle ended (cycle ${siege.cycleCount}, ticks ${siege.tickCount}, attackers ${tally('attacker')}, defenders ${tally('defender')}, phase ${siege.phase})`);
+    rich(A); rich(B);
+    // The holder has warships overhead too: the sky is contested, nobody is blockaded.
+    world.movement.fleets.set('fleet-a-cover', { id: 'fleet-a-cover', factionId: A, name: 'Cover', currentSystemId: sys, destinationSystemId: null, composition: { cruiser: 4 }, basePower: 200, strength: 1, transportedArmyIds: [] });
+    const before = world.economy.factions.get(B).reserves.CREDITS;
+    for (let i = 0; i < 60 && ground.siege; i++) step();
+    assert.ok(ground.siege, `still fighting after ${siege.cycleCount} cycles (winner ${siege.winner === A ? 'holder' : 'attacker'}, fed A ${siege.defenderState.contestFed} B ${siege.attackerState.contestFed}, log: ${siege.battleLog.slice(-4).map((l: any) => l.message).join(' / ').slice(0, 500)})`);
+    assert.ok(world.economy.factions.get(B).reserves.CREDITS < before, 'upkeep was paid');
+    assert.ok(siege.attackerState.contestFed !== false && siege.defenderState.contestFed !== false, 'both sides fed');
+});
+
+test('a side that cannot pay is cut off, starves, and loses the field', () => {
+    const siege = ground.siege;
+    rich(A);
+    const rb = world.economy.factions.get(B).reserves; rb.CREDITS = 0; rb.MATERIEL = 0;
+    for (let i = 0; i < 300 && ground.siege; i++) { rb.CREDITS = 0; step(); }
+    assert.ok(siege.attackerState.contestFed === false, 'the broke side was cut off');
+    assert.ok(!ground.siege, `the battle ended (cycle ${siege.cycleCount})`);
+    assert.strictEqual(siege.winner, A, 'the side that kept paying holds the field');
     assert.ok(!ground.ownerId, 'nobody took the planet: it is still empty');
     assert.ok(!ground.garrison, 'no garrison on an empty world');
-    const winner = siege.winner;
-    assert.ok(winner === A || winner === B, `winner ${winner}`);
     const held = armiesOnGround(world, ground.id);
-    assert.ok(held.length >= 1 && held.every((a: any) => a.factionId === winner), `the winner stands on the field: ${held.map((a: any) => a.factionId).join(',')}`);
-    if (winner === B) {
-        const pow = ensureLedger(world.combat).groups.filter((g: any) => g.planetId === ground.id && g.captorEmpireId === B);
-        assert.ok(pow.length >= 0);
-    }
-    console.log(`        (won by ${winner === A ? 'the dug-in holder' : 'the larger attacker'}, ${held.reduce((s: number, a: any) => s + Object.values(a.composition).reduce((x: number, n: any) => x + n, 0), 0)} men left)`);
+    assert.ok(held.length >= 1 && held.every((a: any) => a.factionId === A), 'the holder stands on the field');
+});
+
+test('blockade runners: a lone ship nearby sometimes gets through; a big fleet or none does not', () => {
+    const p = { id: 'runner-world', systemId: sys };
+    const tries = (n: number) => Array.from({ length: n }, (_, c) => blockadeRunGetsThrough(world, 'runner-empire', p, c)).filter(Boolean).length;
+    assert.strictEqual(tries(40), 0, 'no ship, no run');
+    world.movement.fleets.set('runner-1', { id: 'runner-1', factionId: 'runner-empire', currentSystemId: sys, destinationSystemId: null, composition: { corvette: 1 } });
+    const lone = tries(40);
+    assert.ok(lone > 4 && lone < 28, `a corvette gets through sometimes: ${lone}/40`);
+    world.movement.fleets.get('runner-1').composition = { freighter: 1 };
+    assert.ok(tries(40) > lone, 'a freighter does better');
+    world.movement.fleets.get('runner-1').composition = { battleship: 6 };
+    assert.strictEqual(tries(40), 0, 'a battle fleet cannot slip through');
+    world.movement.fleets.delete('runner-1');
+});
+
+test('a run that gets through only slows the hunger', () => {
+    const surface: any = { sectors: [{ index: 0, terrain: 'plains', ring: 0, neighbors: [1] }, { index: 1, terrain: 'plains', ring: 1, neighbors: [0] }] };
+    const war: any = { control: { 1: 'attacker' }, landingZones: [] };
+    const mk = () => [{ id: 'x', side: 'defender', unitType: 'INFANTRY', strength: 100, maxStrength: 100, sectorIndex: 0, supply: 100 }] as any;
+    const starved = mk(), fed = mk();
+    updateSupply(surface, war, starved, { defenderSources: [] });
+    updateSupply(surface, war, fed, { defenderSources: [], trickle: { defender: true } });
+    assert.strictEqual(starved[0].supply, 75);
+    assert.strictEqual(fed[0].supply, 100 - TRICKLE_SUPPLY_LOSS);
 });
 
 test('the winner can settle the ground it holds', () => {
