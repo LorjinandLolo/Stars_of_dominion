@@ -107,6 +107,8 @@ interface PlanetCardProps {
     canColonize?: boolean;
     /** An own builder ship parked in this system (civilian-ships.ts): it can plant an outpost on a surveyed, unowned world. */
     outpostFleetId?: string | null;
+    /** The selected fleet, parked here, carrying Special Ops or Airborne troops: it can raid (MIL_COMMANDO_RAID). */
+    raidFleetId?: string | null;
 }
 
 function PlanetCard({
@@ -132,6 +134,7 @@ function PlanetCard({
     orbitIndex,
     canColonize = false,
     outpostFleetId = null,
+    raidFleetId = null,
 }: PlanetCardProps) {
     const [expanded, setExpanded] = React.useState(false);
     const [recruiting, setRecruiting] = React.useState(false);
@@ -156,6 +159,10 @@ function PlanetCard({
             setActionBusy(null);
         }
     };
+
+    const canRaid = isEnemyOwned && !!raidFleetId;
+    const raid = (target: 'shield' | 'guns' | 'uplink') =>
+        runPlanetAction(`raid-${target}`, 'MIL_COMMANDO_RAID', { fleetId: raidFleetId, planetId: planet.id, target }, `Raid on ${planet.name}`);
 
     const canOutpost = isNeutral && !!outpostFleetId;
     const foundOutpost = () => runPlanetAction('outpost', 'CIV_FOUND_OUTPOST', { fleetId: outpostFleetId, planetId: planet.id }, `Outpost on ${planet.name}`);
@@ -392,6 +399,22 @@ function PlanetCard({
                             <Swords size={9} />
                             {isNeutral ? 'LAND TROOPS' : 'INVASION'}
                         </button>
+                    )}
+
+                    {/* Commando raid: knock out one installation before the main assault */}
+                    {canRaid && (
+                        <div className="flex gap-1 flex-1" title="Drop the Special Ops and Airborne aboard on one installation. Success puts it out for four days; failure costs most of the raiders, the rest are taken prisoner.">
+                            {([['shield', 'SHIELD'], ['guns', 'GUNS'], ['uplink', 'UPLINK']] as const).map(([t, label]) => (
+                                <button
+                                    key={t}
+                                    disabled={actionBusy === `raid-${t}`}
+                                    onClick={(e) => { e.stopPropagation(); raid(t); }}
+                                    className="flex-1 py-1 bg-amber-700/20 hover:bg-amber-700/35 border border-amber-500/30 rounded text-[9px] text-amber-300 font-bold transition-all disabled:opacity-40"
+                                >
+                                    RAID {label}
+                                </button>
+                            ))}
+                        </div>
                     )}
 
                     {/* Active Siege Tactics */}
@@ -959,6 +982,13 @@ function SystemContextPanel() {
     const builderFleetId: string | null = ((fleets as any[]) ?? []).find((f: any) =>
         f.factionId === playerFactionId && f.currentSystemId === system.id && !f.destinationSystemId
         && civilianCount(f.composition, 'builder') > 0)?.id ?? null;
+
+    // The selected fleet, parked here, carrying raiders (lib/combat/commando-raid.ts).
+    const raidFleetId: string | null = fleetInSystem && selectedFleet.factionId === playerFactionId
+        && (selectedFleet.transportedArmyIds ?? []).some((id: string) => {
+            const c = (armies as any[]).find(a => a.id === id)?.composition ?? {};
+            return (c.SPECIAL_OPS ?? 0) > 0 || (c.AIRBORNE ?? 0) > 0;
+        }) ? selectedFleet.id : null;
 
     const region = regions.find((r) => r.systemIds.includes(system.id));
     // An unknown system has no worlds tab; never strand the player on it.
@@ -1618,6 +1648,7 @@ function SystemContextPanel() {
                                         orbitIndex={i}
                                         canColonize={revealStage === 'surveyed' && !!planet.tags?.includes('colonizable')}
                                         outpostFleetId={revealStage === 'surveyed' ? builderFleetId : null}
+                                        raidFleetId={raidFleetId}
                                     />
                                         ); })}
                                     </section>

@@ -59,6 +59,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", targetId: "id" },
     cost: { ammo: 100, manpower: 500 }
   },
+  MIL_COMMANDO_RAID: {
+    id: "MIL_COMMANDO_RAID",
+    category: "military",
+    // Special Ops / Airborne aboard a parked fleet hit one installation
+    // (lib/combat/commando-raid.ts). target: 'shield' | 'guns' | 'uplink'.
+    params: { fleetId: "id", planetId: "id", target: "string" },
+    cost: {}
+  },
   MIL_ORBIT_PLANET: {
     id: "MIL_ORBIT_PLANET",
     category: "military",

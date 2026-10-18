@@ -670,6 +670,7 @@ export const MANUAL_DATA: ManualSection[] = [
                             'Three sabotage operations put a world\'s defences out of action for two days (they need a deep network there): Disable Orbital Defences (its defence stations go offline, so the orbit falls fast and they add nothing to a space battle), Blind the Shield (shield generators and shield arrays go dark: bombardment gets through, and the defenders lose the shield) and Spike the Guns (surface defence platforms and outpost batteries).',
                             'Time it: the operation itself takes hours, and the defences come back by themselves after two days, so the fleet has to strike in between.',
                             'Defending: when your defences are sabotaged you are told. Counter-intel → Restore Defences brings everything sabotaged in that system back at once (a few hours, 20 Intel).',
+                            'Commando raid, the loud way: a fleet parked over an enemy world you are at war with, carrying Special Ops or Airborne troops, can RAID SHIELD, RAID GUNS or RAID UPLINK (orbital defences) from the world\'s card. Up to 300 raiders go down; Special Ops count double Airborne, a big or dug-in garrison lowers the odds (10% to 85%). Success knocks the target out for four days and costs some raiders. Failure costs most of them and the rest are taken prisoner. The same force needs six hours before raiding again. Restore Defences undoes a raid too.',
                         ],
                     },
                 ],

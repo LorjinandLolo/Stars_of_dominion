@@ -35,6 +35,7 @@ import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-ser
 import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
+import { commandoRaid, RAID_TARGET_LABEL, type RaidTarget } from '../lib/combat/commando-raid';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -1833,6 +1834,27 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!fleet.currentSystemId) {
                 console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
             }
+            break;
+        }
+
+        case 'MIL_COMMANDO_RAID': {
+            // payload: { fleetId, planetId, target } — lib/combat/commando-raid.ts
+            const planet: any = world.construction.planets.get(payload.planetId);
+            const target = payload.target as RaidTarget;
+            const raid = commandoRaid(world, factionId, payload.fleetId, payload.planetId, target, (a, b) => isAtWar(world, a, b));
+            if (!raid.ok) { recordOrderFailure(world, factionId, actionId, raid.reason!); break; }
+            recordGrievance(world, planet.ownerId, factionId, 'attacked');
+            const what = RAID_TARGET_LABEL[target];
+            const hit = raid.hit?.length ? ` (${raid.hit.join(', ')})` : '';
+            notifyContest(world, planet, factionId, planet.ownerId,
+                raid.success ? `Raid on ${planet.name}: ${what} is down` : `Raid on ${planet.name} beaten off`,
+                raid.success
+                    ? `Our raiders took out ${what}${hit} for four days. ${raid.lost} did not come back.`
+                    : `The garrison was waiting. ${raid.lost} raiders dead, ${raid.captured} taken prisoner.`,
+                raid.success
+                    ? `Enemy commandos hit ${what} on ${planet.name}${hit}. It is out for four days; counter-intelligence can run Restore Defences to bring it back sooner.`
+                    : `Enemy commandos tried for ${what} on ${planet.name}. The garrison killed ${raid.lost} and took ${raid.captured} prisoner.`);
+            console.log(`[Tick Worker] COMMANDO RAID on ${planet.name} by ${factionId}: ${raid.success ? 'success' : 'failed'}, lost ${raid.lost}, captured ${raid.captured}`);
             break;
         }
 

@@ -66,6 +66,7 @@ export const BUTHARI_FORBIDDEN_ACTIONS: Record<string, string> = {
     MIL_ATTACK_FLEET: 'open fire',
     MIL_TACTICAL_ENGAGE: 'force an engagement',
     MIL_INVASION_PLANET: 'launch an invasion',
+    MIL_COMMANDO_RAID: 'send in a raid',
     MIL_BOMBARD_PLANET: 'bombard a world',
     AIR_LAUNCH_SORTIE: 'fly a sortie',
 };
