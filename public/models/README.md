@@ -1,8 +1,9 @@
 # Models
 
 Every 3D model the tactical battle uses, where to put your own, and what else could get
-one later. The renderer is `lib/tactical/render3d/`. Concept-art and Meshy/Tripo prompts
-are in `docs/art/ship-image-prompts.md`.
+one later. The renderer is `lib/tactical/render3d/`. Detailed briefs for building each
+model are in `docs/art/model-specs.md`. Concept-art and Meshy/Tripo prompts are in
+`docs/art/ship-image-prompts.md`.
 
 ## Adding your own model
 
