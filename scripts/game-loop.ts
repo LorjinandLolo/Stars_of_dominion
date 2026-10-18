@@ -91,7 +91,8 @@ import { isEmptyWorld, armiesOnGround, groundHolder, digInFortification, payCont
 import { blockadeRunGetsThrough } from '../lib/combat/siege/blockade-runners';
 import { canSeeSystem } from '../lib/exploration/colonize-service';
 import { pacing } from '../lib/combat/siege/siege-pacing';
-import { orbitState, orbitalFireFor, canCrossOrbit, BLOCKADE_GRACE_CYCLES, BLOCKADE_PHASEOUT_CYCLES } from '../lib/combat/siege/orbit-state';
+import { orbitState, orbitalFireFor, canCrossOrbit, skyContested, BLOCKADE_GRACE_CYCLES, BLOCKADE_PHASEOUT_CYCLES } from '../lib/combat/siege/orbit-state';
+import { surfaceGuns, gunTargetOf, flakLoss, bombardmentScreen, returnFire, takeLandingLosses, CONTESTED_LANDING_LOSS, GUN_TARGETS, GUN_TARGET_LABEL, type GunTarget } from '../lib/combat/surface-guns';
 import {
     computeStrongpoints, entrenchmentBonus, fortificationLevelFor, heldBy, strongpointSectors,
     DEFENDER_MORALE_FLOOR_HALL, LEVY_PER_CYCLE, LEVY_MAX_PER_CYCLE, LEVY_MAX_TOTAL, LEVY_KINDS,
@@ -375,6 +376,29 @@ function landingComposition(
         ARMOR: fleet.basePower * 1,
     };
     return { composition: fabricated, troops: fleet.basePower * 5, consumedArmyIds: [], derived: false };
+}
+
+/**
+ * Men lost coming down (lib/combat/surface-guns.ts): an invader landing under
+ * the defender's surface guns loses men to flak, and anyone landing under a
+ * contested sky loses men to the enemy's ships. Takes them from
+ * `composition` in place and tells the lander. Returns the men lost.
+ */
+function landUnderFire(world: GameWorldState, planet: any, factionId: string, side: 'attacker' | 'defender', composition: Record<string, number>): number {
+    const flak = side === 'attacker' && planet.ownerId && planet.ownerId !== factionId
+        ? flakLoss(surfaceGuns(planet, planet.siege?.districts?.strongpoints)) : 0;
+    const contested = skyContested(planet.siege?.orbit) ? CONTESTED_LANDING_LOSS : 0;
+    const lost = takeLandingLosses(composition, flak + contested);
+    if (lost > 0) {
+        const why = [flak ? 'flak from the guns below' : '', contested ? 'enemy ships in a contested sky' : ''].filter(Boolean).join(' and ');
+        console.log(`[Tick Worker] ${lost} of ${factionId}'s troops lost landing on ${planet.name} (${why}).`);
+        try {
+            fireNotification({ id: `landing-fire-${planet.id}-${factionId}-${world.nowSeconds}`, factionId, category: 'combat', priority: 'normal',
+                title: `${planet.name}: losses on the way down`, body: `${lost} of our troops were lost landing to ${why}.`,
+                createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false } as any);
+        } catch { /* probes run without the queue */ }
+    }
+    return lost;
 }
 
 /** Removes armies that have gone ashore, so nothing lands twice. */
@@ -1908,7 +1932,9 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 defenseState.isUnderSiege = true;
 
                 // What is aboard is what comes ashore. See landingComposition.
+                // The guns below take their share on the way down.
                 const landing = landingComposition(world, fleet);
+                landing.troops = Math.max(0, landing.troops - landUnderFire(world, planet, factionId, 'attacker', landing.composition as Record<string, number>));
 
                 // The world the defender built in peacetime is the battlefield:
                 // its fortification level comes from its buildings, and the
@@ -2007,10 +2033,13 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 // nothing is. And only through an orbit the invader holds —
                 // a relief fleet overhead means nothing more comes down.
                 if (!canCrossOrbit(planet.siege.orbit, 'attacker')) {
-                    recordOrderFailure(world, factionId, actionId, `The orbit over ${planet.name} is contested — reinforcements cannot land.`);
+                    recordOrderFailure(world, factionId, actionId, `The enemy holds the orbit over ${planet.name} — reinforcements cannot land.`);
                     break;
                 }
                 const reinforcement = landingComposition(world, fleet);
+                if (reinforcement.derived) {
+                    reinforcement.troops = Math.max(0, reinforcement.troops - landUnderFire(world, planet, factionId, 'attacker', reinforcement.composition as Record<string, number>));
+                }
                 const comp = planet.siege.attackerState.unitComposition as any;
                 if (reinforcement.derived) {
                     for (const [type, n] of Object.entries(reinforcement.composition)) {
@@ -2310,7 +2339,17 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
 
             // General orbital bombardment: batter stability, stoke unrest. A
             // standing orbital layer blunts what reaches the surface.
-            const surfaceFactor = orbitHeld ? 0.35 : 1;
+            // Surface guns fire back: less reaches the ground, and the
+            // bombarding ships take hits (lib/combat/surface-guns.ts).
+            const guns = surfaceGuns(planet, planet.siege?.districts?.strongpoints);
+            const surfaceFactor = (orbitHeld ? 0.35 : 1) * bombardmentScreen(guns);
+            if (guns.power > 0) {
+                const bombardFleet = world.movement.fleets.get(payload.fleetId);
+                if (bombardFleet && bombardFleet.factionId === factionId) {
+                    const knocked = returnFire([bombardFleet], guns, 'spread');
+                    console.log(`[Tick Worker] Return fire from ${planet.name}: ${Math.round(knocked)} power knocked off ${bombardFleet.name ?? bombardFleet.id}.`);
+                }
+            }
             planet.stability = Math.max(0, (planet.stability || 60) - 10 * surfaceFactor);
             planet.unrest = Math.min(100, (planet.unrest || 0) + 5 * surfaceFactor);
             // Roads, grids and relays are what bombardment actually breaks. The
@@ -2354,6 +2393,22 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 return;
             }
             formation.name = name;
+            break;
+        }
+
+        case 'PLANET_SET_GUN_TARGET': {
+            // payload: { planetId, target } — what this world's surface guns fire on (lib/combat/surface-guns.ts).
+            const planet: any = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'That world is not yours.');
+                break;
+            }
+            if (!GUN_TARGETS.includes(payload.target)) {
+                recordOrderFailure(world, factionId, actionId, 'Unknown gun target.');
+                break;
+            }
+            planet.gunTarget = payload.target as GunTarget;
+            console.log(`[Order] ${factionId}: guns on ${planet.name} now fire on ${GUN_TARGET_LABEL[planet.gunTarget as GunTarget]}.`);
             break;
         }
 
@@ -2528,10 +2583,13 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 const side = siege.attackerEmpireId === factionId ? 'attacker' : 'defender';
                 if (!canCrossOrbit(siege.orbit, side)) {
                     recordOrderFailure(world, factionId, actionId, side === 'attacker'
-                        ? `The orbit over ${planet.name} is contested — reinforcements cannot land.`
+                        ? `The enemy holds the orbit over ${planet.name} — reinforcements cannot land.`
                         : `The enemy holds the orbit over ${planet.name} — break the blockade or raise the shield.`);
                     break;
                 }
+                landUnderFire(world, planet, factionId, side, army.composition ?? {});
+            } else if (planet.ownerId && planet.ownerId !== factionId) {
+                landUnderFire(world, planet, factionId, 'attacker', army.composition ?? {});
             }
             fleet.transportedArmyIds = fleet.transportedArmyIds?.filter((id: string) => id !== army.id) || [];
             army.transportFleetId = null;
@@ -6580,6 +6638,7 @@ function landOnEmptyWorld(world: GameWorldState, factionId: string, fleet: any, 
     if (!aboard.length) return { ok: false, reason: `${fleet.name ?? 'The fleet'} carries no troops to land.` };
     for (const id of aboard) {
         const army: any = world.movement.armies!.get(id)!;
+        if (planet.siege) landUnderFire(world, planet, factionId, planet.siege.attackerEmpireId === factionId ? 'attacker' : 'defender', army.composition ?? {});
         army.transportFleetId = null;
         army.currentPlanetId = planet.id;
         army.currentSystemId = planet.systemId;
@@ -6776,7 +6835,8 @@ function orbitalSupportFor(world: GameWorldState, planet: any, siege: GroundSieg
         isAtWar: (a, b) => isAtWar(world, a, b),
         isFleetOperational,
     });
-    return orbitalFireFor(siege.orbit);
+    // The guns below fire back (lib/combat/surface-guns.ts): less gets through.
+    return orbitalFireFor(siege.orbit) * bombardmentScreen(surfaceGuns(planet, siege.districts?.strongpoints));
 }
 
 /**
@@ -6889,6 +6949,18 @@ export function processSieges(world: GameWorldState) {
         // the surface. Terrain does the arguing — a defender holding mountain
         // passes and dug-in cities gives ground far more slowly than one
         // caught on open plains.
+        // Surface guns the defender still mans fire on the invader's ships
+        // overhead once a cycle (lib/combat/surface-guns.ts). Not on contested
+        // ground: nobody's world has no guns.
+        let gunLog = '';
+        if (updatedSiege.cycleCount > cycleBefore && !updatedSiege.contested && planet.ownerId === updatedSiege.defenderEmpireId) {
+            const guns = surfaceGuns(planet, updatedSiege.districts?.strongpoints);
+            const overhead = guns.power > 0 ? [...world.movement.fleets.values()].filter((f: any) =>
+                f.factionId === updatedSiege.attackerEmpireId && f.currentSystemId === planet.systemId && !f.destinationSystemId) : [];
+            const knocked = overhead.length ? returnFire(overhead, guns, gunTargetOf(planet)) : 0;
+            if (knocked > 0) gunLog = `The guns fire on the ships overhead: ${Math.round(knocked)} power knocked off.`;
+        }
+
         if (updatedSiege.districts && updatedSiege.cycleCount > cycleBefore) {
             const surface = generateSurface(planet.id, planet.planetType, planet.tags);
             const war = updatedSiege.districts;
@@ -6913,6 +6985,7 @@ export function processSieges(world: GameWorldState) {
             // meet, and districts change hands because someone was pushed off
             // them. The abstract front swing is the fallback for old sieges.
             const res = { captured: [] as number[], liberated: [] as number[], log: [] as string[] };
+            if (gunLog) res.log.push(gunLog);
             const battleLosses = {
                 attacker: {} as Record<string, number>,
                 defender: {} as Record<string, number>,
@@ -7126,7 +7199,10 @@ export function processSieges(world: GameWorldState) {
                 // blockade works the other way on the defender: supply
                 // shrinks to the capital core and the strongpoints it mans.
                 const orbitHolder = updatedSiege.orbit?.holder;
-                const cutOff = orbitHolder !== 'attacker';
+                // A contested sky is not a blockade: both sides get half
+                // their supply down, and nobody starves for it.
+                const halfSupply = orbitHolder === 'contested';
+                const cutOff = orbitHolder !== 'attacker' && !halfSupply;
                 const att: any = updatedSiege.attackerState;
                 const def: any = updatedSiege.defenderState;
                 att.cutOffCycles = cutOff ? (att.cutOffCycles ?? 0) + 1 : 0;
@@ -7155,6 +7231,7 @@ export function processSieges(world: GameWorldState) {
                     defenderSources: contest.defender ? ((updatedSiege as any).contestCamp ?? []) : [],
                     starveSurrenderCycles: STARVE_SURRENDER_CYCLES,
                     trickle: runnerTrickle,
+                    half: { attacker: halfSupply, defender: halfSupply },
                 } : {
                     attackerBaseSupplied: att.cutOffCycles <= BLOCKADE_GRACE_CYCLES,
                     defenderSources: phasedOut
@@ -7162,8 +7239,13 @@ export function processSieges(world: GameWorldState) {
                         : undefined,
                     starveSurrenderCycles: STARVE_SURRENDER_CYCLES,
                     trickle: runnerTrickle,
+                    half: { attacker: halfSupply, defender: halfSupply },
                 });
                 res.log.push(...supplyResult.log);
+                if (halfSupply && (updatedSiege as any).lastHalfSupplyCycle !== updatedSiege.cycleCount - 1) {
+                    res.log.push('The sky is contested: only half the supply sent gets down, to either side.');
+                }
+                (updatedSiege as any).lastHalfSupplyCycle = halfSupply ? updatedSiege.cycleCount : undefined;
                 for (const side of ['attacker', 'defender'] as const) {
                     for (const [t, n] of Object.entries(supplyResult.surrendered[side])) {
                         surrendered[side][t] = (surrendered[side][t] ?? 0) + (n as number);

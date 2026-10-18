@@ -399,7 +399,16 @@ export interface SupplyOptions {
      * they go hungry slower, but they still go hungry.
      */
     trickle?: Partial<Record<FormationSide, boolean>>;
+    /**
+     * Sides on half supply: neither they nor the enemy hold the sky, so only
+     * some of what is sent gets down. A formation in supply settles at
+     * HALF_SUPPLY_LEVEL instead of filling up; it does not starve.
+     */
+    half?: Partial<Record<FormationSide, boolean>>;
 }
+
+/** Where an in-supply formation's supply settles on half supply. */
+export const HALF_SUPPLY_LEVEL = 50;
 
 export interface SupplyResult {
     log: string[];
@@ -450,7 +459,9 @@ export function updateSupply(
         const was = f.encircled;
         f.encircled = !inSupply;
         if (inSupply) {
-            f.supply = Math.min(100, f.supply + 20);
+            f.supply = options.half?.[f.side]
+                ? (f.supply > HALF_SUPPLY_LEVEL ? Math.max(HALF_SUPPLY_LEVEL, f.supply - 10) : Math.min(HALF_SUPPLY_LEVEL, f.supply + 10))
+                : Math.min(100, f.supply + 20);
             f.starvedCycles = 0;
         } else {
             const trickle = !!options.trickle?.[f.side];

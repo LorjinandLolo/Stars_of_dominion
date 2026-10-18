@@ -14,6 +14,7 @@ import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatPercent } from '@/lib/ui/format';
 import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
+import { surfaceGuns, gunTargetOf, GUN_TARGETS, GUN_TARGET_LABEL, GUN_TARGET_HINT } from '@/lib/combat/surface-guns';
 
 
 function StatBar({ value, color }: { value: number; color: string }) {
@@ -159,6 +160,9 @@ function PlanetCard({
             setActionBusy(null);
         }
     };
+
+    const guns = isOwnedByPlayer ? surfaceGuns(planet, (planet as any).siege?.districts?.strongpoints) : null;
+    const gunTarget = gunTargetOf(planet);
 
     const canRaid = isEnemyOwned && !!raidFleetId;
     const raid = (target: 'shield' | 'guns' | 'uplink') =>
@@ -370,6 +374,20 @@ function PlanetCard({
                             <Hammer size={10} />
                             BUILD
                         </button>
+                    )}
+
+                    {/* Surface guns: what they fire on when enemy ships are overhead (lib/combat/surface-guns.ts) */}
+                    {guns && guns.power > 0 && (
+                        <select
+                            value={gunTarget}
+                            disabled={actionBusy === 'guns'}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => { e.stopPropagation(); runPlanetAction('guns', 'PLANET_SET_GUN_TARGET', { planetId: planet.id, target: e.target.value }, `Guns on ${planet.name}: ${GUN_TARGET_LABEL[e.target.value as keyof typeof GUN_TARGET_LABEL]}`); }}
+                            title={`Surface guns (${guns.power} power) join space battles over this world, shoot down fighters and bombers first, fire back at bombardment and put flak on landings. ${GUN_TARGET_HINT[gunTarget]}`}
+                            className="flex-1 py-1 px-1 bg-rose-950/30 border border-rose-500/30 rounded text-[9px] text-rose-300 font-bold"
+                        >
+                            {GUN_TARGETS.map(t => <option key={t} value={t}>GUNS: {GUN_TARGET_LABEL[t].toUpperCase()}</option>)}
+                        </select>
                     )}
 
                     {/* Orbit: in-system fleets take it now; a fleet elsewhere is

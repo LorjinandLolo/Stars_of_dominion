@@ -83,13 +83,20 @@ export function orbitState(input: {
 
 /**
  * Whether a side can move troops between orbit and surface right now: the
- * invader needs the orbit; the defender needs it NOT to be the invader's, or
- * a shield to land under.
+ * invader needs the orbit or at least a contested sky; the defender needs it
+ * NOT to be the invader's, or a shield to land under. Under a contested sky
+ * both sides land, and both lose men on the way down to the other's ships
+ * (CONTESTED_LANDING_LOSS in lib/combat/surface-guns.ts).
  */
 export function canCrossOrbit(orbit: OrbitState | undefined, side: 'attacker' | 'defender'): boolean {
     if (!orbit) return true;
-    if (side === 'attacker') return orbit.holder === 'attacker';
+    if (side === 'attacker') return orbit.holder === 'attacker' || orbit.holder === 'contested';
     return orbit.holder !== 'attacker' || orbit.shieldUp;
+}
+
+/** Neither side holds the sky: supply comes down at half rate for both. */
+export function skyContested(orbit: OrbitState | undefined): boolean {
+    return orbit?.holder === 'contested';
 }
 
 /** Orbital fire support the invader can bring to bear this tick. */

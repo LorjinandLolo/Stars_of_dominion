@@ -59,6 +59,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", targetId: "id" },
     cost: { ammo: 100, manpower: 500 }
   },
+  PLANET_SET_GUN_TARGET: {
+    id: "PLANET_SET_GUN_TARGET",
+    category: "military",
+    // What a world's surface guns fire on (lib/combat/surface-guns.ts):
+    // 'capital' | 'escorts' | 'transports' | 'spread'.
+    params: { planetId: "id", target: "string" },
+    cost: {}
+  },
   MIL_COMMANDO_RAID: {
     id: "MIL_COMMANDO_RAID",
     category: "military",

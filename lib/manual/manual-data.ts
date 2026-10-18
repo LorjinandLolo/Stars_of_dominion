@@ -592,6 +592,17 @@ export const MANUAL_DATA: ManualSection[] = [
                             'An invader who loses the orbit is cut off: after 3 cycles their beachhead starts to starve, and after 6 their formations surrender.',
                             'A relief fleet that drives the invader\'s fleet away wins the orbit back; transports waiting nearby can then land fresh troops, who muster at the barracks.',
                             'Troops can never enter some terrain (infantry and armour cannot cross mountains), so a strongpoint in the mountains can only be worn down from orbit.',
+                            'A contested sky (warships of both sides overhead) is not a blockade. Both sides can land troops, and both lose a tenth of them to the other\'s ships on the way down. Both sides get half their supply: men settle at half supply but do not starve.',
+                        ],
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Surface guns: an Orbital Defense Platform (and an outpost\'s batteries) shoots at what is overhead while it stands and its district is yours.',
+                            'Space battles: the guns fight alongside your fleet. They shoot down fighters and bombers first, then fire on the ships you chose on the world\'s card (GUNS: capital ships, escorts, troop transports, or whatever is closest). Ships cannot shoot back at them; bombardment, sabotage and commando raids are how a gun is silenced.',
+                            'Bombardment: the guns fire back. Less reaches the ground (a platform stops 40%) and the bombarding ships take hits. During a siege they fire on the invader\'s ships overhead every cycle; they wear a fleet down but never finish it.',
+                            'Landings: flak. An invasion coming down under a platform loses 15% of its men before it lands, reinforcements too.',
+                            'Air strikes on the world, or on a fleet over it, lose craft to the guns before they strike.',
                         ],
                     },
                     {

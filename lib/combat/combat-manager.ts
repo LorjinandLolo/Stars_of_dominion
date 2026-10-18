@@ -44,6 +44,7 @@ import { orbitalDamageScale } from '../orbital/orbital-service';
 import { experienceMultiplier, gainExperience, EXPERIENCE_CAP, EXPERIENCE_FOR_VICTORY } from './veterancy';
 import { commandingAdmiral, admiralPowerBonus, admiralBattleXp, ADMIRAL_PREDICTION_POINTS } from './admiralty';
 import { LeadershipService } from '../leadership/leadership-service';
+import { systemGuns, pickGunTargets, gunRoundDamage, antiAirVolley } from './surface-guns';
 
 /** Engine default for a correct stance prediction (combat-engine.ts:259). */
 const BASE_PREDICTION_BONUS = 0.15;
@@ -333,6 +334,24 @@ function handleEngagement(
         // its fleets and its orbital defenses by remaining mass.
         ensureTally(state, state.attacker.factionId).powerLost += applyDamageToFleets(fleetsAtk, report.defenderDamageDealt);
         ensureTally(state, state.defender.factionId).powerLost += applyDamageToSide(world, state, state.defender, fleetsDef, report.attackerDamageDealt);
+
+        // Ground-to-space guns (lib/combat/surface-guns.ts): every world a
+        // side owns here fires with it. Fighters and bombers first, then the
+        // ships its owner told the guns to take. Ships cannot hit back at a
+        // gun dug into a planet; bombardment and raids silence guns.
+        for (const [side, enemyFleets] of [[state.attacker, fleetsDef], [state.defender, fleetsAtk]] as const) {
+            const enemy = side === state.attacker ? state.defender : state.attacker;
+            for (const { planet, guns, target } of systemGuns(world.construction?.planets?.values() ?? [], side.factionId, systemId)) {
+                const live = enemyFleets.filter(f => f.strength > 0);
+                if (!live.length) break;
+                const downed = antiAirVolley(live, guns.aaKills);
+                const dealt = applyDamageToFleets(pickGunTargets(live, target), gunRoundDamage(guns));
+                ensureTally(state, enemy.factionId).powerLost += dealt;
+                if (downed || dealt) {
+                    console.log(`[CombatManager] Surface guns on ${planet.name ?? planet.id} fire for ${side.factionId}: ${downed} craft shot down, ${dealt.toFixed(1)} power knocked off (${target}).`);
+                }
+            }
+        }
 
         // Annihilation: the engine's own rule (three prediction points, a
         // 1.25 hp ratio, enemy morale under 0.3, a 15% roll) has existed

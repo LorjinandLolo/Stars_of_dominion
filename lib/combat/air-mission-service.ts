@@ -1,6 +1,7 @@
 // lib/combat/air-mission-service.ts
 import { GameWorldState } from '../game-world-state';
 import { AirSortie } from '../movement/types';
+import { surfaceGuns, antiAirOnSortie, systemGuns } from './surface-guns';
 
 export function advanceSorties(world: GameWorldState) {
     if (!world.movement.sorties) return;
@@ -47,6 +48,14 @@ function resolveStrike(world: GameWorldState, sortie: AirSortie) {
             return;
         }
 
+        // Anti-air from the target owner's guns on the worlds below (lib/combat/surface-guns.ts).
+        if (targetFleet.currentSystemId) {
+            for (const { planet, guns } of systemGuns(world.construction?.planets?.values() ?? [], targetFleet.factionId, targetFleet.currentSystemId)) {
+                const downed = antiAirOnSortie(sortie, guns);
+                if (downed) console.log(`[AirMissionService] Guns on ${planet.name ?? planet.id} shot down ${downed} craft.`);
+            }
+        }
+
         // Dogfight with Target Fleet's Interceptors
         const enemyInterceptors = targetFleet.composition?.['interceptor'] || 0;
         let sortieInts = sortie.composition.interceptor || 0;
@@ -86,8 +95,14 @@ function resolveStrike(world: GameWorldState, sortie: AirSortie) {
     } else if (sortie.missionType === 'strike_planet') {
         // Strike planet infrastructure natively permanently
         const planet = world.economy.planets.get(sortie.targetId);
+        // The world's own guns shoot first (lib/combat/surface-guns.ts).
+        const target: any = world.construction?.planets?.get(sortie.targetId);
+        if (target) {
+            const downed = antiAirOnSortie(sortie, surfaceGuns(target, target.siege?.districts?.strongpoints));
+            if (downed) console.log(`[AirMissionService] Guns on ${target.name ?? target.id} shot down ${downed} craft.`);
+            if (!(sortie.composition.bomber || 0) && !(sortie.composition.interceptor || 0)) { sortie.status = 'destroyed' as any; return; }
+        }
         if (planet && planet.services && planet.services['energy_grid']) {
-            // No native planet air defense for now without bases, assume full strike
             const bombers = sortie.composition.bomber || 0;
             if (bombers > 0) {
                 // Every 10 bombers permanently shears off 1 level of the Energy Grid
