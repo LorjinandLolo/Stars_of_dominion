@@ -16,7 +16,8 @@
     "setup:duel": "npx tsx scripts/setup-dev-duel.ts",
     "db:up": "docker compose up -d",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "models:build": "\"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe\" --background --factory-startup --python scripts/models/build_hulls.py --"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

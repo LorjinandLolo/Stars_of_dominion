@@ -20,8 +20,9 @@ Until a class has a model here it is drawn with a procedural placeholder.
 
 ## Orientation and scale
 
-- glTF convention, Y up. Bow along **+X**, dorsal (top deck) along **+Y**, port along
-  **+Z** before the loader converts it.
+- In Blender (Z up): bow along **+X**, dorsal (top deck) along **+Z**, port along **+Y**.
+  Export with the glTF exporter's default "+Y Up" on. In the exported file that is bow
+  +X, dorsal +Y, port -Z. Only matters for asymmetric hulls.
 - Scale does not matter. The loader scales the model so its length along X matches the
   class footprint used by the sim and the click code, and centres it on the hull.
 - Keep the origin roughly at the hull centre; the loader recentres anyway.
@@ -43,3 +44,11 @@ emissive tint, so bake running lights into the emissive map and keep the albedo
 faction-neutral.
 
 Prompts for generating the concept art live in `docs/art/ship-image-prompts.md`.
+
+## Procedural hulls
+
+`scripts/models/build_hulls.py` builds hulls in headless Blender and writes the `.glb`
+here (`npm run models:build -- cruiser --preview <dir>` also renders a top-down and a
+three-quarter preview). Lights use a 4x4 black/white emission texture: faces whose UVs
+sit on the white half glow in the side's colour. A model from Meshy or Tripo can replace
+any of them: overwrite the file, keep the manifest entry.

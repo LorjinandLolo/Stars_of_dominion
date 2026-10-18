@@ -1,1 +1,5 @@
-{ "ships": {} }
+{
+  "ships": {
+    "cruiser": "cruiser.glb"
+  }
+}
