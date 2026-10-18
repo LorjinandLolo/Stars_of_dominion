@@ -203,7 +203,7 @@ import { answerSanctuaryOrder, demandHandoverOrder, orderCrewJoin, orderCrewLeav
 import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
-import { aiInvasionOrders, aiCommandGroundWars } from '../lib/ai/war-ai';
+import { aiInvasionOrders, aiCommandGroundWars, aiFleetTactics } from '../lib/ai/war-ai';
 import { drainAIOrders } from '../lib/ai/ai-orders';
 import { POLITICAL_CAPITAL_COSTS } from '../lib/actions/political-costs';
 import { checkCeasefireGate, recordTrophyKill } from '../lib/factions/kaerruun';
@@ -832,6 +832,9 @@ async function runGameTick() {
         }
         // ...and command both sides' ground wars where a side is AI-run.
         try { aiCommandGroundWars(world); } catch (e: any) { console.warn('[Tick Worker] AI ground command failed:', e.message); }
+        // ...and fight their fleets as a player does: battle stances, retreats,
+        // merges, bombardment, raids, giving up a lost siege (queued, drained below).
+        try { aiFleetTactics(world); } catch (e: any) { console.warn('[Tick Worker] AI fleet tactics failed:', e.message); }
         // 4.7. Orders AI empires queued (lib/ai/ai-orders.ts) run through the
         // player's own handlers: same gates, same charges, same deed counters.
         try { drainAIOrders(world, executeOrder, orderBudget); } catch (e: any) { console.warn('[Tick Worker] AI order drain failed:', e.message); }

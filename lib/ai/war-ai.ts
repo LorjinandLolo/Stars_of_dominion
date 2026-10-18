@@ -38,6 +38,19 @@
 //      is outnumbered or has stalled. aiCommandGroundWars() fights the ground
 //      war as a player does — a battle plan at the capital district and a
 //      tactic each cycle — for AI attackers and AI defenders alike.
+//   4c. TACTICS. Every worker loop, aiFleetTactics() works the player's fleet
+//      orders: a stance (and a read) each round of a space battle, a post-
+//      battle directive, MIL_COMBAT_RETREAT when outmatched; two mauled
+//      battle groups home at the capital merge (MIL_MERGE_FLEETS) so the yard
+//      can lay a fresh one; a battle group over its own siege bombards once
+//      the shield is down (MIL_BOMBARD_PLANET, tech-gated); one carrying
+//      Special Ops or Airborne raids the shield, the uplink or the guns
+//      (MIL_COMMANDO_RAID); and a siege stalled past abandonStallSeconds and
+//      still outnumbered is given up (MIL_LEAVE_SIEGE) while a fleet overhead
+//      can lift the survivors. Not used, by choice: MIL_SPLIT_FLEET (a battle
+//      group is sized to its yard plan, nothing to detach), AIR_LAUNCH_SORTIE
+//      (the hull plans carry no strike craft), MIL_FLEET_STANCE (the belt AI
+//      lurks its pickets through it; battle groups fight in the open).
 //   5. PEACE. The AI offers peace (and accepts it — aiWarWantsPeace) when its
 //      war has done what it was for: the transcendence window closed, the
 //      prey is down to its last world; or when it has failed: no world taken
@@ -56,7 +69,16 @@ import { factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { changeFleetCourse, isFleetOperational } from '@/lib/movement/movement-service';
 import { isAIRunFaction, warEnemiesOf } from '@/lib/ai/belt-ambush-ai';
 import { isTranscending } from '@/lib/victory/victory-service';
-import { queueAIOrder } from '@/lib/ai/ai-orders';
+import { queueAIOrder, hasQueuedAIOrder, type AIOrder } from '@/lib/ai/ai-orders';
+import { checkOrderTechGate } from '@/lib/tech/order-gates';
+import { POLITICAL_CAPITAL_COSTS } from '@/lib/actions/political-costs';
+import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
+import { canCrossOrbit } from '@/lib/combat/siege/orbit-state';
+import { isOrbitSuppressed } from '@/lib/orbital/orbital-service';
+import { surfaceGuns } from '@/lib/combat/surface-guns';
+import { raidersOf, type RaidTarget } from '@/lib/combat/commando-raid';
+import type { CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
+import combatConfig from '@/lib/combat/combat-config.json';
 import { fleetBuildQuote, hasPendingRecruits, hasQueuedFleetBuild, queueAIFleetBuild, queueAIFleetTopUp, yardCanLay } from '@/lib/ai/ai-fleet-orders';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
@@ -151,6 +173,22 @@ export const WAR = {
     musterDays: 3,
     /** An empire's last world is safe from AI invasion for this long into the season. */
     protectLastWorldDays: 90,
+    /**
+     * A siege that has gained no ground for this long, despite the daily
+     * reinforcements, and whose landing is still outnumbered, is given up:
+     * MIL_LEAVE_SIEGE, survivors lifted off by the fleet overhead.
+     */
+    abandonStallSeconds: 6 * 86400,
+    /** A world given up on is not chosen as a target again for this many sim days. */
+    abandonCooldownDays: 10,
+    /** In a space battle, break off (MIL_COMBAT_RETREAT) below this share of the enemy's power… */
+    combatRetreatRatio: 0.5,
+    /** …once this many rounds have shown it is not a fluke. */
+    combatRetreatAfterRounds: 2,
+    /** Post-battle directive: pursue when this much stronger, orderly retreat when weaker than 1/this. */
+    pursueRatio: 1.5,
+    /** Two battle groups parked at the capital, both below this strength, merge into one. */
+    mergeBelowStrength: 0.75,
 } as const;
 
 /** Hull mix by the capital yard's tier. Lowercase ship classes (lib/combat/ship-registry). */
@@ -192,6 +230,8 @@ interface AIWarRecord {
     lastPeaceOffer: Record<string, number>;
     /** enemyId → why this AI declared (absent for wars declared on it). */
     motive?: Record<string, WarMotive>;
+    /** planetId → when this AI gave up its siege there (MIL_LEAVE_SIEGE). */
+    abandoned?: Record<string, number>;
 }
 
 interface AIWarState {
@@ -461,6 +501,7 @@ function isCapitalWorld(world: GameWorldState, planet: any): boolean {
 function nearestEnemyWorld(world: GameWorldState, fromSystemId: string, enemies: ReadonlySet<string>, factionId: string): any | null {
     const ageOk = seasonAgeSeconds(world) >= WAR.protectLastWorldDays * DAY;
     const motives = recordFor(world, factionId).motive ?? {};
+    const abandoned = recordFor(world, factionId).abandoned ?? {};
     const holdings = new Map<string, any[]>();
     const worldCount = new Map<string, number>();
     for (const p of world.construction.planets.values() as Iterable<any>) {
@@ -475,6 +516,8 @@ function nearestEnemyWorld(world: GameWorldState, fromSystemId: string, enemies:
         // Colonies first: a capital is only a target once it is all they hold.
         if (isCapitalWorld(world, p) && (worldCount.get(p.ownerId) ?? 0) > 1) continue;
         if (p.siege && p.siege.attackerEmpireId && p.siege.attackerEmpireId !== factionId) continue;
+        // A siege we gave up: not straight back into the same meat grinder.
+        if (world.nowSeconds - (abandoned[p.id] ?? -Infinity) < WAR.abandonCooldownDays * DAY) continue;
         const list = holdings.get(p.systemId) ?? [];
         list.push(p);
         holdings.set(p.systemId, list);
@@ -810,10 +853,7 @@ export function aiInvasionOrders(world: GameWorldState): AIInvasionOrder[] {
             if (!stalled && !siegeNeedsReinforcement(planet.siege)) continue;
             if (stalled) mission.bestShareAt = world.nowSeconds; // one reinforcement per stall
         } else if (mission.lastVolleyAt && world.nowSeconds - mission.lastVolleyAt < WAR.volleyEverySeconds) continue;
-        const hostileHere = [...world.movement.fleets.values()].some(o =>
-            o.factionId !== f.factionId && o.currentSystemId === f.currentSystemId && !o.destinationSystemId
-            && isFleetOperational(o) && !isCivilianFleet(o) && isAtWar(world, f.factionId, o.factionId));
-        if (hostileHere) continue;
+        if (hostileFleetHere(world, f)) continue;
         mission.lastVolleyAt = world.nowSeconds;
         out.push({ factionId: f.factionId, payload: { fleetId: f.id, planetId: planet.id, systemId: mission.targetSystemId } });
     }
@@ -821,10 +861,8 @@ export function aiInvasionOrders(world: GameWorldState): AIInvasionOrder[] {
 }
 
 function siegeNeedsReinforcement(siege: any): boolean {
-    const formations: any[] = siege.districts?.formations ?? [];
-    const sum = (side: string) => formations.filter(f => f.side === side).reduce((a, f) => a + (f.strength ?? 0), 0);
-    if (formations.length > 0) return sum('attacker') < sum('defender') * WAR.reinforceBelowRatio;
-    return (siege.attackerState?.totalLandedTroops ?? 0) < (siege.defenderState?.garrisonTroops ?? 0) * WAR.reinforceBelowRatio;
+    const { attacker, defender } = siegeStrengths(siege);
+    return attacker < defender * WAR.reinforceBelowRatio;
 }
 
 // ─── 4b. Commanding the ground war (every worker loop) ───────────────────────
@@ -929,4 +967,263 @@ export function aiCommandGroundWars(world: GameWorldState): void {
             }
         }
     }
+}
+
+// ─── 4c. Fleet tactics (every worker loop) ───────────────────────────────────
+
+/**
+ * Queue a tactical order as a player would have to issue it: the tech gate
+ * (checkOrderTechGate, the table executeOrder enforces) and the political-
+ * capital price (lib/actions/political-costs.ts) are checked first, as
+ * lib/ai/offence-ai.ts does, so the AI never queues an order the handler
+ * would only refuse.
+ */
+function tacticOrder(world: GameWorldState, o: AIOrder): boolean {
+    if (!checkOrderTechGate(world as any, o.factionId, o.actionId).allowed) return false;
+    const price = POLITICAL_CAPITAL_COSTS[o.actionId] ?? 0;
+    const pc = Number((world as any).government?.get?.(o.factionId)?.politicalCapital);
+    if (price > 0 && Number.isFinite(pc) && pc < price) return false;
+    // The treasury charge (lib/actions/registry: ammo for a bombardment),
+    // with double in hand as every AI purchase keeps — the invasions need it more.
+    const cost = (ACTION_DEFINITIONS as any)[o.actionId]?.cost as Record<string, number> | undefined;
+    if (cost) {
+        const upper = Object.fromEntries(Object.entries(cost).map(([k, v]) => [k.toUpperCase(), v]));
+        if (!canAfford((world.economy.factions.get(o.factionId) as any)?.reserves, upper, 2)) return false;
+    }
+    return queueAIOrder(world, o);
+}
+
+export interface FleetTactics {
+    stances: Array<{ factionId: string; combatId: string; stance: CombatStance; prediction?: CombatStance }>;
+    directives: Array<{ factionId: string; combatId: string; directive: PostBattleDirective }>;
+    retreats: Array<{ factionId: string; combatId: string }>;
+    merges: Array<{ factionId: string; sourceFleetId: string; targetFleetId: string }>;
+    bombardments: Array<{ factionId: string; fleetId: string; planetId: string }>;
+    raids: Array<{ factionId: string; fleetId: string; planetId: string; target: RaidTarget }>;
+    abandoned: Array<{ factionId: string; planetId: string }>;
+}
+
+const STANCE_COUNTERS = (combatConfig as any).stanceCounters as Record<string, Partial<Record<string, number>>>;
+/** Stances an AI fights in. `withdraw` is for a side that means to leave; the AI leaves by MIL_COMBAT_RETREAT. */
+const FIGHT_STANCES: CombatStance[] = ['shock', 'blitz', 'entrench', 'feint', 'sabotage'];
+/** Chance the AI answers the enemy's last stance with its counter, rather than mixing it up. */
+const COUNTER_CHANCE = 0.6;
+
+/** The stance that does best against `enemy`; ties go to the first listed. */
+export function counterStanceTo(enemy: CombatStance): CombatStance {
+    let best = FIGHT_STANCES[0];
+    let score = -Infinity;
+    for (const s of FIGHT_STANCES) {
+        const v = STANCE_COUNTERS[s]?.[enemy] ?? 0;
+        if (v > score) { best = s; score = v; }
+    }
+    return best;
+}
+
+/** Armed power `factionId` has parked in `systemId`. */
+function powerIn(world: GameWorldState, systemId: string, factionId: string): number {
+    let sum = 0;
+    for (const f of world.movement.fleets.values()) {
+        if (f.factionId !== factionId || f.currentSystemId !== systemId || f.destinationSystemId) continue;
+        if (!isFleetOperational(f) || isCivilianFleet(f)) continue;
+        sum += (f.basePower ?? 0) * (f.strength ?? 1);
+    }
+    return sum;
+}
+
+function hostileFleetHere(world: GameWorldState, f: Fleet): boolean {
+    return [...world.movement.fleets.values()].some(o =>
+        o.factionId !== f.factionId && o.currentSystemId === f.currentSystemId && !o.destinationSystemId
+        && isFleetOperational(o) && !isCivilianFleet(o) && isAtWar(world, f.factionId, o.factionId));
+}
+
+/** Ground strength on the board for each side of a siege. */
+function siegeStrengths(siege: any): { attacker: number; defender: number } {
+    const formations: any[] = siege.districts?.formations ?? [];
+    if (formations.length > 0) {
+        const sum = (side: string) => formations.filter(f => f.side === side).reduce((a, f) => a + (f.strength ?? 0), 0);
+        return { attacker: sum('attacker'), defender: sum('defender') };
+    }
+    return { attacker: siege.attackerState?.totalLandedTroops ?? 0, defender: siege.defenderState?.garrisonTroops ?? 0 };
+}
+
+/** The defender still has its shield: bombardment would only splash off it. */
+function shieldHolds(siege: any): boolean {
+    if (siege.orbit?.shieldUp) return true;
+    return (siege.districts?.strongpoints ?? []).some((p: Strongpoint) => p.kind === 'shield' && p.active && p.holder === 'defender');
+}
+
+/**
+ * What a raid should hit. Before the landing: the shield (it blocks the
+ * bombardment and lets the defender land), else the orbital uplink while the
+ * orbit still holds (the stations go offline and the orbit falls faster),
+ * else the guns (flak on the way down). During our own siege: the shield
+ * strongpoint, else the guns that flak every reinforcement.
+ */
+function raidTargetFor(planet: any, siege: any | null): RaidTarget | null {
+    if (siege) {
+        if (shieldHolds(siege)) return 'shield';
+    } else {
+        const shield = (planet.tiles ?? []).some((t: any) => t.buildingId === 'shield_generator' && t.constructionState === 'active');
+        if (shield) return 'shield';
+        if (!isOrbitSuppressed(planet)) return 'uplink';
+    }
+    return surfaceGuns(planet, siege?.districts?.strongpoints).power > 0 ? 'guns' : null;
+}
+
+/**
+ * The war AI's fleet tactics, through the player's orders (lib/ai/ai-orders
+ * outbox, drained into executeOrder in the same loop). Called every worker
+ * loop after aiInvasionOrders. See 4c in the header.
+ */
+export function aiFleetTactics(world: GameWorldState): FleetTactics {
+    const out: FleetTactics = { stances: [], directives: [], retreats: [], merges: [], bombardments: [], raids: [], abandoned: [] };
+    if (!Array.isArray((world as any).claimedFactionIds)) return out;
+    const now = world.nowSeconds;
+
+    // ── Space battles: a stance each round, a directive, retreat when outmatched.
+    for (const combat of (world.activeCombats?.values?.() ?? []) as Iterable<any>) {
+        if (combat.resolved) continue;
+        const systemId: string | undefined = combat.target?.systemId;
+        if (!systemId) continue;
+        const pairs: Array<[any, any]> = [[combat.attacker, combat.defender], [combat.defender, combat.attacker]];
+        for (const [side, enemy] of pairs) {
+            const factionId: string | undefined = side?.factionId;
+            if (!factionId || !isAIRunFaction(world as any, factionId) || !isEmpire(world, factionId)) continue;
+            const memo: Record<string, any> = combat.aiTactics ?? (combat.aiTactics = {});
+            const m = memo[factionId] ?? (memo[factionId] = {});
+            if (m.retreat) continue;
+            const ours = powerIn(world, systemId, factionId);
+            const theirs = powerIn(world, systemId, enemy?.factionId);
+            const rounds = Number(combat.elapsedRounds ?? combat.round ?? 0);
+
+            // Outmatched for long enough that it is no fluke: break off, as a
+            // player clicks Disengage. The handler sends the fleets home.
+            if (rounds >= WAR.combatRetreatAfterRounds && theirs > 0 && ours < theirs * WAR.combatRetreatRatio) {
+                if (tacticOrder(world, { factionId, actionId: 'MIL_COMBAT_RETREAT', payload: { combatId: combat.id }, reason: `outmatched at ${systemId}` })) {
+                    m.retreat = true;
+                    out.retreats.push({ factionId, combatId: combat.id });
+                    continue;
+                }
+            }
+
+            // A stance for the coming round, and sometimes a read of theirs.
+            // The read assumes they repeat; the stance counters what they
+            // last showed — most of the time, so it cannot be farmed.
+            if (m.round !== rounds) {
+                const last: CombatStance | undefined = enemy?.currentStance;
+                const stance = last && Math.random() < COUNTER_CHANCE
+                    ? counterStanceTo(last)
+                    : FIGHT_STANCES[Math.floor(Math.random() * FIGHT_STANCES.length)];
+                const prediction = last && Math.random() < AI_READ_CHANCE ? last : undefined;
+                if (tacticOrder(world, { factionId, actionId: 'MIL_COMBAT_STANCE', payload: { combatId: combat.id, stance, prediction }, reason: `round ${rounds} at ${systemId}` })) {
+                    m.round = rounds;
+                    out.stances.push({ factionId, combatId: combat.id, stance, prediction });
+                }
+            }
+
+            // What to do when it ends: run them down when well ahead, fall
+            // back in order when behind, otherwise hold the field.
+            const directive: PostBattleDirective = ours >= theirs * WAR.pursueRatio ? 'pursue'
+                : ours * WAR.pursueRatio < theirs ? 'orderly_retreat' : 'consolidate';
+            if (m.directive !== directive
+                && tacticOrder(world, { factionId, actionId: 'MIL_COMBAT_DIRECTIVE', payload: { combatId: combat.id, directive }, reason: `${directive} at ${systemId}` })) {
+                m.directive = directive;
+                out.directives.push({ factionId, combatId: combat.id, directive });
+            }
+        }
+    }
+
+    // ── Battle groups, by faction.
+    const byFaction = new Map<string, Fleet[]>();
+    for (const f of world.movement.fleets.values()) {
+        if (!isWarfleetId(f.id) || !isAIRunFaction(world as any, f.factionId)) continue;
+        const list = byFaction.get(f.factionId) ?? [];
+        list.push(f);
+        byFaction.set(f.factionId, list);
+    }
+
+    for (const [factionId, fleets] of [...byFaction.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        fleets.sort((a, b) => a.id.localeCompare(b.id));
+
+        // Two mauled battle groups home at the yard become one: a full-strength
+        // group is worth more than two broken ones, and the freed slot lets
+        // the war AI lay a fresh one.
+        const capital = (world.economy.factions.get(factionId) as any)?.capitalSystemId as string | undefined;
+        if (capital && !hasQueuedAIOrder(world, factionId, 'MIL_MERGE_FLEETS')) {
+            const home = fleets.filter(f => f.currentSystemId === capital && !f.destinationSystemId && isFleetOperational(f)
+                && !isFitting(world, f) && !missionOf(f) && (f.strength ?? 1) < WAR.mergeBelowStrength);
+            if (home.length >= 2) {
+                const [target, source] = home;
+                if (tacticOrder(world, { factionId, actionId: 'MIL_MERGE_FLEETS', payload: { sourceFleetId: source.id, targetFleetId: target.id }, reason: `merge ${source.id} into ${target.id}` })) {
+                    out.merges.push({ factionId, sourceFleetId: source.id, targetFleetId: target.id });
+                }
+            }
+        }
+
+        // Over the target: raid its defences, and bombard our own siege once the shield is down.
+        for (const f of fleets) {
+            const mission = missionOf(f);
+            if (!mission || mission.relief || f.destinationSystemId || f.currentSystemId !== mission.targetSystemId) continue;
+            if (!isFleetOperational(f) || (f.strength ?? 1) < WAR.retreatStrength) continue;
+            const planet = world.construction.planets.get(mission.targetPlanetId) as any;
+            if (!planet?.ownerId || planet.ownerId === factionId || !isAtWar(world, factionId, planet.ownerId)) continue;
+            if (hostileFleetHere(world, f)) continue;
+            const siege = planet.siege?.attackerEmpireId === factionId ? planet.siege : null;
+            if (planet.siege && !siege) continue; // someone else's siege: stand off
+
+            const raiders = (f.transportedArmyIds ?? [])
+                .map((id: string) => world.movement.armies?.get(id) as any)
+                .find((a: any) => a && Object.keys(raidersOf(a)).length > 0 && (a.raidReadyAt ?? 0) <= now);
+            if (raiders && !hasQueuedAIOrder(world, factionId, 'MIL_COMMANDO_RAID', p => p.fleetId === f.id)) {
+                const target = raidTargetFor(planet, siege);
+                if (target && tacticOrder(world, { factionId, actionId: 'MIL_COMMANDO_RAID', payload: { fleetId: f.id, planetId: planet.id, target }, reason: `raid ${target} on ${planet.id}` })) {
+                    out.raids.push({ factionId, fleetId: f.id, planetId: planet.id, target });
+                }
+            }
+
+            const lastBombard = (mission as any).lastBombardAt ?? -Infinity;
+            if (siege && siege.orbit?.holder === 'attacker' && !shieldHolds(siege) && now - lastBombard >= WAR.volleyEverySeconds) {
+                if (tacticOrder(world, { factionId, actionId: 'MIL_BOMBARD_PLANET', payload: { fleetId: f.id, planetId: planet.id, mode: 'FORTIFICATION' }, reason: `bombard ${planet.id}` })) {
+                    (mission as any).lastBombardAt = now;
+                    out.bombardments.push({ factionId, fleetId: f.id, planetId: planet.id });
+                }
+            }
+        }
+    }
+
+    // ── Sieges given up: stalled and still outnumbered (or the court wants
+    // peace and the landing is losing). Only while a fleet overhead can lift
+    // the survivors; without one, leaving hands them over as prisoners, and
+    // a starving beachhead does that by itself anyway.
+    for (const planet of world.construction.planets.values() as Iterable<any>) {
+        const siege = planet.siege;
+        const factionId: string | undefined = siege?.attackerEmpireId;
+        if (!factionId || !isAIRunFaction(world as any, factionId) || !isEmpire(world, factionId)) continue;
+        const share = Number(siege.defenderState?.occupationProgress ?? 0);
+        const progress = siege.aiProgress ?? (siege.aiProgress = { share, at: now });
+        if (share > progress.share) { progress.share = share; progress.at = now; }
+        const { attacker, defender } = siegeStrengths(siege);
+        const outnumbered = attacker < defender;
+        const stalled = now - progress.at >= WAR.abandonStallSeconds;
+        if (!outnumbered || !(stalled || aiWarWantsPeace(world, factionId, siege.defenderEmpireId))) continue;
+        if (!canCrossOrbit(siege.orbit, 'attacker')) continue;
+        const lift = [...world.movement.fleets.values()].some(f => f.factionId === factionId
+            && f.currentSystemId === planet.systemId && !f.destinationSystemId && isFleetOperational(f));
+        if (!lift || hasQueuedAIOrder(world, factionId, 'MIL_LEAVE_SIEGE', p => p.planetId === planet.id)) continue;
+        const planetId = planet.id;
+        if (tacticOrder(world, {
+            factionId, actionId: 'MIL_LEAVE_SIEGE', payload: { planetId }, reason: `gives up the siege of ${planetId}`,
+            onDone: (w: GameWorldState) => {
+                const p = w.construction.planets.get(planetId) as any;
+                if (p?.siege?.attackerEmpireId === factionId) return; // refused
+                (recordFor(w, factionId).abandoned ??= {})[planetId] = w.nowSeconds;
+                for (const f of w.movement.fleets.values()) {
+                    if (f.factionId === factionId && missionOf(f)?.targetPlanetId === planetId) setMission(w, f, null);
+                }
+                console.log(`[War AI] ${factionId} gave up the siege of ${p?.name ?? planetId}.`);
+            },
+        })) out.abandoned.push({ factionId, planetId });
+    }
+    return out;
 }

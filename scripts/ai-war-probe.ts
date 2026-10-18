@@ -16,7 +16,7 @@ import { drainBuffer } from '../lib/narrative/chronicle';
 import { executeOrder, processSieges } from './game-loop';
 import { processSectorCombats } from '../lib/combat/combat-manager';
 import { advanceFleet } from '../lib/movement/movement-service';
-import { aiInvasionOrders, aiCommandGroundWars, isWarfleetId, seasonAgeSeconds, WAR, warCandidates } from '../lib/ai/war-ai';
+import { aiInvasionOrders, aiCommandGroundWars, aiFleetTactics, isWarfleetId, seasonAgeSeconds, WAR, warCandidates } from '../lib/ai/war-ai';
 import { isAtWar } from '../lib/diplomacy/offer-service';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { factionFleetPower } from '../lib/diplomacy/gambit-service';
@@ -85,6 +85,8 @@ async function main() {
     const fleetsAtBoot = new Set([...world.movement.fleets.keys()]);
     const recruited = new Set<string>();
     const aiWarships = new Set<string>();
+    // Fleet tactics the AI queued over the run (aiFleetTactics), by kind.
+    const tacticCounts: Record<string, number> = {};
 
     for (let i = 1; i <= ticks; i++) {
         // ── The worker's inner loop, between strategic ticks ─────────────────
@@ -103,6 +105,8 @@ async function main() {
                 executeOrder(world, 'MIL_INVASION_PLANET', order.payload, order.factionId);
             }
             aiCommandGroundWars(world);
+            const tactics = aiFleetTactics(world);
+            for (const [k, list] of Object.entries(tactics)) tacticCounts[k] = (tacticCounts[k] ?? 0) + list.length;
             // As the worker: queued AI orders, then the yards lay their hulls
             // (AI battle groups are built through MIL_BUILD_FLEET now).
             drainAIOrders(world, executeOrder, orderBudget);
@@ -160,6 +164,7 @@ async function main() {
     console.log(`\nAI war — ${ticks} ticks (${simDays} sim days), seed ${seed}, humans idle: ${humans.join(', ')}`);
     console.log(`Human seats hold a colony each: ${colonies.join(', ') || 'none founded'}`);
     console.log(`Peak non-war rivalry ${peakRivalry.toFixed(0)}; most warfleets one AI held: ${maxWarfleets}; invasion volleys: ${invasionOrders}`);
+    console.log(`Fleet tactics queued: ${Object.entries(tacticCounts).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}`);
     console.log('Declarations:');
     for (const d of declarations) console.log(`  day ${d.day.toFixed(1).padStart(6)}  ${d.by} → ${d.on}`);
     console.log('Sieges that ended:');

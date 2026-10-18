@@ -6,7 +6,10 @@
 // constitutional secession crisis, prisoners of war, per-empire war fatigue,
 // and declarations through DIP_DECLARE_WAR. Tier 2: battle groups and belt
 // pickets built through MIL_BUILD_FLEET + MIL_RECRUIT_FORMATION_UNIT (price,
-// yard gate, build timer), never conjured. Each scenario is planted, one real
+// yard gate, build timer), never conjured. Tier 3 fleet tactics: merging,
+// battle stances and directives, disengaging, tech-gated bombardment, giving
+// up a stalled siege, commando raids and belt stances, all through the
+// player's orders (aiFleetTactics, MIL_FLEET_STANCE). Each scenario is planted, one real
 // strategic tick runs through the soak harness (which drains the AI order
 // outbox into executeOrder exactly as the worker does), and the outcome is
 // read back off the round-tripped world.
@@ -16,7 +19,8 @@
 import { bootSoakWorld, empireIds, quietConsole, seedSimulation, stepSoak } from './soak-harness';
 import { executeOrder } from './game-loop';
 import { drainAIOrders, queueAIOrder } from '../lib/ai/ai-orders';
-import { aiDeclareWar, aiWarTurn, isWarfleetId, warFatigueOf, warfleetQuote } from '../lib/ai/war-ai';
+import { aiDeclareWar, aiFleetTactics, aiWarTurn, isWarfleetId, WAR, warFatigueOf, warfleetQuote } from '../lib/ai/war-ai';
+import { hasAsteroidBelt } from '../lib/movement/belts';
 import { beltAmbushTurn } from '../lib/ai/belt-ambush-ai';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
 import { minYardTierFor, systemYardFor } from '../lib/combat/shipyard-gate';
@@ -210,6 +214,127 @@ async function main() {
     const conjured = [...world.movement.fleets.values()].filter((f: any) => !fleetsAtBoot.has(f.id) && ids.includes(f.factionId)
         && f.factionId !== human && (isWarfleetId(f.id) || /-trap-\d+$/.test(f.id)) && !targets.has(f.id));
     check('no AI warfleet or picket appeared without a recruitment job', conjured.length === 0, conjured.map((f: any) => f.id).join(', '));
+
+    // ── Fleet tactics go through the player's orders (aiFleetTactics) ────────
+    // Planted from here on (a second battle group, battles, a siege): after
+    // the conjuring check on purpose.
+    const capital: string = world.economy.factions.get(ai).capitalSystemId;
+    const neighbour: string = [...(world.movement.systems.get(capital)?.hyperlaneNeighbors ?? [])].sort()[0];
+    const bg: any = world.movement.fleets.get(wfId!);
+    const twinId = `fleet-${ai}-war-9`;
+    world.movement.fleets.set(twinId, { ...bg, id: twinId, name: 'Probe Twin', composition: { ...bg.composition }, aiMission: undefined });
+    for (const id of [wfId!, twinId]) Object.assign(world.movement.fleets.get(id)!, { strength: 0.5, currentSystemId: capital, destinationSystemId: null, aiMission: undefined });
+    const powerTwo = bg.basePower * 2;
+    let tac = aiFleetTactics(world);
+    check('two mauled battle groups at home are merged by order, not in place', tac.merges.length === 1 && world.movement.fleets.has(twinId),
+        JSON.stringify(tac.merges));
+    drainAIOrders(world, executeOrder);
+    const merged: any = world.movement.fleets.get(wfId!);
+    check('MIL_MERGE_FLEETS absorbed the twin', !world.movement.fleets.has(twinId) && Math.round(merged?.basePower) === Math.round(powerTwo),
+        `power ${merged?.basePower} vs ${powerTwo}`);
+    merged.strength = 1;
+
+    // A space battle away from home: the AI picks a stance and a directive each round.
+    const enemyFleet: any = { ...bg, id: 'fleet-probe-enemy', factionId: target, name: 'Probe Enemy', composition: { corvette: 1 }, basePower: 10, strength: 1, aiMission: undefined, currentSystemId: neighbour, destinationSystemId: null };
+    world.movement.fleets.set(enemyFleet.id, enemyFleet);
+    Object.assign(merged, { currentSystemId: neighbour, destinationSystemId: null, originSystemId: null });
+    const combat: any = {
+        id: 'combat-probe', target: { systemId: neighbour }, phase: 'orbital', round: 1, elapsedRounds: 1, momentum: 0, territoryControl: 0,
+        attacker: { factionId: ai }, defender: { factionId: target, currentStance: 'entrench' }, isSkirmish: false, annihilationEligible: false, resolved: false,
+    };
+    world.activeCombats.set(combat.id, combat);
+    tac = aiFleetTactics(world);
+    drainAIOrders(world, executeOrder);
+    const ownStance = tac.stances.filter(s => s.factionId === ai);
+    check('the AI sets a battle stance through MIL_COMBAT_STANCE', ownStance.length === 1 && combat.attacker.selectedStance === ownStance[0].stance,
+        `${combat.attacker.selectedStance}, read ${combat.attacker.selectedPrediction ?? 'none'}`);
+    check('well ahead, it orders the pursuit (MIL_COMBAT_DIRECTIVE)', combat.attacker.selectedDirective === 'pursue', combat.attacker.selectedDirective);
+    check('one stance a round: nothing re-queued in the same round', aiFleetTactics(world).stances.length === 0);
+    drainAIOrders(world, executeOrder);
+    // Now outmatched, two rounds in: it disengages and the handler sends it home.
+    enemyFleet.basePower = merged.basePower * 4;
+    combat.elapsedRounds = 3;
+    tac = aiFleetTactics(world);
+    drainAIOrders(world, executeOrder);
+    const fled: any = world.movement.fleets.get(wfId!);
+    check('outmatched, it disengages through MIL_COMBAT_RETREAT', tac.retreats.length === 1 && !!fled?.destinationSystemId,
+        `destination ${fled?.destinationSystemId ?? 'none'}`);
+    world.activeCombats.delete(combat.id);
+    world.movement.fleets.delete(enemyFleet.id);
+
+    // A siege of ours with the orbit held and no shield: bombard — once the tech allows it.
+    const prey: any = [...world.construction.planets.values()].find((p: any) => p.ownerId === target && !p.siege);
+    Object.assign(fled, { currentSystemId: prey.systemId, destinationSystemId: null, strength: 1,
+        aiMission: { targetPlanetId: prey.id, targetSystemId: prey.systemId, enemyId: target, assignedAt: world.nowSeconds } });
+    prey.siege = {
+        siegeId: 'siege-probe', planetId: prey.id, attackerEmpireId: ai, defenderEmpireId: target, phase: 'GROUND_COMBAT', cycleCount: 3,
+        orbit: { holder: 'attacker', shieldUp: false, attackerPower: fled.basePower, defenderPower: 0 },
+        attackerState: { totalLandedTroops: 900, unitComposition: { INFANTRY: 900 }, morale: 70 },
+        defenderState: { garrisonTroops: 300, occupationProgress: 0.1 }, battleLog: [],
+    };
+    const tech: any = world.tech.get(ai);
+    if (tech) tech.unlockedTechIds = (tech.unlockedTechIds ?? []).filter((id: string) => id !== 'mil_t1_7');
+    check('no bombardment is queued without Orbital Bombardment I', aiFleetTactics(world).bombardments.length === 0);
+    drainAIOrders(world, executeOrder);
+    if (tech) tech.unlockedTechIds = [...(tech.unlockedTechIds ?? []), 'mil_t1_7'];
+    // The handler charges 50 ammo (lib/actions/registry); the AI keeps double in hand.
+    if (reserves.AMMO !== undefined) {
+        reserves.AMMO = 60;
+        check('no bombardment is queued without the ammo for it in hand', aiFleetTactics(world).bombardments.length === 0);
+        drainAIOrders(world, executeOrder);
+        reserves.AMMO = 5000;
+    }
+    const stabilityBefore = prey.stability ?? 60;
+    tac = aiFleetTactics(world);
+    drainAIOrders(world, executeOrder);
+    check('with the tech and the shield down, it bombards through MIL_BOMBARD_PLANET', tac.bombardments.length === 1 && (prey.stability ?? 60) < stabilityBefore,
+        `${tac.bombardments.length} queued, stability ${stabilityBefore} → ${prey.stability}`);
+    prey.siege.orbit.shieldUp = true;
+    (fled.aiMission as any).lastBombardAt = -Infinity;
+    check('a shield still up: no bombardment', aiFleetTactics(world).bombardments.length === 0);
+    drainAIOrders(world, executeOrder);
+    prey.siege.orbit.shieldUp = false;
+
+    // The landing stalls, outnumbered, for longer than abandonStallSeconds: it gives the siege up and lifts the men off.
+    Object.assign(prey.siege.attackerState, { totalLandedTroops: 100, unitComposition: { INFANTRY: 100 } });
+    prey.siege.defenderState.garrisonTroops = 1000;
+    prey.siege.aiProgress = { share: 0.1, at: world.nowSeconds - WAR.abandonStallSeconds - 1 };
+    tac = aiFleetTactics(world);
+    drainAIOrders(world, executeOrder);
+    const evac = [...(world.movement.armies?.values() ?? [])].find((a: any) => a.transportFleetId === wfId && /-evac-/.test(a.id));
+    check('a stalled, outnumbered siege is given up through MIL_LEAVE_SIEGE', tac.abandoned.length === 1 && !prey.siege,
+        `${tac.abandoned.length} queued, siege ${prey.siege ? 'still on' : 'ended'}, survivors aboard: ${evac ? 'yes' : 'no'}`);
+    check('…its mission is dropped and the world is off the target list for a while',
+        !(world.movement.fleets.get(wfId!) as any)?.aiMission && Number.isFinite((world as any).aiWar.factions[ai].abandoned?.[prey.id]));
+
+    // Raiders aboard, over a defended world before the landing: a commando raid.
+    const raided: any = [...world.construction.planets.values()].find((p: any) => p.ownerId === target && p.id !== prey.id && !p.siege) ?? prey;
+    raided.tiles = [...(raided.tiles ?? []), { tileId: 'probe-shield', buildingId: 'shield_generator', constructionState: 'active', sectorIndex: 40 }];
+    if (!world.movement.armies) world.movement.armies = new Map();
+    const commando: any = { id: 'army-probe-raiders', factionId: ai, name: 'Probe Commando', currentPlanetId: null, currentSystemId: raided.systemId, transportFleetId: wfId, composition: { SPECIAL_OPS: 200 }, strength: 1, morale: 80 };
+    world.movement.armies.set(commando.id, commando);
+    const raider: any = world.movement.fleets.get(wfId!);
+    Object.assign(raider, { currentSystemId: raided.systemId, destinationSystemId: null, transportedArmyIds: [commando.id],
+        aiMission: { targetPlanetId: raided.id, targetSystemId: raided.systemId, enemyId: target, assignedAt: world.nowSeconds } });
+    tac = aiFleetTactics(world);
+    drainAIOrders(world, executeOrder);
+    check('with raiders aboard it raids the shield first through MIL_COMMANDO_RAID', tac.raids.length === 1 && tac.raids[0].target === 'shield'
+        && (commando.raidReadyAt ?? 0) > world.nowSeconds, `${tac.raids[0]?.target ?? 'no raid'}, raiders ready at ${commando.raidReadyAt ?? 'never'}`);
+    check('the raiders rest before the next raid', aiFleetTactics(world).raids.length === 0);
+    drainAIOrders(world, executeOrder);
+
+    // Belt pickets lurk through MIL_FLEET_STANCE, not by writing the stance.
+    const beltSys = [...world.movement.systems.keys()].find(id => hasAsteroidBelt(id));
+    if (beltSys) {
+        const picketId = `fleet-${ai}-trap-9`;
+        world.movement.fleets.set(picketId, { ...bg, id: picketId, name: 'Probe Picket', composition: { corvette: 3 }, basePower: 30, strength: 1, currentSystemId: beltSys, destinationSystemId: null, stance: null, aiMission: undefined, transportedArmyIds: [] });
+        const lurk = beltAmbushTurn(world as any, ai);
+        const p0: any = world.movement.fleets.get(picketId);
+        const queuedOnly = lurk.lurking.includes(picketId) && p0.stance !== 'belt';
+        drainAIOrders(world, executeOrder);
+        check('a picket in a belt lurks through MIL_FLEET_STANCE', queuedOnly && (world.movement.fleets.get(picketId) as any)?.stance === 'belt',
+            `queued first: ${queuedOnly}, stance now ${(world.movement.fleets.get(picketId) as any)?.stance}`);
+    }
 
     quiet.restore();
     console.log('\nAI parity probe');

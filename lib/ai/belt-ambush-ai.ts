@@ -23,6 +23,7 @@ import { hasAsteroidBelt, AMBUSH_WAR_ESCALATION } from '../movement/belts';
 import { isFleetOperational, issueMoveOrder } from '../movement/movement-service';
 import { minYardTierFor, type YardPlanetLike } from '../combat/shipyard-gate';
 import { fleetBuildQuote, hasQueuedFleetBuild, queueAIFleetBuild, yardCanLay } from './ai-fleet-orders';
+import { queueAIOrder } from './ai-orders';
 
 /** Same test as lib/ai/war-ai.ts isWarfleetId — kept local so the two modules do not import each other. */
 function isWarfleetId(id: string): boolean {
@@ -186,20 +187,24 @@ export function beltAmbushTurn(world: BeltAmbushWorldView, factionId: string): B
     const pickets = own.filter(f => f.id !== scoutId && !isWarfleetId(f.id) && isFleetOperational(f));
 
     const enemies = warEnemiesOf(world, factionId);
+    // Stances go through the player's MIL_FLEET_STANCE (belt system and parked
+    // checks in the handler), drained with the rest of the AI's orders.
+    const stance = (f: Fleet, s: 'belt' | 'open') => queueAIOrder(world, {
+        factionId, actionId: 'MIL_FLEET_STANCE', payload: { fleetId: f.id, stance: s }, reason: `${f.id} ${s === 'belt' ? 'lurks' : 'stands down'}`,
+    });
     if (enemies.size === 0) {
         for (const f of pickets) {
-            if (f.stance === 'belt') { f.stance = null; turn.stoodDown.push(f.id); }
+            if (f.stance === 'belt' && isParked(f) && stance(f, 'open')) turn.stoodDown.push(f.id);
         }
         return turn;
     }
 
     // 2. Parked in a belt → lurk.
+    const lurking = new Set<string>();
     for (const f of pickets) {
         if (!isParked(f) || !hasAsteroidBelt(f.currentSystemId!)) continue;
-        if (f.stance !== 'belt') {
-            f.stance = 'belt';
-            f.orbitingPlanetId = null;
-        }
+        if (f.stance !== 'belt' && !stance(f, 'belt')) continue;
+        lurking.add(f.id);
         turn.lurking.push(f.id);
     }
 
@@ -207,13 +212,13 @@ export function beltAmbushTurn(world: BeltAmbushWorldView, factionId: string): B
     const traps = trapSystemsFor(world, factionId, enemies);
     const tended = new Set<string>();
     for (const f of pickets) {
-        if (f.stance === 'belt' && f.currentSystemId) tended.add(f.currentSystemId);
+        if ((f.stance === 'belt' || lurking.has(f.id)) && f.currentSystemId) tended.add(f.currentSystemId);
         if (f.destinationSystemId) tended.add(f.destinationSystemId);
     }
     const open = new Set(traps.filter(id => !tended.has(id)));
     if (open.size > 0) {
         for (const f of pickets) {
-            if (!isParked(f) || f.stance === 'belt') continue;
+            if (!isParked(f) || f.stance === 'belt' || lurking.has(f.id)) continue;
             const target = nearestTarget(world, f.currentSystemId!, open, TRAP_SEARCH_HOPS);
             if (!target) continue;
             try {
