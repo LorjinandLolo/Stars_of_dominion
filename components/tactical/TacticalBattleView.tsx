@@ -50,6 +50,7 @@ import {
     type StrategicFleetLike,
 } from '@/lib/tactical/fleet-adapter';
 import { FastForward, Flag, Pause, Play, X, Zap } from 'lucide-react';
+import type { BattleRenderer } from '@/lib/tactical/render3d/battle-renderer';
 
 const TAU = Math.PI * 2;
 const ARRIVAL_WARP_SECONDS = 4;   // mirrors ARRIVAL_DELAY in lib/tactical/sim.ts
@@ -273,6 +274,10 @@ export default function TacticalBattleView({
 
     const wrapperRef = React.useRef<HTMLDivElement | null>(null);
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    // WebGL world layer under the 2D overlay (lib/tactical/render3d). Null
+    // until three.js has loaded, or for good when WebGL is unavailable — the
+    // 2D canvas then draws the world itself, exactly as it did before.
+    const rendererRef = React.useRef<BattleRenderer | null>(null);
     const viewRef = React.useRef<ViewState>({ scale: 1, ox: 0, oy: 0, cw: 0, ch: 0 });
     const dragRef = React.useRef<DragState | null>(null);
 
@@ -302,9 +307,39 @@ export default function TacticalBattleView({
                 cw,
                 ch,
             };
+            rendererRef.current?.resize(viewRef.current);
         };
         fit();
         window.addEventListener('resize', fit);
+
+        // three.js stays out of the main bundle: load it only once a battle
+        // opens, and fall back to the 2D world drawing if anything fails.
+        // The GL canvas is created here, not by React: disposing a renderer
+        // force-loses its context, and a canvas with a lost context can never
+        // host a new one, so every run of this effect needs a fresh element.
+        let glCancelled = false;
+        const glCanvas = document.createElement('canvas');
+        glCanvas.className = 'absolute inset-0 h-full w-full';
+        wrapper.insertBefore(glCanvas, canvas);
+        {
+            import('@/lib/tactical/render3d/battle-renderer')
+                .then(({ BattleRenderer }) => {
+                    const st = stateRef.current;
+                    if (glCancelled || !st) return;
+                    try {
+                        const r = new BattleRenderer(glCanvas, st);
+                        r.resize(viewRef.current);
+                        rendererRef.current = r;
+                        if (process.env.NODE_ENV !== 'production') {
+                            // Dev-only handle so a console probe can time frames.
+                            (window as unknown as { __tactical?: unknown }).__tactical = { renderer: r, stateRef, viewRef };
+                        }
+                    } catch (err) {
+                        console.warn('[tactical] WebGL renderer unavailable, drawing the world in 2D', err);
+                    }
+                })
+                .catch(err => console.warn('[tactical] 3D renderer failed to load, drawing the world in 2D', err));
+        }
 
         const toLocal = (clientX: number, clientY: number) => {
             const rect = canvas.getBoundingClientRect();
@@ -563,7 +598,9 @@ export default function TacticalBattleView({
             }
         };
 
-        const drawShip = (st: BattleState, sh: TacticalShip, isSelected: boolean) => {
+        // `hull` false = the WebGL layer draws the hull and engine glow; only
+        // the overlay rings, bars and labels are painted here.
+        const drawShip = (st: BattleState, sh: TacticalShip, isSelected: boolean, hull: boolean) => {
             const def = SHIP_CLASSES[sh.classId];
             const isPlayer = sh.side === 'player';
             const arriving = sh.status === 'arriving';
@@ -574,6 +611,7 @@ export default function TacticalBattleView({
             ctx.globalAlpha = arriving ? 0.35 : 1;
 
             // Rotated hull + engine glow.
+            if (hull) {
             ctx.save();
             ctx.rotate(sh.heading);
             if (!arriving && sh.speed > 8) {
@@ -601,6 +639,7 @@ export default function TacticalBattleView({
             ctx.lineWidth = 1.4;
             ctx.stroke();
             ctx.restore();
+            }
 
             // Directional shields: one quadrant arc per facing (F/S/A/P),
             // rotated with the heading. Opacity + thickness track that
@@ -658,14 +697,14 @@ export default function TacticalBattleView({
 
         // Squadron: tight cluster of tiny triangles, one per surviving craft,
         // jittered deterministically from the squadron id + craft index.
-        const drawSquadron = (sq: Squadron, isSelected: boolean) => {
+        const drawSquadron = (sq: Squadron, isSelected: boolean, craft: boolean) => {
             const isPlayer = sq.side === 'player';
             const full = SQUADRON_DEFS[sq.type].craft;
             const rand = mulberry32(hashStr(sq.id));
             ctx.save();
             ctx.translate(sq.x, sq.y);
             ctx.fillStyle = isPlayer ? 'rgba(129, 140, 248, 0.55)' : 'rgba(248, 113, 113, 0.5)';
-            for (let i = 0; i < full; i++) {
+            for (let i = 0; craft && i < full; i++) {
                 const jx = (rand() - 0.5) * 18;
                 const jy = (rand() - 0.5) * 18;
                 const ja = rand() * TAU;
@@ -711,10 +750,17 @@ export default function TacticalBattleView({
 
         // Hazards render under the ships: rock speckle for asteroid fields,
         // soft purple/pink blobs for nebulae, tiny low-alpha caption at centre.
-        const drawHazards = (st: BattleState) => {
+        const drawHazards = (st: BattleState, fills: boolean) => {
             const rocksPerHazard = hazardRocksRef.current ?? [];
             ctx.textAlign = 'center';
             st.hazards.forEach((h, i) => {
+                if (!fills) {
+                    // The WebGL layer owns the rocks and gas; keep the caption.
+                    ctx.font = '600 9px sans-serif';
+                    ctx.fillStyle = h.kind === 'asteroid' ? 'rgba(148, 163, 184, 0.28)' : 'rgba(216, 180, 254, 0.3)';
+                    ctx.fillText(h.kind === 'asteroid' ? 'A S T E R O I D   F I E L D' : 'N E B U L A', h.x, h.y + 3);
+                    return;
+                }
                 if (h.kind === 'asteroid') {
                     ctx.fillStyle = 'rgba(30, 41, 59, 0.55)';
                     ctx.beginPath();
@@ -815,27 +861,39 @@ export default function TacticalBattleView({
             const v = viewRef.current;
             const dpr = window.devicePixelRatio || 1;
 
+            // With the WebGL layer up, it paints the world (backdrop, stars,
+            // hazards, hulls, craft, torpedoes, beams, explosions) and this
+            // canvas is a transparent overlay. Without it, draw everything.
+            const r3d = rendererRef.current;
+            if (r3d) r3d.render(st, v);
+
             // Screen space: letterbox background.
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.fillStyle = '#020617';
-            ctx.fillRect(0, 0, v.cw, v.ch);
+            if (r3d) {
+                ctx.clearRect(0, 0, v.cw, v.ch);
+            } else {
+                ctx.fillStyle = '#020617';
+                ctx.fillRect(0, 0, v.cw, v.ch);
+            }
 
             // World space.
             ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, dpr * v.oy);
 
-            // Battlefield backdrop.
-            ctx.fillStyle = '#050b1e';
-            ctx.fillRect(0, 0, st.width, st.height);
+            if (!r3d) {
+                // Battlefield backdrop.
+                ctx.fillStyle = '#050b1e';
+                ctx.fillRect(0, 0, st.width, st.height);
 
-            // Starfield (static, seeded).
-            for (const s of starsRef.current ?? []) {
-                ctx.globalAlpha = s.a;
-                ctx.fillStyle = '#cbd5e1';
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, s.r, 0, TAU);
-                ctx.fill();
+                // Starfield (static, seeded).
+                for (const s of starsRef.current ?? []) {
+                    ctx.globalAlpha = s.a;
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.r, 0, TAU);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
             }
-            ctx.globalAlpha = 1;
 
             // Grid.
             ctx.strokeStyle = 'rgba(148, 163, 184, 0.05)';
@@ -886,7 +944,7 @@ export default function TacticalBattleView({
             ctx.strokeRect(0, 0, st.width, st.height);
 
             // Hazards sit under everything that flies.
-            drawHazards(st);
+            drawHazards(st, !r3d);
 
             const selected = new Set(selectionRef.current);
 
@@ -901,14 +959,14 @@ export default function TacticalBattleView({
             // Ships.
             for (const sh of st.ships) {
                 if (sh.status === 'destroyed' || sh.status === 'withdrawn') continue;
-                drawShip(st, sh, selected.has(sh.id));
+                drawShip(st, sh, selected.has(sh.id), !r3d);
             }
 
             // Squadrons: dim strike-craft clusters over the ships.
             const selectedSq = new Set(squadronSelectionRef.current);
             for (const sq of st.squadrons) {
                 if (sq.craft <= 0) continue;
-                drawSquadron(sq, selectedSq.has(sq.id));
+                drawSquadron(sq, selectedSq.has(sq.id), !r3d);
             }
 
             // Explicit-target reticles for the current selection.
@@ -932,10 +990,10 @@ export default function TacticalBattleView({
             }
 
             // Torpedoes.
-            for (const torp of st.torpedoes) drawTorpedo(st, torp);
+            if (!r3d) for (const torp of st.torpedoes) drawTorpedo(st, torp);
 
             // Beams (fading).
-            for (const b of st.beams) {
+            if (!r3d) for (const b of st.beams) {
                 const a = Math.max(0, Math.min(1, (b.expiresAt - st.time) / BEAM_FADE_SECONDS));
                 ctx.strokeStyle = b.side === 'player'
                     ? `rgba(129, 140, 248, ${0.9 * a})`
@@ -954,7 +1012,7 @@ export default function TacticalBattleView({
             }
 
             // Explosions (expanding, fading).
-            for (const ex of st.explosions) {
+            if (!r3d) for (const ex of st.explosions) {
                 const rem = Math.max(0, ex.expiresAt - st.time);
                 const t01 = 1 - Math.min(1, rem / 0.7);
                 const rr = ex.radius * (0.4 + 0.9 * t01);
@@ -1019,6 +1077,10 @@ export default function TacticalBattleView({
 
         return () => {
             cancelAnimationFrame(raf);
+            glCancelled = true;
+            rendererRef.current?.dispose();
+            rendererRef.current = null;
+            glCanvas.remove();
             window.removeEventListener('resize', fit);
             canvas.removeEventListener('mousedown', onMouseDown);
             canvas.removeEventListener('contextmenu', onContextMenu);
