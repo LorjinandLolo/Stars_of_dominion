@@ -21,7 +21,8 @@ import { intervene } from '@/lib/diplomacy/intervention-service';
 import { imposeSanctions, getSanction, liftSanctions } from '@/lib/diplomacy/sanctions-service';
 import type { DiplomaticOffer } from '@/lib/diplomacy/diplomacy-types';
 import { condescensionPenalty } from '@/lib/factions/nexulan';
-import { aiWarWantsPeace } from '@/lib/ai/war-ai';
+import { aiWarWantsPeace, warFatigueOf } from '@/lib/ai/war-ai';
+import { queueAIOrder } from '@/lib/ai/ai-orders';
 
 /** Most sanctioners the Enlightenment coalition brings a transcending empire to. */
 export const ENLIGHTENMENT_COALITION = 2;
@@ -76,7 +77,9 @@ export function wouldAccept(world: GameWorldState, offer: DiplomaticOffer): bool
             return tension < threshold;
         }
         case 'peace_offer': {
-            if (world.shared.warFatigue >= 40) return true;
+            // Its own people's weariness, not the galaxy's: one court tiring of
+            // a war does not make every court accept every peace at once.
+            if (warFatigueOf(world, me) >= 40) return true;
             // Its own campaign has stalled or its battle groups are gone.
             if (aiWarWantsPeace(world, me, them)) return true;
             return factionFleetPower(world, me) < factionFleetPower(world, them);
@@ -102,7 +105,7 @@ export function wouldAccept(world: GameWorldState, offer: DiplomaticOffer): bool
             if (!affordable) return false;
 
             const outgunned = factionFleetPower(world, me) < factionFleetPower(world, them);
-            const underThreat = world.shared.warFatigue >= 25 || tension > 55;
+            const underThreat = warFatigueOf(world, me) >= 25 || tension > 55;
             return outgunned || underThreat;
         }
         default:
@@ -254,11 +257,19 @@ function attemptInitiative(world: GameWorldState, factionId: string): void {
         }
     }
 
-    // Exhausted and at war → sue for peace with the first enemy found.
-    if (world.shared.warFatigue >= 50) {
-        const enemy = partners.find(id => isAtWar(world, factionId, id));
+    // Its own people exhausted and at war → sue the enemy it is losing to
+    // worst, through the player's DIP_OFFER_PEACE (public support, ideology
+    // drift). Not again while an offer to them is still on the table.
+    if (warFatigueOf(world, factionId) >= 50) {
+        const myPower = Math.max(1, factionFleetPower(world, factionId));
+        const pendingTo = new Set([...ensureDiplomacyState(world).offers.values()]
+            .filter(o => o.status === 'pending' && o.kind === 'peace_offer' && o.fromFactionId === factionId)
+            .map(o => o.toFactionId));
+        const enemy = partners
+            .filter(id => isAtWar(world, factionId, id) && !pendingTo.has(id))
+            .sort((a, b) => factionFleetPower(world, b) / myPower - factionFleetPower(world, a) / myPower || a.localeCompare(b))[0];
         if (enemy) {
-            createOffer(world, factionId, { kind: 'peace_offer', toFactionId: enemy });
+            queueAIOrder(world, { factionId, actionId: 'DIP_OFFER_PEACE', payload: { targetFactionId: enemy }, reason: 'war-weary' });
             return;
         }
     }

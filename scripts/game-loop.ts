@@ -204,6 +204,7 @@ import { isUndergroundSeatId } from '../lib/rebellion/rebellion-types';
 import { seizeOpportunity } from '../lib/espionage/ops-board-service';
 import { executeMarketOrder } from '../lib/economy/economy-service';
 import { aiInvasionOrders, aiCommandGroundWars } from '../lib/ai/war-ai';
+import { drainAIOrders } from '../lib/ai/ai-orders';
 import { checkCeasefireGate, recordTrophyKill } from '../lib/factions/kaerruun';
 import { administerSerum, checkSerumGate, infrastructureSpeedFor, recordConquest } from '../lib/factions/sarrak';
 import { checkAggressionGate, recordGrievance } from '../lib/factions/buthari';
@@ -830,6 +831,9 @@ async function runGameTick() {
         }
         // ...and command both sides' ground wars where a side is AI-run.
         try { aiCommandGroundWars(world); } catch (e: any) { console.warn('[Tick Worker] AI ground command failed:', e.message); }
+        // 4.7. Orders AI empires queued (lib/ai/ai-orders.ts) run through the
+        // player's own handlers: same gates, same charges, same deed counters.
+        try { drainAIOrders(world, executeOrder, orderBudget); } catch (e: any) { console.warn('[Tick Worker] AI order drain failed:', e.message); }
         
         // 4. Process Construction
         tickConstructionGlobal(world);
@@ -900,6 +904,9 @@ async function runGameTick() {
             // worker's local singleton, and every strategic-tick result (economy,
             // research, population...) was thrown away instead of saved/synced.
             await runStrategicTick(new Date(world.nowSeconds * 1000), currentTickWindow, world);
+            // AI deciders in the strategic tick queue orders; run them before the
+            // round-trip below so the outbox is empty when the world is normalized.
+            try { drainAIOrders(world, executeOrder, orderBudget); } catch (e: any) { console.warn('[Tick Worker] AI order drain failed:', e.message); }
 
             // Round-trip normalize (~every 24 real minutes): the old code
             // re-serialized and re-parsed the whole world every tick, which

@@ -28,6 +28,7 @@ import { runCharterAI } from './charter-ai';
 import { hasLiveOperationAgainst } from './intelligence-ai-service';
 import { runPressOffice } from '@/lib/press-system/press-office';
 import { answerGovernmentDesk } from '../government/caretaker';
+import { runStateDesk } from './state-desk-ai';
 
 /**
  * How an empire is playing right now. The default AI assumes a going concern
@@ -77,6 +78,11 @@ export class StrategicAIService {
         this.manageCharters(factionId, world, stance);
         this.managePress(factionId, world);
         this.manageUnrest(factionId, world);
+        // Counter-intel, press defence, staffing, secession, prisoners — the
+        // player's own orders, queued for the worker (lib/ai/state-desk-ai.ts).
+        for (const action of runStateDesk(world, factionId)) {
+            console.log('[AI] ' + factionId + ' state desk: ' + action);
+        }
     }
 
     /**
@@ -215,16 +221,10 @@ export class StrategicAIService {
         leaders.forEach(leader => {
             if (leader.assignmentId) return;
 
-            if (leader.role === 'Governor') {
-                // Assign to planet with lowest stability or highest population
-                const planets = Array.from(world.construction.planets.values())
-                    .filter(p => p.ownerId === factionId);
-                
-                if (planets.length > 0) {
-                    const target = planets.sort((a, b) => a.stability - b.stability)[0];
-                    LeadershipService.assignLeader(world, leader.id, target.id);
-                }
-            } else if (leader.role === 'Admiral') {
+            // Governors are appointed by GOV_APPOINT_GOVERNOR (state-desk-ai.ts),
+            // which sets planet.governorId. Pointing assignmentId at a planet
+            // here made a 'governor' no planet knew about.
+            if (leader.role === 'Admiral') {
                 // Assign to strongest fleet
                 const fleets = Array.from(world.movement.fleets.values())
                     .filter(f => f.factionId === factionId);

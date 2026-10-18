@@ -18,7 +18,7 @@
 //        - opportunity: a hawkish court (Militarist/Expansionist posture or an
 //          offensive doctrine) falls on a weak neighbour with colonies (2×
 //          power, within WAR.preyHops) it has no pact with.
-//      Same registerActOfWar as the player's DIP_DECLARE_WAR, plus a
+//      Through the player's own DIP_DECLARE_WAR order (lib/ai/ai-orders), plus a
 //      notification to the victim.
 //   2. ARM. At war (or with a declaration in sight) it commissions battle
 //      groups at the capital — hulls the capital yard can lay, priced at the
@@ -47,13 +47,13 @@
 import { isCivilianFleet } from '../combat/civilian-ships';
 import type { GameWorldState } from '@/lib/game-world-state';
 import type { Fleet } from '@/lib/movement/types';
-import { registerActOfWar, isAtWar, createOffer, findActiveTreaty } from '@/lib/diplomacy/offer-service';
+import { isAtWar, findActiveTreaty } from '@/lib/diplomacy/offer-service';
 import { factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { changeFleetCourse, isFleetOperational } from '@/lib/movement/movement-service';
 import { systemYardFor, minYardTierFor } from '@/lib/combat/shipyard-gate';
 import { isAIRunFaction, warEnemiesOf } from '@/lib/ai/belt-ambush-ai';
 import { isTranscending } from '@/lib/victory/victory-service';
-import { recordPoliticalEvent } from '@/lib/government/ideology-drift';
+import { queueAIOrder } from '@/lib/ai/ai-orders';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
 import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
@@ -418,9 +418,41 @@ function nameOf(world: GameWorldState, id: string): string {
     return (world.economy.factions.get(id) as any)?.name ?? id;
 }
 
-export function aiDeclareWar(world: GameWorldState, factionId: string, targetId: string, motive: WarMotive = 'grievance'): void {
-    registerActOfWar(world, factionId, targetId);
-    try { recordPoliticalEvent(world, factionId, 'declare_war'); } catch { /* ideology optional */ }
+/**
+ * Per-empire war weariness: the government's own (cohesion-service) when it
+ * has one, the galaxy-wide figure otherwise — the same read politics-service
+ * uses. The galaxy-wide number alone made every AI court tire of every war on
+ * the same tick.
+ */
+export function warFatigueOf(world: GameWorldState, factionId: string): number {
+    const own = (world as any).government?.get?.(factionId)?.warFatigue;
+    return Number.isFinite(own) ? own : Number(world.shared?.warFatigue ?? 0);
+}
+
+/**
+ * Declare through the player's own DIP_DECLARE_WAR order (lib/ai/ai-orders.ts):
+ * the tech gate, the Bloodmoon ceasefire, the Buthari first-strike gate, the
+ * Leo-pantheri honour price, public support and both deed ledgers all apply.
+ * The war AI's books and the victim's notice are written only once the handler
+ * has actually put the two at war — a refused declaration leaves no trace.
+ */
+export function aiDeclareWar(world: GameWorldState, factionId: string, targetId: string, motive: WarMotive = 'grievance'): boolean {
+    return queueAIOrder(world, {
+        factionId,
+        actionId: 'DIP_DECLARE_WAR',
+        payload: { targetFactionId: targetId },
+        reason: `war of ${motive} on ${targetId}`,
+        onDone: (w: GameWorldState) => {
+            if (!isAtWar(w, factionId, targetId)) {
+                console.log(`[War AI] ${factionId}'s declaration on ${targetId} was refused.`);
+                return;
+            }
+            bookDeclaration(w, factionId, targetId, motive);
+        },
+    });
+}
+
+function bookDeclaration(world: GameWorldState, factionId: string, targetId: string, motive: WarMotive): void {
     const rec = recordFor(world, factionId);
     rec.declared[targetId] = world.nowSeconds;
     (rec.motive ??= {})[targetId] = motive;
@@ -552,7 +584,7 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
     const pastGrace = seasonAgeSeconds(world) >= WAR.graceDays * DAY;
     const offCooldown = world.nowSeconds - rec.lastWarChange >= WAR.cooldownDays * DAY || rec.lastWarChange === 0;
     let candidate: WarCandidate | undefined;
-    if (pastGrace && offCooldown && ownWars < WAR.maxOwnWars && world.shared.warFatigue < 40) {
+    if (pastGrace && offCooldown && ownWars < WAR.maxOwnWars && warFatigueOf(world, factionId) < 40) {
         const stance = StrategicAIService.assessStance(factionId, world).stance;
         const pool = warCandidates(world, factionId);
         // A transcending target overrides the stance check: even a court in
@@ -560,9 +592,10 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
         candidate = pool.find(c => c.transcending) ?? (stance === 'normal' ? pool[0] : undefined);
         const chance = candidate?.motive === 'transcendence' ? WAR.declareChance * 2
             : candidate?.motive === 'opportunity' ? WAR.declareChance / 2 : WAR.declareChance;
-        if (candidate && Math.random() < chance) {
-            aiDeclareWar(world, factionId, candidate.targetId, candidate.motive);
-            enemies.add(candidate.targetId);
+        // Queued, not yet landed: the war begins when the worker drains the
+        // AI orders (same strategic tick). Battle groups muster on the
+        // candidate below either way, and sail only after musterDays.
+        if (candidate && Math.random() < chance && aiDeclareWar(world, factionId, candidate.targetId, candidate.motive)) {
             turn.declared = candidate.targetId;
         }
     }
@@ -691,10 +724,9 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
         const last = rec.lastPeaceOffer[enemyId] ?? 0;
         if (world.nowSeconds - last < WAR.peaceOfferEveryDays * DAY) continue;
         rec.lastPeaceOffer[enemyId] = world.nowSeconds;
-        const result = createOffer(world, factionId, { kind: 'peace_offer', toFactionId: enemyId });
-        if (result.success) {
+        // The player's DIP_OFFER_PEACE: public support and ideology drift apply.
+        if (queueAIOrder(world, { factionId, actionId: 'DIP_OFFER_PEACE', payload: { targetFactionId: enemyId }, reason: `sues ${enemyId} for peace` })) {
             turn.peaceOffered = enemyId;
-            console.log(`[War AI] ${factionId} sues ${enemyId} for peace.`);
         }
         break;
     }

@@ -27,6 +27,9 @@ import { advanceFleet } from '../lib/movement/movement-service';
 import { ensureCorporateState } from '../lib/economy/corporate/company-registry';
 import { seededRandom } from '../lib/economy/corporate/charter-service';
 import { resetChronicleBuffer } from '../lib/narrative/chronicle';
+import { drainAIOrders } from '../lib/ai/ai-orders';
+import { orderBudget } from '../lib/factions/movanite';
+import { executeOrder } from './game-loop';
 
 export const TICK_SECONDS = 6 * 3600;
 /** One season: 315 sim days at four strategic ticks a day. */
@@ -118,6 +121,9 @@ export async function stepSoak(world: any, tickIndex: number): Promise<{ world: 
 
     recalculateSystemControl(world);
     await runStrategicTick(new Date(now * 1000), tickIndex, world);
+    // Orders the AI queued this tick run through the player's handlers, as
+    // the worker does right after its strategic tick (lib/ai/ai-orders.ts).
+    drainAIOrders(world, executeOrder, orderBudget);
 
     // The worker round-trips the world through JSON after every strategic
     // tick. Anything that does not survive that is a bug no in-memory test
