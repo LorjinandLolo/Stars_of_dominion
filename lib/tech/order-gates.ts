@@ -9,8 +9,8 @@
 //   `flag`       — an unlockFlags string (see flags.ts)
 //   `capability` — an UNLOCK_ACTION effect's modifierKey
 //
-// Only player orders reach executeOrder; AI factions call the services directly
-// and are never gated here.
+// AI factions reach executeOrder too, through the order outbox (lib/ai/ai-orders.ts),
+// and are gated here exactly as players are.
 
 import { hasTechFlag, hasUnlockedAction } from './flags';
 import type { PlayerTechState } from './types';

@@ -29,6 +29,7 @@ import { hasLiveOperationAgainst } from './intelligence-ai-service';
 import { runPressOffice } from '@/lib/press-system/press-office';
 import { answerGovernmentDesk } from '../government/caretaker';
 import { runStateDesk } from './state-desk-ai';
+import { runOffenceDesk } from './offence-ai';
 
 /**
  * How an empire is playing right now. The default AI assumes a going concern
@@ -82,6 +83,11 @@ export class StrategicAIService {
         // player's own orders, queued for the worker (lib/ai/state-desk-ai.ts).
         for (const action of runStateDesk(world, factionId)) {
             console.log('[AI] ' + factionId + ' state desk: ' + action);
+        }
+        // Press, diplomacy, pirates, companies, the Clan, rites, agents — the
+        // offensive orders a player has (lib/ai/offence-ai.ts).
+        for (const action of runOffenceDesk(world, factionId, stance)) {
+            console.log('[AI] ' + factionId + ' offence: ' + action);
         }
     }
 
