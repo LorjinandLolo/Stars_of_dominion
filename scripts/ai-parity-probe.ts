@@ -4,7 +4,9 @@
 // Tier 1 of the AI parity work (lib/ai/ai-orders.ts, lib/ai/state-desk-ai.ts):
 // counter-intelligence, press defence, cabinet and governor staffing, a
 // constitutional secession crisis, prisoners of war, per-empire war fatigue,
-// and declarations through DIP_DECLARE_WAR. Each scenario is planted, one real
+// and declarations through DIP_DECLARE_WAR. Tier 2: battle groups and belt
+// pickets built through MIL_BUILD_FLEET + MIL_RECRUIT_FORMATION_UNIT (price,
+// yard gate, build timer), never conjured. Each scenario is planted, one real
 // strategic tick runs through the soak harness (which drains the AI order
 // outbox into executeOrder exactly as the worker does), and the outcome is
 // read back off the round-tripped world.
@@ -14,7 +16,10 @@
 import { bootSoakWorld, empireIds, quietConsole, seedSimulation, stepSoak } from './soak-harness';
 import { executeOrder } from './game-loop';
 import { drainAIOrders, queueAIOrder } from '../lib/ai/ai-orders';
-import { aiDeclareWar, warFatigueOf } from '../lib/ai/war-ai';
+import { aiDeclareWar, aiWarTurn, isWarfleetId, warFatigueOf, warfleetQuote } from '../lib/ai/war-ai';
+import { beltAmbushTurn } from '../lib/ai/belt-ambush-ai';
+import { RecruitmentService } from '../lib/combat/recruitment-service';
+import { minYardTierFor, systemYardFor } from '../lib/combat/shipyard-gate';
 import { wouldAccept } from '../lib/ai/diplomatic-ai-service';
 import { isAtWar } from '../lib/diplomacy/offer-service';
 import { ensurePressState } from '../lib/press-system/integration';
@@ -33,9 +38,13 @@ function check(label: string, ok: boolean, detail = ''): void {
 
 async function main() {
     seedSimulation('parity');
-    const quiet = quietConsole(line => line.startsWith('[AI Orders]') || line.startsWith('[War AI]'));
+    const quiet = quietConsole(line => line.startsWith('[AI Orders]') || line.startsWith('[War AI]') || line.startsWith('[AI Fleets]') || line.startsWith('[Belt AI]'));
     let world = bootSoakWorld();
     const ids = empireIds(world);
+    const fleetsAtBoot = new Set([...world.movement.fleets.keys()]);
+    // Every fleet a recruitment job has targeted, read after each drain.
+    const targets = new Set<string>();
+    const jobTargets = (w: any) => { for (const j of w.combat?.recruitmentJobs ?? []) if (j.targetFormationId) targets.add(j.targetFormationId); };
     const human = ids[0];
     const [ai, ai2, ai3] = ids.slice(1);
     world.claimedFactionIds = [human];
@@ -88,6 +97,7 @@ async function main() {
 
     // ── One strategic tick ───────────────────────────────────────────────────
     ({ world } = await stepSoak(world, 1));
+    jobTargets(world);
 
     // ── Read back ────────────────────────────────────────────────────────────
     const aiCi = world.espionage.factionIntel.get(ai);
@@ -139,6 +149,67 @@ async function main() {
     check('the handler declared it and the war AI booked it', isAtWar(world, ai, target) && rec?.declared?.[target] === world.nowSeconds);
     const onUsAfter = getLedger(world, target).counters[DEED_WARS_DECLARED_ON_US] ?? 0;
     check('the victim\'s deed ledger counts it (DIP_DECLARE_WAR handler)', onUsAfter === onUsBefore + 1, `${onUsBefore} → ${onUsAfter}`);
+
+    // ── Battle groups are built through the player's orders ──────────────────
+    // At war now, `ai` arms. Nothing may appear until the order runs; the
+    // order makes an empty shell plus recruitment jobs (MIL_BUILD_FLEET +
+    // MIL_RECRUIT_FORMATION_UNIT), and the hulls arrive on the jobs' timers.
+    const reserves: Record<string, number> = world.economy.factions.get(ai).reserves;
+    for (const k of ['CREDITS', 'METALS', 'MATERIEL']) if (reserves[k] !== undefined) reserves[k] = Math.max(reserves[k], 200000);
+    const fleetsBefore = new Set([...world.movement.fleets.keys()]);
+    const turn = aiWarTurn(world, ai);
+    const wfId = turn.commissioned;
+    check('the war AI orders a battle group rather than conjuring one', !!wfId && !world.movement.fleets.has(wfId)
+        && [...world.movement.fleets.keys()].every(id => fleetsBefore.has(id)), wfId ?? 'nothing ordered');
+    const paid = { ...reserves };
+    drainAIOrders(world, executeOrder);
+    jobTargets(world);
+    const wf: any = wfId ? world.movement.fleets.get(wfId) : undefined;
+    const wfJobs: any[] = (world.combat?.recruitmentJobs ?? []).filter((j: any) => j.targetFormationId === wfId);
+    const planned: Record<string, number> = {};
+    for (const j of wfJobs) planned[j.classKey] = (planned[j.classKey] ?? 0) + j.count;
+    check('MIL_BUILD_FLEET made the shell under the war AI\'s id, empty, with its hulls on recruitment jobs',
+        !!wf && isWarfleetId(wf.id) && Object.values(wf.composition ?? {}).every((n: any) => !n) && wfJobs.length > 0,
+        `${wfJobs.length} job(s): ${Object.entries(planned).map(([c, n]) => `${n} ${c}`).join(', ')}`);
+    check('no shell is left under the handler\'s timestamp id', ![...world.movement.fleets.values()].some((f: any) => f.factionId === ai && /-\d{10,}$/.test(f.id)));
+    const quote = warfleetQuote(planned);
+    check('it paid the player\'s price (shell + per-hull)', Math.round(paid.CREDITS - reserves.CREDITS) === Math.round(quote.cost.CREDITS)
+        && Math.round(paid.METALS - reserves.METALS) === Math.round(quote.cost.METALS),
+        `credits ${Math.round(paid.CREDITS - reserves.CREDITS)} vs ${quote.cost.CREDITS}, metals ${Math.round(paid.METALS - reserves.METALS)} vs ${quote.cost.METALS}`);
+    check('the yard rule held: every hull fits the capital yard', Object.keys(planned).every(c => minYardTierFor(c)
+        <= systemYardFor(world.construction.planets.values(), ai, world.economy.factions.get(ai).capitalSystemId, world.nowSeconds).tier));
+
+    // Muster long over: a ready battle group would sail now. This one waits for its hulls.
+    rec.declared[target] = world.nowSeconds - 10 * 86400;
+    const turn2 = aiWarTurn(world, ai);
+    const still: any = world.movement.fleets.get(wfId!);
+    check('a battle group on the slip stays home and no second one is ordered', !still?.destinationSystemId && !turn2.commissioned,
+        `destination ${still?.destinationSystemId ?? 'none'}, ordered ${turn2.commissioned ?? 'none'}`);
+    drainAIOrders(world, executeOrder);
+    jobTargets(world);
+    const longest = Math.max(0, ...wfJobs.map((j: any) => j.completesAt - world.nowSeconds));
+    world.nowSeconds += longest + 1;
+    RecruitmentService.tick(world);
+    const built: any = world.movement.fleets.get(wfId!);
+    const sameShips = Object.entries(planned).every(([c, n]) => (built?.composition?.[c] ?? 0) === n);
+    check('the hulls arrive when the jobs complete, at the quoted rating', sameShips && Math.round(built.basePower) === Math.round(quote.power),
+        `after ${Math.round(longest)}s: ${JSON.stringify(built?.composition)}, power ${built?.basePower} vs ${quote.power}`);
+
+    // Pickets: same road, when the belt AI has a trap to man.
+    const pickBefore = new Set([...world.movement.fleets.keys()]);
+    const belt = beltAmbushTurn(world as any, ai);
+    if (belt.commissioned) {
+        check('the belt AI orders its picket rather than conjuring one', !world.movement.fleets.has(belt.commissioned)
+            && [...world.movement.fleets.keys()].every(id => pickBefore.has(id)), belt.commissioned);
+        drainAIOrders(world, executeOrder);
+        jobTargets(world);
+        check('the picket is a shell with recruitment jobs', world.movement.fleets.has(belt.commissioned) && targets.has(belt.commissioned));
+    }
+
+    // The whole run: every warship fleet an AI gained came off a recruitment job.
+    const conjured = [...world.movement.fleets.values()].filter((f: any) => !fleetsAtBoot.has(f.id) && ids.includes(f.factionId)
+        && f.factionId !== human && (isWarfleetId(f.id) || /-trap-\d+$/.test(f.id)) && !targets.has(f.id));
+    check('no AI warfleet or picket appeared without a recruitment job', conjured.length === 0, conjured.map((f: any) => f.id).join(', '));
 
     quiet.restore();
     console.log('\nAI parity probe');

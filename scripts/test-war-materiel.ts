@@ -63,8 +63,10 @@ test('a ship costs materiel in proportion to its metals, everywhere it is priced
     assert.strictEqual(materielFor(300), 30);
     const unit = RecruitmentService.unitCost('CRUISER');
     assert.strictEqual(unit.MATERIEL, materielFor(unit.METALS));
+    // The war AI builds through MIL_BUILD_FLEET + MIL_RECRUIT_FORMATION_UNIT,
+    // which price a hull by its standard design, so its quote does too.
     const quote = warfleetQuote({ corvette: 2 });
-    assert.strictEqual(quote.cost.MATERIEL, 2 * materielFor(RecruitmentService.unitCost('CORVETTE').METALS));
+    assert.strictEqual(quote.cost.MATERIEL, 2 * corvette.cost.MATERIEL);
 });
 
 test('attacks, bombardments and invasions are priced in ammo', () => {

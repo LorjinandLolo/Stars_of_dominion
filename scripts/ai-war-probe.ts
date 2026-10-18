@@ -22,6 +22,9 @@ import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { factionFleetPower } from '../lib/diplomacy/gambit-service';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
 import { pacing } from '../lib/combat/siege/siege-pacing';
+import { RecruitmentService } from '../lib/combat/recruitment-service';
+import { drainAIOrders } from '../lib/ai/ai-orders';
+import { orderBudget } from '../lib/factions/movanite';
 
 // This harness runs LOOPS siege ticks per 6-sim-hour strategic tick, so at
 // the live 60-tick cycle a cycle would be 15 sim hours here (vs 75 sim
@@ -77,6 +80,11 @@ async function main() {
     let maxWarfleets = 0;
     let peakRivalry = 0;
     const startOwners = new Map<string, string>();
+    // Fleets a recruitment job has ever targeted: every AI battle group and
+    // picket must be among them (built through MIL_BUILD_FLEET, not conjured).
+    const fleetsAtBoot = new Set([...world.movement.fleets.keys()]);
+    const recruited = new Set<string>();
+    const aiWarships = new Set<string>();
 
     for (let i = 1; i <= ticks; i++) {
         // ── The worker's inner loop, between strategic ticks ─────────────────
@@ -95,6 +103,11 @@ async function main() {
                 executeOrder(world, 'MIL_INVASION_PLANET', order.payload, order.factionId);
             }
             aiCommandGroundWars(world);
+            // As the worker: queued AI orders, then the yards lay their hulls
+            // (AI battle groups are built through MIL_BUILD_FLEET now).
+            drainAIOrders(world, executeOrder, orderBudget);
+            for (const j of (world.combat?.recruitmentJobs ?? []) as any[]) if (j.targetFormationId) recruited.add(j.targetFormationId);
+            RecruitmentService.tick(world);
             const sieges = new Map<string, any>();
             for (const p of world.construction.planets.values() as Iterable<any>) if (p.siege) sieges.set(p.id, p.siege);
             processSieges(world);
@@ -127,6 +140,10 @@ async function main() {
                 const by = rec[a]?.declared?.[b] === world.nowSeconds ? a : rec[b]?.declared?.[a] === world.nowSeconds ? b : '(other)';
                 declarations.push({ day: seasonAgeSeconds(world) / DAY, by, on: by === a ? b : a });
             }
+        }
+        for (const j of (world.combat?.recruitmentJobs ?? []) as any[]) if (j.targetFormationId) recruited.add(j.targetFormationId);
+        for (const f of world.movement.fleets.values() as Iterable<any>) {
+            if (!fleetsAtBoot.has(f.id) && !humans.includes(f.factionId) && (isWarfleetId(f.id) || /-trap-d+$/.test(f.id))) aiWarships.add(f.id);
         }
         for (const id of ids) {
             const n = [...world.movement.fleets.values()].filter((f: any) => f.factionId === id && isWarfleetId(f.id)).length;
@@ -172,6 +189,9 @@ async function main() {
     check(`nobody is declared on by the AI inside the ${WAR.graceDays}-day grace`, aiDecl.every(d => d.day >= WAR.graceDays),
         aiDecl.filter(d => d.day < WAR.graceDays).map(d => `${d.by}@${d.day.toFixed(0)}`).join(', '));
     check('AI empires raise battle groups', maxWarfleets > 0);
+    const conjured = [...aiWarships].filter(id => !recruited.has(id));
+    check('every AI battle group and picket came off a recruitment job', conjured.length === 0,
+        conjured.length ? conjured.join(', ') : `${aiWarships.size} fleet(s)`);
     check('AI battle groups press invasions', invasionOrders > 0, `${invasionOrders} volley(s)`);
     check('AI empires take worlds by siege', captures.length > 0, `${captures.length} world(s)`);
     check(`no empire loses its last world to the AI before day ${WAR.protectLastWorldDays}`,

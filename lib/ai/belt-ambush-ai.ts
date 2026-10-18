@@ -8,8 +8,10 @@
 //   3. One idle picket per tick sails to the nearest TRAP system: a belt
 //      system this faction owns (or nobody does) that borders enemy space —
 //      the lane an invader must come down.
-//   4. No picket at all → commission one at the capital, paid from the
-//      treasury at the same double-headroom rule the expansion AI uses.
+//   4. No picket at all → order one built at the capital through the
+//      player's MIL_BUILD_FLEET + MIL_RECRUIT_FORMATION_UNIT (lib/ai/
+//      ai-fleet-orders), with double the price in hand as the expansion AI
+//      keeps. It lurks once its hulls are laid.
 //
 // Runs from tick step10b after tickAIExpansion, and stays out of its way: the
 // expansion AI drives whichever own fleet sorts FIRST by id as its scout, so
@@ -19,7 +21,8 @@
 import type { Fleet } from '../movement/types';
 import { hasAsteroidBelt, AMBUSH_WAR_ESCALATION } from '../movement/belts';
 import { isFleetOperational, issueMoveOrder } from '../movement/movement-service';
-import { minYardTierFor, systemYardFor, type YardPlanetLike } from '../combat/shipyard-gate';
+import { minYardTierFor, type YardPlanetLike } from '../combat/shipyard-gate';
+import { fleetBuildQuote, hasQueuedFleetBuild, queueAIFleetBuild, yardCanLay } from './ai-fleet-orders';
 
 /** Same test as lib/ai/war-ai.ts isWarfleetId — kept local so the two modules do not import each other. */
 function isWarfleetId(id: string): boolean {
@@ -40,15 +43,20 @@ export interface BeltAmbushWorldView {
     nowSeconds?: number;
 }
 
-/** Three corvettes and a destroyer, priced like the player's MIL_BUILD_FLEET + hull recruits. */
-export const PICKET_COST: Readonly<Record<string, number>> = { CREDITS: 5200, METALS: 2100 };
-// Lowercase: the combat engine's counter grid and the tactical adapter key
-// compositions by lowercase ship class (lib/combat/ship-registry.ts).
+// Three corvettes and a destroyer. Lowercase: the combat engine's counter grid
+// and the tactical adapter key compositions by lowercase ship class
+// (lib/combat/ship-registry.ts).
 export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 3, destroyer: 1 };
+/**
+ * What MIL_BUILD_FLEET + the hull recruits charge for a picket, and its
+ * finished rating. A function, not a constant: this module and
+ * lib/ai/ai-fleet-orders import each other (through ai-orders).
+ */
+export function picketQuote(): { cost: Record<string, number>; power: number } {
+    return fleetBuildQuote({ ...PICKET_COMPOSITION });
+}
 /** Yard tier the capital must have to lay every hull in the picket (1: the seeded Orbital Shipyard suffices). */
 export const PICKET_REQUIRED_TIER = Math.max(...Object.keys(PICKET_COMPOSITION).map(minYardTierFor));
-/** 100 base + 3×10 + 22, matching data/combat/ground-units.json power values. */
-export const PICKET_BASE_POWER = 152;
 /** Pickets per faction at war — one per trap, at most this many. */
 export const MAX_PICKETS = 2;
 /** How far (hyperlane hops) a picket will travel to reach a trap. */
@@ -124,61 +132,38 @@ function nearestTarget(world: Pick<BeltAmbushWorldView, 'movement'>, from: strin
 
 function canAfford(reserves: Record<string, number> | undefined, cost: Readonly<Record<string, number>>, headroom: number): boolean {
     if (!reserves) return false;
-    return Object.entries(cost).every(([k, v]) => (reserves[k] ?? 0) >= v * headroom);
+    // An untracked reserve key is free, as the order handlers charge it.
+    return Object.entries(cost).every(([k, v]) => reserves[k] === undefined || reserves[k] >= v * headroom);
 }
 
-function commissionPicket(world: BeltAmbushWorldView, factionId: string, ordinal: number): Fleet | null {
+/**
+ * Order a picket built at the capital through the player's orders. Returns the
+ * id it will carry, or null when the yard cannot lay it or the treasury cannot
+ * cover twice the price. Nothing exists until the worker drains the order.
+ */
+function orderPicket(world: BeltAmbushWorldView, factionId: string): string | null {
     const faction = world.economy.factions.get(factionId);
     const capital = faction?.capitalSystemId;
     if (!faction || !capital || !world.movement.systems.has(capital)) return null;
-    // Same yard rule as every other hull: the capital must own a yard that
-    // can lay the picket's biggest ship. Checked before the charge.
-    const yardTier = systemYardFor(world.construction?.planets?.values?.() ?? [], factionId, capital, world.nowSeconds ?? 0).tier;
-    if (yardTier < PICKET_REQUIRED_TIER) return null;
-    const reserves = faction.reserves;
-    if (!canAfford(reserves, PICKET_COST, 2)) return null;
-    for (const [k, v] of Object.entries(PICKET_COST)) reserves![k] = (reserves![k] ?? 0) - v;
-
+    // Same yard rule as every other hull, checked again by the handler.
+    if (!yardCanLay(world, factionId, capital, { ...PICKET_COMPOSITION })) return null;
+    if (!canAfford(faction.reserves, picketQuote().cost, 2)) return null;
+    let ordinal = 1;
+    while (world.movement.fleets.has(`fleet-${factionId}-trap-${ordinal}`)) ordinal++;
     const id = `fleet-${factionId}-trap-${ordinal}`;
-    const fleet: Fleet = {
-        id,
+    const queued = queueAIFleetBuild(world, {
         factionId,
+        fleetId: id,
         name: `${faction.name ?? factionId} Belt Picket ${ordinal}`,
-        currentSystemId: capital,
-        arrivedAtSeconds: world.nowSeconds ?? 0,
-        destinationSystemId: null,
-        activeLayer: null,
-        transitProgress: 0,
-        etaSeconds: 0,
-        plannedPath: [],
-        orders: [],
-        doctrine: {
-            type: 'Defensive',
-            deviationFromPosture: 0,
-            preferredLayers: ['hyperlane'],
-            retreatThreshold: 0.4,
-            logisticsStrain: 0,
-            moraleDrift: 0,
-            supplyLevel: 1.0,
-        },
-        postureId: 'Consolidating',
-        strength: 1.0,
-        basePower: PICKET_BASE_POWER,
         composition: { ...PICKET_COMPOSITION },
-        hyperdriveProfile: {
-            hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-            trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
-            corridor: { speedMultiplier: 2.0, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 },
-            gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
-            deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
-        },
-        isDetectable: true,
-        orbitingPlanetId: null,
-        arrivalOrbitPlanetId: null,
-        stance: null,
-    } as Fleet;
-    world.movement.fleets.set(id, fleet);
-    return fleet;
+        systemId: capital,
+        reason: `belt picket ${ordinal}`,
+        shapeFleet: (shell: any) => ({
+            postureId: 'Consolidating',
+            doctrine: { ...shell.doctrine, type: 'Defensive', retreatThreshold: 0.4 },
+        }),
+    });
+    return queued ? id : null;
 }
 
 export interface BeltAmbushTurn {
@@ -245,12 +230,15 @@ export function beltAmbushTurn(world: BeltAmbushWorldView, factionId: string): B
     // 4. Nothing to lurk with → raise a picket (only once a scout exists, so
     //    the expansion AI never mistakes the picket for its survey wing).
     const wanted = Math.min(MAX_PICKETS, Math.max(1, traps.length));
+    // A picket on the slip (empty, not yet operational) counts by its id, and
+    // one still in the outbox by its order, so nothing is ordered twice.
     const existingPickets = own.filter(f => isPicketId(f.id)).length;
-    if (scoutId && pickets.length < wanted && existingPickets < MAX_PICKETS) {
-        const fleet = commissionPicket(world, factionId, existingPickets + 1);
-        if (fleet) {
-            turn.commissioned = fleet.id;
-            console.log(`[Belt AI] ${factionId} commissioned ${fleet.name} at ${fleet.currentSystemId}.`);
+    if (scoutId && pickets.length < wanted && existingPickets < MAX_PICKETS
+        && !hasQueuedFleetBuild(world, factionId, /-trap-\d+$/)) {
+        const ordered = orderPicket(world, factionId);
+        if (ordered) {
+            turn.commissioned = ordered;
+            console.log(`[Belt AI] ${factionId} orders ${ordered} built at its capital.`);
         }
     }
     return turn;

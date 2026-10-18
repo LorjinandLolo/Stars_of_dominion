@@ -33,6 +33,12 @@ export interface AIOrder {
      * In-memory only: the outbox is drained before the world is serialized.
      */
     onDone?: (world: any) => void;
+    /**
+     * Runs right before the handler, in the same drain — for a decider that
+     * must tell what the handler added (the fleet builder snapshots the
+     * faction's fleet ids here, so onDone can find the one MIL_BUILD_FLEET made).
+     */
+    before?: (world: any) => void;
 }
 
 type OutboxWorld = { claimedFactionIds?: string[]; aiOrderOutbox?: AIOrder[] };
@@ -55,7 +61,10 @@ export function hasQueuedAIOrder(world: any, factionId: string, actionId: string
  * Run every queued AI order through `execute` (the worker's executeOrder) and
  * empty the outbox. `budget(factionId)` is the same per-faction order ceiling
  * the player queue honours (Movanite bottleneck); orders over it wait for the
- * next drain, exactly as a player's do. Returns how many ran.
+ * next drain, exactly as a player's do. Orders an `onDone` queues (a
+ * follow-up that needs the first order's result, such as the hull recruits
+ * for the fleet MIL_BUILD_FLEET just made) join this same drain, after the
+ * rest. Returns how many ran.
  */
 export function drainAIOrders(
     world: any,
@@ -69,7 +78,10 @@ export function drainAIOrders(
     const left = new Map<string, number>();
     const held: AIOrder[] = [];
     let ran = 0;
-    for (const order of box) {
+    // Bounded: an onDone that always re-queues must not spin the worker.
+    const cap = box.length * 8 + 64;
+    for (let i = 0; i < box.length && i < cap; i++) {
+        const order = box[i];
         // A faction claimed between queue and drain is a human now.
         if (!isAIRunFaction(w as any, order.factionId)) continue;
         if (budget) {
@@ -79,6 +91,7 @@ export function drainAIOrders(
             left.set(order.factionId, n - 1);
         }
         try {
+            order.before?.(world);
             execute(world, order.actionId, order.payload, order.factionId);
             ran++;
             order.onDone?.(world);
@@ -86,7 +99,10 @@ export function drainAIOrders(
         } catch (e: any) {
             console.warn(`[AI Orders] ${order.factionId} ${order.actionId} failed:`, e?.message ?? e);
         }
+        const queued = w.aiOrderOutbox;
+        if (queued && queued.length) box.push(...queued.splice(0));
     }
+    if (box.length > cap) held.push(...box.slice(cap));
     if (held.length) (w.aiOrderOutbox ??= []).unshift(...held);
     return ran;
 }

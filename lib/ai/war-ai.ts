@@ -20,10 +20,12 @@
 //          power, within WAR.preyHops) it has no pact with.
 //      Through the player's own DIP_DECLARE_WAR order (lib/ai/ai-orders), plus a
 //      notification to the victim.
-//   2. ARM. At war (or with a declaration in sight) it commissions battle
-//      groups at the capital — hulls the capital yard can lay, priced at the
-//      player's per-hull catalog cost plus the shell — keeping double the cost
-//      in hand, as every AI purchase does.
+//   2. ARM. At war (or with a declaration in sight) it builds battle groups
+//      at the capital through the player's own orders (lib/ai/ai-fleet-orders):
+//      MIL_BUILD_FLEET for the shell and the first hull, then
+//      MIL_RECRUIT_FORMATION_UNIT for the rest — the same price, yard gate and
+//      build timer a player gets, keeping double the cost in hand as every AI
+//      purchase does. A battle group sails only once its last hull is built.
 //   3. CAMPAIGN. After WAR.musterDays (wars it declared; none for wars on it),
 //      idle battle groups take a mission against the nearest enemy COLONY —
 //      a capital only once it is all they hold, and a last world never before
@@ -42,7 +44,9 @@
 //      in WAR.peaceAfterDays, or its battle groups are broken.
 //
 // Warfleet ids end in `-war-N`: the expansion AI and the belt AI leave them
-// alone (isWarfleetId), and they sort after the scout.
+// alone (isWarfleetId), and they sort after the scout. MIL_BUILD_FLEET names a
+// fleet `fleet-<faction>-<timestamp>`; the fleet builder renames it in the same
+// drain, so the shell never shows up under the handler's id.
 
 import { isCivilianFleet } from '../combat/civilian-ships';
 import type { GameWorldState } from '@/lib/game-world-state';
@@ -50,10 +54,10 @@ import type { Fleet } from '@/lib/movement/types';
 import { isAtWar, findActiveTreaty } from '@/lib/diplomacy/offer-service';
 import { factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { changeFleetCourse, isFleetOperational } from '@/lib/movement/movement-service';
-import { systemYardFor, minYardTierFor } from '@/lib/combat/shipyard-gate';
 import { isAIRunFaction, warEnemiesOf } from '@/lib/ai/belt-ambush-ai';
 import { isTranscending } from '@/lib/victory/victory-service';
 import { queueAIOrder } from '@/lib/ai/ai-orders';
+import { fleetBuildQuote, hasPendingRecruits, hasQueuedFleetBuild, queueAIFleetBuild, queueAIFleetTopUp, yardCanLay } from '@/lib/ai/ai-fleet-orders';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
 import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
@@ -65,8 +69,6 @@ import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
 import { applyDefaultDefence } from '@/lib/combat/siege/defence-doctrine';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import type { TacticalStanceId, GroundUnitType } from '@/lib/combat/siege/siege-types';
-import groundUnits from '@/data/combat/ground-units.json';
-import { materielFor } from '../economy/procurement';
 
 const DAY = 86400;
 
@@ -157,9 +159,6 @@ const WARFLEET_BY_TIER: Array<{ tier: number; composition: Record<string, number
     { tier: 2, composition: { destroyer: 4, cruiser: 3 } },
     { tier: 1, composition: { corvette: 4, destroyer: 4 } },
 ];
-/** The shell MIL_BUILD_FLEET charges and its base power (FLEET_SHELL_POWER). */
-const SHELL_COST = { CREDITS: 1000, METALS: 500 };
-const SHELL_POWER = 10; // scripts/game-loop.ts FLEET_SHELL_POWER
 
 const NON_EMPIRES = new Set(['faction-pirates', 'faction-neutral']);
 
@@ -253,25 +252,15 @@ function hopsFromTerritory(world: GameWorldState, factionId: string, maxHops: nu
     return dist;
 }
 
-/** Hull costs and power from the same catalog MIL_BUILD_FLEET charges from. */
+/** What MIL_BUILD_FLEET plus the hull recruits will charge, and the finished rating (lib/ai/ai-fleet-orders). */
 export function warfleetQuote(composition: Record<string, number>): { cost: Record<string, number>; power: number } {
-    const cost: Record<string, number> = { ...SHELL_COST };
-    let power = SHELL_POWER;
-    for (const [cls, n] of Object.entries(composition)) {
-        const unit = (groundUnits as any)[cls.toUpperCase()];
-        if (!unit) continue;
-        cost.CREDITS += (unit.cost?.credits ?? 0) * n;
-        cost.METALS += (unit.cost?.metals ?? 0) * n;
-        power += (unit.power ?? 0) * n;
-    }
-    // The hulls' materiel, priced the way RecruitmentService.unitCost prices it.
-    cost.MATERIEL = (cost.MATERIEL ?? 0) + Object.entries(composition).reduce((sum, [cls, n]) =>
-        sum + materielFor((groundUnits as any)[cls.toUpperCase()]?.cost?.metals ?? 0) * n, 0);
+    const { cost, power } = fleetBuildQuote(composition);
     return { cost, power };
 }
 
 function canAfford(reserves: Record<string, number> | undefined, cost: Record<string, number>, headroom: number): boolean {
-    return !!reserves && Object.entries(cost).every(([k, v]) => (reserves[k] ?? 0) >= v * headroom);
+    // An untracked reserve key is free, as the order handlers charge it.
+    return !!reserves && Object.entries(cost).every(([k, v]) => reserves[k] === undefined || reserves[k] >= v * headroom);
 }
 
 function warfleetsOf(world: GameWorldState, factionId: string): Fleet[] {
@@ -280,62 +269,48 @@ function warfleetsOf(world: GameWorldState, factionId: string): Fleet[] {
         .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function commissionWarfleet(world: GameWorldState, factionId: string): Fleet | null {
+/** A battle group still waiting on its hulls: it stays home and is not counted as broken. */
+function isFitting(world: GameWorldState, f: Fleet): boolean {
+    return hasPendingRecruits(world, f.id) || hasQueuedFleetBuild(world, f.factionId, f.id);
+}
+
+/** The biggest hull mix the capital yard can lay right now. */
+function warfleetPlanFor(world: GameWorldState, factionId: string, capital: string) {
+    return WARFLEET_BY_TIER.find(p => yardCanLay(world, factionId, capital, p.composition)) ?? null;
+}
+
+/**
+ * Order a battle group built at the capital through the player's orders
+ * (MIL_BUILD_FLEET + MIL_RECRUIT_FORMATION_UNIT). Returns the id it will
+ * carry, or null when the yard cannot lay any plan or the treasury cannot
+ * cover twice the price. Nothing exists until the worker drains the order.
+ */
+function orderWarfleet(world: GameWorldState, factionId: string): string | null {
     const faction = world.economy.factions.get(factionId) as any;
     const capital = faction?.capitalSystemId;
     if (!faction || !capital || !world.movement.systems.has(capital)) return null;
-    const yardTier = systemYardFor(world.construction.planets.values() as any, factionId, capital, world.nowSeconds).tier;
-    const plan = WARFLEET_BY_TIER.find(p => p.tier <= yardTier
-        && Object.keys(p.composition).every(cls => minYardTierFor(cls) <= yardTier));
+    const plan = warfleetPlanFor(world, factionId, capital);
     if (!plan) return null;
-    const { cost, power } = warfleetQuote(plan.composition);
-    const reserves = faction.reserves as Record<string, number> | undefined;
-    if (!canAfford(reserves, cost, 2)) return null;
-    for (const [k, v] of Object.entries(cost)) reserves![k] = (reserves![k] ?? 0) - v;
+    if (!canAfford(faction.reserves, warfleetQuote(plan.composition).cost, 2)) return null;
 
     const used = new Set(warfleetsOf(world, factionId).map(f => f.id));
     let ordinal = 1;
     while (used.has(`fleet-${factionId}-war-${ordinal}`)) ordinal++;
     const id = `fleet-${factionId}-war-${ordinal}`;
-    const fleet = {
-        id,
+    const queued = queueAIFleetBuild(world, {
         factionId,
+        fleetId: id,
         name: `${faction.name ?? factionId} Battle Group ${ordinal}`,
-        currentSystemId: capital,
-        arrivedAtSeconds: world.nowSeconds,
-        destinationSystemId: null,
-        activeLayer: null,
-        transitProgress: 0,
-        etaSeconds: 0,
-        plannedPath: [],
-        orders: [],
-        doctrine: {
-            type: 'Offensive',
-            deviationFromPosture: 0,
-            preferredLayers: ['hyperlane'],
-            retreatThreshold: WAR.retreatStrength,
-            logisticsStrain: 0,
-            moraleDrift: 0,
-            supplyLevel: 1.0,
-        },
-        postureId: 'Aggressive',
-        strength: 1.0,
-        basePower: power,
         composition: { ...plan.composition },
-        hyperdriveProfile: {
-            hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-            trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
-            corridor: { speedMultiplier: 2.0, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 },
-            gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
-            deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
-        },
-        isDetectable: true,
-        orbitingPlanetId: null,
-        arrivalOrbitPlanetId: null,
-        stance: null,
-    } as unknown as Fleet;
-    world.movement.fleets.set(id, fleet);
-    return fleet;
+        systemId: capital,
+        reason: `battle group ${ordinal}: ${Object.entries(plan.composition).map(([c, n]) => `${n} ${c}`).join(', ')}`,
+        // The war AI's doctrine: offensive, and home to refit when mauled.
+        shapeFleet: (fleet: any) => ({
+            postureId: 'Aggressive',
+            doctrine: { ...fleet.doctrine, type: 'Offensive', retreatThreshold: WAR.retreatStrength },
+        }),
+    });
+    return queued ? id : null;
 }
 
 // ─── 1. Declaring ────────────────────────────────────────────────────────────
@@ -601,18 +576,41 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
     }
 
     // ── 2. Arm ──────────────────────────────────────────────────────────────
+    const capital = (world.economy.factions.get(factionId) as any)?.capitalSystemId as string | undefined;
     let fleets = warfleetsOf(world, factionId);
+    // One build in flight at a time: a battle group on the slip (or still in
+    // the outbox) counts toward the cap, so nothing is ordered twice.
     const wantFleets = enemies.size > 0 ? WAR.maxWarfleets : candidate ? 1 : 0;
-    if (fleets.length < wantFleets) {
-        const built = commissionWarfleet(world, factionId);
-        if (built) {
-            turn.commissioned = built.id;
-            fleets = warfleetsOf(world, factionId);
-            console.log(`[War AI] ${factionId} commissioned ${(built as any).name} (power ${built.basePower}).`);
+    const building = fleets.some(f => isFitting(world, f))
+        || hasQueuedFleetBuild(world, factionId, /-war-\d+$/);
+    if (fleets.length < wantFleets && !building) {
+        const ordered = orderWarfleet(world, factionId);
+        if (ordered) {
+            turn.commissioned = ordered;
+            console.log(`[War AI] ${factionId} orders ${ordered} built at its capital.`);
         }
     }
-
-    const capital = (world.economy.factions.get(factionId) as any)?.capitalSystemId as string | undefined;
+    // A battle group home at the yard with hulls missing (a refused recruit
+    // left it short) is filled back up to the plan, through the same order.
+    if (capital) {
+        const plan = warfleetPlanFor(world, factionId, capital);
+        const reserves = (world.economy.factions.get(factionId) as any)?.reserves;
+        for (const f of fleets) {
+            if (!plan || isFitting(world, f) || f.destinationSystemId || f.currentSystemId !== capital) continue;
+            const missing: Record<string, number> = {};
+            for (const [cls, n] of Object.entries(plan.composition)) {
+                const short = n - Number((f.composition as any)?.[cls] ?? 0);
+                if (short > 0) missing[cls] = short;
+            }
+            const ships = Object.values(f.composition ?? {}).reduce((a: number, n: any) => a + (Number(n) || 0), 0);
+            const planned = Object.values(plan.composition).reduce((a, n) => a + n, 0);
+            // Only a fleet short of the plan as a whole; a different but full mix stays as it is.
+            if (ships >= planned || Object.keys(missing).length === 0) continue;
+            // The quote includes a shell fee a top-up does not pay: a little caution.
+            if (!canAfford(reserves, fleetBuildQuote(missing).cost, 2)) continue;
+            queueAIFleetTopUp(world, factionId, f, plan.composition);
+        }
+    }
 
     // ── 3. Campaign ─────────────────────────────────────────────────────────
     // Enemies whose muster is over: anyone who declared on us at once; anyone
@@ -635,7 +633,7 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
         if (covered) continue;
         const blockade = Number(siege.orbit?.attackerPower ?? 0);
         const candidates = fleets
-            .filter(f => isFleetOperational(f) && (f.strength ?? 1) >= WAR.retreatStrength && !f.destinationSystemId && !relieved.has(f.id))
+            .filter(f => isFleetOperational(f) && !isFitting(world, f) && (f.strength ?? 1) >= WAR.retreatStrength && !f.destinationSystemId && !relieved.has(f.id))
             .filter(f => (f.basePower ?? 0) * (f.strength ?? 1) >= blockade * WAR.reliefMinPowerRatio)
             .sort((a, b) => (b.basePower ?? 0) * (b.strength ?? 1) - (a.basePower ?? 0) * (a.strength ?? 1));
         const relief = candidates[0];
@@ -660,6 +658,8 @@ export function aiWarTurn(world: GameWorldState, factionId: string): WarTurn {
     for (const f0 of fleets) {
         let f = f0;
         if (!isFleetOperational(f)) continue;
+        // Still on the slip: it sails when its last hull is laid.
+        if (isFitting(world, f)) continue;
         const mission = missionOf(f);
         // A relief fleet stays on station over its world while the siege
         // lasts, whatever the campaign wants.
@@ -749,7 +749,7 @@ export function aiWarWantsPeace(world: GameWorldState, factionId: string, enemyI
     if (motive === 'transcendence' && !isTranscending(world, enemyId)) return true;
     // A war of opportunity is over once only their last world is left.
     if (motive === 'opportunity' && planetsOf(world, enemyId).length <= 1) return true;
-    const broken = warfleetsOf(world, factionId).every(f => (f.strength ?? 1) < WAR.retreatStrength || !isFleetOperational(f))
+    const broken = warfleetsOf(world, factionId).every(f => !isFitting(world, f) && ((f.strength ?? 1) < WAR.retreatStrength || !isFleetOperational(f)))
         && world.nowSeconds - began >= 10 * DAY;
     return stale || broken;
 }
