@@ -1,7 +1,7 @@
 // lib/tactical/render3d/placeholder-hulls.ts
 // Procedural low-poly stand-ins for the five hull classes, used by the 3D
 // battle renderer until a real glTF model exists for the class
-// (public/models/ships/<class>.glb — see the README there).
+// (public/models/manifest.json — see public/models/README.md).
 //
 // Model space convention (shared with the glTF drop-ins after import):
 //   +X = bow, +Y = port, +Z = dorsal (up, toward the camera).

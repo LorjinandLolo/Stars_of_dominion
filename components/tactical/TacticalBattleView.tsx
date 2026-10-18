@@ -51,6 +51,7 @@ import {
 } from '@/lib/tactical/fleet-adapter';
 import { FastForward, Flag, Pause, Play, X, Zap } from 'lucide-react';
 import type { BattleRenderer } from '@/lib/tactical/render3d/battle-renderer';
+import { VIEW_TILT } from '@/lib/tactical/render3d/view';
 
 const TAU = Math.PI * 2;
 const ARRIVAL_WARP_SECONDS = 4;   // mirrors ARRIVAL_DELAY in lib/tactical/sim.ts
@@ -89,6 +90,8 @@ interface ViewState {
     oy: number;
     cw: number;
     ch: number;
+    /** Ground-plane vertical squash from the tilted battle camera (render3d/view.ts). */
+    tilt: number;
 }
 
 interface DragState {
@@ -278,7 +281,7 @@ export default function TacticalBattleView({
     // until three.js has loaded, or for good when WebGL is unavailable — the
     // 2D canvas then draws the world itself, exactly as it did before.
     const rendererRef = React.useRef<BattleRenderer | null>(null);
-    const viewRef = React.useRef<ViewState>({ scale: 1, ox: 0, oy: 0, cw: 0, ch: 0 });
+    const viewRef = React.useRef<ViewState>({ scale: 1, ox: 0, oy: 0, cw: 0, ch: 0, tilt: VIEW_TILT });
     const dragRef = React.useRef<DragState | null>(null);
 
     // ── Canvas loop, camera and input ──
@@ -299,13 +302,17 @@ export default function TacticalBattleView({
             canvas.height = Math.max(1, Math.round(ch * dpr));
             canvas.style.width = `${cw}px`;
             canvas.style.height = `${ch}px`;
-            const scale = Math.min(cw / st.width, ch / st.height) || 1;
+            // The tilted camera squashes the field vertically, so fit on the
+            // foreshortened height.
+            const tilt = VIEW_TILT;
+            const scale = Math.min(cw / st.width, ch / (st.height * tilt)) || 1;
             viewRef.current = {
                 scale,
                 ox: (cw - st.width * scale) / 2,
-                oy: (ch - st.height * scale) / 2,
+                oy: (ch - st.height * scale * tilt) / 2,
                 cw,
                 ch,
+                tilt,
             };
             rendererRef.current?.resize(viewRef.current);
         };
@@ -327,7 +334,10 @@ export default function TacticalBattleView({
                     const st = stateRef.current;
                     if (glCancelled || !st) return;
                     try {
-                        const r = new BattleRenderer(glCanvas, st);
+                        const r = new BattleRenderer(glCanvas, st, {
+                            player: playerFleets[0]?.factionId,
+                            enemy: enemyFleets[0]?.factionId,
+                        });
                         r.resize(viewRef.current);
                         rendererRef.current = r;
                         if (process.env.NODE_ENV !== 'production') {
@@ -347,7 +357,7 @@ export default function TacticalBattleView({
         };
         const screenToWorld = (sx: number, sy: number) => {
             const v = viewRef.current;
-            return { x: (sx - v.ox) / v.scale, y: (sy - v.oy) / v.scale };
+            return { x: (sx - v.ox) / v.scale, y: (sy - v.oy) / (v.scale * v.tilt) };
         };
 
         const shipAt = (
@@ -877,7 +887,8 @@ export default function TacticalBattleView({
             }
 
             // World space.
-            ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, dpr * v.oy);
+            // World space on the tilted ground plane (affine, see render3d/view.ts).
+            ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale * v.tilt, dpr * v.ox, dpr * v.oy);
 
             if (!r3d) {
                 // Battlefield backdrop.

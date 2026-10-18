@@ -279,19 +279,5 @@ mineral veins, no ice, solid mesh, realistic rock texture
 
 ## Full model list
 
-What the battle renderer draws, and what it still draws procedurally today:
-
-| asset | count | used for | drop-in path |
-| --- | --- | --- | --- |
-| hull: corvette, destroyer, cruiser, battleship, carrier | 5 | every ship in a battle | `public/models/ships/<class>.glb` + manifest (supported now) |
-| strike craft | 1 | interceptor and bomber squadrons, tinted per type | not yet wired, placeholder arrowhead |
-| asteroid rock | 3 | asteroid-field hazards, instanced with random scale and spin | not yet wired, placeholder lumpy icosahedron |
-| nebula texture | 1 | nebula hazards, two tinted soft discs | not yet wired, procedural radial gradient |
-| starfield texture | 1 | backdrop | not yet wired, procedural points |
-| space station | 1 | optional dressing for battles in orbit | no render path yet |
-| planet disc | 1 | optional backdrop for battles in orbit | no render path yet |
-
-Nine models in total for the battle (five hulls, one strike craft, three rocks). The
-civilian ships (explorer, freighter, spy, builder) and orbital structures never enter the
-tactical sim, and the galaxy map and system views are 2D, so nothing else needs a mesh
-yet. Faction variation is a runtime tint, not extra models.
+The list of every model slot, where each file goes, the faction ids and the wishlist of
+models that could come next all live in `public/models/README.md`.

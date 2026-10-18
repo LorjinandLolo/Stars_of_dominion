@@ -1,9 +1,0 @@
-{
-  "ships": {
-    "corvette": "corvette.glb",
-    "destroyer": "destroyer.glb",
-    "cruiser": "cruiser.glb",
-    "battleship": "battleship.glb",
-    "carrier": "carrier.glb"
-  }
-}

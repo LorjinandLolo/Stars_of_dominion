@@ -28,7 +28,7 @@ UV_DARK = (0.25, 0.5)
 UV_LIT = (0.75, 0.5)
 DIRS = {'+x': (1, 0, 0), '-x': (-1, 0, 0), '+y': (0, 1, 0), '-y': (0, -1, 0), '+z': (0, 0, 1), '-z': (0, 0, -1)}
 
-# Triangle budgets from public/models/ships/README.md.
+# Triangle budgets from public/models/README.md.
 BUDGET = {'corvette': 3000, 'destroyer': 5000, 'cruiser': 8000, 'carrier': 10000, 'battleship': 12000}
 
 

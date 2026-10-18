@@ -1,0 +1,13 @@
+{
+  "ships": {
+    "corvette": "ships/corvette.glb",
+    "destroyer": "ships/destroyer.glb",
+    "cruiser": "ships/cruiser.glb",
+    "battleship": "ships/battleship.glb",
+    "carrier": "ships/carrier.glb"
+  },
+  "factions": {},
+  "craft": {},
+  "torpedo": null,
+  "asteroids": []
+}

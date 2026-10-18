@@ -6,10 +6,10 @@
 // Everything UI-ish (grid, weapon arcs, shields, hull bars, selection,
 // reticles, drag previews) stays on the 2D canvas above, so the two layers
 // have to agree on where world (x, y) lands on screen. They do because the
-// camera is a narrow perspective camera straight above the view centre, set
-// up so the z = 0 plane maps EXACTLY to the ViewState the 2D code already
-// uses (scale, ox, oy). Hull tops sit a little above z = 0 and pick up a touch
-// of parallax, which is the whole "2.5D" effect.
+// camera is ORTHOGRAPHIC and pitched by VIEW_PITCH (view.ts): an orthographic
+// view of the z = 0 plane is affine, so it maps exactly onto the ViewState the
+// 2D overlay draws with (scale, ox, oy, tilt). Height above the plane shows as
+// screen-up offset, so you see the hulls' flanks and superstructure: the 2.5D.
 //
 // Three-space: world (x, y) → (x, -y, 0); +Z is toward the camera. A ship's
 // heading θ (world, 0 = +x, clockwise on screen) is a rotation of -θ about Z.
@@ -22,23 +22,20 @@ import * as THREE from 'three';
 import type { BattleState, Hazard, ShipClassId, TacticalShip, TacticalSide } from '../types';
 import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStrikeCraft } from './placeholder-hulls';
-import { loadHullModels, type HullModel } from './hull-models';
+import { loadModelSet, type HullModel, type ModelSet } from './hull-models';
+import type { ViewLike } from './view';
+import type { SquadronType } from '../types';
+
+export type { ViewLike } from './view';
 
 const TAU = Math.PI * 2;
-const CAMERA_FOV = 14;
+const CAMERA_DISTANCE = 4000;     // orthographic, so only the depth range depends on it
 const MAX_PIXEL_RATIO = 1.5;
 const BEAM_FADE_SECONDS = 0.12;   // mirrors beam expiry in lib/tactical/sim.ts
-const FX_Z = 6;                   // above hull decks, below nothing (depth test off)
+const FX_Z = 1;                   // glow plane; depth test is off, so it always draws on top
 const CLASS_IDS: ShipClassId[] = ['corvette', 'destroyer', 'cruiser', 'battleship', 'carrier'];
 const SIDES: TacticalSide[] = ['player', 'enemy'];
-
-export interface ViewLike {
-    scale: number;
-    ox: number;
-    oy: number;
-    cw: number;
-    ch: number;
-}
+const CRAFT_TYPES: SquadronType[] = ['interceptor', 'bomber'];
 
 const SIDE_COLOUR: Record<TacticalSide, { tint: THREE.Color; emissive: THREE.Color; glow: THREE.Color; stroke: THREE.Color }> = {
     player: {
@@ -199,7 +196,7 @@ type InstancedMesh = THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
 export class BattleRenderer {
     private readonly renderer: THREE.WebGLRenderer;
     private readonly scene = new THREE.Scene();
-    private readonly camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 10, 20000);
+    private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 2);
     private readonly discTexture = makeSoftDiscTexture();
     private readonly beamTexture = makeBeamTexture();
     private readonly hullGeometry = new Map<ShipClassId, THREE.BufferGeometry>();
@@ -207,20 +204,27 @@ export class BattleRenderer {
     private readonly hulls = new Map<string, InstancePool>();
     /** Back-face silhouette in the side's colour: the 2D view's coloured stroke, in 3D. */
     private readonly outlines = new Map<string, InstancePool>();
-    private readonly craft: Record<TacticalSide, InstancePool>;
+    /** side:type → pool, so interceptors and bombers can carry different models. */
+    private readonly craft = new Map<string, InstancePool>();
+    private readonly craftMaterial = new Map<string, THREE.MeshStandardMaterial>();
     private readonly torpedoes: Record<TacticalSide, InstancePool>;
     private readonly sprites: InstancePool;
     private readonly beams: InstancePool;
     private readonly rocks: InstancePool[] = [];
-    private readonly ownedGeometries: THREE.BufferGeometry[] = [];
+    private readonly rockMaterials: THREE.MeshStandardMaterial[] = [];
+    private readonly ownedGeometries = new Set<THREE.BufferGeometry>();
     private readonly ownedMaterials: THREE.Material[] = [];
     private readonly ownedTextures: THREE.Texture[] = [];
     private readonly colour = new THREE.Color();
     private disposed = false;
-    /** True once at least one real glTF hull replaced its placeholder. */
+    /** True once at least one real glTF model replaced its placeholder. */
     modelsLoaded = false;
 
-    constructor(canvas: HTMLCanvasElement, state: BattleState) {
+    constructor(
+        canvas: HTMLCanvasElement,
+        state: BattleState,
+        private readonly factions: Partial<Record<TacticalSide, string>> = {},
+    ) {
         this.renderer = new THREE.WebGLRenderer({
             canvas,
             antialias: true,
@@ -236,11 +240,11 @@ export class BattleRenderer {
 
         this.camera.up.set(0, 1, 0);
 
-        // Lights: one key, one hemisphere fill. No shadows anywhere.
-        // Low key angle on purpose: the camera looks straight down, so a light
-        // from above would flatten every deck to the same shade.
+        // Lights: one key, one hemisphere fill. No shadows anywhere. The key
+        // sits on the camera's side (low three-Y) and to the left, so the flanks
+        // the tilted camera sees are lit and the decks still read as stepped.
         const key = new THREE.DirectionalLight(0xffffff, 2.0);
-        key.position.set(-1.0, 0.7, 0.9);
+        key.position.set(-0.8, -0.9, 1.1);
         this.scene.add(key);
         this.scene.add(new THREE.HemisphereLight(0x9bb0ff, 0x1a2236, 0.45));
         this.scene.add(new THREE.AmbientLight(0xffffff, 0.06));
@@ -252,7 +256,7 @@ export class BattleRenderer {
         for (const id of CLASS_IDS) {
             const geo = buildPlaceholderHull(id);
             this.hullGeometry.set(id, geo);
-            this.ownedGeometries.push(geo);
+            this.ownedGeometries.add(geo);
             for (const side of SIDES) {
                 const mat = new THREE.MeshStandardMaterial({
                     color: 0x8a93a1,
@@ -276,7 +280,7 @@ export class BattleRenderer {
         }
 
         const craftGeo = buildStrikeCraft();
-        this.ownedGeometries.push(craftGeo);
+        this.ownedGeometries.add(craftGeo);
         const craftMat = (side: TacticalSide) => {
             const m = new THREE.MeshStandardMaterial({
                 color: 0xc8ccd6,
@@ -289,14 +293,17 @@ export class BattleRenderer {
             this.ownedMaterials.push(m);
             return m;
         };
-        this.craft = {
-            player: new InstancePool(this.scene, craftGeo, craftMat('player'), 32),
-            enemy: new InstancePool(this.scene, craftGeo, craftMat('enemy'), 32),
-        };
+        for (const side of SIDES) {
+            for (const type of CRAFT_TYPES) {
+                const m = craftMat(side);
+                this.craftMaterial.set(`${side}:${type}`, m);
+                this.craft.set(`${side}:${type}`, new InstancePool(this.scene, craftGeo, m, 32));
+            }
+        }
 
         const torpGeo = new THREE.ConeGeometry(1.8, 7, 6);
         torpGeo.rotateZ(-Math.PI / 2);
-        this.ownedGeometries.push(torpGeo);
+        this.ownedGeometries.add(torpGeo);
         const torpMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         this.ownedMaterials.push(torpMat);
         this.torpedoes = {
@@ -305,7 +312,7 @@ export class BattleRenderer {
         };
 
         const quad = new THREE.PlaneGeometry(1, 1);
-        this.ownedGeometries.push(quad);
+        this.ownedGeometries.add(quad);
         const spriteMat = new THREE.MeshBasicMaterial({
             map: this.discTexture,
             transparent: true,
@@ -332,7 +339,7 @@ export class BattleRenderer {
     private buildBackdrop(state: BattleState): void {
         const field = new THREE.PlaneGeometry(state.width, state.height);
         const fieldMat = new THREE.MeshBasicMaterial({ color: 0x050b1e });
-        this.ownedGeometries.push(field);
+        this.ownedGeometries.add(field);
         this.ownedMaterials.push(fieldMat);
         const plane = new THREE.Mesh(field, fieldMat);
         plane.position.set(state.width / 2, -state.height / 2, -4);
@@ -357,14 +364,14 @@ export class BattleRenderer {
         stars.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         stars.setAttribute('color', new THREE.BufferAttribute(col, 3));
         const starMat = new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true });
-        this.ownedGeometries.push(stars);
+        this.ownedGeometries.add(stars);
         this.ownedMaterials.push(starMat);
         this.scene.add(new THREE.Points(stars, starMat));
     }
 
     private buildHazards(hazards: Hazard[]): void {
         const discGeo = new THREE.PlaneGeometry(1, 1);
-        this.ownedGeometries.push(discGeo);
+        this.ownedGeometries.add(discGeo);
         hazards.forEach((h, i) => {
             if (h.kind === 'asteroid') {
                 // Dim disc under the rocks, then a rock pool seeded from the position.
@@ -380,9 +387,10 @@ export class BattleRenderer {
                 const seed = (Math.round(h.x * 31 + h.y * 17 + h.r * 7) >>> 0) || 1;
                 const rand = mulberry32(seed);
                 const rockGeo = buildRock(seed + i);
-                this.ownedGeometries.push(rockGeo);
+                this.ownedGeometries.add(rockGeo);
                 const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.95, metalness: 0.05, flatShading: true });
                 this.ownedMaterials.push(rockMat);
+                this.rockMaterials.push(rockMat);
                 const count = Math.max(18, Math.min(60, Math.round((h.r * h.r) / 350)));
                 const pool = new InstancePool(this.scene, rockGeo, rockMat, count);
                 pool.begin();
@@ -417,36 +425,57 @@ export class BattleRenderer {
     // ── glTF drop-ins ──
 
     private async installModels(): Promise<void> {
-        let models: Map<ShipClassId, HullModel>;
+        let set: ModelSet;
         try {
-            models = await loadHullModels();
+            set = await loadModelSet([this.factions.player, this.factions.enemy]);
         } catch {
             return;
         }
         if (this.disposed) {
-            for (const m of models.values()) m.geometry.dispose();
+            disposeModelSet(set);
             return;
         }
-        for (const [id, model] of models) {
-            const old = this.hullGeometry.get(id);
-            this.hullGeometry.set(id, model.geometry);
-            this.ownedGeometries.push(model.geometry);
-            for (const side of SIDES) {
-                const pool = this.hulls.get(`${id}:${side}`)!;
-                pool.setGeometry(model.geometry);
-                this.outlines.get(`${id}:${side}`)!.setGeometry(model.geometry);
-                const mat = this.hullMaterial.get(`${id}:${side}`)!;
-                if (model.maps.map) { mat.map = model.maps.map; mat.color.set(0xffffff); }
-                if (model.maps.normalMap) mat.normalMap = model.maps.normalMap;
-                if (model.maps.roughnessMap) mat.roughnessMap = model.maps.roughnessMap;
-                if (model.maps.metalnessMap) mat.metalnessMap = model.maps.metalnessMap;
-                if (model.maps.emissiveMap) { mat.emissiveMap = model.maps.emissiveMap; mat.emissiveIntensity = 1; }
-                mat.flatShading = false;
-                mat.needsUpdate = true;
-            }
-            for (const t of Object.values(model.maps)) if (t) this.ownedTextures.push(t);
-            old?.dispose();
+        const adopt = (model: HullModel) => {
+            this.ownedGeometries.add(model.geometry);
+            for (const t of Object.values(model.maps)) if (t && !this.ownedTextures.includes(t)) this.ownedTextures.push(t);
             this.modelsLoaded = true;
+        };
+
+        // Hulls: a faction's own hull beats the generic one, per side.
+        for (const id of CLASS_IDS) {
+            for (const side of SIDES) {
+                const faction = this.factions[side];
+                const model = (faction && set.factionShips.get(faction)?.get(id)) || set.ships.get(id);
+                if (!model) continue;
+                adopt(model);
+                this.hulls.get(`${id}:${side}`)!.setGeometry(model.geometry);
+                this.outlines.get(`${id}:${side}`)!.setGeometry(model.geometry);
+                applyMaps(this.hullMaterial.get(`${id}:${side}`)!, model);
+            }
+        }
+
+        for (const type of CRAFT_TYPES) {
+            const model = set.craft.get(type);
+            if (!model) continue;
+            adopt(model);
+            for (const side of SIDES) {
+                this.craft.get(`${side}:${type}`)!.setGeometry(model.geometry);
+                applyMaps(this.craftMaterial.get(`${side}:${type}`)!, model);
+            }
+        }
+
+        if (set.torpedo) {
+            adopt(set.torpedo);
+            for (const side of SIDES) this.torpedoes[side].setGeometry(set.torpedo.geometry);
+        }
+
+        if (set.asteroids.length) {
+            this.rocks.forEach((pool, i) => {
+                const model = set.asteroids[i % set.asteroids.length];
+                adopt(model);
+                pool.setGeometry(model.geometry);
+                applyMaps(this.rockMaterials[i], model);
+            });
         }
     }
 
@@ -457,17 +486,28 @@ export class BattleRenderer {
     }
 
     private placeCamera(view: ViewLike): void {
-        // Visible world rect from the 2D transform; z = 0 must map 1:1 onto it.
-        const cx = (view.cw / 2 - view.ox) / view.scale;
-        const cy = (view.ch / 2 - view.oy) / view.scale;
-        const visibleHeight = view.ch / view.scale;
-        const dist = (visibleHeight / 2) / Math.tan((CAMERA_FOV * Math.PI) / 360);
-        this.camera.aspect = view.cw / Math.max(1, view.ch);
-        this.camera.near = dist * 0.5;
-        this.camera.far = dist * 1.5;
-        this.camera.position.set(cx, -cy, dist);
-        this.camera.lookAt(cx, -cy, 0);
-        this.camera.updateProjectionMatrix();
+        // The ground point under the screen centre, from the 2D transform:
+        //   screenX = ox + scale * x,  screenY = oy + scale * tilt * y.
+        // An orthographic camera pitched by acos(tilt) and looking at that point
+        // reproduces exactly that map for z = 0, at scale px per world unit.
+        const s = view.scale;
+        const tilt = Math.min(1, Math.max(0.05, view.tilt ?? 1));
+        const pitch = Math.acos(tilt);
+        const cx = (view.cw / 2 - view.ox) / s;
+        const cy = (view.ch / 2 - view.oy) / (s * tilt);
+        const cam = this.camera;
+        cam.left = -view.cw / (2 * s);
+        cam.right = view.cw / (2 * s);
+        cam.top = view.ch / (2 * s);
+        cam.bottom = -view.ch / (2 * s);
+        cam.near = 1;
+        cam.far = CAMERA_DISTANCE * 2;
+        // The camera sits "south" of the target (lower three-Y, further down the
+        // screen) and looks north and down, so +Z height reads as screen-up.
+        cam.position.set(cx, -cy - CAMERA_DISTANCE * Math.sin(pitch), CAMERA_DISTANCE * Math.cos(pitch));
+        cam.up.set(0, 1, 0);
+        cam.lookAt(cx, -cy, 0);
+        cam.updateProjectionMatrix();
     }
 
     render(state: BattleState, view: ViewLike): void {
@@ -476,8 +516,7 @@ export class BattleRenderer {
 
         for (const pool of this.hulls.values()) pool.begin();
         for (const pool of this.outlines.values()) pool.begin();
-        this.craft.player.begin();
-        this.craft.enemy.begin();
+        for (const pool of this.craft.values()) pool.begin();
         this.torpedoes.player.begin();
         this.torpedoes.enemy.begin();
         this.sprites.begin();
@@ -492,7 +531,7 @@ export class BattleRenderer {
             if (sq.craft <= 0) continue;
             const full = SQUADRON_DEFS[sq.type].craft;
             const rand = mulberry32(hashStr(sq.id));
-            const pool = this.craft[sq.side];
+            const pool = this.craft.get(`${sq.side}:${sq.type}`)!;
             this.colour.copy(SIDE_COLOUR[sq.side].tint);
             for (let i = 0; i < full; i++) {
                 const jx = (rand() - 0.5) * 18;
@@ -536,8 +575,7 @@ export class BattleRenderer {
 
         for (const pool of this.hulls.values()) pool.end();
         for (const pool of this.outlines.values()) pool.end();
-        this.craft.player.end();
-        this.craft.enemy.end();
+        for (const pool of this.craft.values()) pool.end();
         this.torpedoes.player.end();
         this.torpedoes.enemy.end();
         this.sprites.end();
@@ -575,8 +613,7 @@ export class BattleRenderer {
         this.disposed = true;
         for (const pool of this.hulls.values()) pool.dispose();
         for (const pool of this.outlines.values()) pool.dispose();
-        this.craft.player.dispose();
-        this.craft.enemy.dispose();
+        for (const pool of this.craft.values()) pool.dispose();
         this.torpedoes.player.dispose();
         this.torpedoes.enemy.dispose();
         this.sprites.dispose();
@@ -588,5 +625,26 @@ export class BattleRenderer {
         this.scene.clear();
         this.renderer.dispose();
         this.renderer.forceContextLoss();
+    }
+}
+
+function applyMaps(mat: THREE.MeshStandardMaterial, model: HullModel): void {
+    const m = model.maps;
+    if (m.map) { mat.map = m.map; mat.color.set(0xffffff); }
+    if (m.normalMap) mat.normalMap = m.normalMap;
+    if (m.roughnessMap) mat.roughnessMap = m.roughnessMap;
+    if (m.metalnessMap) mat.metalnessMap = m.metalnessMap;
+    if (m.emissiveMap) { mat.emissiveMap = m.emissiveMap; mat.emissiveIntensity = 1; }
+    mat.flatShading = false;
+    mat.needsUpdate = true;
+}
+
+function disposeModelSet(set: ModelSet): void {
+    const all: HullModel[] = [...set.ships.values(), ...set.craft.values(), ...set.asteroids];
+    for (const byClass of set.factionShips.values()) all.push(...byClass.values());
+    if (set.torpedo) all.push(set.torpedo);
+    for (const m of all) {
+        m.geometry.dispose();
+        for (const t of Object.values(m.maps)) t?.dispose();
     }
 }
