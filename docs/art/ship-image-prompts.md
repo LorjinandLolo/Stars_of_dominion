@@ -177,3 +177,122 @@ rim on the lit edge, terminator line on the right third, no stars, no text.
   per faction.
 - Orient every model with the bow along +X and the dorsal side along +Y before export; the
   sim heading is 0 along +X.
+
+## Prompts for the 3D tools (Meshy, Tripo, Rodin, Hunyuan3D)
+
+Two routes. Image-to-3D with the three-view set above gives the most control and is the
+one to use for the hulls. Text-to-3D is a fallback when a view set will not converge; the
+tools want short shape-first prompts, so these are compressed versions of the image
+prompts with the lighting and background language stripped.
+
+Settings that matter, whichever tool:
+
+- Mode: image-to-3D, multi-view where offered (Meshy "multi-image", Tripo "multiview").
+  Upload hero, top-down and side views in that order.
+- Symmetry: on (every hull is mirror-symmetric about its length).
+- Topology: triangles, target face count per the budget table below.
+- Texture: PBR on, 2k; ask for emissive or "lights" map if offered.
+- Art style: realistic / hard surface. Never "cartoon", "low poly" or "stylised".
+- Remesh and retopology: on if offered. Tripo's "smart low poly" is fine for the corvette
+  and destroyer only.
+- Export: glb, embedded textures, no Draco.
+
+| class | target faces |
+| --- | --- |
+| corvette | 3000 |
+| destroyer | 5000 |
+| cruiser | 8000 |
+| carrier | 10000 |
+| battleship | 12000 |
+| strike craft | 600 |
+| asteroid | 400 |
+
+Negative prompt for tools that take one:
+
+```
+cartoon, low poly, stylized, hollow, floating parts, disconnected pieces, text, logo,
+flat, 2d, mirrored duplicate bridge, double prow, base, stand, pedestal
+```
+
+### Text-to-3D prompts
+
+Corvette:
+
+```
+hard surface sci-fi military corvette starship, narrow dart hull, single dorsal gun
+turret, two oversized engine nacelles at the rear, thin swept fins, exposed fuel tanks
+and pipes, gunmetal grey armour plates with panel lines, cyan running lights, solid
+single mesh, symmetric
+```
+
+Destroyer:
+
+```
+hard surface sci-fi military destroyer starship, wedge hull with sharp prow, two fixed
+heavy forward cannons flanking the bow, four torpedo tube hatches under the chin, angular
+stacked armour at the front, skeletal rear, twin engines, gunmetal grey with panel lines,
+cyan running lights, solid single mesh, symmetric
+```
+
+Cruiser:
+
+```
+hard surface sci-fi military cruiser starship, long rectangular hull with broad flat
+dorsal deck, three heavy gun turrets per flank in armoured broadside batteries, small
+point defence turrets along the spine, raised command tower amidships with sensor arrays,
+four shield emitter pylons, three stern engines, gunmetal grey with panel lines, cyan
+running lights, solid single mesh, symmetric
+```
+
+Battleship:
+
+```
+hard surface sci-fi military battleship starship, very long heavy hull built around one
+enormous spinal cannon with the muzzle at the bow, thick layered frontal armour and blunt
+prow, two tiers of broadside turrets per flank, one large rear turret, tall bridge
+superstructure set back, massive six nozzle engine block, gunmetal grey with panel lines,
+cyan running lights, solid single mesh, symmetric
+```
+
+Carrier:
+
+```
+hard surface sci-fi military carrier starship, wide flat slab hull, two long open hangar
+bays along each flank with launch rails, flight deck markings on top, small point defence
+turrets only, low sensor tower at the rear, four engines, gunmetal grey with panel lines,
+cyan running lights, solid single mesh, symmetric
+```
+
+Strike craft:
+
+```
+tiny hard surface sci-fi single seat space fighter, compact arrowhead body, one cockpit
+canopy, two short wing stubs with weapon pods, single engine, gunmetal grey, cyan engine
+glow, solid single mesh, symmetric, very simple silhouette
+```
+
+Asteroid (run three times):
+
+```
+single irregular rocky asteroid, cratered grey brown stone, fractured edges, pits,
+mineral veins, no ice, solid mesh, realistic rock texture
+```
+
+## Full model list
+
+What the battle renderer draws, and what it still draws procedurally today:
+
+| asset | count | used for | drop-in path |
+| --- | --- | --- | --- |
+| hull: corvette, destroyer, cruiser, battleship, carrier | 5 | every ship in a battle | `public/models/ships/<class>.glb` + manifest (supported now) |
+| strike craft | 1 | interceptor and bomber squadrons, tinted per type | not yet wired, placeholder arrowhead |
+| asteroid rock | 3 | asteroid-field hazards, instanced with random scale and spin | not yet wired, placeholder lumpy icosahedron |
+| nebula texture | 1 | nebula hazards, two tinted soft discs | not yet wired, procedural radial gradient |
+| starfield texture | 1 | backdrop | not yet wired, procedural points |
+| space station | 1 | optional dressing for battles in orbit | no render path yet |
+| planet disc | 1 | optional backdrop for battles in orbit | no render path yet |
+
+Nine models in total for the battle (five hulls, one strike craft, three rocks). The
+civilian ships (explorer, freighter, spy, builder) and orbital structures never enter the
+tactical sim, and the galaxy map and system views are 2D, so nothing else needs a mesh
+yet. Faction variation is a runtime tint, not extra models.
