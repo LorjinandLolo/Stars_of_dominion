@@ -24,20 +24,19 @@ set when the generator allows it.
 
 ## Shared style block
 
-Paste this at the end of every ship prompt.
+Paste this at the end of every ship prompt (about 280 characters, fits tools with a
+short prompt limit).
 
 ```
-Style: hard-surface military science-fiction spaceship, used and functional, not sleek
-consumer design. Dark gunmetal grey hull plating with visible panel lines, exposed
-structural ribs, bolted armour plates, greebles, antenna masts and sensor domes. One
-accent colour only: cyan running lights and engine glow. No faction markings, no decals,
-no text, no flags. Single object, fully in frame, centred, nothing cropped. Plain flat
-dark charcoal background, no stars, no planets, no nebula, no lens flare, no motion blur,
-no particles, no laser fire. Even studio lighting with soft key light from the upper
-left, subtle rim light, no harsh shadows. Photorealistic PBR materials, 8k, sharp focus.
+Hard-surface military sci-fi starship, gunmetal grey plating, panel lines, greebles, cyan
+running lights only. No markings, no text. Single object centred, fully in frame, plain
+flat dark grey background, no stars, no flare, no blur. Soft studio lighting,
+photorealistic PBR, sharp.
 ```
 
-Negative prompt where the tool takes one:
+Negative prompt. Only some tools have a separate box for things to avoid (Meshy, Tripo,
+Stable Diffusion UIs); Midjourney takes it inline as `--no ...`; Higgsfield and most video
+tools have none, skip it there:
 
 ```
 background scenery, stars, space, nebula, planet, lens flare, bloom, motion blur, text,
