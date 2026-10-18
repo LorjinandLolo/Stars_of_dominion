@@ -2,6 +2,7 @@
 // Pillar 6 — Espionage & Subversion: operations, attribution, shadow economy.
 
 import { hasParkedCivilian, SPY_TRACE_FACTOR } from '../combat/civilian-ships';
+import { sabotageDefences, restoreSabotage } from './defence-sabotage';
 import type {
     EspionageWorldState,
     EspionageOperation,
@@ -544,9 +545,40 @@ function resolveSweepOperation(op: EspionageOperation, def: OperationDefinition,
     }
 }
 
+/**
+ * Restore Defences resolves at home, like a sweep: on success everything
+ * sabotaged in the system is back in action now (defence-sabotage.ts).
+ */
+function resolveRestoreOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState, agent: SpyAgent | null): void {
+    const successChance = computeCatalogSuccessChance(def, op.actorFactionId, op.actorFactionId, world, agent);
+    op.succeeded = Math.random() < successChance;
+    op.status = op.succeeded ? 'resolved' : 'failed';
+    op.attributionState = 'invisible';
+    const restored = op.succeeded ? restoreSabotage(world, op.actorFactionId, op.targetRegionId) : 0;
+    const intel = world.espionage.factionIntel.get(op.actorFactionId);
+    if (intel) intel.usedAgentCapacity = Math.max(0, intel.usedAgentCapacity - 1);
+    if (agent) applyAgentOpConsequences(agent, op.succeeded, op.riskLevel, world.nowSeconds, world, false);
+    const where = world.movement.systems.get(op.targetRegionId)?.name ?? op.targetRegionId;
+    op.narrative = op.succeeded ? `${def.name}: ${restored} installation(s) back on line at ${where}` : `${def.name}: the engineers could not get them back`;
+    try {
+        fireNotification({
+            id: `restore-${op.id}`, factionId: op.actorFactionId, category: 'espionage', priority: 'normal',
+            title: op.succeeded ? 'Defences restored' : 'Restoration failed',
+            body: op.succeeded
+                ? (restored ? `${restored} sabotaged installation(s) at ${where} are back in action.` : `Nothing at ${where} needed restoring.`)
+                : `The engineers at ${where} could not undo the sabotage. Try again, or wait for it to wear off.`,
+            createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+        });
+    } catch { /* probes */ }
+}
+
 function resolveCatalogOperation(op: EspionageOperation, def: OperationDefinition, world: GameWorldState): void {
     // The agent the operation named, if they are still ours to command.
     const agent = operationAgent(op, world);
+    if (def.id === 'restore_defences') {
+        resolveRestoreOperation(op, def, world, agent);
+        return;
+    }
     if (def.category === 'counter_intelligence') {
         resolveSweepOperation(op, def, world, agent);
         return;
@@ -768,6 +800,24 @@ function applyCatalogEffects(op: EspionageOperation, def: OperationDefinition, o
             // Sabotaged ammunition stores across the target's worlds.
             for (const p of targetEcoPlanets) {
                 p.stockpile.ammo = (p.stockpile.ammo ?? 0) * (1 - effect.value * mult);
+            }
+        }
+        // lib/espionage/defence-sabotage.ts: defences out before the fleet comes.
+        if (effect.type === 'disable_orbital_defences' || effect.type === 'blind_shield' || effect.type === 'spike_guns') {
+            const kind = effect.type === 'disable_orbital_defences' ? 'orbital' : effect.type === 'blind_shield' ? 'shield' : 'guns';
+            const hit = sabotageDefences(world, op.targetFactionId, op.targetRegionId, kind, Math.round((effect.durationSeconds ?? 172800) * mult));
+            const where = world.movement.systems.get(op.targetRegionId)?.name ?? op.targetRegionId;
+            const names = hit.flatMap(h => h.hit);
+            console.log(`[ESPIONAGE] ${def.name} at ${where}: ${names.length ? names.join(', ') : 'nothing to hit'}`);
+            if (names.length) {
+                try {
+                    fireNotification({
+                        id: `sabotage-def-${op.id}`, factionId: op.targetFactionId, category: 'espionage', priority: 'urgent',
+                        title: `Defences sabotaged at ${where}`,
+                        body: `${names.join(', ')} put out of action. Run Restore Defences (Intelligence → Counter-intel) to bring them back sooner.`,
+                        createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false, linkToTab: 'intelligence',
+                    });
+                } catch { /* probes */ }
             }
         }
         if (effect.type === 'disable_building') {

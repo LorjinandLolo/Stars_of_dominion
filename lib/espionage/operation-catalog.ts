@@ -492,6 +492,81 @@ export const OPERATION_CATALOG: OperationDefinition[] = [
     counterplayTags: ["central_bank_audit", "rationing_protocol"]
   },
   {
+    // lib/espionage/defence-sabotage.ts: soften a world before the fleet comes.
+    id: "sabotage_orbital_defences",
+    name: "Disable Orbital Defences",
+    category: "sabotage",
+    description: "Feed false targeting data and burn out fire-control: a world's orbital defence platforms go offline for two days, so its orbit falls fast and they add nothing to a battle.",
+    targetTypes: ["planet", "system"],
+    intelCost: 60,
+    creditsCost: 2500,
+    durationHoursMin: 12,
+    durationHoursMax: 24,
+    baseSuccessChance: 0.45,
+    baseExposureChance: 0.35,
+    risk: "high",
+    effects: [
+      { type: "disable_orbital_defences", value: 1, durationSeconds: 172800 } // 48 sim hours
+    ],
+    counterplayTags: ["hardened_infra", "restore_defences"]
+  },
+  {
+    id: "sabotage_shield",
+    name: "Blind the Shield",
+    category: "sabotage",
+    description: "Cut the shield generators' power couplings: bombardment gets through and the defenders lose the shield, for two days.",
+    targetTypes: ["planet", "system"],
+    intelCost: 50,
+    creditsCost: 2000,
+    durationHoursMin: 12,
+    durationHoursMax: 24,
+    baseSuccessChance: 0.45,
+    baseExposureChance: 0.35,
+    risk: "high",
+    effects: [
+      { type: "blind_shield", value: 1, durationSeconds: 172800 }
+    ],
+    counterplayTags: ["hardened_infra", "restore_defences"]
+  },
+  {
+    id: "sabotage_guns",
+    name: "Spike the Guns",
+    category: "sabotage",
+    description: "Wreck the breeches of a world's surface defence platforms and outpost batteries for two days.",
+    targetTypes: ["planet", "system"],
+    intelCost: 45,
+    creditsCost: 1800,
+    durationHoursMin: 8,
+    durationHoursMax: 16,
+    baseSuccessChance: 0.5,
+    baseExposureChance: 0.3,
+    risk: "medium",
+    effects: [
+      { type: "spike_guns", value: 1, durationSeconds: 172800 }
+    ],
+    counterplayTags: ["hardened_infra", "restore_defences"]
+  },
+  {
+    // The answer to the three above: run in your own system, it brings
+    // everything sabotaged there back into action at once.
+    id: "restore_defences",
+    name: "Restore Defences",
+    category: "counter_intelligence",
+    description: "Engineers and security sweep the sabotaged installations in one of your systems and bring them back on line.",
+    targetTypes: ["system"],
+    intelCost: 20,
+    creditsCost: 600,
+    durationHoursMin: 2,
+    durationHoursMax: 6,
+    baseSuccessChance: 0.8,
+    baseExposureChance: 0.0,
+    risk: "low",
+    effects: [
+      { type: "restore_sabotage", value: 1 }
+    ],
+    counterplayTags: []
+  },
+  {
     id: "counterintel_sweep",
     name: "Counter-Intel Sweep",
     category: "counter_intelligence",

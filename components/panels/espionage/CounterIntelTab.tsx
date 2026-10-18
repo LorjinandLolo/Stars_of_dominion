@@ -16,6 +16,8 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useUIStore } from '@/lib/store/ui-store';
+import { sabotageBySystem } from '@/lib/espionage/defence-sabotage';
 import { AlertTriangle, Loader2, Lock, Save, ShieldCheck, Target } from 'lucide-react';
 import type { FactionIntelState, SpyAgent } from '@/types/ui-state';
 import {
@@ -43,11 +45,17 @@ interface Props {
     busy: boolean;
     onSavePlan: (budget: number, regions: Record<string, number>) => void;
     onSweep: (systemId: string, agentId: string | null) => void;
+    /** Restore Defences (lib/espionage/defence-sabotage.ts) in one system. */
+    onRestore?: (systemId: string, agentId: string | null) => void;
 }
 
 const perRealHour = (perSimHour: number) => perSimHour * SIM_HOURS_PER_REAL_HOUR;
 
-export function CounterIntelTab({ intel, ownSystems, agents, credits, techBonus, busy, onSavePlan, onSweep }: Props) {
+export function CounterIntelTab({ intel, ownSystems, agents, credits, techBonus, busy, onSavePlan, onSweep, onRestore }: Props) {
+    const planets = useUIStore(s => s.planets);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
+    const sabotaged = useMemo(() => sabotageBySystem(planets as any[], playerFactionId ?? ''), [planets, playerFactionId]);
+    const [restoreSystem, setRestoreSystem] = useState('');
     const savedBudget = intel?.counterIntelBudget ?? 0;
     const savedRegional = useMemo(() => intel?.regionalCounterIntel ?? {}, [intel?.regionalCounterIntel]);
     const [budget, setBudget] = useState(savedBudget);
@@ -180,6 +188,55 @@ export function CounterIntelTab({ intel, ownSystems, agents, credits, techBonus,
                     </button>
                 </div>
             </div>
+
+            {/* Restore Defences */}
+            {(() => {
+                const restore = OPERATION_CATALOG_BY_ID.get('restore_defences');
+                if (!restore || !onRestore) return null;
+                const systems = ownSystems.filter(s => sabotaged.has(s.id));
+                const at = restoreSystem && sabotaged.has(restoreSystem) ? restoreSystem : systems[0]?.id ?? '';
+                const blocker = !systems.length ? 'Nothing is sabotaged'
+                    : atCapacity ? 'All operation slots busy'
+                        : (intel?.intelPoints ?? 0) < restore.intelCost ? `Needs ${restore.intelCost} Intel`
+                            : credits < restore.creditsCost ? `Needs § ${restore.creditsCost}`
+                                : null;
+                const odds = clampSuccessChance(catalogOwnSideChance(restore, {
+                    infiltration: strength, techBonus,
+                    agentModifier: agent ? agentSuccessModifier(visibleTraits(agent.traitIds), agent.experienceLevel, restore.category) : 0,
+                }));
+                return (
+                    <div className={`bg-slate-900/60 border rounded-lg p-4 space-y-3 ${systems.length ? 'border-red-500/40' : 'border-slate-800'}`}>
+                        <h3 className="text-[10px] font-display tracking-widest text-sky-400 uppercase flex items-center gap-2">
+                            <ShieldCheck size={12} /> {restore.name}
+                        </h3>
+                        <p className="text-[10px] text-slate-500">
+                            Saboteurs can put a world&apos;s orbital defences, shields and guns out of action for two days. Engineers and security bring them back here, sooner.
+                        </p>
+                        {systems.length ? (
+                            <>
+                                <select value={at} onChange={e => setRestoreSystem(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-2 text-[11px] text-slate-300 outline-none">
+                                    {systems.map(s => <option key={s.id} value={s.id}>{s.name}: {(sabotaged.get(s.id) ?? []).join(', ')}</option>)}
+                                </select>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono text-slate-400">
+                                    <span>{restore.intelCost} Intel</span>
+                                    <span>§ {restore.creditsCost}</span>
+                                    <span>{formatSimDurationAsReal(restore.durationHoursMin * 3600)} to {formatSimDurationAsReal(restore.durationHoursMax * 3600)}</span>
+                                    <span>~{Math.round(odds * 100)}% to succeed</span>
+                                </div>
+                            </>
+                        ) : <p className="text-[10px] text-slate-500">Nothing of yours is sabotaged right now.</p>}
+                        <button disabled={!!blocker || busy}
+                            onClick={() => { onRestore(at, agent ? agent.id : null); setAgentId(''); }}
+                            className={`w-full py-2 rounded uppercase font-display text-[10px] tracking-widest flex items-center justify-center gap-1.5 ${blocker || busy
+                                ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
+                                : 'bg-sky-600 text-slate-950 hover:bg-sky-500'}`}>
+                            {busy ? <Loader2 size={11} className="animate-spin" /> : blocker ? <Lock size={11} /> : <ShieldCheck size={11} />}
+                            {blocker ?? 'Restore defences'}
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* Sweep */}
             {sweep && (

@@ -388,6 +388,15 @@ export default function IntelligencePanel() {
         showToast('We stop paying them with the next update.', true);
     };
 
+    const handleRestore = async (systemId: string, agentId: string | null) => {
+        if (!playerFactionId) return;
+        setBusy(true);
+        const result = await launchCatalogOpAction(playerFactionId, playerFactionId, systemId, 'restore_defences', agentId);
+        setBusy(false);
+        if (!result.success) { showToast(result.error || 'Restore refused.', false); return; }
+        showToast(`Restore Defences ordered at ${systemName(systemId)}.`, true);
+    };
+
     const handleSweep = async (systemId: string, agentId: string | null) => {
         if (!playerFactionId) return;
         setBusy(true);
@@ -785,6 +794,7 @@ export default function IntelligencePanel() {
                             busy={busy}
                             onSavePlan={handleSavePlan}
                             onSweep={handleSweep}
+                            onRestore={handleRestore}
                         />
                         <InternalSecurity
                             cells={espionageState.rebelCells ?? []}

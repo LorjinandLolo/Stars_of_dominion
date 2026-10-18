@@ -34,6 +34,7 @@ import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORE
 import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-service';
 import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
+import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -786,6 +787,8 @@ async function runGameTick() {
 
         // 4.54. Outposts run their shifts (lib/outposts).
         try { tickOutposts(world); } catch (e: any) { console.warn('[Tick Worker] tickOutposts failed:', e.message); }
+        // Sabotaged defences whose time is up come back (lib/espionage/defence-sabotage.ts).
+        try { tickSabotageRecovery(world); } catch (e: any) { console.warn('[Tick Worker] tickSabotageRecovery failed:', e.message); }
         try { tickAIOutpostManagement(world); } catch (e: any) { console.warn('[Tick Worker] tickAIOutpostManagement failed:', e.message); }
 
         // 4.55. Civilian ships: who is docked where, and what spy ships see.

@@ -181,6 +181,7 @@ export function fortificationLevelFor(planet: { tiles?: any[] }): number {
     const outpost = (planet as any).outpost;
     for (const c of outpost?.cells ?? []) {
         if (c?.buildDoneShift !== undefined) continue;
+        if ((c?.downUntilShift ?? 0) > (outpost?.shift ?? 0)) continue; // knocked out (sabotage, shelling)
         if (c?.module === 'bunker') level += 2;
         if (c?.module === 'battery') level += BATTERY_FORTIFICATION;
     }

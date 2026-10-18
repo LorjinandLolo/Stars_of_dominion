@@ -661,6 +661,20 @@ export const MANUAL_DATA: ManualSection[] = [
         introduction: 'Agents, networks and operations abroad; counter-intelligence, case files and rebel cells at home.',
         subsections: [
             {
+                id: 'sabotage-defences',
+                title: 'Softening a world before an attack',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Three sabotage operations put a world\'s defences out of action for two days (they need a deep network there): Disable Orbital Defences (its defence stations go offline, so the orbit falls fast and they add nothing to a space battle), Blind the Shield (shield generators and shield arrays go dark: bombardment gets through, and the defenders lose the shield) and Spike the Guns (surface defence platforms and outpost batteries).',
+                            'Time it: the operation itself takes hours, and the defences come back by themselves after two days, so the fleet has to strike in between.',
+                            'Defending: when your defences are sabotaged you are told. Counter-intel → Restore Defences brings everything sabotaged in that system back at once (a few hours, 20 Intel).',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'agents',
                 title: 'Agents and Networks',
                 blocks: [

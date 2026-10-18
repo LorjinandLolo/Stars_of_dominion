@@ -18,7 +18,8 @@ export type OrbitalCategory =
     /** Vacuum-dependent laboratories. */
     | 'research';
 
-export type OrbitalSlotState = 'empty' | 'under_construction' | 'active' | 'damaged' | 'destroyed';
+/** 'offline': put out of action by sabotage (lib/espionage/defence-sabotage.ts); counts for nothing until restored. */
+export type OrbitalSlotState = 'empty' | 'under_construction' | 'active' | 'damaged' | 'destroyed' | 'offline';
 
 export interface OrbitalStructureDefinition {
     id: string;
@@ -55,6 +56,9 @@ export interface OrbitalSlot {
     completesAt: number | null;
     /** 0–100. Effects scale linearly with it; 0 means destroyed. */
     integrity: number;
+    /** While 'offline' (sabotage): when it comes back by itself, and the state it returns to. */
+    offlineUntil?: number;
+    stateBeforeOffline?: OrbitalSlotState;
 }
 
 export interface OrbitalBuildOrder {
