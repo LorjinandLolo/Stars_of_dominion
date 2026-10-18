@@ -17,11 +17,18 @@
 // glTF's Y-up to the renderer's Z-up, and normalised to its slot's footprint,
 // so the artist's scale never matters. Only the first material's texture maps
 // are carried over; per-part materials would break instancing.
+//
+// Before the merge every vertex is tagged with the subsystem its part belongs
+// to, read from the glTF node/mesh name (or any ancestor's): a name containing
+// "engine", "shield", "weapon" or "sensor" tags that subsystem, anything else
+// is plain hull. The tag rides along as the `subsystem` vertex attribute, so
+// the renderer can darken one part of an instanced hull per ship. Untagged
+// models simply get hull-wide damage.
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { ShipClassId, SquadronType } from '../types';
+import type { ShipClassId, SquadronType, SubsystemId } from '../types';
 import { SHIP_CLASSES } from '../ship-defs';
 import { addHeightShade } from './placeholder-hulls';
 
@@ -38,6 +45,66 @@ export interface ModelMaps {
 export interface HullModel {
     geometry: THREE.BufferGeometry;
     maps: ModelMaps;
+    /** Where smoke and fire come from on each tagged subsystem, in model space. */
+    emitters: SubsystemEmitters;
+}
+
+/** `subsystem` vertex attribute value per subsystem; 0 is plain hull. */
+export const SUBSYSTEM_TAG: Record<SubsystemId, number> = { engines: 1, shields: 2, weapons: 3, sensors: 4 };
+export const SUBSYSTEM_IDS: SubsystemId[] = ['engines', 'shields', 'weapons', 'sensors'];
+const TAG_WORDS: Array<[string, number]> = [['engine', 1], ['shield', 2], ['weapon', 3], ['sensor', 4]];
+
+/** Up to four anchor points per tagged subsystem, model space (Z-up). */
+export type SubsystemEmitters = Partial<Record<SubsystemId, THREE.Vector3[]>>;
+
+/** Subsystem tag for a glTF object: the first of it and its ancestors whose name says one. */
+function tagFor(obj: THREE.Object3D | null): number {
+    for (let o = obj; o; o = o.parent) {
+        const n = o.name.toLowerCase();
+        for (const [word, tag] of TAG_WORDS) if (n.includes(word)) return tag;
+    }
+    return 0;
+}
+
+/** Give every vertex of a part one subsystem tag. */
+export function setSubsystemTag(g: THREE.BufferGeometry, tag: number): void {
+    const n = g.getAttribute('position').count;
+    g.setAttribute('subsystem', new THREE.BufferAttribute(new Float32Array(n).fill(tag), 1));
+}
+
+/**
+ * Smoke and fire anchors per subsystem: its vertices split into fore/aft and
+ * port/starboard quarters around their own centroid, and each quarter holding
+ * a real share of them gives one point. A broadside's damage then shows on
+ * both flanks instead of on the keel between them.
+ */
+export function subsystemEmitters(g: THREE.BufferGeometry): SubsystemEmitters {
+    const pos = g.getAttribute('position');
+    const tag = g.getAttribute('subsystem');
+    const out: SubsystemEmitters = {};
+    if (!tag) return out;
+    for (const id of SUBSYSTEM_IDS) {
+        const want = SUBSYSTEM_TAG[id];
+        const c = new THREE.Vector3();
+        let n = 0;
+        for (let i = 0; i < pos.count; i++) {
+            if (tag.getX(i) !== want) continue;
+            c.x += pos.getX(i); c.y += pos.getY(i); c.z += pos.getZ(i);
+            n++;
+        }
+        if (!n) continue;
+        c.divideScalar(n);
+        const quarters = Array.from({ length: 4 }, () => ({ p: new THREE.Vector3(), n: 0 }));
+        for (let i = 0; i < pos.count; i++) {
+            if (tag.getX(i) !== want) continue;
+            const q = quarters[(pos.getX(i) >= c.x ? 1 : 0) + (pos.getY(i) >= c.y ? 2 : 0)];
+            q.p.x += pos.getX(i); q.p.y += pos.getY(i); q.p.z += pos.getZ(i);
+            q.n++;
+        }
+        const pts = quarters.filter(q => q.n >= n * 0.12).map(q => q.p.divideScalar(q.n));
+        out[id] = pts.length ? pts : [c];
+    }
+    return out;
 }
 
 export interface ModelSet {
@@ -142,6 +209,7 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         if (!g.getAttribute('uv')) {
             g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
         }
+        setSubsystemTag(g, tagFor(mesh));
         g.morphAttributes = {};
         parts.push(g.index ? g.toNonIndexed() : g);
         if (!firstMaterial) firstMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
@@ -183,5 +251,5 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         if (m.metalnessMap) maps.metalnessMap = m.metalnessMap;
         if (m.emissiveMap) maps.emissiveMap = m.emissiveMap;
     }
-    return { geometry, maps };
+    return { geometry, maps, emitters: subsystemEmitters(geometry) };
 }

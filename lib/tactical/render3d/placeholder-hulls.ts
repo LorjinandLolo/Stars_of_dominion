@@ -76,6 +76,8 @@ export function addHeightShade(g: THREE.BufferGeometry, low = 0.45): void {
 function finish(parts: Part[]): THREE.BufferGeometry {
     const merged = mergeGeometries(parts, false)!;
     for (const p of parts) p.dispose();
+    // Placeholders are one undivided hull: subsystem damage can only show hull-wide.
+    merged.setAttribute('subsystem', new THREE.BufferAttribute(new Float32Array(merged.getAttribute('position').count), 1));
     merged.computeVertexNormals();
     addHeightShade(merged);
     merged.computeBoundingSphere();

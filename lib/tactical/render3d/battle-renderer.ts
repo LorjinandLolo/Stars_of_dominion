@@ -22,7 +22,7 @@ import * as THREE from 'three';
 import type { BattleState, Hazard, ShipClassId, TacticalShip, TacticalSide } from '../types';
 import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStrikeCraft } from './placeholder-hulls';
-import { loadModelSet, type HullModel, type ModelSet } from './hull-models';
+import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
 import type { SquadronType } from '../types';
 
@@ -33,6 +33,7 @@ const CAMERA_DISTANCE = 4000;     // orthographic, so only the depth range depen
 const MAX_PIXEL_RATIO = 1.5;
 const BEAM_FADE_SECONDS = 0.12;   // mirrors beam expiry in lib/tactical/sim.ts
 const FX_Z = 1;                   // glow plane; depth test is off, so it always draws on top
+const DAMAGE_FX_BUDGET = 1500;     // damage smoke/fire/spark sprites per frame; keeps a wrecked 200-ship battle cheap
 const CLASS_IDS: ShipClassId[] = ['corvette', 'destroyer', 'cruiser', 'battleship', 'carrier'];
 const SIDES: TacticalSide[] = ['player', 'enemy'];
 const CRAFT_TYPES: SquadronType[] = ['interceptor', 'bomber'];
@@ -119,24 +120,21 @@ function makeBeamTexture(): THREE.Texture {
 class InstancePool {
     mesh: InstancedMesh;
     private used = 0;
-    private readonly m = new THREE.Matrix4();
-    private readonly p = new THREE.Vector3();
-    private readonly q = new THREE.Quaternion();
-    private readonly s = new THREE.Vector3();
-    private static readonly Z = new THREE.Vector3(0, 0, 1);
-
+    /** Hull pools only: per-ship damage the hull shader reads (see addHullDamage). */
+    private damage: { sys: THREE.InstancedBufferAttribute; hull: THREE.InstancedBufferAttribute } | null = null;
     constructor(
         private readonly scene: THREE.Scene,
         public geometry: THREE.BufferGeometry,
         public material: THREE.Material,
         capacity: number,
-        private readonly opts: { depthTest?: boolean; renderOrder?: number } = {},
+        private readonly opts: { depthTest?: boolean; renderOrder?: number; damage?: boolean } = {},
     ) {
         this.mesh = this.make(Math.max(1, capacity));
     }
 
     private make(capacity: number): InstancedMesh {
-        const mesh = new THREE.InstancedMesh(this.geometry, this.material, capacity) as InstancedMesh;
+        const geometry = this.opts.damage ? this.wrap(capacity) : this.geometry;
+        const mesh = new THREE.InstancedMesh(geometry, this.material, capacity) as InstancedMesh;
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         // Allocate instanceColor up front so per-instance tinting is always on.
         mesh.setColorAt(0, new THREE.Color(1, 1, 1));
@@ -148,9 +146,48 @@ class InstancePool {
         return mesh;
     }
 
+    /**
+     * A damage pool's mesh geometry: every vertex attribute is SHARED with the
+     * caller's geometry (which the outline and the other side's pool also draw),
+     * plus this pool's own instanced damage attributes. Values carry over from
+     * the previous wrapper, so growing or swapping a model keeps them.
+     */
+    private wrap(capacity: number): THREE.BufferGeometry {
+        const g = new THREE.BufferGeometry();
+        for (const [name, attr] of Object.entries(this.geometry.attributes)) g.setAttribute(name, attr);
+        g.setIndex(this.geometry.index);
+        const sys = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4);
+        const hull = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 2).fill(1), 2);
+        if (this.damage) {
+            (sys.array as Float32Array).set(this.damage.sys.array.subarray(0, capacity * 4));
+            (hull.array as Float32Array).set(this.damage.hull.array.subarray(0, capacity * 2));
+        }
+        sys.setUsage(THREE.DynamicDrawUsage);
+        hull.setUsage(THREE.DynamicDrawUsage);
+        g.setAttribute('dmgSys', sys);
+        g.setAttribute('dmgHull', hull);
+        this.damage = { sys, hull };
+        return g;
+    }
+
+    /** Free a wrapper's own buffers. The shared ones are detached first, or dispose would free them too. */
+    private unwrap(g: THREE.BufferGeometry): void {
+        for (const name of Object.keys(g.attributes)) {
+            if (name !== 'dmgSys' && name !== 'dmgHull') g.deleteAttribute(name);
+        }
+        g.setIndex(null);
+        g.dispose();
+    }
+
     setGeometry(geometry: THREE.BufferGeometry): void {
         this.geometry = geometry;
-        this.mesh.geometry = geometry;
+        if (!this.opts.damage) {
+            this.mesh.geometry = geometry;
+            return;
+        }
+        const old = this.mesh.geometry;
+        this.mesh.geometry = this.wrap(this.mesh.instanceMatrix.count);
+        this.unwrap(old);
     }
 
     begin(): void {
@@ -161,37 +198,149 @@ class InstancePool {
         if (this.used >= this.mesh.instanceMatrix.count) {
             const old = this.mesh;
             const next = this.make(old.instanceMatrix.count * 2);
-            for (let i = 0; i < this.used; i++) {
-                old.getMatrixAt(i, this.m);
-                next.setMatrixAt(i, this.m);
-                next.instanceColor!.setXYZ(i, old.instanceColor!.getX(i), old.instanceColor!.getY(i), old.instanceColor!.getZ(i));
-            }
+            (next.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array);
+            (next.instanceColor!.array as Float32Array).set(old.instanceColor!.array);
             this.scene.remove(old);
             old.dispose();
+            if (this.opts.damage) this.unwrap(old.geometry);
             this.mesh = next;
         }
-        this.p.set(x, y, z);
-        this.q.setFromAxisAngle(InstancePool.Z, angle);
-        this.s.set(sx, sy, sz);
-        this.m.compose(this.p, this.q, this.s);
-        this.mesh.setMatrixAt(this.used, this.m);
-        this.mesh.setColorAt(this.used, colour);
+        // Scale, then rotate about Z, then translate, written straight into the
+        // column-major instance matrix: damage effects push thousands of
+        // sprites a frame, and compose() + setMatrixAt() cost several times this.
+        const c = angle ? Math.cos(angle) : 1;
+        const s = angle ? Math.sin(angle) : 0;
+        const e = this.mesh.instanceMatrix.array as Float32Array;
+        const o = this.used * 16;
+        e[o] = c * sx; e[o + 1] = s * sx; e[o + 2] = 0; e[o + 3] = 0;
+        e[o + 4] = -s * sy; e[o + 5] = c * sy; e[o + 6] = 0; e[o + 7] = 0;
+        e[o + 8] = 0; e[o + 9] = 0; e[o + 10] = sz; e[o + 11] = 0;
+        e[o + 12] = x; e[o + 13] = y; e[o + 14] = z; e[o + 15] = 1;
+        const ca = this.mesh.instanceColor!.array as Float32Array;
+        ca[this.used * 3] = colour.r;
+        ca[this.used * 3 + 1] = colour.g;
+        ca[this.used * 3 + 2] = colour.b;
         this.used++;
+    }
+
+    /** Damage for the instance just pushed: subsystem integrity 0..1, hull fraction, stable seed. */
+    setDamage(engines: number, shields: number, weapons: number, sensors: number, hull: number, seed: number): void {
+        const i = this.used - 1;
+        this.damage!.sys.setXYZW(i, engines, shields, weapons, sensors);
+        this.damage!.hull.setXY(i, hull, seed);
     }
 
     end(): void {
         this.mesh.count = this.used;
         this.mesh.instanceMatrix.needsUpdate = true;
         this.mesh.instanceColor!.needsUpdate = true;
+        if (this.damage) {
+            this.damage.sys.needsUpdate = true;
+            this.damage.hull.needsUpdate = true;
+        }
     }
 
     dispose(): void {
         this.scene.remove(this.mesh);
         this.mesh.dispose();
+        if (this.opts.damage) this.unwrap(this.mesh.geometry);
     }
 }
 
 type InstancedMesh = THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
+
+// ── Hull damage shader ──
+//
+// Vertex attribute `subsystem` (hull-models.ts) says which part a vertex is;
+// instanced `dmgSys` holds that ship's engines/shields/weapons/sensors
+// integrity and `dmgHull` its hull fraction plus a stable per-ship seed. A
+// failing part blackens with char spreading across it, glows with ember
+// cracks once it is badly hit, and its lights flicker and then die at 0.
+// Lost hull adds scorch patches over the whole ship. All in the one hull draw
+// call per pool; nothing per ship but six floats.
+
+const DAMAGE_VERT_HEAD = /* glsl */ `
+attribute float subsystem;
+attribute vec4 dmgSys;
+attribute vec2 dmgHull;
+varying vec3 vDmgPos;
+varying float vDmgSys;
+varying vec2 vDmgHull;
+`;
+const DAMAGE_VERT_BODY = /* glsl */ `
+vDmgSys = subsystem < 0.5 ? 1.0 : subsystem < 1.5 ? dmgSys.x : subsystem < 2.5 ? dmgSys.y : subsystem < 3.5 ? dmgSys.z : dmgSys.w;
+vDmgHull = dmgHull;
+vDmgPos = transformed;
+`;
+const DAMAGE_FRAG_HEAD = /* glsl */ `
+uniform float uDmgTime;
+varying vec3 vDmgPos;
+varying float vDmgSys;
+varying vec2 vDmgHull;
+float dmgHash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float dmgNoise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(dmgHash(i), dmgHash(i + vec3(1, 0, 0)), f.x), mix(dmgHash(i + vec3(0, 1, 0)), dmgHash(i + vec3(1, 1, 0)), f.x), f.y),
+        mix(mix(dmgHash(i + vec3(0, 0, 1)), dmgHash(i + vec3(1, 0, 1)), f.x), mix(dmgHash(i + vec3(0, 1, 1)), dmgHash(i + vec3(1, 1, 1)), f.x), f.y),
+        f.z);
+}
+`;
+const DAMAGE_FRAG_COLOUR = /* glsl */ `
+float dmgSysLoss = 1.0 - clamp(vDmgSys, 0.0, 1.0);
+float dmgHullLoss = 1.0 - clamp(vDmgHull.x, 0.0, 1.0);
+vec3 dmgP = vDmgPos + vDmgHull.y * 97.0;
+float dmgN = dmgNoise(dmgP * 0.55) * 0.65 + dmgNoise(dmgP * 1.7) * 0.35;
+float dmgChar = (1.0 - smoothstep(dmgSysLoss - 0.12, dmgSysLoss + 0.04, dmgN)) * step(0.01, dmgSysLoss);
+float dmgTone = mix(1.0, 0.16, dmgSysLoss) * mix(1.0, 0.3, dmgChar);
+float dmgCover = dmgHullLoss * 0.85;
+float dmgScorch = (1.0 - smoothstep(dmgCover - 0.1, dmgCover + 0.02, dmgNoise(dmgP * 0.21 + 13.0))) * step(0.01, dmgHullLoss);
+dmgTone *= mix(1.0, 0.28, dmgScorch);
+float dmgEmber = smoothstep(0.022, 0.0, abs(dmgN - 0.52)) * smoothstep(0.5, 1.0, dmgSysLoss);
+diffuseColor.rgb *= dmgTone;
+`;
+const DAMAGE_FRAG_EMISSIVE = /* glsl */ `
+float dmgFlick = step(0.3, fract(sin(floor(uDmgTime * 11.0) * 12.9898 + vDmgHull.y * 78.233 + floor(vDmgPos.x * 0.3) * 3.1) * 43758.5453));
+float dmgLights = clamp(vDmgSys * 2.5, 0.0, 1.0) * (vDmgSys < 0.5 ? dmgFlick : 1.0);
+dmgLights *= vDmgHull.x < 0.25 ? mix(1.0, dmgFlick, 0.6) : 1.0;
+totalEmissiveRadiance *= dmgLights * mix(1.0, 0.35, dmgScorch);
+totalEmissiveRadiance += vec3(1.0, 0.38, 0.08) * dmgEmber * (0.55 + 0.45 * sin(uDmgTime * 7.0 + vDmgHull.y * 40.0));
+`;
+
+/** Hull material → damage-aware hull material. Every hull pool's geometry must carry the damage attributes. */
+function addHullDamage(mat: THREE.MeshStandardMaterial, time: { value: number }): void {
+    mat.onBeforeCompile = shader => {
+        shader.uniforms.uDmgTime = time;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>\n${DAMAGE_VERT_HEAD}`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>\n${DAMAGE_VERT_BODY}`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>\n${DAMAGE_FRAG_HEAD}`)
+            .replace('#include <color_fragment>', `#include <color_fragment>\n${DAMAGE_FRAG_COLOUR}`)
+            .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${DAMAGE_FRAG_EMISSIVE}`);
+    };
+    mat.customProgramCacheKey = () => 'hull-damage';
+}
+
+/** Deterministic 0..1 from a number (the JS twin of the shader's sin hash). */
+function hash01(n: number): number {
+    const x = Math.sin(n) * 43758.5453;
+    return x - Math.floor(x);
+}
+
+/** Where general hull fires burn: two points along the deck. */
+function hullAnchors(g: THREE.BufferGeometry): THREE.Vector3[] {
+    g.computeBoundingBox();
+    const { min, max } = g.boundingBox!;
+    const z = min.z + (max.z - min.z) * 0.7;
+    return [0.35, 0.62].map(t => new THREE.Vector3(min.x + (max.x - min.x) * t, 0, z));
+}
 
 export class BattleRenderer {
     private readonly renderer: THREE.WebGLRenderer;
@@ -215,7 +364,15 @@ export class BattleRenderer {
     private readonly ownedGeometries = new Set<THREE.BufferGeometry>();
     private readonly ownedMaterials: THREE.Material[] = [];
     private readonly ownedTextures: THREE.Texture[] = [];
+    /** class:side → smoke/fire anchors per tagged subsystem, and along the deck for hull fires. */
+    private readonly emitters = new Map<string, SubsystemEmitters>();
+    private readonly anchors = new Map<string, THREE.Vector3[]>();
+    /** Shader clock for flicker and embers: battle time, so a paused battle holds still. */
+    private readonly damageTime = { value: 0 };
+    private readonly shipSeeds = new Map<string, number>();
     private readonly colour = new THREE.Color();
+    private readonly fxPos = new THREE.Vector3();
+    private fxLeft = 0;
     private disposed = false;
     /** True once at least one real glTF model replaced its placeholder. */
     modelsLoaded = false;
@@ -267,9 +424,12 @@ export class BattleRenderer {
                     flatShading: true,
                     vertexColors: true,
                 });
+                addHullDamage(mat, this.damageTime);
                 this.hullMaterial.set(`${id}:${side}`, mat);
                 this.ownedMaterials.push(mat);
-                this.hulls.set(`${id}:${side}`, new InstancePool(this.scene, geo, mat, 8));
+                this.hulls.set(`${id}:${side}`, new InstancePool(this.scene, geo, mat, 8, { damage: true }));
+                this.emitters.set(`${id}:${side}`, {});
+                this.anchors.set(`${id}:${side}`, hullAnchors(geo));
                 const outlineMat = new THREE.MeshBasicMaterial({
                     color: SIDE_COLOUR[side].stroke,
                     side: THREE.BackSide,
@@ -451,6 +611,8 @@ export class BattleRenderer {
                 this.hulls.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 this.outlines.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 applyMaps(this.hullMaterial.get(`${id}:${side}`)!, model);
+                this.emitters.set(`${id}:${side}`, model.emitters);
+                this.anchors.set(`${id}:${side}`, hullAnchors(model.geometry));
             }
         }
 
@@ -513,6 +675,7 @@ export class BattleRenderer {
     render(state: BattleState, view: ViewLike): void {
         if (this.disposed) return;
         this.placeCamera(view);
+        this.damageTime.value = state.time;
 
         for (const pool of this.hulls.values()) pool.begin();
         for (const pool of this.outlines.values()) pool.begin();
@@ -520,11 +683,12 @@ export class BattleRenderer {
         this.torpedoes.player.begin();
         this.torpedoes.enemy.begin();
         this.sprites.begin();
+        this.fxLeft = DAMAGE_FX_BUDGET;
         this.beams.begin();
 
         for (const sh of state.ships) {
             if (sh.status === 'destroyed' || sh.status === 'withdrawn') continue;
-            this.pushShip(sh);
+            this.pushShip(sh, state.time);
         }
 
         for (const sq of state.squadrons) {
@@ -584,27 +748,128 @@ export class BattleRenderer {
         this.renderer.render(this.scene, this.camera);
     }
 
-    private pushShip(sh: TacticalShip): void {
+    private shipSeed(id: string): number {
+        let s = this.shipSeeds.get(id);
+        if (s === undefined) {
+            s = hashStr(id) / 4294967296;
+            this.shipSeeds.set(id, s);
+        }
+        return s;
+    }
+
+    private pushShip(sh: TacticalShip, t: number): void {
         const def = SHIP_CLASSES[sh.classId];
         const r = def.radius;
         const arriving = sh.status === 'arriving';
-        const pool = this.hulls.get(`${sh.classId}:${sh.side}`)!;
+        const key = `${sh.classId}:${sh.side}`;
+        const pool = this.hulls.get(key)!;
+        const sub = sh.subsystems;
+        const hullFrac = Math.max(0, Math.min(1, sh.hull / def.maxHull));
+        const seed = this.shipSeed(sh.id);
 
         this.colour.copy(sh.status === 'retreating' ? RETREAT_TINT : SIDE_COLOUR[sh.side].tint);
         if (arriving) this.colour.multiplyScalar(ARRIVING_DIM);
         pool.push(sh.x, -sh.y, 0, -sh.heading, 1, 1, 1, this.colour);
+        pool.setDamage(sub?.engines ?? 1, sub?.shields ?? 1, sub?.weapons ?? 1, sub?.sensors ?? 1, hullFrac, seed);
         this.colour.set(sh.status === 'retreating' ? 0xfbbf24 : 0xffffff);
         if (arriving) this.colour.multiplyScalar(ARRIVING_DIM);
         this.outlines.get(`${sh.classId}:${sh.side}`)!
             .push(sh.x, -sh.y, 0, -sh.heading, OUTLINE_SCALE, OUTLINE_SCALE, OUTLINE_SCALE, this.colour);
 
-        if (!arriving && sh.speed > 8) {
-            const p = Math.min(1, sh.speed / def.maxSpeed);
+        if (arriving) return;
+
+        // Engine glow. Damaged engines stutter; dead ones only cough out the
+        // odd burst, moving or not.
+        const engines = sub?.engines ?? 1;
+        let thrust = 1;
+        let p = Math.min(1, sh.speed / def.maxSpeed);
+        if (engines <= 0) {
+            const beat = t * 8 + seed * 50;
+            const burst = hash01(Math.floor(beat) * 1.37 + seed * 91) < 0.22;
+            thrust = burst ? 0.9 * (1 - (beat - Math.floor(beat))) : 0;
+            p = Math.max(p, 0.35);
+        } else if (engines < 0.6) {
+            const stutter = hash01(Math.floor(t * 14 + seed * 100) * 2.11) < 0.35 ? 0.2 : 1;
+            thrust = 1 + (stutter - 1) * (0.6 - engines) / 0.6;
+        }
+        if (thrust > 0 && (sh.speed > 8 || engines <= 0)) {
             const glowR = r * (0.6 + p);
             const gx = sh.x - Math.cos(sh.heading) * r * 1.05;
             const gy = sh.y - Math.sin(sh.heading) * r * 1.05;
-            this.colour.copy(SIDE_COLOUR[sh.side].glow).multiplyScalar(0.06 + 0.24 * p);
+            this.colour.copy(SIDE_COLOUR[sh.side].glow).multiplyScalar((0.06 + 0.24 * p) * thrust);
             this.sprites.push(gx, -gy, FX_Z, 0, glowR * 1.5, glowR * 1.5, 1, this.colour);
+        }
+
+        // Smoke, fire and sparks where the damage is. Untagged models have no
+        // subsystem anchors, so only hull damage shows on them.
+        const emit = this.emitters.get(key)!;
+        if (sub) {
+            for (let i = 0; i < SUBSYSTEM_IDS.length; i++) {
+                const id = SUBSYSTEM_IDS[i];
+                const pts = emit[id];
+                const loss = 1 - sub[id];
+                if (pts && loss >= 0.25) this.burn(sh, pts, loss, seed * 1000 + i * 17, r, t);
+            }
+        }
+        if (hullFrac < 0.5) this.burn(sh, this.anchors.get(key)!, (0.5 - hullFrac) * 1.6, seed * 1000 + 101, r, t);
+    }
+
+    /** Model-space point on a ship → three-space, into fxPos. */
+    private place(sh: TacticalShip, p: THREE.Vector3): THREE.Vector3 {
+        const c = Math.cos(sh.heading), s = Math.sin(sh.heading);
+        // Rotation by -heading about Z: (x, y) → (x c + y s, -x s + y c).
+        return this.fxPos.set(sh.x + p.x * c + p.y * s, -sh.y - p.x * s + p.y * c, p.z);
+    }
+
+    /**
+     * Stateless damage effects: every puff loops on its own phase from battle
+     * time, so nothing is stored per ship and the cost is a few sprites each.
+     * loss 0..1 sets how many puffs, how dense, and whether it burns and sparks.
+     */
+    private burn(sh: TacticalShip, pts: THREE.Vector3[], loss: number, seed: number, r: number, t: number): void {
+        if (this.fxLeft <= 0) return;
+        this.fxLeft -= 9; // upper bound of what one call pushes
+        loss = Math.min(1, loss);
+        // Smoke drifts aft and up the screen, widening as it thins.
+        const ax = -Math.cos(sh.heading), ay = Math.sin(sh.heading);
+        const puffs = 1 + Math.round(loss * 3);
+        for (let k = 0; k < puffs; k++) {
+            const h = hash01(seed + k * 7.31);
+            const life = 1.4 + h * 0.9;
+            const ph = (t / life + h) % 1;
+            const o = this.place(sh, pts[k % pts.length]);
+            const drift = ph * r * 0.8;
+            const x = o.x + ax * drift * 0.7 + (h - 0.5) * r * 0.25;
+            const y = o.y + ay * drift * 0.7 + drift * 0.45;
+            const a = Math.sin(Math.PI * ph) * (0.07 + 0.16 * loss);
+            this.colour.setRGB(0.62, 0.58, 0.55).multiplyScalar(a);
+            const s = r * (0.22 + 0.55 * ph) * (0.75 + 0.5 * loss);
+            this.sprites.push(x, y, o.z + 1, 0, s, s, 1, this.colour);
+        }
+        if (loss >= 0.6) {
+            // Fire: a flickering flame and a hot core on up to two anchors.
+            const heat = 0.35 + (loss - 0.6) * 1.6;
+            for (let k = 0; k < Math.min(2, pts.length); k++) {
+                const o = this.place(sh, pts[k]);
+                const flick = 0.7 + 0.3 * Math.sin(t * 19 + seed + k * 2.3) * Math.sin(t * 7.3 + k);
+                this.colour.setRGB(1.0, 0.42, 0.1).multiplyScalar(heat * flick);
+                this.sprites.push(o.x, o.y, o.z + 1, 0, r * 0.32 * flick, r * 0.32 * flick, 1, this.colour);
+                this.colour.setRGB(1.0, 0.85, 0.5).multiplyScalar(heat * 0.7 * flick);
+                this.sprites.push(o.x, o.y, o.z + 1, 0, r * 0.12, r * 0.12, 1, this.colour);
+            }
+        }
+        if (loss >= 0.3) {
+            // Sparks: short bright pops at random spots near an anchor.
+            const beat = t * 6 + seed * 0.13;
+            const slot = Math.floor(beat);
+            if (hash01(slot * 3.7 + seed) < loss * 0.55) {
+                const o = this.place(sh, pts[slot % pts.length]);
+                const jx = (hash01(slot * 1.3 + seed) - 0.5) * r * 0.3;
+                const jy = (hash01(slot * 2.9 + seed) - 0.5) * r * 0.3;
+                const fade = 1 - (beat - slot);
+                this.colour.setRGB(1.0, 0.92, 0.65).multiplyScalar(1.3 * fade);
+                this.sprites.push(o.x + jx, o.y + jy, o.z + 1, 0, r * 0.1, r * 0.1, 1, this.colour);
+            }
         }
     }
 

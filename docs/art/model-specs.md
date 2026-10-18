@@ -56,8 +56,10 @@ mush at 40 pixels.
 
 ### Mesh
 
-- One object, one material, closed, no floating parts. Every mesh gets merged into one
-  so all ships of a class draw in a single batch.
+- One material, closed, no floating parts. Every mesh gets merged into one so all ships
+  of a class draw in a single batch. Capital hulls should still be split into the named
+  subsystem objects (see Capital subsystems below) before export; escorts may be one
+  object.
 - Mirror-symmetric left to right, unless the class spec says otherwise.
 - Hard-surface: flat faces, bevelled edges. The loader recomputes normals as faceted, so
   avoid relying on smooth shading.
@@ -97,8 +99,20 @@ are shooting at:
 - weapons: the main turrets or the spinal mount
 - sensors: a mast, dish or dome cluster
 
-Keep these four in different places on the hull. Later they can show damage or go dark
-when knocked out.
+Keep these four in different places on the hull.
+
+**Name them, and the game shows their damage.** Split the model into up to five objects
+before export: `engines`, `shields`, `weapons`, `sensors`, and `hull` for everything
+else. The loader tags each vertex from its object (or mesh, or parent) name, so any name
+containing `engine`, `shield`, `weapon` or `sensor` counts: `Engines`, `engine_block`
+and `weapons.001` all work. During a battle a damaged subsystem darkens and chars toward
+black, its lights flicker and then go out when it is knocked out, and it smokes, burns
+and sparks from where its parts are. Hull damage scorches the whole ship. You don't
+model any of this; the code does it from the names. Broken-part variants are not needed.
+
+A model without these names still works, but it only gets hull-wide damage: scorching
+as it loses hull, and no part going dark. Keep the objects separate in the export (all
+on the one shared material); the loader merges them for drawing after tagging.
 
 ---
 
@@ -318,8 +332,8 @@ stern engine block.
   the sensors subsystem.
 - **70 to 80%, rear turret.** One large triple turret on the stern deck, facing aft.
 - **Shield emitters.** Add two to four shield projector domes or rings on the deck
-  between the upper turrets. The current version has none, and it needs a visible
-  shields subsystem.
+  between the upper turrets. The current version has four small domes there; they can
+  be bigger and more distinctive.
 - **80 to 100%, engine block.** A massive square block with **six engines** in two
   rows of three. Lightly armoured: the back of the block is the ship's weak point.
 
@@ -327,7 +341,7 @@ stern engine block.
 stern. Players should be able to see that shooting it from behind is the plan.
 
 **Lights.** Lance bore (largest), six engine mouths, bridge strip, sponson running lights,
-shield emitters once added.
+shield emitter domes.
 
 **Ability hook.** Emergency Repairs: an open hull section or crane rig near the bridge
 where repair sparks could show.
@@ -338,9 +352,9 @@ where repair sparks could show.
 whole length. Don't put a turret forward of the bridge on the centreline; that space
 belongs to the lance.
 
-**Current Blender version.** Strong silhouette, but it has no shield emitters, the coil
-rings are plain cylinders and the engine block is a bare box. Add emitters, better coils
-and engine block detail.
+**Current Blender version.** Strong silhouette, but the shield emitters are small plain
+domes, the coil rings are plain cylinders and the engine block is a bare box. Better
+emitters, coils and engine block detail.
 
 ---
 
@@ -378,8 +392,8 @@ tower. Plan shape: a wide, flat rectangle with a short pointed bow under the dec
 - **60 to 75%, island.** A low sensor tower set to one side (the current version uses
   starboard, the right side), with a window strip, a mast and a dish. This is the
   sensors subsystem, and the one allowed asymmetry.
-- **Shield emitters.** Add two shield domes on the outer walls or the deck corners. The
-  current version has none.
+- **Shield emitters.** Two shield domes on the outer walls or the deck corners. The
+  current version has a small one on each outer wall.
 - **85 to 100%, engine block.** A wide block with **four engines** in a row.
 
 **Armour.** Even and moderate. Thin enough that it looks like it should not be at the
@@ -396,8 +410,8 @@ launch from. Give them clear openings.
 **Don't.** No heavy guns. Don't light the whole trench floor; thin strips only, or the
 carrier becomes a coloured slab.
 
-**Current Blender version.** Clear silhouette but very plain: flat deck, empty walls, no
-shield emitters. The most room to improve of the five.
+**Current Blender version.** Clear silhouette but very plain: flat deck, empty walls,
+token shield domes. The most room to improve of the five.
 
 ---
 
@@ -527,7 +541,9 @@ fine.
 ## 11. Checklist before you drop a model in
 
 - [ ] Bow along +X, top along +Z, port along +Y in Blender.
-- [ ] One object, one material, no floating parts.
+- [ ] One material, no floating parts.
+- [ ] Capital hulls split into objects named `engines`, `shields`, `weapons`, `sensors`
+      and `hull` (untagged models only get hull-wide damage).
 - [ ] The class signature reads in a 40-pixel top-down render.
 - [ ] Weapons face where the spec says.
 - [ ] Capital hulls show engines, shields, weapons and sensors in four separate places.

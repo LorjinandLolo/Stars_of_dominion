@@ -14,8 +14,15 @@ Conventions, matching lib/tactical/render3d/hull-models.ts:
     put their UVs on the black half, lit faces on the white half. The renderer
     multiplies that mask by the side's colour, so lights are faction-tinted.
   * Deterministic: each class has a fixed seed, so a rebuild gives the same mesh.
+  * Subsystems: every part belongs to one of SUBSYSTEMS, 'hull' unless the builder
+    says otherwise with `with k.sys('weapons'):`. Turrets are always weapons,
+    engines always engines, emitters always shields. Each group's parts are
+    joined into one object named after the group, so the .glb carries up to five
+    named meshes; the loader tags every vertex from that name, which is what
+    lets one subsystem show damage on its own.
 """
 
+import contextlib
 import math
 import os
 import random
@@ -31,6 +38,9 @@ DIRS = {'+x': (1, 0, 0), '-x': (-1, 0, 0), '+y': (0, 1, 0), '-y': (0, -1, 0), '+
 # Triangle budgets from public/models/README.md.
 BUDGET = {'corvette': 3000, 'destroyer': 5000, 'cruiser': 8000, 'carrier': 10000, 'battleship': 12000}
 
+# Exported object names. The loader matches 'engine', 'shield', 'weapon', 'sensor'.
+SUBSYSTEMS = ('hull', 'engines', 'shields', 'weapons', 'sensors')
+
 
 # ── Kit: primitives that land in world space with identity transforms ─────────
 
@@ -38,11 +48,23 @@ class Kit:
     def __init__(self, seed):
         self.parts = []
         self.rng = random.Random(seed)
+        self.group = 'hull'
+
+    @contextlib.contextmanager
+    def sys(self, name):
+        """Parts made inside this block belong to subsystem `name`."""
+        assert name in SUBSYSTEMS, name
+        prev, self.group = self.group, name
+        try:
+            yield
+        finally:
+            self.group = prev
 
     def _take(self, lit, bevel):
         o = bpy.context.active_object
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         o['lit'] = lit
+        o['sys'] = self.group
         if bevel > 0:
             m = o.modifiers.new('bevel', 'BEVEL')
             m.width = bevel
@@ -79,12 +101,13 @@ class Kit:
     def turret(self, x, y, z, r, aim, barrels=2, blen=2.2):
         """Gun turret: ring base, wedge housing, barrels along local +X, turned by `aim`."""
         start = len(self.parts)
-        self.cyl(r, r * 0.5, (0, 0, r * 0.25), verts=10)
-        h = self.box((r * 1.5, r * 1.15, r * 0.5), (r * 0.1, 0, r * 0.75))
-        taper(h, '+x', 0.7, 0.75)
-        offs = [0.0] if barrels == 1 else [(i - (barrels - 1) / 2) * r * 0.42 for i in range(barrels)]
-        for oy in offs:
-            self.cyl(r * 0.1, r * blen, (r * 0.55 + r * blen / 2, oy, r * 0.78), axis='x', verts=6)
+        with self.sys('weapons'):
+            self.cyl(r, r * 0.5, (0, 0, r * 0.25), verts=10)
+            h = self.box((r * 1.5, r * 1.15, r * 0.5), (r * 0.1, 0, r * 0.75))
+            taper(h, '+x', 0.7, 0.75)
+            offs = [0.0] if barrels == 1 else [(i - (barrels - 1) / 2) * r * 0.42 for i in range(barrels)]
+            for oy in offs:
+                self.cyl(r * 0.1, r * blen, (r * 0.55 + r * blen / 2, oy, r * 0.78), axis='x', verts=6)
         m = Matrix.Translation((x, y, z)) @ Matrix.Rotation(aim, 4, 'Z')
         for p in self.parts[start:]:
             p.data.transform(m)
@@ -92,11 +115,18 @@ class Kit:
     def engine(self, x, y, z, r, length, nose=0.0):
         """Engine pod along X with a flared nozzle; the nozzle mouth (facing -X) is lit.
         nose > 0 caps the front with a cone of that length (free-standing nacelles)."""
-        self.cyl(r, length, (x + length / 2, y, z), axis='x', verts=12)
-        if nose > 0:
-            self.cyl(r, nose, (x + length + nose / 2, y, z), axis='x', verts=12, r2=r * 0.35)
-        self.cyl(r * 1.2, r * 0.9, (x - r * 0.45, y, z), axis='x', verts=12, r2=r * 0.95)
-        self.cyl(r * 0.9, 0.02, (x - r * 0.9, y, z), axis='x', verts=12, lit='face:-x')
+        with self.sys('engines'):
+            self.cyl(r, length, (x + length / 2, y, z), axis='x', verts=12)
+            if nose > 0:
+                self.cyl(r, nose, (x + length + nose / 2, y, z), axis='x', verts=12, r2=r * 0.35)
+            self.cyl(r * 1.2, r * 0.9, (x - r * 0.45, y, z), axis='x', verts=12, r2=r * 0.95)
+            self.cyl(r * 0.9, 0.02, (x - r * 0.9, y, z), axis='x', verts=12, lit='face:-x')
+
+    def emitter(self, x, y, z, r):
+        """Shield projector standing on a deck at height z: collar and glowing dome."""
+        with self.sys('shields'):
+            self.cyl(r * 1.25, r * 0.6, (x, y, z + r * 0.3), verts=10)
+            self.sphere(r, (x, y, z + r * 0.75), lit='all')
 
     def greebles(self, n, x0, x1, y0, y1, z, smin=0.08, smax=0.3, hmin=0.04, hmax=0.14, keep_out=()):
         """Scatter small boxes on a deck. keep_out: (x, y, radius) circles to leave clear."""
@@ -175,7 +205,8 @@ def build_cruiser(k):
         taper(sp, '+x', 0.7, 0.7)
         taper(sp, '-x', 0.8, 0.8)
         for x in (2.15, 0.4, -1.35):
-            k.box((0.85, 0.7, 0.08), (x, side * 1.42, 0.74))
+            with k.sys('weapons'):
+                k.box((0.85, 0.7, 0.08), (x, side * 1.42, 0.74))
             k.turret(x, side * 1.42, 0.78, 0.34, side * math.radians(78), barrels=2, blen=2.3)
         # Armour plates stepping down the flank.
         for i, x in enumerate((2.6, 1.2, -0.2, -1.6)):
@@ -194,27 +225,30 @@ def build_cruiser(k):
     # Command tower amidships: stepped block, bridge with lit windows, mast, dish.
     t1 = k.box((1.5, 1.05, 0.55), (-0.6, 0, 0.98), bevel=0.04)
     taper(t1, '+z', 0.85, 0.85)
-    t2 = k.box((1.0, 0.8, 0.45), (-0.7, 0, 1.45), bevel=0.03)
-    taper(t2, '+z', 0.85, 0.85)
-    bridge = k.box((0.55, 1.5, 0.22), (-0.55, 0, 1.78), bevel=0.02)
-    taper(bridge, '+x', 1.0, 0.7)
-    k.box((0.04, 1.2, 0.07), (-0.27, 0, 1.79), lit='all')
-    k.cyl(0.035, 0.9, (-0.85, 0, 2.3))
-    k.box((0.06, 0.7, 0.04), (-0.85, 0, 2.45))
-    k.cyl(0.26, 0.05, (-1.15, 0.0, 2.0), axis='z', verts=12, rz=0)
-    k.box((0.3, 0.3, 0.12), (-1.15, 0, 1.9))
+    with k.sys('sensors'):
+        t2 = k.box((1.0, 0.8, 0.45), (-0.7, 0, 1.45), bevel=0.03)
+        taper(t2, '+z', 0.85, 0.85)
+        bridge = k.box((0.55, 1.5, 0.22), (-0.55, 0, 1.78), bevel=0.02)
+        taper(bridge, '+x', 1.0, 0.7)
+        k.box((0.04, 1.2, 0.07), (-0.27, 0, 1.79), lit='all')
+        k.cyl(0.035, 0.9, (-0.85, 0, 2.3))
+        k.box((0.06, 0.7, 0.04), (-0.85, 0, 2.45))
+        k.cyl(0.26, 0.05, (-1.15, 0.0, 2.0), axis='z', verts=12, rz=0)
+        k.box((0.3, 0.3, 0.12), (-1.15, 0, 1.9))
 
     # Shield emitter pylons, two per side, glowing caps.
     def pylons(side):
-        for x in (3.05, -2.7):
-            p = k.box((0.26, 0.12, 0.75), (x, side * 1.18, 1.0))
-            taper(p, '+z', 0.6, 0.8)
-            k.sphere(0.12, (x, side * 1.18, 1.42), lit='all')
+        with k.sys('shields'):
+            for x in (3.05, -2.7):
+                p = k.box((0.26, 0.12, 0.75), (x, side * 1.18, 1.0))
+                taper(p, '+z', 0.6, 0.8)
+                k.sphere(0.12, (x, side * 1.18, 1.42), lit='all')
     k.mirror(pylons)
 
     # Stern engine block and three engines.
-    eb = k.box((1.0, 2.6, 0.95), (-3.95, 0, 0.0), bevel=0.05)
-    taper(eb, '-x', 0.9, 0.9)
+    with k.sys('engines'):
+        eb = k.box((1.0, 2.6, 0.95), (-3.95, 0, 0.0), bevel=0.05)
+        taper(eb, '-x', 0.9, 0.9)
     k.engine(-5.6, 0, 0, 0.44, 1.3)
     k.engine(-5.4, 0.9, 0, 0.34, 1.1)
     k.engine(-5.4, -0.9, 0, 0.34, 1.1)
@@ -244,7 +278,8 @@ def build_corvette(k):
 
     def side(s):
         # Nacelle pylon, nacelle, fuel tank, swept fin with a tip light.
-        k.box((0.9, 0.5, 0.12), (-1.15, s * 0.42, 0), bevel=0.02)
+        with k.sys('engines'):
+            k.box((0.9, 0.5, 0.12), (-1.15, s * 0.42, 0), bevel=0.02)
         k.engine(-2.75, s * 0.66, 0, 0.25, 1.75, nose=0.45)
         k.cyl(0.12, 1.1, (0.15, s * 0.42, 0.16), axis='x', verts=8)
         fin = k.box((1.1, 0.9, 0.06), (-1.6, s * 1.25, -0.02))
@@ -272,26 +307,29 @@ def build_destroyer(k):
     taper(a3, '+x', 0.4, 1.0)
 
     def cannon(s):
-        h = k.box((1.8, 0.5, 0.46), (1.6, s * 0.92, 0.12), bevel=0.04)
-        taper(h, '+x', 0.75, 0.8)
-        k.cyl(0.13, 1.9, (3.4, s * 0.92, 0.14), axis='x', verts=8)
-        k.cyl(0.18, 0.3, (4.4, s * 0.92, 0.14), axis='x', verts=8)
-        k.cyl(0.08, 0.02, (4.56, s * 0.92, 0.14), axis='x', verts=8, lit='face:+x')
+        with k.sys('weapons'):
+            h = k.box((1.8, 0.5, 0.46), (1.6, s * 0.92, 0.12), bevel=0.04)
+            taper(h, '+x', 0.75, 0.8)
+            k.cyl(0.13, 1.9, (3.4, s * 0.92, 0.14), axis='x', verts=8)
+            k.cyl(0.18, 0.3, (4.4, s * 0.92, 0.14), axis='x', verts=8)
+            k.cyl(0.08, 0.02, (4.56, s * 0.92, 0.14), axis='x', verts=8, lit='face:+x')
         # Side plating.
         for i, x in enumerate((1.6, 0.4)):
             k.box((1.1, 0.07, 0.4), (x, s * 1.02, -0.05), bevel=0.02)
     k.mirror(cannon)
 
     # Torpedo tubes under the chin, mouths lit.
-    for y in (-0.42, -0.14, 0.14, 0.42):
-        k.cyl(0.1, 0.7, (2.3, y, -0.38), axis='x', verts=8)
-        k.cyl(0.07, 0.02, (2.66, y, -0.38), axis='x', verts=8, lit='face:+x')
+    with k.sys('weapons'):
+        for y in (-0.42, -0.14, 0.14, 0.42):
+            k.cyl(0.1, 0.7, (2.3, y, -0.38), axis='x', verts=8)
+            k.cyl(0.07, 0.02, (2.66, y, -0.38), axis='x', verts=8, lit='face:+x')
 
     # Bridge set behind the armour.
-    br = k.box((0.9, 0.75, 0.4), (-0.35, 0, 0.62), bevel=0.03)
-    taper(br, '+z', 0.8, 0.85)
-    k.box((0.04, 0.55, 0.06), (0.06, 0, 0.7), lit='all')
-    k.cyl(0.03, 0.6, (-0.55, 0, 1.05))
+    with k.sys('sensors'):
+        br = k.box((0.9, 0.75, 0.4), (-0.35, 0, 0.62), bevel=0.03)
+        taper(br, '+z', 0.8, 0.85)
+        k.box((0.04, 0.55, 0.06), (0.06, 0, 0.7), lit='all')
+        k.cyl(0.03, 0.6, (-0.55, 0, 1.05))
 
     # Skeletal rear: spine, ribs, rails.
     k.box((2.8, 0.55, 0.42), (-2.6, 0, 0.1), bevel=0.03)
@@ -304,7 +342,8 @@ def build_destroyer(k):
     k.turret(-1.25, 0, 0.32, 0.16, math.pi, barrels=1, blen=1.8)
 
     # Engine block and two engines.
-    k.box((0.8, 1.9, 0.8), (-4.1, 0, 0.1), bevel=0.04)
+    with k.sys('engines'):
+        k.box((0.8, 1.9, 0.8), (-4.1, 0, 0.1), bevel=0.04)
     k.engine(-5.9, 0.55, 0.1, 0.42, 1.6)
     k.engine(-5.9, -0.55, 0.1, 0.42, 1.6)
     k.box((0.08, 0.08, 0.06), (4.1, 0, 0.12), lit='all')
@@ -331,12 +370,13 @@ def build_battleship(k):
         taper(p, '+x', 0.82, 1.0)
 
     # Spinal lance: housing the length of the ship, coils, glowing muzzle.
-    k.box((11.2, 1.05, 0.7), (0.6, 0, 1.3), bevel=0.05)
-    k.cyl(0.42, 2.2, (7.5, 0, 1.3), axis='x', verts=12)
-    k.cyl(0.55, 0.35, (8.5, 0, 1.3), axis='x', verts=12)
-    k.cyl(0.36, 0.02, (8.69, 0, 1.3), axis='x', verts=12, lit='face:+x')
-    for x in (-3.2, -1.6, 0.0, 1.6, 3.2):
-        k.cyl(0.62, 0.22, (x, 0, 1.3), axis='x', verts=12)
+    with k.sys('weapons'):
+        k.box((11.2, 1.05, 0.7), (0.6, 0, 1.3), bevel=0.05)
+        k.cyl(0.42, 2.2, (7.5, 0, 1.3), axis='x', verts=12)
+        k.cyl(0.55, 0.35, (8.5, 0, 1.3), axis='x', verts=12)
+        k.cyl(0.36, 0.02, (8.69, 0, 1.3), axis='x', verts=12, lit='face:+x')
+        for x in (-3.2, -1.6, 0.0, 1.6, 3.2):
+            k.cyl(0.62, 0.22, (x, 0, 1.3), axis='x', verts=12)
 
     def broadsides(s):
         # Lower tier on sponsons, upper tier on the deck edge.
@@ -345,8 +385,12 @@ def build_battleship(k):
         for x in (2.6, 0.2, -2.2):
             k.turret(x, s * 2.0, 0.55, 0.38, s * math.radians(88), barrels=2, blen=2.2)
         for x in (1.5, -1.0, -3.3):
-            k.box((1.0, 0.85, 0.1), (x, s * 1.35, 1.05))
+            with k.sys('weapons'):
+                k.box((1.0, 0.85, 0.1), (x, s * 1.35, 1.05))
             k.turret(x, s * 1.35, 1.1, 0.46, s * math.radians(76), barrels=3, blen=2.4)
+        # Shield projectors on the deck between the upper turrets.
+        for x in (0.25, -2.15):
+            k.emitter(x, s * 1.4, 1.0, 0.2)
         for i, x in enumerate((3.3, 1.6, -0.1, -1.8, -3.5)):
             k.box((1.55, 0.09, 0.55), (x, s * 2.36, 0.12), bevel=0.02)
         for x in (4.2, -4.4):
@@ -356,24 +400,27 @@ def build_battleship(k):
     k.mirror(broadsides)
 
     # Rear turret on the stern deck.
-    k.box((1.2, 1.2, 0.12), (-4.4, 0, 1.06))
+    with k.sys('weapons'):
+        k.box((1.2, 1.2, 0.12), (-4.4, 0, 1.06))
     k.turret(-4.4, 0, 1.12, 0.5, math.pi, barrels=3, blen=2.2)
 
     # Tall bridge set well back.
     t1 = k.box((1.7, 1.3, 0.9), (-2.4, 0, 2.1), bevel=0.05)
     taper(t1, '+z', 0.8, 0.85)
-    t2 = k.box((1.1, 0.95, 0.7), (-2.5, 0, 2.85), bevel=0.04)
-    taper(t2, '+z', 0.85, 0.85)
-    wings = k.box((0.65, 2.2, 0.3), (-2.3, 0, 3.32), bevel=0.03)
-    taper(wings, '+x', 1.0, 0.7)
-    k.box((0.04, 1.8, 0.08), (-1.96, 0, 3.34), lit='all')
-    k.cyl(0.05, 1.3, (-2.7, 0, 4.1))
-    k.box((0.08, 1.0, 0.05), (-2.7, 0, 4.4))
-    k.cyl(0.32, 0.06, (-3.1, 0, 3.6), verts=12)
+    with k.sys('sensors'):
+        t2 = k.box((1.1, 0.95, 0.7), (-2.5, 0, 2.85), bevel=0.04)
+        taper(t2, '+z', 0.85, 0.85)
+        wings = k.box((0.65, 2.2, 0.3), (-2.3, 0, 3.32), bevel=0.03)
+        taper(wings, '+x', 1.0, 0.7)
+        k.box((0.04, 1.8, 0.08), (-1.96, 0, 3.34), lit='all')
+        k.cyl(0.05, 1.3, (-2.7, 0, 4.1))
+        k.box((0.08, 1.0, 0.05), (-2.7, 0, 4.4))
+        k.cyl(0.32, 0.06, (-3.1, 0, 3.6), verts=12)
 
     # Engine block, six nozzles.
-    eb = k.box((1.6, 3.6, 1.9), (-6.3, 0, 0.1), bevel=0.07)
-    taper(eb, '-x', 0.92, 0.92)
+    with k.sys('engines'):
+        eb = k.box((1.6, 3.6, 1.9), (-6.3, 0, 0.1), bevel=0.07)
+        taper(eb, '-x', 0.92, 0.92)
     for y in (-1.1, 0.0, 1.1):
         for z in (-0.42, 0.55):
             k.engine(-8.4, y, z, 0.42, 1.4)
@@ -408,6 +455,8 @@ def build_carrier(k):
             k.turret(x, s * 2.42, 0.58, 0.17, s * math.pi / 2, barrels=1, blen=1.8)
         k.box((0.14, 0.14, 0.1), (4.4, s * 2.42, 0.6), lit='all')
         k.box((0.14, 0.14, 0.1), (-4.0, s * 2.42, 0.6), lit='all')
+        # Shield projector on the outer wall, between the fore and middle guns.
+        k.emitter(1.5, s * 2.42, 0.575, 0.2)
     k.mirror(bay)
 
     # Runway lights down the deck centreline.
@@ -421,15 +470,17 @@ def build_carrier(k):
         taper(c, '+x', 0.1, 0.7)
 
     # Low sensor tower aft, offset to starboard like an island.
-    t = k.box((1.1, 0.75, 0.55), (-3.2, -0.7, 1.0), bevel=0.03)
-    taper(t, '+z', 0.85, 0.85)
-    k.box((0.04, 0.6, 0.06), (-2.66, -0.7, 1.05), lit='all')
-    k.cyl(0.035, 0.8, (-3.4, -0.7, 1.6))
-    k.cyl(0.3, 0.05, (-3.6, -0.4, 1.35), verts=12)
+    with k.sys('sensors'):
+        t = k.box((1.1, 0.75, 0.55), (-3.2, -0.7, 1.0), bevel=0.03)
+        taper(t, '+z', 0.85, 0.85)
+        k.box((0.04, 0.6, 0.06), (-2.66, -0.7, 1.05), lit='all')
+        k.cyl(0.035, 0.8, (-3.4, -0.7, 1.6))
+        k.cyl(0.3, 0.05, (-3.6, -0.4, 1.35), verts=12)
 
     # Engine block, four engines.
-    eb = k.box((1.0, 4.4, 0.95), (-5.0, 0, 0.0), bevel=0.05)
-    taper(eb, '-x', 0.92, 0.92)
+    with k.sys('engines'):
+        eb = k.box((1.0, 4.4, 0.95), (-5.0, 0, 0.0), bevel=0.05)
+        taper(eb, '-x', 0.92, 0.92)
     for y in (-1.6, -0.55, 0.55, 1.6):
         k.engine(-6.7, y, 0, 0.36, 1.3)
 
@@ -489,6 +540,9 @@ def set_uvs(o):
 
 
 def finalize(k, name, mat):
+    """Apply the bevels, set the light UVs, and join the parts into one object
+    per subsystem, named after it ('hull', 'engines', ...). Never one object for
+    the whole ship: the names are what the renderer's damage reads."""
     bpy.ops.object.select_all(action='DESELECT')
     for o in k.parts:
         o.select_set(True)
@@ -500,15 +554,34 @@ def finalize(k, name, mat):
         set_uvs(o)
         o.data.materials.clear()
         o.data.materials.append(mat)
-    bpy.ops.object.join()
-    hull = bpy.context.active_object
-    hull.name = name
-    hull.data.name = name
-    tris = sum(len(p.vertices) - 2 for p in hull.data.polygons)
-    return hull, tris
+    # Sort first: a join deletes the joined objects, so k.parts goes stale.
+    groups = {g: [o for o in k.parts if o.get('sys', 'hull') == g] for g in SUBSYSTEMS}
+    objects = []
+    for group, parts in groups.items():
+        if not parts:
+            continue
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in parts:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = parts[0]
+        if len(parts) > 1:
+            bpy.ops.object.join()
+        joined = bpy.context.active_object
+        joined.name = group
+        joined.data.name = f'{name}_{group}'
+        objects.append(joined)
+    tris = sum(len(p.vertices) - 2 for o in objects for p in o.data.polygons)
+    return objects, tris
 
 
-def preview(hull, prefix):
+def bounds(objects):
+    pts = [o.matrix_world @ Vector(c) for o in objects for c in o.bound_box]
+    lo = Vector((min(v.x for v in pts), min(v.y for v in pts), min(v.z for v in pts)))
+    hi = Vector((max(v.x for v in pts), max(v.y for v in pts), max(v.z for v in pts)))
+    return lo, hi
+
+
+def preview(objects, prefix):
     scn = bpy.context.scene
     scn.render.engine = 'BLENDER_WORKBENCH'
     sh = scn.display.shading
@@ -524,9 +597,7 @@ def preview(hull, prefix):
     scn.render.resolution_x = 1000
     scn.render.resolution_y = 600
 
-    bb = [hull.matrix_world @ Vector(c) for c in hull.bound_box]
-    lo = Vector((min(v.x for v in bb), min(v.y for v in bb), min(v.z for v in bb)))
-    hi = Vector((max(v.x for v in bb), max(v.y for v in bb), max(v.z for v in bb)))
+    lo, hi = bounds(objects)
     centre = (lo + hi) / 2
     length = hi.x - lo.x
 
@@ -589,10 +660,11 @@ def main():
         k = Kit(SEEDS[name])
         BUILDERS[name](k)
         mat = hull_material(scratch)
-        hull, tris = finalize(k, name, mat)
+        objects, tris = finalize(k, name, mat)
         bpy.ops.object.select_all(action='DESELECT')
-        hull.select_set(True)
-        bpy.context.view_layer.objects.active = hull
+        for o in objects:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objects[0]
         path = os.path.join(out_dir, f'{name}.glb')
         bpy.ops.export_scene.gltf(
             filepath=path,
@@ -602,15 +674,17 @@ def main():
             export_yup=True,
             export_materials='EXPORT',
         )
-        dims = hull.dimensions
+        lo, hi = bounds(objects)
+        dims = hi - lo
         report[name] = {
             'tris': tris,
             'budget': BUDGET[name],
             'dims': [round(dims.x, 2), round(dims.y, 2), round(dims.z, 2)],
+            'objects': [o.name for o in objects],
             'bytes': os.path.getsize(path),
         }
         if preview_dir:
-            preview(hull, os.path.join(scratch, name))
+            preview(objects, os.path.join(scratch, name))
         print(f'[build_hulls] {name}: {report[name]}')
     print('[build_hulls] done', report)
 

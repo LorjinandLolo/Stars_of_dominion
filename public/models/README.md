@@ -109,6 +109,14 @@ battleship of the factions you play most; they are the biggest on screen.
 - One material per model. The loader merges every mesh into one so ships can be drawn
   in a single batch, and reads only the first material's base colour, normal,
   roughness, metallic and emissive maps.
+- **Name the subsystems.** Before export, split a ship into objects named `engines`,
+  `shields`, `weapons`, `sensors` and `hull` (everything else). Any object, mesh or
+  parent name containing `engine`, `shield`, `weapon` or `sensor` counts. The loader
+  tags every vertex from that name before merging, and the battle renderer uses it to
+  show damage per subsystem: a failing part darkens and chars, its lights flicker and
+  go out when it is knocked out, and smoke, fire and sparks come from it. Hull damage
+  scorches the whole ship. A model without these names still loads, but only gets
+  hull-wide damage. No broken-part variants are needed; the code does the effects.
 - Running lights and engine glow go in the **emissive map**. The renderer recolours
   emissive light per side (indigo for the player, red for the enemy), so keep the
   emissive map white or grey. Keep the base colour faction-neutral unless it is a
@@ -125,7 +133,8 @@ npm run models:build -- cruiser --preview C:/temp/hulls
 ```
 
 It overwrites `ships/<class>.glb` and, with `--preview`, renders a top-down and a
-three-quarter image. If you replace a generic hull with your own, don't run the script
+three-quarter image. Its exports are already split into the named subsystem objects,
+so they are a working example of the naming. If you replace a generic hull with your own, don't run the script
 for that class again, or it will overwrite your file.
 
 ## Models that could come next
