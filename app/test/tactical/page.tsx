@@ -12,7 +12,7 @@ import type { StrategicFleetLike } from '@/lib/tactical/fleet-adapter';
 const PLAYER_FLEETS: StrategicFleetLike[] = [
     {
         id: 'fleet-test-player',
-        factionId: 'PLAYER_FACTION',
+        factionId: 'faction-aurelian',
         name: 'First Strike Group',
         composition: { interceptor: 3, destroyer: 2, cruiser: 1, carrier: 1 },
         strength: 1,
@@ -22,7 +22,7 @@ const PLAYER_FLEETS: StrategicFleetLike[] = [
 const ENEMY_FLEETS: StrategicFleetLike[] = [
     {
         id: 'fleet-test-raiders',
-        factionId: 'CRIMSON_RAIDERS',
+        factionId: 'faction-pirates',
         name: 'Crimson Raider Vanguard',
         composition: { interceptor: 6, destroyer: 4, cruiser: 2, carrier: 1 },
         strength: 1,

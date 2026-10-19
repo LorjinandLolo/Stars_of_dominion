@@ -9,5 +9,6 @@
   "factions": {},
   "craft": {},
   "torpedo": null,
-  "asteroids": []
+  "asteroids": [],
+  "station": null
 }

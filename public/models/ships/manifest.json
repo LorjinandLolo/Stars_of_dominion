@@ -1,0 +1,421 @@
+{
+  "ships": {
+    "corvette": {
+      "path": "/models/ships/corvette.glb",
+      "length": 20.0,
+      "width": 14.53,
+      "height": 3.32,
+      "pivotFromStern": 0.4,
+      "triangles": 2532,
+      "budget": 3000
+    },
+    "destroyer": {
+      "path": "/models/ships/destroyer.glb",
+      "length": 30.0,
+      "width": 6.48,
+      "height": 6.63,
+      "pivotFromStern": 0.4,
+      "triangles": 3550,
+      "budget": 5000
+    },
+    "cruiser": {
+      "path": "/models/ships/cruiser.glb",
+      "length": 42.0,
+      "width": 20.84,
+      "height": 13.19,
+      "pivotFromStern": 0.4,
+      "triangles": 5820,
+      "budget": 8000
+    },
+    "carrier": {
+      "path": "/models/ships/carrier.glb",
+      "length": 55.0,
+      "width": 26.14,
+      "height": 13.68,
+      "pivotFromStern": 0.4,
+      "triangles": 9512,
+      "budget": 10000
+    },
+    "battleship": {
+      "path": "/models/ships/battleship.glb",
+      "length": 60.0,
+      "width": 26.64,
+      "height": 19.71,
+      "pivotFromStern": 0.4,
+      "triangles": 9554,
+      "budget": 12000
+    }
+  },
+  "craft": {
+    "interceptor": {
+      "path": "/models/craft/interceptor.glb",
+      "length": 4.0,
+      "width": 2.8,
+      "height": 0.57,
+      "triangles": 228,
+      "budget": 600
+    },
+    "bomber": {
+      "path": "/models/craft/bomber.glb",
+      "length": 4.0,
+      "width": 3.2,
+      "height": 1.12,
+      "triangles": 388,
+      "budget": 600
+    }
+  },
+  "projectiles": {
+    "torpedo": {
+      "path": "/models/projectiles/torpedo.glb",
+      "length": 7.0,
+      "triangles": 200,
+      "budget": 300
+    }
+  },
+  "asteroids": [
+    {
+      "id": "asteroid_lumpy",
+      "path": "/models/asteroids/asteroid_lumpy.glb",
+      "legacyPath": "/models/asteroids/asteroid_1.glb",
+      "triangles": 320,
+      "budget": 400
+    },
+    {
+      "id": "asteroid_elongated",
+      "path": "/models/asteroids/asteroid_elongated.glb",
+      "legacyPath": "/models/asteroids/asteroid_2.glb",
+      "triangles": 320,
+      "budget": 400
+    },
+    {
+      "id": "asteroid_shattered",
+      "path": "/models/asteroids/asteroid_shattered.glb",
+      "legacyPath": "/models/asteroids/asteroid_3.glb",
+      "triangles": 320,
+      "budget": 400
+    },
+    {
+      "id": "asteroid_metallic",
+      "path": "/models/asteroids/asteroid_metallic.glb",
+      "legacyPath": "/models/asteroids/asteroid_4.glb",
+      "triangles": 320,
+      "budget": 400
+    },
+    {
+      "id": "asteroid_icy",
+      "path": "/models/asteroids/asteroid_icy.glb",
+      "legacyPath": "/models/asteroids/asteroid_5.glb",
+      "triangles": 320,
+      "budget": 400
+    },
+    {
+      "id": "asteroid_bilobed",
+      "path": "/models/asteroids/asteroid_bilobed.glb",
+      "legacyPath": "/models/asteroids/asteroid_6.glb",
+      "triangles": 320,
+      "budget": 400
+    }
+  ],
+  "factions": {
+    "faction-aurelian": {
+      "cruiser": {
+        "path": "/models/factions/faction-aurelian/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5856,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-aurelian/battleship.glb",
+        "length": 60.0,
+        "triangles": 9590,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-aurelian/carrier.glb",
+        "length": 55.0,
+        "triangles": 9548,
+        "budget": 10000
+      }
+    },
+    "faction-vektori": {
+      "cruiser": {
+        "path": "/models/factions/faction-vektori/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5892,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-vektori/battleship.glb",
+        "length": 60.0,
+        "triangles": 9626,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-vektori/carrier.glb",
+        "length": 55.0,
+        "triangles": 9584,
+        "budget": 10000
+      }
+    },
+    "faction-null-syndicate": {
+      "cruiser": {
+        "path": "/models/factions/faction-null-syndicate/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5892,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-null-syndicate/battleship.glb",
+        "length": 60.0,
+        "triangles": 9626,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-null-syndicate/carrier.glb",
+        "length": 55.0,
+        "triangles": 9584,
+        "budget": 10000
+      }
+    },
+    "faction-covenant": {
+      "cruiser": {
+        "path": "/models/factions/faction-covenant/cruiser.glb",
+        "length": 42.0,
+        "triangles": 6036,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-covenant/battleship.glb",
+        "length": 60.0,
+        "triangles": 9770,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-covenant/carrier.glb",
+        "length": 55.0,
+        "triangles": 9728,
+        "budget": 10000
+      }
+    },
+    "faction-rhimetals": {
+      "cruiser": {
+        "path": "/models/factions/faction-rhimetals/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5868,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-rhimetals/battleship.glb",
+        "length": 60.0,
+        "triangles": 9602,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-rhimetals/carrier.glb",
+        "length": 55.0,
+        "triangles": 9560,
+        "budget": 10000
+      }
+    },
+    "faction-gabagoonians": {
+      "cruiser": {
+        "path": "/models/factions/faction-gabagoonians/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5888,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-gabagoonians/battleship.glb",
+        "length": 60.0,
+        "triangles": 9622,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-gabagoonians/carrier.glb",
+        "length": 55.0,
+        "triangles": 9580,
+        "budget": 10000
+      }
+    },
+    "faction-infernoids": {
+      "cruiser": {
+        "path": "/models/factions/faction-infernoids/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5916,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-infernoids/battleship.glb",
+        "length": 60.0,
+        "triangles": 9650,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-infernoids/carrier.glb",
+        "length": 55.0,
+        "triangles": 9608,
+        "budget": 10000
+      }
+    },
+    "faction-movanites": {
+      "cruiser": {
+        "path": "/models/factions/faction-movanites/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5916,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-movanites/battleship.glb",
+        "length": 60.0,
+        "triangles": 9650,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-movanites/carrier.glb",
+        "length": 55.0,
+        "triangles": 9608,
+        "budget": 10000
+      }
+    },
+    "faction-leopantheri": {
+      "cruiser": {
+        "path": "/models/factions/faction-leopantheri/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5988,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-leopantheri/battleship.glb",
+        "length": 60.0,
+        "triangles": 9722,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-leopantheri/carrier.glb",
+        "length": 55.0,
+        "triangles": 9680,
+        "budget": 10000
+      }
+    },
+    "faction-buthari": {
+      "cruiser": {
+        "path": "/models/factions/faction-buthari/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5856,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-buthari/battleship.glb",
+        "length": 60.0,
+        "triangles": 9590,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-buthari/carrier.glb",
+        "length": 55.0,
+        "triangles": 9548,
+        "budget": 10000
+      }
+    },
+    "faction-sarrak": {
+      "cruiser": {
+        "path": "/models/factions/faction-sarrak/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5940,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-sarrak/battleship.glb",
+        "length": 60.0,
+        "triangles": 9674,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-sarrak/carrier.glb",
+        "length": 55.0,
+        "triangles": 9632,
+        "budget": 10000
+      }
+    },
+    "faction-kaerruun": {
+      "cruiser": {
+        "path": "/models/factions/faction-kaerruun/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5844,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-kaerruun/battleship.glb",
+        "length": 60.0,
+        "triangles": 9578,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-kaerruun/carrier.glb",
+        "length": 55.0,
+        "triangles": 9536,
+        "budget": 10000
+      }
+    },
+    "nexulan_convergence": {
+      "cruiser": {
+        "path": "/models/factions/nexulan_convergence/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5844,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/nexulan_convergence/battleship.glb",
+        "length": 60.0,
+        "triangles": 9578,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/nexulan_convergence/carrier.glb",
+        "length": 55.0,
+        "triangles": 9536,
+        "budget": 10000
+      }
+    },
+    "banking_clan": {
+      "cruiser": {
+        "path": "/models/factions/banking_clan/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5844,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/banking_clan/battleship.glb",
+        "length": 60.0,
+        "triangles": 9578,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/banking_clan/carrier.glb",
+        "length": 55.0,
+        "triangles": 9536,
+        "budget": 10000
+      }
+    },
+    "faction-pirates": {
+      "cruiser": {
+        "path": "/models/factions/faction-pirates/cruiser.glb",
+        "length": 42.0,
+        "triangles": 5844,
+        "budget": 8000
+      },
+      "battleship": {
+        "path": "/models/factions/faction-pirates/battleship.glb",
+        "length": 60.0,
+        "triangles": 9578,
+        "budget": 12000
+      },
+      "carrier": {
+        "path": "/models/factions/faction-pirates/carrier.glb",
+        "length": 55.0,
+        "triangles": 9536,
+        "budget": 10000
+      }
+    }
+  }
+}
