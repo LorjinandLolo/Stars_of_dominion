@@ -24,6 +24,7 @@ import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStation, buildStrikeCraft } from './placeholder-hulls';
 import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
+import { fallbackHardpoints, type HardpointLayout } from './hardpoints';
 import { SkyBackdrop } from './sky';
 import type { SquadronType } from '../types';
 
@@ -374,6 +375,25 @@ function hullAnchors(g: THREE.BufferGeometry): THREE.Vector3[] {
     return [0.35, 0.62].map(t => new THREE.Vector3(min.x + (max.x - min.x) * t, 0, z));
 }
 
+/**
+ * Hardpoint marker anchors: a tagged subsystem's emitter points averaged and
+ * lifted to the top of the part, so the marker sits where the eye finds it;
+ * the per-class fallback layout for any subsystem the model does not name.
+ */
+function hardpointLayout(g: THREE.BufferGeometry, emit: SubsystemEmitters): HardpointLayout {
+    g.computeBoundingBox();
+    const { min, max } = g.boundingBox!;
+    const out = fallbackHardpoints({ minX: min.x, maxX: max.x, minY: min.y, maxY: max.y, minZ: min.z, maxZ: max.z });
+    for (const id of SUBSYSTEM_IDS) {
+        const pts = emit[id];
+        if (!pts?.length) continue;
+        let x = 0, y = 0, z = -Infinity;
+        for (const p of pts) { x += p.x; y += p.y; z = Math.max(z, p.z); }
+        out[id] = { x: x / pts.length, y: y / pts.length, z };
+    }
+    return out;
+}
+
 export class BattleRenderer {
     private readonly renderer: THREE.WebGLRenderer;
     private readonly scene = new THREE.Scene();
@@ -404,6 +424,8 @@ export class BattleRenderer {
     /** class:side → smoke/fire anchors per tagged subsystem, and along the deck for hull fires. */
     private readonly emitters = new Map<string, SubsystemEmitters>();
     private readonly anchors = new Map<string, THREE.Vector3[]>();
+    /** class:side → where each subsystem's hardpoint marker goes, model space. */
+    private readonly hardpointLayouts = new Map<string, HardpointLayout>();
     /** Shader clock for flicker and embers: battle time, so a paused battle holds still. */
     private readonly damageTime = { value: 0 };
     private readonly shipSeeds = new Map<string, number>();
@@ -471,6 +493,7 @@ export class BattleRenderer {
                 this.hulls.set(`${id}:${side}`, new InstancePool(this.scene, geo, mat, 8, { damage: true }));
                 this.emitters.set(`${id}:${side}`, {});
                 this.anchors.set(`${id}:${side}`, hullAnchors(geo));
+                this.hardpointLayouts.set(`${id}:${side}`, hardpointLayout(geo, {}));
                 const outlineMat = new THREE.MeshBasicMaterial({
                     color: SIDE_COLOUR[side].stroke,
                     side: THREE.BackSide,
@@ -662,6 +685,7 @@ export class BattleRenderer {
                 applyMaps(this.hullMaterial.get(`${id}:${side}`)!, model);
                 this.emitters.set(`${id}:${side}`, model.emitters);
                 this.anchors.set(`${id}:${side}`, hullAnchors(model.geometry));
+                this.hardpointLayouts.set(`${id}:${side}`, hardpointLayout(model.geometry, model.emitters));
             }
         }
 
@@ -700,6 +724,11 @@ export class BattleRenderer {
                 for (const t of Object.values(set.station.maps)) t?.dispose();
             }
         }
+    }
+
+    /** Subsystem marker anchors for a class and side, model space in battle units (the overlay projects them). */
+    hardpoints(classId: ShipClassId, side: TacticalSide): HardpointLayout | undefined {
+        return this.hardpointLayouts.get(`${classId}:${side}`);
     }
 
     // ── Per frame ──
