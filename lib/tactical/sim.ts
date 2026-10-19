@@ -13,6 +13,8 @@
 
 import type {
     BattleState,
+    BattleStation,
+    BattleStationConfig,
     BattleResult,
     BattlePlan,
     CommandAbilityId,
@@ -99,6 +101,12 @@ export interface BattleConfig {
     playerPlan?: BattlePlan;
     /** Battlefield features (asteroid fields, nebulae). */
     hazards?: Hazard[];
+    /**
+     * The system's station or shipyard, if the battle is at one. `side` is the
+     * defender it belongs to; without x/y it is placed near that side's edge,
+     * behind the deployment line, out of the fight lane.
+     */
+    station?: BattleStationConfig;
     /** Admirals unlock the side's fleet-command abilities. */
     playerHasAdmiral?: boolean;
     enemyHasAdmiral?: boolean;
@@ -145,6 +153,7 @@ export function createBattle(config: BattleConfig): BattleState {
         beams: [],
         explosions: [],
         hazards: (config.hazards ?? []).map(h => ({ ...h })),
+        station: config.station ? placeStation(config.station, config.width ?? 1600, config.height ?? 1000) : undefined,
         player: makeSide(
             config.playerCapacity ?? 12, config.playerReserves,
             config.playerPlan ?? { posture: 'balanced', retreatBelowFleetStrength: 0 },
@@ -165,6 +174,18 @@ export function createBattle(config: BattleConfig): BattleState {
     autoDeployInitial(state, 'enemy');
     logEvent(state, 'Fleets deployed. Engagement underway.');
     return state;
+}
+
+/**
+ * Where the station stands: inside the owner's edge strip (ships spawn at
+ * edgeZone + 40, the station sits behind them at edgeZone - 10) and above the
+ * midline, so it is in view yet off the lanes the deployment rows use.
+ */
+function placeStation(cfg: BattleStationConfig, width: number, height: number): BattleStation {
+    const edgeZone = 70;
+    const x = cfg.x ?? (cfg.side === 'player' ? edgeZone - 10 : width - edgeZone + 10);
+    const y = cfg.y ?? height * 0.22;
+    return { kind: cfg.kind, side: cfg.side, x, y };
 }
 
 function side(state: BattleState, s: TacticalSide): SideState {

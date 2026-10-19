@@ -19,6 +19,7 @@ import type {
     CommandAbilityId,
     FormationId,
     Hazard,
+    BattleStationConfig,
     Squadron,
     SubsystemId,
     TacticalShip,
@@ -75,6 +76,8 @@ interface TacticalBattleViewProps {
     enemyName?: string;
     /** Battlefield hazards (asteroid fields, nebulae) forwarded to createBattle. */
     hazards?: Hazard[];
+    /** The system's station or yard, drawn behind its owner's line (visual only). */
+    station?: BattleStationConfig;
     /** Admirals unlock the side's fleet-command abilities. */
     playerHasAdmiral?: boolean;
     enemyHasAdmiral?: boolean;
@@ -147,6 +150,7 @@ export default function TacticalBattleView({
     enemyFleets,
     enemyName = 'Enemy Fleet',
     hazards,
+    station,
     playerHasAdmiral,
     enemyHasAdmiral,
     onAbort,
@@ -166,6 +170,7 @@ export default function TacticalBattleView({
             enemyTuning: designTuningFor(enemyFleets),
             enemyPlan: defaultEnemyPlan(),
             hazards,
+            station,
             playerHasAdmiral,
             enemyHasAdmiral,
         });

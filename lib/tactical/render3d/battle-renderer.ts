@@ -19,9 +19,9 @@
 // tab never keeps a dead WebGL context around.
 
 import * as THREE from 'three';
-import type { BattleState, Hazard, ShipClassId, TacticalShip, TacticalSide } from '../types';
+import type { BattleState, BattleStation, Hazard, ShipClassId, TacticalShip, TacticalSide } from '../types';
 import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
-import { buildPlaceholderHull, buildRock, buildStrikeCraft } from './placeholder-hulls';
+import { buildPlaceholderHull, buildRock, buildStation, buildStrikeCraft } from './placeholder-hulls';
 import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
 import type { SquadronType } from '../types';
@@ -55,6 +55,7 @@ const SIDE_COLOUR: Record<TacticalSide, { tint: THREE.Color; emissive: THREE.Col
 const OUTLINE_SCALE = 1.1;
 const RETREAT_TINT = new THREE.Color(1.0, 0.85, 0.45);
 const ARRIVING_DIM = 0.3;
+const STATION_SPIN_RATE = 0.06;   // rad per battle second: one turn in under two minutes
 
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
@@ -328,6 +329,36 @@ function addHullDamage(mat: THREE.MeshStandardMaterial, time: { value: number })
     mat.customProgramCacheKey = () => 'hull-damage';
 }
 
+// ── Station spin shader ──
+//
+// Vertex attribute `spin` (hull-models.ts: parts named "ring"; the placeholder
+// tags its ring and spokes) turns about the station's Z axis by uSpin radians,
+// normals too so the lit side travels with the ring. One mesh, one draw call;
+// nothing per frame but the uniform.
+
+const SPIN_VERT_HEAD = /* glsl */ `
+attribute float spin;
+uniform float uSpin;
+mat2 spinRot() { float c = cos(uSpin), s = sin(uSpin); return mat2(c, s, -s, c); }
+`;
+const SPIN_VERT_NORMAL = /* glsl */ `
+if (spin > 0.5) objectNormal.xy = spinRot() * objectNormal.xy;
+`;
+const SPIN_VERT_BODY = /* glsl */ `
+if (spin > 0.5) transformed.xy = spinRot() * transformed.xy;
+`;
+
+function addStationSpin(mat: THREE.MeshStandardMaterial, spin: { value: number }): void {
+    mat.onBeforeCompile = shader => {
+        shader.uniforms.uSpin = spin;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>\n${SPIN_VERT_HEAD}`)
+            .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>\n${SPIN_VERT_NORMAL}`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SPIN_VERT_BODY}`);
+    };
+    mat.customProgramCacheKey = () => 'station-spin';
+}
+
 /** Deterministic 0..1 from a number (the JS twin of the shader's sin hash). */
 function hash01(n: number): number {
     const x = Math.sin(n) * 43758.5453;
@@ -361,6 +392,9 @@ export class BattleRenderer {
     private readonly beams: InstancePool;
     private readonly rocks: InstancePool[] = [];
     private readonly rockMaterials: THREE.MeshStandardMaterial[] = [];
+    /** The system's station: one static mesh whose tagged ring turns by stationSpin. */
+    private station: { mesh: THREE.Mesh; material: THREE.MeshStandardMaterial } | null = null;
+    private readonly stationSpin = { value: 0 };
     private readonly ownedGeometries = new Set<THREE.BufferGeometry>();
     private readonly ownedMaterials: THREE.Material[] = [];
     private readonly ownedTextures: THREE.Texture[] = [];
@@ -408,6 +442,7 @@ export class BattleRenderer {
 
         this.buildBackdrop(state);
         this.buildHazards(state.hazards);
+        if (state.station) this.buildStation(state.station);
 
         // Hull pools: one per (class, side) so each side keeps its own emissive.
         for (const id of CLASS_IDS) {
@@ -582,6 +617,32 @@ export class BattleRenderer {
         });
     }
 
+    /**
+     * The station: lit like a hull, emissive in its owner's colour so the
+     * windows in its emissive map read as that side's lights, ring turning in
+     * the vertex shader. Placeholder until the manifest's station model lands.
+     */
+    private buildStation(st: BattleStation): void {
+        const geo = buildStation(st.kind);
+        this.ownedGeometries.add(geo);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x8a93a1,
+            metalness: 0.5,
+            roughness: 0.55,
+            emissive: SIDE_COLOUR[st.side].emissive,
+            emissiveIntensity: 0.18,
+            flatShading: true,
+            vertexColors: true,
+        });
+        addStationSpin(mat, this.stationSpin);
+        this.ownedMaterials.push(mat);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(st.x, -st.y, 0);
+        mesh.frustumCulled = false;
+        this.scene.add(mesh);
+        this.station = { mesh, material: mat };
+    }
+
     // ── glTF drop-ins ──
 
     private async installModels(): Promise<void> {
@@ -639,6 +700,18 @@ export class BattleRenderer {
                 applyMaps(this.rockMaterials[i], model);
             });
         }
+
+        if (set.station) {
+            if (this.station) {
+                adopt(set.station);
+                this.station.mesh.geometry = set.station.geometry;
+                applyMaps(this.station.material, set.station);
+            } else {
+                // No station in this battle: nothing to show it on.
+                set.station.geometry.dispose();
+                for (const t of Object.values(set.station.maps)) t?.dispose();
+            }
+        }
     }
 
     // ── Per frame ──
@@ -676,6 +749,7 @@ export class BattleRenderer {
         if (this.disposed) return;
         this.placeCamera(view);
         this.damageTime.value = state.time;
+        this.stationSpin.value = state.time * STATION_SPIN_RATE;
 
         for (const pool of this.hulls.values()) pool.begin();
         for (const pool of this.outlines.values()) pool.begin();
@@ -908,6 +982,7 @@ function disposeModelSet(set: ModelSet): void {
     const all: HullModel[] = [...set.ships.values(), ...set.craft.values(), ...set.asteroids];
     for (const byClass of set.factionShips.values()) all.push(...byClass.values());
     if (set.torpedo) all.push(set.torpedo);
+    if (set.station) all.push(set.station);
     for (const m of all) {
         m.geometry.dispose();
         for (const t of Object.values(m.maps)) t?.dispose();

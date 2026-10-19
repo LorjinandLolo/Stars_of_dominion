@@ -234,6 +234,30 @@ export interface Hazard {
     r: number;
 }
 
+// ─── Battlefield features ─────────────────────────────────────────────────────
+
+export type StationKind = 'station' | 'shipyard';
+
+/**
+ * The system's station, drawn behind the defender's deployment line. Purely
+ * visual for now: no collision, no guns, no hull. `side` is the defender it
+ * belongs to, so the renderer lights it in that side's colour.
+ */
+export interface BattleStation {
+    kind: StationKind;
+    x: number;
+    y: number;
+    side: TacticalSide;
+}
+
+/** createBattle's station input: without x/y it is placed behind `side`'s deployment line. */
+export interface BattleStationConfig {
+    kind: StationKind;
+    side: TacticalSide;
+    x?: number;
+    y?: number;
+}
+
 // ─── Formations ───────────────────────────────────────────────────────────────
 
 export type FormationId = 'line' | 'column' | 'wedge' | 'screen' | 'circle';
@@ -329,6 +353,8 @@ export interface BattleState {
     beams: BeamShot[];
     explosions: ExplosionFx[];
     hazards: Hazard[];
+    /** Station behind the defender's line, when the battle is at one. */
+    station?: BattleStation;
     player: SideState;
     enemy: SideState;
     outcome: BattleOutcome | null;

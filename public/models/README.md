@@ -26,7 +26,7 @@ public/models/
   ships/                   the five generic hulls (Blender-built, replace freely)
   factions/<faction>/      a faction's own hulls, override the generic ones
   craft/                   strike craft
-  props/                   torpedo, asteroids
+  props/                   torpedo, asteroids, station
 ```
 
 ## Manifest
@@ -51,7 +51,8 @@ public/models/
     "bomber": "craft/bomber.glb"
   },
   "torpedo": "props/torpedo.glb",
-  "asteroids": ["props/asteroid-1.glb", "props/asteroid-2.glb", "props/asteroid-3.glb"]
+  "asteroids": ["props/asteroid-1.glb", "props/asteroid-2.glb", "props/asteroid-3.glb"],
+  "station": "props/station.glb"
 }
 ```
 
@@ -72,9 +73,18 @@ it wants to change; the rest fall back to `ships`.
 | bomber | `craft.bomber` | anti-ship squadrons | length 4 | 600 | 512 |
 | torpedo | `torpedo` | destroyer and battleship torpedoes | length 7 | 300 | none |
 | asteroids | `asteroids[]` | rocks in asteroid-field hazards, cycled per field, random scale and spin | radius 1 | 400 | 1k |
+| station | `station` | the system's station or shipyard, behind the defender's line (visual only) | 70 across | 6k | 2k |
 
 "Fits to" is in battle units; you do not have to model at that size. The torpedo is
 drawn unlit in a bright side colour, so its textures are ignored.
+
+The station is one model for both kinds (station and shipyard) for now. It is scaled so
+its widest ground-plane extent (X or Y) is 70 units and centred on all three axes. Build
+it with the **ring flat in the XY plane, Z up** in Blender, the same as a hull's deck,
+and name the parts that should turn `ring` (any object, mesh or parent name containing
+`ring`): the renderer spins those slowly about the station's vertical axis and leaves
+the hub, spire and docking arms still. Its windows go in the emissive map, white, and
+light up in the owner's side colour like a hull's running lights.
 
 ## Faction ids
 
@@ -163,8 +173,9 @@ by where they would appear, with the most visible first.
   (continental, oceanic, volcanic, swamp, jungle, montane, gaia, arcology).
 - **Moon.**
 - **Orbital defence platform:** a gun station that fights in the battle.
-- **Space station:** the system's station, as cover or objective.
-- **Shipyard:** for battles at a yard system.
+- **Station with teeth:** the `station` slot draws it today; giving it collision, hull and
+  guns (so it is cover and an objective) is renderer and sim work. A separate shipyard
+  model would also need a second slot; today one model serves both kinds.
 - **Orbital ring:** the charter company megastructure.
 - **Surface guns:** the ground batteries that shoot at orbit (`lib/combat/surface-guns.ts`).
 - **Planetary shield dome:** the strongpoint that blocks orbital fire.

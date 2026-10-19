@@ -6,9 +6,96 @@
     "battleship": "ships/battleship.glb",
     "carrier": "ships/carrier.glb"
   },
-  "factions": {},
-  "craft": {},
-  "torpedo": null,
-  "asteroids": [],
+  "factions": {
+    ".gitkeep": {},
+    "banking_clan": {
+      "cruiser": "factions/banking_clan/cruiser.glb",
+      "battleship": "factions/banking_clan/battleship.glb",
+      "carrier": "factions/banking_clan/carrier.glb"
+    },
+    "faction-aurelian": {
+      "cruiser": "factions/faction-aurelian/cruiser.glb",
+      "battleship": "factions/faction-aurelian/battleship.glb",
+      "carrier": "factions/faction-aurelian/carrier.glb"
+    },
+    "faction-buthari": {
+      "cruiser": "factions/faction-buthari/cruiser.glb",
+      "battleship": "factions/faction-buthari/battleship.glb",
+      "carrier": "factions/faction-buthari/carrier.glb"
+    },
+    "faction-covenant": {
+      "cruiser": "factions/faction-covenant/cruiser.glb",
+      "battleship": "factions/faction-covenant/battleship.glb",
+      "carrier": "factions/faction-covenant/carrier.glb"
+    },
+    "faction-gabagoonians": {
+      "cruiser": "factions/faction-gabagoonians/cruiser.glb",
+      "battleship": "factions/faction-gabagoonians/battleship.glb",
+      "carrier": "factions/faction-gabagoonians/carrier.glb"
+    },
+    "faction-infernoids": {
+      "cruiser": "factions/faction-infernoids/cruiser.glb",
+      "battleship": "factions/faction-infernoids/battleship.glb",
+      "carrier": "factions/faction-infernoids/carrier.glb"
+    },
+    "faction-kaerruun": {
+      "cruiser": "factions/faction-kaerruun/cruiser.glb",
+      "battleship": "factions/faction-kaerruun/battleship.glb",
+      "carrier": "factions/faction-kaerruun/carrier.glb"
+    },
+    "faction-leopantheri": {
+      "cruiser": "factions/faction-leopantheri/cruiser.glb",
+      "battleship": "factions/faction-leopantheri/battleship.glb",
+      "carrier": "factions/faction-leopantheri/carrier.glb"
+    },
+    "faction-movanites": {
+      "cruiser": "factions/faction-movanites/cruiser.glb",
+      "battleship": "factions/faction-movanites/battleship.glb",
+      "carrier": "factions/faction-movanites/carrier.glb"
+    },
+    "faction-null-syndicate": {
+      "cruiser": "factions/faction-null-syndicate/cruiser.glb",
+      "battleship": "factions/faction-null-syndicate/battleship.glb",
+      "carrier": "factions/faction-null-syndicate/carrier.glb"
+    },
+    "faction-pirates": {
+      "cruiser": "factions/faction-pirates/cruiser.glb",
+      "battleship": "factions/faction-pirates/battleship.glb",
+      "carrier": "factions/faction-pirates/carrier.glb"
+    },
+    "faction-rhimetals": {
+      "cruiser": "factions/faction-rhimetals/cruiser.glb",
+      "battleship": "factions/faction-rhimetals/battleship.glb",
+      "carrier": "factions/faction-rhimetals/carrier.glb"
+    },
+    "faction-sarrak": {
+      "cruiser": "factions/faction-sarrak/cruiser.glb",
+      "battleship": "factions/faction-sarrak/battleship.glb",
+      "carrier": "factions/faction-sarrak/carrier.glb"
+    },
+    "faction-vektori": {
+      "cruiser": "factions/faction-vektori/cruiser.glb",
+      "battleship": "factions/faction-vektori/battleship.glb",
+      "carrier": "factions/faction-vektori/carrier.glb"
+    },
+    "nexulan_convergence": {
+      "cruiser": "factions/nexulan_convergence/cruiser.glb",
+      "battleship": "factions/nexulan_convergence/battleship.glb",
+      "carrier": "factions/nexulan_convergence/carrier.glb"
+    }
+  },
+  "craft": {
+    "interceptor": "craft/interceptor.glb",
+    "bomber": "craft/bomber.glb"
+  },
+  "torpedo": "props/torpedo.glb",
+  "asteroids": [
+    "props/asteroid_lumpy.glb",
+    "props/asteroid_elongated.glb",
+    "props/asteroid_shattered.glb",
+    "props/asteroid_metallic.glb",
+    "props/asteroid_icy.glb",
+    "props/asteroid_bilobed.glb"
+  ],
   "station": null
 }

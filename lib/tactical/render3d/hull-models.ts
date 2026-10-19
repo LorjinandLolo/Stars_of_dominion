@@ -10,7 +10,8 @@
 //     "factions":  { "faction-aurelian": { "cruiser": "factions/aurelian/cruiser.glb" } },
 //     "craft":     { "interceptor": "craft/interceptor.glb", "bomber": "craft/bomber.glb" },
 //     "torpedo":   "props/torpedo.glb",
-//     "asteroids": ["props/asteroid-1.glb", "props/asteroid-2.glb"]
+//     "asteroids": ["props/asteroid-1.glb", "props/asteroid-2.glb"],
+//     "station":   "props/station.glb"
 //   }
 //
 // Each model is merged into ONE geometry so it can be instanced, turned from
@@ -24,13 +25,17 @@
 // is plain hull. The tag rides along as the `subsystem` vertex attribute, so
 // the renderer can darken one part of an instanced hull per ship. Untagged
 // models simply get hull-wide damage.
+//
+// The station is tagged the same way but with one word: any part whose name
+// (or an ancestor's) contains "ring" gets `spin` = 1 and turns slowly in the
+// battle; the rest stands still.
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { ShipClassId, SquadronType, SubsystemId } from '../types';
 import { SHIP_CLASSES } from '../ship-defs';
-import { addHeightShade } from './placeholder-hulls';
+import { addHeightShade, STATION_SPAN } from './placeholder-hulls';
 
 export const MODEL_BASE = '/models';
 
@@ -53,23 +58,38 @@ export interface HullModel {
 export const SUBSYSTEM_TAG: Record<SubsystemId, number> = { engines: 1, shields: 2, weapons: 3, sensors: 4 };
 export const SUBSYSTEM_IDS: SubsystemId[] = ['engines', 'shields', 'weapons', 'sensors'];
 const TAG_WORDS: Array<[string, number]> = [['engine', 1], ['shield', 2], ['weapon', 3], ['sensor', 4]];
+/** Station parts that turn: vertex attribute `spin`. */
+const SPIN_WORDS: Array<[string, number]> = [['ring', 1]];
+
+/** How a model's parts are tagged: which name words, into which vertex attribute. */
+interface Tagging {
+    words: Array<[string, number]>;
+    attribute: string;
+}
+const SUBSYSTEM_TAGGING: Tagging = { words: TAG_WORDS, attribute: 'subsystem' };
+const SPIN_TAGGING: Tagging = { words: SPIN_WORDS, attribute: 'spin' };
 
 /** Up to four anchor points per tagged subsystem, model space (Z-up). */
 export type SubsystemEmitters = Partial<Record<SubsystemId, THREE.Vector3[]>>;
 
-/** Subsystem tag for a glTF object: the first of it and its ancestors whose name says one. */
-function tagFor(obj: THREE.Object3D | null): number {
+/** Tag for a glTF object: the first of it and its ancestors whose name says one. */
+function tagFor(obj: THREE.Object3D | null, words: Array<[string, number]>): number {
     for (let o = obj; o; o = o.parent) {
         const n = o.name.toLowerCase();
-        for (const [word, tag] of TAG_WORDS) if (n.includes(word)) return tag;
+        for (const [word, tag] of words) if (n.includes(word)) return tag;
     }
     return 0;
 }
 
+/** Give every vertex of a part one tag. */
+export function setVertexTag(g: THREE.BufferGeometry, attribute: string, tag: number): void {
+    const n = g.getAttribute('position').count;
+    g.setAttribute(attribute, new THREE.BufferAttribute(new Float32Array(n).fill(tag), 1));
+}
+
 /** Give every vertex of a part one subsystem tag. */
 export function setSubsystemTag(g: THREE.BufferGeometry, tag: number): void {
-    const n = g.getAttribute('position').count;
-    g.setAttribute('subsystem', new THREE.BufferAttribute(new Float32Array(n).fill(tag), 1));
+    setVertexTag(g, 'subsystem', tag);
 }
 
 /**
@@ -114,6 +134,8 @@ export interface ModelSet {
     craft: Map<SquadronType, HullModel>;
     torpedo: HullModel | null;
     asteroids: HullModel[];
+    /** The system's station; its `spin` attribute marks the turning ring. */
+    station: HullModel | null;
 }
 
 interface Manifest {
@@ -122,6 +144,7 @@ interface Manifest {
     craft?: Partial<Record<string, string>>;
     torpedo?: string | null;
     asteroids?: string[];
+    station?: string | null;
 }
 
 const CLASS_IDS = new Set<string>(['corvette', 'destroyer', 'cruiser', 'battleship', 'carrier']);
@@ -130,7 +153,9 @@ const CRAFT_TYPES = new Set<string>(['interceptor', 'bomber']);
 /** Where a model's length along X has to land (must match the placeholders). */
 type Fit =
     | { kind: 'length'; length: number; xMin: number; shade: number | null }
-    | { kind: 'radius'; radius: number };
+    | { kind: 'radius'; radius: number }
+    /** Widest ground-plane extent (X or Y) scaled to `span`, centred on all axes. */
+    | { kind: 'span'; span: number; shade: number };
 
 function hullFit(id: ShipClassId): Fit {
     const r = SHIP_CLASSES[id].radius;
@@ -139,9 +164,10 @@ function hullFit(id: ShipClassId): Fit {
 const CRAFT_FIT: Fit = { kind: 'length', length: 4.2, xMin: -1.8, shade: 0.6 };
 const TORPEDO_FIT: Fit = { kind: 'length', length: 7, xMin: -3.5, shade: null };
 const ROCK_FIT: Fit = { kind: 'radius', radius: 1 };
+const STATION_FIT: Fit = { kind: 'span', span: STATION_SPAN, shade: 0.6 };
 
 export function emptyModelSet(): ModelSet {
-    return { ships: new Map(), factionShips: new Map(), craft: new Map(), torpedo: null, asteroids: [] };
+    return { ships: new Map(), factionShips: new Map(), craft: new Map(), torpedo: null, asteroids: [], station: null };
 }
 
 export async function loadModelSet(factionIds: Array<string | undefined>): Promise<ModelSet> {
@@ -151,11 +177,11 @@ export async function loadModelSet(factionIds: Array<string | undefined>): Promi
     const manifest = (await res.json()) as Manifest;
     const loader = new GLTFLoader();
 
-    const load = async (file: string | undefined | null, fit: Fit, label: string): Promise<HullModel | null> => {
+    const load = async (file: string | undefined | null, fit: Fit, label: string, tagging = SUBSYSTEM_TAGGING): Promise<HullModel | null> => {
         if (!file) return null;
         try {
             const gltf = await loader.loadAsync(`${MODEL_BASE}/${file}`);
-            return toModel(gltf.scene, fit);
+            return toModel(gltf.scene, fit, tagging);
         } catch (err) {
             console.warn(`[battle-renderer] model ${label} (${file}) failed to load, keeping placeholder`, err);
             return null;
@@ -187,12 +213,13 @@ export async function loadModelSet(factionIds: Array<string | undefined>): Promi
     (manifest.asteroids ?? []).forEach((file, i) => {
         jobs.push(load(file, ROCK_FIT, `asteroid ${i + 1}`).then(m => { rocks[i] = m; }));
     });
+    jobs.push(load(manifest.station, STATION_FIT, 'station', SPIN_TAGGING).then(m => { out.station = m; }));
     await Promise.all(jobs);
     out.asteroids = rocks.filter((m): m is HullModel => !!m);
     return out;
 }
 
-function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
+function toModel(root: THREE.Object3D, fit: Fit, tagging: Tagging): HullModel | null {
     root.updateMatrixWorld(true);
     const parts: THREE.BufferGeometry[] = [];
     let firstMaterial: THREE.Material | null = null;
@@ -209,7 +236,7 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         if (!g.getAttribute('uv')) {
             g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
         }
-        setSubsystemTag(g, tagFor(mesh));
+        setVertexTag(g, tagging.attribute, tagFor(mesh, tagging.words));
         g.morphAttributes = {};
         parts.push(g.index ? g.toNonIndexed() : g);
         if (!firstMaterial) firstMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
@@ -230,6 +257,12 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         geometry.computeBoundingBox();
         const b2 = geometry.boundingBox!;
         geometry.translate(fit.xMin - b2.min.x, -(b2.min.y + b2.max.y) / 2, -(b2.min.z + b2.max.z) / 2);
+    } else if (fit.kind === 'span') {
+        const centre = new THREE.Vector3();
+        bb.getCenter(centre);
+        geometry.translate(-centre.x, -centre.y, -centre.z);
+        const s = fit.span / (Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y) || 1);
+        geometry.scale(s, s, s);
     } else {
         const centre = new THREE.Vector3();
         bb.getCenter(centre);
@@ -239,7 +272,7 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         geometry.scale(s, s, s);
     }
     geometry.computeVertexNormals();
-    if (fit.kind === 'length' && fit.shade !== null) addHeightShade(geometry, fit.shade);
+    if (fit.kind !== 'radius' && fit.shade !== null) addHeightShade(geometry, fit.shade);
     geometry.computeBoundingSphere();
 
     const maps: ModelMaps = {};
@@ -251,5 +284,5 @@ function toModel(root: THREE.Object3D, fit: Fit): HullModel | null {
         if (m.metalnessMap) maps.metalnessMap = m.metalnessMap;
         if (m.emissiveMap) maps.emissiveMap = m.emissiveMap;
     }
-    return { geometry, maps, emitters: subsystemEmitters(geometry) };
+    return { geometry, maps, emitters: tagging === SUBSYSTEM_TAGGING ? subsystemEmitters(geometry) : {} };
 }

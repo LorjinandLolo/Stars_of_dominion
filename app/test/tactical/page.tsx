@@ -6,7 +6,7 @@
 
 import React from 'react';
 import TacticalBattleView from '@/components/tactical/TacticalBattleView';
-import type { BattleResult, Hazard } from '@/lib/tactical/types';
+import type { BattleResult, BattleStationConfig, Hazard } from '@/lib/tactical/types';
 import type { StrategicFleetLike } from '@/lib/tactical/fleet-adapter';
 
 const PLAYER_FLEETS: StrategicFleetLike[] = [
@@ -34,6 +34,9 @@ const HAZARDS: Hazard[] = [
     { kind: 'asteroid', x: 620, y: 700, r: 90 },
     { kind: 'nebula', x: 1050, y: 560, r: 150 },
 ];
+
+/** The raiders' yard, behind their line on the right, so the station model can be checked here. */
+const STATION: BattleStationConfig = { kind: 'shipyard', side: 'enemy' };
 
 type Done =
     | { kind: 'finished'; result: BattleResult }
@@ -73,6 +76,7 @@ export default function TacticalTestPage() {
             enemyFleets={ENEMY_FLEETS}
             enemyName="Crimson Raider Vanguard"
             hazards={HAZARDS}
+            station={STATION}
             playerHasAdmiral
             onFinish={result => setDone({ kind: 'finished', result })}
             onAbort={() => setDone({ kind: 'aborted' })}

@@ -10,6 +10,8 @@ import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
 import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth-service';
+import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
+import type { SystemNode } from '@/types/ui-state';
 import TopNav from '@/components/shell/TopNav';
 import SmallScreenNote from '@/components/shell/SmallScreenNote';
 import GalaxyShell from '@/components/galaxy/GalaxyShell';
@@ -426,6 +428,37 @@ function hazardsForSystem(systemId: string, tags: string[]): import('@/lib/tacti
 }
 
 /**
+ * The station drawn behind the defender's line, if the battle is at one. The
+ * signal is the orbital layer the sync already carries: a planet of the system
+ * with a standing (active or damaged) slot whose structure is a `shipyard` or
+ * `station` by catalogue category (data/orbital-structures). The system's
+ * 'shipyard' tag counts too, so a yard world that nobody has built on still
+ * shows docks. The station belongs to the system's owner; anyone else's fleet
+ * is the attacker, so it sits on the enemy side when the player is attacking.
+ */
+function stationForSystem(
+    system: SystemNode | undefined,
+    planets: Array<{ systemId?: string; orbital?: { slots?: Array<{ state?: string; structureId?: string | null }> } }>,
+    playerFactionId: string | null | undefined,
+): import('@/lib/tactical/types').BattleStationConfig | undefined {
+    if (!system) return undefined;
+    let kind: import('@/lib/tactical/types').StationKind | null = null;
+    for (const p of planets) {
+        if (p.systemId !== system.id) continue;
+        for (const slot of p.orbital?.slots ?? []) {
+            if (slot.state !== 'active' && slot.state !== 'damaged') continue;
+            const category = slot.structureId ? ORBITAL_STRUCTURE_BY_ID[slot.structureId]?.category : undefined;
+            if (category === 'shipyard') kind = 'shipyard';
+            else if (category === 'station' && !kind) kind = 'station';
+        }
+    }
+    if (!kind && (system.tags ?? []).some(t => String(t).toLowerCase() === 'shipyard')) kind = 'shipyard';
+    if (!kind) return undefined;
+    const side = system.ownerFactionId && system.ownerFactionId === playerFactionId ? 'player' : 'enemy';
+    return { kind, side };
+}
+
+/**
  * Bridges the strategic layer and the live tactical battle. Launch config is
  * set by the "ENGAGE — TACTICAL" button (SystemContextPanel); on resolution the
  * outcome is sent to the worker as MIL_TACTICAL_RESULT, which applies surviving
@@ -437,6 +470,7 @@ function TacticalBattleOverlay() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const fleets = useUIStore(s => s.fleets);
     const systems = useUIStore(s => s.systems);
+    const planets = useUIStore(s => s.planets);
 
     // Snapshot the participating fleets when the battle opens — sync updates
     // during the fight must not restart or mutate the running sim.
@@ -517,6 +551,7 @@ function TacticalBattleOverlay() {
             enemyFleets={snap.enemyFleets}
             enemyName={tacticalBattle.enemyFactionId.replace(/^faction-/, '').replace(/-/g, ' ')}
             hazards={hazardsForSystem(tacticalBattle.systemId, (sys as any)?.tags ?? [])}
+            station={stationForSystem(sys, planets, playerFactionId)}
             playerHasAdmiral={snap.playerFleets.some((f: any) => !!f.leaderId)}
             enemyHasAdmiral={snap.enemyFleets.some((f: any) => !!f.leaderId)}
             onFinish={handleFinish}

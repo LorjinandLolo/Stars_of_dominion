@@ -192,6 +192,77 @@ export function buildStrikeCraft(): THREE.BufferGeometry {
     ]);
 }
 
+/**
+ * Procedural station, about STATION_SPAN units across, ring in the ground
+ * plane: a hub, a habitat ring on four spokes, and either a comms spire
+ * (station) or two long docking gantries along X (shipyard). The ring and
+ * spokes carry `spin` = 1 so the renderer can turn them; everything else is 0.
+ * Model space matches the glTF drop-in after import: ring in XY, +Z up.
+ */
+export const STATION_SPAN = 70;
+
+export function buildStation(kind: 'station' | 'shipyard'): THREE.BufferGeometry {
+    const R = STATION_SPAN / 2 - 4;
+    const spinning: Part[] = [];
+    const ring = new THREE.TorusGeometry(R, 3.2, 6, 40);
+    spinning.push(ring);
+    for (let i = 0; i < 4; i++) {
+        const spoke = new THREE.BoxGeometry(R, 1.4, 1.4);
+        spoke.translate(R / 2, 0, 0);
+        spoke.rotateZ((i * Math.PI) / 2);
+        spinning.push(spoke);
+    }
+    // Four hab blocks sitting on the ring.
+    for (let i = 0; i < 4; i++) {
+        const hab = new THREE.BoxGeometry(7, 5, 5);
+        hab.translate(R, 0, 0);
+        hab.rotateZ((i * Math.PI) / 2 + Math.PI / 4);
+        spinning.push(hab);
+    }
+    const fixed: Part[] = [];
+    const hub = new THREE.CylinderGeometry(6, 6, 10, 10);
+    hub.rotateX(Math.PI / 2);
+    fixed.push(hub);
+    if (kind === 'shipyard') {
+        // Docking gantries: open frames along ±X that a hull could sit in.
+        for (const dir of [1, -1]) {
+            const arm = new THREE.BoxGeometry(22, 2, 2);
+            arm.translate(dir * (R + 6), 0, 0);
+            fixed.push(arm);
+            for (const dy of [-6, 6]) {
+                const rail = new THREE.BoxGeometry(18, 1, 1);
+                rail.translate(dir * (R + 8), dy, 3);
+                fixed.push(rail);
+                const post = new THREE.BoxGeometry(1, 1, 4);
+                post.translate(dir * (R + 16), dy, 1.5);
+                fixed.push(post);
+            }
+        }
+    } else {
+        const spire = new THREE.CylinderGeometry(0.8, 1.6, 16, 6);
+        spire.rotateX(Math.PI / 2);
+        spire.translate(0, 0, 11);
+        fixed.push(spire);
+        const dish = new THREE.ConeGeometry(4, 2, 10);
+        dish.rotateX(Math.PI / 2);
+        dish.translate(0, 0, -7);
+        fixed.push(dish);
+    }
+    const tagged = (parts: Part[], tag: number) => parts.map(p => {
+        const g = p.index ? p.toNonIndexed() : p;
+        if (g !== p) p.dispose();
+        g.setAttribute('spin', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(tag), 1));
+        return g;
+    });
+    const parts = [...tagged(spinning, 1), ...tagged(fixed, 0)];
+    const merged = mergeGeometries(parts, false)!;
+    for (const p of parts) p.dispose();
+    merged.computeVertexNormals();
+    addHeightShade(merged, 0.6);
+    merged.computeBoundingSphere();
+    return merged;
+}
+
 /** Lumpy icosahedron rock, unit radius; scaled per instance. */
 export function buildRock(seed: number): THREE.BufferGeometry {
     const g = new THREE.IcosahedronGeometry(1, 1);

@@ -1,7 +1,7 @@
 # Model specs
 
 A brief for rebuilding every model the tactical battle uses: the five hulls, the two
-strike craft, the torpedo and the asteroids. Each spec says what the model is for in
+strike craft, the torpedo, the asteroids and the station. Each spec says what the model is for in
 the game, what must read at a glance, its proportions, a bow-to-stern part list, where
 weapons go and which way they face, lights, budget, and what the current Blender
 version gets wrong.
@@ -32,6 +32,7 @@ Image and Meshy/Tripo prompts: `docs/art/ship-image-prompts.md`.
 | strike craft | 4 | 3 to 5 px |
 | torpedo | 7 | 6 to 8 px |
 | asteroid | 3 to 12 across | 3 to 14 px |
+| station | 70 across | 60 to 84 px |
 
 So the order of importance is: **silhouette from above first, big masses second, mid
 detail third, greebles last.** A hull that reads only through its greebles will turn to
@@ -538,9 +539,52 @@ fine.
 
 ---
 
-## 11. Checklist before you drop a model in
+## 11. Station
 
-- [ ] Bow along +X, top along +Z, port along +Y in Blender.
+**Role.** The system's station or shipyard, standing behind the defender's deployment
+line near their edge of the field, off the lanes the ships use. It is scenery for now:
+nothing collides with it, it has no hull and no guns. It tells the player where they
+are fighting and whose ground it is. One model serves both kinds.
+
+**Signature.** A ring. From the 36-degree camera it reads as a wide ellipse with a hub
+in the middle, which nothing else on the field looks like.
+
+**Orientation.** Ring flat in the **XY plane, Z up** in Blender, hub at the origin. The
+loader centres the model on all three axes and scales it so its widest extent in X or
+Y is 70 battle units; Z scales with it. Keep the height well under the width, say a
+fifth, or the spire will poke out of the ellipse too far.
+
+**Parts, inside out.**
+
+1. **Hub:** a short cylinder or drum, about a sixth of the ring diameter, the station's
+   core.
+2. **Spokes:** three or four, hub to ring. Thin.
+3. **Ring:** the habitat ring, tube thickness about a tenth of its radius, with a few
+   blocks or modules sitting on it so the turn is visible.
+4. **Spire or mast:** above the hub along +Z, antennae and a dish below.
+5. **Docking arms:** one or two open gantries out past the ring along +X or -X, long
+   enough that a cruiser (42 units) could sit in one. These make it a yard at a glance.
+
+**Name the moving parts `ring`.** The loader tags every vertex of any object, mesh or
+parent whose name contains `ring`, and the renderer turns those about the station's
+vertical axis, one turn in about two minutes. Put the ring, its spokes and the modules
+on it under one parent called `ring`; leave the hub, spire and docking arms out of it.
+Nothing else needs a name.
+
+**Lights.** Windows along the ring and the hub, a row of landing lights down each
+docking arm, in the emissive map, white or grey. The renderer colours them by the
+owner's side like a hull's running lights.
+
+**Look.** Grey-white hull plating like the ships, a little lighter so it reads as
+civilian or industrial. No faction colours in the base map.
+
+**Budget.** 6k triangles, 2k texture, one material.
+
+---
+
+## 12. Checklist before you drop a model in
+
+- [ ] Bow along +X, top along +Z, port along +Y in Blender (station: ring in XY, Z up).
 - [ ] One material, no floating parts.
 - [ ] Capital hulls split into objects named `engines`, `shields`, `weapons`, `sensors`
       and `hull` (untagged models only get hull-wide damage).
