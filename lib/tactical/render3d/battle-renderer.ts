@@ -24,6 +24,7 @@ import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStation, buildStrikeCraft } from './placeholder-hulls';
 import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
+import { SkyBackdrop } from './sky';
 import type { SquadronType } from '../types';
 
 export type { ViewLike } from './view';
@@ -379,6 +380,8 @@ export class BattleRenderer {
     private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 2);
     private readonly discTexture = makeSoftDiscTexture();
     private readonly beamTexture = makeBeamTexture();
+    /** Nebula, stars and planet behind the battle, drawn first each frame. */
+    private sky: SkyBackdrop | null = null;
     private readonly hullGeometry = new Map<ShipClassId, THREE.BufferGeometry>();
     private readonly hullMaterial = new Map<string, THREE.MeshStandardMaterial>();
     private readonly hulls = new Map<string, InstancePool>();
@@ -423,7 +426,9 @@ export class BattleRenderer {
             powerPreference: 'high-performance',
         });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
-        this.renderer.setClearColor(0x020617, 1);
+        this.renderer.setClearColor(0x02030a, 1);
+        // Two passes per frame (sky, then battle), so clearing is manual.
+        this.renderer.autoClear = false;
         this.renderer.shadowMap.enabled = false;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.1;
@@ -440,6 +445,7 @@ export class BattleRenderer {
         this.scene.add(new THREE.HemisphereLight(0x9bb0ff, 0x1a2236, 0.45));
         this.scene.add(new THREE.AmbientLight(0xffffff, 0.06));
 
+        this.sky = new SkyBackdrop(skySeed(state), state, this.discTexture);
         this.buildBackdrop(state);
         this.buildHazards(state.hazards);
         if (state.station) this.buildStation(state.station);
@@ -532,36 +538,18 @@ export class BattleRenderer {
     // ── Static scenery ──
 
     private buildBackdrop(state: BattleState): void {
+        // The sky (sky.ts) is the backdrop now. The battlefield itself is only
+        // a faint dark veil, so its bounds read without hiding the space behind.
         const field = new THREE.PlaneGeometry(state.width, state.height);
-        const fieldMat = new THREE.MeshBasicMaterial({ color: 0x050b1e });
+        const fieldMat = new THREE.MeshBasicMaterial({
+            color: 0x050b1e, transparent: true, opacity: 0.22, depthWrite: false,
+        });
         this.ownedGeometries.add(field);
         this.ownedMaterials.push(fieldMat);
         const plane = new THREE.Mesh(field, fieldMat);
         plane.position.set(state.width / 2, -state.height / 2, -4);
+        plane.renderOrder = -1;
         this.scene.add(plane);
-
-        // Starfield: seeded so it never shimmers between mounts.
-        const rand = mulberry32(0x5eed5);
-        const n = 420;
-        const pos = new Float32Array(n * 3);
-        const col = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) {
-            pos[i * 3] = rand() * state.width;
-            pos[i * 3 + 1] = -rand() * state.height;
-            pos[i * 3 + 2] = -3;
-            const a = 0.25 + rand() * 0.6;
-            const warm = rand() < 0.2;
-            col[i * 3] = a * (warm ? 1 : 0.8);
-            col[i * 3 + 1] = a * 0.85;
-            col[i * 3 + 2] = a * (warm ? 0.7 : 1);
-        }
-        const stars = new THREE.BufferGeometry();
-        stars.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        stars.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        const starMat = new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true });
-        this.ownedGeometries.add(stars);
-        this.ownedMaterials.push(starMat);
-        this.scene.add(new THREE.Points(stars, starMat));
     }
 
     private buildHazards(hazards: Hazard[]): void {
@@ -819,6 +807,20 @@ export class BattleRenderer {
         this.sprites.end();
         this.beams.end();
 
+        this.renderer.clear();
+        if (this.sky) {
+            const s = view.scale;
+            const tilt = Math.min(1, Math.max(0.05, view.tilt ?? 1));
+            this.sky.render(this.renderer, {
+                cw: view.cw,
+                ch: view.ch,
+                cx: (view.cw / 2 - view.ox) / s,
+                cy: (view.ch / 2 - view.oy) / (s * tilt),
+                zoom: view.zoom ?? 1,
+                baseScale: view.baseScale ?? s,
+            }, state.time);
+            this.renderer.clearDepth();
+        }
         this.renderer.render(this.scene, this.camera);
     }
 
@@ -958,6 +960,8 @@ export class BattleRenderer {
         this.sprites.dispose();
         this.beams.dispose();
         for (const pool of this.rocks) pool.dispose();
+        this.sky?.dispose();
+        this.sky = null;
         for (const g of this.ownedGeometries) g.dispose();
         for (const m of this.ownedMaterials) m.dispose();
         for (const t of this.ownedTextures) t.dispose();
@@ -965,6 +969,18 @@ export class BattleRenderer {
         this.renderer.dispose();
         this.renderer.forceContextLoss();
     }
+}
+
+/** One sky per battlefield layout: seeded from the hazards, so a rematch on the same field looks the same. */
+function skySeed(state: BattleState): number {
+    let h = 2166136261 >>> 0;
+    for (const z of state.hazards) {
+        for (const n of [z.x, z.y, z.r, z.kind === 'asteroid' ? 1 : 2]) {
+            h ^= Math.round(n) & 0xffff;
+            h = Math.imul(h, 16777619);
+        }
+    }
+    return h >>> 0;
 }
 
 function applyMaps(mat: THREE.MeshStandardMaterial, model: HullModel): void {

@@ -11,8 +11,12 @@
 // float over, while hull height shows up as screen-up offset (scale * sin(pitch)
 // per unit), which is the 2.5D look.
 
-/** Camera pitch away from straight-down, in radians. 0 = flat top-down. */
-export const VIEW_PITCH = (36 * Math.PI) / 180;
+/**
+ * Camera pitch away from straight-down, in radians. 0 = flat top-down. 58
+ * degrees is a low, Empire-at-War style angle: hull flanks and towers read,
+ * while the ground plane still fits on screen at zoom 1 (it squashes to 53%).
+ */
+export const VIEW_PITCH = (58 * Math.PI) / 180;
 
 /** Vertical foreshortening of the ground plane on screen. */
 export const VIEW_TILT = Math.cos(VIEW_PITCH);
@@ -25,4 +29,8 @@ export interface ViewLike {
     ch: number;
     /** Ground-plane vertical squash; VIEW_TILT for the battle, 1 = top-down. */
     tilt: number;
+    /** Camera zoom, 1 = whole field in view. Drives the sky's parallax. */
+    zoom?: number;
+    /** Pixels per battle unit at zoom 1. */
+    baseScale?: number;
 }

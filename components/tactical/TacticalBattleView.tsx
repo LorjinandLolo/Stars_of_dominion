@@ -95,13 +95,39 @@ interface ViewState {
     ch: number;
     /** Ground-plane vertical squash from the tilted battle camera (render3d/view.ts). */
     tilt: number;
+    /** Camera zoom, 1 = whole field in view. */
+    zoom: number;
+    /** Pixels per battle unit at zoom 1 (the fit-to-window scale). */
+    baseScale: number;
 }
+
+/** Where the battle camera looks: a ground-plane point and a zoom. */
+interface CameraState {
+    cx: number;
+    cy: number;
+    zoom: number;
+    /** False until the first fit has centred the camera on the player's fleet. */
+    placed: boolean;
+}
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4.5;
+const START_ZOOM = 2.3;
+/** How far past the field edge the camera centre may wander, in battle units. */
+const PAN_MARGIN = 120;
+/** Keyboard and edge-scroll pan speed, in screen px per second. */
+const PAN_SPEED_PX = 900;
+/** Edge-scroll band at the canvas border, in px. */
+const EDGE_SCROLL_PX = 14;
 
 interface DragState {
     /** 0 = left, 2 = right. */
     button: number;
     startX: number;
     startY: number;
+    /** Press point on the ground plane. The camera can move mid-drag, so orders use this. */
+    startWX: number;
+    startWY: number;
     curX: number;
     curY: number;
     moved: boolean;
@@ -286,7 +312,8 @@ export default function TacticalBattleView({
     // until three.js has loaded, or for good when WebGL is unavailable — the
     // 2D canvas then draws the world itself, exactly as it did before.
     const rendererRef = React.useRef<BattleRenderer | null>(null);
-    const viewRef = React.useRef<ViewState>({ scale: 1, ox: 0, oy: 0, cw: 0, ch: 0, tilt: VIEW_TILT });
+    const viewRef = React.useRef<ViewState>({ scale: 1, ox: 0, oy: 0, cw: 0, ch: 0, tilt: VIEW_TILT, zoom: 1, baseScale: 1 });
+    const cameraRef = React.useRef<CameraState>({ cx: 0, cy: 0, zoom: START_ZOOM, placed: false });
     const dragRef = React.useRef<DragState | null>(null);
 
     // ── Canvas loop, camera and input ──
@@ -296,6 +323,11 @@ export default function TacticalBattleView({
         if (!canvas || !wrapper) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
+        function screenToWorld(sx: number, sy: number) {
+            const v = viewRef.current;
+            return { x: (sx - v.ox) / v.scale, y: (sy - v.oy) / (v.scale * v.tilt) };
+        }
 
         const fit = () => {
             const st = stateRef.current;
@@ -307,20 +339,86 @@ export default function TacticalBattleView({
             canvas.height = Math.max(1, Math.round(ch * dpr));
             canvas.style.width = `${cw}px`;
             canvas.style.height = `${ch}px`;
-            // The tilted camera squashes the field vertically, so fit on the
-            // foreshortened height.
+            // Zoom 1 fits the whole field; the tilted camera squashes it
+            // vertically, so fit on the foreshortened height.
             const tilt = VIEW_TILT;
-            const scale = Math.min(cw / st.width, ch / (st.height * tilt)) || 1;
-            viewRef.current = {
-                scale,
-                ox: (cw - st.width * scale) / 2,
-                oy: (ch - st.height * scale * tilt) / 2,
-                cw,
-                ch,
-                tilt,
-            };
+            const baseScale = Math.min(cw / st.width, ch / (st.height * tilt)) || 1;
+            viewRef.current = { ...viewRef.current, cw, ch, tilt, baseScale };
+            const cam = cameraRef.current;
+            if (!cam.placed) {
+                // Open close in on the player's own fleet, Empire-at-War style.
+                const c = fleetCentre(st, []);
+                cam.cx = c.x + 120;
+                cam.cy = c.y;
+                cam.zoom = START_ZOOM;
+                cam.placed = true;
+            }
+            applyCamera();
             rendererRef.current?.resize(viewRef.current);
         };
+
+        /** Centre of the given ships, or of the player's fleet when none are given. */
+        const fleetCentre = (st: BattleState, ids: string[]) => {
+            const pick = ids.length
+                ? st.ships.filter(sh => ids.includes(sh.id))
+                : st.ships.filter(sh => sh.side === 'player' && sh.status !== 'destroyed' && sh.status !== 'withdrawn');
+            if (!pick.length) return { x: st.edgeZone + 120, y: st.height / 2 };
+            return {
+                x: pick.reduce((a, sh) => a + sh.x, 0) / pick.length,
+                y: pick.reduce((a, sh) => a + sh.y, 0) / pick.length,
+            };
+        };
+
+        /** Clamp the camera to the field and derive the view the overlay, renderer and clicks share. */
+        const applyCamera = () => {
+            const st = stateRef.current;
+            if (!st) return;
+            const v = viewRef.current;
+            const cam = cameraRef.current;
+            cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom));
+            const scale = v.baseScale * cam.zoom;
+            const halfW = v.cw / (2 * scale);
+            const halfH = v.ch / (2 * scale * v.tilt);
+            // The margin past the field edge grows with zoom: none at zoom 1,
+            // so the whole-field view is always centred.
+            const margin = PAN_MARGIN * (1 - MIN_ZOOM / cam.zoom);
+            const clampAxis = (c: number, half: number, size: number) => {
+                const lo = half - margin;
+                const hi = size - half + margin;
+                return lo > hi ? size / 2 : Math.min(hi, Math.max(lo, c));
+            };
+            cam.cx = clampAxis(cam.cx, halfW, st.width);
+            cam.cy = clampAxis(cam.cy, halfH, st.height);
+            viewRef.current = {
+                ...v,
+                scale,
+                zoom: cam.zoom,
+                ox: v.cw / 2 - cam.cx * scale,
+                oy: v.ch / 2 - cam.cy * scale * v.tilt,
+            };
+        };
+
+        /** Zoom by a factor, keeping the ground point under (sx, sy) fixed on screen. */
+        const zoomAt = (factor: number, sx: number, sy: number) => {
+            const before = screenToWorld(sx, sy);
+            const cam = cameraRef.current;
+            cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * factor));
+            const v = viewRef.current;
+            const scale = v.baseScale * cam.zoom;
+            cam.cx = before.x - (sx - v.cw / 2) / scale;
+            cam.cy = before.y - (sy - v.ch / 2) / (scale * v.tilt);
+            applyCamera();
+        };
+
+        /** Pan by a screen-space delta in px. */
+        const panBy = (dxPx: number, dyPx: number) => {
+            const v = viewRef.current;
+            const cam = cameraRef.current;
+            cam.cx += dxPx / v.scale;
+            cam.cy += dyPx / (v.scale * v.tilt);
+            applyCamera();
+        };
+
         fit();
         window.addEventListener('resize', fit);
 
@@ -347,7 +445,7 @@ export default function TacticalBattleView({
                         rendererRef.current = r;
                         if (process.env.NODE_ENV !== 'production') {
                             // Dev-only handle so a console probe can time frames.
-                            (window as unknown as { __tactical?: unknown }).__tactical = { renderer: r, stateRef, viewRef };
+                            (window as unknown as { __tactical?: unknown }).__tactical = { renderer: r, stateRef, viewRef, cameraRef };
                         }
                     } catch (err) {
                         console.warn('[tactical] WebGL renderer unavailable, drawing the world in 2D', err);
@@ -360,9 +458,9 @@ export default function TacticalBattleView({
             const rect = canvas.getBoundingClientRect();
             return { x: clientX - rect.left, y: clientY - rect.top };
         };
-        const screenToWorld = (sx: number, sy: number) => {
+        const worldToScreen = (wx: number, wy: number) => {
             const v = viewRef.current;
-            return { x: (sx - v.ox) / v.scale, y: (sy - v.oy) / (v.scale * v.tilt) };
+            return { x: v.ox + wx * v.scale, y: v.oy + wy * v.scale * v.tilt };
         };
 
         const shipAt = (
@@ -399,16 +497,68 @@ export default function TacticalBattleView({
             return best;
         };
 
+        // ── Camera input: middle-drag pan, wheel zoom, keys, edge scroll ──
+        let panDrag: { x: number; y: number } | null = null;
+        const pointer = { x: 0, y: 0, inside: false };
+        const keysHeld = new Set<string>();
+
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const p = toLocal(e.clientX, e.clientY);
+            zoomAt(Math.exp(-e.deltaY * 0.0015), p.x, p.y);
+        };
+        const onPointerMove = (e: MouseEvent) => {
+            const p = toLocal(e.clientX, e.clientY);
+            pointer.x = p.x;
+            pointer.y = p.y;
+            pointer.inside = true;
+        };
+        const onPointerLeave = () => { pointer.inside = false; };
+        const onKeyUp = (e: KeyboardEvent) => { keysHeld.delete(e.key.toLowerCase()); };
+        const onBlur = () => { keysHeld.clear(); pointer.inside = false; };
+
+        /** Per-frame pan from held keys and the mouse resting at the canvas edge. */
+        const stepCamera = (dt: number) => {
+            let dx = 0;
+            let dy = 0;
+            if (keysHeld.has('a') || keysHeld.has('arrowleft')) dx -= 1;
+            if (keysHeld.has('d') || keysHeld.has('arrowright')) dx += 1;
+            if (keysHeld.has('w') || keysHeld.has('arrowup')) dy -= 1;
+            if (keysHeld.has('s') || keysHeld.has('arrowdown')) dy += 1;
+            const v = viewRef.current;
+            if (pointer.inside && !dragRef.current && !panDrag && document.hasFocus()) {
+                if (pointer.x < EDGE_SCROLL_PX) dx -= 1;
+                if (pointer.x > v.cw - EDGE_SCROLL_PX) dx += 1;
+                if (pointer.y < EDGE_SCROLL_PX) dy -= 1;
+                if (pointer.y > v.ch - EDGE_SCROLL_PX) dy += 1;
+            }
+            if (dx || dy) {
+                const len = Math.hypot(dx, dy);
+                panBy((dx / len) * PAN_SPEED_PX * dt, (dy / len) * PAN_SPEED_PX * dt);
+            } else {
+                applyCamera();
+            }
+        };
+
         // ── Mouse ──
         const onMouseDown = (e: MouseEvent) => {
+            if (e.button === 1) {
+                // Middle button drags the camera, any time (also after the battle).
+                panDrag = { x: e.clientX, y: e.clientY };
+                e.preventDefault();
+                return;
+            }
             const st = stateRef.current;
             if (!st || st.outcome) return;
             if (e.button !== 0 && e.button !== 2) return;
             const p = toLocal(e.clientX, e.clientY);
+            const w0 = screenToWorld(p.x, p.y);
             dragRef.current = {
                 button: e.button,
                 startX: p.x,
                 startY: p.y,
+                startWX: w0.x,
+                startWY: w0.y,
                 curX: p.x,
                 curY: p.y,
                 moved: false,
@@ -418,6 +568,11 @@ export default function TacticalBattleView({
         };
 
         const onMouseMove = (e: MouseEvent) => {
+            if (panDrag) {
+                panBy(panDrag.x - e.clientX, panDrag.y - e.clientY);
+                panDrag = { x: e.clientX, y: e.clientY };
+                return;
+            }
             const d = dragRef.current;
             if (!d) return;
             const p = toLocal(e.clientX, e.clientY);
@@ -429,6 +584,10 @@ export default function TacticalBattleView({
         };
 
         const onMouseUp = (e: MouseEvent) => {
+            if (e.button === 1) {
+                panDrag = null;
+                return;
+            }
             const d = dragRef.current;
             if (!d || e.button !== d.button) return;
             dragRef.current = null;
@@ -441,7 +600,7 @@ export default function TacticalBattleView({
             // the destination, a drag sets the final facing along the drag
             // vector. With squadrons selected instead: patrol at that point.
             if (d.button === 2) {
-                const dest = screenToWorld(d.startX, d.startY);
+                const dest = { x: d.startWX, y: d.startWY };
                 const face = d.moved ? Math.atan2(wp.y - dest.y, wp.x - dest.x) : null;
                 const sel = selectionRef.current;
                 if (sel.length) {
@@ -462,7 +621,7 @@ export default function TacticalBattleView({
 
             // Left drag: box-select own active ships.
             if (d.moved) {
-                const a = screenToWorld(d.startX, d.startY);
+                const a = { x: d.startWX, y: d.startWY };
                 const x0 = Math.min(a.x, wp.x);
                 const x1 = Math.max(a.x, wp.x);
                 const y0 = Math.min(a.y, wp.y);
@@ -528,6 +687,33 @@ export default function TacticalBattleView({
         const onContextMenu = (e: MouseEvent) => e.preventDefault();
 
         const onKeyDown = (e: KeyboardEvent) => {
+            const key = e.key.toLowerCase();
+            if (['w', 'a', 's', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
+                keysHeld.add(key);
+                if (key.startsWith('arrow')) e.preventDefault();
+            }
+            const v = viewRef.current;
+            if (key === '=' || key === '+') zoomAt(1.25, v.cw / 2, v.ch / 2);
+            else if (key === '-' || key === '_') zoomAt(0.8, v.cw / 2, v.ch / 2);
+            else if (key === 'home') {
+                const st0 = stateRef.current;
+                cameraRef.current.zoom = MIN_ZOOM;
+                if (st0) {
+                    cameraRef.current.cx = st0.width / 2;
+                    cameraRef.current.cy = st0.height / 2;
+                }
+                applyCamera();
+            } else if (key === 'f') {
+                // Focus: the selection if there is one, else the whole fleet.
+                const st0 = stateRef.current;
+                if (st0) {
+                    const c = fleetCentre(st0, selectionRef.current);
+                    cameraRef.current.cx = c.x;
+                    cameraRef.current.cy = c.y;
+                    cameraRef.current.zoom = Math.max(cameraRef.current.zoom, START_ZOOM);
+                    applyCamera();
+                }
+            }
             const st = stateRef.current;
             if (!st || st.outcome) return;
             if (e.key === 'Escape') {
@@ -540,11 +726,25 @@ export default function TacticalBattleView({
 
         canvas.addEventListener('mousedown', onMouseDown);
         canvas.addEventListener('contextmenu', onContextMenu);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('mousemove', onPointerMove);
+        canvas.addEventListener('mouseleave', onPointerLeave);
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
         window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('blur', onBlur);
 
         // ── Drawing helpers (world space unless noted) ──
+
+        /** Text at a ground point, with the tilt squash undone so letters keep their shape. */
+        const groundText = (text: string, x: number, y: number) => {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(1, 1 / viewRef.current.tilt);
+            ctx.fillText(text, 0, 0);
+            ctx.restore();
+        };
 
         const drawArrow = (x1: number, y1: number, x2: number, y2: number, color: string) => {
             const ang = Math.atan2(y2 - y1, x2 - x1);
@@ -677,9 +877,12 @@ export default function TacticalBattleView({
             // Hull bar.
             const hf = Math.max(0, Math.min(1, sh.hull / def.maxHull));
             ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-            ctx.fillRect(-r, r + 8, r * 2, 2.5);
+            // Hull bar: drawn on the squashed ground plane, so undo the squash
+            // on its thickness or it turns into a hairline at low angles.
+            const barH = 2.5 / viewRef.current.tilt;
+            ctx.fillRect(-r, r + 8, r * 2, barH);
             ctx.fillStyle = hf > 0.55 ? '#4ade80' : hf > 0.3 ? '#fbbf24' : '#f87171';
-            ctx.fillRect(-r, r + 8, r * 2 * hf, 2.5);
+            ctx.fillRect(-r, r + 8, r * 2 * hf, barH);
 
             // Selection circle.
             if (isSelected) {
@@ -705,7 +908,11 @@ export default function TacticalBattleView({
                 ctx.font = '600 10px monospace';
                 ctx.textAlign = 'center';
                 ctx.fillStyle = 'rgba(203, 213, 225, 0.9)';
-                ctx.fillText(`${Math.ceil(remaining)}`, 0, -r - 13);
+                ctx.save();
+                ctx.translate(0, -r - 13);
+                ctx.scale(1, 1 / viewRef.current.tilt);
+                ctx.fillText(`${Math.ceil(remaining)}`, 0, 0);
+                ctx.restore();
             }
             ctx.restore();
         };
@@ -773,7 +980,7 @@ export default function TacticalBattleView({
                     // The WebGL layer owns the rocks and gas; keep the caption.
                     ctx.font = '600 9px sans-serif';
                     ctx.fillStyle = h.kind === 'asteroid' ? 'rgba(148, 163, 184, 0.28)' : 'rgba(216, 180, 254, 0.3)';
-                    ctx.fillText(h.kind === 'asteroid' ? 'A S T E R O I D   F I E L D' : 'N E B U L A', h.x, h.y + 3);
+                    groundText(h.kind === 'asteroid' ? 'A S T E R O I D   F I E L D' : 'N E B U L A', h.x, h.y + 3);
                     return;
                 }
                 if (h.kind === 'asteroid') {
@@ -796,7 +1003,7 @@ export default function TacticalBattleView({
                     }
                     ctx.font = '600 9px sans-serif';
                     ctx.fillStyle = 'rgba(148, 163, 184, 0.28)';
-                    ctx.fillText('A S T E R O I D   F I E L D', h.x, h.y + 3);
+                    groundText('A S T E R O I D   F I E L D', h.x, h.y + 3);
                 } else {
                     const g1 = ctx.createRadialGradient(
                         h.x - h.r * 0.22, h.y - h.r * 0.12, 0,
@@ -825,7 +1032,7 @@ export default function TacticalBattleView({
                     ctx.setLineDash([]);
                     ctx.font = '600 9px sans-serif';
                     ctx.fillStyle = 'rgba(216, 180, 254, 0.3)';
-                    ctx.fillText('N E B U L A', h.x, h.y + 3);
+                    groundText('N E B U L A', h.x, h.y + 3);
                 }
             });
         };
@@ -911,8 +1118,8 @@ export default function TacticalBattleView({
                 ctx.globalAlpha = 1;
             }
 
-            // Grid.
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.05)';
+            // Grid: faint, it is a range aid, not the backdrop.
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.035)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             for (let gx = 100; gx < st.width; gx += 100) {
@@ -947,10 +1154,11 @@ export default function TacticalBattleView({
             // Own-zone label (rotated along the left strip).
             ctx.save();
             ctx.translate(st.edgeZone * 0.5, st.height / 2);
+            ctx.scale(1, 1 / v.tilt);
             ctx.rotate(-Math.PI / 2);
-            ctx.font = '700 14px sans-serif';
+            ctx.font = '700 10px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillStyle = 'rgba(129, 140, 248, 0.35)';
+            ctx.fillStyle = 'rgba(129, 140, 248, 0.22)';
             ctx.fillText('R E T R E A T   /   R E I N F O R C E M E N T   Z O N E', 0, 5);
             ctx.restore();
 
@@ -1052,11 +1260,12 @@ export default function TacticalBattleView({
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             const d = dragRef.current;
             if (d && d.moved && !st.outcome) {
+                const s0 = worldToScreen(d.startWX, d.startWY);
                 if (d.button === 0) {
-                    const x = Math.min(d.startX, d.curX);
-                    const y = Math.min(d.startY, d.curY);
-                    const w = Math.abs(d.curX - d.startX);
-                    const h = Math.abs(d.curY - d.startY);
+                    const x = Math.min(s0.x, d.curX);
+                    const y = Math.min(s0.y, d.curY);
+                    const w = Math.abs(d.curX - s0.x);
+                    const h = Math.abs(d.curY - s0.y);
                     ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
                     ctx.fillRect(x, y, w, h);
                     ctx.strokeStyle = 'rgba(129, 140, 248, 0.8)';
@@ -1069,9 +1278,9 @@ export default function TacticalBattleView({
                     ctx.strokeStyle = 'rgba(52, 211, 153, 0.9)';
                     ctx.lineWidth = 1.2;
                     ctx.beginPath();
-                    ctx.arc(d.startX, d.startY, 5, 0, TAU);
+                    ctx.arc(s0.x, s0.y, 5, 0, TAU);
                     ctx.stroke();
-                    drawArrow(d.startX, d.startY, d.curX, d.curY, 'rgba(52, 211, 153, 0.9)');
+                    drawArrow(s0.x, s0.y, d.curX, d.curY, 'rgba(52, 211, 153, 0.9)');
                 }
             }
         };
@@ -1085,6 +1294,7 @@ export default function TacticalBattleView({
             const st = stateRef.current;
             if (st) {
                 if (speedRef.current > 0) update(st, dt * speedRef.current);
+                stepCamera(dt);
                 draw(st);
             }
             raf = requestAnimationFrame(loop);
@@ -1100,9 +1310,14 @@ export default function TacticalBattleView({
             window.removeEventListener('resize', fit);
             canvas.removeEventListener('mousedown', onMouseDown);
             canvas.removeEventListener('contextmenu', onContextMenu);
+            canvas.removeEventListener('wheel', onWheel);
+            canvas.removeEventListener('mousemove', onPointerMove);
+            canvas.removeEventListener('mouseleave', onPointerLeave);
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
             window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            window.removeEventListener('blur', onBlur);
         };
     }, [setSelection, setSquadronSelection, setArmedFormation]);
 
@@ -1228,7 +1443,7 @@ export default function TacticalBattleView({
             {/* Controls hint */}
             {!outcome && (
                 <div className="absolute top-11 left-4 text-[8px] tracking-widest text-slate-600 uppercase pointer-events-none">
-                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect
+                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
                 </div>
             )}
 
