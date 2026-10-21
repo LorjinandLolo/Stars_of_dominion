@@ -64,6 +64,8 @@ import { tickLeaderGrowth } from '../leadership/leader-growth';
 import { tickParliament } from '../government/parliament-service';
 import { tickCoups } from '../government/coup-service';
 import { tickCoupCrises } from '../government/crisis';
+import { tickForeignMinisters } from '../government/foreign-ministers';
+import { tickPuppets } from '../ai/puppet-ai';
 import { tickIdeologyDrift } from '../government/ideology-drift';
 import { tickCohesion } from '../government/cohesion-service';
 import { tickDefiance } from '../government/defiance-service';
@@ -905,6 +907,14 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
     // AI empires declare wars, raise battle groups and send them at enemy
     // worlds; the worker lands the troops (aiInvasionOrders, every loop).
     try { tickAIWar(world); } catch (e) { console.error('[TickProcessor] tickAIWar failed:', e); }
+    // A sitting ruler in another court: war between the two blows the
+    // persona; a court that fell to them fights their wars and pays tribute.
+    try {
+        for (const line of tickForeignMinisters(world)) console.log(`[Seats] ${line}`);
+        for (const turn of tickPuppets(world)) {
+            if (turn.joinedWarsOn.length || turn.tribute) console.log(`[Puppet] ${turn.puppetFactionId}: wars on ${turn.joinedWarsOn.join(', ') || 'nobody'}, tribute ${turn.tribute}`);
+        }
+    } catch (e) { console.error('[TickProcessor] foreign ministers / puppets failed:', e); }
 }
 
 function step12_pirateTacticalAI(world: ReturnType<typeof getGameWorldState>) {

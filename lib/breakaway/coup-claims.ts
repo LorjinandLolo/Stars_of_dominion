@@ -22,6 +22,15 @@
 import { prisma } from '@/lib/db';
 import type { PendingCrisisOutcome } from '@/lib/government/crisis';
 import { exileDeposedRuler } from './seat-service';
+import { installPuppet } from '@/lib/government/foreign-ministers';
+
+/** Persist the personas that fell this tick (lib/government/foreign-ministers.ts exposeSeat). */
+export async function persistSeatExposures(world: any): Promise<number> {
+    const ids: string[] = Array.isArray(world.seatExposures) ? world.seatExposures.splice(0) : [];
+    if (!ids.length) return 0;
+    const { count } = await prisma.factionSeat.updateMany({ where: { id: { in: ids } }, data: { exposed: true } });
+    return count;
+}
 
 export interface AppliedOutcome { crisisId: string; outcome: string; notes: string[] }
 
@@ -42,16 +51,20 @@ export async function applyCrisisOutcomes(world: any): Promise<AppliedOutcome[]>
                     notes.push(seatId ? `${deposed.displayName ?? 'the ruler'} went into hiding (${seatId})` : `${deposed.displayName ?? 'the ruler'}'s claim released`);
                 }
                 const own = await prisma.playerProfile.findUnique({ where: { userId: plotterUserId } });
-                if (own) {
-                    notes.push(`${plotterName} left ${own.factionId} to the AI and took ${p.factionId}`);
-                    await prisma.playerProfile.update({ where: { userId: plotterUserId }, data: { factionId: p.factionId, briefSeenAt: null } });
-                    world.claimedFactionIds = (world.claimedFactionIds ?? []).filter((id: string) => id !== own.factionId);
+                if (own && own.factionId !== p.factionId) {
+                    // A sitting ruler: no second throne. The court is their
+                    // puppet (lib/government/foreign-ministers.ts) and stays
+                    // AI-run under the persona; the plotter keeps their own claim.
+                    installPuppet(world, p.factionId, own.factionId, plotterName);
+                    world.claimedFactionIds = (world.claimedFactionIds ?? []).filter((id: string) => id !== p.factionId);
+                    if (world.factionPlayerNames) delete world.factionPlayerNames[p.factionId];
+                    notes.push(`${p.factionId} is now a puppet of ${own.factionId} under "${plotterName}"`);
                 } else {
-                    await prisma.playerProfile.create({ data: { userId: plotterUserId, factionId: p.factionId, displayName: plotterName } });
+                    if (!own) await prisma.playerProfile.create({ data: { userId: plotterUserId, factionId: p.factionId, displayName: plotterName } });
                     notes.push(`${plotterName} now rules ${p.factionId}`);
+                    if (Array.isArray(world.claimedFactionIds) && !world.claimedFactionIds.includes(p.factionId)) world.claimedFactionIds.push(p.factionId);
+                    if (world.factionPlayerNames) world.factionPlayerNames[p.factionId] = plotterName;
                 }
-                if (Array.isArray(world.claimedFactionIds) && !world.claimedFactionIds.includes(p.factionId)) world.claimedFactionIds.push(p.factionId);
-                if (world.factionPlayerNames) world.factionPlayerNames[p.factionId] = plotterName;
             }
 
             if (p.outcome === 'civil_war' && p.rebelFactionId && plotterUserId) {

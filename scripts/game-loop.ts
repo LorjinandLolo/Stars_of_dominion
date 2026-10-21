@@ -52,7 +52,7 @@ import { resolveProposal, revokeAutoApprove } from '../lib/delegation/advisor-pr
 import { syncHumanMinisters } from '../lib/government/human-ministers';
 import { startPlot, soundOut, answerInvitation, abandonPlot, noteSeat } from '../lib/government/plots';
 import { strikePlot, openCrisis, secureActor, arrestActor, seizeCapital, fleeToFleet, chooseSide } from '../lib/government/crisis';
-import { applyCrisisOutcomes } from '../lib/breakaway/coup-claims';
+import { applyCrisisOutcomes, persistSeatExposures } from '../lib/breakaway/coup-claims';
 import { queueAdvisorOrder } from '../lib/ai/ai-orders';
 import { commissionWarfleet } from '../lib/ai/war-ai';
 
@@ -911,10 +911,20 @@ async function runGameTick() {
             // Friends in cabinets (lib/government/human-ministers.ts): the
             // seat table is mirrored into the governments on the same cadence.
             try {
-                const seats = await prisma.factionSeat.findMany({ select: { id: true, factionId: true, portfolio: true, persona: true, exposed: true } });
-                const sync = syncHumanMinisters(world as any, seats);
+                const seats = await prisma.factionSeat.findMany({ select: { id: true, userId: true, factionId: true, portfolio: true, persona: true, exposed: true } });
+                const sync = syncHumanMinisters(world as any, seats.map(({ userId: _u, ...s }) => s));
                 for (const id of sync.seated) console.log(`[Seats] seated ${id}`);
                 for (const id of sync.vacated) console.log(`[Seats] vacated ${id}`);
+                // Whom each holder truly serves (lib/government/foreign-ministers.ts):
+                // worker-only knowledge, copied onto the public seat record once exposed.
+                const byUser = new Map((await prisma.playerProfile.findMany({ select: { userId: true, factionId: true } })).map(p => [p.userId, p.factionId]));
+                const allegiances = new Map<string, string>();
+                for (const s of seats) {
+                    const own = byUser.get(s.userId);
+                    if (own && own !== s.factionId && !isUndergroundSeatId(own)) allegiances.set(s.id, own);
+                }
+                (world as any).seatAllegiances = allegiances;
+                for (const s of (world as any).seats ?? []) if (s.exposed) s.exposedAs = allegiances.get(s.id);
             } catch (e: any) {
                 console.warn('[Tick Worker] seat sync failed:', e?.message ?? e);
             }
@@ -946,6 +956,8 @@ async function runGameTick() {
             // (lib/breakaway/coup-claims.ts): written now, before the save.
             try {
                 for (const done of await applyCrisisOutcomes(world)) console.log(`[Crisis] ${done.crisisId} ${done.outcome}: ${done.notes.join('; ')}`);
+                const exposed = await persistSeatExposures(world);
+                if (exposed) console.log(`[Seats] ${exposed} persona(s) exposed, persisted`);
             } catch (e: any) { console.warn('[Tick Worker] crisis claims failed:', e?.message ?? e); }
 
             // Round-trip normalize (~every 24 real minutes): the old code

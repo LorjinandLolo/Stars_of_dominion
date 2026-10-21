@@ -38,6 +38,7 @@ import { seatLeaderId, seatsOf } from './human-ministers';
 import { RNG } from '@/lib/trade-system/rng';
 import { seedFromString } from '@/lib/leadership/leader-generator';
 import { fireNotification } from '@/lib/time/notification-hooks';
+import { exposeSeat, EXPOSURE_ON_NAMED_REPORT } from './foreign-ministers';
 
 export type { Plot, PlotActor, PlotKind, ActorKind, RecruitState, PlotWarning, StrikeReadiness, SeatNote };
 export { OFFICERS_ACTOR_ID, SOUND_OUT_EVERY_SECONDS, STRIKE_MIN_RECRUITS, STRIKE_LEGITIMACY, STRIKE_COHESION };
@@ -221,6 +222,9 @@ function reportToRuler(world: GameWorldState, factionId: string, plot: Plot, act
         ? `${actor.name} reports that ${leaderName(world, plot.plotterLeaderId)} sounded them out about ${plot.kind === 'coup' ? 'moving against you' : 'taking a province out'}.`
         : `${actor.name} reports being sounded out about ${plot.kind === 'coup' ? 'moving against you' : 'taking a province out'} — by someone in the cabinet, they would not say who.`;
     const report: LoyaltyReport = { id: `loyalty-${factionId}-${world.nowSeconds}-${actor.id}`, atSeconds: world.nowSeconds, reporterName: actor.name, text, suspectLeaderId: suspect };
+    // A servant who can name the plotter sometimes knows more than a name:
+    // whom the plotter truly serves (lib/government/foreign-ministers.ts).
+    if (named && roll() < EXPOSURE_ON_NAMED_REPORT) exposeSeat(world, factionId, plot.plotterSeatId, 'report');
     const list = (gov.loyaltyReports ??= []);
     list.push(report);
     if (list.length > MAX_REPORTS) list.splice(0, list.length - MAX_REPORTS);

@@ -24,12 +24,24 @@ export default function LoyaltyDeskCard() {
     if (seat || !playerFactionId || !world) return null;
     const gov = world.government?.get?.(playerFactionId);
     const reports: any[] = Array.isArray(gov?.loyaltyReports) ? [...gov.loyaltyReports].reverse() : [];
-    if (reports.length === 0) return null;
+    // Personas that fell: a seated minister exposed as another empire's ruler.
+    const exposed: any[] = (world.seats ?? []).filter((s: any) => s.factionId === playerFactionId && s.exposed && s.exposedAs);
+    if (reports.length === 0 && exposed.length === 0) return null;
     const now = Number(world.nowSeconds ?? 0);
+    const nameOf = (id: string) => world.factionNames?.[id] ?? world.economy?.factions?.get?.(id)?.name ?? id;
 
     return (
         <div className="bg-slate-900/60 border border-red-500/30 rounded-lg p-4 space-y-3">
             <div className="text-[10px] font-display tracking-widest text-red-300 uppercase flex items-center gap-1.5"><ShieldAlert size={11} /> Loyalty desk</div>
+            {exposed.length > 0 && (
+                <ul className="space-y-1">
+                    {exposed.map(s => (
+                        <li key={s.id} className="text-xs text-red-200">
+                            <span className="font-semibold">{s.persona}</span>, your Minister of <span className="capitalize">{s.portfolio}</span>, is the ruler of <span className="font-semibold">{nameOf(s.exposedAs)}</span>.
+                        </li>
+                    ))}
+                </ul>
+            )}
             <p className="text-xs text-slate-400 leading-relaxed">
                 Someone in your cabinet is sounding people out. These are the ones who refused and said so. Dismiss on suspicion, or watch.
             </p>

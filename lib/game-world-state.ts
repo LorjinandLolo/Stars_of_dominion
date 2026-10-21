@@ -27,6 +27,7 @@ import type { AdvisorRecord } from './delegation/advisor-proposals';
 import type { Plot, SeatNote } from './government/plot-view';
 import type { CoupCrisis } from './government/crisis-view';
 import type { PendingCrisisOutcome } from './government/crisis';
+import type { PuppetRecord } from './government/foreign-ministers';
 import type { EmpireMessageView } from './messages/message-rules';
 import type { ComebackRecord } from './comeback/comeback-service';
 import type { GoalState } from './goals/first-week-goals';
@@ -260,6 +261,15 @@ export interface GameWorldState {
     coupCrises?: Map<string, CoupCrisis>;
     /** Resolutions the worker has yet to write to the claims table (lib/breakaway/coup-claims.ts). Transient. */
     pendingCrisisOutcomes?: PendingCrisisOutcome[];
+    /**
+     * Seat id → the empire its holder RULES (lib/government/foreign-ministers.ts).
+     * Worker-only: filled from the claims table, never in a shard or the snapshot.
+     */
+    seatAllegiances?: Map<string, string>;
+    /** Seats exposed this cycle, for the worker to persist. Transient. */
+    seatExposures?: string[];
+    /** Courts that fell to a sitting ruler's plot, keyed by puppet faction id. Public. */
+    puppets?: Map<string, PuppetRecord>;
 
     /**
      * Each human faction's place in the first-week goals

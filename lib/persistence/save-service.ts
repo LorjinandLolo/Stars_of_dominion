@@ -547,6 +547,10 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     if (cloned.seatNotes instanceof Map) cloned.seatNotes.clear();
     // Drained by the worker the same tick it is written; never news.
     delete (cloned as any).pendingCrisisOutcomes;
+    delete (cloned as any).seatExposures;
+    // Whom each seat holder truly serves: the worker's knowledge alone
+    // (lib/government/foreign-ministers.ts). Exposure copies it onto the seat.
+    delete (cloned as any).seatAllegiances;
     if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
     // Messages between two players are read by those two players. The shared
     // snapshot goes to every client, so it carries none of them.
