@@ -123,9 +123,20 @@ export default function PlotCard() {
                     </div>
 
                     {readiness && (
-                        <p className={`text-[11px] ${readiness.ok ? 'text-emerald-300' : 'text-slate-400'}`}>
-                            {readiness.ok ? 'The hour is right. You could strike.' : readiness.reasons.join(' ')}
-                        </p>
+                        <div className="flex items-center justify-between gap-3">
+                            <p className={`text-[11px] ${readiness.ok ? 'text-emerald-300' : 'text-slate-400'}`}>
+                                {readiness.ok ? 'The hour is right.' : readiness.reasons.join(' ')}
+                            </p>
+                            {readiness.ok && (
+                                <button
+                                    disabled={busy !== null}
+                                    onClick={() => { if (window.confirm('Strike now? The court will know within the hour, and there is no taking it back.')) order('strike', 'PLOT_STRIKE', {}, 'Strike for the throne'); }}
+                                    className="min-h-[36px] px-4 rounded-lg border border-red-500/50 bg-red-800/50 hover:bg-red-700/60 text-red-50 text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                                >
+                                    Strike
+                                </button>
+                            )}
+                        </div>
                     )}
 
                     {mine.warnings.length > 0 && (

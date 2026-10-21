@@ -51,6 +51,8 @@ import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation
 import { resolveProposal, revokeAutoApprove } from '../lib/delegation/advisor-proposals';
 import { syncHumanMinisters } from '../lib/government/human-ministers';
 import { startPlot, soundOut, answerInvitation, abandonPlot, noteSeat } from '../lib/government/plots';
+import { strikePlot, openCrisis, secureActor, arrestActor, seizeCapital, fleeToFleet, chooseSide } from '../lib/government/crisis';
+import { applyCrisisOutcomes } from '../lib/breakaway/coup-claims';
 import { queueAdvisorOrder } from '../lib/ai/ai-orders';
 import { commissionWarfleet } from '../lib/ai/war-ai';
 
@@ -940,6 +942,11 @@ async function runGameTick() {
             // AI deciders in the strategic tick queue orders; run them before the
             // round-trip below so the outbox is empty when the world is normalized.
             try { drainAIOrders(world, executeOrder, orderBudget); } catch (e: any) { console.warn('[Tick Worker] AI order drain failed:', e.message); }
+            // A coup crisis that resolved this tick changes who logs in as what
+            // (lib/breakaway/coup-claims.ts): written now, before the save.
+            try {
+                for (const done of await applyCrisisOutcomes(world)) console.log(`[Crisis] ${done.crisisId} ${done.outcome}: ${done.notes.join('; ')}`);
+            } catch (e: any) { console.warn('[Tick Worker] crisis claims failed:', e?.message ?? e); }
 
             // Round-trip normalize (~every 24 real minutes): the old code
             // re-serialized and re-parsed the whole world every tick, which
@@ -3164,6 +3171,51 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             // and a refusal that says "plot" to the ruler is a confession.
             noteSeat(world, seat.id, result.message, result.ok);
             if (result.ok) console.log(`[Plot] ${factionId}/${seat.persona}: ${actionId} — ${result.message}`);
+            break;
+        }
+
+        case 'PLOT_STRIKE': {
+            const seatId: string | undefined = payload?.__issuer?.seatId;
+            const seat = seatId ? ((world as any).seats ?? []).find((s: any) => s.id === seatId && s.factionId === factionId) : null;
+            if (!seat) { recordOrderFailure(world, factionId, actionId, 'Only a seated minister of this court can do that.'); break; }
+            const struck = strikePlot(world, factionId, seat.id);
+            noteSeat(world, seat.id, struck.message, struck.ok);
+            if (struck.ok) console.log(`[Crisis] ${factionId}: ${seat.persona} struck — ${struck.message}`);
+            break;
+        }
+
+        // ── The crisis window (lib/government/crisis.ts) ──────────────────
+        // The ruler's verbs come with no issuer seat; a seat's verbs with one.
+        // Results go to the seat's private note or, for the ruler, the
+        // ordinary order-failure path (the crisis itself is public).
+        case 'CRISIS_SECURE':
+        case 'CRISIS_ARREST':
+        case 'CRISIS_SEIZE':
+        case 'CRISIS_FLEE':
+        case 'CRISIS_SIDE': {
+            const crisis = openCrisis(world, factionId);
+            if (!crisis) { recordOrderFailure(world, factionId, actionId, 'The court is not in crisis.'); break; }
+            const seatId: string | undefined = payload?.__issuer?.seatId;
+            const seat = seatId ? ((world as any).seats ?? []).find((s: any) => s.id === seatId && s.factionId === factionId) : null;
+            if (seatId && !seat) { recordOrderFailure(world, factionId, actionId, 'You hold no seat in this court.'); break; }
+            const isPlotter = !!seat && seat.id === crisis.plotterSeatId;
+            let result: { ok: boolean; message: string };
+            if (actionId === 'CRISIS_SECURE') {
+                result = seat
+                    ? (isPlotter ? secureActor(world, crisis, 'plotter', String(payload?.actorId ?? ''), seat.id) : { ok: false, message: 'Only the plotter calls in favours; pick a side instead.' })
+                    : secureActor(world, crisis, 'ruler', String(payload?.actorId ?? ''));
+            } else if (actionId === 'CRISIS_ARREST') {
+                result = seat ? { ok: false, message: 'Only the head of state orders arrests.' } : arrestActor(world, crisis, String(payload?.actorId ?? ''));
+            } else if (actionId === 'CRISIS_SEIZE') {
+                result = seat ? seizeCapital(world, crisis, seat.id) : { ok: false, message: 'You already hold the capital.' };
+            } else if (actionId === 'CRISIS_FLEE') {
+                result = seat ? { ok: false, message: 'Only the head of state can flee to the fleet.' } : fleeToFleet(world, crisis);
+            } else {
+                result = seat ? chooseSide(world, crisis, seat.id, payload?.side) : { ok: false, message: 'The throne has no side to pick.' };
+            }
+            if (seat) noteSeat(world, seat.id, result.message, result.ok);
+            else if (!result.ok) recordOrderFailure(world, factionId, actionId, result.message);
+            if (result.ok) console.log(`[Crisis] ${factionId}: ${seat ? seat.persona : 'the ruler'} ${actionId} — ${result.message}`);
             break;
         }
 

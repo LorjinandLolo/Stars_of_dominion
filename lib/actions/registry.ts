@@ -1049,6 +1049,44 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: {},
     cost: {}
   },
+  PLOT_STRIKE: {
+    id: "PLOT_STRIKE",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
+  // The crisis window (lib/government/crisis.ts). The ruler's verbs are
+  // charged in political capital inside the handler; the plotter's in favours.
+  CRISIS_SECURE: {
+    id: "CRISIS_SECURE",
+    category: "internal",
+    params: { actorId: "id" },
+    cost: {}
+  },
+  CRISIS_ARREST: {
+    id: "CRISIS_ARREST",
+    category: "internal",
+    params: { actorId: "id" },
+    cost: {}
+  },
+  CRISIS_SEIZE: {
+    id: "CRISIS_SEIZE",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
+  CRISIS_FLEE: {
+    id: "CRISIS_FLEE",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
+  CRISIS_SIDE: {
+    id: "CRISIS_SIDE",
+    category: "internal",
+    params: { side: "string" },
+    cost: {}
+  },
   // Phase 6.5: taking a public side in someone else's collapse.
   DIP_RECOGNIZE_BREAKAWAY: {
     id: "DIP_RECOGNIZE_BREAKAWAY",

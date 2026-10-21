@@ -545,6 +545,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     if (cloned.advisors instanceof Map) cloned.advisors.clear();
     if (cloned.plots instanceof Map) cloned.plots.clear();
     if (cloned.seatNotes instanceof Map) cloned.seatNotes.clear();
+    // Drained by the worker the same tick it is written; never news.
+    delete (cloned as any).pendingCrisisOutcomes;
     if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
     // Messages between two players are read by those two players. The shared
     // snapshot goes to every client, so it carries none of them.

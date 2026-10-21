@@ -317,6 +317,35 @@ async function takeUnderground(
  * there with the people who fled, and seats them. Re-checked here: the route
  * read a snapshot that may be a cycle old.
  */
+/**
+ * A ruler deposed by their own cabinet (lib/government/crisis.ts) falls the
+ * same way a conquered one does: into hiding, with a cell on a world that
+ * remembers them (Item 14). The empire itself lives on under the usurper, so
+ * none of the "eliminated" checks apply. Returns the underground seat id, or
+ * null when no world will hide them (the claim is then simply released).
+ */
+export async function exileDeposedRuler(world: any, input: { userId: string; fromFactionId: string; displayName: string }): Promise<string | null> {
+    const hideout = pickHideout(world, input.fromFactionId);
+    if (!hideout) {
+        await prisma.playerProfile.deleteMany({ where: { userId: input.userId } }).catch(() => {});
+        return null;
+    }
+    const cell = exileCellAt(world, hideout, input.fromFactionId);
+    const seatId = seatIdFor(cell);
+    try {
+        await prisma.playerProfile.update({ where: { userId: input.userId }, data: { factionId: seatId, briefSeenAt: null } });
+    } catch {
+        await prisma.playerProfile.deleteMany({ where: { userId: input.userId } }).catch(() => {});
+        return null;
+    }
+    const exile = attachExile(world, cell, hideout, input.fromFactionId, seatId);
+    const seated = seatCell(world, cell, seatId, input.displayName || 'Commander');
+    if (!seated.ok) return seatId;
+    seatLog(cell, world.nowSeconds, crewLine(exile));
+    seatLog(cell, world.nowSeconds, `Deposed by your own cabinet. You are in hiding on ${hideout.reason}`);
+    return seatId;
+}
+
 async function goIntoHiding(
     world: any,
     payload: LobbySeatPayload,

@@ -71,8 +71,10 @@ export function seatAllows(portfolio: string, actionId: string): boolean {
     if (SOVEREIGN_ONLY.has(actionId)) return false;
     const scope = SCOPE[portfolio as CabinetPortfolio];
     if (!scope) return false;
-    // Every seat may conspire (lib/government/plots.ts); only a seat may.
-    if (actionId.startsWith('PLOT_')) return true;
+    // Every seat may conspire (lib/government/plots.ts); only a seat may. In
+    // a crisis a seat secures, seizes or picks a side; the handler refuses a
+    // seat the ruler's verbs (arrest, flee).
+    if (actionId.startsWith('PLOT_') || actionId.startsWith('CRISIS_')) return true;
     return scope.ids.includes(actionId) || scope.prefixes.some(p => actionId.startsWith(p));
 }
 

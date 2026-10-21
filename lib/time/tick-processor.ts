@@ -63,6 +63,7 @@ import { tickGovernors } from '../government/governor-service';
 import { tickLeaderGrowth } from '../leadership/leader-growth';
 import { tickParliament } from '../government/parliament-service';
 import { tickCoups } from '../government/coup-service';
+import { tickCoupCrises } from '../government/crisis';
 import { tickIdeologyDrift } from '../government/ideology-drift';
 import { tickCohesion } from '../government/cohesion-service';
 import { tickDefiance } from '../government/defiance-service';
@@ -218,6 +219,11 @@ export async function runStrategicTick(
     // and the officer corps decides how it feels about all of it.
     try { tickParliament(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickParliament failed:', e); }
     try { tickCoups(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickCoups failed:', e); }
+    // A minister's coup in its crisis window (lib/government/crisis.ts): the
+    // claims side of a resolution is the worker's (pendingCrisisOutcomes).
+    try {
+        for (const crisis of tickCoupCrises(world)) console.log(`[Crisis] ${crisis.factionId}: ${crisis.outcome} — ${crisis.plotterName} vs ${crisis.rulerName}`);
+    } catch (e) { console.error('[TickProcessor] tickCoupCrises failed:', e); }
     // 9f-6: The empire's ideology drifts toward whoever actually holds power at
     // home. Runs last so it reads this tick's bloc satisfaction.
     try { tickIdeologyDrift(world, TICK_DELTA_SECONDS); } catch (e) { console.error('[TickProcessor] tickIdeologyDrift failed:', e); }

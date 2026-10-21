@@ -25,6 +25,8 @@ import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
 import type { AdvisorRecord } from './delegation/advisor-proposals';
 import type { Plot, SeatNote } from './government/plot-view';
+import type { CoupCrisis } from './government/crisis-view';
+import type { PendingCrisisOutcome } from './government/crisis';
 import type { EmpireMessageView } from './messages/message-rules';
 import type { ComebackRecord } from './comeback/comeback-service';
 import type { GoalState } from './goals/first-week-goals';
@@ -254,6 +256,10 @@ export interface GameWorldState {
     plots?: Map<string, Plot>;
     /** The worker's last private word to each seat (plots.ts noteSeat), keyed by seat id. */
     seatNotes?: Map<string, SeatNote>;
+    /** Coups in their crisis window, and the resolved ones (lib/government/crisis.ts). Public. */
+    coupCrises?: Map<string, CoupCrisis>;
+    /** Resolutions the worker has yet to write to the claims table (lib/breakaway/coup-claims.ts). Transient. */
+    pendingCrisisOutcomes?: PendingCrisisOutcome[];
 
     /**
      * Each human faction's place in the first-week goals

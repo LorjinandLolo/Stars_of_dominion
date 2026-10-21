@@ -20,6 +20,7 @@ import type { PolicyOption } from '@/types/ui-state';
 import { formatPercent } from '@/lib/ui/format';
 import AdvisorsCard from '@/components/government/AdvisorsCard';
 import PlotCard from '@/components/government/PlotCard';
+import CrisisCard from '@/components/government/CrisisCard';
 import LoyaltyDeskCard from '@/components/government/LoyaltyDeskCard';
 import { formatGalacticDeadline, isUrgentDeadline } from '@/lib/time/galactic-time';
 import { adminStatus, overextensionCohesion, ADMIN_PER_CENTER } from '@/lib/government/admin-capacity';
@@ -275,6 +276,8 @@ export default function GovernmentPanel() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* A coup in its window, for whoever is in the court. */}
+                <CrisisCard />
                 {/* A seated minister's own counsel (never shown to the ruler). */}
                 <PlotCard />
                 {/* The ruler's loyalty desk: who reported being sounded out. */}
