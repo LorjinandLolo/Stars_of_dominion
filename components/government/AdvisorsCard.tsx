@@ -3,10 +3,11 @@
 // components/government/AdvisorsCard.tsx
 // Stars of Dominion — the Advisors card.
 //
-// Six switches, one per system a player can leave to their staff. Everything
-// is delegated until the player says otherwise: an empire that is ignored for
-// a week should be slower, never wounded. Turning a switch off takes that
-// system back and restores the old behaviour for it, penalties included.
+// One switch per system a player can leave to their staff. Most are delegated
+// until the player says otherwise: an empire that is ignored for a week should
+// be slower, never wounded. Turning a switch off takes that system back and
+// restores the old behaviour for it, penalties included. Below the switches:
+// the standing orders — advice the player answered Always to in the brief.
 
 import React from 'react';
 import { ShieldCheck, Hand } from 'lucide-react';
@@ -39,6 +40,21 @@ export default function AdvisorsCard() {
     };
 
     const delegatedCount = DELEGATED_SYSTEMS.filter(s => valueFor(s)).length;
+
+    const advisorStanding = useUIStore(s => s.advisorStanding);
+    const [revoked, setRevoked] = React.useState<string[]>([]);
+    const standing = advisorStanding.filter(id => !revoked.includes(id));
+    const revoke = async (id: string) => {
+        if (!playerFactionId) return;
+        setRevoked(prev => [...prev, id]);
+        const result = await dispatchOrder({
+            actionId: 'ADV_REVOKE_ALWAYS',
+            payload: { actionId: id },
+            factionId: playerFactionId,
+            label: `Ask again before ${actionLabel(id).toLowerCase()}`,
+        });
+        if (!result.success) setRevoked(prev => prev.filter(x => x !== id));
+    };
 
     return (
         <div className="bg-slate-900/60 border border-sky-500/25 rounded-lg p-4 space-y-4">
@@ -86,6 +102,35 @@ export default function AdvisorsCard() {
                     );
                 })}
             </div>
+
+            {/* Standing orders: what the player answered Always to in the brief. */}
+            {standing.length > 0 && (
+                <div className="border-t border-slate-800 pt-3">
+                    <div className="text-[10px] font-display tracking-widest text-slate-500 uppercase mb-1">Standing orders</div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed mb-2">
+                        Advice you approved for good: your advisors carry these out without asking. Take one back and they ask again.
+                    </p>
+                    <ul className="space-y-1.5">
+                        {standing.map(id => (
+                            <li key={id} className="flex items-center justify-between gap-3 text-xs">
+                                <span className="text-slate-200">{actionLabel(id)}</span>
+                                <button
+                                    onClick={() => revoke(id)}
+                                    className="text-[10px] font-mono text-sky-300 hover:text-sky-200 underline-offset-2 hover:underline"
+                                >
+                                    ask me again
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
         </div>
     );
+}
+
+/** "DIP_DECLARE_WAR" → "Declare war". */
+function actionLabel(actionId: string): string {
+    const words = actionId.replace(/^[A-Z]+_/, '').toLowerCase().split('_');
+    return words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
 }

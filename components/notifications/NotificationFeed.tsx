@@ -27,6 +27,8 @@ export default function NotificationFeed() {
         // An outpost's news opens that outpost (lib/outposts).
         const outpostId = (n.payload as any)?.outpostPlanetId;
         if (typeof outpostId === 'string') useUIStore.getState().setOutpostPlanet(outpostId);
+        // The advisors' proposals live in the brief (lib/delegation/advisor-proposals.ts).
+        if ((n.payload as any)?.openBrief) useUIStore.getState().setBriefOpen(true);
         setFeedOpen(false);
     };
 

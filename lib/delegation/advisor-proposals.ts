@@ -23,6 +23,7 @@
 import type { DelegatedSystem } from './delegation-types';
 import { queueAdvisorOrder, queueAIOrder, type AIOrder } from '@/lib/ai/ai-orders';
 import { isAIRunFaction } from '@/lib/ai/belt-ambush-ai';
+import { fireNotification } from '@/lib/time/notification-hooks';
 
 export interface AdvisorProposal {
     id: string;
@@ -181,6 +182,19 @@ export function adviseOrder(world: WorldLike, advice: AdviceInput): AdviceResult
         ...(replay ? { replay } : {}),
         createdAtSeconds: world.nowSeconds,
         expiresAtSeconds: world.nowSeconds + (ttlSeconds ?? PROPOSAL_TTL_SECONDS),
+    });
+    // The brief opens itself once per sign-in; advice that arrives mid-session
+    // would otherwise wait unseen. The bell carries it, and its click opens the brief.
+    fireNotification({
+        id: `advice-${order.factionId}-${topic}-${world.nowSeconds}`,
+        factionId: order.factionId,
+        category: 'politics',
+        priority: 'normal',
+        title: 'YOUR ADVISORS HAVE A PROPOSAL',
+        body: `${title}. Open the brief to approve or decline.`,
+        createdAt: new Date(world.nowSeconds * 1000).toISOString(),
+        read: false,
+        payload: { openBrief: true },
     });
     return 'proposed';
 }

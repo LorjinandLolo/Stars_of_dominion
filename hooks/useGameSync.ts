@@ -1039,6 +1039,11 @@ export function useGameSync() {
             delegation: activeFactionId
                 ? ((world as any).delegation?.get?.(activeFactionId) ?? null)
                 : null,
+            // The actions the player answered Always to: their advisors run
+            // these without asking (lib/delegation/advisor-proposals.ts).
+            advisorStanding: activeFactionId
+                ? ((world as any).advisors?.get?.(activeFactionId)?.autoApprove ?? [])
+                : [],
             // The goal the player is on, resolved against this world so its deep
             // link points at a real system. Null once all five are done, and
             // null until the worker has written a record (goals are per human).
@@ -1158,6 +1163,10 @@ export function useGameSync() {
             if (mappedShard.delegation) {
                 if (!world.delegation) world.delegation = new Map();
                 world.delegation.set(mappedShard.factionId, mappedShard.delegation);
+            }
+            if (mappedShard.advisors) {
+                if (!world.advisors) world.advisors = new Map();
+                world.advisors.set(mappedShard.factionId, mappedShard.advisors);
             }
             if (mappedShard.firstWeekGoals) {
                 if (!world.firstWeekGoals) world.firstWeekGoals = new Map();

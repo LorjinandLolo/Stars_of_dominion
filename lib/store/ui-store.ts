@@ -265,6 +265,8 @@ export interface UIStore {
      * (lib/delegation/delegation-service.ts).
      */
     delegation: DelegationState | null;
+    /** Action ids the player's advisors run without asking (the Always list). */
+    advisorStanding: string[];
 
     // ── First-week goals ──
     /** The goal the player is on, with progress and deep link. Null when done or not a player. */
@@ -643,6 +645,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Delegation ──
     delegation: null,
+    advisorStanding: [],
 
     // ── First-week goals ──
     firstWeekGoal: null,

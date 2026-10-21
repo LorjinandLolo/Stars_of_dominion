@@ -1015,6 +1015,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { proposalId: "id", decision: "string" },
     cost: {}
   },
+  // Take an action off the advisors' Always list: they ask again from now on.
+  ADV_REVOKE_ALWAYS: {
+    id: "ADV_REVOKE_ALWAYS",
+    category: "internal",
+    params: { actionId: "string" },
+    cost: {}
+  },
   // Phase 6.5: taking a public side in someone else's collapse.
   DIP_RECOGNIZE_BREAKAWAY: {
     id: "DIP_RECOGNIZE_BREAKAWAY",

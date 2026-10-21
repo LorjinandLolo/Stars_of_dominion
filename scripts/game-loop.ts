@@ -48,7 +48,7 @@ import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
-import { resolveProposal } from '../lib/delegation/advisor-proposals';
+import { resolveProposal, revokeAutoApprove } from '../lib/delegation/advisor-proposals';
 import { queueAdvisorOrder } from '../lib/ai/ai-orders';
 import { commissionWarfleet } from '../lib/ai/war-ai';
 
@@ -3122,6 +3122,15 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             } else {
                 executeOrder(world, proposal.actionId, proposal.payload, factionId);
             }
+            break;
+        }
+
+        case 'ADV_REVOKE_ALWAYS': {
+            // payload: { actionId } — the advisors ask again for this one.
+            const target = String(payload?.actionId ?? '');
+            if (!target) { recordOrderFailure(world, factionId, actionId, 'No action named.'); break; }
+            revokeAutoApprove(world, factionId, target);
+            console.log(`[Order] ${factionId} took ${target} off the advisors' standing list`);
             break;
         }
 

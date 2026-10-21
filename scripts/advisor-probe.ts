@@ -31,6 +31,7 @@ import { serializeWorld, deserializeWorld, extractFactionShard, injectFactionSha
 import { getGovernment } from '../lib/government/government-service';
 import { POLITICAL_CAPITAL_COSTS } from '../lib/actions/political-costs';
 import { CIV_BANKING, CIV_SARRAK } from '../lib/factions/civ-ids';
+import { drainNotifications } from '../lib/time/notification-hooks';
 
 let failures = 0;
 const results: string[] = [];
@@ -161,6 +162,11 @@ async function main() {
     check('the like now queues straight to the outbox', again === 'queued' && (world.aiOrderOutbox ?? []).some((o: any) => o.factionId === human && o.advisor));
     drain();
     check('…and the ledger records it as done without asking', rec.ledger.some(e => e.outcome === 'ran' && e.actionId === 'DIP_SEND_ENVOY'));
+
+    executeOrder(world, 'ADV_REVOKE_ALWAYS', { actionId: 'DIP_SEND_ENVOY' }, human);
+    check('revoking Always takes the action off the standing list', !rec.autoApprove.includes('DIP_SEND_ENVOY'));
+    const notes = drainNotifications(human) as any[];
+    check('a new proposal rings the bell', notes.some(n => n.title === 'YOUR ADVISORS HAVE A PROPOSAL' && n.payload?.openBrief), `${notes.length} notification(s)`);
 
     // ── 8. Unanswered proposals lapse ───────────────────────────────────────
     adviseOrder(world, { system: 'military', factionId: human, actionId: 'DIP_OFFER_PEACE', payload: { targetFactionId: target }, title: 'Peace probe', detail: 'probe' });
