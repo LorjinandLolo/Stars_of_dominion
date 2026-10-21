@@ -18,7 +18,19 @@ export interface InviteClaimResult {
     empireName: string;
     inviterName: string;
     inviterEmpire: string;
+    /** A seat link: the portfolio now held in the inviter's cabinet. */
+    seatPortfolio?: string;
 }
+
+/** The cabinet portfolios a ruler can offer a friend (lib/government/types). */
+const PORTFOLIOS: Array<{ id: string; label: string }> = [
+    { id: 'defence', label: 'Defence' },
+    { id: 'economy', label: 'Economy' },
+    { id: 'science', label: 'Science' },
+    { id: 'intelligence', label: 'Intelligence' },
+    { id: 'interior', label: 'Interior' },
+    { id: 'foreign', label: 'Foreign Affairs' },
+];
 
 interface Props {
     hasClaim: boolean;
@@ -27,8 +39,10 @@ interface Props {
 }
 
 export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props) {
-    const [pending, setPending] = React.useState<{ code: string; inviterName?: string; inviterEmpire?: string } | null>(null);
+    const [pending, setPending] = React.useState<{ code: string; inviterName?: string; inviterEmpire?: string; seatPortfolio?: string | null } | null>(null);
     const [link, setLink] = React.useState<string | null>(null);
+    /** What the next link offers: an empire next door, or a seat in the cabinet. */
+    const [offer, setOffer] = React.useState<'empire' | string>('empire');
     const [copied, setCopied] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -40,14 +54,15 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
     React.useEffect(() => {
         const code = pendingInvite();
         if (!code) return;
-        if (hasClaim) { forgetInvite(); return; }
         fetch(`/api/invites/${encodeURIComponent(code)}`, { cache: 'no-store' })
             .then(r => r.json())
             .then(data => {
                 // "used" is fine here when it was spent on this very account at
-                // registration; the claim route makes the final call.
-                if (data?.inviterName) setPending({ code, inviterName: data.inviterName, inviterEmpire: data.inviterEmpire });
-                else forgetInvite();
+                // registration; the claim route makes the final call. A seat
+                // link is good for a ruler too (a cabinet seat in another
+                // court); an empire link is not.
+                if (!data?.inviterName || (hasClaim && !data.seatPortfolio)) { forgetInvite(); return; }
+                setPending({ code, inviterName: data.inviterName, inviterEmpire: data.inviterEmpire, seatPortfolio: data.seatPortfolio ?? null });
             })
             .catch(() => { /* the lobby still works without the banner */ });
     }, [hasClaim]);
@@ -99,7 +114,11 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
         setBusy(true);
         setError(null);
         try {
-            const res = await fetch('/api/invites', { method: 'POST' });
+            const res = await fetch('/api/invites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(offer === 'empire' ? {} : { seatPortfolio: offer }),
+            });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { setError(data.error ?? 'Could not make a link.'); return; }
             setLink(`${window.location.origin}/join?code=${data.invite.code}`);
@@ -114,7 +133,8 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
         try { await navigator.clipboard.writeText(link); setCopied(true); } catch { /* the link is on screen to select */ }
     };
 
-    if (!hasClaim && pending) {
+    if (pending && (!hasClaim || pending.seatPortfolio)) {
+        const seat = pending.seatPortfolio;
         return (
             <div id="invite-banner" className="mt-6 mx-auto max-w-lg rounded-2xl border border-sky-500/40 bg-sky-950/40 p-5 text-left">
                 <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.3em] uppercase text-sky-300">
@@ -122,8 +142,10 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                 </div>
                 <p className="mt-2 text-sm text-slate-200 leading-relaxed">
                     <span className="font-semibold text-white">{pending.inviterName}</span> leads the{' '}
-                    <span className="font-semibold text-sky-300">{pending.inviterEmpire}</span>. Take the free empire nearest
-                    theirs and start as neighbours — or pick any empire below instead.
+                    <span className="font-semibold text-sky-300">{pending.inviterEmpire}</span>.{' '}
+                    {seat
+                        ? <>They offer you the <span className="capitalize font-semibold">{seat}</span> seat in their cabinet: that brief's orders are yours to give in their name. Serve them, or not.</>
+                        : <>Take the free empire nearest theirs and start as neighbours — or pick any empire below instead.</>}
                 </p>
                 {error && <p className="mt-2 text-xs text-amber-300">{error}</p>}
                 <button
@@ -133,7 +155,8 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                 >
                     {rising
                         ? `Every empire is taken — a province next to ${pending.inviterName} is rising for you…`
-                        : busy ? 'Finding your seat…' : `Start next to ${pending.inviterName}`}
+                        : busy ? 'Finding your seat…'
+                        : seat ? `Take the ${seat} seat` : `Start next to ${pending.inviterName}`}
                 </button>
             </div>
         );
@@ -144,17 +167,31 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
     return (
         <div id="invite-panel" className="mt-6 mx-auto max-w-lg text-left">
             {!link ? (
-                <button
-                    onClick={makeLink}
-                    disabled={busy}
-                    className="mx-auto flex items-center gap-2 min-h-[40px] px-5 rounded-full border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-50 text-sky-200 text-sm font-semibold transition-colors"
-                >
-                    <Link2 size={15} /> {busy ? 'Making a link…' : 'Invite a friend'}
-                </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                    <select
+                        id="invite-offer"
+                        value={offer}
+                        onChange={e => setOffer(e.target.value)}
+                        className="min-h-[40px] px-3 rounded-full border border-slate-700 bg-slate-900 text-slate-200 text-xs"
+                        title="What the link offers"
+                    >
+                        <option value="empire">An empire next to mine</option>
+                        {PORTFOLIOS.map(p => <option key={p.id} value={p.id}>A seat: Minister of {p.label}</option>)}
+                    </select>
+                    <button
+                        onClick={makeLink}
+                        disabled={busy}
+                        className="flex items-center gap-2 min-h-[40px] px-5 rounded-full border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-50 text-sky-200 text-sm font-semibold transition-colors"
+                    >
+                        <Link2 size={15} /> {busy ? 'Making a link…' : 'Invite a friend'}
+                    </button>
+                </div>
             ) : (
                 <div className="rounded-xl border border-sky-500/30 bg-slate-950/70 p-4 space-y-2">
                     <p className="text-[11px] text-slate-400">
-                        Send this to a friend. They start with the free empire nearest yours. Good for one friend, for seven days.
+                        {offer === 'empire'
+                            ? 'Send this to a friend. They start with the free empire nearest yours. Good for one friend, for seven days.'
+                            : `Send this to a friend. They take the ${PORTFOLIOS.find(p => p.id === offer)?.label ?? offer} seat in your cabinet and can give that brief's orders in your name. A minister can serve you — or bury you. Good for one friend, for seven days.`}
                     </p>
                     <div className="flex gap-2">
                         <input

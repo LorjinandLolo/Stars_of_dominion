@@ -142,7 +142,8 @@ export async function GET(req: NextRequest) {
         // GameShell used to do: the server already knows who is asking, so the
         // answer comes back resolved instead of the caller being handed everyone
         // else's identity to match against.
-        const { userId } = await resolveCallerFaction(req);
+        const caller = await resolveCallerFaction(req);
+        const { userId } = caller;
         // The roster (which factions are taken, and the display names players
         // typed) is for signed-in players, not anonymous crawlers.
         if (!userId) {
@@ -163,9 +164,16 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
             claimedFactions,
-            // The caller's own claim, authoritative. Clients should read this
-            // instead of trusting localStorage.
-            myFactionId: profiles.find((p: { userId: string }) => userId && p.userId === userId)?.factionId ?? null,
+            // The faction the caller speaks for, authoritative: their own
+            // claim, or the court they hold a seat in (lib/multiplayer/
+            // caller-faction.ts decides which when they have both). Clients
+            // should read this instead of trusting localStorage.
+            myFactionId: caller.factionId,
+            myRole: caller.role,
+            // The seat they hold, if any, so the lobby can say so.
+            mySeat: caller.seat
+                ? { factionId: caller.seat.factionId, portfolio: caller.seat.portfolio, empireName: LOBBY_FACTIONS.find(f => f.id === caller.seat!.factionId)?.name ?? caller.seat.factionId }
+                : null,
         });
     } catch (err: any) {
          return NextResponse.json({ error: err.message }, { status: 500 });

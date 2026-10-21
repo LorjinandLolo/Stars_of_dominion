@@ -49,6 +49,7 @@ import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
 import { resolveProposal, revokeAutoApprove } from '../lib/delegation/advisor-proposals';
+import { syncHumanMinisters } from '../lib/government/human-ministers';
 import { queueAdvisorOrder } from '../lib/ai/ai-orders';
 import { commissionWarfleet } from '../lib/ai/war-ai';
 
@@ -161,7 +162,7 @@ import { ensureEmpirePostures } from '../lib/politics/posture-bootstrap';
 import { ensureGovernments, spendPoliticalCapital, getGovernment } from '../lib/government/government-service';
 import { enactPolicy, repealPolicy } from '../lib/government/policy-service';
 import { ensureHeadsOfState } from '../lib/government/succession-service';
-import { ensureCabinets, appointMinister, dismissMinister, APPOINT_MINISTER_COST, DISMISS_MINISTER_COST } from '../lib/government/cabinet-service';
+import { ensureCabinets, appointMinister, dismissMinister, getMinister, APPOINT_MINISTER_COST, DISMISS_MINISTER_COST } from '../lib/government/cabinet-service';
 import { ensureGovernors, appointGovernor, APPOINT_GOVERNOR_COST } from '../lib/government/governor-service';
 import { lobbyParty, decreePolicy } from '../lib/government/parliament-service';
 import { ensureCohesion } from '../lib/government/cohesion-service';
@@ -755,6 +756,10 @@ async function runGameTick() {
                 orderBudgets.set(fid, left - 1);
                 try {
                     const payload = JSON.parse(orderDoc.payload);
+                    // Who gave the order, for handlers that care (a minister's
+                    // plot is the minister's). Stripped from nothing: the
+                    // payload is consumed here and never written back.
+                    if (orderDoc.seatId) payload.__issuer = { userId: orderDoc.issuedBy, seatId: orderDoc.seatId };
                     executeOrder(world, orderDoc.actionId, payload, orderDoc.factionId);
                     // Delete on success — keeps the queue table empty so it can
                     // never starve, and avoids unbounded growth.
@@ -899,6 +904,16 @@ async function runGameTick() {
             } catch {
                 // Table unreadable — keep the previous list rather than letting
                 // the AI speak for humans.
+            }
+            // Friends in cabinets (lib/government/human-ministers.ts): the
+            // seat table is mirrored into the governments on the same cadence.
+            try {
+                const seats = await prisma.factionSeat.findMany({ select: { id: true, factionId: true, portfolio: true, persona: true, exposed: true } });
+                const sync = syncHumanMinisters(world as any, seats);
+                for (const id of sync.seated) console.log(`[Seats] seated ${id}`);
+                for (const id of sync.vacated) console.log(`[Seats] vacated ${id}`);
+            } catch (e: any) {
+                console.warn('[Tick Worker] seat sync failed:', e?.message ?? e);
             }
         }
 
@@ -3199,12 +3214,20 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, `Dismissal needs ${DISMISS_MINISTER_COST} political capital.`);
                 break;
             }
+            const sacked = getMinister(world, factionId, payload.portfolio);
             const result = dismissMinister(world, factionId, payload.portfolio);
             if (!result.ok) {
                 recordOrderFailure(world, factionId, actionId, result.message ?? 'Dismissal rejected.');
                 break;
             }
             console.log(`[Order] ${factionId} dismissed the ${payload.portfolio} minister`);
+            // A friend's seat (lib/government/human-ministers.ts): the row goes
+            // too, or the next sync would seat them again.
+            if (sacked?.seatId) {
+                const seatId = sacked.seatId;
+                (world as any).seats = ((world as any).seats ?? []).filter((s: any) => s.id !== seatId);
+                prisma.factionSeat.delete({ where: { id: seatId } }).catch((e: any) => console.warn('[Seats] could not delete seat row:', e?.message ?? e));
+            }
             break;
         }
 

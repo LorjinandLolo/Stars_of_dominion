@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db';
 import { LOBBY_FACTIONS, lobbyFactionById } from '@/data/factions/lobby-factions';
 import { requestBreakawaySeat } from '@/lib/breakaway/seat-service';
 import { capitalSystemIdFor } from '@/lib/galaxy/faction-capitals';
+import { isCabinetPortfolio } from '@/lib/government/seat-scope';
 import {
     INVITE_REFUSALS,
     INVITE_TTL_MS,
@@ -37,12 +38,24 @@ export interface InviteSummary {
     expiresAt: string;
     used: boolean;
     claimedFactionName: string | null;
+    /** A seat link: the portfolio the friend takes. Null for an empire link. */
+    seatPortfolio?: string | null;
 }
 
-/** A player with a claim makes a link. "Next to you" needs a you. */
-export async function createInvite(userId: string): Promise<ServiceResult<InviteSummary>> {
+/**
+ * A player with a claim makes a link. "Next to you" needs a you. With a
+ * `seatPortfolio` the link seats the friend in the inviter's cabinet instead
+ * (lib/government/seat-scope.ts); one holder per portfolio.
+ */
+export async function createInvite(userId: string, opts: { seatPortfolio?: string } = {}): Promise<ServiceResult<InviteSummary>> {
     const profile = await prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) return fail(409, 'Claim your empire first — a friend starts next to it.');
+    const seatPortfolio = opts.seatPortfolio ?? null;
+    if (seatPortfolio !== null) {
+        if (!isCabinetPortfolio(seatPortfolio)) return fail(400, 'That is not a cabinet portfolio.');
+        const taken = await prisma.factionSeat.findUnique({ where: { factionId_portfolio: { factionId: profile.factionId, portfolio: seatPortfolio } } });
+        if (taken) return fail(409, `The ${seatPortfolio} seat is already held by ${taken.persona}.`);
+    }
 
     const open = await prisma.invite.count({
         where: { createdBy: userId, usedBy: null, expiresAt: { gt: new Date() } },
@@ -60,9 +73,10 @@ export async function createInvite(userId: string): Promise<ServiceResult<Invite
                     createdBy: userId,
                     inviterFactionId: profile.factionId,
                     expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+                    seatPortfolio,
                 },
             });
-            return { ok: true, value: { code: invite.code, expiresAt: invite.expiresAt.toISOString(), used: false, claimedFactionName: null } };
+            return { ok: true, value: { code: invite.code, expiresAt: invite.expiresAt.toISOString(), used: false, claimedFactionName: null, seatPortfolio } };
         } catch (e: any) {
             if (e?.code !== 'P2002') throw e;
         }
@@ -78,6 +92,7 @@ export async function listInvites(userId: string): Promise<InviteSummary[]> {
         expiresAt: row.expiresAt.toISOString(),
         used: !!row.usedBy,
         claimedFactionName: row.claimedFactionId ? empireName(row.claimedFactionId) : null,
+        seatPortfolio: row.seatPortfolio ?? null,
     }));
 }
 
@@ -89,6 +104,8 @@ export interface InvitePreview {
     inviterName?: string;
     inviterEmpire?: string;
     expiresAt?: string;
+    /** A seat link: the cabinet portfolio it offers. Null for an empire link. */
+    seatPortfolio?: string | null;
 }
 
 /**
@@ -111,6 +128,7 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
         inviterName: profile?.displayName ?? 'A commander',
         inviterEmpire: empireName(invite.inviterFactionId),
         expiresAt: invite.expiresAt.toISOString(),
+        seatPortfolio: invite.seatPortfolio ?? null,
     };
 }
 
@@ -141,6 +159,47 @@ export interface InviteClaim {
      * claim within a cycle; `factionId` is empty until then.
      */
     pendingBreakaway?: boolean;
+    /** A seat link: the friend now holds this portfolio in `factionId`'s cabinet. */
+    seatPortfolio?: string;
+}
+
+/**
+ * A seat link: seat the friend in the inviter's cabinet. Unlike an empire
+ * link the friend MAY already rule an empire of their own — the court knows
+ * them by `displayName` only, and which empire they rule stays hidden until
+ * exposed (lib/government/plots, later). One seat per account.
+ */
+async function claimSeatThroughInvite(invite: { code: string; inviterFactionId: string; seatPortfolio: string | null; usedAt: Date | null }, userId: string, displayName: string, inviterName: string): Promise<ServiceResult<InviteClaim>> {
+    const portfolio = invite.seatPortfolio!;
+    const held = await prisma.factionSeat.findUnique({ where: { userId } });
+    if (held && held.factionId !== invite.inviterFactionId) return fail(409, 'You already hold a seat in another court this season.');
+    const own = await prisma.playerProfile.findUnique({ where: { userId } });
+    if (own?.factionId === invite.inviterFactionId) return fail(409, 'That is your own cabinet.');
+    try {
+        if (!held) {
+            await prisma.factionSeat.create({
+                data: { userId, factionId: invite.inviterFactionId, portfolio, persona: displayName, invitedBy: inviterName },
+            });
+        }
+    } catch (e: any) {
+        if (e?.code === 'P2002') return fail(409, `The ${portfolio} seat was taken just before you.`);
+        throw e;
+    }
+    await prisma.invite.update({
+        where: { code: invite.code },
+        data: { usedBy: userId, usedAt: invite.usedAt ?? new Date(), claimedFactionId: invite.inviterFactionId },
+    });
+    return {
+        ok: true,
+        value: {
+            factionId: invite.inviterFactionId,
+            empireName: empireName(invite.inviterFactionId),
+            inviterName,
+            inviterEmpire: empireName(invite.inviterFactionId),
+            jumps: null,
+            seatPortfolio: portfolio,
+        },
+    };
 }
 
 /** Hyperlane graph from the live snapshot: the map a friend will actually play on. */
@@ -166,6 +225,11 @@ export async function claimThroughInvite(code: string, userId: string, displayNa
     const invite = await prisma.invite.findUnique({ where: { code } });
     const verdict = checkInvite(invite, userId);
     if (!invite || !verdict.ok) return fail(verdict.ok ? 404 : (verdict.reason === 'unknown' ? 404 : 410), INVITE_REFUSALS[verdict.ok ? 'unknown' : verdict.reason]);
+
+    if (invite.seatPortfolio) {
+        const host = await prisma.playerProfile.findUnique({ where: { factionId: invite.inviterFactionId } });
+        return claimSeatThroughInvite(invite, userId, displayName, host?.displayName ?? 'your friend');
+    }
 
     const mine = await prisma.playerProfile.findUnique({ where: { userId } });
     if (mine) return fail(409, `You already lead ${empireName(mine.factionId)} this season.`);

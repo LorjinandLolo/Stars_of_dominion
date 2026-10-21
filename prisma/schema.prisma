@@ -91,6 +91,10 @@ model GameOrder {
   payload   String
   processed Boolean  @default(false)
   createdAt DateTime @default(now())
+  /// better-auth user id of whoever queued it. Null for rows older than seats.
+  issuedBy  String?
+  /// The cabinet seat it was issued through (lib/government/seats), when not the ruler's own order.
+  seatId    String?
 
   @@index([processed, createdAt])
   @@map("game_orders")
@@ -145,8 +149,35 @@ model Invite {
   expiresAt        DateTime
   createdAt        DateTime  @default(now())
 
+  /// A seat invite: the friend joins the inviter's CABINET in this portfolio
+  /// instead of claiming an empire (lib/government/seats). Null = empire link.
+  seatPortfolio    String?
+
   @@index([createdBy])
   @@map("invites")
+}
+
+// A friend seated in another player's cabinet (design 2 of the casual-player
+// work, 2026-10-21). One seat per account; one holder per portfolio per
+// faction. The holder may also rule an empire of their own — `persona` is
+// the name the court knows them by, and which empire they rule (if any) is
+// hidden from the court until `exposed`. The worker reads this table beside
+// the claims and seats a human minister in that portfolio
+// (lib/government/human-ministers.ts); the order queue lets the holder issue
+// the portfolio's orders (lib/government/seat-scope.ts).
+model FactionSeat {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  factionId  String
+  portfolio  String
+  persona    String
+  invitedBy  String?
+  exposed    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([factionId, portfolio])
+  @@index([factionId])
+  @@map("faction_seats")
 }
 
 // One plain-text note from one player's empire to another's (casual-play spec

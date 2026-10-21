@@ -17,6 +17,8 @@ import { headers } from 'next/headers';
 
 // Actions the game-loop worker handles that aren't (yet) in ACTION_DEFINITIONS.
 // They skip schema/cost validation but still go through ownership checks.
+import { seatAllows, seatRefusal } from '@/lib/government/seat-scope';
+
 const WORKER_ONLY_ACTIONS = new Set([
     'AIR_LAUNCH_SORTIE',
     'MIL_COMBAT_RETREAT',
@@ -113,8 +115,9 @@ async function getSessionUserId(): Promise<string | null> {
  */
 export async function verifyFactionOwnership(
     factionId: string,
-    userId: string | null
-): Promise<{ ok: boolean; error?: string }> {
+    userId: string | null,
+    actionId?: string,
+): Promise<{ ok: boolean; error?: string; seatId?: string }> {
     if (!userId) {
         return { ok: false, error: 'Sign in to issue orders.' };
     }
@@ -124,6 +127,14 @@ export async function verifyFactionOwnership(
             return { ok: false, error: 'This faction has no player claim — claim it in the lobby first.' };
         }
         if (claim.userId === userId) return { ok: true };
+        // A seated minister (lib/government/seat-scope.ts): the faction's own
+        // orders, within their brief, at the faction's price.
+        const seat = await prisma.factionSeat.findUnique({ where: { userId } }).catch(() => null);
+        if (seat && seat.factionId === factionId) {
+            if (!actionId) return { ok: true, seatId: seat.id };
+            if (seatAllows(seat.portfolio, actionId)) return { ok: true, seatId: seat.id };
+            return { ok: false, error: seatRefusal(seat.portfolio, actionId) };
+        }
         return { ok: false, error: 'This faction is claimed by another player.' };
     } catch {
         return { ok: false, error: 'Could not verify faction ownership — try again.' };
@@ -166,18 +177,21 @@ export async function queueOrder(input: QueueOrderInput): Promise<QueueOrderResu
 
     // 2. Identity + ownership
     const userId = await getSessionUserId();
-    const ownership = await verifyFactionOwnership(factionId, userId);
+    const ownership = await verifyFactionOwnership(factionId, userId, actionId);
     if (!ownership.ok) {
         return reject(ownership.error ?? 'Faction ownership check failed.', 403);
     }
 
-    // 3. Queue.
+    // 3. Queue. The row remembers who issued it and through which seat, so
+    // the worker can tell a minister's order from the ruler's.
     try {
         const doc = await prisma.gameOrder.create({
             data: {
                 actionId,
                 factionId,
                 payload: JSON.stringify(payload ?? {}),
+                issuedBy: userId,
+                seatId: ownership.seatId ?? null,
             },
         });
         recordServerEvent('order_queued', { userId, factionId }, { actionId });

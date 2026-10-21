@@ -75,6 +75,12 @@ export interface Leader {
     ambitionDrive?: number;
     /** Cabinet seat held, if any (a CabinetPortfolio id). */
     portfolio?: string;
+    /**
+     * A HUMAN minister (lib/government/human-ministers.ts): the FactionSeat id
+     * behind this leader. Loyalty, corruption and resignation are the
+     * player's own doing, so the cabinet tick leaves these numbers alone.
+     */
+    seatId?: string;
 
     // ── Character (2026-10-15) — lib/leadership/character.ts ────────────────
     /** Career they came up through (a BACKGROUNDS id). Derived from id + role when absent. */

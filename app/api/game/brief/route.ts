@@ -135,11 +135,13 @@ export async function GET(req: NextRequest) {
 /** Mark the brief seen. The next one covers the time from this moment on. */
 export async function POST(req: NextRequest) {
     try {
-        const { userId, factionId } = await resolveCallerFaction(req);
+        const { userId, factionId, role } = await resolveCallerFaction(req);
         if (!userId) {
             return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
         }
-        if (!factionId) {
+        // A seated minister reads the court's brief but does not close the
+        // ruler's window: the profile row is the ruler's.
+        if (!factionId || role !== 'ruler') {
             return NextResponse.json({ ok: true }, { status: 200 });
         }
 

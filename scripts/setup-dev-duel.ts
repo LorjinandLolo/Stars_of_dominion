@@ -27,6 +27,9 @@ const PLAYERS = [
     { email: 'dev1@stars.com', name: 'Dev Commander 1', factionId: 'faction-aurelian', factionName: 'Aurelian Hegemony' },
     { email: 'dev2@stars.com', name: 'Dev Commander 2', factionId: 'faction-vektori',  factionName: 'Vektori Technocracy' },
 ];
+// A third account with NO empire: the friend who takes a cabinet seat
+// (lib/government/seat-scope.ts). Its claims and seats are cleared on each run.
+const MINISTER = { email: 'dev3@stars.com', name: 'Dev Minister 3' };
 const PASSWORD = process.env.DEV_DUEL_PASSWORD || 'password123';
 // What the cheat sheet prints. A password set through the environment is a
 // server's, and container logs are not the place to repeat it.
@@ -100,6 +103,14 @@ async function main() {
         await claimFaction(userId, p.factionId, p.name);
     }
 
+    console.log(`\n--- ${MINISTER.name} (no empire) ---`);
+    const ministerId = await findOrCreateUser(MINISTER.email, MINISTER.name);
+    const { count: claims } = await prisma.playerProfile.deleteMany({ where: { userId: ministerId } });
+    if (claims > 0) console.log('   ↳ released this account\'s claim');
+    const { count: seats } = await prisma.factionSeat.deleteMany({ where: { userId: ministerId } }).catch(() => ({ count: 0 }));
+    if (seats > 0) console.log('   ↳ cleared this account\'s cabinet seat');
+    console.log(`✅ ${MINISTER.name} holds nothing — takes a seat through a friend's link`);
+
     console.log('');
     const sessionOk = await checkSession();
 
@@ -119,6 +130,11 @@ async function main() {
     console.log('  PLAYER 2 (friend):  http://<YOUR-IP>:3000/login');
     console.log(`    email: ${PLAYERS[1].email}   password: ${PASSWORD_SHOWN}`);
     console.log(`    → pick "${PLAYERS[1].factionName}" in the lobby`);
+    console.log('');
+    console.log('  MINISTER (friend in a cabinet):');
+    console.log(`    email: ${MINISTER.email}   password: ${PASSWORD_SHOWN}`);
+    console.log('    → Player 1 mints a seat link in the lobby ("Invite a friend" → a portfolio),');
+    console.log('      this account opens it and takes the seat');
     console.log('');
     console.log('  Full instructions (finding your IP, playing over the');
     console.log('  internet, troubleshooting): TESTING_WITH_A_FRIEND.md');

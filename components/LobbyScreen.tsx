@@ -34,6 +34,8 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     // checklist ("faction registered — loading galaxy") until the game route
     // mounts and GameShell's own boot screen takes over.
     const [entering, setEntering] = useState<{ name: string; accent: string; registered: boolean; neighbour?: string } | null>(null);
+    // A cabinet seat this account holds in a friend's court (lib/government/seat-scope.ts).
+    const [mySeat, setMySeat] = useState<{ factionId: string; portfolio: string; empireName: string } | null>(null);
 
     const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -59,7 +61,11 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                      // If I already claimed something, pre-select it. The server
                      // resolves "mine" from the session — the roster no longer
                      // carries other players' account ids to compare against.
-                     if (data.myFactionId) {
+                     setMySeat(data.mySeat ?? null);
+                     // A seat holder speaks for the court, but has not CLAIMED
+                     // it: the card stays unselected, the court button below
+                     // takes them in.
+                     if (data.myFactionId && data.myRole !== 'minister') {
                           setSelectedId(data.myFactionId);
                           setPlayerFactionId(data.myFactionId);
                      }
@@ -184,7 +190,38 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                             </button>
                         </div>
                     )}
-                    {!currentUserHasClaim && !selectedId && Object.keys(takenFactions).length >= 14 && (
+                    {mySeat && !currentUserHasClaim && (
+                        <div className="mt-3 space-y-2">
+                            <p className="text-violet-300/90 text-sm">
+                                You hold the <span className="capitalize font-semibold">{mySeat.portfolio}</span> seat in the{' '}
+                                <span className="font-semibold">{mySeat.empireName}</span>.
+                            </p>
+                            <button
+                                id="enter-court"
+                                onClick={() => {
+                                    localStorage.setItem('selectedFactionId', mySeat.factionId);
+                                    setPlayerFactionId(mySeat.factionId);
+                                    router.push('/');
+                                }}
+                                className="min-h-[44px] px-6 rounded-lg bg-violet-700 hover:bg-violet-600 text-white font-bold transition-colors"
+                            >
+                                Enter the court
+                            </button>
+                            <div>
+                                <button
+                                    onClick={async () => {
+                                        if (!window.confirm('Give up your seat? The ruler\'s own minister takes the brief back.')) return;
+                                        const res = await fetch('/api/seats', { method: 'DELETE' });
+                                        if (res.ok) window.location.reload();
+                                    }}
+                                    className="inline-flex items-center min-h-[40px] px-2 text-xs text-slate-500 underline hover:text-slate-300 transition-colors"
+                                >
+                                    give up the seat
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {!currentUserHasClaim && !selectedId && !mySeat && Object.keys(takenFactions).length >= 14 && (
                         <p className="text-amber-500/80 text-sm mt-3 max-w-md mx-auto">
                             All fourteen factions are claimed for this season. You can watch the
                             gazette from outside, or ask the host to free a seat.
@@ -279,12 +316,19 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
                             const picked = factions.find(f => f.id === result.factionId);
                             localStorage.setItem('selectedFactionId', result.factionId);
                             setPlayerFactionId(result.factionId);
-                            setEntering({
-                                name: result.empireName,
-                                accent: picked?.accentColor ?? '#38bdf8',
-                                registered: true,
-                                neighbour: `${result.inviterName} (${result.inviterEmpire})`,
-                            });
+                            setEntering(result.seatPortfolio
+                                ? {
+                                    name: `${result.empireName} — ${result.seatPortfolio} seat`,
+                                    accent: picked?.accentColor ?? '#a78bfa',
+                                    registered: true,
+                                    neighbour: `${result.inviterName}, who leads it`,
+                                }
+                                : {
+                                    name: result.empireName,
+                                    accent: picked?.accentColor ?? '#38bdf8',
+                                    registered: true,
+                                    neighbour: `${result.inviterName} (${result.inviterEmpire})`,
+                                });
                             // Long enough to read "You start next to …" before the galaxy loads.
                             setTimeout(() => router.push('/'), 2500);
                         }}

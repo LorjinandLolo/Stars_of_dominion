@@ -177,6 +177,7 @@ export default function GameShell() {
     const galaxyReady = systems.length > 0;
     // Observer mode (Item 7): watching without an empire, so no faction to wait for.
     const observer = useUIStore(s => s.observer);
+    const ministerSeat = useUIStore(s => s.ministerSeat);
     const booting = !bootDoneRef.current && ((!playerFactionId && !observer) || !galaxyReady || syncLoading);
     if (!booting) bootDoneRef.current = true;
     const bootFactionName = playerFactionId
@@ -208,6 +209,11 @@ export default function GameShell() {
                     if (data.myFactionId) {
                         localStorage.setItem('selectedFactionId', data.myFactionId);
                         setPlayerFactionId(data.myFactionId);
+                        // In a court as a seated minister (lib/government/seat-scope.ts):
+                        // the shell says so, and the order queue holds the brief.
+                        useUIStore.getState().setMinisterSeat(
+                            data.myRole === 'minister' && data.mySeat ? data.mySeat : null,
+                        );
                         return;
                     }
                 }
@@ -270,6 +276,14 @@ export default function GameShell() {
         <div className="flex flex-col w-screen h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-slate-950 text-slate-200">
             {/* ── Top information strip (resources · date · alerts) ─────────────── */}
             <TopNav />
+
+            {/* In a friend's court as a minister (lib/government/seat-scope.ts). */}
+            {ministerSeat && (
+                <div className="px-3 py-1.5 bg-violet-950/60 border-b border-violet-500/30 text-[11px] text-violet-200 text-center">
+                    You serve as Minister of <span className="font-semibold capitalize">{ministerSeat.portfolio}</span> to the{' '}
+                    <span className="font-semibold">{ministerSeat.empireName}</span>. Orders within your brief are the empire's own; the rest are the ruler's.
+                </div>
+            )}
 
             {/* Phones only: the map and depth panels are built for a wide screen. */}
             <SmallScreenNote />

@@ -20,6 +20,8 @@ interface Preview {
     inviterName?: string;
     inviterEmpire?: string;
     inviteRequired?: boolean;
+    /** A seat link: the cabinet portfolio offered (lib/government/seat-scope.ts). */
+    seatPortfolio?: string | null;
 }
 
 export default function JoinPage() {
@@ -55,11 +57,13 @@ export default function JoinPage() {
                     <div className="space-y-3 text-center">
                         <p className="text-sm text-slate-300 leading-relaxed">
                             <span className="font-semibold text-white">{preview.inviterName}</span> leads the{' '}
-                            <span className="font-semibold text-sky-300">{preview.inviterEmpire}</span> and wants you in their galaxy.
+                            <span className="font-semibold text-sky-300">{preview.inviterEmpire}</span>
+                            {preview.seatPortfolio ? ' and wants you in their cabinet.' : ' and wants you in their galaxy.'}
                         </p>
                         <p className="text-sm text-slate-400 leading-relaxed">
-                            Take a seat and you start with the free empire nearest theirs — neighbours from day one.
-                            Five minutes a day is enough to play.
+                            {preview.seatPortfolio
+                                ? <>You would hold the <span className="capitalize font-semibold text-slate-200">{preview.seatPortfolio}</span> seat: one brief, given in their name, five minutes a day. Serve them well — or not.</>
+                                : <>Take a seat and you start with the free empire nearest theirs — neighbours from day one. Five minutes a day is enough to play.</>}
                         </p>
                         <p className="text-[11px] font-mono tracking-widest text-slate-500">CODE {preview.code}</p>
                     </div>

@@ -290,6 +290,11 @@ export interface UIStore {
     /** Watching the galaxy without an empire: read-only, orders refused. */
     observer: boolean;
     setObserver: (observer: boolean) => void;
+
+    // ── Cabinet seat (lib/government/seat-scope.ts) ──
+    /** When this account is in a court as a seated minister, not its ruler. Null for a ruler. */
+    ministerSeat: { factionId: string; portfolio: string; empireName: string } | null;
+    setMinisterSeat: (seat: { factionId: string; portfolio: string; empireName: string } | null) => void;
     setDiplomacyFocusId: (factionId: string | null) => void;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──
@@ -662,6 +667,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     diplomacyFocusId: null,
     observer: false,
     setObserver: (observer) => set({ observer }),
+    ministerSeat: null,
+    setMinisterSeat: (seat) => set({ ministerSeat: seat }),
     setDiplomacyFocusId: (factionId) => set({ diplomacyFocusId: factionId }),
 
     // ── Interface preferences ──

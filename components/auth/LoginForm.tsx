@@ -239,6 +239,15 @@ export default function LoginForm() {
                             >
                                 DEV 2 · Vektori
                             </button>
+                            <button
+                                type="button"
+                                disabled={loading}
+                                onClick={() => quickLogin('dev3@stars.com')}
+                                className="flex-1 min-h-[40px] py-2 rounded-lg border border-violet-600/40 bg-violet-900/20 hover:bg-violet-800/30 text-violet-300 text-[10px] font-bold tracking-wider transition-all disabled:opacity-50"
+                                title="No empire: takes a cabinet seat through a friend's link"
+                            >
+                                DEV 3 · Minister
+                            </button>
                         </div>
                     </div>
                 )}

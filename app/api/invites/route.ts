@@ -27,7 +27,11 @@ export async function POST(req: NextRequest) {
     const { userId } = await resolveCallerFaction(req);
     if (!userId) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
     try {
-        const result = await createInvite(userId);
+        // { seatPortfolio } makes a cabinet-seat link instead of an empire link.
+        let body: any = {};
+        try { body = await req.json(); } catch { /* no body: an empire link */ }
+        const seatPortfolio = typeof body?.seatPortfolio === 'string' ? body.seatPortfolio : undefined;
+        const result = await createInvite(userId, { seatPortfolio });
         if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
         return NextResponse.json({ invite: result.value });
     } catch (err: any) {

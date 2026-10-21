@@ -88,6 +88,11 @@ export function ensureCabinets(world: GameWorldState): void {
     if (appointed > 0) console.log(`[Government] Filled ${appointed} cabinet seat(s).`);
 }
 
+/** Fill a vacant chair with the AI's pick (lib/government/human-ministers.ts uses it when a seat is given up). */
+export function fillVacantSeat(world: GameWorldState, gov: GovernmentState, portfolio: CabinetPortfolio): Leader {
+    return appointMinisterInternal(world, gov, portfolio);
+}
+
 /** Seat the best available candidate (or a fresh one) in a portfolio. */
 function appointMinisterInternal(
     world: GameWorldState,
@@ -236,6 +241,9 @@ export function tickCabinets(world: GameWorldState, deltaSeconds: number): void 
                 appointMinisterInternal(world, gov, portfolio);
                 continue;
             }
+            // A friend in the chair (lib/government/human-ministers.ts): their
+            // loyalty and honesty are their own choices, not a drift.
+            if (minister.seatId) { seated++; continue; }
 
             // Loyalty tracks the government's standing; the ambitious sour fastest.
             const drive = (minister.ambitionDrive ?? 50) / 100;

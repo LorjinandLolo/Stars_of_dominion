@@ -37,7 +37,8 @@ export async function PATCH(req: NextRequest) {
         try { body = await req.json(); } catch { return NextResponse.json({ error: 'Expected JSON.' }, { status: 400 }); }
 
         const profile = await prisma.playerProfile.findUnique({ where: { userId }, select: { uiPrefs: true } });
-        if (!profile) return NextResponse.json({ error: 'Claim a faction first.' }, { status: 409 });
+        // A seated minister has no profile row: their dock prefs are not kept.
+        if (!profile) return NextResponse.json({ prefs: defaultUiPrefs() }, { status: 200 });
 
         const next = applyUiPrefsPatch(parseUiPrefs(profile.uiPrefs), {
             showEverything: body?.showEverything,
