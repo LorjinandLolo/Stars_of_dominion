@@ -2,7 +2,7 @@
 // Stars of Dominion — who runs an empire while nobody is watching.
 //
 // Absence may slow an empire; it must never wound it. A human faction leaves
-// six systems delegated by default, and each delegated system is run by the
+// most systems delegated by default, and each delegated system is run by the
 // same code that already runs it for the AI factions — with the conservative
 // choice, never the ambitious one. A depth player turns a system off and takes
 // it back; nothing else about that system changes.
@@ -10,17 +10,27 @@
 // The record rides the faction's own shard (lib/persistence/save-service.ts),
 // because it is the player's setting, not public knowledge.
 
-/** The six systems a player can hand to their advisors. */
+/**
+ * The nine systems a player can hand to their advisors. The last three
+ * (military, diplomacy, development) joined with the veto feed
+ * (lib/delegation/advisor-proposals.ts): delegated, they run the routine;
+ * the ambitious — a war, a peace, a battle group — is only ever PROPOSED,
+ * whatever is delegated.
+ */
 export type DelegatedSystem =
     | 'government'
     | 'corporate'
     | 'press'
     | 'piracy'
     | 'exploration'
-    | 'research';
+    | 'research'
+    | 'military'
+    | 'diplomacy'
+    | 'development';
 
 export const DELEGATED_SYSTEMS: DelegatedSystem[] = [
     'government', 'corporate', 'press', 'piracy', 'exploration', 'research',
+    'military', 'diplomacy', 'development',
 ];
 
 export type DelegationState = Record<DelegatedSystem, boolean>;
@@ -37,6 +47,13 @@ export function defaultDelegation(): DelegationState {
         piracy: true,
         exploration: true,
         research: true,
+        // The Admiralty and the Foreign Office take orders; they do not take
+        // over. Off by default: a fleet that disengages by itself or a peace
+        // signed in your name is a surprise. The Works are on: an idle build
+        // queue is the one thing nobody misses.
+        military: false,
+        diplomacy: false,
+        development: true,
     };
 }
 
@@ -49,6 +66,9 @@ export function noDelegation(): DelegationState {
         piracy: false,
         exploration: false,
         research: false,
+        military: false,
+        diplomacy: false,
+        development: false,
     };
 }
 
@@ -77,5 +97,17 @@ export const DELEGATION_LABELS: Record<DelegatedSystem, { title: string; detail:
     research: {
         title: 'Research council',
         detail: 'When a project finishes, the cheapest technology in your current focus is started. It never picks a fork of no return, and a project you choose replaces its pick.',
+    },
+    military: {
+        title: 'Admiralty',
+        detail: 'Your battle groups fight their own battles: a stance each round, an orderly withdrawal when outmatched, mauled groups merged at the yard. It never declares war, never bombards, never gives up a siege — those come to you as proposals.',
+    },
+    diplomacy: {
+        title: 'Foreign Office',
+        detail: 'A peace offer the court would accept is accepted before it lapses. Every other offer waits for you, with the ministry’s advice attached.',
+    },
+    development: {
+        title: 'The Works',
+        detail: 'An empty build queue is filled with what the world needs most: order where it is unstable, industry where it is poor, research where it is rich. A project you queue yourself always comes first.',
     },
 };

@@ -304,7 +304,8 @@ export class StrategicAIService {
     /**
      * AI logic for constructing buildings on owned planets (Hard Mode macro).
      */
-    private static manageConstruction(factionId: string, world: GameWorldState, stance: AIStance = 'normal'): void {
+    /** Public: a delegated human "Works" desk runs this too (lib/delegation/delegation-runner.ts). */
+    static manageConstruction(factionId: string, world: GameWorldState, stance: AIStance = 'normal'): void {
         const planets = Array.from(world.construction.planets.values()).filter(p => p.ownerId === factionId);
         // A besieged state builds one thing at a time, and builds it to hold on.
         const queueDepth = stance === 'survival' ? 1 : 2;

@@ -48,6 +48,7 @@ export interface BriefDeadline {
 }
 
 export type BriefDecisionKind =
+    | 'advisor'
     | 'diplomacy'
     | 'gambit'
     | 'debate'
@@ -88,6 +89,15 @@ export interface BriefMessage {
     earlier: number;
 }
 
+/** One line of what the advisors did (or were told), newest first. */
+export interface BriefAdvisorLine {
+    id: string;
+    text: string;
+    /** ISO timestamp, real clock. */
+    at: string;
+    outcome: 'ran' | 'approved' | 'declined' | 'expired' | 'always';
+}
+
 /** The one thing worth doing today. */
 export interface BriefSuggestion {
     id: string;
@@ -110,6 +120,8 @@ export interface DailyBrief {
     messages: BriefMessage[];
     happened: BriefLine[];
     decisions: BriefDecision[];
+    /** What the advisors did since the last brief (the veto feed's ledger). */
+    advisors: BriefAdvisorLine[];
     suggestion: BriefSuggestion | null;
     /** Real seconds until the next strategic tick. */
     nextTickInSeconds: number;

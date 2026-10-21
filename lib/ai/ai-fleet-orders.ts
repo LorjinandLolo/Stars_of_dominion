@@ -102,7 +102,7 @@ export interface AIFleetBuild {
  * Returns false (nothing queued) when the faction holds no world in the
  * system, the plan is empty, or it is a human's faction.
  */
-export function queueAIFleetBuild(world: any, build: AIFleetBuild): boolean {
+export function queueAIFleetBuild(world: any, build: AIFleetBuild, enqueue: typeof queueAIOrder = queueAIOrder): boolean {
     const { factionId, fleetId } = build;
     const hulls = HULL_ORDER.filter(c => (build.composition[c] ?? 0) > 0)
         .concat(Object.keys(build.composition).filter(c => !HULL_ORDER.includes(c) && build.composition[c] > 0));
@@ -113,7 +113,9 @@ export function queueAIFleetBuild(world: any, build: AIFleetBuild): boolean {
 
     const first = hulls[0];
     let before: Set<string> = new Set();
-    return queueAIOrder(world, {
+    // `enqueue` is queueAIOrder for an AI empire, queueAdvisorOrder when a
+    // human approved the build (lib/delegation/advisor-proposals.ts).
+    return enqueue(world, {
         factionId,
         actionId: 'MIL_BUILD_FLEET',
         // aiFleetId is ignored by the handler; it marks the order in the outbox.
@@ -134,7 +136,7 @@ export function queueAIFleetBuild(world: any, build: AIFleetBuild): boolean {
             for (const cls of hulls) {
                 const n = (build.composition[cls] ?? 0) - (cls === first ? 1 : 0);
                 if (n <= 0) continue;
-                queueAIOrder(w, {
+                enqueue(w, {
                     factionId,
                     actionId: 'MIL_RECRUIT_FORMATION_UNIT',
                     payload: { formationId: fleetId, isFleet: true, unitType: cls.toUpperCase(), count: n },

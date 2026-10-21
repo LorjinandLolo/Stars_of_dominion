@@ -39,6 +39,12 @@ export interface AIOrder {
      * faction's fleet ids here, so onDone can find the one MIL_BUILD_FLEET made).
      */
     before?: (world: any) => void;
+    /**
+     * Set by lib/delegation/advisor-proposals.ts: an order a HUMAN faction's
+     * advisors run under the player's own Always rule. The drain lets it
+     * through for a claimed faction — the one exception to "only AI-run".
+     */
+    advisor?: true;
 }
 
 type OutboxWorld = { claimedFactionIds?: string[]; aiOrderOutbox?: AIOrder[] };
@@ -48,6 +54,19 @@ export function queueAIOrder(world: any, order: AIOrder): boolean {
     const w = world as OutboxWorld;
     if (!isAIRunFaction(w as any, order.factionId)) return false;
     (w.aiOrderOutbox ??= []).push(order);
+    return true;
+}
+
+/**
+ * Queue an order for a HUMAN faction on its advisors' behalf. Only
+ * lib/delegation/advisor-proposals.ts calls this, and only for an action the
+ * player has put on the Always list; refused for an AI-run faction (that is
+ * queueAIOrder's job) and when nobody is known to be human.
+ */
+export function queueAdvisorOrder(world: any, order: AIOrder): boolean {
+    const w = world as OutboxWorld;
+    if (!Array.isArray(w.claimedFactionIds) || !w.claimedFactionIds.includes(order.factionId)) return false;
+    (w.aiOrderOutbox ??= []).push({ ...order, advisor: true });
     return true;
 }
 
@@ -82,8 +101,12 @@ export function drainAIOrders(
     const cap = box.length * 8 + 64;
     for (let i = 0; i < box.length && i < cap; i++) {
         const order = box[i];
-        // A faction claimed between queue and drain is a human now.
-        if (!isAIRunFaction(w as any, order.factionId)) continue;
+        // A faction claimed between queue and drain is a human now — unless
+        // the order is the human's own advisors acting under an Always rule,
+        // which in turn is void if the faction was released since.
+        if (order.advisor) {
+            if (!Array.isArray(w.claimedFactionIds) || !w.claimedFactionIds.includes(order.factionId)) continue;
+        } else if (!isAIRunFaction(w as any, order.factionId)) continue;
         if (budget) {
             if (!left.has(order.factionId)) left.set(order.factionId, budget(world, order.factionId));
             const n = left.get(order.factionId)!;

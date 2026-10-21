@@ -94,6 +94,8 @@ import { refreshLedgerGauges, evaluateEmergentTriggers } from '../tech/emergent-
 import { assimilateBlueprint, tickAdaptationDebt, accrueObservationFragments } from '../tech/diffusion-service';
 import '../tech/techData'; // side effect: registers all tech trees
 import { runDelegatedSystems } from '../delegation/delegation-runner';
+import { expireProposals } from '../delegation/advisor-proposals';
+import { runAdvisorDesk } from '../ai/advisor-desk';
 import { tickComeback, perkName } from '../comeback/comeback-service';
 import { tickRogueCompanies } from '../economy/corporate/rogue-service';
 import { tickMissionServices } from '../economy/corporate/mission-services';
@@ -629,6 +631,17 @@ function step19b_delegatedSystems(world: ReturnType<typeof getGameWorldState>) {
         }
     } catch (e) {
         console.error('[TickProcessor] step19b_delegatedSystems failed:', e);
+    }
+    // The veto feed: unanswered proposals lapse, then the advisors write up
+    // what they would do next (lib/ai/advisor-desk.ts → the daily brief).
+    try {
+        const lapsed = expireProposals(world as any);
+        if (lapsed) console.log(`[Advisors] ${lapsed} proposal(s) lapsed unanswered`);
+        for (const entry of runAdvisorDesk(world as any)) {
+            if (entry.result !== 'quiet') console.log(`[Advisors] ${entry.factionId}: ${entry.advice} → ${entry.result}`);
+        }
+    } catch (e) {
+        console.error('[TickProcessor] advisor desk failed:', e);
     }
 }
 

@@ -69,7 +69,8 @@ import { factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { changeFleetCourse, isFleetOperational } from '@/lib/movement/movement-service';
 import { isAIRunFaction, warEnemiesOf } from '@/lib/ai/belt-ambush-ai';
 import { isTranscending } from '@/lib/victory/victory-service';
-import { queueAIOrder, hasQueuedAIOrder, type AIOrder } from '@/lib/ai/ai-orders';
+import { queueAIOrder, queueAdvisorOrder, hasQueuedAIOrder, type AIOrder } from '@/lib/ai/ai-orders';
+import { isDelegated } from '@/lib/delegation/delegation-service';
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
 import { POLITICAL_CAPITAL_COSTS } from '@/lib/actions/political-costs';
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
@@ -326,6 +327,26 @@ function warfleetPlanFor(world: GameWorldState, factionId: string, capital: stri
  * cover twice the price. Nothing exists until the worker drains the order.
  */
 function orderWarfleet(world: GameWorldState, factionId: string): string | null {
+    return commissionWarfleet(world, factionId);
+}
+
+/**
+ * What a battle group would be, and cost, for this faction right now — the
+ * advisors' proposal quotes it. Null when the capital yard can lay nothing.
+ */
+export function warfleetQuoteFor(world: GameWorldState, factionId: string): { composition: Record<string, number>; cost: Record<string, number>; power: number } | null {
+    const capital = (world.economy.factions.get(factionId) as any)?.capitalSystemId;
+    if (!capital || !world.movement.systems.has(capital)) return null;
+    const plan = warfleetPlanFor(world, factionId, capital);
+    return plan ? { composition: { ...plan.composition }, ...warfleetQuote(plan.composition) } : null;
+}
+
+/**
+ * Commission a battle group through the player's own orders. `enqueue` is
+ * queueAIOrder for an AI empire (the default) and queueAdvisorOrder when a
+ * human approved the advisors' proposal (scripts/game-loop.ts, 'warfleet').
+ */
+export function commissionWarfleet(world: GameWorldState, factionId: string, enqueue: typeof queueAIOrder = queueAIOrder): string | null {
     const faction = world.economy.factions.get(factionId) as any;
     const capital = faction?.capitalSystemId;
     if (!faction || !capital || !world.movement.systems.has(capital)) return null;
@@ -349,7 +370,7 @@ function orderWarfleet(world: GameWorldState, factionId: string): string | null 
             postureId: 'Aggressive',
             doctrine: { ...fleet.doctrine, type: 'Offensive', retreatThreshold: WAR.retreatStrength },
         }),
-    });
+    }, enqueue);
     return queued ? id : null;
 }
 
@@ -978,6 +999,19 @@ export function aiCommandGroundWars(world: GameWorldState): void {
  * lib/ai/offence-ai.ts does, so the AI never queues an order the handler
  * would only refuse.
  */
+/**
+ * Who fights their fleets through this file: an AI empire fully; a human
+ * whose Admiralty is delegated (lib/delegation) defensively — stances,
+ * directives, disengaging, merging at the yard — never bombardment, raids or
+ * giving up a siege, which are theirs to order (or approve).
+ */
+export type FleetTacticsMode = 'full' | 'defensive';
+export function fleetTacticsMode(world: GameWorldState, factionId: string | undefined): FleetTacticsMode | null {
+    if (!factionId || !isEmpire(world, factionId)) return null;
+    if (isAIRunFaction(world as any, factionId)) return 'full';
+    return isDelegated(world as any, factionId, 'military') ? 'defensive' : null;
+}
+
 function tacticOrder(world: GameWorldState, o: AIOrder): boolean {
     if (!checkOrderTechGate(world as any, o.factionId, o.actionId).allowed) return false;
     const price = POLITICAL_CAPITAL_COSTS[o.actionId] ?? 0;
@@ -990,6 +1024,9 @@ function tacticOrder(world: GameWorldState, o: AIOrder): boolean {
         const upper = Object.fromEntries(Object.entries(cost).map(([k, v]) => [k.toUpperCase(), v]));
         if (!canAfford((world.economy.factions.get(o.factionId) as any)?.reserves, upper, 2)) return false;
     }
+    // A delegated human Admiralty queues as the player's advisors; the drain
+    // lets those through for a claimed faction (lib/ai/ai-orders.ts).
+    if (!isAIRunFaction(world as any, o.factionId)) return queueAdvisorOrder(world, o);
     return queueAIOrder(world, o);
 }
 
@@ -1089,7 +1126,7 @@ export function aiFleetTactics(world: GameWorldState): FleetTactics {
         const pairs: Array<[any, any]> = [[combat.attacker, combat.defender], [combat.defender, combat.attacker]];
         for (const [side, enemy] of pairs) {
             const factionId: string | undefined = side?.factionId;
-            if (!factionId || !isAIRunFaction(world as any, factionId) || !isEmpire(world, factionId)) continue;
+            if (!factionId || !fleetTacticsMode(world, factionId)) continue;
             const memo: Record<string, any> = combat.aiTactics ?? (combat.aiTactics = {});
             const m = memo[factionId] ?? (memo[factionId] = {});
             if (m.retreat) continue;
@@ -1137,7 +1174,7 @@ export function aiFleetTactics(world: GameWorldState): FleetTactics {
     // ── Battle groups, by faction.
     const byFaction = new Map<string, Fleet[]>();
     for (const f of world.movement.fleets.values()) {
-        if (!isWarfleetId(f.id) || !isAIRunFaction(world as any, f.factionId)) continue;
+        if (!isWarfleetId(f.id) || !fleetTacticsMode(world, f.factionId)) continue;
         const list = byFaction.get(f.factionId) ?? [];
         list.push(f);
         byFaction.set(f.factionId, list);
@@ -1145,6 +1182,7 @@ export function aiFleetTactics(world: GameWorldState): FleetTactics {
 
     for (const [factionId, fleets] of [...byFaction.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
         fleets.sort((a, b) => a.id.localeCompare(b.id));
+        const mode = fleetTacticsMode(world, factionId);
 
         // Two mauled battle groups home at the yard become one: a full-strength
         // group is worth more than two broken ones, and the freed slot lets
@@ -1162,6 +1200,8 @@ export function aiFleetTactics(world: GameWorldState): FleetTactics {
         }
 
         // Over the target: raid its defences, and bombard our own siege once the shield is down.
+        // A delegated human Admiralty does neither: both are the player's to order.
+        if (mode !== 'full') continue;
         for (const f of fleets) {
             const mission = missionOf(f);
             if (!mission || mission.relief || f.destinationSystemId || f.currentSystemId !== mission.targetSystemId) continue;

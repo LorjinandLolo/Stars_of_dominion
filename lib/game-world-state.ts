@@ -23,6 +23,7 @@ import type { DefianceEvent } from './government/defiance-types';
 import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
+import type { AdvisorRecord } from './delegation/advisor-proposals';
 import type { EmpireMessageView } from './messages/message-rules';
 import type { ComebackRecord } from './comeback/comeback-service';
 import type { GoalState } from './goals/first-week-goals';
@@ -236,6 +237,13 @@ export interface GameWorldState {
      * owner's shard, not the shared snapshot: it is their setting, not news.
      */
     delegation?: Map<string, DelegationState>;
+
+    /**
+     * Each human faction's advisors' desk (lib/delegation/advisor-proposals.ts):
+     * open proposals, the Always list, the ledger. Rides the owner's shard,
+     * like `delegation`; never the shared snapshot.
+     */
+    advisors?: Map<string, AdvisorRecord>;
 
     /**
      * Each human faction's place in the first-week goals

@@ -68,7 +68,7 @@ export const MANUAL_DATA: ManualSection[] = [
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Six systems can be left to advisors: the Cabinet (debates, defiance, a corrupt minister), the Board liaison (charter company demands), the Press office, Patrol command (pirates), the Survey office (idle fleets keep charting nearby systems) and the Research council (starts the next project when one finishes). Advisors act cautiously, never ambitiously. Take a system back under Empire → Government → Advisors and every decision there is yours again.',
+                        content: 'Nine systems can be left to advisors: the Cabinet (debates, defiance, a corrupt minister), the Board liaison (charter company demands), the Press office, Patrol command (pirates), the Survey office (idle fleets keep charting nearby systems), the Research council (starts the next project when one finishes), the Admiralty (fights your battles defensively), the Foreign Office (accepts a peace the court would take) and the Works (fills an empty build queue). Advisors act cautiously, never ambitiously: a war, a peace, a battle group is only ever proposed, in the daily brief, with Approve, Decline and Always. Take a system back under Empire → Government → Advisors and every decision there is yours again.',
                     },
                     {
                         type: 'strategy_tip',

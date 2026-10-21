@@ -48,6 +48,19 @@ import { quoteRelayPing } from '../lib/exploration/ping-cost';
 import { drainNotifications } from '../lib/time/notification-hooks';
 import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
+import { resolveProposal } from '../lib/delegation/advisor-proposals';
+import { queueAdvisorOrder } from '../lib/ai/ai-orders';
+import { commissionWarfleet } from '../lib/ai/war-ai';
+
+/**
+ * Advisor proposals that are a chain of orders rather than one (the
+ * `replay` field in lib/delegation/advisor-proposals.ts). Each queues into
+ * the AI order outbox as the player's advisors; the drain below runs them
+ * through executeOrder like any other.
+ */
+const ADVISOR_REPLAYS: Record<string, (world: any, factionId: string) => boolean> = {
+    warfleet: (world, factionId) => commissionWarfleet(world, factionId, queueAdvisorOrder) !== null,
+};
 import { tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 import { unlocksForGoal } from '../lib/goals/dock-unlocks';
 import { colonizePlanet } from '../lib/exploration/colonize-service';
@@ -3078,6 +3091,37 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             const enabled = payload?.enabled !== false;
             setDelegation(world, factionId, payload.system, enabled);
             console.log(`[Order] ${factionId} ${enabled ? 'delegated' : 'took back'} ${payload.system}`);
+            break;
+        }
+
+        case 'ADV_RESOLVE_PROPOSAL': {
+            // payload: { proposalId, decision: 'approve' | 'decline' | 'always' }
+            // The veto feed (lib/delegation/advisor-proposals.ts). Approving
+            // runs the proposal's own order through this same function, so it
+            // pays its own price and meets its own gates; this order is free.
+            const decision = payload?.decision;
+            if (decision !== 'approve' && decision !== 'decline' && decision !== 'always') {
+                recordOrderFailure(world, factionId, actionId, `Unknown decision "${decision}".`);
+                break;
+            }
+            const resolved = resolveProposal(world, factionId, String(payload?.proposalId ?? ''), decision);
+            if (!resolved) {
+                recordOrderFailure(world, factionId, actionId, 'That proposal is no longer open.');
+                break;
+            }
+            const { proposal } = resolved;
+            console.log(`[Order] ${factionId} ${decision}d advisors' ${proposal.actionId} (${proposal.title})`);
+            if (!resolved.execute) break;
+            const replay = proposal.replay ? ADVISOR_REPLAYS[proposal.replay] : undefined;
+            if (proposal.replay && !replay) {
+                recordOrderFailure(world, factionId, actionId, `Unknown advisor recipe "${proposal.replay}".`);
+                break;
+            }
+            if (replay) {
+                if (!replay(world, factionId)) recordOrderFailure(world, factionId, proposal.actionId, 'The advisors could not carry that out after all.');
+            } else {
+                executeOrder(world, proposal.actionId, proposal.payload, factionId);
+            }
             break;
         }
 

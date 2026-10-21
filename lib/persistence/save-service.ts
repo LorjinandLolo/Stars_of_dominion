@@ -316,6 +316,9 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // so it rides their own shard; absent record = everything delegated
         // (lib/delegation/delegation-service.ts states that rule once).
         delegation: world.delegation?.get(factionId) ?? null,
+        // Their advisors' desk: open proposals, the Always list, the ledger
+        // (lib/delegation/advisor-proposals.ts). Same rule as delegation.
+        advisors: world.advisors?.get(factionId) ?? null,
         // Where this player is in the first-week goals. Theirs, like the above.
         firstWeekGoals: world.firstWeekGoals?.get(factionId) ?? null,
         // Messages to and from other players (lib/messages). Only this
@@ -428,6 +431,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.delegation) world.delegation = new Map();
         world.delegation.set(shard.factionId, shard.delegation);
     }
+    if (shard.advisors) {
+        if (!world.advisors) world.advisors = new Map();
+        world.advisors.set(shard.factionId, shard.advisors);
+    }
     if (shard.firstWeekGoals) {
         if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
         world.firstWeekGoals.set(shard.factionId, shard.firstWeekGoals);
@@ -517,6 +524,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // the worker restores every shard on boot), so the shared snapshot every
     // client polls does not need to say who is letting their cabinet drive.
     if (cloned.delegation instanceof Map) cloned.delegation.clear();
+    if (cloned.advisors instanceof Map) cloned.advisors.clear();
     if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
     // Messages between two players are read by those two players. The shared
     // snapshot goes to every client, so it carries none of them.

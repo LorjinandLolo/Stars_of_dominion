@@ -32,6 +32,8 @@ import { runPressOffice } from '@/lib/press-system/press-office';
 import { signProtectionContract } from '@/lib/piracy/protection-service';
 import { setAutomationDoctrine, tickAutomation } from '@/lib/exploration/exploration-service';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
+import { wouldAccept } from '@/lib/ai/diplomatic-ai-service';
+import { respondToOffer } from '@/lib/diplomacy/offer-service';
 
 /** What the advisors did this tick, for the log and the probe. */
 export interface DelegationReport {
@@ -84,7 +86,68 @@ const RUNNERS: Record<DelegatedSystem, Runner> = {
     piracy: runPiracy,
     exploration: runExploration,
     research: runResearch,
+    military: runMilitary,
+    diplomacy: runDiplomacy,
+    development: runDevelopment,
 };
+
+// ─── Military ─────────────────────────────────────────────────────────────────
+
+/**
+ * The Admiralty fights between strategic ticks, not at them: the worker runs
+ * aiFleetTactics every loop and reads this flag there
+ * (lib/ai/war-ai.ts fleetTacticsMode → 'defensive' for a delegated human).
+ * Nothing to do here; the entry exists so the table is total.
+ */
+function runMilitary(): void { /* see fleetTacticsMode */ }
+
+// ─── Diplomacy ────────────────────────────────────────────────────────────────
+
+/**
+ * A peace offer the court would accept (the AI's own test) is accepted once it
+ * has sat with the court a tick. Nothing else is answered: a treaty, a trade
+ * pact, a tribute demand each wait for the player, and the brief carries the
+ * ministry's advice beside them (lib/brief/daily-brief.ts).
+ */
+function runDiplomacy(world: GameWorldState, factionId: string, _delta: number, reports: DelegationReport[]): void {
+    const dip: any = (world as any).diplomacy;
+    if (!dip?.offers) return;
+    for (const offer of [...dip.offers.values()]) {
+        if (offer.toFactionId !== factionId || offer.status !== 'pending' || offer.kind !== 'peace_offer') continue;
+        if (world.nowSeconds < Number(offer.createdAtSeconds ?? 0) + DIPLOMACY_DELIBERATION_SECONDS) continue;
+        if (!wouldAccept(world, offer)) continue;
+        const result = respondToOffer(world, factionId, offer.id, 'accept');
+        if (result.success) reports.push({ factionId, system: 'diplomacy', action: `accepted peace from ${offer.fromFactionId}` });
+    }
+}
+
+/** Same pause the AI courts take before answering (lib/ai/diplomatic-ai-service.ts). */
+const DIPLOMACY_DELIBERATION_SECONDS = 6 * 3600;
+
+// ─── Development ──────────────────────────────────────────────────────────────
+
+/**
+ * The Works fill an empty build queue the way the AI's construction desk
+ * does: security where a world is unstable, industry where it is poor,
+ * research where it is rich — through startConstruction, so the price, the
+ * tile and the tier gate are the player's own. A queue the player has
+ * filled is never touched (the desk only builds into free depth).
+ */
+function runDevelopment(world: GameWorldState, factionId: string, _delta: number, reports: DelegationReport[]): void {
+    const before = new Map<string, number>();
+    for (const p of world.construction.planets.values()) {
+        if (p.ownerId === factionId) before.set(p.id, p.buildQueue?.length ?? 0);
+    }
+    const stance = StrategicAIService.assessStance(factionId, world).stance;
+    StrategicAIService.manageConstruction(factionId, world, stance);
+    for (const p of world.construction.planets.values()) {
+        if (p.ownerId !== factionId) continue;
+        const added = (p.buildQueue?.length ?? 0) - (before.get(p.id) ?? 0);
+        if (added <= 0) continue;
+        const newest: any = p.buildQueue[p.buildQueue.length - 1];
+        reports.push({ factionId, system: 'development', action: `queued ${newest?.buildingId ?? 'a building'} on ${p.name ?? p.id}` });
+    }
+}
 
 // ─── Government ───────────────────────────────────────────────────────────────
 

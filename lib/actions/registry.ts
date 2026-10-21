@@ -1006,6 +1006,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { system: "string", enabled: "boolean" },
     cost: {}
   },
+  // The veto feed (lib/delegation/advisor-proposals.ts): approve, decline or
+  // always-approve something the advisors proposed. Free in itself — the
+  // proposal's own order pays its own price when it runs.
+  ADV_RESOLVE_PROPOSAL: {
+    id: "ADV_RESOLVE_PROPOSAL",
+    category: "internal",
+    params: { proposalId: "id", decision: "string" },
+    cost: {}
+  },
   // Phase 6.5: taking a public side in someone else's collapse.
   DIP_RECOGNIZE_BREAKAWAY: {
     id: "DIP_RECOGNIZE_BREAKAWAY",

@@ -323,7 +323,9 @@ export default function DailyBrief() {
                                             <div
                                                 key={decision.id}
                                                 className={`rounded-xl border p-4 ${
-                                                    urgent ? 'border-red-500/40 bg-red-950/20' : 'border-slate-700/60 bg-slate-900/60'
+                                                    urgent ? 'border-red-500/40 bg-red-950/20'
+                                                    : decision.kind === 'advisor' ? 'border-amber-500/30 bg-amber-950/10'
+                                                    : 'border-slate-700/60 bg-slate-900/60'
                                                 }`}
                                             >
                                                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-3 mb-1.5">
@@ -363,6 +365,31 @@ export default function DailyBrief() {
                                         );
                                     })}
                                 </div>
+                            </section>
+                        )}
+
+                        {/* ── What the advisors did ─────────────────────── */}
+                        {(brief.advisors?.length ?? 0) > 0 && (
+                            <section id="brief-advisors">
+                                <h3 className="text-[10px] font-display uppercase tracking-[0.2em] text-slate-500 mb-3">
+                                    Your advisors
+                                </h3>
+                                <ul className="space-y-2">
+                                    {brief.advisors.map(line => (
+                                        <li key={line.id} className="flex gap-3 text-sm text-slate-300 leading-relaxed">
+                                            <span
+                                                className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                                    line.outcome === 'ran' || line.outcome === 'always' ? 'bg-amber-400'
+                                                    : line.outcome === 'approved' ? 'bg-emerald-400' : 'bg-slate-600'
+                                                }`}
+                                            />
+                                            <span className="flex-1">
+                                                {line.text}
+                                                <span className="text-[10px] text-slate-600 ml-2 font-mono">{whenLine(line.at)}</span>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </section>
                         )}
 

@@ -18,8 +18,12 @@ import { formatRealDeadline } from '@/lib/time/galactic-time';
 import { ROGUE_GRACE_SECONDS } from '@/lib/economy/corporate/charter-service';
 import { currentGoal } from '@/lib/goals/first-week-goals';
 import { empireWithPlayer, type HumanPlayers } from '@/lib/players/player-label';
+import { openProposals, advisorLedger } from '@/lib/delegation/advisor-proposals';
+import { POLITICAL_CAPITAL_COSTS } from '@/lib/actions/political-costs';
+import { wouldAccept } from '@/lib/ai/diplomatic-ai-service';
 import type {
     BriefAction,
+    BriefAdvisorLine,
     BriefDeadline,
     BriefDecision,
     BriefLine,
@@ -89,6 +93,7 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
     const messages = collectMessages(input, since, now);
     const happened = collectHappened(input, since, now);
     const decisions = collectDecisions(input, nowSeconds, now);
+    const advisors = collectAdvisorLedger(input, since, now);
     const suggestion = pickSuggestion(input);
 
     return {
@@ -99,10 +104,71 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
         messages,
         happened,
         decisions,
+        advisors,
         suggestion,
         nextTickInSeconds: realSecondsToNextTick(nowSeconds),
-        empty: messages.length === 0 && happened.length === 0 && decisions.length === 0,
+        empty: messages.length === 0 && happened.length === 0 && decisions.length === 0 && advisors.length === 0,
     };
+}
+
+// ─── The advisors' desk ───────────────────────────────────────────────────────
+
+/** The brief asks at most this many advisor questions; the rest wait. */
+const MAX_ADVISOR_DECISIONS = 3;
+const MAX_ADVISOR_LINES = 6;
+
+/** Real clock for a sim instant, counted back from now. */
+function realDateFor(atSeconds: number, nowSeconds: number, now: Date): Date {
+    return new Date(now.getTime() - ((nowSeconds - atSeconds) / SIM_SECONDS_PER_REAL_SECOND) * 1000);
+}
+
+/**
+ * What the advisors propose (lib/delegation/advisor-proposals.ts): each a
+ * pre-filled order with Approve / Decline / Always buttons, all three sent
+ * through ADV_RESOLVE_PROPOSAL so the worker keeps the books. The political
+ * price is said in the detail — Approve is the same click as the panel's.
+ */
+function advisorProposals(input: BriefInput, nowSeconds: number): BriefDecision[] {
+    return openProposals(input.world, input.factionId).slice(0, MAX_ADVISOR_DECISIONS).map(p => {
+        const price = POLITICAL_CAPITAL_COSTS[p.actionId] ?? 0;
+        const priced = price > 0 && !p.detail.includes('political capital') ? ` Costs ${price} political capital.` : '';
+        const answer = (decision: 'approve' | 'decline' | 'always'): BriefAction['payload'] => ({ proposalId: p.id, decision });
+        return {
+            id: `advisor-${p.id}`,
+            kind: 'advisor' as const,
+            title: p.title,
+            detail: `${p.detail}${priced}`,
+            deadline: deadlineFrom(p.expiresAtSeconds, nowSeconds, input.now),
+            actions: [
+                { label: 'Approve', tone: 'accept', actionId: 'ADV_RESOLVE_PROPOSAL', payload: answer('approve') },
+                { label: 'Decline', tone: 'decline', actionId: 'ADV_RESOLVE_PROPOSAL', payload: answer('decline') },
+                { label: 'Always', tone: 'open', actionId: 'ADV_RESOLVE_PROPOSAL', payload: answer('always') },
+            ],
+        };
+    });
+}
+
+/** What the advisors did in the window, newest first; a few lines at most. */
+export function collectAdvisorLedger(input: BriefInput, since: Date, now: Date): BriefAdvisorLine[] {
+    const nowSeconds = Number(input.world?.nowSeconds ?? 0);
+    const out: BriefAdvisorLine[] = [];
+    for (const entry of advisorLedger(input.world, input.factionId)) {
+        const at = realDateFor(entry.atSeconds, nowSeconds, now);
+        if (at < since) break; // newest first: the rest are older
+        out.push({ id: entry.id, text: ledgerText(entry.title, entry.outcome), at: at.toISOString(), outcome: entry.outcome });
+        if (out.length >= MAX_ADVISOR_LINES) break;
+    }
+    return out;
+}
+
+function ledgerText(title: string, outcome: BriefAdvisorLine['outcome']): string {
+    switch (outcome) {
+        case 'ran': return `${title} — done without asking (your standing order).`;
+        case 'approved': return `${title} — you approved it.`;
+        case 'always': return `${title} — you approved it, and the like from now on.`;
+        case 'declined': return `${title} — you declined.`;
+        case 'expired': return `${title} — lapsed unanswered.`;
+    }
 }
 
 // ─── Messages from other players ──────────────────────────────────────────────
@@ -306,6 +372,7 @@ export function describeChronicleRow(row: BriefChronicleRow, factionId: string):
 
 export function collectDecisions(input: BriefInput, nowSeconds: number, _now: Date): BriefDecision[] {
     const decisions: BriefDecision[] = [
+        ...advisorProposals(input, nowSeconds),
         ...diplomaticOffers(input, nowSeconds),
         ...gambits(input, nowSeconds),
         ...interventions(input, nowSeconds),
@@ -463,7 +530,7 @@ function diplomaticOffers(input: BriefInput, nowSeconds: number): BriefDecision[
         kind: 'diplomacy' as const,
         title: `${factionName(input.world, offer.fromFactionId)} proposes ${humanKind(offer.kind)}`,
         counterparts: [counterpart(input, offer.fromFactionId)],
-        detail: offerTerms(offer),
+        detail: `${offerTerms(offer)}${ministryAdvice(input.world, offer)}`,
         deadline: deadlineFrom(offer.expiresAtSeconds, nowSeconds, input.now),
         actions: [
             { label: 'Accept', tone: 'accept', actionId: 'DIP_RESPOND_OFFER', payload: { offerId: offer.id, response: 'accept' } },
@@ -471,6 +538,19 @@ function diplomaticOffers(input: BriefInput, nowSeconds: number): BriefDecision[
             { label: 'Open', tone: 'open', openTab: 'diplomacy' },
         ],
     }));
+}
+
+/**
+ * The Foreign Office's one-line opinion on an offer — the AI court's own
+ * acceptance test (lib/ai/diplomatic-ai-service.ts), read without acting.
+ * Empty when the test cannot be run on this world (a unit test's stub).
+ */
+function ministryAdvice(world: any, offer: any): string {
+    try {
+        return wouldAccept(world, offer) ? ' The Foreign Office advises accepting.' : ' The Foreign Office advises against.';
+    } catch {
+        return '';
+    }
 }
 
 /** Which answers a gambit of this kind accepts. Mirrors GambitResponse. */
