@@ -319,6 +319,16 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // Their advisors' desk: open proposals, the Always list, the ledger
         // (lib/delegation/advisor-proposals.ts). Same rule as delegation.
         advisors: world.advisors?.get(factionId) ?? null,
+        // Ministers' plots against this ruler (lib/government/plots.ts). In the
+        // shard because that is where private state lives; the sync route
+        // gives the ruler NONE of them and each plotter only their own.
+        plots: Array.from(world.plots?.values() ?? []).filter(p => p.factionId === factionId),
+        // The worker's private word to each seat in this court (plots.ts
+        // noteSeat); the sync route hands each seat only its own.
+        seatNotes: Object.fromEntries(
+            ((world as any).seats ?? []).filter((s: any) => s.factionId === factionId)
+                .map((s: any) => [s.id, world.seatNotes?.get(s.id)]).filter(([, n]: any[]) => n),
+        ),
         // Where this player is in the first-week goals. Theirs, like the above.
         firstWeekGoals: world.firstWeekGoals?.get(factionId) ?? null,
         // Messages to and from other players (lib/messages). Only this
@@ -435,6 +445,14 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.advisors) world.advisors = new Map();
         world.advisors.set(shard.factionId, shard.advisors);
     }
+    if (Array.isArray(shard.plots)) {
+        if (!world.plots) world.plots = new Map();
+        for (const plot of shard.plots) if (plot?.id) world.plots.set(plot.id, plot);
+    }
+    if (shard.seatNotes && typeof shard.seatNotes === 'object') {
+        if (!world.seatNotes) world.seatNotes = new Map();
+        for (const [seatId, note] of Object.entries(shard.seatNotes)) if (note) world.seatNotes.set(seatId, note as any);
+    }
     if (shard.firstWeekGoals) {
         if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
         world.firstWeekGoals.set(shard.factionId, shard.firstWeekGoals);
@@ -525,6 +543,8 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // client polls does not need to say who is letting their cabinet drive.
     if (cloned.delegation instanceof Map) cloned.delegation.clear();
     if (cloned.advisors instanceof Map) cloned.advisors.clear();
+    if (cloned.plots instanceof Map) cloned.plots.clear();
+    if (cloned.seatNotes instanceof Map) cloned.seatNotes.clear();
     if (cloned.firstWeekGoals instanceof Map) cloned.firstWeekGoals.clear();
     // Messages between two players are read by those two players. The shared
     // snapshot goes to every client, so it carries none of them.

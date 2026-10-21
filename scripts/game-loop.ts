@@ -50,6 +50,7 @@ import { registerFactionLabels } from '../lib/time/notification-names';
 import { setDelegation, isDelegatedSystem, isDelegated } from '../lib/delegation/delegation-service';
 import { resolveProposal, revokeAutoApprove } from '../lib/delegation/advisor-proposals';
 import { syncHumanMinisters } from '../lib/government/human-ministers';
+import { startPlot, soundOut, answerInvitation, abandonPlot, noteSeat } from '../lib/government/plots';
 import { queueAdvisorOrder } from '../lib/ai/ai-orders';
 import { commissionWarfleet } from '../lib/ai/war-ai';
 
@@ -3137,6 +3138,32 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             } else {
                 executeOrder(world, proposal.actionId, proposal.payload, factionId);
             }
+            break;
+        }
+
+        // ── A minister's plot (lib/government/plots.ts) ───────────────────
+        // Every PLOT_* order must come through a seat: the issuer the order
+        // queue stamped (payload.__issuer.seatId). The ruler cannot plot
+        // against themselves, and the seat must be in THIS court.
+        case 'PLOT_START':
+        case 'PLOT_SOUND_OUT':
+        case 'PLOT_ANSWER':
+        case 'PLOT_ABANDON': {
+            const seatId: string | undefined = payload?.__issuer?.seatId;
+            const seat = seatId ? ((world as any).seats ?? []).find((s: any) => s.id === seatId && s.factionId === factionId) : null;
+            if (!seat) {
+                recordOrderFailure(world, factionId, actionId, 'Only a seated minister of this court can do that.');
+                break;
+            }
+            const result = actionId === 'PLOT_START' ? startPlot(world, factionId, seat.id, payload?.kind)
+                : actionId === 'PLOT_SOUND_OUT' ? soundOut(world, factionId, seat.id, String(payload?.actorId ?? ''))
+                : actionId === 'PLOT_ANSWER' ? answerInvitation(world, factionId, seat.id, String(payload?.plotId ?? ''), payload?.answer)
+                : abandonPlot(world, factionId, seat.id);
+            // Result or refusal, to the plotter's eyes only: lastOrderError
+            // rides the economy record every poller of this faction reads,
+            // and a refusal that says "plot" to the ruler is a confession.
+            noteSeat(world, seat.id, result.message, result.ok);
+            if (result.ok) console.log(`[Plot] ${factionId}/${seat.persona}: ${actionId} — ${result.message}`);
             break;
         }
 

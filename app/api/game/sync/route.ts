@@ -58,10 +58,13 @@ export async function GET(req: NextRequest) {
         // A caller with a session but no claim is legitimate — that is a player
         // sitting in the lobby — and simply owns no shard, so every row they
         // receive is the public projection.
-        const { userId, factionId } = await resolveCallerFaction(req);
+        const { userId, factionId, role, seat } = await resolveCallerFaction(req);
         if (!userId) {
             return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
         }
+        // How they hold their own shard: a seated minister is served the
+        // court's shard minus everyone else's plots (shard-privacy.ts).
+        const access = role === 'minister' && seat ? { role: 'minister' as const, seatId: seat.id } : role === 'ruler' ? { role: 'ruler' as const } : undefined;
 
         const sessionSince = req.nextUrl.searchParams.get('sessionSince');
         const shardsSince = req.nextUrl.searchParams.get('shardsSince');
@@ -147,10 +150,12 @@ export async function GET(req: NextRequest) {
         // as-is instead of being parsed and re-encoded.
         const factionParts = shards.map(s => {
             const isOwn = !!factionId && s.factionId === factionId;
-            const data = projectShardForCaller(s.data, isOwn, viewer);
+            const data = projectShardForCaller(s.data, isOwn, viewer, access);
             const updatedAt = s.updatedAt.toISOString();
             if (isOwn) {
-                const stream = ownShardStream(s.factionId);
+                // One delta stream per PROJECTION: the ruler and a seated
+                // minister are served different views of the same row.
+                const stream = ownShardStream(`${s.factionId}:${access?.seatId ?? 'ruler'}`);
                 stream.update(updatedAt, data);
                 const delta = wantsDelta && ownSince ? stream.deltaFrom(ownSince) : null;
                 if (delta) {

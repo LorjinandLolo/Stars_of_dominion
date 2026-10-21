@@ -35,7 +35,7 @@ export default function LobbyScreen({ factions }: LobbyScreenProps) {
     // mounts and GameShell's own boot screen takes over.
     const [entering, setEntering] = useState<{ name: string; accent: string; registered: boolean; neighbour?: string } | null>(null);
     // A cabinet seat this account holds in a friend's court (lib/government/seat-scope.ts).
-    const [mySeat, setMySeat] = useState<{ factionId: string; portfolio: string; empireName: string } | null>(null);
+    const [mySeat, setMySeat] = useState<{ seatId: string; factionId: string; portfolio: string; empireName: string } | null>(null);
 
     const [takenFactions, setTakenFactions] = useState<Record<string, { displayName: string; isMine: boolean }>>({});
     const [currentUser, setCurrentUser] = useState<any>(null);

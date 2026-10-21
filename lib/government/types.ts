@@ -219,6 +219,12 @@ export interface GovernmentState {
     coupPressure: number;
     /** Sim-clock seconds of the last coup warning fired (dedupes notifications). */
     lastCoupWarningSeconds?: number;
+    /**
+     * The loyalty desk: what loyal servants reported about being sounded out
+     * by a plotting minister (lib/government/plots.ts). The ruler's only
+     * window into a plot before it strikes. Newest last, capped.
+     */
+    loyaltyReports?: Array<{ id: string; atSeconds: number; reporterName: string; text: string; suspectLeaderId: string | null }>;
 
     /**
      * Phase 6.5 — foreign empires that have recognised this state, and those

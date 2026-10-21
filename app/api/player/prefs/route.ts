@@ -21,7 +21,10 @@ export async function GET(req: NextRequest) {
         if (!userId) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
 
         const profile = await prisma.playerProfile.findUnique({ where: { userId }, select: { uiPrefs: true } });
-        return NextResponse.json({ prefs: profile ? parseUiPrefs(profile.uiPrefs) : defaultUiPrefs() });
+        // A seated minister with no empire of their own gets the whole dock:
+        // their court's panels are the job, not a tier to unlock.
+        const seated = !profile && !!(await prisma.factionSeat.findUnique({ where: { userId }, select: { id: true } }).catch(() => null));
+        return NextResponse.json({ prefs: profile ? parseUiPrefs(profile.uiPrefs) : { ...defaultUiPrefs(), showEverything: seated } });
     } catch (err: any) {
         console.error('[API/player/prefs] read failed:', err);
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
@@ -37,8 +40,9 @@ export async function PATCH(req: NextRequest) {
         try { body = await req.json(); } catch { return NextResponse.json({ error: 'Expected JSON.' }, { status: 400 }); }
 
         const profile = await prisma.playerProfile.findUnique({ where: { userId }, select: { uiPrefs: true } });
-        // A seated minister has no profile row: their dock prefs are not kept.
-        if (!profile) return NextResponse.json({ prefs: defaultUiPrefs() }, { status: 200 });
+        // A seated minister has no profile row: their dock prefs are not kept,
+        // and they see the whole dock (same answer as GET).
+        if (!profile) return NextResponse.json({ prefs: { ...defaultUiPrefs(), showEverything: true } }, { status: 200 });
 
         const next = applyUiPrefsPatch(parseUiPrefs(profile.uiPrefs), {
             showEverything: body?.showEverything,

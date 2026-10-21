@@ -1022,6 +1022,33 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { actionId: "string" },
     cost: {}
   },
+  // A seated minister's plot (lib/government/plots.ts). Issued through a
+  // seat only; the worker refuses them from the ruler. Free: the price is
+  // what happens when it goes wrong.
+  PLOT_START: {
+    id: "PLOT_START",
+    category: "internal",
+    params: { kind: "string" },
+    cost: {}
+  },
+  PLOT_SOUND_OUT: {
+    id: "PLOT_SOUND_OUT",
+    category: "internal",
+    params: { actorId: "id" },
+    cost: {}
+  },
+  PLOT_ANSWER: {
+    id: "PLOT_ANSWER",
+    category: "internal",
+    params: { plotId: "id", answer: "string" },
+    cost: {}
+  },
+  PLOT_ABANDON: {
+    id: "PLOT_ABANDON",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
   // Phase 6.5: taking a public side in someone else's collapse.
   DIP_RECOGNIZE_BREAKAWAY: {
     id: "DIP_RECOGNIZE_BREAKAWAY",

@@ -293,8 +293,8 @@ export interface UIStore {
 
     // ── Cabinet seat (lib/government/seat-scope.ts) ──
     /** When this account is in a court as a seated minister, not its ruler. Null for a ruler. */
-    ministerSeat: { factionId: string; portfolio: string; empireName: string } | null;
-    setMinisterSeat: (seat: { factionId: string; portfolio: string; empireName: string } | null) => void;
+    ministerSeat: { seatId: string; factionId: string; portfolio: string; empireName: string } | null;
+    setMinisterSeat: (seat: { seatId: string; factionId: string; portfolio: string; empireName: string } | null) => void;
     setDiplomacyFocusId: (factionId: string | null) => void;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──

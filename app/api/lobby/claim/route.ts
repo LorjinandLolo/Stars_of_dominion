@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
             myRole: caller.role,
             // The seat they hold, if any, so the lobby can say so.
             mySeat: caller.seat
-                ? { factionId: caller.seat.factionId, portfolio: caller.seat.portfolio, empireName: LOBBY_FACTIONS.find(f => f.id === caller.seat!.factionId)?.name ?? caller.seat.factionId }
+                ? { seatId: caller.seat.id, factionId: caller.seat.factionId, portfolio: caller.seat.portfolio, empireName: LOBBY_FACTIONS.find(f => f.id === caller.seat!.factionId)?.name ?? caller.seat.factionId }
                 : null,
         });
     } catch (err: any) {

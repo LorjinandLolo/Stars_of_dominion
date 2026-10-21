@@ -71,6 +71,8 @@ export function seatAllows(portfolio: string, actionId: string): boolean {
     if (SOVEREIGN_ONLY.has(actionId)) return false;
     const scope = SCOPE[portfolio as CabinetPortfolio];
     if (!scope) return false;
+    // Every seat may conspire (lib/government/plots.ts); only a seat may.
+    if (actionId.startsWith('PLOT_')) return true;
     return scope.ids.includes(actionId) || scope.prefixes.some(p => actionId.startsWith(p));
 }
 

@@ -167,7 +167,7 @@ export function scrubOwnerSecrets(shard: any): any {
  * `isOwner` decides which of the two scrubs applies; `viewer` (built from the
  * caller's own shard) fogs rival fleets.
  */
-export function projectShardForCaller(shardJson: string, isOwner: boolean, viewer?: ViewerContext): string {
+export function projectShardForCaller(shardJson: string, isOwner: boolean, viewer?: ViewerContext, access?: ShardAccess): string {
     let parsed: any;
     try {
         parsed = JSON.parse(shardJson);
@@ -175,7 +175,41 @@ export function projectShardForCaller(shardJson: string, isOwner: boolean, viewe
         // An unparseable row must not become a hole — serve nothing for it.
         return JSON.stringify({});
     }
-    return JSON.stringify(isOwner ? scrubOwnerSecrets(parsed) : projectPublicShard(parsed, viewer));
+    return JSON.stringify(isOwner ? scrubForRole(scrubOwnerSecrets(parsed), access) : projectPublicShard(parsed, viewer));
+}
+
+/** How the caller holds the shard they are being served: as its ruler, or through a seat. */
+export interface ShardAccess {
+    role: 'ruler' | 'minister';
+    seatId?: string;
+}
+
+/**
+ * Plots (lib/government/plots.ts) are the one thing in a faction's own shard
+ * its ruler must not read: a plotter's books are the plotter's. The ruler
+ * gets none; a seated minister gets their own plot and the invitations
+ * addressed to them, nothing of anyone else's.
+ */
+export function scrubForRole(shard: any, access?: ShardAccess): any {
+    if (!shard || typeof shard !== 'object') return shard;
+    if (!Array.isArray(shard.plots) && !shard.seatNotes) return shard;
+    const out = { ...shard };
+    if (!access || access.role === 'ruler' || !access.seatId) {
+        delete out.plots;
+        delete out.seatNotes;
+        return out;
+    }
+    const me = `seat-${access.seatId}`;
+    // The worker's private word to THIS seat only.
+    out.seatNotes = shard.seatNotes?.[access.seatId] ? { [access.seatId]: shard.seatNotes[access.seatId] } : {};
+    if (!Array.isArray(shard.plots)) return out;
+    out.plots = shard.plots
+        .filter((p: any) => p?.plotterSeatId === access.seatId || p?.recruits?.[me] === 'invited')
+        .map((p: any) => p.plotterSeatId === access.seatId
+            ? p
+            // An invitation: who asks and what for, none of their books.
+            : { id: p.id, factionId: p.factionId, plotterSeatId: '', plotterLeaderId: p.plotterLeaderId, kind: p.kind, openedAtSeconds: p.openedAtSeconds, recruits: { [me]: 'invited' }, lastSoundOutSeconds: 0, warnings: [], status: p.status });
+    return out;
 }
 
 /**

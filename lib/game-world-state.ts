@@ -24,6 +24,7 @@ import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
 import type { AdvisorRecord } from './delegation/advisor-proposals';
+import type { Plot, SeatNote } from './government/plot-view';
 import type { EmpireMessageView } from './messages/message-rules';
 import type { ComebackRecord } from './comeback/comeback-service';
 import type { GoalState } from './goals/first-week-goals';
@@ -244,6 +245,15 @@ export interface GameWorldState {
      * like `delegation`; never the shared snapshot.
      */
     advisors?: Map<string, AdvisorRecord>;
+
+    /**
+     * Ministers' plots against their rulers (lib/government/plots.ts), keyed
+     * by plot id. Ride the faction shard; the sync route hands each plotter
+     * their own and the ruler none (lib/persistence/shard-privacy.ts).
+     */
+    plots?: Map<string, Plot>;
+    /** The worker's last private word to each seat (plots.ts noteSeat), keyed by seat id. */
+    seatNotes?: Map<string, SeatNote>;
 
     /**
      * Each human faction's place in the first-week goals

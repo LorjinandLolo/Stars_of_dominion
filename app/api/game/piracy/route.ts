@@ -11,8 +11,8 @@
 // and the caller's own faction claim. See docs/pirate-system/systems.md §8.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { prisma } from '@/lib/db';
-import { auth } from '@/lib/auth';
 import { applyPiracySnapshot, deserializeWorld } from '@/lib/persistence/save-service';
 import { buildPirateDashboard, buildPirateView } from '@/lib/piracy/pirate-view';
 
@@ -59,13 +59,12 @@ export async function GET(req: NextRequest) {
     try {
         // Identity comes from the session cookie, never from a query parameter —
         // otherwise this endpoint would be the leak it exists to close.
-        const session = await auth.api.getSession({ headers: req.headers });
-        const userId = session?.user?.id;
-        if (!userId) {
+        // …and a seated minister speaks for their court (lib/multiplayer/caller-faction.ts).
+        const caller = await resolveCallerFaction(req);
+        if (!caller.userId) {
             return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
         }
-
-        const profile = await prisma.playerProfile.findUnique({ where: { userId } });
+        const profile = caller.factionId ? { factionId: caller.factionId } : null;
         if (!profile?.factionId) {
             return NextResponse.json({ error: 'No faction claimed.' }, { status: 403 });
         }

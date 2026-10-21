@@ -1168,6 +1168,16 @@ export function useGameSync() {
                 if (!world.advisors) world.advisors = new Map();
                 world.advisors.set(mappedShard.factionId, mappedShard.advisors);
             }
+            // A seated minister's own plot and invitations (lib/government/plots.ts);
+            // the server already dropped everyone else's.
+            if (Array.isArray(mappedShard.plots)) {
+                if (!world.plots) world.plots = new Map();
+                for (const plot of mappedShard.plots) if (plot?.id) world.plots.set(plot.id, plot);
+            }
+            if (mappedShard.seatNotes && typeof mappedShard.seatNotes === 'object') {
+                if (!world.seatNotes) world.seatNotes = new Map();
+                for (const [seatId, note] of Object.entries(mappedShard.seatNotes)) if (note) world.seatNotes.set(seatId, note as any);
+            }
             if (mappedShard.firstWeekGoals) {
                 if (!world.firstWeekGoals) world.firstWeekGoals = new Map();
                 world.firstWeekGoals.set(mappedShard.factionId, mappedShard.firstWeekGoals);

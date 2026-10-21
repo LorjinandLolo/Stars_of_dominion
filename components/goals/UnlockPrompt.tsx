@@ -28,10 +28,13 @@ export default function UnlockPrompt() {
     const uiPrefs = useUIStore(s => s.uiPrefs);
     const delegation = useUIStore(s => s.delegation);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    // A seated minister (lib/government/seat-scope.ts) is in someone else's
+    // court: delegation is the ruler's to take back, so nothing is asked.
+    const ministerSeat = useUIStore(s => s.ministerSeat);
     const [asking, setAsking] = React.useState<DockUnlock | null>(null);
 
     React.useEffect(() => {
-        if (!uiPrefs || uiPrefs.legacy || !playerFactionId) return;
+        if (!uiPrefs || uiPrefs.legacy || !playerFactionId || ministerSeat) return;
         const rule = unlockForTab(activeTab);
         if (!rule || uiPrefs.opened.includes(rule.id)) return;
 
@@ -42,7 +45,7 @@ export default function UnlockPrompt() {
             ? ({ ...defaultDelegation(), ...(delegation ?? {}) })[rule.delegates]
             : false;
         if (delegated) setAsking(rule);
-    }, [activeTab, uiPrefs, delegation, playerFactionId]);
+    }, [activeTab, uiPrefs, delegation, playerFactionId, ministerSeat]);
 
     if (!asking || !asking.delegates) return null;
     const advisors = DELEGATION_LABELS[asking.delegates];

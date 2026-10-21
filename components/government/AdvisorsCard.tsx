@@ -18,6 +18,8 @@ import { DELEGATED_SYSTEMS, DELEGATION_LABELS, defaultDelegation, type Delegated
 export default function AdvisorsCard() {
     const delegation = useUIStore(s => s.delegation);
     const playerFactionId = useUIStore(s => s.playerFactionId);
+    // Delegation is the ruler's to set; a seated minister sees no switches.
+    const ministerSeat = useUIStore(s => s.ministerSeat);
     // No record means nothing has been taken back yet.
     const state = { ...defaultDelegation(), ...(delegation ?? {}) };
 
@@ -40,6 +42,7 @@ export default function AdvisorsCard() {
     };
 
     const delegatedCount = DELEGATED_SYSTEMS.filter(s => valueFor(s)).length;
+    if (ministerSeat) return null;
 
     const advisorStanding = useUIStore(s => s.advisorStanding);
     const [revoked, setRevoked] = React.useState<string[]>([]);
