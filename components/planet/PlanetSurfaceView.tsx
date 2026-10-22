@@ -13,7 +13,7 @@ import { computeSectorOccupancy, type SectorOccupant } from '@/lib/planet-surfac
 import { SURFACE_WEDGES } from '@/lib/planet-surface/types';
 import { BUILDINGS } from '@/data/buildings';
 import { computeSurfaceGeometry, computeCoastlines, glyphSizeForArea, pointInPolygon, BOARD_SIZE, CX, CY, PLANET_RADIUS } from './surfaceGeometry';
-import { TERRAIN_META, ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
+import { TERRAIN_META, ARCHETYPE_CORE, ARCHETYPE_LABEL, climateOf, terrainColor } from './terrainMeta';
 import SectorInspector from './SectorInspector';
 import DistrictScenery from './DistrictScenery';
 import BuildingMotif from './BuildingMotif';
@@ -436,7 +436,7 @@ export default function PlanetSurfaceView() {
                                 <g key={sec.index}>
                                     <path
                                         d={geo.paths[sec.index]}
-                                        fill={meta.color}
+                                        fill={terrainColor(sec.terrain, climateOf(surface.archetype))}
                                         fillOpacity={dimmed ? 0.1 : isSelected ? 0.62 : isHovered ? 0.52 : 0.42}
                                         stroke={isSelected ? '#ffffff' : region?.color ?? '#0f172a'}
                                         strokeOpacity={isSelected ? 0.95 : dimmed ? 0.08 : 0.32}
@@ -447,6 +447,7 @@ export default function PlanetSurfaceView() {
                                     />
                                     <DistrictScenery
                                         terrain={sec.terrain}
+                                        climate={climateOf(surface.archetype)}
                                         polygon={geo.polygons[sec.index]}
                                         seedKey={`${surface.planetId}:${sec.index}`}
                                         scale={Math.sqrt(geo.areas[sec.index])}

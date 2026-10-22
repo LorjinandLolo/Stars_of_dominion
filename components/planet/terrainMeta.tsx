@@ -28,6 +28,35 @@ export const TERRAIN_META: Record<TerrainType, TerrainMeta> = {
     ruins:     { label: 'Ancient Ruins', color: '#facc15', icon: <Landmark size={16} />, blurb: 'Remnants of a precursor civilization. Research treasure; superstition for the locals.' },
 };
 
+/**
+ * The world's climate, for drawing. A plain on an ice world is tundra and on
+ * a volcanic world is ash: same terrain for the rules, different ground to
+ * look at. Only the living terrains change; ice, rock, sea and city do not.
+ */
+export type Climate = 'temperate' | 'cold' | 'scorched' | 'poisoned' | 'dry';
+
+export function climateOf(archetype: PlanetArchetype): Climate {
+    switch (archetype) {
+        case 'frozen': return 'cold';
+        case 'volcanic': return 'scorched';
+        case 'toxic': return 'poisoned';
+        case 'arid': return 'dry';
+        default: return 'temperate';
+    }
+}
+
+const CLIMATE_COLOR: Record<Exclude<Climate, 'temperate'>, Partial<Record<TerrainType, string>>> = {
+    cold:     { plains: '#8fa39b', forest: '#4f7a6a', jungle: '#567a68', desert: '#a8a29e' },
+    scorched: { plains: '#6b5b55', forest: '#57473c', jungle: '#5c4b3d', desert: '#8a4b2e' },
+    poisoned: { plains: '#8a9a44', forest: '#6b7a2f', jungle: '#5f7a34', desert: '#a39248' },
+    dry:      { plains: '#b5a35c', forest: '#7b8a45', jungle: '#6f8a4a' },
+};
+
+/** Fill colour for a district: the terrain's own, shifted by the world's climate. */
+export function terrainColor(terrain: TerrainType, climate: Climate): string {
+    return (climate !== 'temperate' && CLIMATE_COLOR[climate][terrain]) || TERRAIN_META[terrain].color;
+}
+
 /** Radial-gradient stops for the central planet-core emblem. */
 export const ARCHETYPE_CORE: Record<PlanetArchetype, [string, string]> = {
     continental: ['#166534', '#0c4a6e'],

@@ -10,6 +10,21 @@ import React from 'react';
 import type { TerrainType } from '@/lib/planet-surface/types';
 import { pointInPolygon, type Pt } from './surfaceGeometry';
 import { isoBox, isoShades } from './iso';
+import type { Climate } from './terrainMeta';
+
+/**
+ * Scenery colours per climate for the living terrains (plains, forest,
+ * jungle). Temperate is the original look; a cold world grows tundra and
+ * snow-dusted pines, a scorched one ash and burnt trunks, a poisoned one
+ * sickly growth, a dry one steppe.
+ */
+const SCENE: Record<Climate, { grass: string; shrub: string; hill: string; tree: [string, string]; treeDark: [string, string]; canopy: [string, string, string]; snow: boolean; dead: boolean; roof: [string, string] }> = {
+    temperate: { grass: '#65a30d', shrub: '#3f6212', hill: '#4d7c0f', tree: ['#166534', '#15803d'], treeDark: ['#14532d', '#166534'], canopy: ['#065f46', '#047857', '#059669'], snow: false, dead: false, roof: ['#a16207', '#78350f'] },
+    cold:      { grass: '#cbd5e1', shrub: '#64748b', hill: '#94a3b8', tree: ['#2f5d50', '#3b6d5f'], treeDark: ['#264d42', '#2f5d50'], canopy: ['#33584b', '#3e6658', '#4a7465'], snow: true, dead: false, roof: ['#78716c', '#e2e8f0'] },
+    scorched:  { grass: '#57534e', shrub: '#292524', hill: '#44403c', tree: ['#3f3a36', '#4a443f'], treeDark: ['#292524', '#3f3a36'], canopy: ['#3f3a36', '#4a443f', '#57534e'], snow: false, dead: true, roof: ['#57534e', '#292524'] },
+    poisoned:  { grass: '#a3b33a', shrub: '#5b6b1f', hill: '#7a8a2f', tree: ['#56661f', '#6b7a2f'], treeDark: ['#45521a', '#56661f'], canopy: ['#4d6620', '#5f7a28', '#86a32f'], snow: false, dead: false, roof: ['#78716c', '#44403c'] },
+    dry:       { grass: '#a16207', shrub: '#713f12', hill: '#a16207', tree: ['#4d6b2a', '#5f7f33'], treeDark: ['#3f5a22', '#4d6b2a'], canopy: ['#3f6b2a', '#4d7c33', '#65a30d'], snow: false, dead: false, roof: ['#a16207', '#78350f'] },
+};
 
 // ─── Seeded scatter ──────────────────────────────────────────────────────────
 
@@ -105,6 +120,8 @@ interface SceneryProps {
     dimmed: boolean;
     /** Radial band 0 (core) .. 7 (frontier) — urban density tier derives from it. */
     ring?: number;
+    /** The world's climate: what plains, forest and jungle look like here. */
+    climate?: Climate;
     /** True inside the capital region — grants the grand civic landmark. */
     capital?: boolean;
     /**
@@ -125,17 +142,31 @@ interface SceneryProps {
     roadBearing?: number | null;
 }
 
-function Tree({ x, y, s, dark }: { x: number; y: number; s: number; dark: boolean }) {
+function Tree({ x, y, s, dark, climate = 'temperate' }: { x: number; y: number; s: number; dark: boolean; climate?: Climate }) {
+    const c = SCENE[climate];
+    const [a, b] = dark ? c.treeDark : c.tree;
+    if (c.dead) {
+        // Burnt standing trunks: a spar and two broken limbs.
+        return (
+            <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`} stroke={a} strokeLinecap="round">
+                <line x1={0} y1={s * 0.3} x2={0} y2={-s * 0.85} strokeWidth={s * 0.12} />
+                <line x1={0} y1={-s * 0.35} x2={s * 0.3} y2={-s * 0.6} strokeWidth={s * 0.07} />
+                <line x1={0} y1={-s * 0.15} x2={-s * 0.28} y2={-s * 0.4} strokeWidth={s * 0.07} />
+            </g>
+        );
+    }
     return (
         <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
             <rect x={-s * 0.07} y={0} width={s * 0.14} height={s * 0.3} fill="#5b3a1e" />
-            <path d={`M 0 ${-s} L ${s * 0.5} ${s * 0.05} L ${-s * 0.5} ${s * 0.05} Z`} fill={dark ? '#14532d' : '#166534'} />
-            <path d={`M 0 ${-s * 0.6} L ${s * 0.4} ${s * 0.25} L ${-s * 0.4} ${s * 0.25} Z`} fill={dark ? '#166534' : '#15803d'} />
+            <path d={`M 0 ${-s} L ${s * 0.5} ${s * 0.05} L ${-s * 0.5} ${s * 0.05} Z`} fill={a} />
+            <path d={`M 0 ${-s * 0.6} L ${s * 0.4} ${s * 0.25} L ${-s * 0.4} ${s * 0.25} Z`} fill={b} />
+            {c.snow && <path d={`M 0 ${-s} L ${s * 0.2} ${-s * 0.55} L ${-s * 0.2} ${-s * 0.55} Z`} fill="#f1f5f9" opacity={0.9} />}
         </g>
     );
 }
 
-export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes }: SceneryProps) {
+export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate' }: SceneryProps) {
+    const sc = SCENE[climate];
     const rand = React.useMemo(() => mulberry32(hash(seedKey)), [seedKey]);
     const s = Math.max(4, scale * 0.16); // motif unit size
     /** Cleared corridor width either side of a route's centreline. */
@@ -148,7 +179,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 // Dense clusters with size variance — old growth beside saplings.
                 const pts = scatter(polygon, 10, r, 0.82, keepOut, s * 0.9, routes, clearance);
                 return pts.map((p, i) => (
-                    <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} />
+                    <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} climate={climate} />
                 ));
             }
             case 'jungle': {
@@ -157,8 +188,8 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                     <>
                         {pts.map((p, i) => (
                             <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
-                                <circle r={s * 0.5} fill={i % 2 ? '#065f46' : '#047857'} />
-                                <circle r={s * 0.3} cx={s * 0.25} cy={-s * 0.2} fill="#059669" />
+                                <circle r={s * 0.5} fill={i % 2 ? sc.canopy[0] : sc.canopy[1]} />
+                                <circle r={s * 0.3} cx={s * 0.25} cy={-s * 0.2} fill={sc.canopy[2]} />
                             </g>
                         ))}
                         {/* river thread */}
@@ -182,7 +213,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                             return (
                                 <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
                                     <path d={`M ${-h * 0.85} ${h * 0.45} L 0 ${-h} L ${h * 0.85} ${h * 0.45} Z`} fill={i % 2 ? '#78716c' : '#6b6560'} />
-                                    <path d={`M ${-h * 0.26} ${-h * 0.2} L 0 ${-h} L ${h * 0.26} ${-h * 0.2} L 0 ${-h * 0.42} Z`} fill="#e7e5e4" />
+                                    <path d={`M ${-h * 0.26} ${-h * 0.2} L 0 ${-h} L ${h * 0.26} ${-h * 0.2} L 0 ${-h * 0.42} Z`} fill={climate === 'scorched' ? '#292524' : climate === 'poisoned' ? '#a3b33a' : '#e7e5e4'} />
                                 </g>
                             );
                         })}
@@ -208,8 +239,8 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                                 // scattered farmstead / village
                                 return (
                                     <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
-                                        <rect x={-s * 0.35} y={-s * 0.25} width={s * 0.7} height={s * 0.5} fill="#a16207" />
-                                        <path d={`M ${-s * 0.45} ${-s * 0.25} L 0 ${-s * 0.6} L ${s * 0.45} ${-s * 0.25} Z`} fill="#78350f" />
+                                        <rect x={-s * 0.35} y={-s * 0.25} width={s * 0.7} height={s * 0.5} fill={sc.roof[0]} />
+                                        <path d={`M ${-s * 0.45} ${-s * 0.25} L 0 ${-s * 0.6} L ${s * 0.45} ${-s * 0.25} Z`} fill={sc.roof[1]} />
                                     </g>
                                 );
                             }
@@ -217,14 +248,22 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                                 // rolling hill contour
                                 return (
                                     <path key={i} d={`M ${p[0] - s * 1.2} ${p[1]} q ${s * 1.2} ${-s * 0.55} ${s * 2.4} 0`}
-                                        fill="none" stroke="#4d7c0f" strokeWidth={s * 0.12} opacity={0.5} />
+                                        fill="none" stroke={sc.hill} strokeWidth={s * 0.12} opacity={0.5} />
                                 );
                             }
-                            // grass tufts / shrubs
+                            // Scorched ground: a glowing crack in the ash instead of grass.
+                            if (sc.dead && i % 4 === 2) {
+                                return (
+                                    <path key={i} d={`M ${p[0] - s * 0.6} ${p[1]} l ${s * 0.35} ${-s * 0.2} l ${s * 0.3} ${s * 0.25} l ${s * 0.4} ${-s * 0.15}`}
+                                        fill="none" stroke="#f97316" strokeWidth={s * 0.1} opacity={0.75} strokeLinecap="round" />
+                                );
+                            }
+                            // grass tufts / shrubs (tundra moss and snow patches when cold)
                             return (
                                 <g key={i}>
-                                    <path d={`M ${p[0].toFixed(1)} ${p[1].toFixed(1)} q ${s * 0.3} ${-s * 0.5} ${s * 0.6} 0`} fill="none" stroke="#65a30d" strokeWidth={s * 0.16} opacity={0.8} />
-                                    <circle cx={p[0] + s * 0.75} cy={p[1] - s * 0.1} r={s * 0.14} fill="#3f6212" opacity={0.8} />
+                                    <path d={`M ${p[0].toFixed(1)} ${p[1].toFixed(1)} q ${s * 0.3} ${-s * 0.5} ${s * 0.6} 0`} fill="none" stroke={sc.grass} strokeWidth={s * 0.16} opacity={0.8} />
+                                    <circle cx={p[0] + s * 0.75} cy={p[1] - s * 0.1} r={s * 0.14} fill={sc.shrub} opacity={0.8} />
+                                    {sc.snow && <ellipse cx={p[0] - s * 0.3} cy={p[1] + s * 0.3} rx={s * 0.4} ry={s * 0.16} fill="#f1f5f9" opacity={0.7} />}
                                 </g>
                             );
                         })}
@@ -240,8 +279,9 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                                 // oasis
                                 return (
                                     <g key={i}>
-                                        <ellipse cx={p[0]} cy={p[1]} rx={s * 0.6} ry={s * 0.35} fill="#0891b2" opacity={0.8} />
-                                        <circle cx={p[0] + s * 0.5} cy={p[1] - s * 0.35} r={s * 0.25} fill="#15803d" />
+                                        {/* an oasis — or, on a scorched world, a lava pool */}
+                                        <ellipse cx={p[0]} cy={p[1]} rx={s * 0.6} ry={s * 0.35} fill={climate === 'scorched' ? '#ea580c' : climate === 'poisoned' ? '#84cc16' : '#0891b2'} opacity={0.8} />
+                                        {climate !== 'scorched' && <circle cx={p[0] + s * 0.5} cy={p[1] - s * 0.35} r={s * 0.25} fill={climate === 'poisoned' ? '#5b6b1f' : '#15803d'} />}
                                     </g>
                                 );
                             }
@@ -504,7 +544,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             default:
                 return null;
         }
-    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance]);
+    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate]);
 
     if (!content) return null;
     return <g pointerEvents="none" opacity={dimmed ? 0.12 : 0.9}>{content}</g>;
