@@ -557,12 +557,10 @@ export default function PlanetSurfaceView() {
 
                         {/* Rivers: from the high ground down to the sea (carveFeatures) */}
                         <g pointerEvents="none">
-                            {surface.sectors.filter(sec => sec.river).flatMap(sec => {
+                            {surface.sectors.filter(sec => sec.riverTo !== undefined).flatMap(sec => {
                                 const [ax, ay] = geo.centroids[sec.index];
                                 const dimmed = hoverRegion !== null && sec.regionId !== hoverRegion;
-                                return sec.neighbors
-                                    .filter(n => (surface.sectors[n].river && n > sec.index) || surface.sectors[n].terrain === 'ocean')
-                                    .slice(0, 3)
+                                return (sec.riverTo === undefined ? [] : [sec.riverTo])
                                     .map(n => {
                                         const [bx, by] = geo.centroids[n];
                                         const mouth = surface.sectors[n].terrain === 'ocean';

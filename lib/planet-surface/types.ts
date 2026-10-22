@@ -103,6 +103,8 @@ export interface SurfaceSector {
      * fresh water for the people, and a line for a defender to hold.
      */
     river?: boolean;
+    /** Where water flows on to from here (a river district or the sea): set on river districts and on the mountain spring a river rises in. */
+    riverTo?: number;
     /** What is in the ground here, if anything worth digging for. */
     deposit?: DepositKind;
 }

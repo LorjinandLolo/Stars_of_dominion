@@ -656,7 +656,8 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         habitability: Math.min(100, TERRAIN_HABITABILITY[terrain[i]] + (features.river.has(i) ? 10 : 0)),
         chokepoint: isChokepoint(i),
         neighbors: neighbors[i],
-        ...(features.river.has(i) ? { river: true } : {}),
+        ...(features.river.has(i) ? { river: true, ...(features.river.get(i)! >= 0 ? { riverTo: features.river.get(i)! } : {}) } : {}),
+        ...(features.springs.has(i) ? { riverTo: features.springs.get(i)! } : {}),
         ...(features.deposit.has(i) ? { deposit: features.deposit.get(i)! } : {}),
     }));
 
@@ -689,9 +690,12 @@ const DEPOSIT_RULES: Array<{ kind: DepositKind; tag?: string; terrain: TerrainTy
     { kind: 'relic', tag: 'relic_site', terrain: ['ruins', 'desert', 'plains', 'mountains'], count: [1, 1] },
 ];
 
-function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], tags: string[]): { river: Set<number>; deposit: Map<number, DepositKind> } {
+function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], tags: string[]): { river: Map<number, number>; springs: Map<number, number>; deposit: Map<number, DepositKind> } {
     const rand = mulberry32(hashString(planetId + ':features'));
-    const river = new Set<number>();
+    // River district -> the district its water flows on into (-1: it ends there).
+    const river = new Map<number, number>();
+    // Mountain springs: drawn, but a mountain is not a river district.
+    const springs = new Map<number, number>();
     const deposit = new Map<number, DepositKind>();
     const n = terrain.length;
 
@@ -706,14 +710,19 @@ function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: Te
     for (let r = 0; r < wanted && sources.length; r++) {
         const src = sources.splice(Math.floor(rand() * sources.length), 1)[0];
         let cur = src;
+        let last = -1; // the river district water is flowing out of
         const seen = new Set<number>([src]);
         for (let step = 0; step < 12; step++) {
             const next = neighbors[cur].filter(j => !seen.has(j) && terrain[j] !== 'mountains' && terrain[j] !== 'volcanic')
                 .sort((a, b) => height(a) - height(b))[0];
             if (next === undefined) break;
-            if (terrain[next] === 'ocean') break;
+            // Into the sea, or into an older river as a tributary: done.
+            if (terrain[next] === 'ocean' || river.has(next)) { if (last >= 0) river.set(last, next); break; }
+            if (last >= 0) river.set(last, next);
+            else springs.set(src, next); // the spring in the high ground
+            river.set(next, -1);
             seen.add(next);
-            river.add(next);
+            last = next;
             cur = next;
         }
     }
@@ -730,7 +739,7 @@ function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: Te
             deposit.set(pool.splice(Math.floor(rand() * pool.length), 1)[0], rule.kind);
         }
     }
-    return { river, deposit };
+    return { river, springs, deposit };
 }
 
 // ─── Legacy building auto-placement ─────────────────────────────────────────
