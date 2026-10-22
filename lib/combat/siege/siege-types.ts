@@ -144,6 +144,12 @@ export interface DistrictWarState {
     /** Consecutive cycles the invader has held the capital district (CAPITAL_FALL_CYCLES ends the war). */
     capitalHeldCycles?: number;
     /**
+     * Defender supply sources (the capital core, manned strongpoints) by
+     * consecutive cycles fully ringed by the invader. At
+     * ENCIRCLE_STARVE_CYCLES a source stops feeding anyone (updateSupply).
+     */
+    sourceEncircled?: Record<number, number>;
+    /**
      * The defender has given no orders yet: the worker runs the default
      * defence doctrine (defence-doctrine.ts) every cycle. Cleared by the
      * defending player's first formation or plan order.

@@ -89,6 +89,7 @@ export const BLOODMOON_FORBIDDEN_ACTIONS: Record<string, string> = {
     MIL_TACTICAL_ENGAGE: 'force an engagement',
     MIL_INVASION_PLANET: 'launch an invasion',
     MIL_COMMANDO_RAID: 'send in a raid',
+    MIL_AIR_DROP: 'drop paratroopers',
     MIL_BOMBARD_PLANET: 'bombard a world',
     AIR_LAUNCH_SORTIE: 'fly a sortie',
     POW_DISPOSE: 'dispose of prisoners',

@@ -130,8 +130,16 @@ test('no clock: while both sides pay their upkeep, the battle grinds on', () => 
     rich(A); rich(B);
     // The holder has warships overhead too: the sky is contested, nobody is blockaded.
     world.movement.fleets.set('fleet-a-cover', { id: 'fleet-a-cover', factionId: A, name: 'Cover', currentSystemId: sys, destinationSystemId: null, composition: { cruiser: 4 }, basePower: 200, strength: 1, transportedArmyIds: [] });
+    // Even numbers: no clock does not mean no winner — 2500 against 1200 on
+    // open ground is decided on merit — so the quagmire is two equal armies.
+    const total = (side: string) => siege.districts.formations.filter((f: any) => f.side === side).reduce((s: number, f: any) => s + f.strength, 0);
+    const lift = total('attacker') / Math.max(1, total('defender'));
+    for (const f of siege.districts.formations) if (f.side === 'defender') { f.strength = Math.round(f.strength * lift); f.maxStrength = Math.max(f.maxStrength ?? 0, f.strength); }
     const before = world.economy.factions.get(B).reserves.CREDITS;
-    for (let i = 0; i < 60 && ground.siege; i++) step();
+    // Days into the battle, far past the two-hour clock it used to have:
+    // nothing but a side with nobody left ends it.
+    siege.cycleCount += 500;
+    for (let i = 0; i < 10 && ground.siege; i++) step();
     assert.ok(ground.siege, `still fighting after ${siege.cycleCount} cycles (winner ${siege.winner === A ? 'holder' : 'attacker'}, fed A ${siege.defenderState.contestFed} B ${siege.attackerState.contestFed}, log: ${siege.battleLog.slice(-4).map((l: any) => l.message).join(' / ').slice(0, 500)})`);
     assert.ok(world.economy.factions.get(B).reserves.CREDITS < before, 'upkeep was paid');
     assert.ok(siege.attackerState.contestFed !== false && siege.defenderState.contestFed !== false, 'both sides fed');

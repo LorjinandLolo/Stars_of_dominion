@@ -166,7 +166,8 @@ test('a contested sky: both sides can land, and both lose men to the other\'s sh
 });
 
 test('a contested sky: half supply for both, settling at half, no starving', () => {
-    const surface: any = { sectors: [{ index: 0, terrain: 'plains', ring: 0, neighbors: [1] }, { index: 1, terrain: 'plains', ring: 1, neighbors: [0] }] };
+    // District 2 is the defender's open corridor: a ringed source would starve (ENCIRCLE_STARVE_CYCLES).
+    const surface: any = { sectors: [{ index: 0, terrain: 'plains', ring: 0, neighbors: [1, 2] }, { index: 1, terrain: 'plains', ring: 1, neighbors: [0] }, { index: 2, terrain: 'plains', ring: 1, neighbors: [0] }] };
     const war: any = { control: { 1: 'attacker' }, landingZones: [1] };
     const fs: any[] = [
         { id: 'a', side: 'attacker', unitType: 'INFANTRY', strength: 100, maxStrength: 100, sectorIndex: 1, supply: 100 },

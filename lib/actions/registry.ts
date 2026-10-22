@@ -67,6 +67,13 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", target: "string" },
     cost: {}
   },
+  MIL_AIR_DROP: {
+    id: "MIL_AIR_DROP",
+    category: "military",
+    // Airborne / Special Ops aboard drop onto any district of our siege (lib/combat/siege/air-drop.ts).
+    params: { fleetId: "id", planetId: "id", sectorIndex: "number" },
+    cost: {}
+  },
   MIL_COMMANDO_RAID: {
     id: "MIL_COMMANDO_RAID",
     category: "military",

@@ -591,7 +591,10 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             'An invader who loses the orbit is cut off: after 3 cycles their beachhead starts to starve, and after 6 their formations surrender.',
                             'A relief fleet that drives the invader\'s fleet away wins the orbit back; transports waiting nearby can then land fresh troops, who muster at the barracks.',
-                            'Troops can never enter some terrain (infantry and armour cannot cross mountains), so a strongpoint in the mountains can only be worn down from orbit.',
+                            'Troops can never enter some terrain (infantry and armour cannot cross mountains), so a strongpoint in the mountains can only be worn down from orbit, surrounded, or taken by air.',
+                            'The capital district is always a city (or an outpost\'s dome), so every world can be taken on foot.',
+                            'Surround it: a capital or strongpoint whose every neighbouring district you have held for 3 cycles is cut off. Nothing reaches it, and its garrison starves like any cut-off formation.',
+                            'Air drop: Airborne and Special Ops aboard a fleet over your siege can drop onto any district behind the line (DROP buttons in the war bar): the shield generator, the gun platform, the barracks, the capital. They fight the moment they land; hold a shield or fortress for 2 cycles and the sappers bring it down. Flak from the guns below takes its share, and nothing drops while the enemy holds the sky.',
                             'A contested sky (warships of both sides overhead) is not a blockade. Both sides can land troops, and both lose a tenth of them to the other\'s ships on the way down. Both sides get half their supply: men settle at half supply but do not starve.',
                         ],
                     },

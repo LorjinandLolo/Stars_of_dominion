@@ -263,7 +263,7 @@ function terrainQuotas(rand: () => number, archetype: PlanetArchetype, landBias:
  */
 const CLAIM_ORDER: TerrainType[] = ['mountains', 'volcanic', 'frozen', 'desert', 'jungle', 'forest', 'toxic', 'ruins', 'urban'];
 
-function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean): TerrainType[] {
+function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean, founded = false): TerrainType[] {
     const noiseSeed = Math.floor(rand() * 0xffffffff);
     const ox = rand() * 50, oy = rand() * 50;
     const tilt = (rand() - 0.5) * 0.7; // radians: the poles are roughly north and south
@@ -364,6 +364,13 @@ function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: 
         for (let i = 0; i < out.length; i++) {
             if (out[i] === 'urban') out[i] = archetype === 'arcology' ? 'ruins' : 'plains';
         }
+        // District 0 is where a world is won (CAPITAL_SECTOR): an outpost's
+        // dome stands there, and a world with no one on it is still landed on
+        // there. It is never a mountain wall or open sea, which no infantry
+        // could ever enter and which made an outpost on a dead world (or an
+        // empty one) impossible to take by force.
+        if (founded) out[0] = 'urban';
+        else if (out[0] === 'mountains' || out[0] === 'ocean') out[0] = 'plains';
         return out;
     }
 
@@ -615,7 +622,10 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
     // never be) — its surface must read as wilderness, not as a city that
     // predates its own founding.
     const settled = !(tags?.includes('colonizable') || tags?.includes('dead_matter'));
-    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled);
+    // An outpost (or a colony on dead rock) has a settlement on an otherwise
+    // unsettled surface: its dome is the capital district.
+    const founded = !!(tags?.includes('outpost') || tags?.includes('colony'));
+    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled, founded);
     const { regions, regionOf } = generateRegions(rand, terrain, seeds, settled);
 
     const rough = (t: TerrainType) => t === 'mountains' || t === 'volcanic' || t === 'ocean';

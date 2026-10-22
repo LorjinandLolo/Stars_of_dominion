@@ -410,6 +410,33 @@ export interface SupplyOptions {
 /** Where an in-supply formation's supply settles on half supply. */
 export const HALF_SUPPLY_LEVEL = 50;
 
+/**
+ * Cycles a defender supply source (the capital core, a manned strongpoint)
+ * can be completely ringed by the invader before it stops feeding anyone.
+ * A mountain fortress is not taken by storm; it is surrounded and starved.
+ */
+export const ENCIRCLE_STARVE_CYCLES = 3;
+
+/**
+ * The defender's sources that are still open: a source whose every passable
+ * neighbour the invader has held for ENCIRCLE_STARVE_CYCLES cycles is cut
+ * off. Counts on war.sourceEncircled; call once per cycle.
+ */
+export function openDefenderSources(surface: PlanetSurface, war: DistrictWarState, sources: number[]): number[] {
+    const adjacency = buildAdjacency(surface);
+    const before = war.sourceEncircled ?? {};
+    const counts: Record<number, number> = {};
+    const open: number[] = [];
+    for (const i of sources) {
+        const around = adjacency[i].filter(n => isPassable(surface.sectors[n]));
+        const ringed = around.length > 0 && around.every(n => controllerOf(war, n) === 'attacker');
+        if (ringed) counts[i] = (before[i] ?? 0) + 1;
+        if (!ringed || counts[i] < ENCIRCLE_STARVE_CYCLES) open.push(i);
+    }
+    war.sourceEncircled = counts;
+    return open;
+}
+
 export interface SupplyResult {
     log: string[];
     /** Men who starved into surrender this cycle, by side and type. Prisoners to the last man. */
@@ -429,12 +456,17 @@ export function updateSupply(
     const log: string[] = [];
     const surrendered: SupplyResult['surrendered'] = { attacker: {}, defender: {} };
 
+    // Ringed sources starve (openDefenderSources): counted once per call.
+    const defenderSources = openDefenderSources(surface, war, (options.defenderSources
+        ?? surface.sectors.filter(s => isPassable(s) && controllerOf(war, s.index) === 'defender' && s.ring <= 1).map(s => s.index))
+        .filter(i => isPassable(surface.sectors[i]) && controllerOf(war, i) === 'defender'));
+    const cutOffSources = Object.entries(war.sourceEncircled ?? {}).filter(([, n]) => n === ENCIRCLE_STARVE_CYCLES).map(([i]) => Number(i));
+    if (cutOffSources.length) log.push(`Surrounded, district${cutOffSources.length > 1 ? 's' : ''} ${cutOffSources.join(', ')} can no longer be supplied.`);
+
     const reachable = (side: FormationSide): Set<number> => {
         const sources = side === 'attacker'
             ? (options.attackerBaseSupplied === false ? [] : war.landingZones.filter(i => controllerOf(war, i) === 'attacker'))
-            : (options.defenderSources
-                ?? surface.sectors.filter(s => isPassable(s) && controllerOf(war, s.index) === 'defender' && s.ring <= 1).map(s => s.index))
-                .filter(i => isPassable(surface.sectors[i]) && controllerOf(war, i) === 'defender');
+            : defenderSources;
         const seen = new Set<number>(sources);
         const queue = [...sources];
         while (queue.length) {

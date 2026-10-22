@@ -78,6 +78,7 @@ import { canCrossOrbit } from '@/lib/combat/siege/orbit-state';
 import { isOrbitSuppressed } from '@/lib/orbital/orbital-service';
 import { surfaceGuns } from '@/lib/combat/surface-guns';
 import { raidersOf, type RaidTarget } from '@/lib/combat/commando-raid';
+import { airDropForce, airDropMen, airDropTargets } from '@/lib/combat/siege/air-drop';
 import type { CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
 import combatConfig from '@/lib/combat/combat-config.json';
 import { fleetBuildQuote, hasPendingRecruits, hasQueuedFleetBuild, queueAIFleetBuild, queueAIFleetTopUp, yardCanLay } from '@/lib/ai/ai-fleet-orders';
@@ -1220,6 +1221,12 @@ export function aiFleetTactics(world: GameWorldState): FleetTactics {
                 if (target && tacticOrder(world, { factionId, actionId: 'MIL_COMMANDO_RAID', payload: { fleetId: f.id, planetId: planet.id, target }, reason: `raid ${target} on ${planet.id}` })) {
                     out.raids.push({ factionId, fleetId: f.id, planetId: planet.id, target });
                 }
+            } else if (siege?.districts?.formations && shieldHolds(siege) && !hasQueuedAIOrder(world, factionId, 'MIL_AIR_DROP', p => p.fleetId === f.id)) {
+                // The raiders are spent or recovering and the shield still
+                // holds over our siege: drop the paratroopers on it instead.
+                const force = (f.transportedArmyIds ?? []).reduce((n: number, id: string) => n + airDropMen(airDropForce(world.movement.armies?.get(id) as any)), 0);
+                const shield = force > 0 ? airDropTargets(generateSurface(planet.id, planet.planetType, planet.tags), siege.districts).find(p => p.kind === 'shield') : undefined;
+                if (shield) tacticOrder(world, { factionId, actionId: 'MIL_AIR_DROP', payload: { fleetId: f.id, planetId: planet.id, sectorIndex: shield.sectorIndex }, reason: `air drop on the shield of ${planet.id}` });
             }
 
             const lastBombard = (mission as any).lastBombardAt ?? -Infinity;

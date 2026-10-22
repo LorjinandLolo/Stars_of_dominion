@@ -14,6 +14,7 @@ import { controllerOf } from '@/lib/combat/siege/district-front';
 import { SIEGE_CYCLE_TICKS, TICK_REAL_SECONDS, cycleRealSeconds } from '@/lib/combat/siege/siege-pacing';
 import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
 import PrisonerPanel from './PrisonerPanel';
+import { airDropForce, airDropMen, airDropTargets, DROP_LABEL } from '@/lib/combat/siege/air-drop';
 
 const STANCES = [
     { id: 'AGGRESSIVE_ASSAULT', label: 'ASSAULT', icon: <Swords size={12} />, beats: 'HOLD', color: '#f87171' },
@@ -34,6 +35,8 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const factions = useUIStore(s => s.factions);
     const prisoners = useUIStore(s => s.prisoners);
+    const fleets = useUIStore(s => s.fleets);
+    const armies = useUIStore(s => s.armies);
     const [logOpen, setLogOpen] = React.useState(false);
     const [powOpen, setPowOpen] = React.useState(false);
 
@@ -260,6 +263,35 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
                     )}
                 </div>
             )}
+
+            {/* ── Air drop: Airborne / Special Ops onto any district (lib/combat/siege/air-drop.ts) ── */}
+            {isAttacker && war && (() => {
+                const overhead = ((fleets ?? []) as any[]).filter(f => f.factionId === playerFactionId && f.currentSystemId === planet.systemId && !f.destinationSystemId);
+                let dropFleet: any = null, men = 0;
+                for (const f of overhead) {
+                    const n = (f.transportedArmyIds ?? []).reduce((s: number, id: string) => s + airDropMen(airDropForce(((armies ?? []) as any[]).find(a => a.id === id))), 0);
+                    if (n > men) { men = n; dropFleet = f; }
+                }
+                const targets = dropFleet ? airDropTargets(surface, war).slice(0, 4) : [];
+                if (!targets.length) return null;
+                return (
+                    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-slate-900/80"
+                         title="Airborne and Special Ops drop straight onto a district behind the line. They fight the moment they land; hold a shield or fortress for two cycles and the sappers bring it down. Flak from the guns below takes its share.">
+                        <span className="text-[8px] font-display tracking-[0.18em] text-slate-500 uppercase flex items-center gap-1">
+                            <Wind size={10} /> Air drop · {men}
+                        </span>
+                        {targets.map(t => (
+                            <button
+                                key={t.sectorIndex}
+                                onClick={() => order('MIL_AIR_DROP', { fleetId: dropFleet.id, planetId: planet.id, sectorIndex: t.sectorIndex }, `Air drop on ${planet.name}`)}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300 text-[9px] font-display tracking-[0.12em] hover:bg-fuchsia-500/20 transition-colors"
+                            >
+                                DROP: {(DROP_LABEL[t.kind] ?? t.kind).toUpperCase()} · D{t.sectorIndex}
+                            </button>
+                        ))}
+                    </div>
+                );
+            })()}
 
             {/* ── Battle plans ─────────────────────────────────────────────
                 Draw a front to hold or an offensive to launch, let the troops

@@ -36,6 +36,7 @@ import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOut
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
 import { commandoRaid, RAID_TARGET_LABEL, type RaidTarget } from '../lib/combat/commando-raid';
+import { airDropForce, airDropMen, canDropOn } from '../lib/combat/siege/air-drop';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -1879,6 +1880,54 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!fleet.currentSystemId) {
                 console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
             }
+            break;
+        }
+
+        case 'MIL_AIR_DROP': {
+            // payload: { fleetId, planetId, sectorIndex } — lib/combat/siege/air-drop.ts.
+            // Airborne and Special Ops aboard a fleet over our own siege drop
+            // onto any district; everyone else stays aboard.
+            const planet: any = world.construction.planets.get(payload.planetId);
+            const fleet: any = world.movement.fleets.get(payload.fleetId);
+            const siege = planet?.siege;
+            const war = siege?.districts;
+            if (!planet || !fleet || fleet.factionId !== factionId) { recordOrderFailure(world, factionId, actionId, 'No such fleet under your command.'); break; }
+            if (!siege || siege.attackerEmpireId !== factionId || !war?.formations) { recordOrderFailure(world, factionId, actionId, `You are not invading ${planet.name}: land a beachhead first.`); break; }
+            if (!fleet.currentSystemId || fleet.destinationSystemId || fleet.currentSystemId !== planet.systemId) { recordOrderFailure(world, factionId, actionId, `${fleet.name ?? 'The fleet'} must be parked over ${planet.name}.`); break; }
+            if (!canCrossOrbit(siege.orbit, 'attacker')) { recordOrderFailure(world, factionId, actionId, `The enemy holds the orbit over ${planet.name}: nothing drops.`); break; }
+            const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+            const at = Number(payload.sectorIndex);
+            if (!Number.isInteger(at) || !canDropOn(surf, at)) { recordOrderFailure(world, factionId, actionId, 'Pick a land district to drop on.'); break; }
+            const drop: Record<string, number> = {};
+            for (const id of fleet.transportedArmyIds ?? []) {
+                const army: any = world.movement.armies?.get(id);
+                if (!army || army.factionId !== factionId) continue;
+                for (const [t, n] of Object.entries(airDropForce(army))) {
+                    drop[t] = (drop[t] ?? 0) + n;
+                    army.composition[t] = 0;
+                    delete army.composition[t];
+                }
+                if (!Object.values(army.composition ?? {}).some((n: any) => Number(n) > 0)) {
+                    world.movement.armies!.delete(army.id);
+                    fleet.transportedArmyIds = (fleet.transportedArmyIds ?? []).filter((x: string) => x !== army.id);
+                }
+            }
+            if (!airDropMen(drop)) { recordOrderFailure(world, factionId, actionId, `${fleet.name ?? 'The fleet'} carries no Airborne or Special Ops.`); break; }
+            landUnderFire(world, planet, factionId, 'attacker', drop);
+            const men = airDropMen(drop);
+            if (men > 0) {
+                const comp = siege.attackerState.unitComposition as any;
+                for (const [t, n] of Object.entries(drop)) comp[t] = (comp[t] ?? 0) + n;
+                siege.attackerState.totalLandedTroops += men;
+                war.formations = [...war.formations, ...seedFormations(surf, war, 'attacker', drop as any, `f-a-drop-${world.nowSeconds}`, [at])];
+            }
+            const spot = (war.strongpoints ?? []).find((p: any) => p.sectorIndex === at);
+            const where = spot ? `the ${String(spot.buildingId ?? spot.kind).replace(/_/g, ' ')} in district ${at}` : `district ${at}`;
+            siege.battleLog.push({ cycle: siege.cycleCount, message: `${men} paratroopers drop onto ${where}.`, event: 'AIR_DROP' });
+            notifyContest(world, planet, factionId, siege.defenderEmpireId, `${planet.name}: air drop`,
+                `${men} of our Airborne and Special Ops are down on ${where}. Hold it.`,
+                `Enemy paratroopers dropped onto ${where}, behind our lines.`);
+            console.log(`[Tick Worker] AIR DROP on ${planet.name} by ${factionId}: ${men} onto district ${at}`);
             break;
         }
 
@@ -7593,19 +7642,22 @@ export function processSieges(world: GameWorldState) {
             // out; a counter-attack that retakes it in time saves the world.
             // With no defender formation left on the board there is nobody to
             // counter-attack, and it falls at once.
-            if (capitalTaken(war)) {
+            // Contested ground has no government to topple: it ends when one
+            // side has nobody left (resolveContestCycle), never at a district.
+            const capitalLost = capitalTaken(war) && !updatedSiege.contested;
+            if (capitalLost) {
                 war.capitalHeldCycles = (war.capitalHeldCycles ?? 0) + 1;
             } else {
                 war.capitalHeldCycles = 0;
             }
             const defendersLeft = (war.formations ?? []).some(f => f.side === 'defender' && f.strength > 0);
-            if (capitalTaken(war) && war.capitalHeldCycles < CAPITAL_FALL_CYCLES && defendersLeft) {
+            if (capitalLost && war.capitalHeldCycles < CAPITAL_FALL_CYCLES && defendersLeft) {
                 updatedSiege.battleLog.push({
                     cycle: updatedSiege.cycleCount,
                     message: 'The capital district is in enemy hands. The government holds out in the bunkers — retake it, or the world falls.',
                     event: 'CAPITAL_BESIEGED',
                 });
-            } else if (capitalTaken(war)) {
+            } else if (capitalLost) {
                 // capturePlanet owns the whole transfer: tech absorption while
                 // the previous owner is still on the record (diffusion:
                 // conquest), the ownership flip, siege teardown, stability hit,
