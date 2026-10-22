@@ -23,6 +23,7 @@ const SCENE: Record<Climate, { grass: string; shrub: string; hill: string; tree:
     cold:      { grass: '#cbd5e1', shrub: '#64748b', hill: '#94a3b8', tree: ['#2f5d50', '#3b6d5f'], treeDark: ['#264d42', '#2f5d50'], canopy: ['#33584b', '#3e6658', '#4a7465'], snow: true, dead: false, roof: ['#78716c', '#e2e8f0'] },
     scorched:  { grass: '#57534e', shrub: '#292524', hill: '#44403c', tree: ['#3f3a36', '#4a443f'], treeDark: ['#292524', '#3f3a36'], canopy: ['#3f3a36', '#4a443f', '#57534e'], snow: false, dead: true, roof: ['#57534e', '#292524'] },
     poisoned:  { grass: '#a3b33a', shrub: '#5b6b1f', hill: '#7a8a2f', tree: ['#56661f', '#6b7a2f'], treeDark: ['#45521a', '#56661f'], canopy: ['#4d6620', '#5f7a28', '#86a32f'], snow: false, dead: false, roof: ['#78716c', '#44403c'] },
+    glassed:   { grass: '#155e75', shrub: '#0e3a46', hill: '#155e75', tree: ['#1e293b', '#1e293b'], treeDark: ['#0f172a', '#0f172a'], canopy: ['#1e293b', '#1e293b', '#334155'], snow: false, dead: true, roof: ['#1e293b', '#0f172a'] },
     dry:       { grass: '#a16207', shrub: '#713f12', hill: '#a16207', tree: ['#4d6b2a', '#5f7f33'], treeDark: ['#3f5a22', '#4d6b2a'], canopy: ['#3f6b2a', '#4d7c33', '#65a30d'], snow: false, dead: false, roof: ['#a16207', '#78350f'] },
 };
 
@@ -189,6 +190,27 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
 
     const content = React.useMemo(() => {
         const r = mulberry32(hash(seedKey)); // fresh stream per render pass
+        // A glassed world: whatever was here is fused glass, shards catching
+        // the light and cracks still glowing with the heat.
+        if (climate === 'glassed') {
+            if (terrain === 'ocean') return null;
+            const pts = scatter(polygon, 7, r, 0.85, keepOut, s * 0.8, routes, clearance);
+            return pts.map((p, i) => {
+                const w = s * (0.5 + r() * 0.6);
+                if (i % 3 === 0) {
+                    return (
+                        <path key={i} d={`M ${p[0] - w} ${p[1]} l ${w * 0.6} ${-w * 0.25} l ${w * 0.5} ${w * 0.3} l ${w * 0.7} ${-w * 0.2}`}
+                            fill="none" stroke="#22d3ee" strokeWidth={s * 0.08} opacity={0.55} strokeLinecap="round" />
+                    );
+                }
+                return (
+                    <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)}) rotate(${Math.round(r() * 60 - 30)})`}>
+                        <path d={`M 0 ${-w} L ${w * 0.35} 0 L 0 ${w * 0.25} L ${-w * 0.3} 0 Z`} fill="#334155" stroke="#67e8f9" strokeWidth={0.5} strokeOpacity={0.5} />
+                        <path d={`M 0 ${-w} L ${w * 0.35} 0 L 0 ${-w * 0.2} Z`} fill="#a5f3fc" opacity={0.35} />
+                    </g>
+                );
+            });
+        }
         switch (terrain) {
             case 'forest': {
                 // Dense clusters with size variance — old growth beside saplings.

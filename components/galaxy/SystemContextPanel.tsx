@@ -17,6 +17,7 @@ import { classifyStar, factionColor } from './starVisuals';
 import { bodySummary } from '@/components/planet/bodyVisuals';
 import NativesPanel from './NativesPanel';
 import CampPanel from './CampPanel';
+import DoomsdayPanel from './DoomsdayPanel';
 import { surfaceGuns, gunTargetOf, GUN_TARGETS, GUN_TARGET_LABEL, GUN_TARGET_HINT } from '@/lib/combat/surface-guns';
 
 
@@ -655,6 +656,8 @@ function PlanetCard({
                 {planet.natives && <NativesPanel planet={planet} playerFactionId={playerFactionId} />}
                 {/* Camp worlds (lib/camps): run one, or send people to it */}
                 {isOwnedByPlayer && <CampPanel planet={planet} />}
+                {/* Terror bombing, glassing, the World Breaker (lib/combat/planet-ruin.ts) */}
+                <DoomsdayPanel planet={planet} />
 
                 {isOwnedByPlayer && activeJobs.length > 0 && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-700/30">

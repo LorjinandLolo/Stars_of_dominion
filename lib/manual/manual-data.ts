@@ -614,6 +614,21 @@ export const MANUAL_DATA: ManualSection[] = [
                 ],
             },
             {
+                id: 'oblivion',
+                title: 'Bombarding a world to oblivion',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Any empire can do all of this to a world whose owner it is at war with (or an unowned one). Each step is remembered by the whole galaxy: infamy for you, and every empire\'s rivalry with you rises.',
+                            'Terror bombing (TERROR BOMB on the world\'s card, from a fleet over it): every volley kills a share of the people and burns a district or two. The orbital layer and the surface guns blunt it; a planetary shield stops most of it.',
+                            'Glassing (GLASS IT): a fleet that holds the orbit (no enemy ships, its orbital defences beaten down) burns the whole surface. About two real hours with 400 power, faster with more; a shield slows it to a quarter. Lose the orbit and it pauses. The owner is warned at the start and at halfway. At the end everyone is dead, every building is slag, nobody owns it, and it is dead glass only an outpost can use.',
+                            'The World Breaker: build one at a world of yours with a tier 3 shipyard (250,000 credits, 60,000 metals, 8,000 materiel; three real days). Park it over a world, hold the orbit, and charge it (CRACK THE WORLD): about thirty minutes later the world is gone, a field of debris. Contest the orbit or drive it off and the charge is broken. A day to recharge.',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'blockade',
                 title: 'Blockade and relief',
                 blocks: [

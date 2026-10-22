@@ -36,6 +36,7 @@ import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOut
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
 import { commandoRaid, RAID_TARGET_LABEL, type RaidTarget } from '../lib/combat/commando-raid';
+import { terrorBombard, startGlassing, stopGlassing, startWorldBreaker, startCrack, powerOver, type RuinNotice } from '../lib/combat/planet-ruin';
 import { airDropForce, airDropMen, canDropOn } from '../lib/combat/siege/air-drop';
 import { nativeAction, nativesResist, nativeComposition, nativesIdFor, isNativesId, isPseudoEmpireId, type NativeAction } from '../lib/natives/natives';
 import {
@@ -1974,6 +1975,32 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'MIL_GLASS_PLANET': {
+            // payload: { planetId, stop? } — lib/combat/planet-ruin.ts
+            const r = payload?.stop ? stopGlassing(world, factionId, payload.planetId) : startGlassing(world, factionId, payload.planetId);
+            if (!r.ok) { recordOrderFailure(world, factionId, actionId, r.reason!); break; }
+            sendRuinNotices(world, [[factionId, 'Glassing', r.message ?? 'Done.'], ...((r as any).notices ?? [])]);
+            console.log(`[Order] ${factionId} MIL_GLASS_PLANET ${payload?.stop ? 'stop' : 'start'} on ${payload.planetId}`);
+            break;
+        }
+
+        case 'MIL_BUILD_WORLDBREAKER': {
+            // payload: { planetId } — a tier-3 yard world of ours.
+            const r = startWorldBreaker(world, factionId, payload.planetId);
+            if (!r.ok) { recordOrderFailure(world, factionId, actionId, r.reason!); break; }
+            sendRuinNotices(world, [[factionId, 'World Breaker', r.message ?? 'Done.']]);
+            break;
+        }
+
+        case 'MIL_CRACK_PLANET': {
+            // payload: { fleetId, planetId } — the World Breaker begins to charge.
+            const r = startCrack(world, factionId, payload.fleetId, payload.planetId);
+            if (!r.ok) { recordOrderFailure(world, factionId, actionId, r.reason!); break; }
+            sendRuinNotices(world, [[factionId, 'World Breaker', r.message ?? 'Done.'], ...((r as any).notices ?? [])]);
+            console.log(`[Order] ${factionId} MIL_CRACK_PLANET on ${payload.planetId}`);
+            break;
+        }
+
         case 'MIL_COMMANDO_RAID': {
             // payload: { fleetId, planetId, target } — lib/combat/commando-raid.ts
             const planet: any = world.construction.planets.get(payload.planetId);
@@ -2002,6 +2029,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             
             if (!planet || !fleet || fleet.factionId !== factionId) return;
             if (planet.ownerId === factionId) return; // Already owner
+            if ((planet as any).destroyed) { recordOrderFailure(world, factionId, actionId, `${planet.name} is gone: there is nothing to land on.`); break; }
 
             // Nobody owns it: there is nobody to besiege. The troops aboard go
             // down onto open ground (lib/combat/siege/contested-ground.ts), and
@@ -2473,6 +2501,11 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             // Roads, grids and relays are what bombardment actually breaks. The
             // damage outlives the raid: the network has to be paid back up.
             damageInfrastructure(planet, 6 * surfaceFactor);
+            // Terror bombing (lib/combat/planet-ruin.ts): the people and the districts.
+            if (payload.mode === 'TERROR') {
+                const t = terrorBombard(world, factionId, planet, powerOver(world, factionId, planet.systemId), surfaceFactor);
+                console.log(`[Tick Worker] TERROR BOMBING of ${planet.name}: ${Math.round(t.killedShare * 100)}% of the people, ${t.ruined} district(s) ruined.`);
+            }
             // If we're besieging this planet, bombardment also feeds the ground assault.
             if (planet.siege && planet.siege.attackerEmpireId === factionId) {
                 const mode = payload.mode || 'FORTIFICATION';
@@ -2688,7 +2721,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             const siege = planet.siege;
             // Open ground: any empty world this empire has surveyed.
-            const openGround = !siege && isEmptyWorld(planet) && canSeeSystem(world, factionId, planet.systemId);
+            const openGround = !siege && isEmptyWorld(planet) && !(planet as any).destroyed && canSeeSystem(world, factionId, planet.systemId);
             const belligerent = planet.ownerId === factionId || openGround
                 || (siege && (siege.attackerEmpireId === factionId || siege.defenderEmpireId === factionId));
             if (!belligerent) {
@@ -6877,6 +6910,17 @@ function standAsArmy(world: GameWorldState, planet: any, factionId: string, comp
         composition, stance: 'fortified', strength: 1.0, basePower: 100, supplyLevel: 0.5, morale: 60,
         stationedAt: world.nowSeconds, dugIn: 0.3,
     } as any);
+}
+
+/** Send planet-ruin notices ([factionId, title, body]); never to natives or inmates. */
+function sendRuinNotices(world: GameWorldState, notices: RuinNotice[]): void {
+    const at = new Date(world.nowSeconds * 1000).toISOString();
+    notices.forEach(([factionId, title, body], i) => {
+        if (!factionId || isPseudoEmpireId(factionId)) return;
+        try {
+            fireNotification({ id: `ruin-${factionId}-${world.nowSeconds}-${i}`, factionId, category: 'combat', priority: 'urgent', title, body, createdAt: at, read: false } as any);
+        } catch { /* probes run without the queue */ }
+    });
 }
 
 function notifyContest(world: GameWorldState, planet: any, a: string, b: string, title: string, toA: string, toB: string): void {

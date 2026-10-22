@@ -244,6 +244,7 @@ export function foundOutpost(world: GameWorldState, factionId: string, fleetId: 
     if (!planet) return { ok: false, reason: 'No such world.' };
     if (!parked(fleet) || fleet.currentSystemId !== planet.systemId) return { ok: false, reason: 'The builder ship must be parked in that world’s system.' };
     if (planet.ownerId && planet.ownerId !== 'faction-neutral') return { ok: false, reason: `${planet.name} already belongs to someone.` };
+    if ((planet as any).destroyed) return { ok: false, reason: `${planet.name} is a debris field: there is nothing to build on.` };
     const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
     for (const [key, amt] of Object.entries(OUTPOST_COST)) {
         if ((reserves?.[key] ?? 0) < amt) return { ok: false, reason: `An outpost needs ${amt.toLocaleString()} ${key.toLowerCase()}.` };

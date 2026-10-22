@@ -33,7 +33,7 @@ export const TERRAIN_META: Record<TerrainType, TerrainMeta> = {
  * a volcanic world is ash: same terrain for the rules, different ground to
  * look at. Only the living terrains change; ice, rock, sea and city do not.
  */
-export type Climate = 'temperate' | 'cold' | 'scorched' | 'poisoned' | 'dry';
+export type Climate = 'temperate' | 'cold' | 'scorched' | 'poisoned' | 'dry' | 'glassed';
 
 export function climateOf(archetype: PlanetArchetype): Climate {
     switch (archetype) {
@@ -50,6 +50,11 @@ const CLIMATE_COLOR: Record<Exclude<Climate, 'temperate'>, Partial<Record<Terrai
     scorched: { plains: '#6b5b55', forest: '#57473c', jungle: '#5c4b3d', desert: '#8a4b2e' },
     poisoned: { plains: '#8a9a44', forest: '#6b7a2f', jungle: '#5f7a34', desert: '#a39248' },
     dry:      { plains: '#b5a35c', forest: '#7b8a45', jungle: '#6f8a4a' },
+    // A glassed world (lib/combat/planet-ruin.ts): everything fused, the seas boiled to dark glass.
+    glassed:  {
+        plains: '#24363f', forest: '#22323a', jungle: '#203038', desert: '#2a3a40', mountains: '#1b262c', frozen: '#2c3d45',
+        ocean: '#14232b', toxic: '#22303a', volcanic: '#1d2329', urban: '#1a242b', ruins: '#202c33',
+    },
 };
 
 /** Fill colour for a district: the terrain's own, shifted by the world's climate. */

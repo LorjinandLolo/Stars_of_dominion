@@ -262,6 +262,18 @@ export default function PlanetSurfaceView() {
 
     if (!surfacePlanetId || !planet || !surface || !geo) return null;
 
+    // A destroyed world has no surface to show (lib/combat/planet-ruin.ts).
+    if (planet.destroyed) {
+        return (
+            <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-slate-950/95 text-center gap-3">
+                <div className="text-[13px] font-display tracking-[0.3em] text-orange-300 uppercase">{planet.name}</div>
+                <div className="text-[11px] text-slate-400 max-w-sm">There is no surface. A field of debris drifts where the world was.</div>
+                <button onClick={() => setSurfacePlanet(null)} className="px-3 py-1.5 rounded border border-slate-600 text-[10px] text-slate-300 hover:bg-white/10">Return</button>
+            </div>
+        );
+    }
+    // A glassed world draws as glass whatever its terrain was.
+    const worldClimate = planet.glassed ? 'glassed' : climateOf(surface.archetype);
     const isOwner = planet.ownerId === playerFactionId;
     const ownerFaction = factions[planet.ownerId];
     const regionById = new Map(surface.regions.map(r => [r.id, r]));
@@ -437,7 +449,7 @@ export default function PlanetSurfaceView() {
                                 <g key={sec.index}>
                                     <path
                                         d={geo.paths[sec.index]}
-                                        fill={terrainColor(sec.terrain, climateOf(surface.archetype))}
+                                        fill={terrainColor(sec.terrain, worldClimate)}
                                         fillOpacity={dimmed ? 0.1 : isSelected ? 0.62 : isHovered ? 0.52 : 0.42}
                                         stroke={isSelected ? '#ffffff' : region?.color ?? '#0f172a'}
                                         strokeOpacity={isSelected ? 0.95 : dimmed ? 0.08 : 0.32}
@@ -448,7 +460,7 @@ export default function PlanetSurfaceView() {
                                     />
                                     <DistrictScenery
                                         terrain={sec.terrain}
-                                        climate={climateOf(surface.archetype)}
+                                        climate={worldClimate}
                                         inhabited={(!!planet.ownerId && (planet.population ?? 0) > 0) || !!planet.natives}
                                         settlers={planet.natives && !planet.ownerId ? 'natives' : 'colony'}
                                         polygon={geo.polygons[sec.index]}
@@ -482,10 +494,12 @@ export default function PlanetSurfaceView() {
                                 let nx = -dy / len, ny = dx / len;
                                 if ((mx - lx) * nx + (my - ly) * ny < 0) { nx = -nx; ny = -ny; }
                                 const off = (d: number) => ({ x1: seg.a[0] + nx * d, y1: seg.a[1] + ny * d, x2: seg.b[0] + nx * d, y2: seg.b[1] + ny * d });
-                                const climate = climateOf(surface.archetype);
+                                const climate = worldClimate;
                                 const sand = climate === 'cold' ? '#dbe4ea' : climate === 'scorched' ? '#3b3532' : climate === 'poisoned' ? '#b8b26a' : '#ecd9a0';
                                 const palm = climate === 'temperate' && ['jungle', 'swamp', 'gaia', 'oceanic'].includes(surface.archetype)
                                     && ['plains', 'jungle', 'forest'].includes(surface.sectors[land].terrain) && Number(seg.key.split('-')[2]) % 3 === 0;
+                                // Glass: the sea boiled away, a thin glowing seam where the shore was.
+                                if (climate === 'glassed') return <line key={seg.key} {...off(0)} stroke="#22d3ee" strokeWidth={1.4} opacity={0.5} />;
                                 return (
                                     <g key={seg.key}>
                                         <line {...off(8)} stroke="#5eead4" strokeWidth={14} strokeLinecap="round" opacity={0.32} />
@@ -582,7 +596,7 @@ export default function PlanetSurfaceView() {
 
                         {/* Rivers: from the high ground down to the sea (carveFeatures) */}
                         <g pointerEvents="none">
-                            {surface.sectors.filter(sec => sec.riverTo !== undefined).flatMap(sec => {
+                            {worldClimate !== 'glassed' && surface.sectors.filter(sec => sec.riverTo !== undefined).flatMap(sec => {
                                 const [ax, ay] = geo.centroids[sec.index];
                                 const dimmed = hoverRegion !== null && sec.regionId !== hoverRegion;
                                 return (sec.riverTo === undefined ? [] : [sec.riverTo])

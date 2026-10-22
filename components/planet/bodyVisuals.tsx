@@ -50,6 +50,44 @@ export interface BodyArtProps {
 export function BodyArt({ planet, archetype, x, y, r, limbId }: BodyArtProps) {
     const id = String(planet.id).replace(/[^a-zA-Z0-9_-]/g, '_');
     const h = hashString(planet.id + ':look');
+    // Destroyed (lib/combat/planet-ruin.ts): a ring of tumbling rock where the world was.
+    if (planet.destroyed) {
+        return (
+            <g>
+                <circle cx={x} cy={y} r={r} fill="#f97316" opacity={0.06} />
+                {Array.from({ length: 22 }, (_, k) => {
+                    const a = (k / 22) * Math.PI * 2 + ((h >> (k % 16)) % 10) * 0.03;
+                    const d = r * (0.55 + ((h >> (k % 11)) % 7) * 0.08);
+                    const s = 1.2 + ((h >> (k % 13)) % 4) * 0.8;
+                    return <polygon key={k} points={`${x + Math.cos(a) * d},${y + Math.sin(a) * d - s} ${x + Math.cos(a) * d + s},${y + Math.sin(a) * d + s * 0.6} ${x + Math.cos(a) * d - s},${y + Math.sin(a) * d + s * 0.5}`}
+                        fill={k % 3 ? '#57534e' : '#78716c'} />;
+                })}
+            </g>
+        );
+    }
+    // Glassed: a black-glass ball veined with cyan where it is still hot.
+    if (planet.glassed) {
+        return (
+            <g>
+                <defs>
+                    <radialGradient id={`ba-glass-${id}`} cx="35%" cy="30%">
+                        <stop offset="0%" stopColor="#475569" />
+                        <stop offset="45%" stopColor="#1e293b" />
+                        <stop offset="100%" stopColor="#020617" />
+                    </radialGradient>
+                    <clipPath id={`ba-gclip-${id}`}><circle cx={x} cy={y} r={r} /></clipPath>
+                </defs>
+                <circle cx={x} cy={y} r={r} fill={`url(#ba-glass-${id})`} stroke="#020617" strokeWidth={1.5} />
+                <g clipPath={`url(#ba-gclip-${id})`} stroke="#22d3ee" strokeWidth={1} opacity={0.6} fill="none">
+                    {Array.from({ length: 5 }, (_, k) => {
+                        const a = ((h >> k) % 628) / 100;
+                        return <path key={k} d={`M ${x} ${y} l ${Math.cos(a) * r * 0.5} ${Math.sin(a) * r * 0.5} l ${Math.cos(a + 0.6) * r * 0.5} ${Math.sin(a + 0.6) * r * 0.5}`} />;
+                    })}
+                </g>
+                <ellipse cx={x - r * 0.35} cy={y - r * 0.4} rx={r * 0.25} ry={r * 0.12} fill="#e0f2fe" opacity={0.25} />
+            </g>
+        );
+    }
     const gas = String(planet.planetType) === 'gas_giant';
     const palette = gas ? GAS_PALETTES[h % GAS_PALETTES.length] : null;
     const [inner, outer] = gas ? [palette![0], palette![2]] : ARCHETYPE_CORE[archetype];
@@ -134,6 +172,8 @@ export function BodyArt({ planet, archetype, x, y, r, limbId }: BodyArtProps) {
 export function bodySummary(planet: any): string {
     const parts: string[] = [];
     if (planet.size) parts.push(planet.size);
+    if (planet.destroyed) return 'destroyed: a debris field';
+    if (planet.glassed) return 'glassed: dead glass';
     if (planet.planetType === 'gas_giant') parts.push('gas giant');
     if (Number(planet.habitability) > 0) parts.push(`hab ${planet.habitability}`);
     const deposits: Record<string, string> = {

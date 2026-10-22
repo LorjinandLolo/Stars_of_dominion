@@ -75,6 +75,27 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", action: "string" },
     cost: {}
   },
+  MIL_GLASS_PLANET: {
+    id: "MIL_GLASS_PLANET",
+    category: "military",
+    // Burn a world to glass over ~2 real hours while holding its orbit (lib/combat/planet-ruin.ts); stop: true halts it.
+    params: { planetId: "id" },
+    cost: {}
+  },
+  MIL_BUILD_WORLDBREAKER: {
+    id: "MIL_BUILD_WORLDBREAKER",
+    category: "military",
+    // Lay down a World Breaker at a tier-3 yard (3 real days); the handler charges BREAKER_COST.
+    params: { planetId: "id" },
+    cost: {}
+  },
+  MIL_CRACK_PLANET: {
+    id: "MIL_CRACK_PLANET",
+    category: "military",
+    // Charge the World Breaker over a world (~30 real minutes holding the orbit), then it is gone.
+    params: { fleetId: "id", planetId: "id" },
+    cost: {}
+  },
   MIL_AIR_DROP: {
     id: "MIL_AIR_DROP",
     category: "military",

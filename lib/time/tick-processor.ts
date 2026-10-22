@@ -7,6 +7,7 @@ import { tickCivilianShips } from '../combat/civilian-service';
 import { tickStagingArmies } from '../combat/siege/contested-ground';
 import { tickNatives } from '../natives/natives';
 import { tickCamps, musterForged } from '../camps/labour-camp';
+import { tickPlanetRuin } from '../combat/planet-ruin';
 import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
@@ -195,6 +196,13 @@ export async function runStrategicTick(
             if (ev.kind === 'breakout') planet.camp.pendingBreakout = true;
         }
     } catch (e) { console.error('[TickProcessor] tickCamps failed:', e); }
+    // Glassing, World Breaker builds and charges (lib/combat/planet-ruin.ts).
+    try {
+        const at = new Date(world.nowSeconds * 1000).toISOString();
+        tickPlanetRuin(world).forEach(([factionId, title, body], i) => {
+            fireNotification({ id: `ruin-${factionId}-${world.nowSeconds}-${i}`, factionId, category: 'combat', priority: 'urgent', title, body, createdAt: at, read: false } as any);
+        });
+    } catch (e) { console.error('[TickProcessor] tickPlanetRuin failed:', e); }
     try { shipOutpostWarehouses(world); } catch (e) { console.error('[TickProcessor] shipOutpostWarehouses failed:', e); }
     // 9c: Gambits — doctrine auto-resolve for overdue confrontations
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }
