@@ -448,6 +448,7 @@ export default function PlanetSurfaceView() {
                                     <DistrictScenery
                                         terrain={sec.terrain}
                                         climate={climateOf(surface.archetype)}
+                                        inhabited={(!!planet.ownerId && (planet.population ?? 0) > 0) || (planet.tags ?? []).includes('natives')}
                                         polygon={geo.polygons[sec.index]}
                                         seedKey={`${surface.planetId}:${sec.index}`}
                                         scale={Math.sqrt(geo.areas[sec.index])}

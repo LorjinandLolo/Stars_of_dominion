@@ -122,6 +122,8 @@ interface SceneryProps {
     ring?: number;
     /** The world's climate: what plains, forest and jungle look like here. */
     climate?: Climate;
+    /** Someone lives on this world (a colony, or natives): plains get farmsteads. */
+    inhabited?: boolean;
     /** True inside the capital region — grants the grand civic landmark. */
     capital?: boolean;
     /**
@@ -165,7 +167,7 @@ function Tree({ x, y, s, dark, climate = 'temperate' }: { x: number; y: number; 
     );
 }
 
-export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate' }: SceneryProps) {
+export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate', inhabited = true }: SceneryProps) {
     const sc = SCENE[climate];
     const rand = React.useMemo(() => mulberry32(hash(seedKey)), [seedKey]);
     const s = Math.max(4, scale * 0.16); // motif unit size
@@ -235,8 +237,8 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 return (
                     <>
                         {pts.map((p, i) => {
-                            if (i % 4 === 0) {
-                                // scattered farmstead / village
+                            if (i % 4 === 0 && inhabited) {
+                                // scattered farmstead / village — only where someone lives
                                 return (
                                     <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
                                         <rect x={-s * 0.35} y={-s * 0.25} width={s * 0.7} height={s * 0.5} fill={sc.roof[0]} />
@@ -544,7 +546,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             default:
                 return null;
         }
-    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate]);
+    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate, inhabited]);
 
     if (!content) return null;
     return <g pointerEvents="none" opacity={dimmed ? 0.12 : 0.9}>{content}</g>;
