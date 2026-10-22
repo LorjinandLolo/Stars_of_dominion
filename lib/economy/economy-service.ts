@@ -20,6 +20,8 @@ import { Resource, type FactionIncome } from '../trade-system/types';
 import { eventBus } from '../movement/event-bus';
 import config from '../movement/movement-config.json';
 import { calculateBiosphereModifiers } from './biosphere-traits';
+import { buildingOutputPercents } from './building-output';
+import type { Planet } from '../construction/construction-types';
 import { tickGalacticTrade, initializeGalacticMarkets } from '../trade-system/trade-network-service';
 import { RNG } from '../trade-system/rng';
 import { tickConstructionGlobal } from '../construction/construction-service';
@@ -75,7 +77,7 @@ function bundleSum(b: ResourceBundle): number {
     return Object.values(b).reduce((s, v) => s + (v ?? 0), 0);
 }
 
-function planetBaseRates(planet: PlanetProduction): ResourceBundle {
+function planetBaseRates(planet: PlanetProduction, built?: Planet): ResourceBundle {
     const base = econ.production.baseRates;
     const mults = (econ.production.planetTypeMults as Record<string, ResourceBundle>)[planet.planetType] ?? {};
     const result: ResourceBundle = {};
@@ -85,6 +87,15 @@ function planetBaseRates(planet: PlanetProduction): ResourceBundle {
         const key = k as keyof ResourceBundle;
         const mult = (mults as Record<string, number | undefined>)[key] ?? 1.0;
         result[key] = v * mult;
+    }
+
+    // 1b. Finished buildings on the surface (lib/economy/building-output.ts):
+    //     each adds a percentage of the STANDARD base rate, not of this world's,
+    //     so a mine on a poor world still pays like a mine.
+    for (const [k, pct] of Object.entries(buildingOutputPercents(built))) {
+        const key = k as keyof ResourceBundle;
+        const v = (base as Record<string, number | undefined>)[key] ?? 0;
+        result[key] = (result[key] ?? 0) + v * (pct ?? 0) / 100;
     }
 
     // 2. Apply narrative Biosphere modifiers computed from SWN world tags.
@@ -178,14 +189,15 @@ export function tickProduction(
     // Infrastructure Phase 4: the engineering tracks under the buildings. The
     // grid decides how much output survives distribution, the water system feeds
     // both farms and families.
-    const infra = computeInfrastructureEffects(world.construction?.planets?.get(planet.planetId));
+    const built = world.construction?.planets?.get(planet.planetId);
+    const infra = computeInfrastructureEffects(built);
 
     // Doctrine-driven population growth adjustment (services set the baseline),
     // then the water system on top of it.
     planet.demographics.growthRate *= mods.popGrowth * infra.populationGrowth;
 
     // 3. Compute Production Modifiers
-    const rates = planetBaseRates(planet);
+    const rates = planetBaseRates(planet, built);
 
     // Water infrastructure lifts agricultural yield specifically.
     if (rates.food) rates.food *= infra.foodOutput;
