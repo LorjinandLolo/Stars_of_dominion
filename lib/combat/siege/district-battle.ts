@@ -48,6 +48,9 @@ const TERRAIN_DEFENCE: Record<TerrainType, number> = {
     toxic: 1.3, frozen: 1.25, ruins: 1.2, desert: 1.0, plains: 0.9, ocean: 1,
 };
 
+/** Holding a river line: whoever holds a river district fights from behind the water. */
+export const RIVER_DEFENCE = 1.25;
+
 /** Terrain that blunts heavy formations regardless of who holds it. */
 const HEAVY_PENALTY: Partial<Record<TerrainType, number>> = {
     mountains: 0.6, jungle: 0.6, forest: 0.8, urban: 0.7, frozen: 0.85,
@@ -252,6 +255,10 @@ export function resolveDistrictBattle(
 
     let aStr = sideStrength(attackers, defenders, terrain, holderBefore === 'attacker', entrench, aStance);
     let dStr = sideStrength(defenders, attackers, terrain, holderBefore === 'defender', entrench, dStance);
+    if (sector.river) {
+        if (holderBefore === 'attacker') aStr *= RIVER_DEFENCE;
+        else dStr *= RIVER_DEFENCE;
+    }
 
     // Stance rock-paper-scissors.
     if (STANCE[aStance].beats === dStance) aStr *= 1.15;

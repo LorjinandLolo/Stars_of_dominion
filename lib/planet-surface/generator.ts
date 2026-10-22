@@ -21,6 +21,7 @@ import {
     PLANET_ARCHETYPES,
     RegionKind,
     SocialGroupSeed,
+    DepositKind,
     SURFACE_SECTOR_COUNT,
     SURFACE_WEDGES,
     SURFACE_RINGS,
@@ -643,6 +644,7 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         if (passable(t)) return walls >= neighbors[i].length - 1 && walls >= 2;
         return false;
     };
+    const features = carveFeatures(planetId, archetype, terrain, neighbors, tags ?? []);
     const sectors: SurfaceSector[] = seeds.map((s, i) => ({
         index: i,
         cx: s.x,
@@ -651,14 +653,84 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         wedge: wedgeOf(s.x, s.y),
         terrain: terrain[i],
         regionId: regionOf[i],
-        habitability: TERRAIN_HABITABILITY[terrain[i]],
+        habitability: Math.min(100, TERRAIN_HABITABILITY[terrain[i]] + (features.river.has(i) ? 10 : 0)),
         chokepoint: isChokepoint(i),
         neighbors: neighbors[i],
+        ...(features.river.has(i) ? { river: true } : {}),
+        ...(features.deposit.has(i) ? { deposit: features.deposit.get(i)! } : {}),
     }));
 
     const surface: PlanetSurface = { planetId, archetype, sectors, regions };
     surfaceCache.set(cacheKey, surface);
     return surface;
+}
+
+// ─── Rivers and deposits ────────────────────────────────────────────────────
+// Laid over the finished terrain with their OWN generator, so adding them did
+// not move a single district, region or building on any existing world.
+
+/** Rivers per archetype: [min, max]. Dry, frozen and poisoned worlds have few or none. */
+const RIVERS: Partial<Record<PlanetArchetype, [number, number]>> = {
+    continental: [2, 3], gaia: [2, 4], jungle: [1, 3], swamp: [2, 3], oceanic: [1, 2],
+    montane: [1, 2], frozen: [0, 1], arid: [0, 1],
+};
+/** How high each terrain sits, for water running downhill. */
+const TERRAIN_HEIGHT: Record<TerrainType, number> = {
+    mountains: 5, volcanic: 5, frozen: 3, forest: 2, jungle: 1.5, toxic: 1.5,
+    ruins: 1.2, plains: 1, desert: 1, urban: 1, ocean: 0,
+};
+/** Body tags that place deposits, the terrain they sit in, and how many districts. */
+const DEPOSIT_RULES: Array<{ kind: DepositKind; tag?: string; terrain: TerrainType[]; count: [number, number] }> = [
+    { kind: 'ore', terrain: ['mountains', 'desert', 'volcanic'], count: [1, 2] },
+    { kind: 'rare_minerals', tag: 'rare_minerals', terrain: ['mountains', 'desert', 'volcanic'], count: [1, 3] },
+    { kind: 'geothermal', tag: 'geothermal', terrain: ['volcanic', 'mountains', 'desert'], count: [1, 2] },
+    { kind: 'ice', tag: 'ice', terrain: ['frozen', 'mountains'], count: [1, 2] },
+    { kind: 'fertile', tag: 'fertile', terrain: ['plains', 'forest', 'jungle'], count: [2, 3] },
+    { kind: 'relic', tag: 'relic_site', terrain: ['ruins', 'desert', 'plains', 'mountains'], count: [1, 1] },
+];
+
+function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], tags: string[]): { river: Set<number>; deposit: Map<number, DepositKind> } {
+    const rand = mulberry32(hashString(planetId + ':features'));
+    const river = new Set<number>();
+    const deposit = new Map<number, DepositKind>();
+    const n = terrain.length;
+
+    // Rivers rise in the high ground and run downhill to the sea. A river that
+    // finds no sea within a dozen districts ends where it is (a lake, a delta
+    // into the sand) — it still waters the ground it crossed.
+    const [lo, hi] = RIVERS[archetype] ?? [0, 0];
+    const wanted = lo + Math.floor(rand() * (hi - lo + 1));
+    const height = (i: number) => TERRAIN_HEIGHT[terrain[i]] + rand() * 0.6;
+    const sources = [...Array(n).keys()].filter(i => (terrain[i] === 'mountains' || terrain[i] === 'frozen')
+        && neighbors[i].some(j => terrain[j] !== 'mountains' && terrain[j] !== 'volcanic' && terrain[j] !== 'ocean'));
+    for (let r = 0; r < wanted && sources.length; r++) {
+        const src = sources.splice(Math.floor(rand() * sources.length), 1)[0];
+        let cur = src;
+        const seen = new Set<number>([src]);
+        for (let step = 0; step < 12; step++) {
+            const next = neighbors[cur].filter(j => !seen.has(j) && terrain[j] !== 'mountains' && terrain[j] !== 'volcanic')
+                .sort((a, b) => height(a) - height(b))[0];
+            if (next === undefined) break;
+            if (terrain[next] === 'ocean') break;
+            seen.add(next);
+            river.add(next);
+            cur = next;
+        }
+    }
+
+    // Deposits: the common ore, then whatever the body's tags promise.
+    for (const rule of DEPOSIT_RULES) {
+        if (rule.tag && !tags.includes(rule.tag)) continue;
+        if (!rule.tag && rand() < 0.35) continue; // not every world has an ore seam worth the name
+        const want = rule.count[0] + Math.floor(rand() * (rule.count[1] - rule.count[0] + 1));
+        const fits = [...Array(n).keys()].filter(i => i !== 0 && !deposit.has(i) && rule.terrain.includes(terrain[i]));
+        const anyLand = [...Array(n).keys()].filter(i => i !== 0 && !deposit.has(i) && terrain[i] !== 'ocean');
+        const pool = fits.length ? fits : rule.tag ? anyLand : [];
+        for (let k = 0; k < want && pool.length; k++) {
+            deposit.set(pool.splice(Math.floor(rand() * pool.length), 1)[0], rule.kind);
+        }
+    }
+    return { river, deposit };
 }
 
 // ─── Legacy building auto-placement ─────────────────────────────────────────

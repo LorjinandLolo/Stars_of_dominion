@@ -98,7 +98,21 @@ export interface SurfaceSector {
     chokepoint: boolean;
     /** Indexes of the 3 nearest neighbouring sectors (approximate adjacency). */
     neighbors: number[];
+    /**
+     * A river runs through it (lib/planet-surface/generator.ts carveRivers):
+     * fresh water for the people, and a line for a defender to hold.
+     */
+    river?: boolean;
+    /** What is in the ground here, if anything worth digging for. */
+    deposit?: DepositKind;
 }
+
+/**
+ * District-level deposits. Where the body's deposit tags
+ * (lib/exploration/body-generator.ts) actually are on the map, plus the
+ * common ore seams every rocky world has.
+ */
+export type DepositKind = 'ore' | 'rare_minerals' | 'geothermal' | 'ice' | 'fertile' | 'relic';
 
 export interface SurfaceRegion {
     id: string;

@@ -17,6 +17,19 @@ import { ResourceBundle } from './economy-types';
  */
 export const BIOSPHERE_TRAIT_MODIFIERS: Record<string, ResourceBundle> = {
 
+    // ── Body traits (lib/exploration/body-generator.ts) ────────────────────────
+    // What a survey found in the ground and the sky: deposits, and what the
+    // star does to the world. Kept modest; they stack with the world tags.
+    'rare_minerals':     { rare: +30, metals: +10 },
+    'geothermal':        { energy: +25 },
+    'ice':               { chemicals: +10, food: -5 },
+    'helium3':           { energy: +30 },
+    'fertile':           { food: +25 },
+    'pristine':          { food: +15, luxury: +10 },
+    'irradiated':        { food: -25, research: +10 },
+    'tidally_locked':    { energy: +10, food: -10 },
+    'relic_site':        { research: +15, rare: +10 },
+
     // ── Environmental Worlds ───────────────────────────────────────────────────
     'Agriculture World': { food: +40, luxury: +10, metals: -15 },
     'Grasslands':        { food: +25, luxury: +5 },
