@@ -25,7 +25,8 @@ export type PlanetType =
   | "tomb"
   | "ocean"
   | "arctic"
-  | "desert";
+  | "desert"
+  | "gas_giant";
 
 export type DistrictType = "industrial" | "research" | "military" | "civilian" | "agricultural" | "any";
 export type ConstructionState = "empty" | "under_construction" | "active" | "ruined";
@@ -153,6 +154,8 @@ export interface Demographic {
  */
 export type ConqueredFrom = string | undefined;
 
+export type BodySize = "small" | "medium" | "large";
+
 export interface Planet {
   id: string;
   name: string;
@@ -177,6 +180,16 @@ export interface Planet {
   isOccupied: boolean;
   governorId?: string;
   demographics: Demographic[];
+  /**
+   * Where a surveyed body sits and what it is (lib/exploration/body-generator.ts).
+   * Absent on homeworlds and seeded worlds. orbitIndex counts out from the star;
+   * a moon carries its parent's orbitIndex and parentPlanetId.
+   */
+  orbitIndex?: number;
+  parentPlanetId?: string;
+  size?: BodySize;
+  /** 0..100: how kind the world is to life. Sets popCapacity for a colony. */
+  habitability?: number;
   /** Former owner, when taken by force. Feeds the population composition. */
   conqueredFrom?: ConqueredFrom;
 

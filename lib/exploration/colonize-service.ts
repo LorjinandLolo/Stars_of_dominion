@@ -72,6 +72,10 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     constr.tags.push(...kept);
     if (!constr.tags.includes('colony')) constr.tags.push('colony');
 
+    // How many the world can hold: a surveyed body rolled its own (size and
+    // habitability, lib/exploration/body-generator.ts); anything older is 50.
+    const capacity = constr.popCapacity > 0 ? constr.popCapacity : 50;
+
     // Economy record — the colony starts small and grows like any other world.
     if (!world.economy.planets.has(planetId)) {
         const ecoPlanet: PlanetProduction = {
@@ -89,7 +93,7 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
             demographics: {
                 population: 10,
                 growthRate: 0.05,
-                housingCapacity: 50,
+                housingCapacity: capacity,
                 serviceSatisfaction: 100,
                 unrestRisk: 0,
                 manpowerEfficiency: 1.0,
@@ -109,7 +113,7 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
 
     constr.ownerId = factionId;
     constr.population = Math.max(constr.population ?? 0, 10);
-    constr.popCapacity = Math.max(constr.popCapacity ?? 0, 50);
+    constr.popCapacity = capacity;
     constr.popGrowth = 0.05;
     if (constr.infrastructureLevel < 1) constr.infrastructureLevel = 1;
     if (constr.demographics.length === 0) {

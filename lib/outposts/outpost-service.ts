@@ -5,6 +5,7 @@
 // and growing into a colony. Worker-side: imports world services.
 
 import { generateSurface, autoPlaceBuilding } from '../planet-surface/generator';
+import { colonyCapacity } from '../exploration/body-generator';
 import { computeSectorOccupancy } from '../planet-surface/occupancy';
 import { BUILDINGS } from '../../data/buildings';
 import type { GameWorldState } from '../game-world-state';
@@ -497,9 +498,10 @@ export function graduate(world: GameWorldState, planet: AnyPlanet, state: Outpos
     if (!tags.includes('colony')) tags.push('colony');
     if (wasDead && !tags.includes('domed')) tags.push('domed');
     planet.population = Math.max(10, Math.round(state.colonists / 3));
-    planet.popCapacity = 50;
+    // How many the world holds now: its habitability and size (domes: 50).
+    planet.popCapacity = colonyCapacity(planet, wasDead);
     const eco = world.economy.planets.get(planet.id);
-    if (eco) { eco.demographics.population = planet.population; eco.demographics.housingCapacity = 50; }
+    if (eco) { eco.demographics.population = planet.population; eco.demographics.housingCapacity = planet.popCapacity; }
     const carried = carryModulesToSurface(planet, state);
     log(state, `${planet.name} is a colony. ${wasDead ? 'Under the domes, a' : 'A'} city begins.${carried.length ? ` The first districts stand on the old domes: ${carried.join(', ')}.` : ''}`, 'good');
     notify(world, planet.ownerId, `outpost-colony-${planet.id}`, `${planet.name} is a colony`, 'The outpost has grown into a full colony. Its surface is open for districts, and its old modules keep working.', 'normal', planet.id);
