@@ -9,7 +9,7 @@ import React from 'react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { resolveDisposition, type PrisonerDisposition, type PrisonerGroup } from '@/lib/combat/siege/prisoners';
-import { Coins, Hammer, UserPlus, Lock, Skull, Users, X } from 'lucide-react';
+import { Coins, Hammer, UserPlus, Lock, Skull, Users, X, Fence } from 'lucide-react';
 
 const OPTIONS: Array<{
     id: PrisonerDisposition;
@@ -25,10 +25,15 @@ const OPTIONS: Array<{
     { id: 'execute',  label: 'EXECUTE',  icon: <Skull size={12} />,    color: '#ef4444', blurb: 'Kill them. Terror, fury, and infamy that follows you.' },
 ];
 
+/** Only offered while the empire runs a camp world (lib/camps). */
+const CAMP_OPTION = { id: 'camp' as PrisonerDisposition, label: 'TO THE CAMPS', icon: <Fence size={12} />, color: '#a8a29e', blurb: 'Ship them to our camp world: they work, they die, and too many of them may break out.' };
+
 export default function PrisonerPanel({ onClose }: { onClose: () => void }) {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const prisoners = useUIStore(s => s.prisoners);
     const factions = useUIStore(s => s.factions);
+    const hasCamp = useUIStore(s => (s.planets as any[]).some(p => p.ownerId === s.playerFactionId && p.camp));
+    const options = hasCamp ? [...OPTIONS, CAMP_OPTION] : OPTIONS;
     const [confirming, setConfirming] = React.useState<string | null>(null);
 
     const mine: PrisonerGroup[] = React.useMemo(
@@ -99,7 +104,7 @@ export default function PrisonerPanel({ onClose }: { onClose: () => void }) {
 
                             {open && (
                                 <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
-                                    {OPTIONS.map(opt => {
+                                    {options.map(opt => {
                                         const outcome = resolveDisposition(group, opt.id);
                                         return (
                                             <button

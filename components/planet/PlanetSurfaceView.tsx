@@ -22,6 +22,7 @@ import WarHud from './WarHud';
 import UnitPieces from './UnitPieces';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { computeRoadNetwork, computeBridges } from './roadNetwork';
+import CampOverlay from './CampOverlay';
 import type { DepositKind } from '@/lib/planet-surface/types';
 
 /** Deposit markers on the board (lib/planet-surface/generator.ts carveFeatures). */
@@ -633,6 +634,9 @@ export default function PlanetSurfaceView() {
                                 />
                             );
                         })}
+
+                        {/* A camp world: the wire, the towers, the pits (lib/camps) */}
+                        {planet.camp && <CampOverlay surface={surface} geo={geo} revolt={!!planet.camp.revolt} />}
 
                         {/* The ground war: territory, front line, beachheads */}
                         {planet.siege?.districts && (

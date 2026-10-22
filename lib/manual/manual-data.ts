@@ -237,6 +237,22 @@ export const MANUAL_DATA: ManualSection[] = [
                 ],
             },
             {
+                id: 'camps',
+                title: 'Camp worlds',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Any colony but your capital can be made a camp world (6,000 credits, from its card). It becomes a world of wire, towers and pits.',
+                            'Who goes there: prisoners of war (TO THE CAMPS in the prisoner panel), your own dissidents (PURGE TO CAMP on another world: its unrest falls, once a day), part of a conquered world\'s people (DEPORT TO CAMP), and a beaten native people.',
+                            'Labour: metals, materiel and ammo every strategic tick, and the camp world builds its districts, troops and ships half again as fast. Experiments: research, but the inmates die fast and the galaxy hears of it. Forge: the harshest survivors become elite soldiers (Special Ops) who muster on the camp world; harsh worlds forge better. Any time: draft penal battalions (militia) from the inmates.',
+                            'Every mode kills, and every mode is remembered (infamy).',
+                            'Guard it: about one guard (garrison and your armies on the world) per three inmates. Past that the risk of a breakout climbs. A breakout is a real battle on the camp world\'s map. Crush it and the camp goes on; lose the capital and the world breaks free to its freed convicts, who will remember you.',
+                        ],
+                    },
+                ],
+            },
+            {
                 id: 'natives',
                 title: 'Native peoples',
                 blocks: [

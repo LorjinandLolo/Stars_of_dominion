@@ -30,6 +30,7 @@ export default function NativesPanel({ planet, playerFactionId }: { planet: any;
     const [busy, setBusy] = React.useState<string | null>(null);
     const civId = useUIStore(s => (s.factions as any)?.[playerFactionId ?? '']?.civilizationId);
     // Only the harshest civilizations may put a people to forced labour (worker: mayForceLabour).
+    const hasCamp = useUIStore(s => (s.planets as any[]).some(p => p.ownerId === playerFactionId && p.camp));
     const canForceLabour = !!CIVILIZATIONS.find(c => c.id === civId)?.playstyleTags?.some((t: string) => FORCED_LABOUR_TAGS.includes(t));
     if (!n || !playerFactionId) return null;
 
@@ -83,6 +84,9 @@ export default function NativesPanel({ planet, playerFactionId }: { planet: any;
                     <>
                         <Btn action="integrate" label="INTEGRATE" title="Make them subjects: a colony with their people, unrest at first, and their gift." />
                         <Btn action="displace" tone="amber" label="DISPLACE" title="Drive them into reserves in the wilds and take the land. Infamy." />
+                        {hasCamp && (
+                            <Btn action="camp" tone="rose" label="TO THE CAMPS" title="Ship them to our camp world. The land is ours; most of them will not survive it." />
+                        )}
                         {canForceLabour && (
                             <Btn action="enslave" tone="rose" label="FORCED LABOUR" title="Put them to work: production, but steady unrest, revolts, and great infamy." />
                         )}

@@ -16,6 +16,7 @@ import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilia
 import { classifyStar, factionColor } from './starVisuals';
 import { bodySummary } from '@/components/planet/bodyVisuals';
 import NativesPanel from './NativesPanel';
+import CampPanel from './CampPanel';
 import { surfaceGuns, gunTargetOf, GUN_TARGETS, GUN_TARGET_LABEL, GUN_TARGET_HINT } from '@/lib/combat/surface-guns';
 
 
@@ -652,6 +653,8 @@ function PlanetCard({
                 {/* Units in production on this world */}
                 {/* A native people on this world (lib/natives) */}
                 {planet.natives && <NativesPanel planet={planet} playerFactionId={playerFactionId} />}
+                {/* Camp worlds (lib/camps): run one, or send people to it */}
+                {isOwnedByPlayer && <CampPanel planet={planet} />}
 
                 {isOwnedByPlayer && activeJobs.length > 0 && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-700/30">

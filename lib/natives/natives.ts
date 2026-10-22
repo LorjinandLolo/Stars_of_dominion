@@ -29,16 +29,23 @@ import { RNG, seedFromString } from '../trade-system/rng';
 import { CIVILIZATIONS } from '../civilization/data/civilizations';
 // A cycle (colonize-service asks nativeConsent), resolved at call time.
 import { colonizePlanet } from '../exploration/colonize-service';
+import { campFor, admit } from '../camps/labour-camp';
 
 /** Pseudo-empire id the natives fight under on the siege board. */
 export const NATIVES_PREFIX = 'natives:';
 export const nativesIdFor = (planetId: string) => `${NATIVES_PREFIX}${planetId}`;
 export const isNativesId = (id?: string | null): boolean => !!id && id.startsWith(NATIVES_PREFIX);
+/**
+ * Sides on the siege board that are not empires: a native people, or the
+ * inmates of a camp world in revolt (lib/camps). They have no treasury, no
+ * fleets, take and give no prisoners and get no notifications.
+ */
+export const isPseudoEmpireId = (id?: string | null): boolean => !!id && (id.startsWith(NATIVES_PREFIX) || id.startsWith('inmates:'));
 
-export type NativeKind = 'arboreal' | 'giant' | 'amphibian' | 'burrower';
+export type NativeKind = 'arboreal' | 'giant' | 'amphibian' | 'burrower' | 'convicts';
 export type NativeGift = 'warriors' | 'scouts' | 'artisans' | 'miners';
 export type NativeStatus = 'free' | 'at_war' | 'pacified' | 'neighbours' | 'uplifted' | 'integrated' | 'enslaved' | 'displaced';
-export type NativeFate = 'integrate' | 'enslave' | 'displace';
+export type NativeFate = 'integrate' | 'enslave' | 'displace' | 'camp';
 
 export interface NativeCivilization {
     speciesName: string;
@@ -95,6 +102,7 @@ const KIND_BLURB: Record<NativeKind, string> = {
     giant: 'Towering, long-lived forest giants. Fierce in a fight, loyal to a friend, slow to forget a wrong.',
     amphibian: 'Web-handed river folk on stilt villages, who know every channel, reed bed and tide.',
     burrower: 'Stocky tunnel-dwellers who raise great earth halls and follow the ore deep into the hills.',
+    convicts: 'The freed inmates of a camp world that broke its chains. Hard, armed, and owing nothing to anyone.',
 };
 export const GIFT_LABEL: Record<NativeGift, string> = {
     warriors: 'Warriors (+25% military)',
@@ -142,6 +150,8 @@ export function rollNatives(planetId: string, archetype: PlanetArchetype | undef
 export function nativeComposition(n: NativeCivilization): Record<string, number> {
     if (n.warriors <= 0) return {};
     if (n.kind === 'giant') return { INFANTRY: n.warriors };
+    // Freed convicts: hard men with the guards' rifles.
+    if (n.kind === 'convicts') { const inf = Math.round(n.warriors * 0.6); return { INFANTRY: inf, MILITIA: n.warriors - inf }; }
     if (n.techLevel === 'stone') return { MILITIA: n.warriors };
     const share = n.techLevel === 'iron' ? 0.5 : 0.25;
     const inf = Math.round(n.warriors * share);
@@ -242,6 +252,7 @@ export function nativeAction(world: GameWorldState, factionId: string, planetId:
         case 'integrate':
         case 'enslave':
         case 'displace':
+        case 'camp':
             return decideFate(world, factionId, planet, action);
     }
     return { ok: false, reason: 'Unknown action.' };
@@ -252,6 +263,8 @@ function decideFate(world: GameWorldState, factionId: string, planet: any, fate:
     const n: NativeCivilization = planet.natives;
     if (n.status !== 'pacified' || n.overlordId !== factionId) return { ok: false, reason: `The ${n.speciesName}'s fate is not ours to decide.` };
     if (fate === 'enslave' && !mayForceLabour(world, factionId)) return { ok: false, reason: 'Our people would not stand for it.' };
+    const camp = fate === 'camp' ? campFor(world, factionId) : null;
+    if (fate === 'camp' && !camp) return { ok: false, reason: 'We have no camp world to send them to.' };
     const tags: string[] = planet.tags ?? (planet.tags = []);
     // The world becomes ours in all three cases: a colony on the beaten ground.
     const r = settleNativeWorld(world, factionId, planet);
@@ -263,6 +276,13 @@ function decideFate(world: GameWorldState, factionId: string, planet: any, fate:
         tags.push(`native_${n.gift}`);
         addInfamy(world, factionId, 2);
         return { ok: true, message: `The ${n.speciesName} are our subjects now. They will be slow to forgive, but they will work and fight for us.` };
+    }
+    if (fate === 'camp') {
+        const taken = admit(camp, 'natives', n.population * 20);
+        n.status = 'displaced';
+        n.population = Math.round(n.population * 0.1);
+        addInfamy(world, factionId, 12);
+        return { ok: true, message: `${taken.toLocaleString()} of the ${n.speciesName} were shipped to ${camp.name}. The land is ours.` };
     }
     if (fate === 'displace') {
         n.status = 'displaced';

@@ -79,6 +79,7 @@ import { isOrbitSuppressed } from '@/lib/orbital/orbital-service';
 import { surfaceGuns } from '@/lib/combat/surface-guns';
 import { raidersOf, type RaidTarget } from '@/lib/combat/commando-raid';
 import { airDropForce, airDropMen, airDropTargets } from '@/lib/combat/siege/air-drop';
+import { isPseudoEmpireId } from '@/lib/natives/natives';
 import type { CombatStance, PostBattleDirective } from '@/lib/combat/combat-types';
 import combatConfig from '@/lib/combat/combat-config.json';
 import { fleetBuildQuote, hasPendingRecruits, hasQueuedFleetBuild, queueAIFleetBuild, queueAIFleetTopUp, yardCanLay } from '@/lib/ai/ai-fleet-orders';
@@ -918,7 +919,8 @@ export function aiCommandGroundWars(world: GameWorldState): void {
             ['defender', siege.defenderEmpireId],
         ];
         for (const [side, factionId] of sides) {
-            if (!factionId || !isAIRunFaction(world as any, factionId)) continue;
+            // Native peoples and camp inmates in revolt have no player: the AI general fights for them.
+            if (!factionId || !(isAIRunFaction(world as any, factionId) || isPseudoEmpireId(factionId))) continue;
             // Stances persist across cycles on a positional siege, so "set it
             // if unset" would lock the AI into its first roll for the whole
             // war. Re-roll once per cycle instead, and make a stance read

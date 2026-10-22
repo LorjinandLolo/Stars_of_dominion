@@ -11,6 +11,7 @@ import {
 } from './construction-types';
 import { BUILDINGS } from '../../data/buildings';
 import { recalculatePlanetStats } from './recalculation';
+import { campBuildSpeed } from '../camps/labour-camp';
 import { constructionLogisticsMultiplier } from '../logistics/distribution-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import { getTechModifier } from '../tech/modifiers';
@@ -131,7 +132,9 @@ function buildSecondsFor(planet: Planet, buildingDef: BuildingDefinition, world?
   const buildSpeed = Math.max(0.05, stats.constructionSpeedModifier
     * constructionLogisticsMultiplier(planet)
     * computeInfrastructureEffects(planet).constructionSpeed
-    * getTechModifier(world, planet.ownerId, 'construction_speed'));
+    * getTechModifier(world, planet.ownerId, 'construction_speed')
+    // Labour gangs on a camp world (lib/camps).
+    * campBuildSpeed(planet));
   return baseBuildSeconds(buildingDef) / buildSpeed;
 }
 

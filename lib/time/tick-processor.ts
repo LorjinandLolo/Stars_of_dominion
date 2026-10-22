@@ -6,6 +6,7 @@
 import { tickCivilianShips } from '../combat/civilian-service';
 import { tickStagingArmies } from '../combat/siege/contested-ground';
 import { tickNatives } from '../natives/natives';
+import { tickCamps, musterForged } from '../camps/labour-camp';
 import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
@@ -184,6 +185,16 @@ export async function runStrategicTick(
             fireNotification({ id: `natives-${factionId}-${title}-${world.nowSeconds}`, factionId, category: 'diplomacy', priority: 'normal', title, body, createdAt: at, read: false } as any);
         }
     } catch (e) { console.error('[TickProcessor] tickNatives failed:', e); }
+    // Camp worlds (lib/camps): output, deaths, forged soldiers; a breakout is
+    // flagged here and started as a siege by the worker's next loop.
+    try {
+        for (const ev of tickCamps(world)) {
+            const planet: any = world.construction.planets.get(ev.planetId);
+            if (!planet?.camp) continue;
+            if (ev.kind === 'forged' && ev.men) musterForged(world, planet, ev.men);
+            if (ev.kind === 'breakout') planet.camp.pendingBreakout = true;
+        }
+    } catch (e) { console.error('[TickProcessor] tickCamps failed:', e); }
     try { shipOutpostWarehouses(world); } catch (e) { console.error('[TickProcessor] shipOutpostWarehouses failed:', e); }
     // 9c: Gambits — doctrine auto-resolve for overdue confrontations
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }

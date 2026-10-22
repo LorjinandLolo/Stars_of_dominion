@@ -37,7 +37,11 @@ import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
 import { commandoRaid, RAID_TARGET_LABEL, type RaidTarget } from '../lib/combat/commando-raid';
 import { airDropForce, airDropMen, canDropOn } from '../lib/combat/siege/air-drop';
-import { nativeAction, nativesResist, nativeComposition, nativesIdFor, isNativesId, type NativeAction } from '../lib/natives/natives';
+import { nativeAction, nativesResist, nativeComposition, nativesIdFor, isNativesId, isPseudoEmpireId, type NativeAction } from '../lib/natives/natives';
+import {
+    designateCamp, setCampMode, purge as campPurge, deport as campDeport, draft as campDraft, campFor, admit as campAdmit,
+    inmatesIdFor, isInmatesId, campBuildSpeed, CAMP_BUILD_SPEED, type CampMode,
+} from '../lib/camps/labour-camp';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -837,6 +841,10 @@ async function runGameTick() {
 
         // 4.54. Outposts run their shifts (lib/outposts).
         try { tickOutposts(world); } catch (e: any) { console.warn('[Tick Worker] tickOutposts failed:', e.message); }
+        // Camp breakouts flagged by the strategic tick become sieges here (lib/camps).
+        for (const p of world.construction.planets.values() as Iterable<any>) {
+            if (p.camp?.pendingBreakout) { delete p.camp.pendingBreakout; try { startCampBreakout(world, p); } catch (e: any) { console.warn('[Tick Worker] startCampBreakout failed:', e.message); } }
+        }
         // Sabotaged defences whose time is up come back (lib/espionage/defence-sabotage.ts).
         try { tickSabotageRecovery(world); } catch (e: any) { console.warn('[Tick Worker] tickSabotageRecovery failed:', e.message); }
         try { tickAIOutpostManagement(world); } catch (e: any) { console.warn('[Tick Worker] tickAIOutpostManagement failed:', e.message); }
@@ -1639,6 +1647,13 @@ function queueFormationRecruit(
     );
     job.targetFormationId = formationId;
     job.isFleet = isFleet;
+    // Built at a camp world's yard: the labour gangs (lib/camps).
+    {
+        const formation: any = isFleet ? world.movement.fleets.get(formationId) : world.movement.armies?.get(formationId);
+        const sys = formation?.currentSystemId;
+        const camp = sys ? [...world.construction.planets.values()].find((p: any) => p.systemId === sys && p.ownerId === factionId && p.camp && !p.camp.revolt) : null;
+        if (camp) job.completesAt = job.startedAt + (job.completesAt - job.startedAt) / CAMP_BUILD_SPEED;
+    }
     if (!world.combat) world.combat = {};
     if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
     world.combat.recruitmentJobs.push(job);
@@ -1881,6 +1896,23 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!fleet.currentSystemId) {
                 console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
             }
+            break;
+        }
+
+        case 'CAMP_ORDER': {
+            // payload: { action: 'designate' | 'mode' | 'purge' | 'deport' | 'draft', planetId, mode?, fromPlanetId? } — lib/camps/labour-camp.ts
+            const p = payload ?? {};
+            const r = p.action === 'designate' ? designateCamp(world, factionId, p.planetId)
+                : p.action === 'mode' ? setCampMode(world, factionId, p.planetId, p.mode as CampMode)
+                : p.action === 'purge' ? campPurge(world, factionId, p.planetId, p.fromPlanetId)
+                : p.action === 'deport' ? campDeport(world, factionId, p.planetId, p.fromPlanetId)
+                : p.action === 'draft' ? campDraft(world, factionId, p.planetId)
+                : { ok: false, reason: 'Unknown camp order.' };
+            if (!r.ok) { recordOrderFailure(world, factionId, actionId, r.reason!); break; }
+            const camp: any = world.construction.planets.get(p.planetId) ?? campFor(world, factionId);
+            if (r.draft && camp) standAsArmy(world, camp, factionId, { MILITIA: r.draft }, `Penal Battalion of ${camp.name}`);
+            notifyContest(world, camp ?? { id: p.planetId }, factionId, '', `${camp?.name ?? 'Camp'}`, r.message ?? 'Done.', '');
+            console.log(`[Order] ${factionId} CAMP_ORDER ${p.action} on ${camp?.name ?? p.planetId}`);
             break;
         }
 
@@ -2297,9 +2329,14 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             if (group.resolved) { recordOrderFailure(world, factionId, actionId, 'Their fate is already decided.'); break; }
 
-            const valid: PrisonerDisposition[] = ['ransom', 'labour', 'recruit', 'imprison', 'execute'];
+            const valid: PrisonerDisposition[] = ['ransom', 'labour', 'recruit', 'imprison', 'execute', 'camp'];
             const disposition = payload.disposition as PrisonerDisposition;
             if (!valid.includes(disposition)) { recordOrderFailure(world, factionId, actionId, 'Unknown disposition.'); break; }
+            if (disposition === 'camp') {
+                const camp = campFor(world, factionId, payload.campId);
+                if (!camp) { recordOrderFailure(world, factionId, actionId, 'We have no camp world to send them to.'); break; }
+                campAdmit(camp, 'pow', group.count);
+            }
 
             const outcome = resolveDisposition(group, disposition);
             const reserves = world.economy.factions.get(factionId)?.reserves;
@@ -3928,6 +3965,10 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recruitCount,
                 world.nowSeconds
             );
+            {
+                const speed = campBuildSpeed(world.construction.planets.get(payload.planetId));
+                if (speed > 1) job.completesAt = job.startedAt + (job.completesAt - job.startedAt) / speed;
+            }
             if (!world.combat) world.combat = {};
             if (!world.combat.recruitmentJobs) world.combat.recruitmentJobs = [];
             world.combat.recruitmentJobs.push(job);
@@ -6634,6 +6675,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
  * fourteen factions and every conquest since the siege system was written.
  */
 function capturePlanet(world: GameWorldState, planet: any, attackerId: string, label: string) {
+    // A camp world's inmates took the capital: the world breaks free.
+    if (isInmatesId(attackerId)) { campBreaksFree(world, planet); return; }
     // A field battle on empty ground takes the field, not the planet.
     if (planet.siege?.contested || isEmptyWorld(planet)) {
         contestWon(world, planet, attackerId);
@@ -6757,7 +6800,7 @@ function endSiegeDefenderHolds(
         } as any);
         withdrawingFleet.transportedArmyIds = [...(withdrawingFleet.transportedArmyIds ?? []), armyId];
         console.log(`[Tick Worker] ${men} invaders lift off ${planet.name} aboard ${withdrawingFleet.name ?? withdrawingFleet.id}`);
-    } else if (men > 0 && !isNativesId(siege.defenderEmpireId)) {
+    } else if (men > 0 && !isPseudoEmpireId(siege.defenderEmpireId) && !isPseudoEmpireId(siege.attackerEmpireId)) {
         const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
         for (const [unitType, count] of Object.entries(survivors)) {
             if (!count || count <= 0) continue;
@@ -6772,6 +6815,18 @@ function endSiegeDefenderHolds(
                 capturedAtSeconds: world.nowSeconds,
             });
         }
+    }
+    if (isInmatesId(siege.attackerEmpireId)) {
+        if (planet.camp) { planet.camp.revolt = false; planet.camp.breakouts = (planet.camp.breakouts ?? 0) + 1; }
+        const garrison: any = planet.garrison ?? siege.defenderState;
+        garrison.isUnderSiege = false;
+        garrison.siegeId = undefined;
+        planet.garrison = garrison;
+        planet.siege = null;
+        notifyContest(world, planet, planet.ownerId, '', `${planet.name}: the revolt is crushed`,
+            `The breakout on ${planet.name} was put down. The camp goes on.`, '');
+        console.log(`[Tick Worker] CAMP REVOLT on ${planet.name} crushed.`);
+        return;
     }
     if (isNativesId(siege.defenderEmpireId) && planet.natives) {
         // The people won: they go back to their villages, and remember.
@@ -6827,7 +6882,7 @@ function standAsArmy(world: GameWorldState, planet: any, factionId: string, comp
 function notifyContest(world: GameWorldState, planet: any, a: string, b: string, title: string, toA: string, toB: string): void {
     const at = new Date(world.nowSeconds * 1000).toISOString();
     for (const [who, body] of [[a, toA], [b, toB]] as const) {
-        if (!who || isNativesId(who)) continue;
+        if (!who || isPseudoEmpireId(who)) continue;
         try {
             fireNotification({ id: `contest-${planet.id}-${who}-${world.nowSeconds}`, factionId: who, category: 'combat', priority: 'urgent', title, body, createdAt: at, read: false } as any);
         } catch { /* probes run without the queue */ }
@@ -6993,6 +7048,93 @@ function startNativeWar(world: GameWorldState, planet: any, attackerId: string):
     console.log(`[Tick Worker] NATIVE WAR at ${planet.name}: ${attackerId} against ${n.warriors} ${n.speciesName}.`);
 }
 
+/**
+ * A camp world breaks out (lib/camps/labour-camp.ts): the able inmates rise
+ * where the camps stand and fight the garrison and every army of the owner on
+ * the world, on its district board, under the pseudo-empire inmates:<planetId>.
+ * The AI general commands them; they hold the camp stores so they are never
+ * cut off from orbit. Taking the capital frees the world (campBreaksFree);
+ * being wiped out ends the revolt (endSiegeDefenderHolds).
+ */
+export function startCampBreakout(world: GameWorldState, planet: any): void {
+    const camp = planet.camp;
+    if (!camp || planet.siege || !planet.ownerId) return;
+    const rising = Math.floor(camp.inmates * 0.6);
+    if (rising < 100) return;
+    camp.inmates -= rising;
+    camp.revolt = true;
+    const forged = camp.mode === 'forge' ? Math.floor(rising * 0.1) : 0;
+    const composition: Record<string, number> = { MILITIA: rising - forged, ...(forged ? { SPECIAL_OPS: forged } : {}) };
+    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+    const inmatesId = inmatesIdFor(planet.id);
+    const ownerId = planet.ownerId;
+    const defenseState: PlanetaryDefenseState = planet.garrison || defaultGarrison(planet, ownerId, DEFAULT_GARRISON_TROOPS);
+    defenseState.ownerEmpireId = ownerId;
+    defenseState.isUnderSiege = true;
+    // The camps stand away from the city: the rising starts out in the open.
+    const campSector = surface.sectors.filter(s => s.ring >= 3 && s.terrain !== 'ocean' && s.terrain !== 'mountains')
+        .sort((a, b) => a.index - b.index)[Math.floor(camp.breakouts * 7) % 5] ?? surface.sectors.find(s => s.terrain !== 'ocean');
+    const siegeId = `breakout-${planet.id}-${world.nowSeconds}`;
+    planet.siege = {
+        siegeId, planetId: planet.id, attackerEmpireId: inmatesId, defenderEmpireId: ownerId,
+        campRevolt: true, phase: 'LANDING', tickCount: 0, cycleCount: 0,
+        cycleLengthTicks: pacing.cycleLengthTicks, currentFrontage: 500, maxFrontage: 1000,
+        attackerState: {
+            siegeId, attackerEmpireId: inmatesId, sourceFleetIds: [], totalLandedTroops: rising, reserveTroops: 0,
+            unitComposition: composition as any, supply: 1000, maxSupply: 1000, morale: 100, maxMorale: 100, cohesion: 100, maxCohesion: 100,
+            orbitalSupportPower: 0, retreatRequested: false, reinforcementQueue: [], occupationControl: 0, devastationCaused: 0,
+        },
+        defenderState: defenseState,
+        battleLog: [],
+        lastResolvedCycle: 0,
+        districts: initDistrictWar(surface, defenseState.fortificationLevel ?? 0, campSector?.index ?? null, entrenchmentBonus(surface, [])),
+    } as any;
+    absorbStationedArmies(world, planet, planet.siege);
+    const war = planet.siege.districts!;
+    war.formations = [
+        ...seedFormations(surface, war, 'attacker', composition as any, `f-i-${world.nowSeconds}`),
+        ...seedFormations(surface, war, 'defender', defenseState.unitComposition, `f-d-${world.nowSeconds}`),
+    ];
+    war.contested = computeFront(surface, war);
+    war.strongpoints = computeStrongpoints(surface, planet, war);
+    war.defenderAuto = true;
+    applyDefaultDefence(surface, war, war.formations, war.strongpoints, world.nowSeconds);
+    planet.garrison = defenseState;
+    notifyContest(world, planet, ownerId, '', `${planet.name}: BREAKOUT`,
+        `${rising.toLocaleString()} inmates have overrun the wire on ${planet.name} and are fighting for the capital${forged ? `, ${forged.toLocaleString()} of them forged soldiers` : ''}. Hold it, or the world is lost.`, '');
+    console.log(`[Tick Worker] CAMP BREAKOUT on ${planet.name}: ${rising} inmates rise.`);
+}
+
+/**
+ * The inmates took the capital: the camp world breaks free. Nobody owns it any
+ * more; the freed convicts are its people now (a native people of kind
+ * 'convicts', lib/natives), hostile to their old masters, and anyone may deal
+ * with them or try to take it back.
+ */
+function campBreaksFree(world: GameWorldState, planet: any): void {
+    const siege: GroundSiegeState | null = planet.siege ?? null;
+    const formations = (siege?.districts?.formations ?? []) as Formation[];
+    const fighters = formations.length ? Math.round(tallySide(formations, 'attacker').total) : 0;
+    const former = planet.ownerId;
+    const freed = (planet.camp?.inmates ?? 0) + fighters;
+    // Release the world: no owner, no economy record, no garrison.
+    planet.ownerId = '';
+    world.economy.planets.delete(planet.id);
+    delete planet.garrison;
+    delete planet.camp;
+    planet.siege = null;
+    planet.tags = (planet.tags ?? []).filter((t: string) => t !== 'labour_camp' && t !== 'colony');
+    if (!planet.tags.includes('natives')) planet.tags.push('natives');
+    planet.natives = {
+        speciesName: `Free of ${planet.name}`, kind: 'convicts', gift: 'warriors', techLevel: 'iron', disposition: 'proud',
+        population: Math.max(10, Math.round(freed / 20)), warriors: Math.max(100, fighters), maxWarriors: Math.max(200, Math.round(freed * 0.6)),
+        status: 'free', contacted: true, relations: { [former]: 0 }, observers: {},
+    };
+    notifyContest(world, planet, former, '', `${planet.name} is lost`,
+        `The inmates of ${planet.name} took the capital. The world has broken free, and its people will remember us.`, '');
+    console.log(`[Tick Worker] CAMP WORLD ${planet.name} BREAKS FREE from ${former}.`);
+}
+
 /** The natives were beaten: they lay down their spears, and their fate is the victor's. */
 function nativesDefeated(world: GameWorldState, planet: any, attackerId: string): void {
     const n = planet.natives;
@@ -7104,6 +7246,10 @@ function empireName(world: GameWorldState, id: string): string {
     if (isNativesId(id)) {
         const p: any = world.construction.planets.get(id.slice('natives:'.length));
         return p?.natives ? `the ${p.natives.speciesName}` : 'the natives';
+    }
+    if (isInmatesId(id)) {
+        const p: any = world.construction.planets.get(id.slice('inmates:'.length));
+        return `the inmates of ${p?.name ?? 'the camp'}`;
     }
     const f: any = world.economy?.factions?.get?.(id);
     return f?.name ?? String(id).replace(/^faction-/, '').replace(/[-_]/g, ' ');
@@ -7497,7 +7643,9 @@ export function processSieges(world: GameWorldState) {
                 // A contested sky is not a blockade: both sides get half
                 // their supply down, and nobody starves for it.
                 const halfSupply = orbitHolder === 'contested';
-                const cutOff = orbitHolder !== 'attacker' && !halfSupply;
+                // Camp inmates in revolt hold the camp's stores; they are not fed from orbit.
+                const groundRising = isPseudoEmpireId(updatedSiege.attackerEmpireId);
+                const cutOff = orbitHolder !== 'attacker' && !halfSupply && !groundRising;
                 const att: any = updatedSiege.attackerState;
                 const def: any = updatedSiege.defenderState;
                 att.cutOffCycles = cutOff ? (att.cutOffCycles ?? 0) + 1 : 0;
@@ -7635,7 +7783,7 @@ export function processSieges(world: GameWorldState) {
                 captorEmpireId: string,
             ) => {
                 if (!lossesByType) return 0;
-                if (isNativesId(ownerEmpireId) || isNativesId(captorEmpireId)) return 0; // no prisoners in a native war
+                if (isPseudoEmpireId(ownerEmpireId) || isPseudoEmpireId(captorEmpireId)) return 0; // no prisoners with natives or inmates
                 // The Infernoids are not taken alive — the one surviving
                 // consequence of ground morale, and the only place their
                 // "no fear of death" can express itself honestly.
@@ -7683,7 +7831,7 @@ export function processSieges(world: GameWorldState) {
             // rate says about men who were merely beaten.
             const takeSurrendered = (byType: Record<string, number>, ownerEmpireId: string, captorEmpireId: string) => {
                 let total = 0;
-                if (isNativesId(ownerEmpireId) || isNativesId(captorEmpireId)) return 0; // they melt into the wilds, or die
+                if (isPseudoEmpireId(ownerEmpireId) || isPseudoEmpireId(captorEmpireId)) return 0; // they melt away, or die
                 for (const [unitType, count] of Object.entries(byType)) {
                     if (!count) continue;
                     total += count;

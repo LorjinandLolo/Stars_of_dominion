@@ -12,7 +12,8 @@ export type PrisonerDisposition =
     | 'labour'      // put to work — metals, at a humanitarian price
     | 'recruit'     // turned into your own militia
     | 'imprison'    // held as leverage, fed at your expense
-    | 'execute';    // killed
+    | 'execute'     // killed
+    | 'camp';       // shipped to a camp world (lib/camps)
 
 export interface PrisonerGroup {
     id: string;
@@ -136,6 +137,12 @@ export function resolveDisposition(
                 credits: -Math.ceil(n * 6),  // upkeep
                 rivalry: 2,
                 summary: `${n} prisoners held pending negotiation.`,
+            };
+        case 'camp':
+            return {
+                rivalry: 8,
+                infamy: 2,
+                summary: `${n} prisoners shipped to the camps.`,
             };
         case 'execute':
             return {
