@@ -14,6 +14,7 @@ import { isFleetOperational } from '@/lib/movement/movement-service';
 import { formatPercent } from '@/lib/ui/format';
 import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
+import { bodySummary } from '@/components/planet/bodyVisuals';
 import { surfaceGuns, gunTargetOf, GUN_TARGETS, GUN_TARGET_LABEL, GUN_TARGET_HINT } from '@/lib/combat/surface-guns';
 
 
@@ -58,6 +59,7 @@ const PLANET_TYPE_ICONS: Record<string, { icon: string; color: string }> = {
     ocean:       { icon: '🌊', color: '#0ea5e9' },
     arctic:      { icon: '❄️', color: '#bae6fd' },
     desert:      { icon: '🏜️', color: '#ca8a04' },
+    gas_giant:   { icon: '🪐', color: '#e8c48f' },
 };
 
 // ── Orbit colours: each world's stripe marks its place around the star ──────
@@ -191,7 +193,8 @@ function PlanetCard({
                 <span className="text-sm leading-none shrink-0">{typeInfo.icon}</span>
                 <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-slate-200 truncate leading-tight">{planet.name}</div>
-                    <div className="text-[10px] capitalize leading-tight" style={{ color: typeInfo.color }}>{planet.planetType}</div>
+                    <div className="text-[10px] capitalize leading-tight" style={{ color: typeInfo.color }}>{planet.parentPlanetId ? 'moon' : String(planet.planetType).replace('_', ' ')}</div>
+                    {bodySummary(planet) && <div className="text-[9px] text-slate-500 leading-tight truncate">{bodySummary(planet)}</div>}
                 </div>
                 <button
                     onClick={(e) => { e.stopPropagation(); onSurface(planet.id); }}

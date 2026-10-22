@@ -13,6 +13,7 @@ import { classifyStar, factionColor, hashString } from '@/components/galaxy/star
 import { hasAsteroidBelt, beltLaneIndex } from '@/lib/movement/belts';
 import { generateSurface } from '@/lib/planet-surface/generator';
 import { ARCHETYPE_CORE, ARCHETYPE_LABEL } from './terrainMeta';
+import { BodyArt, bodyRadius, bodySummary } from './bodyVisuals';
 import { formatPercent } from '@/lib/ui/format';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import {
@@ -71,13 +72,14 @@ function usePrefersReducedMotion(): boolean {
     return reduced;
 }
 
-/** Planet marker radius from its type/size hints. */
-function planetRadius(planet: any): number {
-    const t = String(planet.planetType ?? '').toLowerCase();
-    if (t.includes('mega')) return 46;
-    if (t.includes('capital')) return 40;
-    if (t.includes('moon')) return 22;
-    return 32;
+/**
+ * Where a moon is: riding its parent, on its own little orbit. Pure in the
+ * same inputs as planetPosAt, so render, hit target and camera agree.
+ */
+function moonPosAt(parent: { x: number; y: number }, parentRadius: number, k: number, moonId: string, seconds: number): { x: number; y: number; r: number } {
+    const dist = parentRadius + 22 + k * 16;
+    const angle = (hashString(moonId) % 628) / 100 + (2 * Math.PI * seconds) / (45 + k * 30);
+    return { x: parent.x + dist * Math.cos(angle), y: parent.y + dist * Math.sin(angle), r: dist };
 }
 
 export default function SystemOrbitalView() {
@@ -99,6 +101,29 @@ export default function SystemOrbitalView() {
         () => planets.filter((p: any) => p.systemId === systemViewId),
         [planets, systemViewId]
     );
+    // Worlds out from the star in their real orbit order (body-generator's
+    // orbitIndex; older worlds keep list order), and moons with their parent.
+    const { primaries, moonsOf } = React.useMemo(() => {
+        const ids = new Set(systemPlanets.map((p: any) => p.id));
+        const moonsOf: Record<string, any[]> = {};
+        const primaries: any[] = [];
+        systemPlanets.forEach((p: any) => {
+            if (p.parentPlanetId && ids.has(p.parentPlanetId)) (moonsOf[p.parentPlanetId] ??= []).push(p);
+            else primaries.push(p);
+        });
+        primaries.sort((a: any, b: any) => (a.orbitIndex ?? systemPlanets.indexOf(a)) - (b.orbitIndex ?? systemPlanets.indexOf(b)));
+        return { primaries, moonsOf };
+    }, [systemPlanets]);
+    /** Any world's live position: a primary on its lane, a moon around its parent. */
+    const posOf = React.useCallback((id: string, seconds: number): { x: number; y: number; r: number } | null => {
+        const i = primaries.findIndex((p: any) => p.id === id);
+        if (i >= 0) return planetPosAt(i, primaries.length, seconds);
+        const p = systemPlanets.find((q: any) => q.id === id);
+        const pi = p ? primaries.findIndex((q: any) => q.id === p.parentPlanetId) : -1;
+        if (pi < 0) return null;
+        const k = (moonsOf[p.parentPlanetId] ?? []).findIndex((m: any) => m.id === id);
+        return moonPosAt(planetPosAt(pi, primaries.length, seconds), bodyRadius(primaries[pi]), Math.max(0, k), id, seconds);
+    }, [primaries, moonsOf, systemPlanets]);
 
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
     React.useEffect(() => { setSelectedId(null); }, [systemViewId]);
@@ -113,17 +138,16 @@ export default function SystemOrbitalView() {
     const [cam, setCam] = React.useState<Camera>(CAMERA_HOME);
     const camRef = React.useRef<Camera>(CAMERA_HOME);
     const followRef = React.useRef(true);
-    const frameRef = React.useRef({ selectedIndex: -1, count: 0, seconds: 0 });
+    const frameRef = React.useRef<{ selectedId: string | null; posOf: (id: string, s: number) => { x: number; y: number } | null; seconds: number }>({ selectedId: null, posOf: () => null, seconds: 0 });
     const dragRef = React.useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
     const [dragging, setDragging] = React.useState(false);
     const svgRef = React.useRef<SVGSVGElement | null>(null);
 
     // The rAF loop aims the camera from these without waiting for a render.
-    const selectedIndex = selectedId ? systemPlanets.findIndex((p: any) => p.id === selectedId) : -1;
     React.useLayoutEffect(() => {
-        frameRef.current.selectedIndex = selectedIndex;
-        frameRef.current.count = systemPlanets.length;
-    }, [selectedIndex, systemPlanets.length]);
+        frameRef.current.selectedId = selectedId;
+        frameRef.current.posOf = posOf;
+    }, [selectedId, posOf]);
 
     /** Selecting (or clearing) re-arms the follow; a pan/zoom disarms it. */
     const selectPlanet = React.useCallback((id: string | null) => {
@@ -148,10 +172,9 @@ export default function SystemOrbitalView() {
                 setOrbitSeconds(seconds);
             }
             if (followRef.current) {
-                const { selectedIndex, count } = frameRef.current;
-                const target = selectedIndex >= 0
-                    ? (() => { const p = planetPosAt(selectedIndex, count, seconds); return cameraFocusing(p.x, p.y); })()
-                    : CAMERA_HOME;
+                const { selectedId: sel, posOf: where } = frameRef.current;
+                const at = sel ? where(sel, seconds) : null;
+                const target = at ? cameraFocusing(at.x, at.y) : CAMERA_HOME;
                 const cur = camRef.current;
                 const k = reducedMotion ? 1 : 1 - Math.exp(-dt * 7);
                 const next = {
@@ -255,13 +278,13 @@ export default function SystemOrbitalView() {
 
     const star = classifyStar(system);
     const selected = systemPlanets.find((p: any) => p.id === selectedId) ?? null;
-    const lane = orbitLane(systemPlanets.length);
-    const planetPos = (i: number) => planetPosAt(i, systemPlanets.length, orbitSeconds);
+    const lane = orbitLane(primaries.length);
+    const planetPos = (i: number) => planetPosAt(i, primaries.length, orbitSeconds);
     // The belt is a real feature now (lib/movement/belts.ts): same roll the
     // worker makes, so what you see is what you can lurk in.
     const hasBelt = hasAsteroidBelt(system.id);
-    const beltRadius = systemPlanets.length > 0
-        ? planetPos(beltLaneIndex(system.id, systemPlanets.length)).r + lane * 0.5
+    const beltRadius = primaries.length > 0
+        ? planetPos(beltLaneIndex(system.id, primaries.length)).r + lane * 0.5
         : 320;
 
     /** My fleet parked here — the selected one if it is, else the first. */
@@ -352,8 +375,9 @@ export default function SystemOrbitalView() {
                     <div className="px-3 py-2 text-[8px] font-display tracking-[0.25em] text-slate-500 uppercase border-b border-slate-800/40">
                         Worlds · {systemPlanets.length}
                     </div>
-                    {systemPlanets.map((p: any) => {
+                    {primaries.flatMap((q: any) => [q, ...(moonsOf[q.id] ?? [])]).map((p: any) => {
                         const psurf = generateSurface(p.id, p.planetType, p.tags);
+                        const summary = bodySummary(p);
                         const [pin, pout] = ARCHETYPE_CORE[psurf.archetype];
                         const isSel = selectedId === p.id;
                         return (
@@ -361,7 +385,8 @@ export default function SystemOrbitalView() {
                                 key={p.id}
                                 onClick={() => selectPlanet(selectedId === p.id ? null : p.id)}
                                 className={[
-                                    'flex items-center gap-2.5 px-3 py-2.5 border-b border-slate-900/80 text-left transition-colors',
+                                    'flex items-center gap-2.5 py-2.5 border-b border-slate-900/80 text-left transition-colors',
+                                    p.parentPlanetId ? 'pl-7 pr-3' : 'px-3',
                                     isSel ? 'bg-sky-500/10 border-l-2 border-l-sky-400' : 'hover:bg-slate-900/60',
                                 ].join(' ')}
                             >
@@ -372,8 +397,9 @@ export default function SystemOrbitalView() {
                                 <span className="min-w-0 flex-1">
                                     <span className="block text-[10px] font-display tracking-wider text-slate-200 truncate">{p.name}</span>
                                     <span className="block text-[7px] font-display tracking-[0.15em] text-slate-500 uppercase">
-                                        {ARCHETYPE_LABEL[psurf.archetype]} {p.planetType}
+                                        {p.planetType === 'gas_giant' ? 'Gas giant' : p.parentPlanetId ? 'Moon' : `${ARCHETYPE_LABEL[psurf.archetype]} ${p.planetType}`}
                                     </span>
+                                    {summary && <span className="block text-[7px] font-mono text-slate-600 truncate">{summary}</span>}
                                 </span>
                                 <span
                                     className="w-2 h-2 rounded-full flex-shrink-0"
@@ -432,7 +458,7 @@ export default function SystemOrbitalView() {
                         <g transform={`translate(${cam.x.toFixed(2)} ${cam.y.toFixed(2)}) scale(${cam.zoom.toFixed(4)})`}>
 
                         {/* Orbit arcs */}
-                        {systemPlanets.map((p: any, i: number) => (
+                        {primaries.map((p: any, i: number) => (
                             <circle
                                 key={`orbit-${p.id}`}
                                 cx={SUN_X} cy={SUN_Y} r={planetPos(i).r}
@@ -461,15 +487,17 @@ export default function SystemOrbitalView() {
                         <circle cx={SUN_X} cy={SUN_Y} r={78} fill="url(#sv-star)" className="sv-breathe" />
 
                         {/* Planets */}
-                        {systemPlanets.map((p: any, i: number) => {
+                        {primaries.map((p: any, i: number) => {
                             const { x, y } = planetPos(i);
-                            const rad = planetRadius(p);
+                            const rad = bodyRadius(p);
                             const surface = generateSurface(p.id, p.planetType, p.tags);
-                            const [inner, outer] = ARCHETYPE_CORE[surface.archetype];
+                            const realMoons: any[] = moonsOf[p.id] ?? [];
                             const isSelected = selectedId === p.id;
                             const owner = p.ownerId ? factionColor(p.ownerId) : '#475569';
                             const contested = !!p.siege;
-                            const moonCount = String(p.planetType).toLowerCase().includes('moon') ? 0 : hashString(p.id + ':moons') % 3;
+                            // Cosmetic moons only for worlds from before the body generator
+                            // rolled real ones; a charted world shows the moons it has.
+                            const moonCount = realMoons.length || p.orbitIndex !== undefined || String(p.planetType).toLowerCase().includes('moon') ? 0 : hashString(p.id + ':moons') % 3;
                             const hasStation = ((p.orbital?.slots ?? []) as any[]).some(sl => sl && sl.state !== 'destroyed');
                             return (
                                 <g
@@ -484,20 +512,8 @@ export default function SystemOrbitalView() {
                                     )}
                                     {/* Ownership ring */}
                                     <circle cx={x} cy={y} r={rad + 6} fill="none" stroke={owner} strokeWidth={2.5} opacity={p.ownerId ? 0.85 : 0.35} />
-                                    {/* World */}
-                                    <circle
-                                        cx={x} cy={y} r={rad}
-                                        fill={`url(#sv-body-${p.id})`}
-                                        stroke="#020617" strokeWidth={1.5}
-                                    />
-                                    <defs>
-                                        <radialGradient id={`sv-body-${p.id}`} cx="35%" cy="32%">
-                                            <stop offset="0%" stopColor={inner} />
-                                            <stop offset="100%" stopColor={outer} />
-                                        </radialGradient>
-                                    </defs>
-                                    {/* Terminator */}
-                                    <circle cx={x} cy={y} r={rad} fill="url(#sv-limb)" pointerEvents="none" />
+                                    {/* World: bands, caps, air, rings (bodyVisuals) */}
+                                    <BodyArt planet={p} archetype={surface.archetype} x={x} y={y} r={rad} limbId="sv-limb" />
                                     {contested && (
                                         <circle cx={x} cy={y} r={rad + 12} fill="none" stroke="#ef4444" strokeWidth={2} className="sv-pulse" />
                                     )}
@@ -517,8 +533,29 @@ export default function SystemOrbitalView() {
                                         fill="#64748b" fontFamily="monospace"
                                         pointerEvents="none"
                                     >
-                                        {ARCHETYPE_LABEL[surface.archetype]}
+                                        {p.planetType === 'gas_giant' ? 'GAS GIANT' : ARCHETYPE_LABEL[surface.archetype]}
                                     </text>
+
+                                    {/* Real moons: their own worlds, selectable, riding the parent */}
+                                    {realMoons.map((m: any, k: number) => {
+                                        const mp = moonPosAt({ x, y }, rad, k, m.id, orbitSeconds);
+                                        const mr = bodyRadius(m);
+                                        const msurf = generateSurface(m.id, m.planetType, m.tags);
+                                        const mSel = selectedId === m.id;
+                                        return (
+                                            <g key={m.id} onClick={(e) => { e.stopPropagation(); if (!dragRef.current?.moved) selectPlanet(mSel ? null : m.id); }}>
+                                                <circle cx={x} cy={y} r={mp.r} fill="none" stroke="#1e293b" strokeWidth={0.6} strokeDasharray="2 4" pointerEvents="none" />
+                                                <circle cx={mp.x} cy={mp.y} r={mr + 10} fill="transparent" />
+                                                {m.ownerId && <circle cx={mp.x} cy={mp.y} r={mr + 4} fill="none" stroke={factionColor(m.ownerId)} strokeWidth={1.5} opacity={0.85} />}
+                                                {mSel && <circle cx={mp.x} cy={mp.y} r={mr + 9} fill="none" stroke="#ffffff" strokeWidth={1.2} strokeDasharray="3 3" className="sv-spin" />}
+                                                <BodyArt planet={m} archetype={msurf.archetype} x={mp.x} y={mp.y} r={mr} limbId="sv-limb" />
+                                                {mSel && (
+                                                    <text x={mp.x} y={mp.y + mr + 16} textAnchor="middle" fontSize={11} fill="#f8fafc" fontFamily="var(--font-display)" pointerEvents="none"
+                                                        style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}>{m.name}</text>
+                                                )}
+                                            </g>
+                                        );
+                                    })}
 
                                     {/* Moons: tiny companions on their own slow orbits */}
                                     {Array.from({ length: moonCount }, (_, m) => (
@@ -568,9 +605,9 @@ export default function SystemOrbitalView() {
                                 // Parked over a world: ride a tight ring around it (and move
                                 // with it); otherwise hold station off the star. The old fixed
                                 // slot put every fleet "a little too far" from anything.
-                                const orbitIdx = f.orbitingPlanetId ? systemPlanets.findIndex((p: any) => p.id === f.orbitingPlanetId) : -1;
-                                const orbitPos = orbitIdx >= 0 ? planetPos(orbitIdx) : null;
-                                const orbitRing = orbitIdx >= 0 ? planetRadius(systemPlanets[orbitIdx]) + 30 : 0;
+                                const orbited = f.orbitingPlanetId ? systemPlanets.find((p: any) => p.id === f.orbitingPlanetId) : null;
+                                const orbitPos = orbited ? posOf(orbited.id, orbitSeconds) : null;
+                                const orbitRing = orbited ? bodyRadius(orbited) + 30 : 0;
                                 const orbitAngle = -0.95 + fi * 0.65;
                                 // Lurking: ride the belt itself, tucked among the rocks.
                                 const inBelt = f.stance === 'belt' && hasBelt;
@@ -730,6 +767,7 @@ function PlanetDossier({ planet, factions, playerFactionId, onSurface, onSystems
                 <Stat icon={<Wrench size={10} />} label="Infrastructure" value={`Level ${planet.infrastructureLevel ?? 1}`} />
                 <Stat icon={<ShieldCheck size={10} />} label="Defense" value={'★'.repeat(defenseStars) + '☆'.repeat(5 - defenseStars)} tone="text-amber-300" />
                 <Stat icon={<Globe size={10} />} label="Developed" value={`${developed}/64 districts`} />
+                {bodySummary(planet) && <Stat icon={<Globe size={10} />} label="Survey" value={bodySummary(planet)} tone="text-sky-300" />}
                 {planet.specialization && <Stat icon={<Landmark size={10} />} label="Doctrine" value={String(planet.specialization).replace(/[-_]/g, ' ')} />}
 
                 {/* Construction queue */}

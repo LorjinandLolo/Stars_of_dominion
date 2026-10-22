@@ -22,6 +22,17 @@ import WarHud from './WarHud';
 import UnitPieces from './UnitPieces';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { computeRoadNetwork, computeBridges } from './roadNetwork';
+import type { DepositKind } from '@/lib/planet-surface/types';
+
+/** Deposit markers on the board (lib/planet-surface/generator.ts carveFeatures). */
+const DEPOSIT_META: Record<DepositKind, { label: string; color: string }> = {
+    ore: { label: 'Ore seam', color: '#d6d3d1' },
+    rare_minerals: { label: 'Rare minerals', color: '#e879f9' },
+    geothermal: { label: 'Geothermal vent', color: '#fb923c' },
+    ice: { label: 'Ice deposit', color: '#a5f3fc' },
+    fertile: { label: 'Fertile soil', color: '#bef264' },
+    relic: { label: 'Precursor relic', color: '#fde047' },
+};
 import { factionColor } from '@/components/galaxy/starVisuals';
 import { terrainCostForCiv } from '@/lib/factions/terrain-affinity';
 import { formatPercent } from '@/lib/ui/format';
@@ -544,14 +555,46 @@ export default function PlanetSurfaceView() {
                             })}
                         </g>
 
+                        {/* Rivers: from the high ground down to the sea (carveFeatures) */}
+                        <g pointerEvents="none">
+                            {surface.sectors.filter(sec => sec.river).flatMap(sec => {
+                                const [ax, ay] = geo.centroids[sec.index];
+                                const dimmed = hoverRegion !== null && sec.regionId !== hoverRegion;
+                                return sec.neighbors
+                                    .filter(n => (surface.sectors[n].river && n > sec.index) || surface.sectors[n].terrain === 'ocean')
+                                    .slice(0, 3)
+                                    .map(n => {
+                                        const [bx, by] = geo.centroids[n];
+                                        const mouth = surface.sectors[n].terrain === 'ocean';
+                                        const ex = mouth ? ax + (bx - ax) * 0.55 : bx, ey = mouth ? ay + (by - ay) * 0.55 : by;
+                                        const mx = (ax + ex) / 2 + (ey - ay) * 0.12, my = (ay + ey) / 2 - (ex - ax) * 0.12;
+                                        return (
+                                            <g key={`river-${sec.index}-${n}`} opacity={dimmed ? 0.25 : 1}>
+                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0c4a6e" strokeWidth={6} strokeLinecap="round" opacity={0.55} />
+                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#38bdf8" strokeWidth={3} strokeLinecap="round" opacity={0.85} />
+                                            </g>
+                                        );
+                                    });
+                            })}
+                        </g>
+
                         {/* Developments + markers */}
                         {surface.sectors.map(sec => {
                             const occ = occupancy.get(sec.index) ?? null;
                             const dimmed = hoverRegion !== null && sec.regionId !== hoverRegion;
                             const [cxp, cyp] = geo.centroids[sec.index];
                             if (!occ) {
-                                return sec.chokepoint ? (
-                                    <circle key={`m-${sec.index}`} cx={cxp} cy={cyp} r={3.5} fill="#fbbf24" opacity={dimmed ? 0.15 : 0.75} pointerEvents="none" />
+                                const dep = sec.deposit ? DEPOSIT_META[sec.deposit] : null;
+                                return (sec.chokepoint || dep) ? (
+                                    <g key={`m-${sec.index}`} pointerEvents="none" opacity={dimmed ? 0.15 : 0.85}>
+                                        {sec.chokepoint && <circle cx={cxp} cy={cyp} r={3.5} fill="#fbbf24" />}
+                                        {dep && (
+                                            <g transform={`translate(${cxp + (sec.chokepoint ? 9 : 0)} ${cyp})`}>
+                                                <polygon points="0,-6 5,0 0,6 -5,0" fill={dep.color} stroke="#020617" strokeWidth={1} />
+                                                <polygon points="0,-6 5,0 0,0" fill="#ffffff" opacity={0.35} />
+                                            </g>
+                                        )}
+                                    </g>
                                 ) : null;
                             }
                             const def = BUILDING_BY_ID.get(occ.buildingId);
@@ -779,8 +822,9 @@ export default function PlanetSurfaceView() {
                         style={{ left: Math.min(hover.x + 14, window.innerWidth - 190), top: hover.y + 14 }}
                     >
                         <div className="text-[9px] font-display tracking-wider uppercase" style={{ color: meta.color }}>
-                            {meta.label}{sec.chokepoint ? ' · chokepoint' : ''}
+                            {meta.label}{sec.chokepoint ? ' · chokepoint' : ''}{sec.river ? ' · river' : ''}
                         </div>
+                        {sec.deposit && <div className="text-[8px] mt-0.5" style={{ color: DEPOSIT_META[sec.deposit].color }}>{DEPOSIT_META[sec.deposit].label}</div>}
                         <div className="text-[8px] text-slate-400">{region?.name}</div>
                         {def && <div className="text-[8px] text-slate-200 mt-0.5">{def.name}{occ!.state !== 'active' ? ` (${occ!.state.replace('_', ' ')})` : ''}</div>}
                     </div>
