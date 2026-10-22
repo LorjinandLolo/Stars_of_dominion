@@ -10,7 +10,7 @@ import React from 'react';
 import type { PlanetSurface, TerrainType } from '@/lib/planet-surface/types';
 import type { DistrictWarState, GroundUnitType } from '@/lib/combat/siege/siege-types';
 import type { Formation, FormationSide } from '@/lib/combat/siege/formations';
-import { legalMoves } from '@/lib/combat/siege/formations';
+import { legalMoves, veteranLevel, VET_LABEL } from '@/lib/combat/siege/formations';
 import { controllerOf } from '@/lib/combat/siege/district-front';
 import { pointInPolygon, type SurfaceGeometry, type Pt } from './surfaceGeometry';
 
@@ -353,13 +353,24 @@ export default function UnitPieces({
                                 y={size * 0.85} textAnchor="middle" fontSize={size * 0.72}
                                 fill="#e2e8f0" fontFamily="monospace" pointerEvents="none"
                             >
-                                {f.strength >= 1000 ? `${(f.strength / 1000).toFixed(1)}k` : f.strength}
+                                {/* The enemy's numbers are a scout's estimate (ground fog). */}
+                                {playerSide && !mine ? '~' : ''}{f.strength >= 1000 ? `${(f.strength / 1000).toFixed(1)}k` : f.strength}
                             </text>
                             {/* organisation bar: a shredded formation fights badly */}
                             <rect x={-size * 1.15} y={size * 1.0} width={size * 2.3} height={size * 0.22}
                                 fill="#1e293b" rx={size * 0.11} />
                             <rect x={-size * 1.15} y={size * 1.0} width={size * 2.3 * (org / 100)} height={size * 0.22}
                                 fill={org > 60 ? '#4ade80' : org > 30 ? '#fbbf24' : '#f87171'} rx={size * 0.11} />
+                            {/* veteran chevrons, one per level */}
+                            {veteranLevel(f) > 0 && (
+                                <g transform={`translate(${(-size * 1.2).toFixed(1)}, ${(-size * 0.75).toFixed(1)})`} pointerEvents="none">
+                                    <title>{VET_LABEL[veteranLevel(f)]}</title>
+                                    {Array.from({ length: veteranLevel(f) }, (_, n) => (
+                                        <path key={n} d={`M 0 ${n * size * 0.28} l ${size * 0.22} ${-size * 0.18} l ${size * 0.22} ${size * 0.18}`}
+                                            fill="none" stroke="#fbbf24" strokeWidth={1.1} />
+                                    ))}
+                                </g>
+                            )}
                             {/* cut off from supply */}
                             {f.encircled && (
                                 <circle cx={size * 1.2} cy={-size * 0.8} r={size * 0.34}

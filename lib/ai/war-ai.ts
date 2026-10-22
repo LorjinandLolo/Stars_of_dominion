@@ -87,13 +87,16 @@ import { fireNotification } from '@/lib/time/notification-hooks';
 import { StrategicAIService } from '@/lib/ai/strategic-ai-service';
 import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
 import { CivilizationRegistry } from '@/lib/civilization/registry';
-import { createPlan, type BattlePlan } from '@/lib/combat/siege/battle-plans';
-import { CAPITAL_SECTOR } from '@/lib/combat/siege/district-front';
-import { canEverEnter, type Formation } from '@/lib/combat/siege/formations';
+import type { BattlePlan } from '@/lib/combat/siege/battle-plans';
+import type { Formation } from '@/lib/combat/siege/formations';
 import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
-import { applyDefaultDefence } from '@/lib/combat/siege/defence-doctrine';
+import { applyDefaultDefence, CAPITAL_PIECES } from '@/lib/combat/siege/defence-doctrine';
+import { CAPITAL_SECTOR } from '@/lib/combat/siege/district-front';
+import { commandGround } from '@/lib/ai/ground-general';
+import { callInBlocked, queueCallIn } from '@/lib/combat/siege/call-ins';
+import type { GroundMoment } from '@/lib/combat/siege/moments';
 import { generateSurface } from '@/lib/planet-surface/generator';
-import type { TacticalStanceId, GroundUnitType } from '@/lib/combat/siege/siege-types';
+import type { TacticalStanceId } from '@/lib/combat/siege/siege-types';
 
 const DAY = 86400;
 
@@ -890,10 +893,17 @@ function siegeNeedsReinforcement(siege: any): boolean {
 
 // ─── 4b. Commanding the ground war (every worker loop) ───────────────────────
 
-const ATTACK_TACTICS: TacticalStanceId[] = ['AGGRESSIVE_ASSAULT', 'AGGRESSIVE_ASSAULT', 'MANEUVER_AMBUSH'];
-const DEFEND_TACTICS: TacticalStanceId[] = ['DEFENSIVE_HOLD', 'DEFENSIVE_HOLD', 'MANEUVER_AMBUSH', 'AGGRESSIVE_ASSAULT'];
-/** Preparation an AI offensive waits for before it goes (the cap is 100). */
-export const AI_PLAN_LAUNCH_PREPARATION = 54;
+/**
+ * The ground general's dice for one side of one siege in one cycle: the same
+ * world plays out the same way, so a replay or a probe is reproducible.
+ */
+function generalRng(planetId: string, salt: string, cycle: number): () => number {
+    let h = 2166136261;
+    for (const ch of `${planetId}:${salt}:${cycle}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+    let x = h >>> 0;
+    return () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return x / 4294967296; };
+}
+
 /** Chance per cycle that an AI commander makes a stance read. */
 const AI_READ_CHANCE = 0.5;
 
@@ -903,17 +913,20 @@ const AI_READ_CHANCE = 0.5;
  * cycle in DEFENSIVE_HOLD. A player does both through MIL_SIEGE_PLAN and the
  * tactic order; the AI did neither, so every AI landing sat on its beachhead
  * forever and an AI defender never manned its front. Each loop, for every
- * siege with an AI-run side:
- *   - attacker: one offensive plan aimed at the capital district, every
- *     formation assigned, launched once it has prepared for a few cycles;
- *   - defender: one front plan, executed at once, so the line is held;
- *   - both: a tactic for the coming cycle (the engine clears it after each).
+ * siege with an AI-run side, the ground general (lib/ai/ground-general.ts)
+ * reads the war through that side's fog and orders every formation:
+ *   - attacker: masses on the one or two districts with the best odds, pins
+ *     the rest of the line, pulls broken pieces back, keeps a reserve;
+ *   - defender: the shared doctrine, plus counter-attacks on weak invader pieces;
+ *   - both, once per cycle: a stance and read, answers to its moments, call-ins.
  */
 export function aiCommandGroundWars(world: GameWorldState): void {
     if (!Array.isArray((world as any).claimedFactionIds)) return;
     for (const planet of world.construction.planets.values() as Iterable<any>) {
         const siege = planet.siege;
         if (!siege) continue;
+        const war = siege.districts;
+        if (!war || !Array.isArray(war.formations) || war.formations.length === 0) continue;
         const sides: Array<['attacker' | 'defender', string]> = [
             ['attacker', siege.attackerEmpireId],
             ['defender', siege.defenderEmpireId],
@@ -921,74 +934,83 @@ export function aiCommandGroundWars(world: GameWorldState): void {
         for (const [side, factionId] of sides) {
             // Native peoples and camp inmates in revolt have no player: the AI general fights for them.
             if (!factionId || !(isAIRunFaction(world as any, factionId) || isPseudoEmpireId(factionId))) continue;
-            // Stances persist across cycles on a positional siege, so "set it
-            // if unset" would lock the AI into its first roll for the whole
-            // war. Re-roll once per cycle instead, and make a stance read
-            // about half the time — a read is a gamble (right ×1.3, wrong
-            // ×0.85), and an AI that always guessed would just be noise.
-            const memo: Record<string, number> = (siege as any).aiCommandCycle ?? ((siege as any).aiCommandCycle = {});
-            if (memo[side] !== siege.cycleCount) {
-                memo[side] = siege.cycleCount;
-                const pick = side === 'attacker' ? ATTACK_TACTICS : DEFEND_TACTICS;
-                const tactic = pick[Math.floor(Math.random() * pick.length)];
-                const guessPool = side === 'attacker' ? DEFEND_TACTICS : ATTACK_TACTICS;
-                const guess = Math.random() < AI_READ_CHANCE
-                    ? guessPool[Math.floor(Math.random() * guessPool.length)]
-                    : undefined;
-                if (side === 'attacker') {
-                    siege.attackerState.activeAttackerTactic = tactic;
-                    siege.attackerState.attackerPrediction = guess;
-                } else {
-                    siege.defenderState.activeDefenderTactic = tactic;
-                    siege.defenderState.defenderPrediction = guess;
+            const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+            const points: Strongpoint[] = war.strongpoints ?? [];
+            war.plans = war.plans ?? [];
+
+            // The defender's backbone is the shared doctrine: capital and
+            // strongpoints manned, everything else on the line (the same code
+            // a human defender gets until they give an order). The general
+            // only adds counter-attacks on top of it.
+            let pinned: Set<string> | undefined;
+            if (side === 'defender') {
+                // The doctrine pins every piece standing on a post; the general
+                // keeps only the post's quota (the strongest) and may use the rest.
+                const doctrine = applyDefaultDefence(surface, war, war.formations, points, world.nowSeconds);
+                pinned = new Set<string>();
+                const onPost = new Map<number, Formation[]>();
+                for (const f of war.formations as Formation[]) {
+                    if (!doctrine.pinned.has(f.id)) continue;
+                    const at = f.path?.length ? f.path[f.path.length - 1] : f.moveTo ?? f.sectorIndex;
+                    onPost.set(at, [...(onPost.get(at) ?? []), f]);
                 }
+                for (const [at, forms] of onPost) {
+                    const quota = at === CAPITAL_SECTOR ? CAPITAL_PIECES : 1;
+                    for (const f of forms.sort((x, y) => y.strength - x.strength).slice(0, quota)) pinned.add(f.id);
+                }
+            }
+            else {
+                // The attacker fights the board itself: no standing plan.
+                war.plans = war.plans.filter((p: BattlePlan) => p.side !== 'attacker');
+                for (const f of war.formations as Formation[]) if (f.side === 'attacker') f.planId = null;
             }
 
-            const war = siege.districts;
-            if (!war || !Array.isArray(war.formations) || war.formations.length === 0) continue;
-            war.plans = war.plans ?? [];
-            const points: Strongpoint[] = war.strongpoints ?? [];
-            let plan: BattlePlan | undefined = war.plans.find((p: BattlePlan) => p.side === side);
-            if (!plan) {
-                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
-                plan = createPlan(surface, war, side, side === 'attacker' ? 'offensive' : 'front',
-                    side === 'attacker' ? [CAPITAL_SECTOR] : [], world.nowSeconds);
-                war.plans.push(plan);
+            const plan = commandGround({
+                surface, war, side,
+                cycle: siege.cycleCount,
+                orbitHolder: siege.orbit?.holder,
+                shieldUp: siege.orbit?.shieldUp,
+                strongpoints: points,
+                rng: generalRng(planet.id, side, siege.cycleCount),
+                idleCycles: (war as any).aiIdle?.[side] ?? 0,
+                pinned,
+            });
+            const byId = new Map((war.formations as Formation[]).map(f => [f.id, f]));
+            for (const o of plan.orders) {
+                const f = byId.get(o.formationId);
+                if (!f) continue;
+                f.planId = null;
+                f.path = [];
+                f.redeploying = false;
+                f.moveTo = o.moveTo;
+                if (o.stance) f.stance = o.stance;
             }
-            // The defender runs the shared doctrine: capital and strongpoints
-            // manned, everything else on the line (the same code a human
-            // defender gets until they give an order).
-            if (side === 'defender') {
-                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
-                applyDefaultDefence(surface, war, war.formations, points, world.nowSeconds);
-                continue;
+
+            // Once per cycle: the stance and read, the moments, the call-ins.
+            // Stances persist across cycles on a positional siege, so they are
+            // re-chosen every cycle rather than set once.
+            const memo: Record<string, number> = (siege as any).aiCommandCycle ?? ((siege as any).aiCommandCycle = {});
+            if (memo[side] === siege.cycleCount) continue;
+            memo[side] = siege.cycleCount;
+            const guess = generalRng(planet.id, side + ':read', siege.cycleCount)() < AI_READ_CHANCE ? plan.prediction : undefined;
+            if (side === 'attacker') {
+                siege.attackerState.activeAttackerTactic = plan.tactic;
+                siege.attackerState.attackerPrediction = guess;
+            } else {
+                siege.defenderState.activeDefenderTactic = plan.tactic;
+                siege.defenderState.defenderPrediction = guess;
             }
-            // The invader's objectives, in order: the shield (so the fleet
-            // can fire and the defender cannot land), the barracks (so the
-            // levy stops), then the capital. Refreshed every loop so a
-            // strongpoint that falls drops off the list and the next one
-            // becomes the target. A district none of our pieces can ever
-            // enter (a shield built in the mountains, and no airborne) is not
-            // an objective — it is the fleet's problem.
-            {
-                const surface = generateSurface(planet.id, planet.planetType, planet.tags);
-                const ownTypes = new Set<GroundUnitType>(war.formations.filter((f: Formation) => f.side === 'attacker' && f.strength > 0).map((f: Formation) => f.unitType));
-                const reachable = (idx: number) => [...ownTypes].some(t => canEverEnter(t, surface.sectors[idx].terrain));
-                const next = (kind: 'shield' | 'barracks') =>
-                    points.filter(p => p.kind === kind && p.active && p.holder === 'defender' && reachable(p.sectorIndex)).map(p => p.sectorIndex);
-                const objective = next('shield')[0] ?? next('barracks')[0] ?? CAPITAL_SECTOR;
-                if (plan.objectives[0] !== objective) plan.objectives = [objective];
+            for (const a of plan.moments) {
+                const m = (war.moments ?? []).find((x: GroundMoment) => x.id === a.momentId);
+                if (m && !m.resolved) m.chosen = a.choice;
             }
-            for (const f of war.formations) {
-                if (f.side === side && f.strength > 0 && f.planId !== plan.id) {
-                    f.planId = plan.id;
-                    f.moveTo = null;
-                    f.path = [];
-                }
+            const board = { surface, war, orbit: siege.orbit, nextCycle: siege.cycleCount + 1 };
+            for (const c of plan.callIns) {
+                if (!callInBlocked(board, side, c.kind, c.sector)) queueCallIn(war, side, c.kind, c.sector, siege.cycleCount + 1);
             }
-            if (!plan.executing && plan.preparation >= AI_PLAN_LAUNCH_PREPARATION) {
-                plan.executing = true;
-            }
+            (war as any).aiIntent = { ...((war as any).aiIntent ?? {}), [side]: plan.intent };
+            const idle = ((war as any).aiIdle ??= {});
+            idle[side] = plan.attacked ? 0 : (idle[side] ?? 0) + 1;
         }
     }
 }

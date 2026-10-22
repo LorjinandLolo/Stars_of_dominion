@@ -10,6 +10,7 @@ import type { PlanetSurface } from '@/lib/planet-surface/types';
 import type { DistrictWarState } from '@/lib/combat/siege/siege-types';
 import { controllerOf, computeFront, isPassable } from '@/lib/combat/siege/district-front';
 import type { SurfaceGeometry, Pt } from './surfaceGeometry';
+import BattlePlayback from './BattlePlayback';
 
 interface WarLayerProps {
     surface: PlanetSurface;
@@ -153,6 +154,10 @@ export default function WarLayer({ surface, geo, war, attackerColor, defenderCol
                     </g>
                 );
             })}
+
+            {/* The last cycle replayed, incoming call-ins, decisions waiting */}
+            <BattlePlayback geo={geo} war={war} attackerColor={attackerColor} defenderColor={defenderColor}
+                playerSide={playerIsAttacker ? 'attacker' : 'defender'} />
 
             <style>{`
                 .war-front { animation: war-front 1.1s linear infinite; }

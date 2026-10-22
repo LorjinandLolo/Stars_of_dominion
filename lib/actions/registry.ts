@@ -103,6 +103,20 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { fleetId: "id", planetId: "id", sectorIndex: "number" },
     cost: {}
   },
+  MIL_GROUND_MOMENT: {
+    id: "MIL_GROUND_MOMENT",
+    category: "military",
+    // Answer a decision the last ground cycle raised (lib/combat/siege/moments.ts).
+    params: { planetId: "id", momentId: "string", choiceId: "string" },
+    cost: {}
+  },
+  MIL_GROUND_CALL_IN: {
+    id: "MIL_GROUND_CALL_IN",
+    category: "military",
+    // Orbital strike / barrage / smoke / rally, landing next cycle (lib/combat/siege/call-ins.ts).
+    params: { planetId: "id", kind: "string", sectorIndex: "number" },
+    cost: {}
+  },
   MIL_COMMANDO_RAID: {
     id: "MIL_COMMANDO_RAID",
     category: "military",

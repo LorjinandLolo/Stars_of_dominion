@@ -27,6 +27,11 @@ const MIN_ORG_TO_MOVE = 40;
 export const CAPITAL_PIECES = 2;
 /** Plan kinds the doctrine owns; a player's own plans are never touched because the doctrine only runs while they have given no orders. */
 const DOCTRINE_PLAN_KINDS: Array<BattlePlan['kind']> = ['front', 'offensive'];
+/**
+ * A piece this small on a post is not its garrison: it stays, but the post
+ * still gets a real one. A fortress held by a hundred militia is given away.
+ */
+export const MIN_GARRISON = 300;
 /** The invader holding any district this close to the capital contracts the front onto the core. */
 export const THREAT_RING = 3;
 
@@ -81,23 +86,27 @@ export function applyDefaultDefence(
     }
     // Under-manned posts get the nearest spare pieces that can get there.
     for (const idx of wanted) {
-        const present = own.filter(f => pinned.has(f.id) && headingTo(f, idx)).length;
+        const present = own.filter(f => pinned.has(f.id) && headingTo(f, idx) && f.strength >= MIN_GARRISON).length;
         for (let n = present; n < (wantedCount.get(idx) ?? 1); n++) {
             if (!assignNearest(idx)) { unmanned.push(idx); break; }
         }
     }
     function assignNearest(idx: number): boolean {
-        let best: { f: Formation; route: number[] } | null = null;
+        // The strongest piece that can get there soon, not merely the nearest:
+        // a post held by a hundred militia is a post given away.
+        let best: { f: Formation; route: number[]; score: number } | null = null;
         for (const f of own) {
             if (pinned.has(f.id) || (f.organization ?? 100) < MIN_ORG_TO_MOVE) continue;
             const route = redeployRoute(surface, war, f, idx);
-            if (route && (!best || route.length < best.route.length)) best = { f, route };
+            if (!route) continue;
+            const score = f.strength / (1 + route.length);
+            if (!best || score > best.score) best = { f, route, score };
         }
         if (!best) {
             // No rail route (cut off): try a plain march if it is adjacent.
             for (const f of own) {
                 if (pinned.has(f.id)) continue;
-                if (legalMoves(surface, war, f).some(o => o.sectorIndex === idx && !o.contested)) { best = { f, route: [idx] }; break; }
+                if (legalMoves(surface, war, f).some(o => o.sectorIndex === idx && !o.contested)) { best = { f, route: [idx], score: 0 }; break; }
             }
         }
         if (!best) return false;

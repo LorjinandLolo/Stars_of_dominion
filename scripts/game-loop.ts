@@ -148,6 +148,10 @@ import {
     type Formation,
 } from '../lib/combat/siege/formations';
 import { resolveDistrictBattle } from '../lib/combat/siege/district-battle';
+import { districtReport, type BattleFactor, type DistrictReport } from '../lib/combat/siege/battle-beats';
+import { rollWeather, weatherMultiplier, rollPreMoveChaos, rollPostBattleChaos, WEATHER_EFFECT, WEATHER_LABEL, type ChaosEvent, type WeatherKind } from '../lib/combat/siege/chaos';
+import { applyMoments, detectMoments, type DistrictBuff } from '../lib/combat/siege/moments';
+import { applyCallIns, callInBlocked, queueCallIn, CALL_INS, type CallInKind } from '../lib/combat/siege/call-ins';
 import {
     createPlan,
     tickPlan,
@@ -161,6 +165,7 @@ import { BUILDINGS } from '../data/buildings';
 import { generateSurface, autoPlaceBuilding } from '../lib/planet-surface/generator';
 import { SURFACE_SECTOR_COUNT } from '../lib/planet-surface/types';
 import { computeSectorOccupancy } from '../lib/planet-surface/occupancy';
+import { roadLinkKeys } from '../lib/planet-surface/roads';
 // Static imports for order handlers. These used to be fire-and-forget dynamic
 // `import().then(...)` calls inside executeOrder — the mutation could land AFTER
 // saveWorldState() had already serialized the world, silently losing the order.
@@ -1939,6 +1944,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!siege || siege.attackerEmpireId !== factionId || !war?.formations) { recordOrderFailure(world, factionId, actionId, `You are not invading ${planet.name}: land a beachhead first.`); break; }
             if (!fleet.currentSystemId || fleet.destinationSystemId || fleet.currentSystemId !== planet.systemId) { recordOrderFailure(world, factionId, actionId, `${fleet.name ?? 'The fleet'} must be parked over ${planet.name}.`); break; }
             if (!canCrossOrbit(siege.orbit, 'attacker')) { recordOrderFailure(world, factionId, actionId, `The enemy holds the orbit over ${planet.name}: nothing drops.`); break; }
+            if (war.weather && WEATHER_EFFECT[war.weather.kind as WeatherKind].groundsDrops) { recordOrderFailure(world, factionId, actionId, `${WEATHER_LABEL[war.weather.kind as WeatherKind]} over ${planet.name}: the drop is grounded.`); break; }
             const surf = generateSurface(planet.id, planet.planetType, planet.tags);
             const at = Number(payload.sectorIndex);
             if (!Number.isInteger(at) || !canDropOn(surf, at)) { recordOrderFailure(world, factionId, actionId, 'Pick a land district to drop on.'); break; }
@@ -2419,6 +2425,37 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                     planet.siege.defenderState.activeDefenderTactic = payload.tacticId as TacticalStanceId;
                 }
             }
+            break;
+        }
+
+        case 'MIL_GROUND_MOMENT': {
+            // payload: { planetId, momentId, choiceId } — lib/combat/siege/moments.ts.
+            // The answer is applied at the start of the next cycle.
+            const planet: any = world.construction.planets.get(payload.planetId);
+            const war = planet?.siege?.districts;
+            const side = planet?.siege?.attackerEmpireId === factionId ? 'attacker' : planet?.siege?.defenderEmpireId === factionId ? 'defender' : null;
+            const moment = (war?.moments ?? []).find((m: any) => m.id === payload.momentId);
+            if (!side || !moment || moment.side !== side) { recordOrderFailure(world, factionId, actionId, 'That decision is not yours to make.'); break; }
+            if (moment.resolved) { recordOrderFailure(world, factionId, actionId, 'Too late — the cycle has already resolved.'); break; }
+            if (!moment.choices.some((c: any) => c.id === payload.choiceId)) { recordOrderFailure(world, factionId, actionId, 'Not one of the choices.'); break; }
+            moment.chosen = payload.choiceId;
+            break;
+        }
+
+        case 'MIL_GROUND_CALL_IN': {
+            // payload: { planetId, kind, sectorIndex } — lib/combat/siege/call-ins.ts.
+            // Lands at the start of the next cycle.
+            const planet: any = world.construction.planets.get(payload.planetId);
+            const siege = planet?.siege;
+            const war = siege?.districts;
+            const side = siege?.attackerEmpireId === factionId ? 'attacker' : siege?.defenderEmpireId === factionId ? 'defender' : null;
+            const kind = payload.kind as CallInKind;
+            if (!side || !war?.formations || !CALL_INS[kind]) { recordOrderFailure(world, factionId, actionId, 'You have no war on that world to call anything in on.'); break; }
+            const surf = generateSurface(planet.id, planet.planetType, planet.tags);
+            const at = Number(payload.sectorIndex ?? -1);
+            const why = callInBlocked({ surface: surf, war, orbit: siege.orbit, nextCycle: siege.cycleCount + 1 }, side, kind, at);
+            if (why) { recordOrderFailure(world, factionId, actionId, why); break; }
+            queueCallIn(war, side, kind, at, siege.cycleCount + 1);
             break;
         }
 
@@ -7584,7 +7621,10 @@ export function processSieges(world: GameWorldState) {
 
                 // A defender who has given no orders runs the default doctrine:
                 // the capital and the strongpoints manned, the rest on the line.
-                if (war.defenderAuto && !isAIRunFaction(world as any, updatedSiege.defenderEmpireId)) {
+                // AI empires, natives and camp revolts get it from the ground
+                // general (lib/ai/ground-general.ts), which also counter-attacks;
+                // running it again here would wipe those orders.
+                if (war.defenderAuto && !isAIRunFaction(world as any, updatedSiege.defenderEmpireId) && !isPseudoEmpireId(updatedSiege.defenderEmpireId)) {
                     applyDefaultDefence(surface, war, war.formations, points, world.nowSeconds);
                 }
 
@@ -7594,13 +7634,50 @@ export function processSieges(world: GameWorldState) {
                     res.log.push(...tickPlan(surface, war, plan, war.formations));
                 }
 
+                // Strength each side brought into the cycle, for the morale maths.
+                const menBefore = { attacker: 0, defender: 0 };
+                for (const f of war.formations) if (f.strength > 0) menBefore[f.side] += f.strength;
+
+                // ── The weather, the decisions, the call-ins, the friction ─
+                // The last cycle's moments take their answer (or the default)
+                // and the call-ins ordered since land, before anything moves.
+                // Their kills fall inside this cycle, so the pools rewritten
+                // below see them. Then the ways a move goes wrong.
+                const cycleNo = updatedSiege.cycleCount;
+                war.weather = rollWeather(surface, war.weather, cycleNo, rng);
+                const weatherKind = war.weather.kind;
+                // Roads: the world's road tree (the one the surface view draws),
+                // less whatever has been blown and not yet repaired.
+                {
+                    const cut = war.roadsCut ?? {};
+                    for (const [k, until] of Object.entries(cut)) if (until <= cycleNo) delete cut[k];
+                    war.roads = roadLinkKeys(surface, computeSectorOccupancy(planet as any, surface).keys()).filter(k => !cut[k]);
+                }
+                const chaosEvents: ChaosEvent[] = [];
+                const reports: DistrictReport[] = [];
+                const buffs: DistrictBuff[] = [];
+                {
+                    const answered = applyMoments(surface, war, war.formations, war.moments ?? [], cycleNo);
+                    const landed = applyCallIns(war, war.formations, cycleNo);
+                    buffs.push(...answered.buffs, ...landed.buffs);
+                    res.log.push(...answered.log, ...landed.log);
+                    for (const side of ['attacker', 'defender'] as const) {
+                        for (const [t, n] of Object.entries(answered.surrendered[side])) surrendered[side][t] = (surrendered[side][t] ?? 0) + (n as number);
+                        for (const [t, n] of Object.entries(landed.killed[side])) battleLosses[side][t] = (battleLosses[side][t] ?? 0) + (n as number);
+                    }
+                    const pre = rollPreMoveChaos({
+                        surface, war, formations: war.formations, cycle: cycleNo, weather: weatherKind, rng,
+                        morale: { attacker: updatedSiege.attackerState.morale ?? 100, defender: updatedSiege.defenderState.morale ?? 100 },
+                        partisansAllowed: false,
+                    });
+                    chaosEvents.push(...pre);
+                    res.log.push(...pre.map(e => e.text));
+                }
+
                 // Who is standing still this cycle — they are the ones digging in.
                 const stillIds = new Set(war.formations
                     .filter(f => f.strength > 0 && f.moveTo == null && !(f.path?.length) && !f.redeploying)
                     .map(f => f.id));
-                // Strength each side brought into the cycle, for the morale maths.
-                const menBefore = { attacker: 0, defender: 0 };
-                for (const f of war.formations) if (f.strength > 0) menBefore[f.side] += f.strength;
 
                 res.log.push(...resolveMoves(surface, war, war.formations));
 
@@ -7643,9 +7720,19 @@ export function processSieges(world: GameWorldState) {
                         dealt: districtTraits.defender.dealt
                             * painMultiplier(world, updatedSiege.defenderEmpireId ?? planet.ownerId, war.formations as any, 'defender', idx),
                     };
-                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits, reads);
+                    // The weather on each side's mix of arms, and whatever a
+                    // moment or a call-in put on this district this cycle.
+                    const modifiers: Record<'attacker' | 'defender', BattleFactor[]> = { attacker: [], defender: [] };
+                    for (const side of ['attacker', 'defender'] as const) {
+                        const here = war.formations.filter(f => f.strength > 0 && f.sectorIndex === idx && f.side === side);
+                        const w = weatherMultiplier(weatherKind, here, here[0]?.stance ?? stances[side]);
+                        if (w !== 1) modifiers[side].push({ side, label: WEATHER_LABEL[weatherKind], mult: w });
+                        for (const b of buffs) if (b.sector === idx && b.side === side && b.cycle === cycleNo) modifiers[side].push({ side, label: b.reason, mult: b.mult });
+                    }
+                    const outcome = resolveDistrictBattle(surface, war, war.formations, idx, stances, morale, rng, planBonus, districtTraits, reads, modifiers);
                     if (!outcome) continue;
                     fought.add(idx);
+                    reports.push(districtReport(outcome.beatInput, rng));
                     if (outcome.captured) {
                         (outcome.holder === 'attacker' ? res.captured : res.liberated).push(idx);
                     }
@@ -7674,6 +7761,27 @@ export function processSieges(world: GameWorldState) {
                     if (burned > 0) {
                         res.log.push(`Zughra's flame scours the invaders — ${burned.toFixed(0)} strength burned away.`);
                     }
+                }
+
+                // What the fighting left behind: an officer down, short rounds,
+                // a depot going up, partisans behind the line, deserters. Men
+                // these kill are losses; partisans are new pieces, tallied
+                // into the pools with everything else below.
+                {
+                    const post = rollPostBattleChaos({
+                        surface, war, formations: war.formations, cycle: cycleNo, weather: weatherKind, rng,
+                        morale,
+                        partisansAllowed: !updatedSiege.contested && !isNativesId(updatedSiege.defenderEmpireId) && planet.ownerId === updatedSiege.defenderEmpireId,
+                    }, fought);
+                    war.formations.push(...post.spawned);
+                    for (const e of post.events) {
+                        if ((e.kind === 'friendly_fire' || e.kind === 'deserters') && e.men) {
+                            const t = war.formations.find(f => f.id === e.formationId)?.unitType ?? 'INFANTRY';
+                            battleLosses[e.side][t] = (battleLosses[e.side][t] ?? 0) + e.men;
+                        }
+                    }
+                    chaosEvents.push(...post.events);
+                    res.log.push(...post.events.map(e => e.text));
                 }
 
                 war.formations = pruneFormations(war.formations);
@@ -7741,7 +7849,16 @@ export function processSieges(world: GameWorldState) {
                 // Formations that stood still and are fed pull themselves back
                 // together; the redeployed, the encircled and the ones that
                 // just fought do not.
-                recoverOrganization(war.formations, fought);
+                // Bad weather slows it: rain and snow are no place to rest.
+                {
+                    const orgBefore = new Map(war.formations.map(f => [f.id, f.organization ?? 100]));
+                    recoverOrganization(war.formations, fought);
+                    const slow = WEATHER_EFFECT[weatherKind].recovery;
+                    if (slow < 1) for (const f of war.formations) {
+                        const was = orgBefore.get(f.id) ?? 100;
+                        if ((f.organization ?? 100) > was) f.organization = was + ((f.organization ?? 100) - was) * slow;
+                    }
+                }
 
                 // Shovels: a formation that neither moved nor fought this
                 // cycle, standing on ground its side holds, digs in.
@@ -7809,6 +7926,12 @@ export function processSieges(world: GameWorldState) {
                         now.holder === 'attacker' ? 'strongpoint_fallen' : 'strongpoint_retaken',
                         { strongpoint: now }, nameOfEmpire);
                 }
+
+                // The cycle as it will be replayed on the board, and the
+                // decisions it leaves each commander before the next one.
+                war.lastReport = { cycle: cycleNo, at: world.nowSeconds, districts: reports, events: chaosEvents, weather: weatherKind };
+                war.moments = detectMoments(surface, war, war.formations, reports, cycleNo,
+                    war.strongpoints.filter(p => p.active).map(p => p.sectorIndex));
             } else {
                 const abstract = advanceFront(surface, war, swing, rng);
                 res.captured.push(...abstract.captured);

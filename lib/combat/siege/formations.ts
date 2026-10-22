@@ -61,7 +61,20 @@ export interface Formation {
     encircled?: boolean;
     /** Consecutive cycles at zero supply; at STARVE_SURRENDER_CYCLES it lays down its arms. */
     starvedCycles?: number;
+    /**
+     * Battles survived (two for one where it held the ground). Every
+     * VET_XP_PER_LEVEL makes it a veteran level, up to VET_MAX_LEVEL; each
+     * level fights VET_STEP harder (district-battle.ts).
+     */
+    xp?: number;
 }
+
+export const VET_XP_PER_LEVEL = 3;
+export const VET_MAX_LEVEL = 3;
+export const VET_STEP = 0.07;
+/** 0 (green) .. VET_MAX_LEVEL (elite). */
+export const veteranLevel = (f: Pick<Formation, 'xp'>) => Math.min(VET_MAX_LEVEL, Math.floor((f.xp ?? 0) / VET_XP_PER_LEVEL));
+export const VET_LABEL = ['Green', 'Blooded', 'Veteran', 'Elite'] as const;
 
 export const ORG_MAX = 100;
 /** Organisation regained per cycle when a formation holds still and is supplied. */
@@ -204,6 +217,8 @@ export function legalMoves(
     terrainCostOverride?: (terrain: TerrainType, base: number) => number,
 ): MoveOption[] {
     const adjacency = buildAdjacency(surface);
+    // The world's own roads (war.roads, kept by the worker) unless the caller passes its own.
+    roadLinks = roadLinks ?? roadSetOf(war);
     const budget = BASE_MOVE[formation.unitType];
     const sensitivity = TERRAIN_SENSITIVITY[formation.unitType];
     const start = formation.sectorIndex;
@@ -217,8 +232,11 @@ export function legalMoves(
         for (const n of adjacency[cur]) {
             const sec = surface.sectors[n];
             if (!isPassable(sec)) continue;
-            const linked = roadLinks?.has(cur < n ? `${cur}-${n}` : `${n}-${cur}`);
-            // A road halves the going; rough ground punishes heavy formations.
+            // A road halves the going, but only between districts your side
+            // holds: nobody drives up the enemy's road into his guns. Rough
+            // ground punishes heavy formations.
+            const linked = roadLinks?.has(cur < n ? `${cur}-${n}` : `${n}-${cur}`)
+                && controllerOf(war, cur) === formation.side && controllerOf(war, n) === formation.side;
             const base = TERRAIN_COST[sec.terrain];
             const effective = terrainCostOverride ? terrainCostOverride(sec.terrain, base) : base;
             const raw = effective * (linked ? 0.5 : sensitivity);
@@ -237,6 +255,15 @@ export function legalMoves(
         cost,
         contested: controllerOf(war, sectorIndex) !== formation.side,
     }));
+}
+
+/** war.roads as a Set, built once per array (the worker replaces the array each cycle). */
+const roadSets = new WeakMap<string[], Set<string>>();
+function roadSetOf(war: DistrictWarState): Set<string> | undefined {
+    if (!war.roads?.length) return undefined;
+    let set = roadSets.get(war.roads);
+    if (!set) { set = new Set(war.roads); roadSets.set(war.roads, set); }
+    return set;
 }
 
 /**

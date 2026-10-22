@@ -12,9 +12,9 @@ import type { DistrictWarState, DistrictController, GroundSiegeState } from './s
 export const CAPITAL_SECTOR = 0;
 /**
  * Consecutive cycles the invader must hold the capital before the government
- * falls. One cycle in the bunkers is the garrison's chance to retake it.
+ * falls. Two cycles in the bunkers are the garrison's chance to retake it.
  */
-export const CAPITAL_FALL_CYCLES = 2;
+export const CAPITAL_FALL_CYCLES = 3;
 
 /** Terrain an invasion cannot land on or fight through conventionally. */
 const IMPASSABLE: TerrainType[] = ['ocean'];

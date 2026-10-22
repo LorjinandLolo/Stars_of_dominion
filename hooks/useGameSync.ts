@@ -1297,6 +1297,15 @@ export function useGameSync() {
             }
         };
 
+        // Ground fog: the snapshot carries no siege pieces; the route sends
+        // each side its own view of its wars next to every new snapshot.
+        const mergeGroundWars = (world: GameWorldState, wars: Array<{ planetId: string; districts: any }> | undefined) => {
+            for (const w of wars ?? []) {
+                const planet: any = world.construction?.planets?.get?.(w.planetId);
+                if (planet?.siege) planet.siege.districts = { ...(planet.siege.districts ?? {}), ...w.districts };
+            }
+        };
+
         const initSync = async (attempt = 0) => {
             try {
                 if (attempt === 0) setIsLoading(true);
@@ -1310,6 +1319,7 @@ export function useGameSync() {
                 const baseWorld = await deserializeWorldAsync(data.session.snapshot, data.session.updatedAt);
                 // Worker path bypasses save-service deserializeWorld — normalize here.
                 normalizeEspionageState(baseWorld);
+                mergeGroundWars(baseWorld, data.groundWars);
                 worldRef.current = baseWorld;
                 sessionSince = data.session.updatedAt;
 
@@ -1372,6 +1382,7 @@ export function useGameSync() {
                 if (newBase) {
                     const rebuilt = newBase;
                     normalizeEspionageState(rebuilt);
+                    mergeGroundWars(rebuilt, data.groundWars);
                     // Re-inject cached MAPPED shards into new base snapshot (zero re-parsing cost)
                     mappedShardCacheRef.current.forEach(mapped => injectMappedShard(rebuilt, mapped));
                     worldRef.current = newBase;

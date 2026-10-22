@@ -155,6 +155,28 @@ export interface DistrictWarState {
      * defending player's first formation or plan order.
      */
     defenderAuto?: boolean;
+    /** The weather the next cycle is fought in (chaos.ts rollWeather). */
+    weather?: import('./chaos').WeatherState;
+    /** What the last resolved cycle did, beat by beat (battle-beats.ts). Display only. */
+    lastReport?: import('./battle-beats').CycleReport;
+    /**
+     * Decisions the last cycle threw up (moments.ts): open until the next
+     * cycle resolves, then applied with the answer or the default. Resolved
+     * ones from the cycle before are kept for display.
+     */
+    moments?: import('./moments').GroundMoment[];
+    /** Call-ins ordered for the next cycle (call-ins.ts). */
+    callIns?: import('./call-ins').QueuedCallIn[];
+    /**
+     * Road links (lib/planet-surface/roads.ts roadKey) usable this cycle: the
+     * world's road tree minus demolished links. A road halves the going
+     * (formations.ts legalMoves). Recomputed by the worker every cycle.
+     */
+    roads?: string[];
+    /** Demolished road links → the cycle they are passable again. */
+    roadsCut?: Record<string, number>;
+    /** Cycle each side's call-ins are ready again. */
+    callInReady?: Partial<Record<'attacker' | 'defender', Partial<Record<import('./call-ins').CallInKind, number>>>>;
 }
 
 export interface GroundSiegeState {

@@ -7,6 +7,7 @@
 import type { PlanetSurface } from '@/lib/planet-surface/types';
 import type { SectorOccupant } from '@/lib/planet-surface/occupancy';
 import type { SurfaceGeometry, Pt } from './surfaceGeometry';
+import { roadKey, roadTree } from '@/lib/planet-surface/roads';
 
 export interface RoadEdge {
     key: string;
@@ -35,44 +36,15 @@ const POWER_BUILDING = /reactor|power|energy|grid|solar|stellar|collector|harves
 
 const CAPITAL_SECTOR = 0;
 
-/** Symmetric adjacency: a↔b if either lists the other as a neighbour. */
-function buildAdjacency(surface: PlanetSurface): number[][] {
-    const adj: Set<number>[] = surface.sectors.map(() => new Set<number>());
-    for (const sec of surface.sectors) {
-        for (const n of sec.neighbors) {
-            adj[sec.index].add(n);
-            adj[n].add(sec.index);
-        }
-    }
-    return adj.map(s => Array.from(s));
-}
-
 export function computeRoadNetwork(
     surface: PlanetSurface,
     geo: SurfaceGeometry,
     occupancy: Map<number, SectorOccupant>,
     buildingCategory: (buildingId: string) => string | undefined,
 ): RoadEdge[] {
-    const adj = buildAdjacency(surface);
-    const passable = (i: number) => surface.sectors[i].terrain !== 'ocean';
-
-    // BFS tree rooted at the capital over land.
-    const parent = new Array<number>(surface.sectors.length).fill(-1);
-    const seen = new Array<boolean>(surface.sectors.length).fill(false);
-    const queue: number[] = [];
-    if (passable(CAPITAL_SECTOR)) {
-        queue.push(CAPITAL_SECTOR);
-        seen[CAPITAL_SECTOR] = true;
-    }
-    while (queue.length) {
-        const cur = queue.shift()!;
-        for (const n of adj[cur]) {
-            if (seen[n] || !passable(n)) continue;
-            seen[n] = true;
-            parent[n] = cur;
-            queue.push(n);
-        }
-    }
+    // BFS tree rooted at the capital over land — the same tree the ground
+    // war moves along (lib/planet-surface/roads.ts).
+    const { parent, reached: seen } = roadTree(surface);
 
     // Walk each developed district's path to the root; dedupe edges.
     const edgeKind = new Map<string, 'road' | 'rail' | 'supply'>();
@@ -87,7 +59,7 @@ export function computeRoadNetwork(
         let cur = idx;
         while (parent[cur] !== -1) {
             const p = parent[cur];
-            const key = cur < p ? `${cur}-${p}` : `${p}-${cur}`;
+            const key = roadKey(cur, p);
             const existing = edgeKind.get(key);
             if (!existing || rank[kind] > rank[existing]) edgeKind.set(key, kind);
             cur = p;

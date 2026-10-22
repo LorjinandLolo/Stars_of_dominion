@@ -30,6 +30,8 @@ import { resolveCallerFaction } from '@/lib/multiplayer/caller-faction';
 import { projectShardForCaller, viewerContextFromOwnShard } from '@/lib/persistence/shard-privacy';
 import { isUndergroundSeatId } from '@/lib/rebellion/rebellion-types';
 import { DeltaStream, rawDeltaToJson } from '@/lib/persistence/tree-delta';
+import { fogView, stripGroundSecrets } from '@/lib/combat/siege/ground-fog';
+import { generateSurface } from '@/lib/planet-surface/generator';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +48,35 @@ const deltaState = (globalThis as any).__stardomSyncDelta ??= {
     shards: new Map<string, DeltaStream>(),
 };
 const sessionStream: DeltaStream = deltaState.session;
+
+/**
+ * Ground fog (lib/combat/siege/ground-fog.ts): the shared snapshot goes out
+ * with every siege's pieces, plans, moments and call-ins stripped, and each
+ * party to a siege is sent its own fogged view of it alongside. The stripped
+ * copy is what the delta stream records, so deltas carry no secrets either.
+ * Kept per snapshot version.
+ */
+type GroundWars = ReturnType<typeof stripGroundSecrets>;
+const groundState: { version: string | null; wars: GroundWars } = (globalThis as any).__stardomGroundWars ??= { version: null, wars: [] };
+function recordSession(version: string, snapshot: string): void {
+    if (sessionStream.currentVersion === version) return;
+    const tree = JSON.parse(snapshot);
+    groundState.wars = stripGroundSecrets(tree);
+    groundState.version = version;
+    sessionStream.update(version, JSON.stringify(tree));
+}
+/** The sieges `factionId` fights in, each as that side sees it. */
+function groundWarsFor(factionId: string | null | undefined): Array<{ planetId: string; districts: any }> {
+    if (!factionId) return [];
+    const out: Array<{ planetId: string; districts: any }> = [];
+    for (const w of groundState.wars) {
+        const side = w.attackerEmpireId === factionId ? 'attacker' : w.defenderEmpireId === factionId ? 'defender' : null;
+        if (!side) continue;
+        const surface = generateSurface(w.planetId, w.planetType, w.tags);
+        out.push({ planetId: w.planetId, districts: fogView(surface, w.siege.districts, side, w.siege.cycleCount ?? 0, w.siege.orbit?.holder) });
+    }
+    return out;
+}
 function ownShardStream(factionId: string): DeltaStream {
     let stream = deltaState.shards.get(factionId);
     if (!stream) { stream = new DeltaStream(60); deltaState.shards.set(factionId, stream); }
@@ -110,7 +141,10 @@ export async function GET(req: NextRequest) {
                     where: { id: SESSION_DOC_ID },
                     select: { snapshot: true, updatedAt: true },
                 });
-                if (session) sessionStream.update(session.updatedAt.toISOString(), session.snapshot);
+                if (session) {
+                    recordSession(session.updatedAt.toISOString(), session.snapshot);
+                    session = { snapshot: sessionStream.currentJson!, updatedAt: session.updatedAt };
+                }
             }
             if (session && wantsDelta && sessionSince && sessionStream.currentVersion === session.updatedAt.toISOString()) {
                 const delta = sessionStream.deltaFrom(sessionSince);
@@ -171,7 +205,10 @@ export async function GET(req: NextRequest) {
                 ? JSON.stringify({ snapshot: session.snapshot, updatedAt: session.updatedAt.toISOString() })
                 : 'null';
 
+        // Sent with every new snapshot: the client merges it into the world it rebuilds.
+        const groundPart = session ? `"groundWars":${JSON.stringify(groundWarsFor(factionId))},` : '';
         const body = `{"humanPlayers":${JSON.stringify(humanPlayers)},`
+            + groundPart
             + `"session":${sessionPart},`
             + `"sessionUpdatedAt":"${(session?.updatedAt ?? sessionMeta.updatedAt).toISOString()}",`
             + `"factions":[${factionParts.join(',')}]}`;

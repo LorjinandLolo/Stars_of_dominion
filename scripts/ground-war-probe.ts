@@ -240,9 +240,12 @@ console.log('\n[2] A real siege through the worker');
     const c2 = siege.cycleCount;
     while (siege.cycleCount === c2) tick();
     const fresh = forms().filter(f => f.side === 'defender' && f.unitType === 'MILITIA' && f.id.includes('-m-'));
+    // Measured on the new pieces: the militia already on the board can be in
+    // this cycle's fighting and die, which says nothing about the recruit.
+    const freshMen = fresh.reduce((a, f) => a + Math.max(0, f.strength), 0);
     check('a garrison recruit completing mid-siege becomes a piece',
-        sum(forms(), 'defender', 'MILITIA') >= militiaBefore + 800 - 50 && fresh.length > 0,
-        `${militiaBefore} → ${sum(forms(), 'defender', 'MILITIA')}`);
+        freshMen >= 800 - 50 && fresh.length > 0,
+        `${freshMen} fresh (militia on the board ${militiaBefore} → ${sum(forms(), 'defender', 'MILITIA')})`);
     check('and musters at the capital', fresh.every(f => f.sectorIndex === CAPITAL_SECTOR || siege.districts.control[CAPITAL_SECTOR] === 'attacker'));
 
     // Let the war run.
@@ -533,8 +536,10 @@ console.log('\n[3] Blockade and strongpoints');
         say(`             invaders:  ${every5(big.enemy)}   → ${big.outcome} after ${big.ended} cycles (${hours(big.ended)} h)`);
         // Stands = not lost inside two hours. The trace reads 0 once the siege is
         // over either way, so a defence that BEATS the invasion early (the invasion
-        // collapses) must count as standing, not as wiped out.
-        check('with barracks and fortress an equal defence under blockade stands two real hours (cycle 24)', on.held && (on.trace[23] > 0 || on.outcome.startsWith('invasion')), `${on.outcome} after ${on.ended} cycles, ${on.trace[23]} men at cycle 24`);
+        // collapses) must count as standing, not as wiped out. Falling AFTER the
+        // two hours is the relief window doing its job, not a failure.
+        const stood = on.outcome.startsWith('invasion') || on.trace[23] > 0;
+        check('with barracks and fortress an equal defence under blockade stands two real hours (cycle 24)', stood, `${on.outcome} after ${on.ended} cycles, ${on.trace[23]} men at cycle 24`);
         check('and outlasts the same defence without them', on.ended > off.ended || (on.held && !off.held), `${on.ended} vs ${off.ended} cycles`);
     }
 

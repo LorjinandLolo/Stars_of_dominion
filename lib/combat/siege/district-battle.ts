@@ -8,8 +8,9 @@
 import type { PlanetSurface, TerrainType } from '../../planet-surface/types';
 import type { GroundUnitType, TacticalStanceId, DistrictWarState } from './siege-types';
 import type { Formation, FormationSide } from './formations';
-import { formationsAt } from './formations';
+import { formationsAt, veteranLevel, VET_STEP } from './formations';
 import { buildAdjacency, controllerOf, isPassable } from './district-front';
+import type { BattleFactor, BeatInput } from './battle-beats';
 
 /** Raw fighting value per man, by unit type. One Elder is not a man. */
 const UNIT_POWER: Record<GroundUnitType, number> = {
@@ -53,6 +54,40 @@ export const GUERRILLA_TERRAIN: Partial<Record<TerrainType, number>> = {
     jungle: 1.8, forest: 1.6, mountains: 1.4, ruins: 1.3, frozen: 1.2, plains: 1.05,
 };
 
+/**
+ * Combined arms: a side fielding foot, armour and guns together in one
+ * district covers each arm's weakness with another's strength. By how many of
+ * the three it brings (one: no bonus).
+ */
+export const COMBINED_ARMS: Record<number, number> = { 2: 1.08, 3: 1.18 };
+function armsOf(forms: Formation[]): number {
+    const arms = new Set<string>();
+    for (const f of forms) {
+        if (f.strength <= 0) continue;
+        if (f.unitType === 'ARMOR') arms.add('armour');
+        else if (f.unitType === 'ARTILLERY') arms.add('guns');
+        else if (f.unitType !== 'ELDER_INFERNOID') arms.add('foot');
+    }
+    return arms.size;
+}
+
+/**
+ * Share of the opposing strength that turns into casualty damage in one
+ * cycle. Low enough that a well-matched district is fought over for several
+ * cycles (the line moves back and forth) rather than settled in one roll.
+ */
+export const BATTLE_LETHALITY = 0.35;
+
+/**
+ * Frontage: the fighting power one district has room for in a cycle. A side
+ * that brings more fights with this much and feeds the rest in as
+ * replacements, so a doom-stack does not wipe a line out in one roll — it
+ * grinds it down over several cycles, and staying power (the men behind the
+ * front) is what numbers buy. Chokepoints are narrower.
+ */
+export const FRONTAGE_POWER = 1400;
+export const CHOKEPOINT_FRONTAGE = 0.6;
+
 /** Holding a river line: whoever holds a river district fights from behind the water. */
 export const RIVER_DEFENCE = 1.25;
 
@@ -84,6 +119,12 @@ export interface DistrictBattleResult {
     /** Morale at the moment losses landed — drives prisoner counts. */
     moraleBySide: Record<FormationSide, number>;
     log: string;
+    /**
+     * What the fight was made of, for the cycle report and the board's replay
+     * (battle-beats.ts): who brought what, which multipliers applied. The
+     * outcome above is decided before this is assembled; it only describes it.
+     */
+    beatInput: BeatInput;
 }
 
 /** Army-wide morale as a strength multiplier: 0.6 at zero, 1.1 at full. */
@@ -117,6 +158,8 @@ function sideStrength(
         }
         // Natives in their own woods.
         if (f.guerrilla) power *= GUERRILLA_TERRAIN[terrain] ?? 1.1;
+        // Men who have done this before.
+        power *= 1 + veteranLevel(f) * VET_STEP;
         // Starving men fight badly.
         power *= 0.45 + (f.supply / 100) * 0.55;
         // So do disorganised ones — this is what makes a rail redeployment
@@ -242,6 +285,12 @@ export function resolveDistrictBattle(
      * guessed wrong below it. 1 when no read was made.
      */
     reads: Record<FormationSide, number> = { attacker: 1, defender: 1 },
+    /**
+     * One-off multipliers for this district this cycle — the weather, a last
+     * stand, smoke from a call-in (chaos.ts, moments.ts, call-ins.ts). Applied
+     * to each side's strength and listed in the report under their labels.
+     */
+    modifiers: Record<FormationSide, BattleFactor[]> = { attacker: [], defender: [] },
 ): DistrictBattleResult | null {
     const attackers = formationsAt(formations, sectorIndex, 'attacker');
     const defenders = formationsAt(formations, sectorIndex, 'defender');
@@ -262,36 +311,78 @@ export function resolveDistrictBattle(
 
     let aStr = sideStrength(attackers, defenders, terrain, holderBefore === 'attacker', entrench, aStance);
     let dStr = sideStrength(defenders, attackers, terrain, holderBefore === 'defender', entrench, dStance);
+    // Every multiplier below is also written down, so the report can say why.
+    const factors: BattleFactor[] = [];
+    const note = (side: FormationSide, label: string, mult: number) => { if (mult !== 1) factors.push({ side, label, mult }); };
+    note(holderBefore, `Ground: ${terrain}`, TERRAIN_DEFENCE[terrain]);
+    note(holderBefore, 'Dug in', 1 + entrench / 250);
     if (sector.river) {
         if (holderBefore === 'attacker') aStr *= RIVER_DEFENCE;
         else dStr *= RIVER_DEFENCE;
+        note(holderBefore, 'River line', RIVER_DEFENCE);
     }
 
     // Stance rock-paper-scissors.
-    if (STANCE[aStance].beats === dStance) aStr *= 1.15;
-    if (STANCE[dStance].beats === aStance) dStr *= 1.15;
+    if (STANCE[aStance].beats === dStance) { aStr *= 1.15; note('attacker', 'Stance won', 1.15); }
+    if (STANCE[dStance].beats === aStance) { dStr *= 1.15; note('defender', 'Stance won', 1.15); }
 
     // A rehearsed plan pays off on the day.
     aStr *= 1 + (planning.attacker ?? 0);
     dStr *= 1 + (planning.defender ?? 0);
+    note('attacker', 'Battle plan', 1 + (planning.attacker ?? 0));
+    note('defender', 'Battle plan', 1 + (planning.defender ?? 0));
 
     // An army that believes it is winning fights like it; one that has been
     // bled and pushed back for cycles does not.
     aStr *= moraleMultiplier(morale.attacker);
     dStr *= moraleMultiplier(morale.defender);
+    note('attacker', 'Morale', moraleMultiplier(morale.attacker));
+    note('defender', 'Morale', moraleMultiplier(morale.defender));
 
     // The commander who read the enemy's posture right this cycle.
     aStr *= reads.attacker ?? 1;
     dStr *= reads.defender ?? 1;
+    note('attacker', (reads.attacker ?? 1) > 1 ? 'Read them right' : 'Misread them', reads.attacker ?? 1);
+    note('defender', (reads.defender ?? 1) > 1 ? 'Read them right' : 'Misread them', reads.defender ?? 1);
 
     // Who is fighting, and on what ground. The Sarrak hit harder in wet terrain
     // and worse on dry; the Divine Serum rides the same multiplier.
     aStr *= traits.attacker?.dealt ?? 1;
     dStr *= traits.defender?.dealt ?? 1;
+    note('attacker', 'Civilization', traits.attacker?.dealt ?? 1);
+    note('defender', 'Civilization', traits.defender?.dealt ?? 1);
+
+    // Foot, armour and guns together.
+    const aArms = COMBINED_ARMS[armsOf(attackers)] ?? 1;
+    const dArms = COMBINED_ARMS[armsOf(defenders)] ?? 1;
+    aStr *= aArms; dStr *= dArms;
+    note('attacker', 'Combined arms', aArms);
+    note('defender', 'Combined arms', dArms);
+    // Veterans: already in each formation's strength, noted here as the side's average.
+    const vetAvg = (fs: Formation[]) => {
+        const men = fs.reduce((s, f) => s + f.strength, 0) || 1;
+        return fs.reduce((s, f) => s + f.strength * (1 + veteranLevel(f) * VET_STEP), 0) / men;
+    };
+    note('attacker', 'Veterans', Math.round(vetAvg(attackers) * 100) / 100);
+    note('defender', 'Veterans', Math.round(vetAvg(defenders) * 100) / 100);
+
+    // Weather, last stands, smoke: whatever this cycle threw at this district.
+    for (const m of modifiers.attacker ?? []) { aStr *= m.mult; note('attacker', m.label, m.mult); }
+    for (const m of modifiers.defender ?? []) { dStr *= m.mult; note('defender', m.label, m.mult); }
 
     // Encircled formations fight without support.
-    if (attackers.every(f => f.encircled)) aStr *= 0.7;
-    if (defenders.every(f => f.encircled)) dStr *= 0.7;
+    if (attackers.every(f => f.encircled)) { aStr *= 0.7; note('attacker', 'Encircled', 0.7); }
+    if (defenders.every(f => f.encircled)) { dStr *= 0.7; note('defender', 'Encircled', 0.7); }
+
+    // Only so many can fight here at once (FRONTAGE_POWER).
+    {
+        const room = FRONTAGE_POWER * (sector.chokepoint ? CHOKEPOINT_FRONTAGE : 1);
+        const aFront = Math.min(1, room / Math.max(1, rawPower(attackers)));
+        const dFront = Math.min(1, room / Math.max(1, rawPower(defenders)));
+        aStr *= aFront; dStr *= dFront;
+        note('attacker', 'Frontage', Math.round(aFront * 100) / 100);
+        note('defender', 'Frontage', Math.round(dFront * 100) / 100);
+    }
 
     // A little friction so identical fights don't always play out identically.
     aStr *= 0.9 + rng() * 0.2;
@@ -305,8 +396,8 @@ export function resolveDistrictBattle(
     const aHeavy = heavyShare(attackers);
     const dHeavy = heavyShare(defenders);
 
-    const attackerIncoming = dStr * STANCE[aStance].taken * 0.35 * (traits.attacker?.taken ?? 1);
-    const defenderIncoming = aStr * STANCE[dStance].taken * 0.35 * (traits.defender?.taken ?? 1);
+    const attackerIncoming = dStr * STANCE[aStance].taken * BATTLE_LETHALITY * (traits.attacker?.taken ?? 1);
+    const defenderIncoming = aStr * STANCE[dStance].taken * BATTLE_LETHALITY * (traits.defender?.taken ?? 1);
 
     // The second argument is the share of that damage heavy enough to threaten
     // an Elder. For every other unit type it is ignored entirely, so this is a
@@ -370,6 +461,11 @@ export function resolveDistrictBattle(
     else if (dLeft > 0 && aLeft <= 0) holder = 'defender';
 
     const captured = holder !== holderBefore;
+    // Whoever lived through it learned something; whoever held the ground, more.
+    for (const f of [...attackers, ...defenders]) {
+        if (f.strength <= 0) continue;
+        f.xp = (f.xp ?? 0) + (f.side === holder ? 2 : 1);
+    }
     if (captured) {
         if (holder === 'attacker') war.control[sectorIndex] = 'attacker';
         else delete war.control[sectorIndex];
@@ -398,6 +494,22 @@ export function resolveDistrictBattle(
         retreatedBySide: { attacker: aBreak.retreated, defender: dBreak.retreated },
         moraleBySide: { attacker: morale.attacker, defender: morale.defender },
         log,
+        beatInput: {
+            sector: sectorIndex,
+            terrain,
+            river: sector.river,
+            holderBefore,
+            holder,
+            captured,
+            brought: { attacker: attackersBefore, defender: defendersBefore },
+            losses: { attacker: attackerLosses, defender: defenderLosses },
+            surrendered: { attacker: aBreak.surrendered, defender: dBreak.surrendered },
+            retreated: { attacker: aBreak.retreated, defender: dBreak.retreated },
+            stances: { attacker: aStance, defender: dStance },
+            factors,
+            blast,
+            entrenchment: entrench,
+        },
     };
 }
 

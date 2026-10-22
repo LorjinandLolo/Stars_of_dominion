@@ -14,6 +14,7 @@ import { controllerOf } from '@/lib/combat/siege/district-front';
 import { SIEGE_CYCLE_TICKS, TICK_REAL_SECONDS, cycleRealSeconds } from '@/lib/combat/siege/siege-pacing';
 import type { Strongpoint } from '@/lib/combat/siege/strongpoints';
 import PrisonerPanel from './PrisonerPanel';
+import GroundCommandPanel from './GroundCommandPanel';
 import { airDropForce, airDropMen, airDropTargets, DROP_LABEL } from '@/lib/combat/siege/air-drop';
 
 const STANCES = [
@@ -262,6 +263,12 @@ export default function WarHud({ planet, surface, selectedFormations = [], redep
                         </button>
                     )}
                 </div>
+            )}
+
+            {/* ── The last cycle, the decisions it raised, call-ins, weather ── */}
+            {(isAttacker || isDefender) && war && (
+                <GroundCommandPanel planet={planet} surface={surface} war={war}
+                    side={isAttacker ? 'attacker' : 'defender'} countdown={countdown} order={order} />
             )}
 
             {/* ── Air drop: Airborne / Special Ops onto any district (lib/combat/siege/air-drop.ts) ── */}
