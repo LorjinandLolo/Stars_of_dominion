@@ -198,21 +198,52 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                     : <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} climate={climate} />);
             }
             case 'jungle': {
-                const pts = scatter(polygon, 9, r, 0.82, keepOut, s * 0.9, routes, clearance);
+                // A closed canopy: the ground is never seen. An under-layer of
+                // shadowed foliage fills the gaps, overlapping crowns sit on
+                // it, a few emergent giants break the roof, and mist hangs in
+                // the low places. Clipped to the district so the roof has an
+                // edge where the jungle ends.
+                const clipId = `jc-${seedKey.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                const under = scatter(polygon, 16, r, 0.98, keepOut, s * 0.6, routes, clearance);
+                const crowns = scatter(polygon, 26, r, 0.92, keepOut, s * 0.42, routes, clearance);
+                const giants = scatter(polygon, 2, r, 0.7, keepOut, s * 1.6, routes, clearance);
+                const mist = scatter(polygon, 2, r, 0.75, keepOut, s, routes, clearance);
                 return (
                     <>
-                        {pts.map((p, i) => (
-                            <g key={i} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
-                                <circle r={s * 0.5} fill={i % 2 ? sc.canopy[0] : sc.canopy[1]} />
-                                <circle r={s * 0.3} cx={s * 0.25} cy={-s * 0.2} fill={sc.canopy[2]} />
-                            </g>
-                        ))}
-                        {/* river thread */}
-                        {(() => {
-                            const line = scatter(polygon, 3, r, 0.7, keepOut, s * 0.9, routes, clearance);
-                            if (line.length < 3) return null;
-                            return <path d={`M ${line.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' Q ')}`} fill="none" stroke="#0ea5e9" strokeWidth={s * 0.2} opacity={0.55} />;
-                        })()}
+                        <defs>
+                            <clipPath id={clipId}><polygon points={polygon.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')} /></clipPath>
+                        </defs>
+                        <g clipPath={`url(#${clipId})`}>
+                            {under.map((p, i) => (
+                                <circle key={`u${i}`} cx={p[0]} cy={p[1]} r={s * (0.85 + r() * 0.3)} fill={sc.canopy[0]} opacity={0.8} />
+                            ))}
+                            {crowns.map((p, i) => {
+                                const R = s * (0.38 + r() * 0.3);
+                                return (
+                                    <g key={`c${i}`} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
+                                        <circle cx={R * 0.18} cy={R * 0.22} r={R} fill="#022c22" opacity={0.35} />
+                                        <circle r={R} fill={i % 3 === 0 ? sc.canopy[0] : sc.canopy[1]} />
+                                        <circle cx={-R * 0.22} cy={-R * 0.26} r={R * 0.62} fill={sc.canopy[2]} opacity={0.85} />
+                                        <circle cx={-R * 0.34} cy={-R * 0.4} r={R * 0.22} fill="#ffffff" opacity={0.14} />
+                                    </g>
+                                );
+                            })}
+                            {giants.map((p, i) => {
+                                const R = s * 0.85;
+                                return (
+                                    <g key={`g${i}`} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})`}>
+                                        <ellipse cx={R * 0.35} cy={R * 0.45} rx={R} ry={R * 0.75} fill="#022c22" opacity={0.4} />
+                                        <circle r={R} fill={sc.canopy[1]} />
+                                        <circle cx={-R * 0.3} cy={-R * 0.1} r={R * 0.55} fill={sc.canopy[2]} />
+                                        <circle cx={R * 0.25} cy={-R * 0.35} r={R * 0.45} fill={sc.canopy[2]} opacity={0.8} />
+                                        <circle cx={-R * 0.35} cy={-R * 0.45} r={R * 0.2} fill="#ffffff" opacity={0.16} />
+                                    </g>
+                                );
+                            })}
+                            {mist.map((p, i) => (
+                                <ellipse key={`m${i}`} cx={p[0]} cy={p[1]} rx={s * 1.3} ry={s * 0.35} fill="#e2e8f0" opacity={0.12} />
+                            ))}
+                        </g>
                     </>
                 );
             }

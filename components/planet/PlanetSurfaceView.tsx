@@ -469,15 +469,36 @@ export default function PlanetSurfaceView() {
                             );
                         })}
 
-                        {/* Coastlines: golden shore where land meets sea */}
+                        {/* Shores: shallows, surf, then a beach whose sand suits the world (sand, shingle, black sand, ochre) */}
                         <g pointerEvents="none">
-                            {coastlines.map(seg => (
-                                <line
-                                    key={seg.key}
-                                    x1={seg.a[0]} y1={seg.a[1]} x2={seg.b[0]} y2={seg.b[1]}
-                                    stroke="#fbbf24" strokeWidth={2.4} strokeLinecap="round" opacity={0.6}
-                                />
-                            ))}
+                            {coastlines.map(seg => {
+                                // Which way is the sea: away from the land district's centre.
+                                const land = Number(seg.key.split('-')[0]);
+                                const [lx, ly] = geo.centroids[land];
+                                const mx = (seg.a[0] + seg.b[0]) / 2, my = (seg.a[1] + seg.b[1]) / 2;
+                                const dx = seg.b[0] - seg.a[0], dy = seg.b[1] - seg.a[1];
+                                const len = Math.hypot(dx, dy) || 1;
+                                let nx = -dy / len, ny = dx / len;
+                                if ((mx - lx) * nx + (my - ly) * ny < 0) { nx = -nx; ny = -ny; }
+                                const off = (d: number) => ({ x1: seg.a[0] + nx * d, y1: seg.a[1] + ny * d, x2: seg.b[0] + nx * d, y2: seg.b[1] + ny * d });
+                                const climate = climateOf(surface.archetype);
+                                const sand = climate === 'cold' ? '#dbe4ea' : climate === 'scorched' ? '#3b3532' : climate === 'poisoned' ? '#b8b26a' : '#ecd9a0';
+                                const palm = climate === 'temperate' && ['jungle', 'swamp', 'gaia', 'oceanic'].includes(surface.archetype)
+                                    && ['plains', 'jungle', 'forest'].includes(surface.sectors[land].terrain) && Number(seg.key.split('-')[2]) % 3 === 0;
+                                return (
+                                    <g key={seg.key}>
+                                        <line {...off(8)} stroke="#5eead4" strokeWidth={14} strokeLinecap="round" opacity={0.32} />
+                                        <line {...off(4.2)} stroke="#f8fafc" strokeWidth={1.4} strokeDasharray="3 4" strokeLinecap="round" opacity={0.7} />
+                                        <line {...off(-1.8)} stroke={sand} strokeWidth={6.5} strokeLinecap="round" opacity={0.95} />
+                                        {palm && (
+                                            <g transform={`translate(${(mx - nx * 7).toFixed(1)} ${(my - ny * 7).toFixed(1)})`}>
+                                                <path d="M 0 0 q 1.2 -4 0.4 -8" fill="none" stroke="#78350f" strokeWidth={1.1} />
+                                                <path d="M 0.4 -8 q -3.4 -0.6 -5 1.8 M 0.4 -8 q 3.4 -0.8 5 1.6 M 0.4 -8 q -1 -3 -3.6 -3.4 M 0.4 -8 q 1.6 -2.8 4 -2.6" fill="none" stroke="#15803d" strokeWidth={1.3} strokeLinecap="round" />
+                                            </g>
+                                        )}
+                                    </g>
+                                );
+                            })}
                         </g>
 
                         {/* Infrastructure: roads / rails / animated supply routes */}
