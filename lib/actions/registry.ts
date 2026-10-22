@@ -67,6 +67,14 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { planetId: "id", target: "string" },
     cost: {}
   },
+  NATIVE_ACTION: {
+    id: "NATIVE_ACTION",
+    category: "diplomatic",
+    // A native people (lib/natives/natives.ts): observe | contact | gift | uplift
+    // | integrate | enslave | displace. Costs are charged by the service.
+    params: { planetId: "id", action: "string" },
+    cost: {}
+  },
   MIL_AIR_DROP: {
     id: "MIL_AIR_DROP",
     category: "military",

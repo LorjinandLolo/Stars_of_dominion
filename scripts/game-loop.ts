@@ -37,6 +37,7 @@ import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
 import { commandoRaid, RAID_TARGET_LABEL, type RaidTarget } from '../lib/combat/commando-raid';
 import { airDropForce, airDropMen, canDropOn } from '../lib/combat/siege/air-drop';
+import { nativeAction, nativesResist, nativeComposition, nativesIdFor, isNativesId, type NativeAction } from '../lib/natives/natives';
 import { blendExperience } from '../lib/combat/veterancy';
 
 /** Rating of a freshly commissioned, empty task force (MIL_BUILD_FLEET). */
@@ -1880,6 +1881,16 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             if (!fleet.currentSystemId) {
                 console.log(`[Order] Fleet ${payload.fleetId} rerouted mid-transit → ${payload.destinationId}.`);
             }
+            break;
+        }
+
+        case 'NATIVE_ACTION': {
+            // payload: { planetId, action } — lib/natives/natives.ts
+            const r = nativeAction(world, factionId, payload.planetId, payload.action as NativeAction);
+            if (!r.ok) { recordOrderFailure(world, factionId, actionId, r.reason!); break; }
+            const planet: any = world.construction.planets.get(payload.planetId);
+            notifyContest(world, planet, factionId, '', `${planet.name}: the ${planet.natives.speciesName}`, r.message ?? 'Done.', '');
+            console.log(`[Order] ${factionId} NATIVE_ACTION ${payload.action} on ${planet.name}`);
             break;
         }
 
@@ -6746,7 +6757,7 @@ function endSiegeDefenderHolds(
         } as any);
         withdrawingFleet.transportedArmyIds = [...(withdrawingFleet.transportedArmyIds ?? []), armyId];
         console.log(`[Tick Worker] ${men} invaders lift off ${planet.name} aboard ${withdrawingFleet.name ?? withdrawingFleet.id}`);
-    } else if (men > 0) {
+    } else if (men > 0 && !isNativesId(siege.defenderEmpireId)) {
         const ledger = ensureLedger(world.combat ?? (world.combat = { recruitmentJobs: [] }));
         for (const [unitType, count] of Object.entries(survivors)) {
             if (!count || count <= 0) continue;
@@ -6761,6 +6772,18 @@ function endSiegeDefenderHolds(
                 capturedAtSeconds: world.nowSeconds,
             });
         }
+    }
+    if (isNativesId(siege.defenderEmpireId) && planet.natives) {
+        // The people won: they go back to their villages, and remember.
+        const held = formations.length ? tallySide(formations, 'defender').total : 0;
+        planet.natives.warriors = Math.max(0, Math.round(held));
+        planet.natives.status = 'free';
+        planet.natives.relations[siege.attackerEmpireId] = 0;
+        delete planet.garrison;
+        notifyContest(world, planet, siege.attackerEmpireId, '', `${planet.name}: thrown back`,
+            `The ${planet.natives.speciesName} drove our troops off ${planet.name}. None of ours came back.`, '');
+        planet.siege = null;
+        return;
     }
     if (siege.contested) {
         // No world to garrison: the holder's survivors stand as a field army.
@@ -6804,7 +6827,7 @@ function standAsArmy(world: GameWorldState, planet: any, factionId: string, comp
 function notifyContest(world: GameWorldState, planet: any, a: string, b: string, title: string, toA: string, toB: string): void {
     const at = new Date(world.nowSeconds * 1000).toISOString();
     for (const [who, body] of [[a, toA], [b, toB]] as const) {
-        if (!who) continue;
+        if (!who || isNativesId(who)) continue;
         try {
             fireNotification({ id: `contest-${planet.id}-${who}-${world.nowSeconds}`, factionId: who, category: 'combat', priority: 'urgent', title, body, createdAt: at, read: false } as any);
         } catch { /* probes run without the queue */ }
@@ -6844,6 +6867,8 @@ function landOnEmptyWorld(world: GameWorldState, factionId: string, fleet: any, 
 /** Enemy armies at war on the same empty world: the ground is contested. */
 function maybeStartContest(world: GameWorldState, planet: any, arrivingFactionId: string): void {
     if (planet.siege || !isEmptyWorld(planet)) return;
+    // A native people (lib/natives) fights troops it did not invite.
+    if (nativesResist(planet, arrivingFactionId)) { startNativeWar(world, planet, arrivingFactionId); return; }
     const enemies = [...new Set(armiesOnGround(world, planet.id).map(a => a.factionId))]
         .filter(id => id !== arrivingFactionId && isAtWar(world, id, arrivingFactionId));
     if (!enemies.length) return;
@@ -6916,6 +6941,78 @@ function startContest(world: GameWorldState, planet: any, holderId: string, atta
 }
 
 /**
+ * Troops landed uninvited on a native world: the people fight for it, on the
+ * world's own district board, as a contest against the pseudo-empire
+ * natives:<planetId>. They are guerrillas (Formation.guerrilla), live off the
+ * whole land (every district they hold feeds them), pay no upkeep and take
+ * no prisoners. It ends when one side has nobody left: beaten, the people's
+ * fate is the victor's (NATIVE_ACTION integrate / displace / enslave).
+ */
+function startNativeWar(world: GameWorldState, planet: any, attackerId: string): void {
+    const n = planet.natives;
+    const nativesId = nativesIdFor(planet.id);
+    const surface = generateSurface(planet.id, planet.planetType, planet.tags);
+    const fort = 3; // they have always been here
+    const defenseState: PlanetaryDefenseState = defaultGarrison(planet, nativesId, nativeComposition(n) as any, fort);
+    defenseState.isUnderSiege = true;
+    const siegeId = `natives-${planet.id}-${world.nowSeconds}`;
+    planet.siege = {
+        siegeId, planetId: planet.id, attackerEmpireId: attackerId, defenderEmpireId: nativesId,
+        contested: true, nativeWar: true, phase: 'LANDING', tickCount: 0, cycleCount: 0,
+        cycleLengthTicks: pacing.cycleLengthTicks, currentFrontage: 500, maxFrontage: 1000,
+        attackerState: {
+            siegeId, attackerEmpireId: attackerId, sourceFleetIds: [], totalLandedTroops: 0, reserveTroops: 0,
+            unitComposition: {} as any, supply: 1000, maxSupply: 1000, morale: 100, maxMorale: 100, cohesion: 100, maxCohesion: 100,
+            orbitalSupportPower: 0, retreatRequested: false, reinforcementQueue: [], occupationControl: 0, devastationCaused: 0,
+        },
+        defenderState: defenseState,
+        battleLog: [],
+        lastResolvedCycle: 0,
+        districts: initDistrictWar(surface, fort, null, entrenchmentBonus(surface, [])),
+    } as any;
+    absorbStationedArmies(world, planet, planet.siege);
+    const war = planet.siege.districts!;
+    const defenders = seedFormations(surface, war, 'defender', defenseState.unitComposition, `f-n-${world.nowSeconds}`);
+    for (const f of defenders) f.guerrilla = true;
+    war.formations = [...seedFormations(surface, war, 'attacker', planet.siege.attackerState.unitComposition, `f-a-${world.nowSeconds}`), ...defenders];
+    war.contested = computeFront(surface, war);
+    war.strongpoints = computeStrongpoints(surface, planet, war);
+    war.defenderAuto = true;
+    applyDefaultDefence(surface, war, war.formations, war.strongpoints, world.nowSeconds);
+    // The whole land is theirs: every district they still hold feeds them.
+    (planet.siege as any).contestCamp = surface.sectors.filter(s => s.terrain !== 'ocean').map(s => s.index);
+    planet.garrison = defenseState;
+    n.status = 'at_war';
+    n.observers = {};
+    n.relations[attackerId] = 0;
+    n.uplift = undefined;
+    const ps: any = (world as any).politics?.empires?.get?.(attackerId);
+    if (ps) ps.infamy = (ps.infamy ?? 0) + 3;
+    notifyContest(world, planet, attackerId, '', `${planet.name}: the ${n.speciesName} fight`,
+        `Our troops landed uninvited on ${planet.name}, and the ${n.speciesName} are fighting for their home: ${n.warriors.toLocaleString()} of them, at home in every forest. They take no prisoners.`, '');
+    console.log(`[Tick Worker] NATIVE WAR at ${planet.name}: ${attackerId} against ${n.warriors} ${n.speciesName}.`);
+}
+
+/** The natives were beaten: they lay down their spears, and their fate is the victor's. */
+function nativesDefeated(world: GameWorldState, planet: any, attackerId: string): void {
+    const n = planet.natives;
+    const siege: GroundSiegeState | null = planet.siege ?? null;
+    const formations = (siege?.districts?.formations ?? []) as Formation[];
+    const survivors = formations.length ? tallySide(formations, 'attacker').comp : (siege?.attackerState.unitComposition ?? {});
+    if (siege) { siege.winner = attackerId; siege.endReason = 'OCCUPATION'; }
+    standAsArmy(world, planet, attackerId, survivors, `Victors of ${planet.name}`);
+    delete planet.garrison;
+    planet.siege = null;
+    n.status = 'pacified';
+    n.overlordId = attackerId;
+    n.warriors = 0;
+    n.population = Math.max(1, Math.round(n.population * 0.85));
+    notifyContest(world, planet, attackerId, '', `${planet.name}: the ${n.speciesName} are beaten`,
+        `The ${n.speciesName} have laid down their spears. Their fate is ours: integrate them as subjects, drive them into reserves${'' }, or put them to work. Decide on the world's card.`, '');
+    console.log(`[Tick Worker] NATIVE WAR at ${planet.name} won by ${attackerId}.`);
+}
+
+/**
  * Returns true when the contest ended this cycle: one side has no men left on
  * the board (killed, or starved into surrender). There is no clock; a
  * contest both sides keep paying for goes on (see contestSupply).
@@ -6923,7 +7020,11 @@ function startContest(world: GameWorldState, planet: any, holderId: string, atta
 function resolveContestCycle(world: GameWorldState, planet: any, siege: GroundSiegeState): boolean {
     const formations = (siege.districts?.formations ?? []) as Formation[];
     const men = (side: 'attacker' | 'defender') => formations.filter(f => f.side === side).reduce((n, f) => n + Math.max(0, f.strength), 0);
-    if (men('defender') <= 0) { contestWon(world, planet, siege.attackerEmpireId); return true; }
+    if (men('defender') <= 0) {
+        if (isNativesId(siege.defenderEmpireId)) nativesDefeated(world, planet, siege.attackerEmpireId);
+        else contestWon(world, planet, siege.attackerEmpireId);
+        return true;
+    }
     if (men('attacker') <= 0) { endSiegeDefenderHolds(world, planet, siege, 'ATTACKER_COLLAPSE'); return true; }
     return false;
 }
@@ -6942,6 +7043,7 @@ function contestSupply(world: GameWorldState, planet: any, siege: GroundSiegeSta
     const result = { attacker: false, defender: false, trickle: { attacker: false, defender: false }, log };
     for (const side of ['attacker', 'defender'] as const) {
         const empire = side === 'attacker' ? siege.attackerEmpireId : siege.defenderEmpireId;
+        if (isNativesId(empire)) { result[side] = true; continue; } // they live off their own land
         const men = formations.filter(f => f.side === side).reduce((n, f) => n + Math.max(0, f.strength), 0);
         const paid = payContestUpkeep(world, empire, men);
         const blockaded = holder === (side === 'attacker' ? 'defender' : 'attacker');
@@ -6999,6 +7101,10 @@ function contestWon(world: GameWorldState, planet: any, attackerId: string): voi
 
 /** Display name for an empire id, for notifications. */
 function empireName(world: GameWorldState, id: string): string {
+    if (isNativesId(id)) {
+        const p: any = world.construction.planets.get(id.slice('natives:'.length));
+        return p?.natives ? `the ${p.natives.speciesName}` : 'the natives';
+    }
     const f: any = world.economy?.factions?.get?.(id);
     return f?.name ?? String(id).replace(/^faction-/, '').replace(/[-_]/g, ' ');
 }
@@ -7529,6 +7635,7 @@ export function processSieges(world: GameWorldState) {
                 captorEmpireId: string,
             ) => {
                 if (!lossesByType) return 0;
+                if (isNativesId(ownerEmpireId) || isNativesId(captorEmpireId)) return 0; // no prisoners in a native war
                 // The Infernoids are not taken alive — the one surviving
                 // consequence of ground morale, and the only place their
                 // "no fear of death" can express itself honestly.
@@ -7576,6 +7683,7 @@ export function processSieges(world: GameWorldState) {
             // rate says about men who were merely beaten.
             const takeSurrendered = (byType: Record<string, number>, ownerEmpireId: string, captorEmpireId: string) => {
                 let total = 0;
+                if (isNativesId(ownerEmpireId) || isNativesId(captorEmpireId)) return 0; // they melt into the wilds, or die
                 for (const [unitType, count] of Object.entries(byType)) {
                     if (!count) continue;
                     total += count;

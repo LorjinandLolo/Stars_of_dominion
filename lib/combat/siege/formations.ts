@@ -17,6 +17,12 @@ export type FormationSide = 'attacker' | 'defender';
 
 export interface Formation {
     id: string;
+    /**
+     * Native fighters on their own world (lib/natives): they know every
+     * thicket, so they fight far above their weight in forest and jungle
+     * (GUERRILLA_TERRAIN in district-battle.ts).
+     */
+    guerrilla?: boolean;
     side: FormationSide;
     unitType: GroundUnitType;
     /** Fighting men in the formation. At 0 it is destroyed. */

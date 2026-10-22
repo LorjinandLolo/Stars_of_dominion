@@ -15,6 +15,7 @@ import { formatPercent } from '@/lib/ui/format';
 import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
 import { bodySummary } from '@/components/planet/bodyVisuals';
+import NativesPanel from './NativesPanel';
 import { surfaceGuns, gunTargetOf, GUN_TARGETS, GUN_TARGET_LABEL, GUN_TARGET_HINT } from '@/lib/combat/surface-guns';
 
 
@@ -186,7 +187,8 @@ function PlanetCard({
     // An unsettled world with nothing happening around it needs one line: what
     // it is and whether you can settle it. The full card (stability of nobody,
     // a UNITS button with no units) made a six-world system a long scroll.
-    const compact = isNeutral && !selectedFleetId && !planet.siege && !isOrbitedByFleet && armiesPresent === 0;
+    // A world with a native people always gets the full card: there is someone to deal with.
+    const compact = isNeutral && !selectedFleetId && !planet.siege && !isOrbitedByFleet && armiesPresent === 0 && !planet.natives;
     if (compact) {
         return (
             <div className="flex items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-900/30 hover:border-slate-700 px-2.5 py-2 transition-colors">
@@ -648,6 +650,9 @@ function PlanetCard({
                 )}
 
                 {/* Units in production on this world */}
+                {/* A native people on this world (lib/natives) */}
+                {planet.natives && <NativesPanel planet={planet} playerFactionId={playerFactionId} />}
+
                 {isOwnedByPlayer && activeJobs.length > 0 && (
                     <div className="mt-2.5 pt-2.5 border-t border-slate-700/30">
                         {/* Active Progress Bars */}

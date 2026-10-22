@@ -236,6 +236,21 @@ export const MANUAL_DATA: ManualSection[] = [
                     },
                 ],
             },
+            {
+                id: 'natives',
+                title: 'Native peoples',
+                blocks: [
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'A rare few living worlds are already home to a people who never left them: tree-dwellers, forest giants, river folk, tunnel-dwellers. Their card in the system panel shows who they are and how they feel about you.',
+                            'Observe: a ship in the system studies them unseen and earns research, until anyone makes contact.',
+                            'Contact: send envoys. Their attitude starts from their temper; gifts raise it. At 50+ they trade with you, at 40+ they let you settle beside them (their patience with a colony wears down: keep giving, or they raid it), at 70+ you can uplift them over about eight hours and they join your empire as a member people with their gift.',
+                            'Land troops without their welcome (under 60) and they fight a guerrilla war on their world\'s map: strong in forest and jungle, always fed, no prisoners either way. Beat them and their fate is yours: integrate them (subjects, unrest at first), drive them into reserves (infamy), or, for the harshest civilizations only, put them to forced labour (production, constant unrest and revolts, great infamy).',
+                        ],
+                    },
+                ],
+            },
         ],
     },
     {

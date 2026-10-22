@@ -48,6 +48,11 @@ const TERRAIN_DEFENCE: Record<TerrainType, number> = {
     toxic: 1.3, frozen: 1.25, ruins: 1.2, desert: 1.0, plains: 0.9, ocean: 1,
 };
 
+/** Natives on their own ground: ambush, traps, the trees themselves (Formation.guerrilla). */
+export const GUERRILLA_TERRAIN: Partial<Record<TerrainType, number>> = {
+    jungle: 1.8, forest: 1.6, mountains: 1.4, ruins: 1.3, frozen: 1.2, plains: 1.05,
+};
+
 /** Holding a river line: whoever holds a river district fights from behind the water. */
 export const RIVER_DEFENCE = 1.25;
 
@@ -110,6 +115,8 @@ function sideStrength(
         if (f.unitType === 'ARMOR' || f.unitType === 'ARTILLERY') {
             power *= HEAVY_PENALTY[terrain] ?? 1;
         }
+        // Natives in their own woods.
+        if (f.guerrilla) power *= GUERRILLA_TERRAIN[terrain] ?? 1.1;
         // Starving men fight badly.
         power *= 0.45 + (f.supply / 100) * 0.55;
         // So do disorganised ones — this is what makes a rail redeployment

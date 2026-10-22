@@ -9,6 +9,7 @@ import type { PlanetProduction } from '../economy/economy-types';
 import { initializePlanetServices } from '../economy/services/service-engine';
 import { bumpMetric } from '../tech/history-ledger';
 import { DEED_COLONIES_FOUNDED } from '../tech/deed-metrics';
+import { nativeConsent, markNeighbours } from '../natives/natives';
 
 /**
  * What a colony costs, in faction reserve keys. The PLANET_CLAIM entry in
@@ -57,6 +58,9 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     if (constr.tags?.includes('dead_matter')) {
         return { ok: false, reason: `${constr.name} cannot support a settlement.` };
     }
+    // A native people lives here (lib/natives): only with their consent.
+    const refusal = nativeConsent(constr, factionId);
+    if (refusal) return { ok: false, reason: refusal };
     const faction = world.economy.factions.get(factionId);
     if (!faction) return { ok: false, reason: 'Unknown faction.' };
     if (!canSeeSystem(world, factionId, constr.systemId)) {
@@ -132,6 +136,7 @@ export function colonizePlanet(world: GameWorldState, factionId: string, planetI
     // The saga: one line per world settled.
     bumpMetric(world, factionId, DEED_COLONIES_FOUNDED);
 
+    markNeighbours(constr, factionId);
     console.log(`[Colonize] ${factionId} founded a colony on ${constr.name} (${constr.systemId}).`);
     return { ok: true };
 }

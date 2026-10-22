@@ -75,9 +75,32 @@ export function selectLandingZones(
         }
     }
 
+    // Only ground that connects to the capital on foot. A beachhead in a
+    // pocket walled off by mountains and sea could never reach district 0:
+    // the invasion sat there for ever (found with native wars, 2026-10-22).
+    // Mountains and open sea are what infantry cannot cross (formations.ts
+    // canEverEnter); the player's own pick above is still honoured.
+    const walkable = (sec: SurfaceSector) => sec.terrain !== 'mountains' && sec.terrain !== 'ocean';
+    const connected = new Set<number>();
+    if (surface.sectors[CAPITAL_SECTOR] && walkable(surface.sectors[CAPITAL_SECTOR])) {
+        const adjacency = buildAdjacency(surface);
+        const queue = [CAPITAL_SECTOR];
+        connected.add(CAPITAL_SECTOR);
+        while (queue.length) {
+            const cur = queue.shift()!;
+            for (const nb of adjacency[cur]) {
+                if (connected.has(nb) || !walkable(surface.sectors[nb])) continue;
+                connected.add(nb);
+                queue.push(nb);
+            }
+        }
+    }
+    const reachable = candidates.filter(sec => connected.has(sec.index) && sec.index !== CAPITAL_SECTOR);
+    const pool = reachable.length >= count ? reachable : candidates;
+
     // Score: outer rings are reachable from orbit, open terrain is landable,
     // chokepoints and the capital's neighbourhood are murder to drop into.
-    const scored = candidates
+    const scored = pool
         .map(s => ({
             index: s.index,
             score:

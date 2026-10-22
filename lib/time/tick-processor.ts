@@ -5,6 +5,7 @@
 
 import { tickCivilianShips } from '../combat/civilian-service';
 import { tickStagingArmies } from '../combat/siege/contested-ground';
+import { tickNatives } from '../natives/natives';
 import { shipOutpostWarehouses } from '../outposts/outpost-service';
 import { tickAIOutposts } from '../ai/outpost-ai';
 import { getGameWorldState } from '../game-world-state-singleton';
@@ -176,6 +177,13 @@ export async function runStrategicTick(
     try { tickCivilianShips(world); } catch (e) { console.error('[TickProcessor] tickCivilianShips failed:', e); }
     // Armies on ground they do not own dig in and live off their supply.
     try { tickStagingArmies(world); } catch (e) { console.error('[TickProcessor] tickStagingArmies failed:', e); }
+    // Native peoples (lib/natives): observation, trade, uplift, neighbours' patience, revolts.
+    try {
+        const at = new Date(world.nowSeconds * 1000).toISOString();
+        for (const [factionId, title, body] of tickNatives(world)) {
+            fireNotification({ id: `natives-${factionId}-${title}-${world.nowSeconds}`, factionId, category: 'diplomacy', priority: 'normal', title, body, createdAt: at, read: false } as any);
+        }
+    } catch (e) { console.error('[TickProcessor] tickNatives failed:', e); }
     try { shipOutpostWarehouses(world); } catch (e) { console.error('[TickProcessor] shipOutpostWarehouses failed:', e); }
     // 9c: Gambits — doctrine auto-resolve for overdue confrontations
     try { tickGambits(world); } catch (e) { console.error('[TickProcessor] tickGambits failed:', e); }

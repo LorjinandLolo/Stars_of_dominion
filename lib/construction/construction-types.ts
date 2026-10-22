@@ -197,6 +197,9 @@ export interface Planet {
   garrison?: PlanetaryDefenseState;
   siege?: GroundSiegeState | null;
 
+  /** A native people living on this world (lib/natives/natives.ts). */
+  natives?: import('../natives/natives').NativeCivilization;
+
   /**
    * Phase 3: the orbital layer above this world — stations, yards, defenses and
    * orbital logistics. Absent until something is built there.

@@ -31,6 +31,7 @@ import type { Planet as ConstructionPlanet, PlanetType, BodySize } from '../cons
 import type { PlanetArchetype } from '../planet-surface/types';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { classifyStar, type StarKey } from '../galaxy/star-class';
+import { rollNatives, type NativeCivilization } from '../natives/natives';
 
 export type OrbitZone = 'hot' | 'temperate' | 'cold';
 
@@ -123,6 +124,8 @@ export interface BodySpec {
     maxTiles: number;
     popCapacity: number;
     tags: string[];
+    /** A native people already living here (lib/natives), rarely. */
+    natives?: NativeCivilization;
 }
 
 function pickKind(rng: RNG, kinds: BodyKind[]): BodyKind {
@@ -177,6 +180,9 @@ export function planSystemBodies(system: { id: string; name: string; tags?: stri
         const kind = pickKind(rng, kinds);
         const id = `planet-${system.id}-body-${i + 1}`;
         const body = makeBody(rng, kind, zone, star.habMult, star.tags, id, `${system.name} ${ROMAN[i] ?? String(i + 1)}`, orbits[i]);
+        // Someone may already live here (rolled on its own generator).
+        const natives = body.colonizable ? rollNatives(body.id, kind.archetype, body.habitability) : null;
+        if (natives) { body.natives = natives; body.tags.push('natives'); }
         out.push(body);
         // Big worlds hold moons: an ice moon round a gas giant is a classic outpost site.
         const moonChance = kind.type === 'gas_giant' ? 0.45 : body.size === 'large' ? 0.2 : 0;
@@ -234,6 +240,7 @@ export function materializeSystemBodies(world: GameWorldState, systemId: string)
             tags: [...body.tags],
             population: 0,
             popCapacity: body.popCapacity,
+            ...(body.natives ? { natives: JSON.parse(JSON.stringify(body.natives)) } : {}),
             popGrowth: 0,
             unrest: 0,
             isOccupied: false,

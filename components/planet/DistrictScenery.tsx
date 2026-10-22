@@ -124,6 +124,8 @@ interface SceneryProps {
     climate?: Climate;
     /** Someone lives on this world (a colony, or natives): plains get farmsteads. */
     inhabited?: boolean;
+    /** Who: a colony's farmsteads, or a native people's round huts (in the forest too). */
+    settlers?: 'colony' | 'natives';
     /** True inside the capital region — grants the grand civic landmark. */
     capital?: boolean;
     /**
@@ -142,6 +144,17 @@ interface SceneryProps {
      * continuation of the highway instead of crossing it at a random angle.
      */
     roadBearing?: number | null;
+}
+
+/** A native village hut: round, thatched, with a fire ring. */
+function NativeHut({ x, y, s }: { x: number; y: number; s: number }) {
+    return (
+        <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
+            <circle r={s * 0.42} fill="#7c5a34" />
+            <path d={`M ${-s * 0.5} 0 Q 0 ${-s * 0.75} ${s * 0.5} 0 Z`} fill="#b08a4a" />
+            <circle cx={s * 0.55} cy={s * 0.3} r={s * 0.09} fill="#f97316" opacity={0.85} />
+        </g>
+    );
 }
 
 function Tree({ x, y, s, dark, climate = 'temperate' }: { x: number; y: number; s: number; dark: boolean; climate?: Climate }) {
@@ -167,7 +180,7 @@ function Tree({ x, y, s, dark, climate = 'temperate' }: { x: number; y: number; 
     );
 }
 
-export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate', inhabited = true }: SceneryProps) {
+export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate', inhabited = true, settlers = 'colony' }: SceneryProps) {
     const sc = SCENE[climate];
     const rand = React.useMemo(() => mulberry32(hash(seedKey)), [seedKey]);
     const s = Math.max(4, scale * 0.16); // motif unit size
@@ -180,9 +193,9 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             case 'forest': {
                 // Dense clusters with size variance — old growth beside saplings.
                 const pts = scatter(polygon, 10, r, 0.82, keepOut, s * 0.9, routes, clearance);
-                return pts.map((p, i) => (
-                    <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} climate={climate} />
-                ));
+                return pts.map((p, i) => (settlers === 'natives' && inhabited && i % 5 === 2)
+                    ? <NativeHut key={i} x={p[0]} y={p[1]} s={s} />
+                    : <Tree key={i} x={p[0]} y={p[1]} s={s * (0.55 + r() * 0.75)} dark={i % 2 === 0} climate={climate} />);
             }
             case 'jungle': {
                 const pts = scatter(polygon, 9, r, 0.82, keepOut, s * 0.9, routes, clearance);
@@ -237,6 +250,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                 return (
                     <>
                         {pts.map((p, i) => {
+                            if (i % 4 === 0 && inhabited && settlers === 'natives') return <NativeHut key={i} x={p[0]} y={p[1]} s={s} />;
                             if (i % 4 === 0 && inhabited) {
                                 // scattered farmstead / village — only where someone lives
                                 return (
@@ -546,7 +560,7 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
             default:
                 return null;
         }
-    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate, inhabited]);
+    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate, inhabited, settlers]);
 
     if (!content) return null;
     return <g pointerEvents="none" opacity={dimmed ? 0.12 : 0.9}>{content}</g>;
