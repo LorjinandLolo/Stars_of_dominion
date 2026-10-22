@@ -120,7 +120,8 @@ export function fogView(
             ...report,
             // Every fight in the report was one you were in or watched.
             districts: report.districts.filter(d => seen.has(d.sector) || d.holderBefore === side || d.holder === side),
-            events: report.events.filter(e => e.side === side || (e.sector != null && seen.has(e.sector))),
+            // Friction you can see; decisions only your own.
+            events: report.events.filter(e => e.side === side || (e.kind !== 'decision' && e.sector != null && seen.has(e.sector))),
         } : undefined,
         visible: [...seen],
     };

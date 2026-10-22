@@ -65,7 +65,9 @@ export default function WarLayer({ surface, geo, war, attackerColor, defenderCol
                 if (controllerOf(war, n) === 'attacker') continue;
                 if (!isPassable(surface.sectors[n])) continue;
                 for (const [p, q] of sharedEdges(geo.rawPolygons[sec.index], geo.rawPolygons[n])) {
-                    edges.push({ key: `fe-${sec.index}-${n}-${p[0].toFixed(0)}`, a: p, b: q });
+                    // Two edges between one pair of districts can round to the same x; the
+                    // running count keeps the keys unique.
+                    edges.push({ key: `fe-${sec.index}-${n}-${p[0].toFixed(0)}-${edges.length}`, a: p, b: q });
                 }
             }
         }

@@ -7660,7 +7660,9 @@ export function processSieges(world: GameWorldState) {
                     const answered = applyMoments(surface, war, war.formations, war.moments ?? [], cycleNo);
                     const landed = applyCallIns(war, war.formations, cycleNo);
                     buffs.push(...answered.buffs, ...landed.buffs);
-                    res.log.push(...answered.log, ...landed.log);
+                    // Call-ins are seen by both sides; decisions only by whoever made them.
+                    res.log.push(...landed.log);
+                    chaosEvents.push(...answered.events);
                     for (const side of ['attacker', 'defender'] as const) {
                         for (const [t, n] of Object.entries(answered.surrendered[side])) surrendered[side][t] = (surrendered[side][t] ?? 0) + (n as number);
                         for (const [t, n] of Object.entries(landed.killed[side])) battleLosses[side][t] = (battleLosses[side][t] ?? 0) + (n as number);
@@ -8050,10 +8052,18 @@ export function processSieges(world: GameWorldState) {
             const share = occupationShare(surface, war);
             updatedSiege.defenderState.occupationProgress = share;
             if (res.log.length) {
+                // The cycle's real cost to each side — battles, call-ins,
+                // friction and surrenders — which the system panel shows as
+                // the last cycle's casualties.
+                const lostThisCycle = (side: 'attacker' | 'defender') =>
+                    Object.values(battleLosses[side]).reduce((s, n) => s + n, 0)
+                    + Object.values(surrendered[side]).reduce((s, n) => s + n, 0);
                 updatedSiege.battleLog.push({
                     cycle: updatedSiege.cycleCount,
                     message: `${res.log.join(' ')} Attacker holds ${share}% of the surface.`,
                     event: res.captured.length ? 'ADVANCE' : res.liberated.length ? 'COUNTERATTACK' : undefined,
+                    attackerLosses: Math.round(lostThisCycle('attacker')),
+                    defenderLosses: Math.round(lostThisCycle('defender')),
                 });
             }
             if (updatedSiege.phase === 'LANDING' && share > 12) updatedSiege.phase = 'ACTIVE_SIEGE';

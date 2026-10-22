@@ -133,7 +133,8 @@ export type ChaosKind =
     | 'supply_dump'     // a depot goes up
     | 'partisans'       // a band rises behind the invader's line
     | 'deserters'       // a beaten army bleeds men
-    | 'rally';          // someone stands up and the line steadies
+    | 'rally'           // someone stands up and the line steadies
+    | 'decision';       // a commander's answer to a moment (moments.ts) — own side only
 
 export interface ChaosEvent {
     kind: ChaosKind;

@@ -54,7 +54,7 @@ export default function GroundCommandPanel({ planet, surface, war, side, countdo
             {/* Ticker + weather */}
             <div className="flex items-start gap-3 px-3 py-2">
                 <div className="flex-1 min-w-0 space-y-0.5 font-mono text-[9.5px] leading-snug">
-                    {shown.length === 0 && <div className="text-slate-600">No fighting yet this war.</div>}
+                    {shown.length === 0 && <div className="text-slate-600">{report ? `Cycle ${report.cycle}: nothing was fought.` : 'No fighting yet this war.'}</div>}
                     {shown.map((l, i) => (
                         <div key={`${l.t}-${i}`} className={`${SIDE_TEXT[l.side]} ${i === shown.length - 1 && p != null ? 'opacity-100' : 'opacity-70'} truncate`}
                             title={l.text}>

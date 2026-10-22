@@ -19,6 +19,7 @@ import type { Formation, FormationSide } from './formations';
 import { formationsAt } from './formations';
 import { buildAdjacency, CAPITAL_SECTOR, controllerOf, isPassable } from './district-front';
 import type { DistrictReport } from './battle-beats';
+import type { ChaosEvent } from './chaos';
 
 export type MomentKind = 'breakthrough' | 'pocket' | 'last_stand' | 'counterattack';
 
@@ -182,7 +183,11 @@ export function detectMoments(
 }
 
 export interface MomentApplyResult {
-    log: string[];
+    /**
+     * What each side decided, for its own report only (kind 'decision'): the
+     * shared battle log would tell the enemy what you chose.
+     */
+    events: ChaosEvent[];
     buffs: DistrictBuff[];
     /** Men who laid down their arms by choice, by side and type. */
     surrendered: Record<FormationSide, Partial<Record<GroundUnitType, number>>>;
@@ -201,7 +206,7 @@ export function applyMoments(
     cycle: number,
 ): MomentApplyResult {
     const adjacency = buildAdjacency(surface);
-    const res: MomentApplyResult = { log: [], buffs: [], surrendered: { attacker: {}, defender: {} } };
+    const res: MomentApplyResult = { events: [], buffs: [], surrendered: { attacker: {}, defender: {} } };
     for (const m of moments) {
         if (m.resolved) continue;
         const answer = m.choices.some(c => c.id === m.chosen) ? m.chosen! : m.defaultChoice;
@@ -218,6 +223,7 @@ export function applyMoments(
             .sort((a, b) => menIn(formationsAt(formations, b, m.side)) - menIn(formationsAt(formations, a, m.side)))[0];
         const label = m.choices.find(c => c.id === answer)?.label ?? answer;
         const said = m.chosen ? label : `${label} (no orders)`;
+        const decide = (text: string) => res.events.push({ kind: 'decision', side: m.side, sector: m.sector, text });
 
         switch (`${m.kind}:${answer}`) {
             case 'breakthrough:exploit': {
@@ -228,13 +234,13 @@ export function applyMoments(
                     f.organization = Math.max(0, (f.organization ?? 100) - 10);
                 }
                 res.buffs.push({ sector: target, side: m.side, mult: BUFF.exploit, cycle, reason: 'Exploiting' });
-                res.log.push(`District ${m.sector}: ${said} — the advance rolls on into district ${target}.`);
+                decide(`District ${m.sector}: ${said} — the advance rolls on into district ${target}.`);
                 break;
             }
             case 'breakthrough:consolidate': {
                 (war.entrenchment ??= {})[m.sector] = Math.min(100, (war.entrenchment[m.sector] ?? 0) + 15);
                 for (const f of forms) f.organization = Math.min(100, (f.organization ?? 100) + 10);
-                res.log.push(`District ${m.sector}: ${said} — the new ground is dug in.`);
+                decide(`District ${m.sector}: ${said} — the new ground is dug in.`);
                 break;
             }
             case 'pocket:break_out': {
@@ -243,13 +249,13 @@ export function applyMoments(
                 if (target == null) break;
                 for (const f of forms) { f.moveTo = target; f.path = []; f.stance = 'AGGRESSIVE_ASSAULT'; }
                 res.buffs.push({ sector: target, side: m.side, mult: BUFF.breakOut, cycle, reason: 'Breaking out' });
-                res.log.push(`District ${m.sector}: ${said} — the pocket fights toward district ${target}.`);
+                decide(`District ${m.sector}: ${said} — the pocket fights toward district ${target}.`);
                 break;
             }
             case 'pocket:hold': {
                 for (const f of forms) { f.supply = Math.min(100, f.supply + 25); f.moveTo = null; f.path = []; }
                 (war.entrenchment ??= {})[m.sector] = Math.min(100, (war.entrenchment[m.sector] ?? 0) + 10);
-                res.log.push(`District ${m.sector}: ${said} — the pocket rations and digs in.`);
+                decide(`District ${m.sector}: ${said} — the pocket rations and digs in.`);
                 break;
             }
             case 'pocket:surrender': {
@@ -258,7 +264,7 @@ export function applyMoments(
                     res.surrendered[f.side][f.unitType] = (res.surrendered[f.side][f.unitType] ?? 0) + f.strength;
                     f.strength = 0;
                 }
-                res.log.push(`District ${m.sector}: ${said} — ${men} men lay down their arms.`);
+                decide(`District ${m.sector}: ${said} — ${men} men lay down their arms.`);
                 break;
             }
             case 'last_stand:to_the_last': {
@@ -267,20 +273,20 @@ export function applyMoments(
                     f.organization = Math.max(f.organization ?? 100, 45);
                 }
                 res.buffs.push({ sector: m.sector, side: m.side, mult: BUFF.lastStand, cycle, reason: 'Last stand' });
-                res.log.push(`District ${m.sector}: ${said} — nobody leaves.`);
+                decide(`District ${m.sector}: ${said} — nobody leaves.`);
                 break;
             }
             case 'last_stand:fall_back': {
                 const target = friendlyNext(m.sector);
                 if (target == null) break;
                 for (const f of forms) { f.moveTo = target; f.path = []; }
-                res.log.push(`District ${m.sector}: ${said} — the defenders pull back to district ${target}.`);
+                decide(`District ${m.sector}: ${said} — the defenders pull back to district ${target}.`);
                 break;
             }
             case 'counterattack:counterattack': {
                 for (const f of forms) { f.moveTo = m.sector; f.path = []; f.stance = 'AGGRESSIVE_ASSAULT'; }
                 res.buffs.push({ sector: m.sector, side: m.side, mult: BUFF.counterattack, cycle, reason: 'Counterattack' });
-                res.log.push(`District ${m.sector}: ${said} — the reserve goes in.`);
+                decide(`District ${m.sector}: ${said} — the reserve goes in.`);
                 break;
             }
             case 'counterattack:hold':

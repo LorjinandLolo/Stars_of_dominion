@@ -71,6 +71,12 @@ interface Run {
     demolitions: number;
 }
 
+/**
+ * A commander's answer to a moment, sent the way the decision card sends it
+ * (MIL_GROUND_MOMENT through executeOrder), and what the next cycle did with it.
+ */
+const momentOrder: { sent?: string; label?: string; applied?: string[]; refusal?: string } = {};
+
 function invade(A: string, B: string, scale: number, tag: string): Run | null {
     const planet: any = [...world.construction.planets.values()].find((p: any) => p.ownerId === B && !p.siege && !p.probeUsed);
     if (!planet) return null;
@@ -97,6 +103,20 @@ function invade(A: string, B: string, scale: number, tag: string): Run | null {
     for (let c = 0; c < MAX_CYCLES && planet.siege; c++) {
         const before = siege.cycleCount;
         const callInsBefore = run.callIns;
+        // Once per probe: answer an open moment with a choice that is not its default.
+        if (!momentOrder.sent) {
+            const m = (siege.districts.moments ?? []).find((x: any) => !x.resolved && x.choices.some((c: any) => c.id !== x.defaultChoice));
+            if (m) {
+                const choice = m.choices.find((c: any) => c.id !== m.defaultChoice);
+                const who = m.side === 'attacker' ? siege.attackerEmpireId : siege.defenderEmpireId;
+                aiCommandGroundWars(world); // the AI answers first; the order must still stand
+                executeOrder(world, 'MIL_GROUND_MOMENT', { planetId: planet.id, momentId: m.id, choiceId: choice.id }, who);
+                momentOrder.sent = m.chosen === choice.id ? m.id : undefined;
+                momentOrder.label = choice.label;
+                momentOrder.refusal = world.economy.factions.get(who)?.lastOrderError?.reason;
+                if (momentOrder.sent) momentOrder.applied = undefined;
+            }
+        }
         while (siege.cycleCount === before && planet.siege) {
             const was = (siege.districts.callIns ?? []).length;
             tick();
@@ -104,6 +124,7 @@ function invade(A: string, B: string, scale: number, tag: string): Run | null {
         }
         const war = siege.districts;
         const report = war.lastReport;
+        if (momentOrder.sent && !momentOrder.applied) momentOrder.applied = (report?.events ?? []).filter((e: any) => e.kind === 'decision').map((e: any) => e.text);
         run.cycles = siege.cycleCount;
         if (report?.districts?.length) { run.foughtCycles++; run.fights += report.districts.length; }
         run.events += report?.events?.length ?? 0;
@@ -166,6 +187,8 @@ check('the line moves back and forth', median(equal.map(r => r.swings)) >= 4, `m
 check('friction happens', equal.every(r => r.events > 0));
 check('commanders get decisions', equal.some(r => r.moments > 0));
 check('formations become veterans', equal.some(r => r.veterans > 0));
+check('an answer to a moment is taken (MIL_GROUND_MOMENT)', !!momentOrder.sent, momentOrder.refusal ?? momentOrder.label ?? 'no moment came up');
+check('and applied at the next cycle instead of the default', (momentOrder.applied ?? []).some(t => t.includes(`${momentOrder.label} —`)), (momentOrder.applied ?? []).join(' / ').slice(0, 200));
 check('the worlds have roads on the war board', [...equal, ...big].some(r => r.roads > 0));
 check('defenders blow roads in front of enemy armour', [...equal, ...big].some(r => r.demolitions > 0));
 const lostEq = equal.filter(r => r.outcome === 'lost').length / Math.max(1, equal.length);

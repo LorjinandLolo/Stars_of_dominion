@@ -13,7 +13,7 @@ export const PLAYBACK_MS = 20_000;
 
 /** Where each friction event falls in the replay: mishaps before the fighting, aftermath after. */
 const EVENT_T: Record<string, number> = {
-    comms_jammed: 0.02, lost_unit: 0.03, bogged_down: 0.04,
+    decision: 0.01, comms_jammed: 0.02, lost_unit: 0.03, bogged_down: 0.04,
     officer_killed: 0.82, rally: 0.84, friendly_fire: 0.6, supply_dump: 0.88, partisans: 0.92, deserters: 0.95,
 };
 
