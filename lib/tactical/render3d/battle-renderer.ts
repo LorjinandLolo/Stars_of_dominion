@@ -24,7 +24,7 @@ import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStation, buildStrikeCraft } from './placeholder-hulls';
 import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
-import { fallbackHardpoints, type HardpointLayout } from './hardpoints';
+import { fallbackHardpoints, mountsFromPoints, type HardpointLayout } from './hardpoints';
 import { SkyBackdrop } from './sky';
 import type { SquadronType } from '../types';
 
@@ -379,11 +379,13 @@ function hullAnchors(g: THREE.BufferGeometry): THREE.Vector3[] {
  * Hardpoint marker anchors: a tagged subsystem's emitter points averaged and
  * lifted to the top of the part, so the marker sits where the eye finds it;
  * the per-class fallback layout for any subsystem the model does not name.
+ * Weapon mounts pick their flank out of the tagged weapon points.
  */
-function hardpointLayout(g: THREE.BufferGeometry, emit: SubsystemEmitters): HardpointLayout {
+function hardpointLayout(classId: ShipClassId, g: THREE.BufferGeometry, emit: SubsystemEmitters): HardpointLayout {
     g.computeBoundingBox();
     const { min, max } = g.boundingBox!;
-    const out = fallbackHardpoints({ minX: min.x, maxX: max.x, minY: min.y, maxY: max.y, minZ: min.z, maxZ: max.z });
+    const weapons = SHIP_CLASSES[classId].weapons;
+    const out = fallbackHardpoints({ minX: min.x, maxX: max.x, minY: min.y, maxY: max.y, minZ: min.z, maxZ: max.z }, weapons);
     for (const id of SUBSYSTEM_IDS) {
         const pts = emit[id];
         if (!pts?.length) continue;
@@ -391,6 +393,7 @@ function hardpointLayout(g: THREE.BufferGeometry, emit: SubsystemEmitters): Hard
         for (const p of pts) { x += p.x; y += p.y; z = Math.max(z, p.z); }
         out[id] = { x: x / pts.length, y: y / pts.length, z };
     }
+    if (emit.weapons?.length) out.mounts = mountsFromPoints(emit.weapons, weapons, out.mounts);
     return out;
 }
 
@@ -506,7 +509,7 @@ export class BattleRenderer {
                 this.hullMaterial.set(`${id}:${side}`, mat);
                 this.ownedMaterials.push(mat);
                 this.hulls.set(`${id}:${side}`, new InstancePool(this.scene, geo, mat, 8, { damage: true }));
-                const layout = hardpointLayout(geo, {});
+                const layout = hardpointLayout(id, geo, {});
                 this.emitters.set(`${id}:${side}`, damageEmitters(layout, {}));
                 this.anchors.set(`${id}:${side}`, hullAnchors(geo));
                 this.hardpointLayouts.set(`${id}:${side}`, layout);
@@ -699,7 +702,7 @@ export class BattleRenderer {
                 this.hulls.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 this.outlines.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 applyMaps(this.hullMaterial.get(`${id}:${side}`)!, model);
-                const layout = hardpointLayout(model.geometry, model.emitters);
+                const layout = hardpointLayout(id, model.geometry, model.emitters);
                 this.emitters.set(`${id}:${side}`, damageEmitters(layout, model.emitters));
                 this.anchors.set(`${id}:${side}`, hullAnchors(model.geometry));
                 this.hardpointLayouts.set(`${id}:${side}`, layout);

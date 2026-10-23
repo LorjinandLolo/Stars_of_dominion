@@ -25,7 +25,8 @@ import type {
     SideState,
     Squadron,
     SquadronType,
-    SubsystemId,
+    CalledSubsystemId,
+    HardpointId,
     TacticalShip,
     TacticalSide,
     Torpedo,
@@ -37,7 +38,7 @@ import {
     FACING_AFT,
     FACING_PORT,
 } from './types';
-import { SHIP_CLASSES, SQUADRON_DEFS, freshSubsystems } from './ship-defs';
+import { SHIP_CLASSES, SQUADRON_DEFS, freshMounts, freshSubsystems, isLightMount, isOmniMount } from './ship-defs';
 import { IDENTITY_TUNING } from './types';
 import type { DesignTuning } from './types';
 
@@ -58,6 +59,11 @@ const NEBULA_TORPEDO_FIZZLE = 1.5;  // seconds a torpedo survives after its targ
 const SUBSYSTEM_HP_FRACTION = 0.25;      // subsystem pool = 25% of maxHull worth of damage
 const SUBSYSTEM_TARGET_MISS_CHANCE = 0.25; // accuracy trade-off for called shots
 const SUBSYSTEM_DAMAGE_SHARE = 0.6;      // share of hull damage that also hits the called subsystem
+// Weapon mounts are hardpoints of their own, each a share of the subsystem
+// pool: silencing one broadside is cheaper than the old all-weapons
+// subsystem, silencing both a little dearer, the PD net cheaper still.
+const MOUNT_POOL_MAIN = 0.6;
+const MOUNT_POOL_LIGHT = 0.3;
 const ENGINES_DISABLED_SPEED_MULT = 0.25;
 const SENSORS_DISABLED_RANGE_MULT = 0.55;
 
@@ -250,7 +256,9 @@ function spawnShip(
         moveOrder: null,
         targetId: null,
         targetSubsystem: null,
+        targetMount: null,
         subsystems: def.hasSubsystems ? freshSubsystems() : undefined,
+        mounts: def.hasSubsystems ? freshMounts(classId) : undefined,
         hangarCooldowns: def.hangar ? def.hangar.squadrons.map(() => 0) : undefined,
         status: instant ? 'active' : 'arriving',
         arrivalAt: instant ? 0 : state.time + ARRIVAL_DELAY,
@@ -446,11 +454,12 @@ export function setTarget(state: BattleState, shipIds: string[], targetId: strin
         // A new (or cleared) lock resets any called shot — the subsystem pick
         // belongs to the previous target.
         ship.targetSubsystem = null;
+        ship.targetMount = null;
     }
 }
 
-/** Call a shot on a subsystem of the CURRENT target (capital hulls only). */
-export function setTargetSubsystem(state: BattleState, shipIds: string[], subsystem: SubsystemId | null) {
+/** Call a shot on a subsystem of the CURRENT target (capital hulls only). Replaces any called mount. */
+export function setTargetSubsystem(state: BattleState, shipIds: string[], subsystem: CalledSubsystemId | null) {
     for (const id of shipIds) {
         const ship = state.ships.find(sh => sh.id === id);
         if (!ship || ship.status === 'destroyed' || ship.status === 'withdrawn') continue;
@@ -459,7 +468,44 @@ export function setTargetSubsystem(state: BattleState, shipIds: string[], subsys
             if (!target?.subsystems) continue;
         }
         ship.targetSubsystem = subsystem;
+        ship.targetMount = null;
     }
+}
+
+/** Call a shot on one weapon mount of the CURRENT target (capital hulls only). Replaces any called subsystem. */
+export function setTargetMount(state: BattleState, shipIds: string[], mount: number | null) {
+    for (const id of shipIds) {
+        const ship = state.ships.find(sh => sh.id === id);
+        if (!ship || ship.status === 'destroyed' || ship.status === 'withdrawn') continue;
+        if (mount !== null) {
+            const target = ship.targetId ? state.ships.find(sh => sh.id === ship.targetId) : null;
+            if (!target?.mounts || mount < 0 || mount >= target.mounts.length) continue;
+        }
+        ship.targetMount = mount;
+        ship.targetSubsystem = null;
+    }
+}
+
+/** Call a shot on any hardpoint of the current target, or call it off (null). */
+export function setCalledShot(state: BattleState, shipIds: string[], hp: HardpointId | null) {
+    if (typeof hp === 'number') setTargetMount(state, shipIds, hp);
+    else setTargetSubsystem(state, shipIds, hp);
+}
+
+/** The hardpoint a ship's called shot is on, if any. */
+export function calledShotOf(ship: TacticalShip): HardpointId | null {
+    return ship.targetMount ?? ship.targetSubsystem;
+}
+
+/** A hardpoint's integrity, 0–1 (0 when the ship has no such hardpoint). */
+export function hardpointIntegrity(ship: TacticalShip, hp: HardpointId): number {
+    return typeof hp === 'number' ? ship.mounts?.[hp] ?? 0 : ship.subsystems?.[hp] ?? 0;
+}
+
+/** What to call a hardpoint in the HUD and the battle log. */
+export function hardpointName(ship: TacticalShip, hp: HardpointId): string {
+    if (typeof hp === 'number') return SHIP_CLASSES[ship.classId].weapons[hp]?.name ?? 'Weapon';
+    return hp.charAt(0).toUpperCase() + hp.slice(1);
 }
 
 export function orderRetreat(state: BattleState, shipIds: string[]) {
@@ -521,9 +567,8 @@ export function useAbility(state: BattleState, shipId: string): boolean {
         // Instant effect: three torpedoes at the current (or nearest) target.
         const target = resolveTarget(state, ship, def.weapons[1]);
         if (!target) { ship.abilityCooldown = 0; ship.abilityActiveUntil = 0; return false; }
-        const calledShot = ship.targetSubsystem && target.id === ship.targetId && target.subsystems
-            && target.subsystems[ship.targetSubsystem] > 0 ? ship.targetSubsystem : null;
-        for (let i = 0; i < 3; i++) spawnTorpedo(state, ship, target, def.weapons[1], i * 14 - 14, calledShot);
+        const called = liveCalledShot(ship, target);
+        for (let i = 0; i < 3; i++) spawnTorpedo(state, ship, target, def.weapons[1], i * 14 - 14, called);
         logEvent(state, `${def.name} launches a torpedo salvo!`);
     }
 
@@ -795,8 +840,8 @@ export interface DamageOpts {
     sourceY?: number;
     /** Fraction of the damage that bypasses shields entirely (bombing runs). */
     shieldPierce?: number;
-    /** Called shot: a share of resulting hull damage also degrades this subsystem. */
-    subsystem?: SubsystemId | null;
+    /** Called shot: a share of resulting hull damage also degrades this subsystem or weapon mount. */
+    hardpoint?: HardpointId | null;
     /** Design mix of the shooter: multiplier while the damage is eating shields. */
     vsShield?: number;
     /** Design mix of the shooter: multiplier once the damage reaches hull. */
@@ -840,13 +885,22 @@ export function applyDamage(state: BattleState, target: TacticalShip, amount: nu
         const throughArmor = hullDamage * (1 - Math.min(0.9, Math.max(0, armor + armorBonus)));
         target.hull -= throughArmor;
 
-        // Called shot: degrade the targeted subsystem alongside the hull.
-        if (opts.subsystem && target.subsystems && target.subsystems[opts.subsystem] > 0) {
-            const pool = def.maxHull * SUBSYSTEM_HP_FRACTION;
-            target.subsystems[opts.subsystem] = Math.max(
-                0, target.subsystems[opts.subsystem] - (throughArmor * SUBSYSTEM_DAMAGE_SHARE) / pool);
-            if (target.subsystems[opts.subsystem] <= 0) {
-                logEvent(state, `${target.side === 'player' ? 'Friendly' : 'Enemy'} ${def.name}: ${opts.subsystem} DISABLED!`);
+        // Called shot: degrade the targeted hardpoint alongside the hull.
+        const hp = opts.hardpoint ?? null;
+        if (hp !== null && hardpointIntegrity(target, hp) > 0) {
+            const who = `${target.side === 'player' ? 'Friendly' : 'Enemy'} ${def.name}`;
+            const hit = throughArmor * SUBSYSTEM_DAMAGE_SHARE;
+            if (typeof hp === 'number') {
+                const mounts = target.mounts!;
+                const pool = def.maxHull * SUBSYSTEM_HP_FRACTION
+                    * (isLightMount(def.weapons[hp]) ? MOUNT_POOL_LIGHT : MOUNT_POOL_MAIN);
+                mounts[hp] = Math.max(0, mounts[hp] - hit / pool);
+                if (target.subsystems) target.subsystems.weapons = mounts.reduce((a, b) => a + b, 0) / mounts.length;
+                if (mounts[hp] <= 0) logEvent(state, `${who}: ${def.weapons[hp].name} DESTROYED!`);
+            } else if (target.subsystems) {
+                const pool = def.maxHull * SUBSYSTEM_HP_FRACTION;
+                target.subsystems[hp] = Math.max(0, target.subsystems[hp] - hit / pool);
+                if (target.subsystems[hp] <= 0) logEvent(state, `${who}: ${hp} DISABLED!`);
             }
         }
     }
@@ -888,6 +942,28 @@ function canEngage(state: BattleState, ship: TacticalShip, weapon: WeaponDef, ta
     return true;
 }
 
+/**
+ * The target's live directional mount whose arc covers `ship`, heaviest
+ * damage per second first: the battery aimed at it. Omni point defence covers
+ * everyone, so it never counts. Null when nothing bears (behind the target, or
+ * an escort without mounts).
+ */
+function mountBearingOn(target: TacticalShip, ship: TacticalShip): number | null {
+    if (!target.mounts) return null;
+    const weapons = SHIP_CLASSES[target.classId].weapons;
+    const bearing = Math.atan2(ship.y - target.y, ship.x - target.x);
+    let best: number | null = null;
+    let bestDps = 0;
+    for (let i = 0; i < weapons.length; i++) {
+        const w = weapons[i];
+        if (target.mounts[i] <= 0 || isOmniMount(w)) continue;
+        if (Math.abs(angleDiff(normalizeAngle(target.heading + w.mountAngle), bearing)) > w.arc / 2) continue;
+        const dps = w.damage / w.cooldown;
+        if (dps > bestDps) { bestDps = dps; best = i; }
+    }
+    return best;
+}
+
 function resolveTarget(state: BattleState, ship: TacticalShip, weapon: WeaponDef): TacticalShip | null {
     // Explicit target first, if this weapon can bear on it.
     if (ship.targetId) {
@@ -897,6 +973,7 @@ function resolveTarget(state: BattleState, ship: TacticalShip, weapon: WeaponDef
         } else {
             ship.targetId = null; // stale lock
             ship.targetSubsystem = null;
+            ship.targetMount = null;
         }
     }
     // Weapons-free: nearest hostile this weapon can bear on.
@@ -937,16 +1014,30 @@ function damageSquadron(state: BattleState, sq: Squadron, amount: number) {
     }
 }
 
+/**
+ * The ship's called shot if it applies to this target and the hardpoint still
+ * stands. A call on an already-destroyed hardpoint is pure downside, so it is
+ * cleared and the ship stops paying the miss chance for nothing.
+ */
+function liveCalledShot(ship: TacticalShip, target: TacticalShip): HardpointId | null {
+    const hp = calledShotOf(ship);
+    if (hp === null || target.id !== ship.targetId) return null;
+    if (hardpointIntegrity(target, hp) > 0) return hp;
+    ship.targetSubsystem = null;
+    ship.targetMount = null;
+    return null;
+}
+
 function tickWeapons(state: BattleState, ship: TacticalShip, h: number) {
     const def = SHIP_CLASSES[ship.classId];
     const overcharging = def.ability.id === 'overcharge_shields' && ship.abilityActiveUntil > state.time;
-    const weaponsDisabled = !!ship.subsystems && ship.subsystems.weapons <= 0;
 
     for (let i = 0; i < def.weapons.length; i++) {
         if (ship.weaponCooldowns[i] > 0) {
             ship.weaponCooldowns[i] = Math.max(0, ship.weaponCooldowns[i] - h);
         }
-        if (ship.weaponCooldowns[i] > 0 || overcharging || weaponsDisabled) continue;
+        // A destroyed mount is silent for the rest of the battle; the others fight on.
+        if (ship.weaponCooldowns[i] > 0 || overcharging || (ship.mounts && ship.mounts[i] <= 0)) continue;
 
         const weapon = def.weapons[i];
 
@@ -969,27 +1060,20 @@ function tickWeapons(state: BattleState, ship: TacticalShip, h: number) {
 
         ship.weaponCooldowns[i] = weapon.cooldown;
 
-        // Called shots trade accuracy for the subsystem hit. A call on an
-        // already-destroyed subsystem is pure downside — clear it so the ship
-        // doesn't keep paying the miss chance for nothing.
-        let calledShot = ship.targetSubsystem && target.id === ship.targetId && target.subsystems
-            ? ship.targetSubsystem : null;
-        if (calledShot && target.subsystems![calledShot] <= 0) {
-            ship.targetSubsystem = null;
-            calledShot = null;
-        }
+        // Called shots trade accuracy for the hardpoint hit.
+        const calledShot = liveCalledShot(ship, target);
 
         if (weapon.projectile === 'torpedo') {
             // Torpedoes carry the called shot to impact; their travel time is
             // the accuracy trade-off, so no launch-miss roll.
             spawnTorpedo(state, ship, target, weapon, 0, calledShot);
         } else {
-            if (calledShot && Math.random() < SUBSYSTEM_TARGET_MISS_CHANCE) {
+            if (calledShot !== null && Math.random() < SUBSYSTEM_TARGET_MISS_CHANCE) {
                 continue; // clean miss
             }
             const tuning = side(state, ship.side).tuning;
             applyDamage(state, target, weapon.damage * tuning.weaponMult, {
-                sourceX: ship.x, sourceY: ship.y, subsystem: calledShot,
+                sourceX: ship.x, sourceY: ship.y, hardpoint: calledShot,
                 shieldPierce: tuning.pierceBonus, vsShield: tuning.vsShield, vsHull: tuning.vsHull,
             });
             state.beams.push({
@@ -1006,7 +1090,7 @@ function spawnTorpedo(
     target: TacticalShip,
     weapon: WeaponDef,
     lateralOffset: number,
-    subsystem: SubsystemId | null = null
+    hardpoint: HardpointId | null = null
 ) {
     const perp = ship.heading + Math.PI / 2;
     state.torpedoes.push({
@@ -1018,7 +1102,7 @@ function spawnTorpedo(
         y: ship.y + Math.sin(perp) * lateralOffset,
         speed: weapon.projectileSpeed ?? 130,
         damage: weapon.damage,
-        subsystem,
+        hardpoint,
         expiresAt: state.time + TORPEDO_LIFETIME,
     });
 }
@@ -1042,7 +1126,7 @@ function tickTorpedoes(state: BattleState, h: number) {
         if (dist <= hitDist) {
             const tuning = side(state, torp.side).tuning;
             applyDamage(state, target, torp.damage * tuning.weaponMult, {
-                sourceX: torp.x, sourceY: torp.y, subsystem: torp.subsystem ?? null,
+                sourceX: torp.x, sourceY: torp.y, hardpoint: torp.hardpoint ?? null,
                 shieldPierce: tuning.pierceBonus, vsShield: tuning.vsShield, vsHull: tuning.vsHull,
             });
             state.explosions.push({ x: torp.x, y: torp.y, radius: 10, expiresAt: state.time + 0.4 });
@@ -1276,6 +1360,7 @@ function runEnemyAI(state: BattleState) {
             const closeTo = NEBULA_DETECT_RANGE * 0.75;
             ship.targetId = null;
             ship.targetSubsystem = null;
+            ship.targetMount = null;
             issueMove(state, [ship.id],
                 nearest.x - Math.cos(bearingTo) * closeTo,
                 nearest.y - Math.sin(bearingTo) * closeTo, null);
@@ -1290,13 +1375,11 @@ function runEnemyAI(state: BattleState) {
         }
         ship.targetId = target.id;
 
-        // Called shots: aggressive destroyers/battleships go for the engines
-        // of capital targets so nothing escapes.
-        ship.targetSubsystem =
-            st.plan.posture === 'aggressive'
-                && target.subsystems && target.subsystems.engines > 0
-                && (ship.classId === 'destroyer' || ship.classId === 'battleship')
-                ? 'engines' : null;
+        // Called shots: cruisers and battleships go for the battery that is
+        // shooting at them, so a broadside duel silences the guns that hurt.
+        ship.targetSubsystem = null;
+        ship.targetMount = ship.classId === 'cruiser' || ship.classId === 'battleship'
+            ? mountBearingOn(target, ship) : null;
 
         const dx = target.x - ship.x;
         const dy = target.y - ship.y;

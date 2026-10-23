@@ -23,6 +23,9 @@ import {
     issueFormationMove,
     setTarget,
     setTargetSubsystem,
+    setTargetMount,
+    setCalledShot,
+    calledShotOf,
     orderRetreat,
     fleetWithdraw,
     deployReinforcement,
@@ -41,7 +44,7 @@ import {
     angleDiff,
     type BattleConfig,
 } from './sim';
-import { SHIP_CLASSES, SQUADRON_DEFS, freshSubsystems, classForCompositionKey } from './ship-defs';
+import { SHIP_CLASSES, SQUADRON_DEFS, freshMounts, freshSubsystems, classForCompositionKey } from './ship-defs';
 import {
     fleetsToReserves,
     designTuningFor,
@@ -178,7 +181,9 @@ function mkShip(sideId: TacticalSide, classId: ShipClassId, x: number, y: number
         moveOrder: null,
         targetId: null,
         targetSubsystem: null,
+        targetMount: null,
         subsystems: def.hasSubsystems ? freshSubsystems() : undefined,
+        mounts: def.hasSubsystems ? freshMounts(classId) : undefined,
         hangarCooldowns: def.hangar ? def.hangar.squadrons.map(() => 0) : undefined,
         status: 'active',
         arrivalAt: 0,
@@ -779,10 +784,10 @@ suite('Subsystems — engines, weapons, shields; called-shot bookkeeping', () =>
     assert(a.subsystems!.engines === 1, 'subsystems start at full integrity');
     for (let i = 0; i < 4; i++) a.shields[i] = 0;
 
-    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, subsystem: 'engines' });
+    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, hardpoint: 'engines' });
     const e1 = a.subsystems!.engines;
     assert(e1 > 0 && e1 < 1, `called shot degrades engines toward 0 (now ${e1.toFixed(2)})`);
-    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, subsystem: 'engines' });
+    applyDamage(state, a, 50, { sourceX: a.x - 200, sourceY: a.y, hardpoint: 'engines' });
     assert(a.subsystems!.engines === 0, 'second called shot disables the engines (clamped at 0)');
     assert(a.hull > SHIP_CLASSES.cruiser.maxHull * 0.5, 'ship still well above the low-hull slowdown threshold');
 
@@ -798,18 +803,18 @@ suite('Subsystems — engines, weapons, shields; called-shot bookkeeping', () =>
     assert(hTravelled > aTravelled * 2,
         `healthy twin outruns the crippled ship (${hTravelled.toFixed(0)} vs ${aTravelled.toFixed(0)} units)`);
 
-    // Weapons: at 0 the ship stops firing even with an enemy in easy range.
+    // Weapons: with every mount at 0 the ship stops firing even with an enemy in easy range.
     const st2 = freshBattle([R('cruiser', 1)]);
     const cr = fielded(st2, 'player', 'cruiser')[0]; // heading 0 → port battery bears on -y
     const foe = fielded(st2, 'enemy', 'corvette')[0];
-    cr.subsystems!.weapons = 0;
+    cr.mounts!.fill(0);
     const foeSpot = { x: cr.x, y: cr.y - 200 }; // port side: in battery range 300, outside foe turret 180
     const foeTotal0 = foe.hull + totalShield(foe);
     runHolding(st2, 2, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
     assert(foe.hull + totalShield(foe) === foeTotal0,
-        'weapons at 0 → no beams: enemy in easy range takes zero damage over 2s');
+        'all mounts at 0 → no beams: enemy in easy range takes zero damage over 2s');
 
-    cr.subsystems!.weapons = 1;
+    cr.mounts!.fill(1);
     runHolding(st2, 1, [{ ship: foe, x: foeSpot.x, y: foeSpot.y }]);
     assert(foe.hull + totalShield(foe) < foeTotal0, 'restored weapons resume fire (control)');
 
@@ -837,6 +842,121 @@ suite('Subsystems — engines, weapons, shields; called-shot bookkeeping', () =>
     assert(dd.targetSubsystem === 'engines', 'called shot accepted against a capital target');
     setTarget(st4, [dd.id], null);
     assert(dd.targetSubsystem === null, 'clearing the lock resets the called shot');
+});
+
+suite('Weapon mounts — each turret/battery is its own hardpoint', () => {
+    const weapons = SHIP_CLASSES.cruiser.weapons;
+    const PORT = weapons.findIndex(w => w.id === 'port-battery');
+    const STBD = weapons.findIndex(w => w.id === 'starboard-battery');
+    const PD = weapons.findIndex(w => w.id === 'point-defence');
+
+    // Called shots on a mount: main mounts take 0.6 of the subsystem pool, PD 0.3.
+    const state = freshBattle([R('cruiser', 1)]);
+    const a = fielded(state, 'player', 'cruiser')[0];
+    assert(a.mounts?.length === weapons.length && a.mounts.every(m => m === 1), 'capital hulls start with one live mount per weapon');
+    for (let i = 0; i < 4; i++) a.shields[i] = 0;
+    const pool = SHIP_CLASSES.cruiser.maxHull * 0.25;
+    const sideArmor = SHIP_CLASSES.cruiser.armor.side;
+    // From port (-y), so the side armour applies.
+    applyDamage(state, a, 20, { sourceX: a.x, sourceY: a.y - 200, hardpoint: PORT });
+    const expectPort = 1 - (20 * (1 - sideArmor) * 0.6) / (pool * 0.6);
+    assert(Math.abs(a.mounts![PORT] - expectPort) < 1e-9, `port battery takes the called hit on a 0.6 pool (now ${a.mounts![PORT].toFixed(3)})`);
+    assert(a.mounts![STBD] === 1 && a.mounts![PD] === 1, 'the other mounts are untouched');
+    assert(a.subsystems!.engines === 1, 'a mount hit leaves the hull subsystems alone');
+    applyDamage(state, a, 20, { sourceX: a.x, sourceY: a.y - 200, hardpoint: PD });
+    assert(Math.abs((1 - a.mounts![PD]) - 2 * (1 - expectPort)) < 1e-9, 'point defence is a light mount: same hit costs it twice as much');
+    applyDamage(state, a, 200, { sourceX: a.x, sourceY: a.y - 200, hardpoint: PORT });
+    assert(a.mounts![PORT] === 0, 'port battery destroyed (clamped at 0)');
+    assert(state.events.some(e => e.includes('Port Battery DESTROYED')), 'the log names the destroyed mount');
+    const mean = a.mounts!.reduce((s, m) => s + m, 0) / a.mounts!.length;
+    assert(Math.abs(a.subsystems!.weapons - mean) < 1e-9, 'subsystems.weapons follows the mean of the mounts');
+
+    // A dead port battery: the port flank goes quiet, starboard fights on.
+    const st2 = freshBattle([R('cruiser', 1)], [R('corvette', 2)]);
+    const cr = fielded(st2, 'player', 'cruiser')[0]; // heading 0: port is -y, starboard +y
+    const [portFoe, stbdFoe] = fielded(st2, 'enemy', 'corvette');
+    cr.mounts![PORT] = 0;
+    const portSpot = { x: cr.x, y: cr.y - 200 };  // in battery range 300, outside PD 140 and the foes' turrets 180
+    const stbdSpot = { x: cr.x, y: cr.y + 200 };
+    const total = (sh: TacticalShip) => sh.hull + totalShield(sh);
+    const port0 = total(portFoe), stbd0 = total(stbdFoe);
+    runHolding(st2, 2, [
+        { ship: portFoe, x: portSpot.x, y: portSpot.y },
+        { ship: stbdFoe, x: stbdSpot.x, y: stbdSpot.y },
+        { ship: cr, x: cr.x, y: cr.y },
+    ]);
+    assert(total(portFoe) === port0, 'destroyed port battery: the foe off the port beam takes nothing');
+    assert(total(stbdFoe) < stbd0, `starboard battery keeps firing (${(stbd0 - total(stbdFoe)).toFixed(0)} damage dealt)`);
+
+    // Bookkeeping: a mount call needs a lock, replaces a subsystem call and vice versa.
+    const st3 = freshBattle([R('destroyer', 1)], [R('cruiser', 1)]);
+    const dd = fielded(st3, 'player', 'destroyer')[0];
+    const ecr = fielded(st3, 'enemy', 'cruiser')[0];
+    setTargetMount(st3, [dd.id], PORT);
+    assert(dd.targetMount === null, 'mount call refused without a locked target');
+    setTarget(st3, [dd.id], ecr.id);
+    setTargetMount(st3, [dd.id], 99);
+    assert(dd.targetMount === null, 'mount call refused for a mount the target does not have');
+    setTargetSubsystem(st3, [dd.id], 'engines');
+    setTargetMount(st3, [dd.id], STBD);
+    assert(dd.targetMount === STBD && dd.targetSubsystem === null, 'a mount call replaces the subsystem call');
+    setCalledShot(st3, [dd.id], 'sensors');
+    assert(calledShotOf(dd) === 'sensors' && dd.targetMount === null, 'setCalledShot routes a subsystem and clears the mount');
+    setCalledShot(st3, [dd.id], PD);
+    assert(calledShotOf(dd) === PD, 'setCalledShot routes a mount index, point defence included');
+    setTarget(st3, [dd.id], null);
+    assert(calledShotOf(dd) === null, 'clearing the lock resets the mount call');
+
+    // A call on a destroyed mount clears itself on the next shot.
+    const st4 = freshBattle([R('cruiser', 1)], [R('cruiser', 1)]);
+    const me = fielded(st4, 'player', 'cruiser')[0];
+    const them = fielded(st4, 'enemy', 'cruiser')[0];
+    setTarget(st4, [me.id], them.id);
+    setTargetMount(st4, [me.id], PORT);
+    them.mounts![PORT] = 0;
+    me.heading = 0;
+    const themSpot = { x: me.x, y: me.y + 220 }; // off my starboard beam
+    for (let i = 0; i < 10 && me.targetMount !== null; i++) {
+        update(st4, 0.1);
+        them.x = themSpot.x; them.y = themSpot.y; them.speed = 0; them.moveOrder = null;
+        me.speed = 0; me.moveOrder = null; me.heading = 0;
+    }
+    assert(me.targetMount === null, 'a called shot on a destroyed mount is dropped instead of paying the miss chance');
+});
+
+suite('Enemy AI calls the battery aimed at it', () => {
+    const state = freshBattle([R('cruiser', 1)], [R('cruiser', 1)]);
+    const mine = fielded(state, 'player', 'cruiser')[0];
+    const ai = fielded(state, 'enemy', 'cruiser')[0];
+    const weapons = SHIP_CLASSES.cruiser.weapons;
+    const PORT = weapons.findIndex(w => w.id === 'port-battery');
+    const STBD = weapons.findIndex(w => w.id === 'starboard-battery');
+    state.enemy.plan = { posture: 'balanced', retreatBelowFleetStrength: 0 };
+
+    // Pin both ships (and my heading) but keep the AI's own target lock: the
+    // AI re-decides every 0.5s, so 0.6s always holds one fresh decision.
+    let heading = 0;
+    const hold = () => {
+        for (let i = 0; i < 6; i++) {
+            mine.x = 500; mine.y = 500; mine.speed = 0; mine.moveOrder = null; mine.heading = heading;
+            ai.x = 760; ai.y = 500; ai.speed = 0;
+            update(state, 0.1);
+        }
+    };
+    // Mine faces up the screen (-y): starboard is +x, where the AI sits.
+    heading = -Math.PI / 2;
+    hold();
+    assert(ai.targetId === mine.id && ai.targetMount === STBD, `AI calls my starboard battery, the one facing it (got ${ai.targetMount})`);
+
+    // Starboard silenced: nothing else bears (port faces away, PD is omni) → no call.
+    mine.mounts![STBD] = 0;
+    hold();
+    assert(ai.targetMount === null, 'with the facing battery dead and only PD left, the AI stops calling shots');
+
+    // Turn so port faces it.
+    heading = Math.PI / 2;
+    hold();
+    assert(ai.targetMount === PORT, 'turning the port battery to it moves the AI call to port');
 });
 
 suite('Line of sight — asteroid fields block beams', () => {

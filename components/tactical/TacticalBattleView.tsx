@@ -21,23 +21,27 @@ import type {
     Hazard,
     BattleStationConfig,
     Squadron,
-    SubsystemId,
+    CalledSubsystemId,
+    HardpointId,
     TacticalShip,
     Torpedo,
 } from '@/lib/tactical/types';
 import { SHIP_CLASSES, SQUADRON_DEFS } from '@/lib/tactical/ship-defs';
 import {
     activeDeploymentPoints,
+    calledShotOf,
     computeResult,
     createBattle,
     deployReinforcement,
     fleetWithdraw,
+    hardpointIntegrity,
+    hardpointName,
     issueFormationMove,
     issueMove,
     orderRetreat,
+    setCalledShot,
     setSquadronOrder,
     setTarget,
-    setTargetSubsystem,
     totalShield,
     update,
     useAbility as triggerAbility,
@@ -55,6 +59,7 @@ import type { BattleRenderer } from '@/lib/tactical/render3d/battle-renderer';
 import { VIEW_TILT } from '@/lib/tactical/render3d/view';
 import {
     fallbackHardpoints,
+    hardpointAnchor,
     projectHardpoint,
     radiusBox,
     type HardpointLayout,
@@ -68,7 +73,8 @@ const MAX_SELECTED_ROWS = 6;
 const SQUADRON_GRAB_RADIUS = 12;  // world units for squadron click-select
 
 const FORMATIONS: FormationId[] = ['line', 'column', 'wedge', 'screen', 'circle'];
-const SUBSYSTEM_IDS: SubsystemId[] = ['engines', 'shields', 'weapons', 'sensors'];
+/** Hull subsystems with a hardpoint of their own; weapons are a hardpoint per mount. */
+const CALLED_SUBSYSTEMS: CalledSubsystemId[] = ['engines', 'shields', 'sensors'];
 const FACING_LABELS = ['Fore', 'Starboard', 'Aft', 'Port'] as const;
 const COMMAND_LABELS: Record<CommandAbilityId, string> = {
     coordinated_volley: 'Coordinated Volley',
@@ -135,7 +141,7 @@ const HARDPOINT_SEP_PX = 17;
 /** One hardpoint marker as laid out this frame, screen px. */
 interface HardpointMarker {
     ship: TacticalShip;
-    id: SubsystemId;
+    id: HardpointId;
     /** Where the part is. */
     ax: number;
     ay: number;
@@ -543,7 +549,8 @@ export default function TacticalBattleView({
             if (fromModel) return fromModel;
             let flat = flatLayouts.get(sh.classId);
             if (!flat) {
-                flat = fallbackHardpoints(radiusBox(SHIP_CLASSES[sh.classId].radius));
+                const def = SHIP_CLASSES[sh.classId];
+                flat = fallbackHardpoints(radiusBox(def.radius), def.weapons);
                 flatLayouts.set(sh.classId, flat);
             }
             return flat;
@@ -601,21 +608,24 @@ export default function TacticalBattleView({
                 if (sx < -pad || sx > v.cw + pad || sy < -pad || sy > v.ch + pad) continue;
                 const layout = layoutFor(sh);
                 const first = markerCount;
-                for (const id of SUBSYSTEM_IDS) {
-                    let m = markers[markerCount];
-                    if (!m) {
-                        m = { ship: sh, id, ax: 0, ay: 0, x: 0, y: 0 };
-                        markers.push(m);
-                    }
-                    m.ship = sh;
-                    m.id = id;
-                    projectHardpoint(sh, layout[id], v, m);
-                    m.ax = m.x;
-                    m.ay = m.y;
-                    markerCount++;
-                }
+                for (const id of CALLED_SUBSYSTEMS) addMarker(sh, id, layout, v);
+                const mounts = sh.mounts?.length ?? 0;
+                for (let i = 0; i < mounts; i++) addMarker(sh, i, layout, v);
                 spreadMarkers(first, markerCount);
             }
+        };
+        const addMarker = (sh: TacticalShip, id: HardpointId, layout: HardpointLayout, v: typeof viewRef.current) => {
+            let m = markers[markerCount];
+            if (!m) {
+                m = { ship: sh, id, ax: 0, ay: 0, x: 0, y: 0 };
+                markers.push(m);
+            }
+            m.ship = sh;
+            m.id = id;
+            projectHardpoint(sh, hardpointAnchor(layout, id), v, m);
+            m.ax = m.x;
+            m.ay = m.y;
+            markerCount++;
         };
 
         /** The live (not knocked-out) marker under a screen point, if any. */
@@ -624,7 +634,7 @@ export default function TacticalBattleView({
             let bestD = HARDPOINT_HIT_PX;
             for (let i = 0; i < markerCount; i++) {
                 const m = markers[i];
-                if ((m.ship.subsystems?.[m.id] ?? 0) <= 0) continue;
+                if (hardpointIntegrity(m.ship, m.id) <= 0) continue;
                 const d = Math.hypot(m.x - px, m.y - py);
                 if (d <= bestD) {
                     best = m;
@@ -804,10 +814,10 @@ export default function TacticalBattleView({
                     // Clicking the shot already called calls it off, like the HUD card.
                     const already = sel.every(id => {
                         const own = st.ships.find(sh => sh.id === id);
-                        return !own || (own.targetId === m.ship.id && own.targetSubsystem === m.id);
+                        return !own || (own.targetId === m.ship.id && calledShotOf(own) === m.id);
                     });
                     setTarget(st, sel, m.ship.id);
-                    setTargetSubsystem(st, sel, already ? null : m.id);
+                    setCalledShot(st, sel, already ? null : m.id);
                     forceHud();
                     return;
                 }
@@ -939,7 +949,10 @@ export default function TacticalBattleView({
 
         const drawWeaponArcs = (sh: TacticalShip) => {
             const def = SHIP_CLASSES[sh.classId];
-            for (const w of def.weapons) {
+            for (let i = 0; i < def.weapons.length; i++) {
+                // A destroyed mount covers nothing any more.
+                if (sh.mounts && sh.mounts[i] <= 0) continue;
+                const w = def.weapons[i];
                 const mount = sh.heading + w.mountAngle;
                 if (w.arc >= TAU - 1e-3) {
                     // Omnidirectional turret: faint range circle.
@@ -1132,7 +1145,31 @@ export default function TacticalBattleView({
         };
 
         /** Append the subsystem's glyph, centred on (x, y), to the current path. */
-        const hardpointGlyph = (id: SubsystemId, x: number, y: number) => {
+        const hardpointGlyph = (sh: TacticalShip, id: HardpointId, x: number, y: number) => {
+            if (typeof id === 'number') {
+                const w = SHIP_CLASSES[sh.classId].weapons[id];
+                if (!w || w.arc >= TAU - 1e-3) {
+                    // Point defence: a small turret throwing flak every way.
+                    ctx.moveTo(x + 1.6, y);
+                    ctx.arc(x, y, 1.6, 0, TAU);
+                    for (let q = 0; q < 4; q++) {
+                        const a = q * Math.PI / 2 + Math.PI / 4;
+                        ctx.moveTo(x + Math.cos(a) * 2.8, y + Math.sin(a) * 2.8);
+                        ctx.lineTo(x + Math.cos(a) * 4.6, y + Math.sin(a) * 4.6);
+                    }
+                    return;
+                }
+                // Turret whose barrel points where the mount fires, on screen.
+                const a = sh.heading + w.mountAngle;
+                let dx = Math.cos(a), dy = Math.sin(a) * viewRef.current.tilt;
+                const n = Math.hypot(dx, dy) || 1;
+                dx /= n; dy /= n;
+                ctx.moveTo(x - dx * 1.2 + 2.2, y - dy * 1.2);
+                ctx.arc(x - dx * 1.2, y - dy * 1.2, 2.2, 0, TAU);
+                ctx.moveTo(x + dx * 1, y + dy * 1);
+                ctx.lineTo(x + dx * 5, y + dy * 5);
+                return;
+            }
             if (id === 'engines') {
                 // Thrust chevrons pointing aft.
                 ctx.moveTo(x + 1, y - 3); ctx.lineTo(x - 2, y); ctx.lineTo(x + 1, y + 3);
@@ -1142,11 +1179,6 @@ export default function TacticalBattleView({
                 ctx.moveTo(x - 4, y + 2);
                 ctx.arc(x, y + 2, 4, Math.PI, 0);
                 ctx.moveTo(x - 4.5, y + 2.5); ctx.lineTo(x + 4.5, y + 2.5);
-            } else if (id === 'weapons') {
-                // Turret with a barrel.
-                ctx.moveTo(x + 1.2, y + 1);
-                ctx.arc(x - 1, y + 1, 2.2, 0, TAU);
-                ctx.moveTo(x + 0.6, y - 0.6); ctx.lineTo(x + 4, y - 4);
             } else {
                 // Sensor dish sweeping two arcs.
                 ctx.moveTo(x - 2.5, y);
@@ -1190,15 +1222,15 @@ export default function TacticalBattleView({
             // The selection's called shots: a handful at most, so a flat list.
             calledShots.length = 0;
             for (const sh of st.ships) {
-                if (selected.has(sh.id) && sh.targetId && sh.targetSubsystem) calledShots.push(sh);
+                if (selected.has(sh.id) && sh.targetId && calledShotOf(sh) !== null) calledShots.push(sh);
             }
             const isCalled = (m: HardpointMarker) => {
-                for (const sh of calledShots) if (sh.targetId === m.ship.id && sh.targetSubsystem === m.id) return true;
+                for (const sh of calledShots) if (sh.targetId === m.ship.id && calledShotOf(sh) === m.id) return true;
                 return false;
             };
             for (let i = 0; i < markerCount; i++) {
                 const m = markers[i];
-                const integrity = Math.max(0, Math.min(1, m.ship.subsystems?.[m.id] ?? 0));
+                const integrity = Math.max(0, Math.min(1, hardpointIntegrity(m.ship, m.id)));
                 let f = integrity > 0.6 ? HP_HIGH : integrity > 0.3 ? HP_MID : 0;
                 if (integrity <= 0) f |= HP_DEAD;
                 if (hoverMarker === m) f |= HP_HOT;
@@ -1211,7 +1243,7 @@ export default function TacticalBattleView({
                 ctx.moveTo(m.x + r, m.y);
                 ctx.arc(m.x, m.y, r, 0, TAU);
             };
-            const glyph = (m: HardpointMarker) => hardpointGlyph(m.id, m.x, m.y);
+            const glyph = (m: HardpointMarker) => hardpointGlyph(m.ship, m.id, m.x, m.y);
             ctx.lineCap = 'round';
 
             // Leader lines from the part to a marker that had to move off it.
@@ -1291,8 +1323,8 @@ export default function TacticalBattleView({
             const hot = hoverMarker;
             if (hot) {
                 const r = HARDPOINT_R + 1.5;
-                const integrity = Math.max(0, Math.min(1, hot.ship.subsystems?.[hot.id] ?? 0));
-                const label = `${hot.id.toUpperCase()} ${Math.round(integrity * 100)}%`;
+                const integrity = Math.max(0, Math.min(1, hardpointIntegrity(hot.ship, hot.id)));
+                const label = `${hardpointName(hot.ship, hot.id).toUpperCase()} ${Math.round(integrity * 100)}%`;
                 ctx.font = '700 9px sans-serif';
                 ctx.textAlign = 'center';
                 const tw = ctx.measureText(label).width;
@@ -1679,7 +1711,8 @@ export default function TacticalBattleView({
         const t = state.ships.find(sh => sh.id === tid);
         if (!t || t.side !== 'enemy' || !t.subsystems) return null;
         if (t.status !== 'active' && t.status !== 'retreating') return null;
-        return { ship: t, subsystems: t.subsystems, active: selectedShips[0].targetSubsystem };
+        const hardpoints: HardpointId[] = [...CALLED_SUBSYSTEMS, ...(t.mounts ?? []).map((_, i) => i)];
+        return { ship: t, hardpoints, active: calledShotOf(selectedShips[0]) };
     })();
 
     return (
@@ -1778,7 +1811,7 @@ export default function TacticalBattleView({
             {/* Controls hint */}
             {!outcome && (
                 <div className="absolute top-11 left-4 text-[8px] tracking-widest text-slate-600 uppercase pointer-events-none">
-                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
+                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem or gun · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
                 </div>
             )}
 
@@ -1791,25 +1824,25 @@ export default function TacticalBattleView({
                         </span>
                         <button
                             onClick={() => {
-                                setTargetSubsystem(state, selectedIds, null);
+                                setCalledShot(state, selectedIds, null);
                                 forceHud();
                             }}
-                            disabled={!calledTarget.active}
+                            disabled={calledTarget.active === null}
                             className="text-[8px] font-bold tracking-widest text-slate-500 uppercase hover:text-rose-300 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             Call off
                         </button>
                     </div>
                     <div className="grid grid-cols-2 gap-1">
-                        {SUBSYSTEM_IDS.map(id => {
-                            const integrity = calledTarget.subsystems[id];
+                        {calledTarget.hardpoints.map(id => {
+                            const integrity = hardpointIntegrity(calledTarget.ship, id);
                             const active = calledTarget.active === id;
                             const dead = integrity <= 0;
                             return (
                                 <button
                                     key={id}
                                     onClick={() => {
-                                        setTargetSubsystem(state, selectedIds, active ? null : id);
+                                        setCalledShot(state, selectedIds, active ? null : id);
                                         forceHud();
                                     }}
                                     disabled={dead}
@@ -1819,10 +1852,10 @@ export default function TacticalBattleView({
                                             : 'bg-slate-900/60 border-slate-700/60 hover:border-rose-700/50'
                                     } ${dead ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
-                                    <span className={`text-[8px] font-bold tracking-widest uppercase ${
+                                    <span className={`block truncate text-[8px] font-bold tracking-widest uppercase ${
                                         dead ? 'line-through text-slate-500' : active ? 'text-rose-200' : 'text-slate-300'
                                     }`}>
-                                        {id}
+                                        {hardpointName(calledTarget.ship, id)}
                                     </span>
                                     <div className="mt-0.5 h-0.5 w-full bg-slate-800 rounded-full overflow-hidden">
                                         <div

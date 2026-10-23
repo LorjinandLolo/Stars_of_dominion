@@ -13,7 +13,7 @@
 // Numbers tuned so a corvette dies in ~4s of focus, a battleship survives
 // ~40s of a cruiser's broadside — battles resolve in the 1–4 minute band.
 
-import type { ArmorProfile, ShipClassDef, ShipClassId, SquadronDef, SquadronType } from './types';
+import type { ArmorProfile, ShipClassDef, ShipClassId, SquadronDef, SquadronType, WeaponDef } from './types';
 
 const TURRET_ARC = Math.PI * 2;
 const deg = (d: number) => (d * Math.PI) / 180;
@@ -316,6 +316,21 @@ export const SQUADRON_DEFS: Record<SquadronType, SquadronDef> = {
 /** Fresh subsystem block for capital hulls. */
 export function freshSubsystems() {
     return { engines: 1, shields: 1, weapons: 1, sensors: 1 };
+}
+
+/** Fresh per-mount integrity for a capital hull, one per class weapon. */
+export function freshMounts(classId: ShipClassId): number[] {
+    return SHIP_CLASSES[classId].weapons.map(() => 1);
+}
+
+/** Point defence and other strike-craft guns are light mounts: smaller hardpoints. */
+export function isLightMount(weapon: WeaponDef): boolean {
+    return !!weapon.antiSquadron;
+}
+
+/** Omnidirectional turrets (point defence nets) bear everywhere, so they have no flank. */
+export function isOmniMount(weapon: WeaponDef): boolean {
+    return weapon.arc >= Math.PI * 2 - 1e-6;
 }
 
 /** Map a strategic composition key to a tactical ship class (V2 mapping). */

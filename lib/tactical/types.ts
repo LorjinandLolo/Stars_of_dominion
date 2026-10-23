@@ -117,8 +117,18 @@ export type ShieldFacings = [number, number, number, number];
 
 export type SubsystemId = 'engines' | 'shields' | 'weapons' | 'sensors';
 
-/** Subsystem integrity, 0–1. At 0 the subsystem is disabled for the battle. */
+/**
+ * Subsystem integrity, 0–1. At 0 the subsystem is disabled for the battle.
+ * `weapons` is the mean of the ship's mounts (TacticalShip.mounts), kept for
+ * the renderer's damage look; each mount is its own hardpoint.
+ */
 export type SubsystemState = Record<SubsystemId, number>;
+
+/** What a called shot can aim at besides a weapon mount: weapons are called per mount. */
+export type CalledSubsystemId = Exclude<SubsystemId, 'weapons'>;
+
+/** One hardpoint on a capital hull: a called subsystem, or a weapon mount by its index in the class weapons. */
+export type HardpointId = CalledSubsystemId | number;
 
 export interface MoveOrder {
     x: number;
@@ -159,9 +169,13 @@ export interface TacticalShip {
     /** Explicit target; when null, weapons auto-engage the nearest hostile in arc+range. */
     targetId: string | null;
     /** Subsystem this ship's weapons aim for on the CURRENT target (capitals only). */
-    targetSubsystem: SubsystemId | null;
+    targetSubsystem: CalledSubsystemId | null;
+    /** Weapon mount (index into the target's class weapons) aimed for instead; never set together with targetSubsystem. */
+    targetMount: number | null;
     /** Present on capital hulls (hasSubsystems); absent on escorts. */
     subsystems?: SubsystemState;
+    /** Per-mount integrity, 0–1, parallel to the class weapons (capital hulls only). A mount at 0 never fires. */
+    mounts?: number[];
     /** Per-squadron-type relaunch timers (carriers). */
     hangarCooldowns?: number[];
     status: ShipStatus;
@@ -200,8 +214,8 @@ export interface Torpedo {
     y: number;
     speed: number;
     damage: number;
-    /** Called shot carried to impact (torpedoes deliver subsystem damage). */
-    subsystem?: SubsystemId | null;
+    /** Called shot carried to impact (torpedoes deliver hardpoint damage). */
+    hardpoint?: HardpointId | null;
     /** Torpedoes self-destruct after this sim time (avoids immortal chasers). */
     expiresAt: number;
 }
