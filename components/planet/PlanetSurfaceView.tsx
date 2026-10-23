@@ -553,7 +553,12 @@ export default function PlanetSurfaceView() {
                                             </>
                                         )}
                                         {edge.kind === 'supply' && (
-                                            <path d={d} fill="none" stroke="#38bdf8" strokeWidth={2} strokeDasharray="7 6" strokeLinecap="round" opacity={0.85} className="ps-supply" />
+                                            // Violet convoy dashes, moving: the one colour no river,
+                                            // road, rail or power line uses — rivers are solid water-blue.
+                                            <>
+                                                <path d={d} fill="none" stroke="#a78bfa" strokeWidth={2.4} strokeDasharray="7 6" strokeLinecap="round" opacity={0.95} className="ps-supply" />
+                                                <path d={d} fill="none" stroke="#f5f3ff" strokeWidth={0.8} strokeDasharray="7 6" strokeLinecap="round" opacity={0.7} className="ps-supply" />
+                                            </>
                                         )}
                                         {edge.kind === 'power' && (() => {
                                             // Thin line + pylon crossbars at thirds
@@ -607,8 +612,10 @@ export default function PlanetSurfaceView() {
                                         const mx = (ax + ex) / 2 + (ey - ay) * 0.12, my = (ay + ey) / 2 - (ex - ax) * 0.12;
                                         return (
                                             <g key={`river-${sec.index}-${n}`} opacity={dimmed ? 0.25 : 1}>
-                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0c4a6e" strokeWidth={6} strokeLinecap="round" opacity={0.55} />
-                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#38bdf8" strokeWidth={3} strokeLinecap="round" opacity={0.85} />
+                                                {/* Banks, water, and a pale shimmer down the middle: always solid, never dashed */}
+                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0c4a6e" strokeWidth={7} strokeLinecap="round" opacity={0.6} />
+                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0ea5e9" strokeWidth={4} strokeLinecap="round" opacity={0.9} />
+                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#e0f2fe" strokeWidth={1} strokeLinecap="round" opacity={0.55} />
                                             </g>
                                         );
                                     });
