@@ -18,6 +18,7 @@ import SectorInspector from './SectorInspector';
 import DistrictScenery from './DistrictScenery';
 import BuildingMotif from './BuildingMotif';
 import WarLayer from './WarLayer';
+import RiverLayer from './RiverLayer';
 import WarHud from './WarHud';
 import UnitPieces from './UnitPieces';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -599,28 +600,8 @@ export default function PlanetSurfaceView() {
                             })}
                         </g>
 
-                        {/* Rivers: from the high ground down to the sea (carveFeatures) */}
-                        <g pointerEvents="none">
-                            {worldClimate !== 'glassed' && surface.sectors.filter(sec => sec.riverTo !== undefined).flatMap(sec => {
-                                const [ax, ay] = geo.centroids[sec.index];
-                                const dimmed = hoverRegion !== null && sec.regionId !== hoverRegion;
-                                return (sec.riverTo === undefined ? [] : [sec.riverTo])
-                                    .map(n => {
-                                        const [bx, by] = geo.centroids[n];
-                                        const mouth = surface.sectors[n].terrain === 'ocean';
-                                        const ex = mouth ? ax + (bx - ax) * 0.55 : bx, ey = mouth ? ay + (by - ay) * 0.55 : by;
-                                        const mx = (ax + ex) / 2 + (ey - ay) * 0.12, my = (ay + ey) / 2 - (ex - ax) * 0.12;
-                                        return (
-                                            <g key={`river-${sec.index}-${n}`} opacity={dimmed ? 0.25 : 1}>
-                                                {/* Banks, water, and a pale shimmer down the middle: always solid, never dashed */}
-                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0c4a6e" strokeWidth={7} strokeLinecap="round" opacity={0.6} />
-                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#0ea5e9" strokeWidth={4} strokeLinecap="round" opacity={0.9} />
-                                                <path d={`M ${ax} ${ay} Q ${mx} ${my} ${ex} ${ey}`} fill="none" stroke="#e0f2fe" strokeWidth={1} strokeLinecap="round" opacity={0.55} />
-                                            </g>
-                                        );
-                                    });
-                            })}
-                        </g>
+                        {/* Rivers and lakes: drained from the land itself (generator flowRivers), drawn in riverPaths.ts */}
+                        {worldClimate !== 'glassed' && <RiverLayer surface={surface} geo={geo} />}
 
                         {/* Developments + markers */}
                         {surface.sectors.map(sec => {
@@ -869,7 +850,7 @@ export default function PlanetSurfaceView() {
                         style={{ left: Math.min(hover.x + 14, window.innerWidth - 190), top: hover.y + 14 }}
                     >
                         <div className="text-[9px] font-display tracking-wider uppercase" style={{ color: meta.color }}>
-                            {meta.label}{sec.chokepoint ? ' · chokepoint' : ''}{sec.river ? ' · river' : ''}
+                            {meta.label}{sec.chokepoint ? ' · chokepoint' : ''}{sec.river ? (sec.lake ? ' · lake' : ' · river') : ''}
                         </div>
                         {sec.deposit && <div className="text-[8px] mt-0.5" style={{ color: DEPOSIT_META[sec.deposit].color }}>{DEPOSIT_META[sec.deposit].label}</div>}
                         <div className="text-[8px] text-slate-400">{region?.name}</div>

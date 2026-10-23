@@ -264,7 +264,10 @@ function terrainQuotas(rand: () => number, archetype: PlanetArchetype, landBias:
  */
 const CLAIM_ORDER: TerrainType[] = ['mountains', 'volcanic', 'frozen', 'desert', 'jungle', 'forest', 'toxic', 'ruins', 'urban'];
 
-function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean, founded = false): TerrainType[] {
+/** The climate fields a world was shaped by, handed on to the rivers (filled by generateTerrain). */
+interface TerrainFields { elevation: number[]; moisture: number[] }
+
+function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: SeedPoint[], neighbors: number[][], landBias: boolean, settled: boolean, founded = false, fields?: TerrainFields): TerrainType[] {
     const noiseSeed = Math.floor(rand() * 0xffffffff);
     const ox = rand() * 50, oy = rand() * 50;
     const tilt = (rand() - 0.5) * 0.7; // radians: the poles are roughly north and south
@@ -323,6 +326,9 @@ function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: 
         return moistureBase[i] * 0.6 + coastal * 0.8;
     });
     const heat = (i: number) => 1 - latitude[i] - Math.max(0, elevation[i]) * 0.25;
+    // Handed on as they are: reading them draws nothing from the rng, so the
+    // terrain is the same whether anyone asks for them or not.
+    if (fields) { fields.elevation = elevation; fields.moisture = moisture; }
 
     const scores: Partial<Record<TerrainType, (i: number) => number>> = {
         mountains: i => ridge[i] * 0.9 + elevation[i] * 0.6,
@@ -626,7 +632,8 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
     // An outpost (or a colony on dead rock) has a settlement on an otherwise
     // unsettled surface: its dome is the capital district.
     const founded = !!(tags?.includes('outpost') || tags?.includes('colony'));
-    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled, founded);
+    const fields: TerrainFields = { elevation: [], moisture: [] };
+    const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled, founded, fields);
     const { regions, regionOf } = generateRegions(rand, terrain, seeds, settled);
 
     const rough = (t: TerrainType) => t === 'mountains' || t === 'volcanic' || t === 'ocean';
@@ -644,7 +651,7 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         if (passable(t)) return walls >= neighbors[i].length - 1 && walls >= 2;
         return false;
     };
-    const features = carveFeatures(planetId, archetype, terrain, neighbors, tags ?? []);
+    const features = carveFeatures(planetId, archetype, terrain, neighbors, tags ?? [], fields);
     const sectors: SurfaceSector[] = seeds.map((s, i) => ({
         index: i,
         cx: s.x,
@@ -656,7 +663,7 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         habitability: Math.min(100, TERRAIN_HABITABILITY[terrain[i]] + (features.river.has(i) ? 10 : 0)),
         chokepoint: isChokepoint(i),
         neighbors: neighbors[i],
-        ...(features.river.has(i) ? { river: true, ...(features.river.get(i)! >= 0 ? { riverTo: features.river.get(i)! } : {}) } : {}),
+        ...(features.river.has(i) ? { river: true, ...(features.river.get(i)! >= 0 ? { riverTo: features.river.get(i)! } : {}), riverFlow: features.flow.get(i) ?? 0, ...(features.lakes.has(i) ? { lake: true } : {}) } : {}),
         ...(features.springs.has(i) ? { riverTo: features.springs.get(i)! } : {}),
         ...(features.deposit.has(i) ? { deposit: features.deposit.get(i)! } : {}),
     }));
@@ -667,15 +674,19 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
 }
 
 // ─── Rivers and deposits ────────────────────────────────────────────────────
-// Laid over the finished terrain with their OWN generator, so adding them did
+// Laid over the finished terrain with their OWN generators, so adding them did
 // not move a single district, region or building on any existing world.
 
-/** Rivers per archetype: [min, max]. Dry, frozen and poisoned worlds have few or none. */
+/**
+ * The pre-2026-10-23 rivers' counts. Kept only so their rng draws still happen
+ * before the deposits (legacyRiverDraws): the deposits come off the same
+ * stream, and they must not move on any existing world.
+ */
 const RIVERS: Partial<Record<PlanetArchetype, [number, number]>> = {
     continental: [2, 3], gaia: [2, 4], jungle: [1, 3], swamp: [2, 3], oceanic: [1, 2],
     montane: [1, 2], frozen: [0, 1], arid: [0, 1],
 };
-/** How high each terrain sits, for water running downhill. */
+/** How high each terrain sat for the legacy walk (legacyRiverDraws only). */
 const TERRAIN_HEIGHT: Record<TerrainType, number> = {
     mountains: 5, volcanic: 5, frozen: 3, forest: 2, jungle: 1.5, toxic: 1.5,
     ruins: 1.2, plains: 1, desert: 1, urban: 1, ocean: 0,
@@ -690,42 +701,24 @@ const DEPOSIT_RULES: Array<{ kind: DepositKind; tag?: string; terrain: TerrainTy
     { kind: 'relic', tag: 'relic_site', terrain: ['ruins', 'desert', 'plains', 'mountains'], count: [1, 1] },
 ];
 
-function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], tags: string[]): { river: Map<number, number>; springs: Map<number, number>; deposit: Map<number, DepositKind> } {
+interface RiverFeatures {
+    /** River district -> the district its water flows on into (-1: it ends there). */
+    river: Map<number, number>;
+    /** Mountain spring -> the river district it feeds: drawn, but a mountain is not a river district. */
+    springs: Map<number, number>;
+    /** River district -> riverFlow (0..1). */
+    flow: Map<number, number>;
+    /** River districts that are lakes. */
+    lakes: Set<number>;
+}
+
+function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], tags: string[], fields: TerrainFields): RiverFeatures & { deposit: Map<number, DepositKind> } {
     const rand = mulberry32(hashString(planetId + ':features'));
-    // River district -> the district its water flows on into (-1: it ends there).
-    const river = new Map<number, number>();
-    // Mountain springs: drawn, but a mountain is not a river district.
-    const springs = new Map<number, number>();
     const deposit = new Map<number, DepositKind>();
     const n = terrain.length;
 
-    // Rivers rise in the high ground and run downhill to the sea. A river that
-    // finds no sea within a dozen districts ends where it is (a lake, a delta
-    // into the sand) — it still waters the ground it crossed.
-    const [lo, hi] = RIVERS[archetype] ?? [0, 0];
-    const wanted = lo + Math.floor(rand() * (hi - lo + 1));
-    const height = (i: number) => TERRAIN_HEIGHT[terrain[i]] + rand() * 0.6;
-    const sources = [...Array(n).keys()].filter(i => (terrain[i] === 'mountains' || terrain[i] === 'frozen')
-        && neighbors[i].some(j => terrain[j] !== 'mountains' && terrain[j] !== 'volcanic' && terrain[j] !== 'ocean'));
-    for (let r = 0; r < wanted && sources.length; r++) {
-        const src = sources.splice(Math.floor(rand() * sources.length), 1)[0];
-        let cur = src;
-        let last = -1; // the river district water is flowing out of
-        const seen = new Set<number>([src]);
-        for (let step = 0; step < 12; step++) {
-            const next = neighbors[cur].filter(j => !seen.has(j) && terrain[j] !== 'mountains' && terrain[j] !== 'volcanic')
-                .sort((a, b) => height(a) - height(b))[0];
-            if (next === undefined) break;
-            // Into the sea, or into an older river as a tributary: done.
-            if (terrain[next] === 'ocean' || river.has(next)) { if (last >= 0) river.set(last, next); break; }
-            if (last >= 0) river.set(last, next);
-            else springs.set(src, next); // the spring in the high ground
-            river.set(next, -1);
-            seen.add(next);
-            last = next;
-            cur = next;
-        }
-    }
+    legacyRiverDraws(rand, archetype, terrain, neighbors);
+    const rivers = flowRivers(planetId, archetype, terrain, neighbors, fields);
 
     // Deposits: the common ore, then whatever the body's tags promise.
     for (const rule of DEPOSIT_RULES) {
@@ -739,7 +732,147 @@ function carveFeatures(planetId: string, archetype: PlanetArchetype, terrain: Te
             deposit.set(pool.splice(Math.floor(rand() * pool.length), 1)[0], rule.kind);
         }
     }
-    return { river, springs, deposit };
+    return { ...rivers, deposit };
+}
+
+/**
+ * The old river walk, run for its rng draws alone: the deposits come off the
+ * same stream after it, and replaying exactly what it drew keeps every
+ * deposit on every existing world where it was. Its rivers are thrown away.
+ */
+function legacyRiverDraws(rand: () => number, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][]): void {
+    const n = terrain.length;
+    const river = new Map<number, number>();
+    const [lo, hi] = RIVERS[archetype] ?? [0, 0];
+    const wanted = lo + Math.floor(rand() * (hi - lo + 1));
+    const height = (i: number) => TERRAIN_HEIGHT[terrain[i]] + rand() * 0.6;
+    const sources = [...Array(n).keys()].filter(i => (terrain[i] === 'mountains' || terrain[i] === 'frozen')
+        && neighbors[i].some(j => terrain[j] !== 'mountains' && terrain[j] !== 'volcanic' && terrain[j] !== 'ocean'));
+    for (let r = 0; r < wanted && sources.length; r++) {
+        const src = sources.splice(Math.floor(rand() * sources.length), 1)[0];
+        let cur = src;
+        const seen = new Set<number>([src]);
+        for (let step = 0; step < 12; step++) {
+            const next = neighbors[cur].filter(j => !seen.has(j) && terrain[j] !== 'mountains' && terrain[j] !== 'volcanic')
+                .sort((a, b) => height(a) - height(b))[0];
+            if (next === undefined) break;
+            if (terrain[next] === 'ocean' || river.has(next)) break;
+            river.set(next, -1);
+            seen.add(next);
+            cur = next;
+        }
+    }
+}
+
+// ─── Rivers from the land itself ─────────────────────────────────────────────
+// After Red Blob Games' polygon maps and Martin O'Leary's fantasy maps: rain
+// falls on every district by its moisture, every district drains to its
+// lowest neighbour over the world's real elevation, and a river is wherever
+// enough water has gathered. Tributaries join of themselves, a basin with no
+// way down fills into a lake and spills over, and the water a district carries
+// sets how wide the river is drawn there. Own rng, so nothing else moves.
+
+/** How much rain each kind of world gets. Worlds not listed have no rivers. */
+const RAIN: Partial<Record<PlanetArchetype, number>> = {
+    continental: 1, gaia: 1.25, jungle: 1.3, swamp: 1.4, oceanic: 1.1,
+    montane: 0.85, frozen: 0.35, arid: 0.22,
+};
+/** Gathered rain (in districts' worth of rain) a district needs to carry a river. */
+const RIVER_FLUX = 4;
+/**
+ * River districts a world may have, at most: above it the threshold rises
+ * until only the bigger rivers are left. River districts fight and feed
+ * better (RIVER_DEFENCE, habitability), so this is a balance number as much
+ * as a look — roughly what the old fixed-count rivers gave.
+ */
+const MAX_RIVER_DISTRICTS: Partial<Record<PlanetArchetype, number>> = {
+    continental: 9, gaia: 10, jungle: 10, swamp: 11, oceanic: 5, montane: 7, frozen: 4, arid: 3,
+};
+/** Lakes a world may have, at most (swamps are made of them). */
+const MAX_LAKES: Partial<Record<PlanetArchetype, number>> = { swamp: 2 };
+/** How far a basin must have filled above its floor to read as a lake, not a pond. */
+const LAKE_DEPTH = 0.04;
+
+function flowRivers(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], neighbors: number[][], fields: TerrainFields): RiverFeatures {
+    const out: RiverFeatures = { river: new Map(), springs: new Map(), flow: new Map(), lakes: new Set() };
+    const rain = RAIN[archetype] ?? 0;
+    const n = terrain.length;
+    if (!rain || fields.elevation.length !== n) return out;
+    const rand = mulberry32(hashString(planetId + ':rivers'));
+
+    const adj: Set<number>[] = terrain.map(() => new Set<number>());
+    neighbors.forEach((ns, i) => ns.forEach(j => { adj[i].add(j); adj[j].add(i); }));
+    const isSea = (i: number) => terrain[i] === 'ocean';
+    const isHigh = (i: number) => terrain[i] === 'mountains' || terrain[i] === 'volcanic';
+    // The real ground: the climate's elevation, with the ranges standing proud of it.
+    const h = terrain.map((t, i) => fields.elevation[i]
+        + (t === 'mountains' || t === 'volcanic' ? 0.5 : t === 'frozen' ? 0.15 : 0) + rand() * 0.02);
+
+    // Priority flood from the sea: every district learns its way down, and a
+    // basin with no lower neighbour fills to its rim (filled > h) and spills.
+    // A world with no sea drains into its lowest basin, which becomes a lake.
+    const filled = new Array<number>(n).fill(Infinity);
+    const down = new Array<number>(n).fill(-1);
+    const done = new Array<boolean>(n).fill(false);
+    const open: number[] = [];
+    let terminal = -1;
+    const seas = [...Array(n).keys()].filter(isSea);
+    if (seas.length) {
+        for (const s of seas) { filled[s] = h[s]; open.push(s); }
+    } else {
+        terminal = [...Array(n).keys()].filter(i => !isHigh(i)).sort((a, b) => h[a] - h[b])[0] ?? -1;
+        if (terminal < 0) return out;
+        filled[terminal] = h[terminal];
+        open.push(terminal);
+    }
+    const order: number[] = [];
+    while (open.length) {
+        open.sort((a, b) => filled[a] - filled[b]);
+        const cur = open.shift()!;
+        if (done[cur]) continue;
+        done[cur] = true;
+        order.push(cur);
+        for (const j of adj[cur]) {
+            if (done[j] || isSea(j)) continue;
+            const f = Math.max(h[j], filled[cur] + 1e-4);
+            if (f < filled[j]) { filled[j] = f; down[j] = cur; open.push(j); }
+        }
+    }
+
+    // Rain by moisture (ice holds half of it), gathered downhill: furthest
+    // from the outlet first, so each district hands on all it has collected.
+    const flux = terrain.map((t, i) => isSea(i) ? 0
+        : rain * (0.35 + Math.max(0, Math.min(1.5, fields.moisture[i]))) * (t === 'frozen' ? 0.5 : 1));
+    for (let k = order.length - 1; k >= 0; k--) {
+        const i = order[k];
+        if (down[i] >= 0) flux[down[i]] += flux[i];
+    }
+
+    const carries = (i: number, t: number) => !isSea(i) && !isHigh(i) && flux[i] >= t;
+    let threshold = RIVER_FLUX;
+    const cap = MAX_RIVER_DISTRICTS[archetype] ?? 6;
+    while ([...Array(n).keys()].filter(i => carries(i, threshold)).length > cap) threshold *= 1.1;
+    const isRiver = (i: number) => carries(i, threshold) || (i === terminal && !isHigh(i) && flux[i] >= threshold * 0.6);
+    const rivers = [...Array(n).keys()].filter(isRiver);
+    const maxFlux = Math.max(...rivers.map(i => flux[i]), 1e-6);
+
+    for (const i of rivers) {
+        out.river.set(i, down[i]);
+        out.flow.set(i, Math.round(Math.sqrt(flux[i] / maxFlux) * 100) / 100);
+    }
+    // Lakes: the basins water had to fill to get out (and a sea-less world's
+    // last basin), the biggest first.
+    rivers.filter(i => i === terminal || filled[i] > h[i] + LAKE_DEPTH)
+        .sort((a, b) => flux[b] - flux[a]).slice(0, MAX_LAKES[archetype] ?? 1)
+        .forEach(i => out.lakes.add(i));
+    // Springs: where a river begins, the high ground that feeds it most.
+    for (const i of rivers) {
+        const upstream = [...adj[i]].filter(j => down[j] === i);
+        if (upstream.some(j => out.river.has(j))) continue;
+        const spring = upstream.filter(j => isHigh(j) || terrain[j] === 'frozen').sort((a, b) => flux[b] - flux[a])[0];
+        if (spring !== undefined) out.springs.set(spring, i);
+    }
+    return out;
 }
 
 // ─── Legacy building auto-placement ─────────────────────────────────────────

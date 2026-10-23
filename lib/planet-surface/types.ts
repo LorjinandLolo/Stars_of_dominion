@@ -105,6 +105,14 @@ export interface SurfaceSector {
     river?: boolean;
     /** Where water flows on to from here (a river district or the sea): set on river districts and on the mountain spring a river rises in. */
     riverTo?: number;
+    /**
+     * How much water passes through, 0..1 of the world's biggest river (the
+     * square root of the gathered rain, so width reads naturally). Drawing
+     * only: the river-district rules do not care how big the river is.
+     */
+    riverFlow?: number;
+    /** Water pooled in a basin on its way down: drawn as a lake, still a river district. */
+    lake?: boolean;
     /** What is in the ground here, if anything worth digging for. */
     deposit?: DepositKind;
 }
