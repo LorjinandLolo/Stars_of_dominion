@@ -136,6 +136,8 @@ import {
 import {
     seedFormations,
     resolveMoves,
+    mergeStragglers,
+    STRAGGLER_BELOW,
     updateSupply,
     contestedDistricts,
     pruneFormations,
@@ -7433,7 +7435,23 @@ function seedArrivals(
     const at = musterDistrict(surface, war, side, preferred);
     if (at == null) return 0;
     const added = seedFormations(surface, war, side, arriving, `f-${side[0]}-m-${world.nowSeconds}-${siege.tickCount}`, [at]);
-    war.formations.push(...added);
+    for (const piece of added) {
+        // A trickle (the barracks levy, a few recruits) reinforces the piece of
+        // its kind already standing at the muster point instead of becoming a
+        // piece of its own: fifty men a cycle used to leave dozens of tiny
+        // militia counters in one district. Big arrivals stay their own piece.
+        const host = piece.strength < STRAGGLER_BELOW ? war.formations.find(f =>
+            f.side === side && f.unitType === piece.unitType && f.strength > 0 && f.sectorIndex === at
+            && f.moveTo == null && !(f.path?.length) && !f.redeploying && !f.encircled) : undefined;
+        if (!host) { war.formations.push(piece); continue; }
+        const total = host.strength + piece.strength;
+        // Fresh men are organised and fed, and green: they dilute the veterans.
+        host.organization = ((host.organization ?? 100) * host.strength + 100 * piece.strength) / total;
+        host.supply = (host.supply * host.strength + piece.supply * piece.strength) / total;
+        if (host.xp) host.xp = Math.floor(host.xp * host.strength / total);
+        host.maxStrength = (host.maxStrength ?? host.strength) + piece.strength;
+        host.strength = total;
+    }
     return men;
 }
 
@@ -7618,6 +7636,9 @@ export function processSieges(world: GameWorldState) {
                         if (landed >= 200) reportSiegeEvent(world, planet, updatedSiege, 'reinforcements_landed', { men: landed }, nameOfEmpire);
                     }
                 }
+
+                // Stragglers fold into a piece of their kind (old sieges, levies).
+                if (mergeStragglers(war.formations) > 0) war.formations = pruneFormations(war.formations);
 
                 // A defender who has given no orders runs the default doctrine:
                 // the capital and the strongpoints manned, the rest on the line.

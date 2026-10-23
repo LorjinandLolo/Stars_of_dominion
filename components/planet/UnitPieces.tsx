@@ -300,10 +300,16 @@ export default function UnitPieces({
                 const area = geo.areas[sectorIndex];
                 const size = Math.max(7, Math.min(12, Math.sqrt(area) * 0.13));
                 return stack.map((f, i) => {
-                    // Fan the stack so several formations in one district all read.
+                    // Fan the stack so several formations in one district all read,
+                    // four to a row, further rows stepping away from the centre —
+                    // a big stack must stay on its own district.
                     const spread = size * 2.3;
-                    const offX = (i - (stack.length - 1) / 2) * spread;
-                    const offY = f.side === 'attacker' ? size * 1.5 : -size * 1.5;
+                    const perRow = Math.min(4, stack.length);
+                    const col = i % 4;
+                    const row = Math.floor(i / 4);
+                    const inRow = Math.min(perRow, stack.length - row * 4);
+                    const offX = (col - (inRow - 1) / 2) * spread;
+                    const offY = (f.side === 'attacker' ? 1 : -1) * size * (1.5 + row * 2.1);
                     const x = cx + offX;
                     const y = cy + offY;
                     const color = f.side === 'attacker' ? attackerColor : defenderColor;

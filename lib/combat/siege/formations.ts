@@ -629,5 +629,46 @@ export function contestedDistricts(formations: Formation[]): number[] {
         .sort((a, b) => a - b);
 }
 
+/**
+ * Pieces smaller than this fold into a piece of their kind standing idle in
+ * the same district (mergeStragglers, and the worker's arrivals): the levy
+ * sends fifty men a cycle, and without this a siege grew dozens of tiny
+ * militia counters on one district.
+ */
+export const STRAGGLER_BELOW = 300;
+
+/**
+ * Folds small idle pieces into the strongest idle piece of the same side,
+ * kind, district and plan. Merged pieces are left at strength 0 for
+ * pruneFormations. Fresh men dilute a veteran's experience by headcount.
+ * Returns how many pieces were folded in.
+ */
+export function mergeStragglers(formations: Formation[]): number {
+    const idle = (f: Formation) => f.strength > 0 && f.moveTo == null && !(f.path?.length) && !f.redeploying && !f.encircled;
+    const groups = new Map<string, Formation[]>();
+    for (const f of formations) {
+        if (!idle(f)) continue;
+        const key = `${f.side}|${f.unitType}|${f.sectorIndex}|${f.planId ?? ''}|${f.guerrilla ? 'g' : ''}`;
+        groups.set(key, [...(groups.get(key) ?? []), f]);
+    }
+    let merged = 0;
+    for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        const host = group.reduce((a, b) => (b.strength > a.strength ? b : a));
+        for (const f of group) {
+            if (f === host || f.strength >= STRAGGLER_BELOW) continue;
+            const total = host.strength + f.strength;
+            host.organization = ((host.organization ?? 100) * host.strength + (f.organization ?? 100) * f.strength) / total;
+            host.supply = (host.supply * host.strength + f.supply * f.strength) / total;
+            host.xp = Math.floor(((host.xp ?? 0) * host.strength + (f.xp ?? 0) * f.strength) / total);
+            host.maxStrength = (host.maxStrength ?? host.strength) + (f.maxStrength ?? f.strength);
+            host.strength = total;
+            f.strength = 0;
+            merged++;
+        }
+    }
+    return merged;
+}
+
 /** Drops destroyed formations. */
 export const pruneFormations = (formations: Formation[]) => formations.filter(f => f.strength > 0);

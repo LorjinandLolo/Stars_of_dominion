@@ -76,13 +76,18 @@ export default function BattlePlayback({ geo, war, attackerColor, defenderColor,
                 const p = geo.centroids[a], q = geo.centroids[b];
                 if (!p || !q) return null;
                 const x = (p[0] + q[0]) / 2, y = (p[1] + q[1]) / 2;
+                const repaired = war.roadsCut?.[k];
                 return (
-                    <g key={`cut-${k}`} opacity={0.9}>
-                        <title>Road demolished</title>
+                    <g key={`cut-${k}`}>
+                        <title>{`Road demolished${repaired ? ` — passable again at cycle ${repaired}` : ''}`}</title>
+                        {/* The cut stretch itself: broken, so you can see which road is gone */}
+                        <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#020617" strokeWidth={6} strokeLinecap="round" opacity={0.7} />
+                        <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#f97316" strokeWidth={3} strokeDasharray="7 6" strokeLinecap="round" />
+                        {/* Roadblock sign at the break: square and orange, so it never
+                            reads as the round red clash marker of a fight */}
+                        <rect x={x - 10} y={y - 10} width={20} height={20} rx={3} fill="#f97316" stroke="#020617" strokeWidth={1.6} />
                         <path d={`M ${x - 5} ${y - 5} L ${x + 5} ${y + 5} M ${x + 5} ${y - 5} L ${x - 5} ${y + 5}`}
-                            stroke="#020617" strokeWidth={4} strokeLinecap="round" />
-                        <path d={`M ${x - 5} ${y - 5} L ${x + 5} ${y + 5} M ${x + 5} ${y - 5} L ${x - 5} ${y + 5}`}
-                            stroke="#f97316" strokeWidth={2} strokeLinecap="round" />
+                            stroke="#020617" strokeWidth={2.8} strokeLinecap="round" />
                     </g>
                 );
             })}
