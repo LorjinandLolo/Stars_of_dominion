@@ -125,8 +125,10 @@ battleship of the factions you play most; they are the biggest on screen.
   tags every vertex from that name before merging, and the battle renderer uses it to
   show damage per subsystem: a failing part darkens and chars, its lights flicker and
   go out when it is knocked out, and smoke, fire and sparks come from it. Hull damage
-  scorches the whole ship. A model without these names still loads, but only gets
-  hull-wide damage. No broken-part variants are needed; the code does the effects.
+  scorches the whole ship. A model without these names still loads; its smoke and
+  fire come from the per-class hardpoint spots (where the targeting markers sit) and
+  the char and light effects are hull-wide only. No broken-part variants are needed;
+  the code does the effects.
 - Running lights and engine glow go in the **emissive map**. The renderer recolours
   emissive light per side (indigo for the player, red for the enemy), so keep the
   emissive map white or grey. Keep the base colour faction-neutral unless it is a

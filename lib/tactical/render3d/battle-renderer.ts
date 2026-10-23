@@ -394,6 +394,21 @@ function hardpointLayout(g: THREE.BufferGeometry, emit: SubsystemEmitters): Hard
     return out;
 }
 
+/**
+ * Smoke and fire anchors for every subsystem: the model's tagged emitters, and
+ * the hardpoint marker's spot for any part it does not name, so an untagged
+ * hull burns where its marker sits. Built with the layout, never per frame.
+ */
+function damageEmitters(layout: HardpointLayout, emit: SubsystemEmitters): SubsystemEmitters {
+    const out: SubsystemEmitters = {};
+    for (const id of SUBSYSTEM_IDS) {
+        const pts = emit[id];
+        const a = layout[id];
+        out[id] = pts?.length ? pts : [new THREE.Vector3(a.x, a.y, a.z)];
+    }
+    return out;
+}
+
 export class BattleRenderer {
     private readonly renderer: THREE.WebGLRenderer;
     private readonly scene = new THREE.Scene();
@@ -421,7 +436,7 @@ export class BattleRenderer {
     private readonly ownedGeometries = new Set<THREE.BufferGeometry>();
     private readonly ownedMaterials: THREE.Material[] = [];
     private readonly ownedTextures: THREE.Texture[] = [];
-    /** class:side → smoke/fire anchors per tagged subsystem, and along the deck for hull fires. */
+    /** class:side → smoke/fire anchors per subsystem (tagged parts, else the hardpoint spot), and along the deck for hull fires. */
     private readonly emitters = new Map<string, SubsystemEmitters>();
     private readonly anchors = new Map<string, THREE.Vector3[]>();
     /** class:side → where each subsystem's hardpoint marker goes, model space. */
@@ -491,9 +506,10 @@ export class BattleRenderer {
                 this.hullMaterial.set(`${id}:${side}`, mat);
                 this.ownedMaterials.push(mat);
                 this.hulls.set(`${id}:${side}`, new InstancePool(this.scene, geo, mat, 8, { damage: true }));
-                this.emitters.set(`${id}:${side}`, {});
+                const layout = hardpointLayout(geo, {});
+                this.emitters.set(`${id}:${side}`, damageEmitters(layout, {}));
                 this.anchors.set(`${id}:${side}`, hullAnchors(geo));
-                this.hardpointLayouts.set(`${id}:${side}`, hardpointLayout(geo, {}));
+                this.hardpointLayouts.set(`${id}:${side}`, layout);
                 const outlineMat = new THREE.MeshBasicMaterial({
                     color: SIDE_COLOUR[side].stroke,
                     side: THREE.BackSide,
@@ -683,9 +699,10 @@ export class BattleRenderer {
                 this.hulls.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 this.outlines.get(`${id}:${side}`)!.setGeometry(model.geometry);
                 applyMaps(this.hullMaterial.get(`${id}:${side}`)!, model);
-                this.emitters.set(`${id}:${side}`, model.emitters);
+                const layout = hardpointLayout(model.geometry, model.emitters);
+                this.emitters.set(`${id}:${side}`, damageEmitters(layout, model.emitters));
                 this.anchors.set(`${id}:${side}`, hullAnchors(model.geometry));
-                this.hardpointLayouts.set(`${id}:${side}`, hardpointLayout(model.geometry, model.emitters));
+                this.hardpointLayouts.set(`${id}:${side}`, layout);
             }
         }
 
@@ -905,15 +922,14 @@ export class BattleRenderer {
             this.sprites.push(gx, -gy, FX_Z, 0, glowR * 1.5, glowR * 1.5, 1, this.colour);
         }
 
-        // Smoke, fire and sparks where the damage is. Untagged models have no
-        // subsystem anchors, so only hull damage shows on them.
+        // Smoke, fire and sparks where the damage is: on the tagged part, or at
+        // the hardpoint marker on a model that does not name it.
         const emit = this.emitters.get(key)!;
         if (sub) {
             for (let i = 0; i < SUBSYSTEM_IDS.length; i++) {
                 const id = SUBSYSTEM_IDS[i];
-                const pts = emit[id];
                 const loss = 1 - sub[id];
-                if (pts && loss >= 0.25) this.burn(sh, pts, loss, seed * 1000 + i * 17, r, t);
+                if (loss >= 0.25) this.burn(sh, emit[id]!, loss, seed * 1000 + i * 17, r, t);
             }
         }
         if (hullFrac < 0.5) this.burn(sh, this.anchors.get(key)!, (0.5 - hullFrac) * 1.6, seed * 1000 + 101, r, t);
