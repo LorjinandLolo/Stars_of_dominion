@@ -54,7 +54,7 @@ import {
     designTuningFor,
     type StrategicFleetLike,
 } from '@/lib/tactical/fleet-adapter';
-import { FastForward, Flag, Pause, Play, X, Zap } from 'lucide-react';
+import { Crosshair, FastForward, Flag, Pause, Play, X, Zap } from 'lucide-react';
 import type { BattleRenderer } from '@/lib/tactical/render3d/battle-renderer';
 import { VIEW_TILT } from '@/lib/tactical/render3d/view';
 import {
@@ -543,6 +543,8 @@ export default function TacticalBattleView({
         /** Enemy ship under the cursor; sticky while the cursor is on one of its markers. */
         let hoverShipId: string | null = null;
         let hoverMarker: HardpointMarker | null = null;
+        /** Off-screen arrows drawn this frame for the player's squadrons, for click-to-find. */
+        let squadronArrows: Array<{ x: number; y: number; id: string }> = [];
         const flatLayouts = new Map<string, HardpointLayout>();
         const layoutFor = (sh: TacticalShip): HardpointLayout => {
             const fromModel = rendererRef.current?.hardpoints(sh.classId, sh.side);
@@ -796,9 +798,36 @@ export default function TacticalBattleView({
                         sh.side === 'player' && sh.status === 'active' &&
                         sh.x >= x0 && sh.x <= x1 && sh.y >= y0 && sh.y <= y1)
                     .map(sh => sh.id);
+                if (!inBox.length) {
+                    // No ships in the box: grab the player's squadrons instead.
+                    const sqInBox = st.squadrons
+                        .filter(q => q.side === 'player' && q.craft > 0 &&
+                            q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1)
+                        .map(q => q.id);
+                    if (sqInBox.length) {
+                        const nextSq = d.shift ? [...new Set([...squadronSelectionRef.current, ...sqInBox])] : sqInBox;
+                        setSquadronSelection(nextSq);
+                        setSelection([]);
+                        return;
+                    }
+                }
                 const next = d.shift ? [...new Set([...selectionRef.current, ...inBox])] : inBox;
                 setSelection(next);
                 if (next.length) setSquadronSelection([]);
+                return;
+            }
+
+            // Left click on an off-screen squadron arrow: select it and go there.
+            const arrow = squadronArrows.find(a => Math.hypot(a.x - p.x, a.y - p.y) <= 16);
+            if (arrow) {
+                const sq = st.squadrons.find(q => q.id === arrow.id);
+                if (sq) {
+                    setSquadronSelection([sq.id]);
+                    setSelection([]);
+                    cameraRef.current.cx = sq.x;
+                    cameraRef.current.cy = sq.y;
+                    cameraRef.current.zoom = Math.max(cameraRef.current.zoom, START_ZOOM);
+                }
                 return;
             }
 
@@ -923,6 +952,88 @@ export default function TacticalBattleView({
         window.addEventListener('blur', onBlur);
 
         // ── Drawing helpers (world space unless noted) ──
+
+        /** Squadron icon in screen space: interceptors a dart, bombers a diamond. */
+        const drawSquadronIcon = (type: Squadron['type'], x: number, y: number, colour: string, filled: boolean, angle = -Math.PI / 2) => {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle + Math.PI / 2);
+            ctx.beginPath();
+            if (type === 'interceptor') {
+                ctx.moveTo(0, -6);
+                ctx.lineTo(5, 5);
+                ctx.lineTo(0, 2);
+                ctx.lineTo(-5, 5);
+            } else {
+                ctx.moveTo(0, -6);
+                ctx.lineTo(5, 0);
+                ctx.lineTo(0, 6);
+                ctx.lineTo(-5, 0);
+            }
+            ctx.closePath();
+            ctx.lineWidth = 1.4;
+            ctx.strokeStyle = colour;
+            ctx.fillStyle = filled ? colour : 'rgba(2, 6, 23, 0.65)';
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        /** Screen space. Marks every squadron; points at the player's off-screen ones. */
+        const drawSquadronMarkers = (st: BattleState) => {
+            const v = viewRef.current;
+            const selectedSq = new Set(squadronSelectionRef.current);
+            const insetX = 18, insetTop = 60, insetBottom = 18;
+            squadronArrows = [];
+            ctx.textAlign = 'left';
+            ctx.font = '700 9px monospace';
+            for (const sq of st.squadrons) {
+                if (sq.craft <= 0) continue;
+                const isPlayer = sq.side === 'player';
+                const sel = selectedSq.has(sq.id);
+                const p = worldToScreen(sq.x, sq.y);
+                const colour = sel ? '#ffffff' : isPlayer ? 'rgba(165, 180, 252, 0.95)' : 'rgba(252, 165, 165, 0.85)';
+                const onScreen = p.x >= 0 && p.x <= v.cw && p.y >= insetTop - 20 && p.y <= v.ch;
+                if (onScreen) {
+                    const mx = p.x, my = p.y - 18;
+                    ctx.strokeStyle = sel ? 'rgba(255, 255, 255, 0.4)' : isPlayer ? 'rgba(165, 180, 252, 0.3)' : 'rgba(252, 165, 165, 0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(mx, my + 6);
+                    ctx.lineTo(p.x, p.y - 4);
+                    ctx.stroke();
+                    drawSquadronIcon(sq.type, mx, my, colour, sel);
+                    ctx.fillStyle = colour;
+                    ctx.fillText(String(sq.craft), mx + 8, my + 3);
+                } else if (isPlayer) {
+                    // Clamp the direction to the screen border.
+                    const cx = v.cw / 2, cy = (v.ch + insetTop - insetBottom) / 2;
+                    const dx = p.x - cx, dy = p.y - cy;
+                    const halfW = v.cw / 2 - insetX;
+                    const halfH = (v.ch - insetTop - insetBottom) / 2;
+                    const t = Math.min(halfW / Math.max(1e-6, Math.abs(dx)), halfH / Math.max(1e-6, Math.abs(dy)));
+                    const ex = cx + dx * t, ey = cy + dy * t;
+                    const ang = Math.atan2(dy, dx);
+                    ctx.save();
+                    ctx.translate(ex, ey);
+                    ctx.rotate(ang);
+                    ctx.beginPath();
+                    ctx.moveTo(9, 0);
+                    ctx.lineTo(-3, -6);
+                    ctx.lineTo(-3, 6);
+                    ctx.closePath();
+                    ctx.fillStyle = colour;
+                    ctx.fill();
+                    ctx.restore();
+                    const ix = ex - Math.cos(ang) * 16, iy = ey - Math.sin(ang) * 16;
+                    drawSquadronIcon(sq.type, ix, iy, colour, sel);
+                    ctx.fillStyle = colour;
+                    ctx.fillText(String(sq.craft), ix + 8, iy + 3);
+                    squadronArrows.push({ x: ex, y: ey, id: sq.id });
+                    squadronArrows.push({ x: ix, y: iy, id: sq.id });
+                }
+            }
+        };
 
         /** Text at a ground point, with the tilt squash undone so letters keep their shape. */
         const groundText = (text: string, x: number, y: number) => {
@@ -1614,6 +1725,10 @@ export default function TacticalBattleView({
             // Screen space from here on.
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+            // Squadron markers: a fixed-size icon and craft count over every
+            // flight, and an edge arrow for the player's flights off screen.
+            drawSquadronMarkers(st);
+
             // Hardpoint markers and called-shot crosshairs over the hulls.
             updateHover(st);
             collectMarkers(st);
@@ -1701,6 +1816,12 @@ export default function TacticalBattleView({
     const selectedSquadrons = selectedSquadronIds
         .map(id => state.squadrons.find(q => q.id === id))
         .filter((q): q is Squadron => !!q && q.craft > 0);
+    const playerSquadrons = state.squadrons.filter(q => q.side === 'player' && q.craft > 0);
+    const focusSquadron = (sq: Squadron) => {
+        cameraRef.current.cx = sq.x;
+        cameraRef.current.cy = sq.y;
+        cameraRef.current.zoom = Math.max(cameraRef.current.zoom, START_ZOOM);
+    };
 
     // Subsystem targeting card: shown when the WHOLE ship selection shares one
     // explicit enemy target and that target is a capital hull with subsystems.
@@ -1811,7 +1932,7 @@ export default function TacticalBattleView({
             {/* Controls hint */}
             {!outcome && (
                 <div className="absolute top-11 left-4 text-[8px] tracking-widest text-slate-600 uppercase pointer-events-none">
-                    LMB select ship/squadron · drag box-select · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem or gun · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
+                    LMB select ship/squadron · drag box-select (no ships in the box = squadrons) · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem or gun · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
                 </div>
             )}
 
@@ -1962,6 +2083,63 @@ export default function TacticalBattleView({
                             +{selectedShips.length - MAX_SELECTED_ROWS} more selected
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Left: strike craft roster, so no squadron gets lost ── */}
+            {playerSquadrons.length > 0 && !outcome && (
+                <div className="absolute left-3 top-20 w-52 rounded border border-indigo-700/30 bg-slate-950/80 backdrop-blur-sm p-1.5 space-y-1 pointer-events-auto">
+                    <div className="flex items-center justify-between px-0.5">
+                        <span className="text-[9px] font-display font-bold tracking-widest text-indigo-300 uppercase">
+                            Strike craft
+                        </span>
+                        <button
+                            onClick={() => {
+                                setSquadronSelection(playerSquadrons.map(q => q.id));
+                                setSelection([]);
+                            }}
+                            className="px-1.5 py-0.5 rounded border border-indigo-600/40 text-[8px] font-bold tracking-widest text-indigo-200 uppercase hover:bg-indigo-800/40"
+                        >
+                            All
+                        </button>
+                    </div>
+                    {playerSquadrons.map(sq => {
+                        const sdef = SQUADRON_DEFS[sq.type];
+                        const sel = selectedSquadronIds.includes(sq.id);
+                        return (
+                            <div
+                                key={sq.id}
+                                className={`flex items-center gap-1.5 rounded px-1 py-0.5 border ${sel ? 'border-indigo-300/70 bg-indigo-900/40' : 'border-slate-800/80 bg-slate-900/50'}`}
+                            >
+                                <button
+                                    onClick={e => {
+                                        const ids = e.shiftKey
+                                            ? (sel ? selectedSquadronIds.filter(id => id !== sq.id) : [...selectedSquadronIds, sq.id])
+                                            : [sq.id];
+                                        setSquadronSelection(ids);
+                                        setSelection([]);
+                                    }}
+                                    onDoubleClick={() => focusSquadron(sq)}
+                                    className="flex-1 flex items-center gap-1.5 text-left"
+                                    title="Click to select (shift adds), double-click to find"
+                                >
+                                    <span className="text-[9px] font-bold tracking-wider text-slate-200 uppercase w-16">{sq.type}</span>
+                                    <span className="flex-1 h-1 rounded-full bg-slate-800 overflow-hidden">
+                                        <span className="block h-full bg-indigo-400" style={{ width: `${(sq.craft / sdef.craft) * 100}%` }} />
+                                    </span>
+                                    <span className="text-[8px] font-mono text-slate-400 tabular-nums">{sq.craft}/{sdef.craft}</span>
+                                    <span className="text-[7px] tracking-widest text-slate-500 uppercase w-9 text-right">{sq.order}</span>
+                                </button>
+                                <button
+                                    onClick={() => focusSquadron(sq)}
+                                    className="text-slate-400 hover:text-indigo-200"
+                                    title="Find this squadron"
+                                >
+                                    <Crosshair size={11} />
+                                </button>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 

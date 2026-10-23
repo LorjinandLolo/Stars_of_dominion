@@ -1145,6 +1145,7 @@ function tickTorpedoes(state: BattleState, h: number) {
 function launchSquadron(state: BattleState, ship: TacticalShip, type: SquadronType) {
     const sdef = SQUADRON_DEFS[type];
     state.squadrons.push({
+        heading: ship.heading,
         id: `sq-${state.nextId++}`,
         side: ship.side,
         type,
@@ -1178,12 +1179,101 @@ function tickHangar(state: BattleState, ship: TacticalShip, h: number) {
     }
 }
 
+// ── Strike-craft flight ──
+// Craft always fly forward at full speed and turn at a limited rate, so they
+// can't hover: against a ship they make attack runs, diving at it, firing in a
+// cone ahead, overshooting, breaking away and swinging round for another pass.
+// Fire only lands in the inbound window, so per-second damage while firing is
+// scaled up to keep each type's sustained damage close to its SQUADRON_DEFS
+// rating (measured with scripts/strike-craft-probe.ts).
+
+/** Turn rate, radians per second. Turning circle = speed / rate. */
+const SQUADRON_TURN_RATE: Record<SquadronType, number> = { interceptor: 4.2, bomber: 2.6 };
+/** Half-width of the forward cone a craft can fire in, radians. */
+const RUN_FIRE_CONE: Record<SquadronType, number> = { interceptor: 0.7, bomber: 0.45 };
+/** Damage multiplier while inside the firing window of a run. */
+const RUN_DAMAGE_MULT: Record<SquadronType, number> = { interceptor: 3.5, bomber: 5 };
+/** How far past the target a pass carries before breaking round. */
+const RUN_OVERSHOOT: Record<SquadronType, number> = { interceptor: 100, bomber: 120 };
+/** Runs open fire a little beyond the craft's rated range: the dive closes fast. */
+const RUN_RANGE_FACTOR = 1.5;
+/** Distance from the target's centre (beyond its radius) that counts as the pass. */
+const RUN_PASS_DIST = 16;
+/** Seconds between tracer lines while firing. Visual only. */
+const TRACER_INTERVAL = 0.16;
+
+/** Turn toward (gx, gy) at the craft's turn rate and fly forward. */
+function steerSquadron(sq: Squadron, gx: number, gy: number, h: number) {
+    const sdef = SQUADRON_DEFS[sq.type];
+    const heading = sq.heading ?? 0;
+    const want = Math.atan2(gy - sq.y, gx - sq.x);
+    const turn = Math.max(-SQUADRON_TURN_RATE[sq.type] * h, Math.min(SQUADRON_TURN_RATE[sq.type] * h, angleDiff(heading, want)));
+    sq.heading = normalizeAngle(heading + turn);
+    sq.x += Math.cos(sq.heading) * sdef.speed * h;
+    sq.y += Math.sin(sq.heading) * sdef.speed * h;
+}
+
+/** Is the point inside the craft's forward firing cone? */
+function inFireCone(sq: Squadron, x: number, y: number): boolean {
+    const want = Math.atan2(y - sq.y, x - sq.x);
+    return Math.abs(angleDiff(sq.heading ?? 0, want)) <= RUN_FIRE_CONE[sq.type];
+}
+
+/** Tracer line from the squadron to a point, throttled. Visual only. */
+function squadronTracer(state: BattleState, sq: Squadron, x: number, y: number, h: number) {
+    sq.tracerCooldown = (sq.tracerCooldown ?? 0) - h;
+    if (sq.tracerCooldown > 0) return;
+    sq.tracerCooldown = TRACER_INTERVAL;
+    const jx = (Math.sin(state.time * 37 + sq.x) * 0.5) * 8;
+    const jy = (Math.cos(state.time * 29 + sq.y) * 0.5) * 8;
+    state.beams.push({ x1: sq.x, y1: sq.y, x2: x + jx, y2: y + jy, side: sq.side, expiresAt: state.time + 0.07 });
+}
+
+/**
+ * Fly an attack run on a ship. Returns the steering goal for this tick and
+ * whether the craft are lined up to fire.
+ */
+function attackRun(state: BattleState, sq: Squadron, target: TacticalShip): { gx: number; gy: number; firing: boolean } {
+    const sdef = SQUADRON_DEFS[sq.type];
+    const r = SHIP_CLASSES[target.classId].radius;
+    const d = Math.hypot(target.x - sq.x, target.y - sq.y);
+    if (sq.run !== 'outbound') sq.run = 'inbound';
+
+    if (sq.run === 'inbound') {
+        if (d < r + RUN_PASS_DIST) {
+            // Through the pass: keep going straight, then come round.
+            const heading = sq.heading ?? 0;
+            const swing = (Math.sin(state.time * 1.7 + sq.x * 0.01) * 0.6);
+            const over = RUN_OVERSHOOT[sq.type];
+            sq.runX = Math.min(state.width - 20, Math.max(20, target.x + Math.cos(heading + swing) * over));
+            sq.runY = Math.min(state.height - 20, Math.max(20, target.y + Math.sin(heading + swing) * over));
+            sq.run = 'outbound';
+            if (sq.type === 'bomber' && sq.runFired) {
+                // Ordnance going off on the hull marks the bombing run.
+                state.explosions.push({ x: target.x, y: target.y, radius: r * 0.9, expiresAt: state.time + 0.45 });
+            }
+            sq.runFired = false;
+            return { gx: sq.runX, gy: sq.runY, firing: false };
+        }
+        const firing = d <= sdef.range * RUN_RANGE_FACTOR && inFireCone(sq, target.x, target.y);
+        if (firing) sq.runFired = true;
+        return { gx: target.x, gy: target.y, firing };
+    }
+
+    // Outbound: break away to the waypoint, then turn back in.
+    const gx = sq.runX ?? target.x;
+    const gy = sq.runY ?? target.y;
+    if (Math.hypot(gx - sq.x, gy - sq.y) < 28 || d > RUN_OVERSHOOT[sq.type] * 1.25) sq.run = 'inbound';
+    return { gx, gy, firing: false };
+}
+
 function tickSquadrons(state: BattleState, h: number) {
     for (const sq of state.squadrons) {
         if (sq.craft <= 0) continue;
         const sdef = SQUADRON_DEFS[sq.type];
         const carrier = state.ships.find(sh => sh.id === sq.carrierId);
         const strengthRatio = sq.craft / sdef.craft;
+        if (sq.heading === undefined) sq.heading = carrier?.heading ?? 0;
 
         // Goal point by order.
         let goalX = sq.patrolX;
@@ -1204,51 +1294,28 @@ function tickSquadrons(state: BattleState, h: number) {
                 sq.craft = 0; // nowhere to land — written off
                 continue;
             }
-            goalX = carrier.x;
-            goalY = carrier.y;
-            if (Math.hypot(sq.x - goalX, sq.y - goalY) < SHIP_CLASSES[carrier.classId].radius + 6) {
+            const d = Math.hypot(sq.x - carrier.x, sq.y - carrier.y);
+            if (d < SHIP_CLASSES[carrier.classId].radius + 6) {
                 sq.craft = 0; // recovered aboard; hangar timer rebuilds the squadron
                 continue;
             }
-        } else if (sq.order === 'attack' && ward && ward.status !== 'destroyed' && ward.status !== 'withdrawn') {
-            // Hold at strike range instead of hugging the hull centre — flying
-            // to the exact centre parked bombers inside every PD blind spot
-            // (and made the target un-clickable under the squadron sprite).
-            const standoff = sdef.range * 0.7;
-            const d = Math.hypot(sq.x - ward.x, sq.y - ward.y);
-            if (d > 1e-6) {
-                goalX = ward.x + ((sq.x - ward.x) / d) * standoff;
-                goalY = ward.y + ((sq.y - ward.y) / d) * standoff;
+            if (d < 70) {
+                // Final approach: line up and set down instead of circling the deck.
+                const v = Math.min(d, sdef.speed * h);
+                sq.heading = Math.atan2(carrier.y - sq.y, carrier.x - sq.x);
+                sq.x += Math.cos(sq.heading) * v;
+                sq.y += Math.sin(sq.heading) * v;
             } else {
-                goalX = ward.x + standoff;
-                goalY = ward.y;
+                steerSquadron(sq, carrier.x, carrier.y, h);
             }
-        } else if (sq.order === 'defend') {
-            const anchor = (ward && ward.status !== 'destroyed' && ward.status !== 'withdrawn') ? ward : carrier;
-            if (anchor) {
-                const orbit = state.time * 0.9 + (sq.type === 'bomber' ? Math.PI : 0);
-                goalX = anchor.x + Math.cos(orbit) * 55;
-                goalY = anchor.y + Math.sin(orbit) * 55;
-            }
+            sq.run = undefined;
+            clampSquadron(state, sq);
+            continue; // guns cold on the way home
         }
 
-        // Strike craft are agile: direct velocity, no inertia model.
-        const dx = goalX - sq.x;
-        const dy = goalY - sq.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 4) {
-            const v = sdef.speed * h;
-            sq.x += (dx / d) * Math.min(1, v / d) * d;
-            sq.y += (dy / d) * Math.min(1, v / d) * d;
-        }
-        sq.x = Math.min(state.width, Math.max(0, sq.x));
-        sq.y = Math.min(state.height, Math.max(0, sq.y));
-
-        if (sq.order === 'return') continue; // guns cold on the way home
-
-        // Dogfighting first: interceptors hunt enemy squadrons.
-        let engagedSquadron = false;
+        // Interceptors dogfight first: chase the nearest enemy squadron in reach.
         if (sdef.squadronDps > sdef.shipDps) {
+            const reach = sq.order === 'attack' ? sdef.range * 1.5 : 260;
             let nearest: Squadron | null = null;
             let nd = Infinity;
             for (const other of state.squadrons) {
@@ -1256,39 +1323,73 @@ function tickSquadrons(state: BattleState, h: number) {
                 const dd = Math.hypot(other.x - sq.x, other.y - sq.y);
                 if (dd < nd) { nd = dd; nearest = other; }
             }
-            if (nearest && nd <= sdef.range * 1.5) {
-                damageSquadron(state, nearest, sdef.squadronDps * strengthRatio * h);
-                engagedSquadron = true;
+            if (nearest && nd <= reach) {
+                steerSquadron(sq, nearest.x, nearest.y, h);
+                sq.run = undefined;
+                if (nd <= sdef.range * 1.5 && inFireCone(sq, nearest.x, nearest.y)) {
+                    // Cone-limited, so scaled up to keep the rated dogfight damage.
+                    damageSquadron(state, nearest, sdef.squadronDps * strengthRatio * h * 1.6);
+                    squadronTracer(state, sq, nearest.x, nearest.y, h);
+                }
+                clampSquadron(state, sq);
+                continue;
             }
         }
 
-        // Ship attacks: ordered target, else nearest hostile in reach.
-        if (!engagedSquadron) {
-            let shipTarget: TacticalShip | null = null;
-            if (sq.order === 'attack' && ward && isSquadronTargetable(ward)) {
-                shipTarget = ward;
-            } else {
-                let nd = Infinity;
-                for (const other of state.ships) {
-                    if (other.side === sq.side || !isSquadronTargetable(other)) continue;
-                    const dd = Math.hypot(other.x - sq.x, other.y - sq.y);
-                    // Defenders only engage hostiles near their ward.
-                    const leash = sq.order === 'defend' ? 200 : sdef.range * 1.2;
-                    if (dd < nd && dd <= leash) { nd = dd; shipTarget = other; }
-                }
+        // Ship target: the ordered one, else the nearest hostile in reach.
+        let shipTarget: TacticalShip | null = null;
+        if (sq.order === 'attack' && ward && isSquadronTargetable(ward)) {
+            shipTarget = ward;
+        } else {
+            let nd = Infinity;
+            for (const other of state.ships) {
+                if (other.side === sq.side || !isSquadronTargetable(other)) continue;
+                const dd = Math.hypot(other.x - sq.x, other.y - sq.y);
+                // Defenders only engage hostiles near their ward.
+                const leash = sq.order === 'defend' ? 200 : sdef.range * 1.6;
+                if (dd < nd && dd <= leash) { nd = dd; shipTarget = other; }
             }
-            if (shipTarget && Math.hypot(shipTarget.x - sq.x, shipTarget.y - sq.y) <= sdef.range
-                && targetVisible(state, sq.x, sq.y, shipTarget)) {
+        }
+
+        if (shipTarget) {
+            const runStep = attackRun(state, sq, shipTarget);
+            steerSquadron(sq, runStep.gx, runStep.gy, h);
+            if (runStep.firing && targetVisible(state, sq.x, sq.y, shipTarget)) {
                 const tuning = side(state, sq.side).tuning;
-                applyDamage(state, shipTarget, sdef.shipDps * strengthRatio * h * tuning.weaponMult, {
+                applyDamage(state, shipTarget, sdef.shipDps * strengthRatio * h * tuning.weaponMult * RUN_DAMAGE_MULT[sq.type], {
                     sourceX: sq.x, sourceY: sq.y, shieldPierce: sdef.shieldPierce + tuning.pierceBonus,
                     vsShield: tuning.vsShield, vsHull: tuning.vsHull,
                 });
+                squadronTracer(state, sq, shipTarget.x, shipTarget.y, h);
             }
+        } else {
+            // Nothing to hit: fly the order's station. Constant speed and a
+            // turning circle turn any fixed point into a natural orbit.
+            sq.run = undefined;
+            if (sq.order === 'defend') {
+                const anchor = (ward && ward.status !== 'destroyed' && ward.status !== 'withdrawn') ? ward : carrier;
+                if (anchor) {
+                    const orbit = state.time * 0.9 + (sq.type === 'bomber' ? Math.PI : 0);
+                    goalX = anchor.x + Math.cos(orbit) * 70;
+                    goalY = anchor.y + Math.sin(orbit) * 70;
+                }
+            }
+            steerSquadron(sq, goalX, goalY, h);
         }
+        clampSquadron(state, sq);
     }
 
     state.squadrons = state.squadrons.filter(sq => sq.craft > 0);
+}
+
+/** Keep craft on the field; at the border, turn them back toward the middle. */
+function clampSquadron(state: BattleState, sq: Squadron) {
+    const m = 6;
+    if (sq.x < m || sq.x > state.width - m || sq.y < m || sq.y > state.height - m) {
+        sq.x = Math.min(state.width - m, Math.max(m, sq.x));
+        sq.y = Math.min(state.height - m, Math.max(m, sq.y));
+        sq.heading = Math.atan2(state.height / 2 - sq.y, state.width / 2 - sq.x);
+    }
 }
 
 function isSquadronTargetable(ship: TacticalShip): boolean {

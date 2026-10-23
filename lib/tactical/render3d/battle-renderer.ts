@@ -802,18 +802,36 @@ export class BattleRenderer {
             this.pushShip(sh, state.time);
         }
 
+        // Strike craft fly in a loose V behind their leader, pointed along the
+        // squadron's heading, each trailing an engine streak. Zoomed out they
+        // are drawn larger than life (up to 2.2x) so a squadron never shrinks
+        // to an invisible speck.
+        const craftScale = Math.min(2.2, Math.max(1, 2.2 / Math.max(1, view.zoom ?? 1)));
         for (const sq of state.squadrons) {
             if (sq.craft <= 0) continue;
             const full = SQUADRON_DEFS[sq.type].craft;
             const rand = mulberry32(hashStr(sq.id));
             const pool = this.craft.get(`${sq.side}:${sq.type}`)!;
-            this.colour.copy(SIDE_COLOUR[sq.side].tint);
+            const heading = sq.heading ?? 0;
+            const fx = Math.cos(heading), fy = Math.sin(heading);
+            const glow = SIDE_COLOUR[sq.side].glow;
+            const spacing = 4.2 * craftScale;
             for (let i = 0; i < full; i++) {
-                const jx = (rand() - 0.5) * 18;
-                const jy = (rand() - 0.5) * 18;
-                const ja = rand() * TAU;
+                const row = Math.ceil(i / 2);
+                const sideSign = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1);
+                const wobble = (rand() - 0.5) * 1.6;
                 if (i >= sq.craft) continue; // dead slot — keep the jitter stream aligned
-                pool.push(sq.x + jx, -(sq.y + jy), 2, -ja, 1, 1, 1, this.colour);
+                // Local frame: back along -heading, out along the wing.
+                const back = -row * spacing + wobble;
+                const out = sideSign * row * spacing * 0.9;
+                const cx = sq.x + fx * back - fy * out;
+                const cy = sq.y + fy * back + fx * out;
+                this.colour.copy(SIDE_COLOUR[sq.side].tint);
+                pool.push(cx, -cy, 2, -heading, craftScale, craftScale, craftScale, this.colour);
+                // Engine streak behind the craft.
+                const len = 9 * craftScale;
+                this.colour.copy(glow).multiplyScalar(0.55);
+                this.beams.push(cx - fx * len * 0.55, -(cy - fy * len * 0.55), FX_Z, -heading, len, 1.6 * craftScale, 1, this.colour);
             }
         }
 

@@ -201,6 +201,17 @@ export interface Squadron {
     /** Patrol point (patrol order). */
     patrolX: number;
     patrolY: number;
+    /** Direction of travel, radians. Craft fly forward and turn at a limited rate. */
+    heading?: number;
+    /** Attack-run phase against a ship: diving in, or breaking away to come round again. */
+    run?: 'inbound' | 'outbound';
+    /** Where the current break-away leg ends. */
+    runX?: number;
+    runY?: number;
+    /** Whether this pass has fired yet (bombers mark the release with a blast). */
+    runFired?: boolean;
+    /** Seconds until the next tracer is drawn. Visual only. */
+    tracerCooldown?: number;
 }
 
 export type SquadronOrder = 'defend' | 'attack' | 'patrol' | 'return';
