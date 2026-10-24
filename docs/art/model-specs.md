@@ -171,12 +171,14 @@ needle hull is a bare box. Push the intake shapes, nozzle flares and the fin rak
 
 **Role in battle.** The aggressive forward hitter and anti-capital torpedo boat (3
 deployment points). Speed 90, turns at 2.0. 130 hull, 80 shields. Armour is front-heavy:
-18% fore, 10% sides, 6% aft. Two weapons, **both pointing forward**:
+18% fore, 10% sides, 6% aft. Its two ship weapons **both point forward**, plus one
+small turret for strike craft:
 
-- **Forward guns:** fixed, 70-degree cone straight ahead, 260 range. They track fast
-  enough to shoot strike craft if the destroyer keeps its nose on them.
+- **Forward guns:** fixed, 70-degree cone straight ahead, 260 range. Ships only.
 - **Torpedo launcher:** 40-degree cone straight ahead, 420 range, 45 damage per torpedo,
   every 9 seconds.
+- **Point defence:** one small turret that turns all the way round, 130 range. It shoots
+  strike craft only, never ships.
 
 Ability: **Torpedo Salvo**, three torpedoes at once. Destroyers have to point at their
 target to fight, and they show their weak stern when they turn away.
@@ -203,7 +205,9 @@ triangle that is widest a third of the way back, then a narrow, skeletal rear.
   flanks.
 - **40 to 55%, bridge.** A small armoured bridge right behind the stacked plates, with a
   window strip and one antenna.
-- **50 to 60%, point defence.** One small rear-facing single turret on the spine.
+- **50 to 60%, point defence.** One small single-barrel turret on the spine with a clean
+  round base, since it turns all the way round. It is a weapon hardpoint in battle, so
+  it should read as a turret from above.
 - **55 to 85%, skeletal rear.** A narrow spine with exposed ribs and side rails, a raked
   dorsal fin. Visibly lighter and more fragile than the front.
 - **85 to 100%, engines.** A compact engine block and two big engines side by side.
@@ -219,7 +223,8 @@ them a clear dark frame so a muzzle flash reads.
 
 **Budget.** 5,000 triangles, 2k texture.
 
-**Don't.** No broadside turrets; all its firepower points forward. Don't make the guns so
+**Don't.** No broadside turrets; all its ship firepower points forward, and the point
+defence turret stays small. Don't make the guns so
 long that the hull shrinks: the loader scales the whole model by its total length,
 barrels included.
 

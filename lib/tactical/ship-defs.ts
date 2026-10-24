@@ -81,9 +81,8 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 damage: 9,
                 cooldown: 1.0,
                 projectile: 'beam',
-                // Fast-tracking mounts — a destroyer that keeps its nose on a
-                // bomber squadron can defend itself (its only anti-craft answer).
-                antiSquadron: true,
+                // Ship guns only: strike craft are the point-defence turret's
+                // job now, so the guns never break off a hull to chase craft.
             },
             {
                 id: 'torpedo',
@@ -95,6 +94,23 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
                 cooldown: 9,
                 projectile: 'torpedo',
                 projectileSpeed: 130,
+            },
+            {
+                // One small turret on the spine that covers every angle, so a
+                // destroyer no longer has to point its nose at a bomber run to
+                // fight back. Craft only: it adds no ship-to-ship firepower,
+                // and its damage is tuned so destroyers kill strike craft at
+                // the rate their nose guns used to (destroyer probe, Oct 2026).
+                id: 'point-defence',
+                name: 'Point Defence',
+                mountAngle: 0,
+                arc: TURRET_ARC,
+                range: 130,
+                damage: 1.9,
+                cooldown: 0.45,
+                projectile: 'beam',
+                antiSquadron: true,
+                squadronOnly: true,
             },
         ],
         ability: {

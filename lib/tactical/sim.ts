@@ -1054,6 +1054,8 @@ function tickWeapons(state: BattleState, ship: TacticalShip, h: number) {
                 continue;
             }
         }
+        // Craft-only guns hold fire rather than plinking at hulls.
+        if (weapon.squadronOnly) continue;
 
         const target = resolveTarget(state, ship, weapon);
         if (!target) continue;

@@ -31,6 +31,11 @@ export interface WeaponDef {
     projectileSpeed?: number;
     /** Point-defence weapons also engage enemy strike-craft squadrons. */
     antiSquadron?: boolean;
+    /**
+     * Shoots strike craft only, never ships. For guns added to give a hull a
+     * defence against craft without adding ship-to-ship firepower.
+     */
+    squadronOnly?: boolean;
 }
 
 export interface AbilityDef {
