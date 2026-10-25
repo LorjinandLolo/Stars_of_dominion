@@ -5624,9 +5624,21 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 survivor.composition = pooledShips > 0 ? surviving : { ...side.composition };
                 survivor.strength = side.strength;
                 for (const fid of existing.slice(1)) world.movement.fleets.delete(fid);
+                return survivor;
             };
-            applySideResult(playerFleetIds, playerResult, lock.preBattle?.player, enemyFactionId);
-            applySideResult(enemyFleetIds, enemyResult, lock.preBattle?.enemy, factionId);
+            const playerSurvivor = applySideResult(playerFleetIds, playerResult, lock.preBattle?.player, enemyFactionId);
+            const enemySurvivor = applySideResult(enemyFleetIds, enemyResult, lock.preBattle?.enemy, factionId);
+
+            // A side that ordered a full withdrawal left the field, so it
+            // leaves the system too, the way a rout does. Left holding, the
+            // auto-resolver re-engaged it the very next cycle and the
+            // withdrawal bought nothing. With nowhere to go it stays.
+            if (playerSurvivor && playerResult?.withdrew === true && payload.winner !== 'player') {
+                withdrawFleetHome(world, playerSurvivor);
+            }
+            if (enemySurvivor && enemyResult?.withdrew === true && payload.winner !== 'enemy') {
+                withdrawFleetHome(world, enemySurvivor);
+            }
 
             // Drop any auto-resolve engagement for this pair — ids look like
             // combat-<systemId>-<facA>-<facB> (either faction order).

@@ -403,6 +403,8 @@ export interface SideResult {
     /** Average hull fraction of survivors (strategic fleet `strength`), 0 if none. */
     strength: number;
     destroyed: boolean;
+    /** The side ordered a full withdrawal: its survivors leave the system on the strategic map. */
+    withdrew?: boolean;
 }
 
 export interface BattleResult {

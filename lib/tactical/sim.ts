@@ -1624,6 +1624,7 @@ export function computeResult(state: BattleState): BattleResult {
             composition,
             strength: totalSurvivors > 0 ? Math.max(0.05, Math.min(1, hullFracSum / totalSurvivors)) : 0,
             destroyed: totalSurvivors === 0,
+            withdrew: st.withdrawing,
         };
     };
 

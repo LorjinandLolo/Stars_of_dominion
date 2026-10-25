@@ -233,6 +233,53 @@ console.log('\n5. A fleet that jumped out mid-battle is not in the result');
     check('and its books match its hulls', stayed?.designCounts?.[battleship.id] === 5 && !rosterByHull(stayed, lookup).hulls.battleship.inconsistent);
 }
 
+console.log('\n6. A side that withdrew leaves the system');
+{
+    reset();
+    world.movement.fleets.set('a1', mkFleet('a1', A, 5));
+    world.movement.fleets.set('b1', mkFleet('b1', B, 5));
+    engage();
+    executeOrder(world, 'MIL_TACTICAL_RESULT', {
+        systemId: SYS, enemyFactionId: B,
+        playerFleetIds: ['a1'], enemyFleetIds: ['b1'],
+        playerResult: { destroyed: false, composition: { battleship: 3 }, strength: 0.6, withdrew: true },
+        enemyResult: { destroyed: false, composition: { battleship: 4 }, strength: 0.8, withdrew: false },
+        winner: 'enemy', reason: 'Your fleet has withdrawn.', durationSeconds: 60,
+    }, A);
+    const fled: any = world.movement.fleets.get('a1');
+    const held: any = world.movement.fleets.get('b1');
+    check('the withdrawn fleet heads home', fled?.destinationSystemId === HOME, String(fled?.destinationSystemId));
+    check('with its survivors', fled?.composition?.battleship === 3, JSON.stringify(fled?.composition));
+    check('the side that held the field stays', held?.currentSystemId === SYS && !held?.destinationSystemId);
+
+    reset();
+    world.movement.fleets.set('a1', mkFleet('a1', A, 5));
+    world.movement.fleets.set('b1', mkFleet('b1', B, 5));
+    engage();
+    executeOrder(world, 'MIL_TACTICAL_RESULT', {
+        systemId: SYS, enemyFactionId: B,
+        playerFleetIds: ['a1'], enemyFleetIds: ['b1'],
+        playerResult: { destroyed: false, composition: { battleship: 5 }, strength: 1 },
+        enemyResult: { destroyed: false, composition: { battleship: 2 }, strength: 0.4, withdrew: true },
+        winner: 'player', reason: 'Enemy fleet has withdrawn.', durationSeconds: 60,
+    }, A);
+    check('an enemy that withdrew heads home', (world.movement.fleets.get('b1') as any)?.destinationSystemId === HOME);
+    check('and the winner holds', !(world.movement.fleets.get('a1') as any)?.destinationSystemId);
+
+    reset();
+    world.movement.fleets.set('a1', mkFleet('a1', A, 5));
+    world.movement.fleets.set('b1', mkFleet('b1', B, 5));
+    engage();
+    executeOrder(world, 'MIL_TACTICAL_RESULT', {
+        systemId: SYS, enemyFactionId: B,
+        playerFleetIds: ['a1'], enemyFleetIds: ['b1'],
+        playerResult: { destroyed: false, composition: { battleship: 5 }, strength: 1 },
+        enemyResult: { destroyed: false, composition: { battleship: 2 }, strength: 0.4, withdrew: true },
+        winner: 'enemy', reason: 'test', durationSeconds: 60,
+    }, A);
+    check('a withdrawal that contradicts the winner is ignored', !(world.movement.fleets.get('b1') as any)?.destinationSystemId);
+}
+
 world.rivalries.delete(`rivalry-${A}-${B}`);
 world.movement.fleets.clear();
 world.activeCombats.clear();
