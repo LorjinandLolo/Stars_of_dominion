@@ -131,7 +131,10 @@ const PAN_MARGIN = 120;
 const PAN_SPEED_PX = 900;
 /** Edge-scroll band at the canvas border, in px. */
 const EDGE_SCROLL_PX = 14;
-/** Hardpoint markers show on every enemy capital from this zoom; below it only on hovered or targeted ones. */
+/**
+ * Hardpoint markers show on every capital in view from this zoom; below it
+ * only on hovered or targeted enemies and hovered or selected own ships.
+ */
 const HARDPOINT_ZOOM = 1.8;
 /** Hardpoint marker radius, its click radius and the minimum spacing between one ship's markers, in screen px. */
 const HARDPOINT_R = 7;
@@ -540,7 +543,7 @@ export default function TacticalBattleView({
         // reused pool: nothing allocates per frame once the pool has grown.
         const markers: HardpointMarker[] = [];
         let markerCount = 0;
-        /** Enemy ship under the cursor; sticky while the cursor is on one of its markers. */
+        /** Capital under the cursor (own, or enemy with a selection in hand); sticky while the cursor is on one of its markers. */
         let hoverShipId: string | null = null;
         let hoverMarker: HardpointMarker | null = null;
         /** Off-screen arrows drawn this frame for the player's squadrons, for click-to-find. */
@@ -584,27 +587,36 @@ export default function TacticalBattleView({
         };
 
         /**
-         * Lay out the markers for this instant: enemy capitals only, only with
-         * own ships selected, and then on every one in view once zoomed in, or
-         * on the hovered ship and the selection's targets when zoomed out.
+         * Lay out the markers for this instant, on capitals only. Enemy ones
+         * (clickable, they call shots) need own ships selected; own ones are
+         * read-only health readouts and need nothing. Zoomed in, every capital
+         * in view gets them; zoomed out, only the hovered ship, the
+         * selection's targets and the selected own ships.
          */
         const collectMarkers = (st: BattleState) => {
             markerCount = 0;
+            if (st.outcome) return;
             const sel = selectionRef.current;
-            if (!sel.length || st.outcome) return;
             const v = viewRef.current;
             const zoomed = v.zoom >= HARDPOINT_ZOOM;
             let targets: Set<string> | null = null;
-            if (!zoomed) {
+            let picked: Set<string> | null = null;
+            if (!zoomed && sel.length) {
+                picked = new Set(sel);
                 for (const sh of st.ships) {
-                    if (sh.targetId && sel.includes(sh.id)) (targets ??= new Set()).add(sh.targetId);
+                    if (sh.targetId && picked.has(sh.id)) (targets ??= new Set()).add(sh.targetId);
                 }
             }
             const pad = 60;
             for (const sh of st.ships) {
-                if (sh.side !== 'enemy' || !sh.subsystems) continue;
+                if (!sh.subsystems) continue;
                 if (sh.status !== 'active' && sh.status !== 'retreating') continue;
-                if (!zoomed && sh.id !== hoverShipId && !targets?.has(sh.id)) continue;
+                if (sh.side === 'enemy') {
+                    if (!sel.length) continue;
+                    if (!zoomed && sh.id !== hoverShipId && !targets?.has(sh.id)) continue;
+                } else if (!zoomed && sh.id !== hoverShipId && !picked?.has(sh.id)) {
+                    continue;
+                }
                 const sx = v.ox + sh.x * v.scale;
                 const sy = v.oy + sh.y * v.scale * v.tilt;
                 if (sx < -pad || sx > v.cw + pad || sy < -pad || sy > v.ch + pad) continue;
@@ -630,13 +642,16 @@ export default function TacticalBattleView({
             markerCount++;
         };
 
-        /** The live (not knocked-out) marker under a screen point, if any. */
+        /**
+         * The marker under a screen point, if any: an enemy one only while its
+         * part is live (a dead one is not a shot), an own one either way.
+         */
         const markerAt = (px: number, py: number): HardpointMarker | null => {
             let best: HardpointMarker | null = null;
             let bestD = HARDPOINT_HIT_PX;
             for (let i = 0; i < markerCount; i++) {
                 const m = markers[i];
-                if (hardpointIntegrity(m.ship, m.id) <= 0) continue;
+                if (m.ship.side === 'enemy' && hardpointIntegrity(m.ship, m.id) <= 0) continue;
                 const d = Math.hypot(m.x - px, m.y - py);
                 if (d <= bestD) {
                     best = m;
@@ -646,9 +661,9 @@ export default function TacticalBattleView({
             return best;
         };
 
-        /** Per frame, before layout: which enemy ship and marker the cursor is on. */
+        /** Per frame, before layout: which capital and marker the cursor is on. */
         const updateHover = (st: BattleState) => {
-            if (!pointer.inside || !selectionRef.current.length || st.outcome) {
+            if (!pointer.inside || st.outcome) {
                 hoverShipId = null;
                 return;
             }
@@ -660,8 +675,10 @@ export default function TacticalBattleView({
                 return;
             }
             const w = screenToWorld(pointer.x, pointer.y);
+            const armed = selectionRef.current.length > 0;
             hoverShipId = shipAt(st, w.x, w.y, sh =>
-                sh.side === 'enemy' && !!sh.subsystems && (sh.status === 'active' || sh.status === 'retreating'))?.id ?? null;
+                (armed || sh.side === 'player') && !!sh.subsystems &&
+                (sh.status === 'active' || sh.status === 'retreating'))?.id ?? null;
         };
 
         // ── Camera input: middle-drag pan, wheel zoom, keys, edge scroll ──
@@ -834,22 +851,32 @@ export default function TacticalBattleView({
             // Left click on a hardpoint marker: target that ship AND call that
             // subsystem in one go. Wins over everything else, but only when the
             // cursor is actually on a marker; the hull around it keeps the
-            // ordinary click below.
-            if (selectionRef.current.length) {
-                collectMarkers(st);
-                const m = markerAt(p.x, p.y);
-                if (m) {
-                    const sel = selectionRef.current;
-                    // Clicking the shot already called calls it off, like the HUD card.
-                    const already = sel.every(id => {
-                        const own = st.ships.find(sh => sh.id === id);
-                        return !own || (own.targetId === m.ship.id && calledShotOf(own) === m.id);
-                    });
-                    setTarget(st, sel, m.ship.id);
-                    setCalledShot(st, sel, already ? null : m.id);
-                    forceHud();
+            // ordinary click below. Own markers are read-only: clicking one
+            // selects its ship, exactly like clicking the hull.
+            collectMarkers(st);
+            const m = markerAt(p.x, p.y);
+            if (m && m.ship.side === 'player') {
+                if (m.ship.status === 'active') {
+                    const cur = selectionRef.current;
+                    if (d.shift) {
+                        setSelection(cur.includes(m.ship.id) ? cur.filter(id => id !== m.ship.id) : [...cur, m.ship.id]);
+                    } else {
+                        setSelection([m.ship.id]);
+                    }
+                    setSquadronSelection([]);
                     return;
                 }
+            } else if (m && selectionRef.current.length) {
+                const sel = selectionRef.current;
+                // Clicking the shot already called calls it off, like the HUD card.
+                const already = sel.every(id => {
+                    const own = st.ships.find(sh => sh.id === id);
+                    return !own || (own.targetId === m.ship.id && calledShotOf(own) === m.id);
+                });
+                setTarget(st, sel, m.ship.id);
+                setCalledShot(st, sel, already ? null : m.id);
+                forceHud();
+                return;
             }
 
             // Left click: own ship → select; own squadron → select squadron;
@@ -1302,7 +1329,7 @@ export default function TacticalBattleView({
         };
 
         // Per-marker state for this frame's draw, so each style is one path.
-        const HP_DEAD = 1, HP_HOT = 2, HP_CALLED = 4, HP_MOVED = 8, HP_HIGH = 16, HP_MID = 32;
+        const HP_DEAD = 1, HP_HOT = 2, HP_CALLED = 4, HP_MOVED = 8, HP_HIGH = 16, HP_MID = 32, HP_OWN = 64;
         const markerFlags: number[] = [];
         const markerLevel: number[] = [];
         const calledShots: TacticalShip[] = [];
@@ -1320,9 +1347,10 @@ export default function TacticalBattleView({
         };
 
         /**
-         * Hardpoint markers over enemy hulls, screen space: leader line to the
+         * Hardpoint markers over the hulls, screen space: leader line to the
          * part when the marker had to move off it, icon, integrity bar beside
-         * it; knocked-out parts dim and are crossed out. Called shots of the
+         * it; knocked-out parts dim and are crossed out. Enemy markers are
+         * red, own ones are in the player's indigo. Called shots of the
          * selection get the rose crosshair on their marker, ticks on the
          * diagonals so they stay clear of the bar. Batched by style, so a
          * crowded zoomed-in view costs a couple of dozen draw calls, not five
@@ -1347,6 +1375,7 @@ export default function TacticalBattleView({
                 if (hoverMarker === m) f |= HP_HOT;
                 if (calledShots.length && isCalled(m)) f |= HP_CALLED;
                 if (Math.abs(m.x - m.ax) + Math.abs(m.y - m.ay) > 2) f |= HP_MOVED;
+                if (m.ship.side === 'player') f |= HP_OWN;
                 markerFlags[i] = f;
                 markerLevel[i] = integrity;
             }
@@ -1358,14 +1387,17 @@ export default function TacticalBattleView({
             ctx.lineCap = 'round';
 
             // Leader lines from the part to a marker that had to move off it.
-            if (markerPath(HP_MOVED, HP_MOVED, m => { ctx.moveTo(m.ax, m.ay); ctx.lineTo(m.x, m.y); })) {
-                ctx.strokeStyle = 'rgba(252, 165, 165, 0.45)';
+            const leaders = (own: number, rgb: string) => {
+                if (!markerPath(HP_MOVED | HP_OWN, HP_MOVED | own, m => { ctx.moveTo(m.ax, m.ay); ctx.lineTo(m.x, m.y); })) return;
+                ctx.strokeStyle = `rgba(${rgb}, 0.45)`;
                 ctx.lineWidth = 1;
                 ctx.stroke();
-                markerPath(HP_MOVED, HP_MOVED, m => ctx.rect(m.ax - 1, m.ay - 1, 2, 2));
-                ctx.fillStyle = 'rgba(252, 165, 165, 0.7)';
+                markerPath(HP_MOVED | HP_OWN, HP_MOVED | own, m => ctx.rect(m.ax - 1, m.ay - 1, 2, 2));
+                ctx.fillStyle = `rgba(${rgb}, 0.7)`;
                 ctx.fill();
-            }
+            };
+            leaders(0, '252, 165, 165');
+            leaders(HP_OWN, '165, 180, 252');
 
             // Discs and rings: live, called, knocked out, hovered.
             const ringGroup = (mask: number, value: number, r: number, fill: string, ring: string, width: number) => {
@@ -1376,17 +1408,21 @@ export default function TacticalBattleView({
                 ctx.lineWidth = width;
                 ctx.stroke();
             };
-            const STATE = HP_DEAD | HP_HOT | HP_CALLED;
+            const STATE = HP_DEAD | HP_HOT | HP_CALLED | HP_OWN;
             ringGroup(STATE, 0, HARDPOINT_R, 'rgba(15, 23, 42, 0.82)', 'rgba(248, 113, 113, 0.85)', 1.1);
+            ringGroup(STATE, HP_OWN, HARDPOINT_R, 'rgba(15, 23, 42, 0.82)', 'rgba(129, 140, 248, 0.85)', 1.1);
             ringGroup(STATE, HP_CALLED, HARDPOINT_R, 'rgba(15, 23, 42, 0.82)', '#fb7185', 1.1);
             ringGroup(HP_DEAD | HP_HOT, HP_DEAD, HARDPOINT_R, 'rgba(15, 23, 42, 0.4)', 'rgba(100, 116, 139, 0.45)', 1.1);
-            ringGroup(HP_HOT, HP_HOT, HARDPOINT_R + 1.5, 'rgba(69, 10, 10, 0.92)', '#fde68a', 1.6);
+            ringGroup(HP_HOT | HP_OWN, HP_HOT, HARDPOINT_R + 1.5, 'rgba(69, 10, 10, 0.92)', '#fde68a', 1.6);
+            ringGroup(HP_HOT | HP_OWN, HP_HOT | HP_OWN, HARDPOINT_R + 1.5, 'rgba(30, 27, 75, 0.92)', '#c7d2fe', 1.6);
 
             // Glyphs.
             ctx.lineWidth = 1.1;
-            if (markerPath(HP_DEAD | HP_HOT, 0, glyph)) { ctx.strokeStyle = '#fecaca'; ctx.stroke(); }
+            if (markerPath(HP_DEAD | HP_HOT | HP_OWN, 0, glyph)) { ctx.strokeStyle = '#fecaca'; ctx.stroke(); }
+            if (markerPath(HP_DEAD | HP_HOT | HP_OWN, HP_OWN, glyph)) { ctx.strokeStyle = '#c7d2fe'; ctx.stroke(); }
             if (markerPath(HP_DEAD | HP_HOT, HP_DEAD, glyph)) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)'; ctx.stroke(); }
-            if (markerPath(HP_HOT, HP_HOT, glyph)) { ctx.strokeStyle = '#fef3c7'; ctx.stroke(); }
+            if (markerPath(HP_HOT | HP_OWN, HP_HOT, glyph)) { ctx.strokeStyle = '#fef3c7'; ctx.stroke(); }
+            if (markerPath(HP_HOT | HP_OWN, HP_HOT | HP_OWN, glyph)) { ctx.strokeStyle = '#eef2ff'; ctx.stroke(); }
 
             // Called-shot crosshairs, under the bars.
             if (markerPath(HP_CALLED, HP_CALLED, m => {
@@ -1441,7 +1477,7 @@ export default function TacticalBattleView({
                 const tw = ctx.measureText(label).width;
                 ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
                 ctx.fillRect(hot.x - tw / 2 - 3, hot.y - r - 15, tw + 6, 12);
-                ctx.fillStyle = '#fde68a';
+                ctx.fillStyle = hot.ship.side === 'player' ? '#c7d2fe' : '#fde68a';
                 ctx.fillText(label, hot.x, hot.y - r - 6);
             }
         };
