@@ -222,19 +222,102 @@ function autoDeployInitial(state: BattleState, s: TacticalSide) {
     st.reserves = st.reserves.filter(r => r.count > 0);
 }
 
+/** The deployment row's slot `i`: alternating above and below the midline, 70 apart. */
+function staggerY(state: BattleState, i: number): number {
+    const y = state.height / 2 + (i % 2 === 0 ? 1 : -1) * Math.ceil(i / 2) * 70;
+    return Math.min(state.height - 40, Math.max(40, y));
+}
+
+function fieldedCount(state: BattleState, s: TacticalSide): number {
+    return state.ships.filter(sh => sh.side === s && sh.status !== 'destroyed' && sh.status !== 'withdrawn').length;
+}
+
+// ─── Reinforcement placement (Empire at War rule) ───────────────────────────
+// A reinforcement warps in on its own side's edge, or near one of its side's
+// active hulls or its station, and never within the keep-out of an enemy hull.
+
+/** How deep the own-edge arrival band reaches into the field, from the map edge. */
+export const REINFORCE_EDGE_DEPTH = 150;
+/** Arrival allowed this close to an active friendly hull or the side's station. */
+export const REINFORCE_ANCHOR_RADIUS = 220;
+/** No arrival this close to an enemy hull (about a cruiser battery's reach). */
+export const REINFORCE_KEEP_OUT = 300;
+
+export type ReinforceBlocker = 'bounds' | 'enemy' | 'unanchored';
+
+/** Why a reinforcement cannot arrive at (x, y), or null when it can. */
+export function reinforcementBlocker(state: BattleState, s: TacticalSide, x: number, y: number): ReinforceBlocker | null {
+    if (x < 40 || x > state.width - 40 || y < 40 || y > state.height - 40) return 'bounds';
+    for (const sh of state.ships) {
+        if (sh.side === s) continue;
+        if (sh.status !== 'active' && sh.status !== 'arriving' && sh.status !== 'retreating') continue;
+        if (Math.hypot(sh.x - x, sh.y - y) < REINFORCE_KEEP_OUT) return 'enemy';
+    }
+    if (s === 'player' ? x <= REINFORCE_EDGE_DEPTH : x >= state.width - REINFORCE_EDGE_DEPTH) return null;
+    if (state.station && state.station.side === s
+        && Math.hypot(state.station.x - x, state.station.y - y) <= REINFORCE_ANCHOR_RADIUS) return null;
+    for (const sh of state.ships) {
+        if (sh.side !== s || sh.status !== 'active') continue;
+        if (Math.hypot(sh.x - x, sh.y - y) <= REINFORCE_ANCHOR_RADIUS) return null;
+    }
+    return 'unanchored';
+}
+
+/**
+ * Where a reinforcement sent without a chosen point arrives: the next free
+ * slot of the edge row, else just behind the friendly hull nearest the own
+ * edge. Null when the enemy holds every arrival point.
+ */
+export function defaultReinforcementPoint(state: BattleState, s: TacticalSide): { x: number; y: number } | null {
+    const x = s === 'player' ? state.edgeZone + 40 : state.width - state.edgeZone - 40;
+    const start = fieldedCount(state, s);
+    const slots = Math.ceil(state.height / 70) + 1;
+    for (let i = start; i < start + slots; i++) {
+        const y = staggerY(state, i);
+        if (!reinforcementBlocker(state, s, x, y)) return { x, y };
+    }
+    return pointBehindFleet(state, s, 'edge');
+}
+
+/**
+ * The enemy commander's pick: just behind its own line, at the hull nearest
+ * the fight, spread so a batch does not stack. Falls back to the edge row.
+ */
+export function aiReinforcementPoint(state: BattleState, s: TacticalSide): { x: number; y: number } | null {
+    return pointBehindFleet(state, s, 'front') ?? defaultReinforcementPoint(state, s);
+}
+
+function pointBehindFleet(state: BattleState, s: TacticalSide, anchor: 'edge' | 'front'): { x: number; y: number } | null {
+    const back = s === 'player' ? -1 : 1;
+    const own = state.ships
+        .filter(sh => sh.side === s && sh.status === 'active')
+        // 'edge': rearmost hull first; 'front': foremost first.
+        .sort((a, b) => (anchor === 'edge' ? 1 : -1) * back * (b.x - a.x));
+    const inbound = state.ships.filter(sh => sh.side === s && sh.status === 'arriving').length;
+    for (const sh of own) {
+        for (let k = 0; k < 6; k++) {
+            const slot = inbound + k;
+            const x = sh.x + back * 120;
+            const y = Math.min(state.height - 40, Math.max(40, sh.y + (slot % 2 === 0 ? 1 : -1) * Math.ceil(slot / 2) * 60));
+            if (!reinforcementBlocker(state, s, x, y)) return { x, y };
+        }
+    }
+    return null;
+}
+
 function spawnShip(
     state: BattleState,
     s: TacticalSide,
     classId: ShipClassId,
     sourceKey: string,
     strengthMult: number,
-    instant: boolean
+    instant: boolean,
+    at?: { x: number; y: number },
 ): TacticalShip {
     const def = SHIP_CLASSES[classId];
     // Player enters on the left edge, enemy on the right; stagger vertically.
-    const fielded = state.ships.filter(sh => sh.side === s && sh.status !== 'destroyed' && sh.status !== 'withdrawn').length;
-    const x = s === 'player' ? state.edgeZone + 40 : state.width - state.edgeZone - 40;
-    const y = state.height / 2 + (fielded % 2 === 0 ? 1 : -1) * Math.ceil(fielded / 2) * 70;
+    const x = at ? at.x : s === 'player' ? state.edgeZone + 40 : state.width - state.edgeZone - 40;
+    const y = at ? at.y : staggerY(state, fieldedCount(state, s));
     const hullMult = Math.min(1, Math.max(0.3, strengthMult));
     // Design: Deflectors and Hardened Shields grow the pool (fleet-adapter designTuningFor).
     const facing = (def.maxShield * side(state, s).tuning.shieldMult) / 4;
@@ -244,7 +327,7 @@ function spawnShip(
         classId,
         sourceKey,
         x,
-        y: Math.min(state.height - 40, Math.max(40, y)),
+        y,
         heading: s === 'player' ? 0 : Math.PI,
         speed: 0,
         hull: def.maxHull * hullMult,
@@ -539,9 +622,14 @@ export function fleetWithdraw(state: BattleState, s: TacticalSide) {
 /**
  * Deploy one ship of the given class from reserve. `sourceKey` disambiguates
  * when two strategic composition keys map to the same tactical class (e.g.
- * interceptor + bomber → corvette). Returns the ship or null.
+ * interceptor + bomber → corvette). `at` is the arrival point the commander
+ * chose; it must pass reinforcementBlocker. Without one the ship takes the
+ * default (player) or the AI's pick (enemy). Returns the ship, or null when
+ * nothing may arrive — the reserve is not spent then.
  */
-export function deployReinforcement(state: BattleState, s: TacticalSide, classId: ShipClassId, sourceKey?: string): TacticalShip | null {
+export function deployReinforcement(
+    state: BattleState, s: TacticalSide, classId: ShipClassId, sourceKey?: string, at?: { x: number; y: number },
+): TacticalShip | null {
     const st = side(state, s);
     if (st.withdrawing || state.outcome) return null;
     const entry = st.reserves.find(r =>
@@ -549,9 +637,17 @@ export function deployReinforcement(state: BattleState, s: TacticalSide, classId
     if (!entry) return null;
     const cost = SHIP_CLASSES[classId].deploymentCost;
     if (activeDeploymentPoints(state, s) + cost > st.capacity) return null;
+    let point: { x: number; y: number } | null;
+    if (at) {
+        point = reinforcementBlocker(state, s, at.x, at.y) ? null : at;
+    } else {
+        point = s === 'enemy' ? aiReinforcementPoint(state, s) : defaultReinforcementPoint(state, s);
+        if (!point && s === 'player') logEvent(state, 'No clear arrival point: the enemy holds your reinforcement zone.');
+    }
+    if (!point) return null;
     entry.count--;
     if (entry.count <= 0) st.reserves = st.reserves.filter(r => r !== entry);
-    const ship = spawnShip(state, s, classId, entry.sourceKey, st.strengthMult, false);
+    const ship = spawnShip(state, s, classId, entry.sourceKey, st.strengthMult, false, point);
     logEvent(state, `${s === 'player' ? 'Reinforcement' : 'Enemy reinforcement'} inbound: ${SHIP_CLASSES[classId].name}.`);
     return ship;
 }

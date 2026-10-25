@@ -29,6 +29,9 @@ import {
     orderRetreat,
     fleetWithdraw,
     deployReinforcement,
+    reinforcementBlocker,
+    defaultReinforcementPoint,
+    aiReinforcementPoint,
     useAbility,
     setSquadronOrder,
     useCommandAbility,
@@ -1329,6 +1332,49 @@ suite('design tuning — spawn and damage', () => {
     const myHullBefore = mine.hull;
     applyDamage(state, mine, 10, { shieldPierce: 1, vsHull: 2 });
     assert(Math.abs((myHullBefore - mine.hull) - 20 * (1 - def.armor.fore)) < 1e-6, 'a side without armorBonus takes the class armour only');
+});
+
+suite('reinforcement placement — own edge, near own hulls, never near the enemy', () => {
+    const state = createBattle({
+        playerReserves: [R('cruiser', 1), R('corvette', 6)], enemyReserves: [R('cruiser', 1), R('corvette', 6)],
+        playerCapacity: 6, enemyCapacity: 6,
+    });
+    // Room to call in what stayed in reserve.
+    state.player.capacity = 40;
+    state.enemy.capacity = 40;
+    const mine = fielded(state, 'player', 'cruiser')[0];
+    const theirs = fielded(state, 'enemy', 'cruiser')[0];
+    mine.x = 500; mine.y = 300;
+    theirs.x = 1100; theirs.y = 700;
+    for (const sh of fielded(state, 'enemy')) if (sh !== theirs) { sh.x = 1100; sh.y = 700; }
+    for (const sh of fielded(state, 'player')) if (sh !== mine) { sh.x = 500; sh.y = 300; }
+
+    assert(reinforcementBlocker(state, 'player', 100, 500) === null, 'the own edge band is open');
+    assert(reinforcementBlocker(state, 'player', 560, 340) === null, 'so is the ground beside an active friendly hull');
+    assert(reinforcementBlocker(state, 'player', 800, 150) === 'unanchored', 'open space far from the fleet is not');
+    assert(reinforcementBlocker(state, 'player', 1000, 650) === 'enemy', 'nor is anywhere inside the enemy keep-out');
+    assert(reinforcementBlocker(state, 'player', 10, 500) === 'bounds', 'and off the field is refused');
+    assert(reinforcementBlocker(state, 'enemy', 1500, 500) === null, 'the enemy edge band is the right edge');
+
+    const before = state.player.reserves.reduce((a, r) => a + r.count, 0);
+    assert(deployReinforcement(state, 'player', 'corvette', undefined, { x: 1000, y: 650 }) === null, 'a drop inside the keep-out is refused');
+    assert(state.player.reserves.reduce((a, r) => a + r.count, 0) === before, 'and the reserve is not spent');
+    const placed = deployReinforcement(state, 'player', 'corvette', undefined, { x: 560, y: 340 });
+    assert(!!placed && placed.x === 560 && placed.y === 340 && placed.status === 'arriving', 'a legal drop warps in exactly there');
+
+    // The enemy parks across the player's whole edge: nothing may arrive.
+    for (let i = 0; i < 6; i++) {
+        state.ships.push({ ...theirs, id: `blocker-${i}`, x: 120, y: 40 + i * 190 });
+    }
+    mine.x = 300; mine.y = 500;
+    for (const sh of fielded(state, 'player')) if (sh.side === 'player') { sh.x = 300; sh.y = 500; }
+    assert(defaultReinforcementPoint(state, 'player') === null, 'with the edge and the fleet inside the keep-out there is no default point');
+    assert(deployReinforcement(state, 'player', 'corvette') === null, 'so a default deploy is refused too');
+
+    const enemyPick = aiReinforcementPoint(state, 'enemy');
+    assert(!!enemyPick && reinforcementBlocker(state, 'enemy', enemyPick.x, enemyPick.y) === null, 'the AI picks a legal point of its own');
+    const enemyShip = deployReinforcement(state, 'enemy', 'corvette');
+    assert(!!enemyShip && reinforcementBlocker(state, 'enemy', enemyShip.x, enemyShip.y) === null, 'and its reinforcement arrives at one');
 });
 
 console.log('\n✅ All tests completed.\n');

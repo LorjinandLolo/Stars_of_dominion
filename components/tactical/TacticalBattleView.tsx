@@ -23,6 +23,7 @@ import type {
     Squadron,
     CalledSubsystemId,
     HardpointId,
+    ShipClassId,
     TacticalShip,
     Torpedo,
 } from '@/lib/tactical/types';
@@ -39,6 +40,10 @@ import {
     issueFormationMove,
     issueMove,
     orderRetreat,
+    reinforcementBlocker,
+    REINFORCE_ANCHOR_RADIUS,
+    REINFORCE_EDGE_DEPTH,
+    REINFORCE_KEEP_OUT,
     setCalledShot,
     setSquadronOrder,
     setTarget,
@@ -289,6 +294,15 @@ export default function TacticalBattleView({
     const setArmedFormation = React.useCallback((f: FormationId | null) => {
         armedFormationRef.current = f;
         setArmedFormationState(f);
+    }, []);
+
+    // Armed reinforcement: the next left-click on the field is its arrival
+    // point (Shift keeps it armed for another); right-click or Esc cancels.
+    const [placing, setPlacingState] = React.useState<{ classId: ShipClassId; sourceKey: string } | null>(null);
+    const placingRef = React.useRef<{ classId: ShipClassId; sourceKey: string } | null>(null);
+    const setPlacing = React.useCallback((p: { classId: ShipClassId; sourceKey: string } | null) => {
+        placingRef.current = p;
+        setPlacingState(p);
     }, []);
 
     const setSelection = React.useCallback((ids: string[]) => {
@@ -780,6 +794,24 @@ export default function TacticalBattleView({
             const p = toLocal(e.clientX, e.clientY);
             const wp = screenToWorld(p.x, p.y);
 
+            // Armed reinforcement: the press point is its arrival point; the
+            // right button cancels. An illegal point keeps it armed — the
+            // ghost already says why.
+            const pl = placingRef.current;
+            if (pl) {
+                if (d.button === 2) {
+                    setPlacing(null);
+                    return;
+                }
+                if (deployReinforcement(st, 'player', pl.classId, pl.sourceKey, { x: d.startWX, y: d.startWY })) {
+                    const left = st.player.reserves.some(r => r.classId === pl.classId && r.sourceKey === pl.sourceKey);
+                    const fits = activeDeploymentPoints(st, 'player') + SHIP_CLASSES[pl.classId].deploymentCost <= st.player.capacity;
+                    if (!d.shift || !left || !fits) setPlacing(null);
+                    forceHud();
+                }
+                return;
+            }
+
             // Right button: ship move (or armed-formation move) — press point is
             // the destination, a drag sets the final facing along the drag
             // vector. With squadrons selected instead: patrol at that point.
@@ -959,7 +991,9 @@ export default function TacticalBattleView({
             }
             const st = stateRef.current;
             if (!st || st.outcome) return;
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && placingRef.current) {
+                setPlacing(null);
+            } else if (e.key === 'Escape') {
                 setSelection([]);
                 setSquadronSelection([]);
             } else if (e.key === 'r' || e.key === 'R') {
@@ -1591,6 +1625,71 @@ export default function TacticalBattleView({
             ctx.fill();
         };
 
+        /**
+         * Armed reinforcement, world space: the ground it may arrive on (own
+         * edge band, rings round own hulls and station), the enemy keep-out,
+         * and a ghost hull at the cursor, green where it can arrive. Returns
+         * what blocks the cursor point, for the label drawn in screen space.
+         */
+        const drawPlacement = (st: BattleState): { ok: boolean; why: string } | null => {
+            const pl = placingRef.current;
+            if (!pl || st.outcome) return null;
+            ctx.fillStyle = 'rgba(52, 211, 153, 0.05)';
+            ctx.fillRect(0, 0, REINFORCE_EDGE_DEPTH, st.height);
+            ctx.setLineDash([6, 6]);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(52, 211, 153, 0.35)';
+            ctx.beginPath();
+            for (const sh of st.ships) {
+                if (sh.side !== 'player' || sh.status !== 'active') continue;
+                ctx.moveTo(sh.x + REINFORCE_ANCHOR_RADIUS, sh.y);
+                ctx.arc(sh.x, sh.y, REINFORCE_ANCHOR_RADIUS, 0, TAU);
+            }
+            if (st.station?.side === 'player') {
+                ctx.moveTo(st.station.x + REINFORCE_ANCHOR_RADIUS, st.station.y);
+                ctx.arc(st.station.x, st.station.y, REINFORCE_ANCHOR_RADIUS, 0, TAU);
+            }
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(248, 113, 113, 0.06)';
+            ctx.strokeStyle = 'rgba(248, 113, 113, 0.4)';
+            ctx.beginPath();
+            for (const sh of st.ships) {
+                if (sh.side !== 'enemy') continue;
+                if (sh.status !== 'active' && sh.status !== 'arriving' && sh.status !== 'retreating') continue;
+                ctx.moveTo(sh.x + REINFORCE_KEEP_OUT, sh.y);
+                ctx.arc(sh.x, sh.y, REINFORCE_KEEP_OUT, 0, TAU);
+            }
+            ctx.fill();
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if (!pointer.inside) return null;
+            const w = screenToWorld(pointer.x, pointer.y);
+            const blocker = reinforcementBlocker(st, 'player', w.x, w.y);
+            const rgb = blocker ? '248, 113, 113' : '52, 211, 153';
+            const r = SHIP_CLASSES[pl.classId].radius;
+            // A chevron facing the enemy, the way the ship will arrive.
+            ctx.fillStyle = `rgba(${rgb}, 0.25)`;
+            ctx.strokeStyle = `rgba(${rgb}, 0.9)`;
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(w.x + r, w.y);
+            ctx.lineTo(w.x - r * 0.8, w.y - r * 0.65);
+            ctx.lineTo(w.x - r * 0.45, w.y);
+            ctx.lineTo(w.x - r * 0.8, w.y + r * 0.65);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(w.x, w.y, r * 1.6, 0, TAU);
+            ctx.stroke();
+            const why = blocker === 'enemy' ? 'ENEMY TOO CLOSE'
+                : blocker === 'unanchored' ? 'TOO FAR FROM YOUR FLEET'
+                : blocker === 'bounds' ? 'OFF THE FIELD'
+                : `${SHIP_CLASSES[pl.classId].name.toUpperCase()} · CLICK TO ARRIVE`;
+            return { ok: !blocker, why };
+        };
+
         const draw = (st: BattleState) => {
             const v = viewRef.current;
             const dpr = window.devicePixelRatio || 1;
@@ -1758,8 +1857,18 @@ export default function TacticalBattleView({
                 ctx.stroke();
             }
 
+            const placement = drawPlacement(st);
+
             // Screen space from here on.
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            if (placement) {
+                ctx.font = '700 9px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = placement.ok ? 'rgba(110, 231, 183, 0.95)' : 'rgba(252, 165, 165, 0.95)';
+                ctx.fillText(placement.why, pointer.x, pointer.y + 28);
+                ctx.textAlign = 'left';
+            }
 
             // Squadron markers: a fixed-size icon and craft count over every
             // flight, and an edge arrow for the player's flights off screen.
@@ -1777,7 +1886,7 @@ export default function TacticalBattleView({
 
             // Drag previews.
             const d = dragRef.current;
-            if (d && d.moved && !st.outcome) {
+            if (d && d.moved && !st.outcome && !placingRef.current) {
                 const s0 = worldToScreen(d.startWX, d.startWY);
                 if (d.button === 0) {
                     const x = Math.min(s0.x, d.curX);
@@ -1844,6 +1953,14 @@ export default function TacticalBattleView({
     const result = outcome ? computeResult(state) : null;
     const usedPoints = activeDeploymentPoints(state, 'player');
     const enemyReserveShips = state.enemy.reserves.reduce((a, r) => a + r.count, 0);
+    // An armed reinforcement disarms once it can no longer come in.
+    const placingStale = !!placing && (
+        !!outcome || state.player.withdrawing
+        || !state.player.reserves.some(r => r.classId === placing.classId && r.sourceKey === placing.sourceKey)
+        || usedPoints + SHIP_CLASSES[placing.classId].deploymentCost > state.player.capacity);
+    React.useEffect(() => {
+        if (placingStale) setPlacing(null);
+    }, [placingStale, setPlacing]);
     const events = state.events.slice(-4);
     const selectedShips = selectedIds
         .map(id => state.ships.find(sh => sh.id === id))
@@ -1968,7 +2085,7 @@ export default function TacticalBattleView({
             {/* Controls hint */}
             {!outcome && (
                 <div className="absolute top-11 left-4 text-[8px] tracking-widest text-slate-600 uppercase pointer-events-none">
-                    LMB select ship/squadron · drag box-select (no ships in the box = squadrons) · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem or gun · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
+                    LMB select ship/squadron · drag box-select (no ships in the box = squadrons) · LMB enemy = target / squadron strike · LMB hardpoint icon = target that subsystem or gun · RMB move or patrol · RMB-drag + facing · formation: arm, then RMB · reinforce: pick a reserve, LMB the field (Shift: several) · R retreat · ESC deselect · wheel zoom · MMB-drag / WASD / screen edge pan · F focus · Home zoom out
                 </div>
             )}
 
@@ -2237,6 +2354,13 @@ export default function TacticalBattleView({
                             {usedPoints}/{state.player.capacity} pts
                         </span>
                     </div>
+                    {state.player.reserves.length > 0 && (
+                        <p className={`text-[8px] leading-snug ${placing ? 'text-emerald-300' : 'text-slate-500'}`}>
+                            {placing
+                                ? 'Click the field to bring it in · Shift: place several · RMB / Esc: cancel'
+                                : 'Click a ship, then the field · double-click: arrive at your edge'}
+                        </p>
+                    )}
                     {state.player.reserves.length === 0 ? (
                         <p className="text-[9px] text-slate-500">No reserves remaining.</p>
                     ) : (
@@ -2245,15 +2369,20 @@ export default function TacticalBattleView({
                             const blocked =
                                 state.player.withdrawing ||
                                 usedPoints + def.deploymentCost > state.player.capacity;
+                            const armed = placing?.classId === entry.classId && placing.sourceKey === entry.sourceKey;
                             return (
                                 <button
                                     key={`${entry.classId}:${entry.sourceKey}`}
-                                    onClick={() => {
+                                    onClick={() => setPlacing(armed ? null : { classId: entry.classId, sourceKey: entry.sourceKey })}
+                                    onDoubleClick={() => {
                                         deployReinforcement(state, 'player', entry.classId, entry.sourceKey);
+                                        setPlacing(null);
                                         forceHud();
                                     }}
                                     disabled={blocked}
-                                    className="w-full flex items-center justify-between px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60 text-[9px] font-bold tracking-wider text-slate-200 hover:bg-indigo-900/40 hover:border-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className={`w-full flex items-center justify-between px-1.5 py-1 rounded border text-[9px] font-bold tracking-wider text-slate-200 hover:bg-indigo-900/40 hover:border-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        armed ? 'bg-emerald-900/40 border-emerald-500/60' : 'bg-slate-900/60 border-slate-700/60'
+                                    }`}
                                 >
                                     <span>{def.name.toUpperCase()} <span className="text-slate-500">({entry.sourceKey})</span> ×{entry.count}</span>
                                     <span className="font-mono text-slate-400">cost {def.deploymentCost}</span>
