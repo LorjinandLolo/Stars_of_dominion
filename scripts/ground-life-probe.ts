@@ -5,9 +5,9 @@
 // cycle (fights, districts changing hands, friction, decisions), and whether
 // numbers still decide it. The pacing targets live in the checks at the end.
 //
-// Run:  npx tsx scripts/ground-life-probe.ts [runsPerScenario=4]
+// Run:  npx tsx scripts/ground-life-probe.ts [runsPerScenario=32] [seed]
 
-import { bootSoakWorld, empireIds, quietConsole } from './soak-harness';
+import { bootSoakWorld, empireIds, quietConsole, seedSimulation } from './soak-harness';
 import { executeOrder, processSieges } from './game-loop';
 import { aiCommandGroundWars } from '../lib/ai/war-ai';
 import { registerActOfWar } from '../lib/diplomacy/offer-service';
@@ -18,7 +18,11 @@ import { generateSurface } from '../lib/planet-surface/generator';
 import { legalMoves } from '../lib/combat/siege/formations';
 import { roadLinkKeys } from '../lib/planet-surface/roads';
 
-const RUNS = Number(process.argv[2] ?? 4);
+// The AI general still rolls Math.random for stances and reads, and a few ids
+// read the clock, so the median of four wars swung 15-23 cycles from one run
+// to the next. Thirty-two per scenario hold it at 20-23 across seeds.
+const RUNS = Number(process.argv[2] ?? 32);
+seedSimulation(process.argv[3] ?? 'ground-life');
 const MAX_CYCLES = 72; // six real hours
 
 let failures = 0;
@@ -236,4 +240,4 @@ check('and a bigger invasion is not thrown back more often than an equal one, gi
 }
 
 say(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
-process.exit(0);
+process.exit(failures ? 1 : 0);
