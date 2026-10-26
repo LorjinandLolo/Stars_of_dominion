@@ -3355,6 +3355,34 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             break;
         }
 
+        case 'PRESS_REACT': {
+            // payload: { articleId, headline?, actionId, payload? } — a reaction
+            // to a gazette story (lib/narrative/reactions.ts). The inner order
+            // runs through this same function (its own gates, its own price);
+            // then the chronicle records that the court answered the news.
+            const inner = String(payload?.actionId ?? '');
+            const innerPayload = (payload?.payload && typeof payload.payload === 'object') ? payload.payload : {};
+            if (!inner || inner === 'PRESS_REACT' || !(inner in ACTION_DEFINITIONS)) {
+                recordOrderFailure(world, factionId, actionId, 'That is not an answer the court can give.');
+                break;
+            }
+            const before = world.economy?.factions?.get?.(factionId)?.lastOrderError?.id;
+            executeOrder(world, inner, innerPayload, factionId);
+            const after = world.economy?.factions?.get?.(factionId)?.lastOrderError;
+            if (after?.id && after.id !== before && after.actionId === inner) break; // the inner order was refused: nothing to remember
+            const target = typeof innerPayload.targetFactionId === 'string' ? innerPayload.targetFactionId
+                : typeof innerPayload.rebelFactionId === 'string' ? innerPayload.rebelFactionId : null;
+            chronicle.record(world, {
+                type: 'press_reaction',
+                actorIds: [factionId],
+                targetIds: target ? [target] : [],
+                facts: { reaction: inner, headline: typeof payload?.headline === 'string' ? payload.headline.slice(0, 140) : null, articleId: String(payload?.articleId ?? '') },
+                coalesceKey: `press-reaction-${factionId}-${String(payload?.articleId ?? '')}`,
+            });
+            console.log(`[Press] ${factionId} answered "${payload?.headline ?? payload?.articleId}" with ${inner}`);
+            break;
+        }
+
         case 'PLOT_STRIKE': {
             const seatId: string | undefined = payload?.__issuer?.seatId;
             const seat = seatId ? ((world as any).seats ?? []).find((s: any) => s.id === seatId && s.factionId === factionId) : null;

@@ -537,6 +537,22 @@ function draftFor(req: NarrationRequest, actor: string): Draft {
             };
         }
 
+        case 'press_reaction': {
+            // A court answering the news (lib/narrative/reactions.ts).
+            const verb: Record<string, string> = {
+                DIP_SEND_ENVOY: 'sends an envoy', DIP_IMPOSE_SANCTIONS: 'answers with sanctions', DIP_PLANT_RUMOR: 'answers with whispers',
+                DIP_OFFER_PEACE: 'sues for peace', PRESS_LAUNCH_CAMPAIGN: 'rallies its press', GOV_DISMISS_MINISTER: 'sacks a minister',
+                DIP_RECOGNIZE_BREAKAWAY: 'recognises the breakaway',
+            };
+            const did = verb[str(e, 'reaction')] ?? 'answers';
+            const story = str(e, 'headline');
+            return {
+                headline: `${actor} ${did}${e.targetNames.length ? `: ${target}` : ''}`,
+                body: `${hedge}${actor} ${did}${e.targetNames.length ? ` toward ${target}` : ''}${story ? ` in answer to the story "${story}"` : ' in answer to the news'}. Courts that answer the gazette are courts that read it; the galaxy notes which way they lean.`,
+                tone: 'neutral',
+            };
+        }
+
         default:
             return {
                 headline: `${actor}: ${e.type.replace(/_/g, ' ')} reported${where ? ` at ${where}` : ''}`,

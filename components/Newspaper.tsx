@@ -1,5 +1,6 @@
 'use client';
 import useSWR from 'swr';
+import ReactionBar from '@/components/gazette/ReactionBar';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -54,6 +55,8 @@ export default function Newspaper({ day }: { day?: number }) {
                             </div>
                         </div>
                         <div className="text-[10px] text-slate-400 leading-snug">{a.lede}</div>
+                        {/* What the court can do about it (lib/narrative/reactions.ts). */}
+                        <ReactionBar articleId={String(a.id ?? idx)} headline={String(a.headline ?? '')} events={a.events ?? []} />
                     </article>
                 );
             })}

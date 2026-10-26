@@ -1072,6 +1072,15 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { actionId: "string" },
     cost: {}
   },
+  // A reaction to a gazette article (lib/narrative/reactions.ts): runs the
+  // named order and records that it was an answer to the news, so the
+  // narrator writes the follow-up. The inner order pays its own price.
+  PRESS_REACT: {
+    id: "PRESS_REACT",
+    category: "internal",
+    params: { articleId: "id", actionId: "string" },
+    cost: {}
+  },
   // A seated minister's plot (lib/government/plots.ts). Issued through a
   // seat only; the worker refuses them from the ruler. Free: the price is
   // what happens when it goes wrong.

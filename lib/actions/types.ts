@@ -211,6 +211,7 @@ export type PlayerActionId =
   | "GOV_SET_DELEGATION"
   | "ADV_RESOLVE_PROPOSAL"
   | "ADV_REVOKE_ALWAYS"
+  | "PRESS_REACT"
   | "PLOT_START"
   | "PLOT_SOUND_OUT"
   | "PLOT_ANSWER"

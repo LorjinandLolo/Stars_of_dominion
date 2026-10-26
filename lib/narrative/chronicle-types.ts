@@ -34,6 +34,9 @@ export type ChronicleEventType =
     // Press — a journalist getting the story is itself an event
     | 'investigation_published'
     | 'scandal_confirmed'
+    // A court answers the news in public (lib/narrative/reactions.ts): the
+    // actor reacted, facts.reaction is the order, facts.headline the story.
+    | 'press_reaction'
     // Politics & government
     | 'leader_rose'
     | 'leader_died'

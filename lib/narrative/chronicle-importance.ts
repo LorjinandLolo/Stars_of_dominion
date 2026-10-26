@@ -51,6 +51,8 @@ const BASE_IMPORTANCE: Record<ChronicleEventType, number> = {
     civil_war_started: 92,
     // Who leads a rebellion now is the story; the rebellion itself already ran.
     breakaway_claimed: 66,
+    // Local news: a court's public answer to a story (reactions.ts).
+    press_reaction: 22,
     rebel_act: 32,
     crackdown: 30,
     rebel_killed: 28,
