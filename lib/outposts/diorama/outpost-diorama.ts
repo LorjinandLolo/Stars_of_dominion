@@ -102,6 +102,9 @@ interface Walker {
 export class OutpostDiorama {
     private readonly renderer: THREE.WebGLRenderer;
     private readonly scene = new THREE.Scene();
+    /** Everything but the lights: the graduation pull-back shrinks and sinks it. */
+    private readonly root = new THREE.Group();
+    private pullback = 0;
     private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
     private readonly geo = new Geo();
     private readonly tiles: THREE.Mesh[] = [];
@@ -118,6 +121,7 @@ export class OutpostDiorama {
     private width = 1;
     private height = 1;
     private storm = 0;
+    private night = 0;
     private time = 0;
     private disposed = false;
     private signature = '';
@@ -139,7 +143,7 @@ export class OutpostDiorama {
         this.sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
         this.sun.position.set(6, 8, 3);
         this.fill = new THREE.HemisphereLight(0x8fb3ff, 0x2b1d12, 0.55);
-        this.scene.add(this.sun, this.fill);
+        this.scene.add(this.sun, this.fill, this.root);
 
         for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
             const mat = new THREE.MeshStandardMaterial({ color: CLOSED_COLOUR, roughness: 0.95, metalness: 0.02 });
@@ -147,7 +151,7 @@ export class OutpostDiorama {
             const [x, z] = cellXZ(i);
             mesh.position.set(x, -TILE_H / 2, z);
             mesh.userData.cell = i;
-            this.scene.add(mesh);
+            this.root.add(mesh);
             this.tiles.push(mesh);
             this.tileMats.push(mat);
             this.ownedMaterials.push(mat);
@@ -157,14 +161,14 @@ export class OutpostDiorama {
         this.selectRing = new THREE.Mesh(this.geo.select, selMat);
         this.selectRing.rotation.x = -Math.PI / 2;
         this.selectRing.visible = false;
-        this.scene.add(this.selectRing);
+        this.root.add(this.selectRing);
         this.ownedMaterials.push(selMat);
 
         const dustMat = new THREE.MeshBasicMaterial({ color: 0xc9a26b, transparent: true, opacity: 0, depthWrite: false });
         this.dust = new THREE.Mesh(this.geo.dust, dustMat);
         this.dust.rotation.x = -Math.PI / 2;
         this.dust.position.y = 0.9;
-        this.scene.add(this.dust);
+        this.root.add(this.dust);
         this.ownedMaterials.push(dustMat);
     }
 
@@ -262,13 +266,13 @@ export class OutpostDiorama {
         // Modules: rebuild only what changed.
         const sig = state.cells.map(c => c.module ?? '').join(',');
         if (sig !== this.signature) {
-            for (const [i, node] of this.modules) { if (state.cells[i]?.module !== node.id) { this.scene.remove(node.group); this.modules.delete(i); } }
+            for (const [i, node] of this.modules) { if (state.cells[i]?.module !== node.id) { this.root.remove(node.group); this.modules.delete(i); } }
             state.cells.forEach((c, i) => {
                 if (!c.module || this.modules.has(i)) return;
                 const node = this.buildModule(c.module);
                 const [x, z] = cellXZ(i);
                 node.group.position.set(x, 0, z);
-                this.scene.add(node.group);
+                this.root.add(node.group);
                 this.modules.set(i, node);
             });
             this.signature = sig;
@@ -297,10 +301,10 @@ export class OutpostDiorama {
             const mesh = new THREE.Mesh(this.geo.walker, mat);
             const p = this.randomStop(state, running);
             mesh.position.copy(p);
-            this.scene.add(mesh);
+            this.root.add(mesh);
             this.walkers.push({ mesh, from: p.clone(), to: this.randomStop(state, running), t: Math.random(), speed: 0.25 + Math.random() * 0.2 });
         }
-        while (this.walkers.length > want) { const w = this.walkers.pop()!; this.scene.remove(w.mesh); }
+        while (this.walkers.length > want) { const w = this.walkers.pop()!; this.root.remove(w.mesh); }
 
         // Beacons over cells with an open crisis; dust when a storm is on.
         const wanted = new Map<string, number>();
@@ -311,14 +315,14 @@ export class OutpostDiorama {
         }
         if (state.effects.some(e => e.kind === 'solar_down' && e.untilShift > state.shift)) storm = 1;
         this.storm = storm;
-        for (const [id, mesh] of this.beacons) { if (!wanted.has(id)) { this.scene.remove(mesh); this.beacons.delete(id); } }
+        for (const [id, mesh] of this.beacons) { if (!wanted.has(id)) { this.root.remove(mesh); this.beacons.delete(id); } }
         for (const [id, cell] of wanted) {
             if (this.beacons.has(id)) continue;
             const mat = this.material(0xef4444, { emissive: 0xef4444, emissiveIntensity: 1.2 });
             const mesh = new THREE.Mesh(this.geo.beacon, mat);
             const [x, z] = cellXZ(cell);
             mesh.position.set(x, 1.2, z);
-            this.scene.add(mesh);
+            this.root.add(mesh);
             this.beacons.set(id, mesh);
         }
 
@@ -326,6 +330,7 @@ export class OutpostDiorama {
         const a = input.shiftProgress * Math.PI * 2;
         this.sun.position.set(Math.cos(a) * 8, 5 + Math.sin(a) * 4, Math.sin(a) * 8);
         const night = Math.max(0, -Math.sin(a));
+        this.night = night;
         this.sun.intensity = 1.6 - night * 1.1;
         this.fill.intensity = 0.55 - night * 0.25;
     }
@@ -338,9 +343,26 @@ export class OutpostDiorama {
         return new THREE.Vector3(x + (Math.random() - 0.5) * 0.7, 0.1, z + (Math.random() - 0.5) * 0.7);
     }
 
+    /**
+     * The graduation dissolve, 0–1: the camera seems to pull back as the
+     * diorama shrinks and sinks, the domes dim, dust rises — the snow globe
+     * becomes a dot on a world. The React mount fades the canvas over it and
+     * opens the surface at the end.
+     */
+    setPullback(p: number): void {
+        this.pullback = Math.max(0, Math.min(1, p));
+    }
+
     frame(dt: number, input: DioramaInput): void {
         if (this.disposed) return;
         this.time += dt;
+        const pb = this.pullback;
+        const ease = pb * pb * (3 - 2 * pb);
+        this.root.scale.setScalar(1 - 0.72 * ease);
+        this.root.position.y = -0.9 * ease;
+        this.root.rotation.y = ease * 0.6;
+        this.sun.intensity = (1.6 - this.night * 1.1) * (1 - 0.5 * ease);
+        for (const node of this.modules.values()) for (const m of node.glow) m.emissiveIntensity *= 1 - 0.02 * ease;
         const running = new Set(input.running);
         for (const w of this.walkers) {
             w.t += dt * w.speed;
@@ -354,7 +376,7 @@ export class OutpostDiorama {
             (b.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.8 + Math.sin(this.time * 6) * 0.6;
         }
         const dustMat = this.dust.material as THREE.MeshBasicMaterial;
-        dustMat.opacity += ((this.storm ? 0.28 : 0) - dustMat.opacity) * Math.min(1, dt * 2);
+        dustMat.opacity += ((this.storm ? 0.28 : 0) + 0.35 * ease - dustMat.opacity) * Math.min(1, dt * 2);
         this.dust.position.x = Math.sin(this.time * 0.4) * 0.8;
         this.dust.position.z = Math.cos(this.time * 0.3) * 0.8;
         this.renderer.render(this.scene, this.camera);

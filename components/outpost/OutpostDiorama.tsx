@@ -13,14 +13,26 @@ import { SHIFT_SIM_SECONDS } from '@/lib/outposts/outpost-catalog';
 
 interface Props {
     state: OutpostState;
+    /** The outpost became a colony: play the dissolve, then call onDissolved. */
+    graduated: boolean;
+    onDissolved?: () => void;
     running: number[];
     idleOf: Map<number, 'workers' | 'power'>;
     selected: number | null;
     onSelect: (cell: number) => void;
 }
 
-export default function OutpostDiorama({ state, running, idleOf, selected, onSelect }: Props) {
+/** How long the snow globe takes to become a dot on a world. */
+const DISSOLVE_MS = 2800;
+
+export default function OutpostDiorama({ state, running, idleOf, selected, onSelect, graduated, onDissolved }: Props) {
     const hostRef = React.useRef<HTMLDivElement>(null);
+    const dioRef = React.useRef<import('@/lib/outposts/diorama/outpost-diorama').OutpostDiorama | null>(null);
+    const onDissolvedRef = React.useRef(onDissolved);
+    onDissolvedRef.current = onDissolved;
+    const wasGraduated = React.useRef(graduated);
+    const [fade, setFade] = React.useState(0);
+    const [caption, setCaption] = React.useState<string | null>(null);
     const inputRef = React.useRef({ state, running, idleOf, selected });
     inputRef.current = { state, running, idleOf, selected };
     const [failed, setFailed] = React.useState(false);
@@ -49,6 +61,7 @@ export default function OutpostDiorama({ state, running, idleOf, selected, onSel
             if (cancelled) return;
             try {
                 dio = new OutpostDiorama(canvas);
+                dioRef.current = dio;
             } catch {
                 setFailed(true);
                 return;
@@ -89,11 +102,53 @@ export default function OutpostDiorama({ state, running, idleOf, selected, onSel
             (canvas as any).__fit?.();
             dio?.dispose();
             dio = null;
+            dioRef.current = null;
             canvas.remove();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // The dissolve: when the outpost becomes a colony while this is open, the
+    // diorama pulls back and fades, then the surface opens. An outpost opened
+    // already graduated just shows the frozen grid.
+    const dissolve = React.useCallback((andThen: boolean) => {
+        let raf = 0;
+        const started = performance.now();
+        setCaption('The domes are a city now.');
+        const step = (now: number) => {
+            const p = Math.min(1, (now - started) / DISSOLVE_MS);
+            dioRef.current?.setPullback(p);
+            setFade(p);
+            if (p < 1) { raf = requestAnimationFrame(step); return; }
+            if (andThen) onDissolvedRef.current?.();
+        };
+        raf = requestAnimationFrame(step);
+        return () => cancelAnimationFrame(raf);
+    }, []);
+
+    React.useEffect(() => {
+        if (!graduated || wasGraduated.current) { wasGraduated.current = graduated; return; }
+        wasGraduated.current = true;
+        return dissolve(true);
+    }, [graduated, dissolve]);
+
+    // Dev handle: play the dissolve without a real graduation (no hand-off
+    // unless asked), so the sequence can be seen on any outpost.
+    React.useEffect(() => {
+        if (process.env.NODE_ENV !== 'development') return;
+        (window as any).__outpostDissolve = (andThen = false) => dissolve(andThen);
+        return () => { delete (window as any).__outpostDissolve; };
+    }, [dissolve]);
+
     if (failed) return <div className="text-[11px] text-slate-500 p-3">The diorama needs WebGL; the board below still works.</div>;
-    return <div ref={hostRef} className="w-full aspect-[4/3] rounded-2xl border border-slate-800 bg-[radial-gradient(ellipse_at_50%_30%,rgba(56,189,248,0.10),rgba(2,6,23,0.9)_70%)] overflow-hidden cursor-pointer" aria-label="Outpost diorama" />;
+    return (
+        <div className="relative w-full aspect-[4/3] rounded-2xl border border-slate-800 bg-[radial-gradient(ellipse_at_50%_30%,rgba(56,189,248,0.10),rgba(2,6,23,0.9)_70%)] overflow-hidden">
+            <div ref={hostRef} className="absolute inset-0 cursor-pointer" style={{ opacity: 1 - fade * 0.95, transition: 'opacity 120ms linear' }} aria-label="Outpost diorama" />
+            {caption && (
+                <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-6" style={{ opacity: Math.min(1, fade * 2) }}>
+                    <div className="px-3 py-1.5 rounded-full bg-slate-950/70 border border-emerald-500/40 text-emerald-200 text-xs font-semibold tracking-wide">{caption} Opening the surface…</div>
+                </div>
+            )}
+        </div>
+    );
 }

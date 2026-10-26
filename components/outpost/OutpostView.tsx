@@ -354,6 +354,7 @@ function GrowthCard({ title, blurb, blockers, cost, accent, busy, onGrow, Icon }
 export default function OutpostView() {
     const planetId = useUIStore(s => s.outpostPlanetId);
     const setOutpostPlanet = useUIStore(s => s.setOutpostPlanet);
+    const setSurfacePlanet = useUIStore(s => s.setSurfacePlanet);
     const planets = useUIStore(s => s.planets);
     const factions = useUIStore(s => s.factions);
     const playerFactionId = useUIStore(s => s.playerFactionId);
@@ -449,6 +450,9 @@ export default function OutpostView() {
                             {!state.graduated && <ShiftClock nextShiftAt={state.nextShiftAt} shift={state.shift} />}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                            {state.graduated && (
+                                <button onClick={() => { setSurfacePlanet(planet.id); setOutpostPlanet(null); }} className="px-2.5 py-2 rounded-lg border border-emerald-500/40 bg-emerald-900/30 text-emerald-200 hover:text-white text-[11px] flex items-center gap-1"><Home size={14} /> Open the surface</button>
+                            )}
                             <button onClick={() => setTutorialOpen(true)} className="px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white text-[11px] flex items-center gap-1"><CircleHelp size={14} /> How to play</button>
                             <button onClick={() => setOutpostPlanet(null)} aria-label="Close outpost" className="p-2 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-400 hover:text-white"><X size={16} /></button>
                         </div>
@@ -547,7 +551,10 @@ export default function OutpostView() {
                     <div className="space-y-2">
                         <div className="max-w-[540px] mx-auto w-full space-y-2">
                             {view === 'diorama' && (
-                                <OutpostDiorama state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)} />
+                                <OutpostDiorama state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)}
+                                    graduated={!!state.graduated}
+                                    // The snow globe has become a dot on a world: open that world.
+                                    onDissolved={() => { setSurfacePlanet(planet.id); setOutpostPlanet(null); }} />
                             )}
                             {view === 'board' && (
                                 <Board state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)} />
