@@ -11,6 +11,7 @@ import type { TerrainType } from '@/lib/planet-surface/types';
 import { pointInPolygon, type Pt } from './surfaceGeometry';
 import { isoBox, isoShades } from './iso';
 import type { Climate } from './terrainMeta';
+import { renderCity, type CityTier } from './CityScenery';
 
 /**
  * Scenery colours per climate for the living terrains (plains, forest,
@@ -145,6 +146,10 @@ interface SceneryProps {
      * continuation of the highway instead of crossing it at a random angle.
      */
     roadBearing?: number | null;
+    /** For an urban district: where it sits in the settlement and where its streets leave (CityScenery). */
+    city?: { tier: CityTier; seat: boolean; exits: Pt[] };
+    /** River centreline segments crossing this district (riverPaths.ts), with half-width: kept clear. */
+    water?: Array<{ a: Pt; b: Pt; hw: number }>;
 }
 
 /** A native village hut: round, thatched, with a fire ring. */
@@ -181,7 +186,12 @@ function Tree({ x, y, s, dark, climate = 'temperate' }: { x: number; y: number; 
     );
 }
 
-export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes, climate = 'temperate', inhabited = true, settlers = 'colony' }: SceneryProps) {
+export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimmed, ring = 4, capital = false, roadBearing = null, keepOut = null, routes: routesIn, climate = 'temperate', inhabited = true, settlers = 'colony', city, water }: SceneryProps) {
+    // Nothing grows or stands in a river: its course is cleared like a road's.
+    const routes = React.useMemo(
+        () => (water?.length ? [...(routesIn ?? []), ...water.map(w => [w.a, w.b] as [Pt, Pt])] : routesIn),
+        [routesIn, water],
+    );
     const sc = SCENE[climate];
     const rand = React.useMemo(() => mulberry32(hash(seedKey)), [seedKey]);
     const s = Math.max(4, scale * 0.16); // motif unit size
@@ -424,196 +434,20 @@ export default function DistrictScenery({ terrain, polygon, seedKey, scale, dimm
                     </g>
                 ));
             }
-            case 'urban': {
-                // A miniature city viewed from orbit: a main street with mixed
-                // building stock along it, parks, an industrial edge, and one
-                // landmark. Density tier comes from the radial band — core
-                // districts are metropolises, frontier ones are outposts.
-                const tier = ring <= 1 ? 3 : ring <= 3 ? 2 : ring <= 5 ? 1 : 0; // 3=metro 2=city 1=town 0=outpost
-                const cx0 = polygon.reduce((t, p) => t + p[0], 0) / polygon.length;
-                const cy0 = polygon.reduce((t, p) => t + p[1], 0) / polygon.length;
-                // Main street bearing: continue the incoming highway when one
-                // touches this district; otherwise seeded.
-                const roadAngle = roadBearing ?? r() * Math.PI;
-                const dirX = Math.cos(roadAngle), dirY = Math.sin(roadAngle);
-                const perpX = -dirY, perpY = dirX;
-                const reach = s * (2.2 + tier * 0.5);
-                const inside = (p: Pt) => pointInPolygon(p, polygon);
-
-                // Slots along the street, alternating sides; skip ones that
-                // fall outside the district.
-                const slotCount = [4, 7, 11, 15][tier];
-                const slots: Array<{ p: Pt; side: number; t: number }> = [];
-                for (let i = 0; i < slotCount; i++) {
-                    const t = -1 + (2 * (i + 0.5)) / slotCount;           // -1..1 along street
-                    const side = i % 2 === 0 ? 1 : -1;
-                    const off = s * (0.55 + r() * 0.5);
-                    const p: Pt = [
-                        cx0 + dirX * t * reach + perpX * side * off,
-                        cy0 + dirY * t * reach + perpY * side * off,
-                    ];
-                    // Never build on a route: the corridor belongs to the road.
-                    if (inside(p) && !onRoute(p, routes, clearance)) slots.push({ p, side, t });
-                }
-
-                // Arcology palette — cool steel, glass and ceramic. Deliberately
-                // nothing like the stone browns of mountain terrain.
-                const palette = ['#5b6b8c', '#2a7f8f', '#8892a8', '#3c4d70', '#6d7ea3'];
-                const roadA: Pt = [cx0 - dirX * reach, cy0 - dirY * reach];
-                const roadB: Pt = [cx0 + dirX * reach, cy0 + dirY * reach];
-
-                /**
-                 * An isometric tower: three shaded faces, glazing bands up the
-                 * sunlit side, a lit crown. Reads as built volume, not a smudge.
-                 */
-                const building = (p: Pt, h: number, w: number, c: string, key: React.Key, lit: boolean) => {
-                    const d = w * 0.85;
-                    const faces = isoBox(p[0], p[1], w, d, h);
-                    const [top, left, right] = isoShades(c);
-                    const bands = Math.max(0, Math.min(4, Math.floor(h / (s * 0.42))));
-                    return (
-                        <g key={key}>
-                            {/* ground shadow anchors the block to the district */}
-                            <ellipse cx={p[0]} cy={p[1] + d * 0.35} rx={w * 1.15} ry={w * 0.5} fill="#020617" opacity={0.28} />
-                            <polygon points={faces.left} fill={left} />
-                            <polygon points={faces.right} fill={right} />
-                            <polygon points={faces.top} fill={top} stroke="#0f172a" strokeWidth={0.35} />
-                            {/* glazing: horizontal bands climbing the right face */}
-                            {Array.from({ length: bands }, (_, b) => {
-                                const z = h * ((b + 0.7) / (bands + 0.5));
-                                const f = isoBox(p[0], p[1], w, d, z);
-                                const pts = f.right.split(' ');
-                                return (
-                                    <line
-                                        key={b}
-                                        x1={pts[0].split(',')[0]} y1={pts[3].split(',')[1]}
-                                        x2={pts[1].split(',')[0]} y2={pts[2].split(',')[1]}
-                                        stroke="#a5f3fc" strokeWidth={Math.max(0.4, s * 0.05)} opacity={0.45}
-                                    />
-                                );
-                            })}
-                            {lit && (
-                                <circle
-                                    cx={p[0]} cy={p[1] + (w - d) * 0.5 - h - s * 0.08} r={Math.max(0.7, s * 0.09)}
-                                    fill="#fbbf24" className="bm-twinkle"
-                                    style={{ animationDelay: `${(Number(key) || 0) * 0.7}s` }}
-                                />
-                            )}
-                        </g>
-                    );
-                };
-
-                return (
-                    <>
-                        {/* main street (glowing at night) + cross street on big cities */}
-                        <line x1={roadA[0]} y1={roadA[1]} x2={roadB[0]} y2={roadB[1]} stroke="#1f2937" strokeWidth={s * 0.28} strokeLinecap="round" />
-                        <line x1={roadA[0]} y1={roadA[1]} x2={roadB[0]} y2={roadB[1]} stroke="#fbbf24" strokeWidth={s * 0.06}
-                            strokeDasharray={`${s * 0.18} ${s * 0.3}`} opacity={0.55} className="bm-glow" />
-                        {tier >= 2 && (
-                            <line x1={cx0 - perpX * reach * 0.55} y1={cy0 - perpY * reach * 0.55}
-                                x2={cx0 + perpX * reach * 0.55} y2={cy0 + perpY * reach * 0.55}
-                                stroke="#1f2937" strokeWidth={s * 0.2} strokeLinecap="round" opacity={0.85} />
-                        )}
-
-                        {/* Building stock: tower-heavy — this is a CITY. Talls
-                            dominate the core, mid-rises fill the rest. Blocks are
-                            depth-sorted so nearer towers overlap farther ones. */}
-                        {(() => {
-                            type Block = { p: Pt; h: number; w: number; c: string; key: string; lit: boolean };
-                            const blocks: Block[] = [];
-                            slots.forEach((slot, i) => {
-                                const central = Math.abs(slot.t) < 0.6;
-                                const isTall = tier >= 1 && central && i % 3 !== 2;
-                                const h = isTall
-                                    ? s * (1.4 + r() * 1.1 + tier * 0.15)
-                                    : s * (0.6 + r() * 0.6 + tier * 0.15);
-                                blocks.push({
-                                    p: slot.p, h, w: s * (0.34 + r() * 0.24),
-                                    c: palette[i % palette.length], key: `b-${i}`, lit: i % 2 === 0,
-                                });
-                                // Second row behind downtown: depth without clutter.
-                                if (tier >= 2 && i % 3 === 0) {
-                                    const q: Pt = [slot.p[0] + perpX * slot.side * s * 0.8, slot.p[1] + perpY * slot.side * s * 0.8];
-                                    if (inside(q) && !onRoute(q, routes, clearance)) {
-                                        blocks.push({
-                                            p: q, h: s * (0.9 + r() * 0.9), w: s * 0.34,
-                                            c: palette[(i + 2) % palette.length], key: `b2-${i}`, lit: false,
-                                        });
-                                    }
-                                }
-                            });
-                            return blocks
-                                .sort((a, b) => a.p[1] - b.p[1])
-                                .map(bl => building(bl.p, bl.h, bl.w, bl.c, bl.key, bl.lit));
-                        })()}
-
-                        {/* industrial edge: warehouse + chimney at the end of the street (city and up) */}
-                        {tier >= 2 && (() => {
-                            const p: Pt = [roadB[0] - dirX * s * 0.4, roadB[1] - dirY * s * 0.4];
-                            if (!inside(p)) return null;
-                            return (
-                                <g>
-                                    <rect x={p[0] - s * 0.55} y={p[1] - s * 0.4} width={s * 1.0} height={s * 0.45} fill="#57534e" />
-                                    <path d={`M ${p[0] - s * 0.6} ${p[1] - s * 0.4} l ${s * 0.55} ${-s * 0.22} l ${s * 0.55} ${s * 0.22} Z`} fill="#78716c" />
-                                    <rect x={p[0] + s * 0.55} y={p[1] - s * 0.95} width={s * 0.14} height={s * 1.0} fill="#44403c" />
-                                    <circle cx={p[0] + s * 0.62} cy={p[1] - s * 1.05} r={s * 0.1} fill="#cbd5e1" className="bm-smoke" />
-                                </g>
-                            );
-                        })()}
-
-                        {/* landmark: what this city is ABOUT */}
-                        {(() => {
-                            const p: Pt = [cx0 - perpX * s * 0.9, cy0 - perpY * s * 0.9];
-                            if (!inside(p) || tier === 0) return null;
-                            if (capital) {
-                                // grand civic dome + banner — unmistakably the seat of power
-                                return (
-                                    <g>
-                                        <rect x={p[0] - s * 0.7} y={p[1] - s * 0.35} width={s * 1.4} height={s * 0.4} fill="#e7e5e4" />
-                                        <path d={`M ${p[0] - s * 0.45} ${p[1] - s * 0.35} A ${s * 0.45} ${s * 0.45} 0 0 1 ${p[0] + s * 0.45} ${p[1] - s * 0.35}`} fill="#facc15" />
-                                        {[-0.5, -0.25, 0, 0.25, 0.5].map((o, j) => (
-                                            <line key={j} x1={p[0] + o * s} y1={p[1] + s * 0.05} x2={p[0] + o * s} y2={p[1] - s * 0.32} stroke="#a8a29e" strokeWidth={s * 0.06} />
-                                        ))}
-                                        <line x1={p[0]} y1={p[1] - s * 0.8} x2={p[0]} y2={p[1] - s * 1.2} stroke="#e7e5e4" strokeWidth={s * 0.05} />
-                                        <path d={`M ${p[0]} ${p[1] - s * 1.2} l ${s * 0.3} ${s * 0.1} l ${-s * 0.3} ${s * 0.1} Z`} fill="#facc15" />
-                                    </g>
-                                );
-                            }
-                            const pickLm = Math.floor(r() * 3);
-                            if (pickLm === 0) {
-                                // monument obelisk on a plaza
-                                return (
-                                    <g>
-                                        <rect x={p[0] - s * 0.45} y={p[1] - s * 0.06} width={s * 0.9} height={s * 0.14} fill="#94a3b8" opacity={0.6} />
-                                        <path d={`M ${p[0] - s * 0.08} ${p[1]} L ${p[0] - s * 0.03} ${p[1] - s * 1.05} L ${p[0] + s * 0.03} ${p[1] - s * 1.05} L ${p[0] + s * 0.08} ${p[1]} Z`} fill="#e7e5e4" />
-                                    </g>
-                                );
-                            }
-                            if (pickLm === 1) {
-                                // financial spire: glass wedge
-                                return (
-                                    <g>
-                                        <path d={`M ${p[0] - s * 0.3} ${p[1]} L ${p[0]} ${p[1] - s * 1.4} L ${p[0] + s * 0.3} ${p[1]} Z`} fill="#0ea5e9" opacity={0.9} />
-                                        <line x1={p[0]} y1={p[1] - s * 1.4} x2={p[0]} y2={p[1] - s * 1.65} stroke="#7dd3fc" strokeWidth={s * 0.05} />
-                                    </g>
-                                );
-                            }
-                            // rail station: platform hall + tracks stub
-                            return (
-                                <g>
-                                    <rect x={p[0] - s * 0.55} y={p[1] - s * 0.35} width={s * 1.1} height={s * 0.35} fill="#7c5c3e" />
-                                    <path d={`M ${p[0] - s * 0.62} ${p[1] - s * 0.35} A ${s * 0.62} ${s * 0.45} 0 0 1 ${p[0] + s * 0.62} ${p[1] - s * 0.35}`} fill="#a8a29e" />
-                                    <line x1={p[0] - s * 0.7} y1={p[1] + s * 0.12} x2={p[0] + s * 0.7} y2={p[1] + s * 0.12} stroke="#64748b" strokeWidth={s * 0.07} strokeDasharray={`${s * 0.1} ${s * 0.12}`} />
-                                </g>
-                            );
-                        })()}
-                    </>
-                );
-            }
+            case 'urban':
+                // The street grid, density by place in the settlement, parks,
+                // the plaza and the dome: CityScenery.tsx.
+                return renderCity({
+                    polygon, s, rand: r,
+                    tier: city?.tier ?? (ring <= 1 ? 'downtown' : ring <= 3 ? 'city' : 'suburb'),
+                    seat: city?.seat ?? false,
+                    roadBearing, exits: city?.exits ?? [], water: water ?? [],
+                    routes, clearance, keepOut,
+                });
             default:
                 return null;
         }
-    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate, inhabited, settlers]);
+    }, [terrain, polygon, seedKey, s, ring, capital, roadBearing, keepOut, routes, clearance, climate, inhabited, settlers, city, water]);
 
     if (!content) return null;
     return <g pointerEvents="none" opacity={dimmed ? 0.12 : 0.9}>{content}</g>;

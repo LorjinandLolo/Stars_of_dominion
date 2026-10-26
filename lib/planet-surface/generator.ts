@@ -392,6 +392,103 @@ function generateTerrain(rand: () => number, archetype: PlanetArchetype, seeds: 
     return out;
 }
 
+// ─── Cities ─────────────────────────────────────────────────────────────────
+// The climate pass gives a settled world little more than its capital core
+// (district 0 and its three most habitable neighbours), wherever the noise
+// put it: a capital could sit on a dry plateau with the river two districts
+// away, and the rest of the world had no town at all. growCities lays the
+// settlement out the way it grows:
+//   - the capital core takes the neighbours a city would grow into — the
+//     river, the coast, open ground — instead of the merely habitable;
+//   - the capital sprawls a district or two further on the richer worlds;
+//   - and a town or two stands where people gather: a river crossing, a
+//     harbour, best of all a river mouth.
+// Kept small on purpose: urban ground fights at x1.8 (district-battle.ts),
+// so every town is a strongpoint someone has to take.
+
+/** How good each kind of ground is to build a city on; unlisted ground is never built on. */
+const CITY_GROUND: Partial<Record<TerrainType, number>> = { urban: 1, plains: 1, forest: 0.55, desert: 0.5 };
+/** Districts the capital grows beyond its core: [any settled world, a homeworld]. */
+const CAPITAL_SPRAWL: Partial<Record<PlanetArchetype, [number, number]>> = {
+    continental: [1, 2], gaia: [1, 2], oceanic: [0, 1], jungle: [0, 1], swamp: [0, 1], montane: [0, 1], arid: [0, 1], frozen: [0, 1],
+};
+/** Towns a settled world has: [min, max]. */
+const TOWNS: Partial<Record<PlanetArchetype, [number, number]>> = {
+    continental: [1, 2], gaia: [1, 2], oceanic: [1, 2], jungle: [1, 1], swamp: [1, 1], montane: [1, 1], arid: [0, 1], frozen: [0, 1],
+};
+/** Hops a new town keeps from any city. */
+const TOWN_SPACING = 3;
+
+function growCities(planetId: string, archetype: PlanetArchetype, terrain: TerrainType[], seeds: SeedPoint[], neighbors: number[][], fields: TerrainFields, homeworld: boolean): { moved: Map<number, TerrainType>; towns: Set<number> } {
+    const moved = new Map<number, TerrainType>();
+    const towns = new Set<number>();
+    const n = terrain.length;
+    const was = [...terrain];
+    if (was[0] !== 'urban') return { moved, towns };
+    const rand = mulberry32(hashString(planetId + ':cities'));
+    const adj: number[][] = terrain.map(() => []);
+    neighbors.forEach((ns, i) => ns.forEach(j => { if (!adj[i].includes(j)) adj[i].push(j); if (!adj[j].includes(i)) adj[j].push(i); }));
+    // Rivers do not care which open ground is city and which is field
+    // (flowRivers reads only sea, high ground and ice), so the rivers the
+    // finished world will have are known now.
+    const rivers = new Set(flowRivers(planetId, archetype, terrain, neighbors, fields).river.keys());
+    const coast = (i: number) => adj[i].some(j => was[j] === 'ocean');
+    const hops = new Array<number>(n).fill(Infinity);
+    hops[0] = 0;
+    for (const q = [0]; q.length;) { const c = q.shift()!; for (const j of adj[c]) if (hops[j] === Infinity && was[j] !== 'ocean') { hops[j] = hops[c] + 1; q.push(j); } }
+    // The ground a city can take: open land that is not some other city's
+    // already (the climate's own urban districts beyond the core stay put).
+    const core0 = adj[0].filter(j => was[j] === 'urban');
+    const buildable = (i: number) => i !== 0 && (CITY_GROUND[was[i]] !== undefined) && (was[i] !== 'urban' || core0.includes(i));
+    const site = (i: number) => (CITY_GROUND[was[i] === 'urban' ? 'plains' : was[i]] ?? 0)
+        + (rivers.has(i) ? 0.9 : 0) + (coast(i) ? 0.6 : 0) + (adj[i].some(j => rivers.has(j)) ? 0.25 : 0) + rand() * 0.3;
+
+    // 1. The core: district 0 and the best neighbours to grow into. A core
+    //    neighbour the city does not keep goes back to open ground.
+    const coreWant = core0.length;
+    const core = adj[0].filter(buildable).map(i => ({ i, s: site(i) })).sort((a, b) => b.s - a.s).slice(0, coreWant).map(x => x.i);
+    const city = new Set<number>([0, ...core]);
+    // 2. The capital sprawls along its best edge.
+    const [any, home] = CAPITAL_SPRAWL[archetype] ?? [0, 0];
+    for (let k = homeworld ? home : any; k > 0; k--) {
+        const edge = [...Array(n).keys()].filter(i => !city.has(i) && buildable(i) && adj[i].some(j => city.has(j)));
+        const best = edge.map(i => ({ i, s: site(i) - 0.35 * hops[i] })).sort((a, b) => b.s - a.s)[0];
+        if (!best) break;
+        city.add(best.i);
+    }
+    // 3. Towns at the crossings and harbours, spaced from every city.
+    const [tLo, tHi] = TOWNS[archetype] ?? [0, 0];
+    const within = (i: number, r: number) => {
+        const d = new Map<number, number>([[i, 0]]);
+        for (const q = [i]; q.length;) { const c = q.shift()!; if (d.get(c)! >= r) continue; for (const j of adj[c]) if (!d.has(j)) { d.set(j, d.get(c)! + 1); q.push(j); } }
+        return [...d.keys()];
+    };
+    for (let k = tLo + Math.floor(rand() * (tHi - tLo + 1)); k > 0; k--) {
+        const settled = [...Array(n).keys()].filter(i => city.has(i) || was[i] === 'urban');
+        const taken = new Set(settled.flatMap(i => within(i, TOWN_SPACING - 1)));
+        const best = [...Array(n).keys()].filter(i => !taken.has(i) && buildable(i))
+            .map(i => ({ i, s: site(i) + (rivers.has(i) && coast(i) ? 0.6 : 0) }))
+            .sort((a, b) => b.s - a.s)[0];
+        // A town needs a reason to be there: water, or good open ground.
+        if (!best || best.s < 1.4) break;
+        city.add(best.i);
+        towns.add(best.i);
+    }
+
+    // Apply. A core neighbour the city gave up is open ground again.
+    for (const i of city) {
+        if (was[i] === 'urban') continue;
+        terrain[i] = 'urban';
+        moved.set(i, was[i]);
+    }
+    for (const i of core0) {
+        if (city.has(i)) continue;
+        terrain[i] = 'plains';
+        moved.set(i, 'urban');
+    }
+    return { moved, towns };
+}
+
 // ─── Region generation ──────────────────────────────────────────────────────
 
 const REGION_KIND_BY_TERRAIN: Partial<Record<TerrainType, RegionKind>> = {
@@ -634,6 +731,12 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
     const founded = !!(tags?.includes('outpost') || tags?.includes('colony'));
     const fields: TerrainFields = { elevation: [], moisture: [] };
     const terrain = generateTerrain(rand, archetype, seeds, neighbors, landBias, settled, founded, fields);
+    // Cities grow where people would build them: out from the capital over
+    // open ground, along the rivers and the coast, with towns at the
+    // crossings and the ports. Settled worlds only; own rng.
+    const cities = settled && archetype !== 'arcology'
+        ? growCities(planetId, archetype, terrain, seeds, neighbors, fields, landBias)
+        : { moved: new Map<number, TerrainType>(), towns: new Set<number>() };
     const { regions, regionOf } = generateRegions(rand, terrain, seeds, settled);
 
     const rough = (t: TerrainType) => t === 'mountains' || t === 'volcanic' || t === 'ocean';
@@ -666,6 +769,8 @@ export function generateSurface(planetId: string, typeHint?: string, tags?: stri
         ...(features.river.has(i) ? { river: true, ...(features.river.get(i)! >= 0 ? { riverTo: features.river.get(i)! } : {}), riverFlow: features.flow.get(i) ?? 0, ...(features.lakes.has(i) ? { lake: true } : {}) } : {}),
         ...(features.springs.has(i) ? { riverTo: features.springs.get(i)! } : {}),
         ...(features.deposit.has(i) ? { deposit: features.deposit.get(i)! } : {}),
+        ...(cities.moved.has(i) ? { placementTerrain: cities.moved.get(i)! } : {}),
+        ...(cities.towns.has(i) ? { town: true } : {}),
     }));
 
     const surface: PlanetSurface = { planetId, archetype, sectors, regions };
@@ -907,8 +1012,11 @@ export function autoPlaceBuilding(
             const idx = (startAt + step) % SURFACE_SECTOR_COUNT;
             if (occupied.has(idx)) continue;
             const s = surface.sectors[idx];
-            if (s.terrain === 'ocean' && !(pref && pref.includes('ocean'))) continue;
-            if (pass === 0 && pref && !pref.includes(s.terrain)) continue;
+            // The terrain the district had before the cities grew, so a legacy
+            // building lands where it always did.
+            const t = s.placementTerrain ?? s.terrain;
+            if (t === 'ocean' && !(pref && pref.includes('ocean'))) continue;
+            if (pass === 0 && pref && !pref.includes(t)) continue;
             return idx;
         }
     }

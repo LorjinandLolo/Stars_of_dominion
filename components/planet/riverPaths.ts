@@ -26,7 +26,13 @@ export interface RiverRibbon {
     shimmer: string;
     shimmerWidth: number;
 }
-export interface RiverShapes { ribbons: RiverRibbon[]; lakes: Array<{ key: string; d: string }>; deltas: Array<{ key: string; fan: string }> }
+export interface RiverShapes {
+    ribbons: RiverRibbon[];
+    lakes: Array<{ key: string; d: string }>;
+    deltas: Array<{ key: string; fan: string }>;
+    /** Every river's centreline and width, so scenery can keep off the water. */
+    lines: Array<{ pts: Pt[]; widths: number[] }>;
+}
 
 /** Width at the spring and per unit of riverFlow (board units). */
 const W_MIN = 1.1;
@@ -43,7 +49,7 @@ const f1 = (n: number) => n.toFixed(1);
 const hash = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
 /** Midpoint of the edge two cells share, or of their centres when they share none. */
-function portal(geo: SurfaceGeometry, a: number, b: number): Pt {
+export function portal(geo: SurfaceGeometry, a: number, b: number): Pt {
     const pa = geo.rawPolygons[a] ?? [], pb = geo.rawPolygons[b] ?? [];
     const shared = pa.filter(p => pb.some(q => Math.abs(p[0] - q[0]) < 0.6 && Math.abs(p[1] - q[1]) < 0.6));
     if (shared.length >= 2) return mid(shared[0], shared[1]);
@@ -113,6 +119,7 @@ export function buildRivers(surface: PlanetSurface, geo: SurfaceGeometry): River
 
     const ribbons: RiverRibbon[] = [];
     const deltas: RiverShapes['deltas'] = [];
+    const lines: RiverShapes['lines'] = [];
     const heads = nodes.filter(i => !(upstream.get(i)?.length));
     for (const head of heads) {
         // Down the stem until the sea, the end of the water, or a bigger river.
@@ -175,6 +182,7 @@ export function buildRivers(surface: PlanetSurface, geo: SurfaceGeometry): River
             if (end.kind === 'sea' && u > 0.85) w *= 1 + (u - 0.85) * 2.5;   // the estuary opens
             return w;
         });
+        lines.push({ pts: bent, widths });
         ribbons.push({
             key: `river-${head}`,
             water: ribbon(bent, widths),
@@ -234,5 +242,5 @@ export function buildRivers(surface: PlanetSurface, geo: SurfaceGeometry): River
         return { key: `lake-${s.index}`, d: `${d} Z` };
     }).filter((x): x is { key: string; d: string } => !!x);
 
-    return { ribbons, lakes, deltas };
+    return { ribbons, lakes, deltas, lines };
 }

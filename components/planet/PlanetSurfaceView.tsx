@@ -19,6 +19,8 @@ import DistrictScenery from './DistrictScenery';
 import BuildingMotif from './BuildingMotif';
 import WarLayer from './WarLayer';
 import RiverLayer from './RiverLayer';
+import { buildRivers, portal } from './riverPaths';
+import type { CityTier } from './CityScenery';
 import WarHud from './WarHud';
 import UnitPieces from './UnitPieces';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
@@ -261,6 +263,48 @@ export default function PlanetSurfaceView() {
         return m;
     }, [roads]);
 
+    // Rivers, built once: drawn by RiverLayer, and kept clear by the scenery.
+    const riverShapes = React.useMemo(() => (surface && geo) ? buildRivers(surface, geo) : null, [surface, geo]);
+    const waterBySector = React.useMemo(() => {
+        const m = new Map<number, Array<{ a: [number, number]; b: [number, number]; hw: number }>>();
+        if (!riverShapes || !geo) return m;
+        for (const line of riverShapes.lines) {
+            for (let k = 0; k + 1 < line.pts.length; k += 2) {
+                const a = line.pts[k], b = line.pts[Math.min(line.pts.length - 1, k + 2)];
+                const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+                const idx = geo.polygons.findIndex(poly => poly.length >= 3 && pointInPolygon(mid, poly));
+                if (idx < 0) continue;
+                const list = m.get(idx) ?? [];
+                list.push({ a, b, hw: line.widths[k] / 2 + 1.5 });
+                m.set(idx, list);
+            }
+        }
+        return m;
+    }, [riverShapes, geo]);
+    // Each urban district's place in the settlement (downtown, the ring
+    // around it, the suburbs, a town) and the borders its streets leave by.
+    const cityBySector = React.useMemo(() => {
+        const m = new Map<number, { tier: CityTier; seat: boolean; exits: [number, number][] }>();
+        if (!surface || !geo) return m;
+        const urban = (i: number) => surface.sectors[i]?.terrain === 'urban';
+        const hops = new Map<number, number>();
+        if (urban(0)) {
+            hops.set(0, 0);
+            for (const q = [0]; q.length;) {
+                const c = q.shift()!;
+                for (const j of geo.cellNeighbors[c] ?? []) if (urban(j) && !hops.has(j) && !surface.sectors[j].town) { hops.set(j, hops.get(c)! + 1); q.push(j); }
+            }
+        }
+        for (const sec of surface.sectors) {
+            if (sec.terrain !== 'urban') continue;
+            const h = hops.get(sec.index);
+            const tier: CityTier = sec.town ? 'town' : h === 0 ? 'downtown' : h === 1 ? 'city' : h !== undefined ? 'suburb' : (sec.ring <= 1 ? 'city' : 'town');
+            const exits = (geo.cellNeighbors[sec.index] ?? []).filter(urban).map(j => portal(geo, sec.index, j) as [number, number]);
+            m.set(sec.index, { tier, seat: sec.index === 0 && sec.regionId === 'region-capital', exits });
+        }
+        return m;
+    }, [surface, geo]);
+
     if (!surfacePlanetId || !planet || !surface || !geo) return null;
 
     // A destroyed world has no surface to show (lib/combat/planet-ruin.ts).
@@ -471,6 +515,8 @@ export default function PlanetSurfaceView() {
                                         ring={sec.ring}
                                         capital={sec.regionId === 'region-capital'}
                                         roadBearing={bearingBySector.get(sec.index) ?? null}
+                                        city={cityBySector.get(sec.index)}
+                                        water={waterBySector.get(sec.index)}
                                         routes={routesBySector.get(sec.index)}
                                         keepOut={occupancy.has(sec.index) ? {
                                             x: geo.centroids[sec.index][0],
@@ -601,7 +647,7 @@ export default function PlanetSurfaceView() {
                         </g>
 
                         {/* Rivers and lakes: drained from the land itself (generator flowRivers), drawn in riverPaths.ts */}
-                        {worldClimate !== 'glassed' && <RiverLayer surface={surface} geo={geo} />}
+                        {worldClimate !== 'glassed' && riverShapes && <RiverLayer shapes={riverShapes} />}
 
                         {/* Developments + markers */}
                         {surface.sectors.map(sec => {

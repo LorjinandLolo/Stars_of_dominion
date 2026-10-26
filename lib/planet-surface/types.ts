@@ -113,6 +113,15 @@ export interface SurfaceSector {
     riverFlow?: number;
     /** Water pooled in a basin on its way down: drawn as a lake, still a river district. */
     lake?: boolean;
+    /**
+     * What this district was before the cities grew (generator growCities),
+     * set only where that moved it. Legacy buildings with no stored district
+     * are auto-placed by terrain (autoPlaceBuilding), and must keep landing
+     * where they always did.
+     */
+    placementTerrain?: TerrainType;
+    /** Part of a town away from the capital city (growCities): a river crossing or a port. */
+    town?: boolean;
     /** What is in the ground here, if anything worth digging for. */
     deposit?: DepositKind;
 }

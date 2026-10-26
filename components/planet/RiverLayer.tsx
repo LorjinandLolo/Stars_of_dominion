@@ -7,16 +7,14 @@
 // board are routes.
 
 import React from 'react';
-import type { PlanetSurface } from '@/lib/planet-surface/types';
-import type { SurfaceGeometry } from './surfaceGeometry';
-import { buildRivers } from './riverPaths';
+import type { RiverShapes } from './riverPaths';
 
 const BANK = '#0c4a6e';
 const WATER = '#0ea5e9';
 const CURRENT = '#e0f2fe';
 
-export default function RiverLayer({ surface, geo }: { surface: PlanetSurface; geo: SurfaceGeometry }) {
-    const shapes = React.useMemo(() => buildRivers(surface, geo), [surface, geo]);
+/** `shapes` from buildRivers (riverPaths.ts), built once by the surface view and shared with the scenery. */
+export default function RiverLayer({ shapes }: { shapes: RiverShapes }) {
     return (
         <g pointerEvents="none">
             {shapes.deltas.map(d => (
