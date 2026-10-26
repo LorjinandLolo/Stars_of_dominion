@@ -20,6 +20,7 @@ import { defaultGarrison } from '../combat/siege/garrison';
 import { fortificationLevelFor } from '../combat/siege/strongpoints';
 import { createOutpostState } from './outpost-map';
 import { computeBalance, countModules, log, moduleActive, runShift } from './outpost-sim';
+import { ensureRoster, killColonists, listNames } from './colonists';
 import { expireCrises, openCrisisOfKind, resolveCrisis, rollCrisis, type CrisisContext } from './crises';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { isAtWar, shiftRivalry } from '../diplomacy/offer-service';
@@ -391,7 +392,9 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
             state.food = Math.max(state.food, 8);
             state.air = Math.max(state.air, 6);
             state.morale = 50;
-            log(state, 'A new crew landed to restart the outpost.', 'good');
+            state.roster = [];
+            const crew = ensureRoster(state);
+            log(state, `A new crew landed to restart the outpost: ${listNames(crew.map(c => c.name))}.`, 'good');
             return { ok: true };
         }
         case 'experiment': {
@@ -544,14 +547,13 @@ export function outpostBombarded(world: GameWorldState, planet: AnyPlanet, attac
             cell.downUntilShift = Math.max(cell.downUntilShift ?? 0, state.shift + 3);
         }
     }
-    const dead = sheltered ? 0 : Math.min(state.colonists, 1 + Math.floor(state.colonists * 0.1));
-    state.colonists -= dead;
-    state.stats.deaths += dead;
+    const killed = sheltered ? [] : killColonists(state, Math.min(state.colonists, 1 + Math.floor(state.colonists * 0.1)), 'killed in the bombardment', rng);
+    const dead = killed.length;
     state.effects.push({ kind: 'morale', value: -10, untilShift: state.shift + 3 });
     const what = names.length ? `${names.join(' and ')} hit` : 'the domes rattled';
-    log(state, sheltered ? `Bombardment: everyone was in the bunker. ${what}.` : `Bombardment: ${what}, ${dead} dead.`, 'bad');
+    log(state, sheltered ? `Bombardment: everyone was in the bunker. ${what}.` : `Bombardment: ${what}. ${listNames(killed)} ${dead === 1 ? 'is' : 'are'} dead.`, 'bad');
     notify(world, planet.ownerId, `outpost-bombard-${planet.id}-${world.nowSeconds}`, `${planet.name} under bombardment`,
-        sheltered ? `The colonists sheltered in the bunker. ${what}.` : `${what}. ${dead} colonist${dead === 1 ? '' : 's'} killed. A bunker would have sheltered them.`, 'urgent', planet.id);
+        sheltered ? `The colonists sheltered in the bunker. ${what}.` : `${what}. ${listNames(killed)} killed. A bunker would have sheltered them.`, 'urgent', planet.id);
     void attackerId;
 }
 

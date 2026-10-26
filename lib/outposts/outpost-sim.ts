@@ -8,6 +8,7 @@ import {
     MODULES, cellOpen, neighborsOf, mineYield, COLONISTS_PER_UNIT, AIR_RESERVE_MAX, CHARTER_BONUS,
     PRISON_LABOUR_METALS, LOG_KEEP,
 } from './outpost-catalog';
+import { ensureRoster, healRoster, killColonists, leaveColonists, listNames, TRAIT_LABEL } from './colonists';
 
 export interface BalanceContext {
     /** The world carries rare minerals: ore yields rares too. */
@@ -56,8 +57,10 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
         .filter(x => x.def && moduleActive(state, x.i))
         .sort((a, b) => a.def!.priority - b.def!.priority || a.i - b.i);
 
-    // Workers first, in priority order.
-    let workersFree = state.colonists;
+    // Workers first, in priority order. The hurt and the sick do not work
+    // (colonists.ts); a roster-less save counts everyone.
+    const unfitCount = state.roster ? state.roster.filter(c => c.status !== 'well').length : 0;
+    let workersFree = Math.max(0, state.colonists - unfitCount);
     let workersNeeded = 0;
     const staffed: typeof candidates = [];
     const idle: OutpostBalance['idle'] = [];
@@ -182,6 +185,11 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
     });
     state.effects = state.effects.filter(e => e.untilShift > state.shift);
 
+    // Scars fade with time (crises.ts); the hurt and the sick mend (colonists.ts).
+    if (state.scars) state.scars = state.scars.filter(s => s.untilShift > state.shift);
+    ensureRoster(state);
+    for (const name of healRoster(state)) log(state, `${name} is back on their feet.`, 'good');
+
     const balance = computeBalance(state, ctx);
     let deaths = 0, arrivals = 0, departures = 0;
 
@@ -190,9 +198,10 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
     if (state.air > AIR_RESERVE_MAX) state.air = AIR_RESERVE_MAX;
     if (state.air < 0) {
         const lost = Math.min(state.colonists, Math.ceil(-state.air));
-        deaths += lost;
         state.air = 0;
-        log(state, `The air ran out in the outer domes. ${lost} dead.`, 'bad');
+        const names = killColonists(state, lost, 'suffocated when the air ran out');
+        deaths += names.length;
+        log(state, `The air ran out in the outer domes. ${listNames(names)} ${names.length === 1 ? 'is' : 'are'} dead.`, 'bad');
     } else if (balance.airMade < balance.airUsed) {
         log(state, `Air reserve falling: ${state.air} left.`, 'bad');
     }
@@ -201,9 +210,12 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
     state.food += balance.foodMade - balance.foodUsed;
     if (state.food < 0) {
         state.food = 0;
-        if (state.colonists - deaths > 0) { deaths += 1; log(state, 'The stores are empty. A colonist starved.', 'bad'); }
+        if (state.colonists > 0) {
+            const names = killColonists(state, 1, 'starved');
+            deaths += names.length;
+            log(state, `The stores are empty. ${listNames(names)} starved.`, 'bad');
+        }
     }
-    state.colonists = Math.max(0, state.colonists - deaths);
 
     // Output into the warehouse, up to its capacity.
     let held = Object.values(state.warehouse).reduce((s, n) => s + n, 0);
@@ -220,9 +232,16 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
 
     // People leave a miserable outpost, and come to a good one.
     if (state.morale < 25 && state.colonists > 0) {
-        departures = 1;
-        state.colonists -= 1;
-        log(state, 'A colonist took the supply shuttle home and did not come back.', 'bad');
+        if (state.colonists === 1) {
+            departures = 1;
+            state.colonists = 0;
+            if (state.roster) state.roster.length = 0;
+            log(state, 'The last colonist took the supply shuttle home.', 'bad');
+        } else {
+            const names = leaveColonists(state, 1);
+            departures = names.length;
+            log(state, `${listNames(names)} took the supply shuttle home and did not come back.`, 'bad');
+        }
     } else if (!ctx.besieged && state.colonists < balance.housing && state.food > 0 && state.air > 0 && state.morale >= 40) {
         arrivals = 1
             + (countModules(state, 'dock') > 0 ? 1 : 0)
@@ -230,9 +249,11 @@ export function runShift(state: OutpostState, ctx: BalanceContext = {}): ShiftRe
             + (state.charter === 'settlement' ? 1 : 0);
         arrivals = Math.min(arrivals, balance.housing - state.colonists);
         state.colonists += arrivals;
-        if (arrivals > 0) log(state, `${arrivals} new colonist${arrivals === 1 ? '' : 's'} arrived.`, 'good');
+        const named = ensureRoster(state);
+        if (arrivals > 0) log(state, `${listNames(named.map(c => `${c.name} (${TRAIT_LABEL[c.trait].toLowerCase()})`))} arrived.`, 'good');
     }
 
-    state.stats.deaths += deaths;
+    // killColonists already counted its own; the count must match the names.
+    ensureRoster(state);
     return { balance, deaths, arrivals, departures, abandoned: state.colonists <= 0 };
 }

@@ -53,7 +53,35 @@ deadline of two shifts. Unanswered, the outpost's steward picks: with a
 governor on the world the sensible answer, without one the passive one.
 Catalog in `crises.ts`: dust storm, meteor shower, air leak, sickness, reactor
 fault, supply delay, miners' strike, prison riot, lab accident, rich vein,
-ruins, homesickness, raiders.
+ruins, homesickness, raiders — and four that only follow a scar or a person:
+sabotage (after a broken strike), breakout (after a starved or stormed cell
+block), a grave to dig (after a death outside), and a drunk's accident.
+
+## People
+
+Colonists are named (`colonists.ts`, `state.roster`): one trait each — medic,
+engineer, miner, botanist, veteran, zealot, drunk, scholar — and a status. A
+crisis names who is in the strike zone, who went down with the fever, who
+speaks for the crews; a death is a grave with a name (`state.graves`) and the
+log says who. The hurt and the sick do not work until they mend (two or three
+shifts; one with a medbay, faster with a medic). Traits change the odds: an
+engineer comes back from a breach and patches a reactor with less risk, a
+medic treats a fever like a medbay, a veteran keeps the raiders fooled and
+holds a riot, a botanist stretches the stores, a zealot keeps people from
+petitioning to leave, a scholar pushes experiments through, a drunk has
+accidents. `state.colonists` stays the number the shift balances; the roster
+is reconciled to it after every shift, so old outposts simply grow one.
+
+## Scars
+
+An answer leaves something behind (`state.scars`, `crises.ts`): a dome sealed
+and not mended leaks again (and the next breach says so); a reactor patched
+live weeps until it is scrammed and inspected; crews broken in a strike go
+sullen and cut couplings; cell blocks starved out or stormed plan a breakout;
+promises made in a petition are quoted back; a body outside wants burying
+before anyone settles. A scar doubles the odds of its crisis, opens the
+follow-up, and clears with the mending answer (repair, scram, a raise, a
+settlement, a festival, a service) or with time (4–10 shifts).
 
 ## Charter
 

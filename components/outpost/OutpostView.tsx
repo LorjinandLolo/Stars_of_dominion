@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { tierName, BASE_REQUIREMENTS, BARRACKS_TROOP_CAP, drydockYardTier } from '@/lib/outposts/outpost-catalog';
 import { outpostAdvice } from '@/lib/outposts/outpost-advice';
+import { TRAIT_LABEL, TRAIT_BLURB } from '@/lib/outposts/colonists';
 import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 /** How a crisis reads: an opportunity, a danger, or something that can kill. */
@@ -665,6 +666,35 @@ export default function OutpostView() {
                 </div>
 
                 {tutorialOpen && <OutpostTutorial onClose={closeTutorial} />}
+
+                {/* People: who is here, what they are good at, who is laid up; and who is in the ground */}
+                {(state.roster?.length ?? 0) > 0 && (
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-2">People ({state.roster!.length})</div>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
+                            {state.roster!.map(c => (
+                                <li key={c.id} className="flex items-center justify-between gap-2 text-[11px]" title={TRAIT_BLURB[c.trait]}>
+                                    <span className={c.status === 'well' ? 'text-slate-200' : 'text-amber-300'}>{c.name}</span>
+                                    <span className="text-slate-500 whitespace-nowrap">
+                                        {TRAIT_LABEL[c.trait].toLowerCase()}{c.status !== 'well' && <span className="text-amber-400 ml-1">· {c.status}</span>}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                        {(state.scars?.length ?? 0) > 0 && (
+                            <ul className="mt-2 pt-2 border-t border-slate-800 space-y-0.5">
+                                {state.scars!.map(s => (
+                                    <li key={s.kind} className="text-[11px] text-amber-200/90">{s.text} <span className="text-slate-600 font-mono">({s.untilShift - state.shift} shifts)</span></li>
+                                ))}
+                            </ul>
+                        )}
+                        {(state.graves?.length ?? 0) > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-500">
+                                Remembered: {[...state.graves!].reverse().slice(0, 6).map(g => `${g.name} (${g.how}, shift ${g.shift})`).join('; ')}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Log */}
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">

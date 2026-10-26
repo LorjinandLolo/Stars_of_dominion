@@ -18,7 +18,8 @@ import { outpostAdvice } from '../lib/outposts/outpost-advice';
 import { BARRACKS_TROOP_CAP, BASE_FORTIFICATION, BATTERY_FORTIFICATION } from '../lib/outposts/outpost-catalog';
 import { extractFactionShard, cleanWorldForSave, injectOutposts } from '../lib/persistence/save-service';
 import { projectShardForCaller } from '../lib/persistence/shard-privacy';
-import { expireCrises, rollCrisis, CRISIS_KINDS } from '../lib/outposts/crises';
+import { expireCrises, rollCrisis, CRISIS_KINDS, crisisWeight, hasScar, openCrisisOfKind, resolveCrisis } from '../lib/outposts/crises';
+import { ensureRoster, killColonists, TRAITS } from '../lib/outposts/colonists';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
 import { RNG } from '../lib/trade-system/rng';
 import { registry as techRegistry } from '../lib/tech/engine';
@@ -425,6 +426,189 @@ test('drydocks make the base a shipyard; batteries and the base dig in', () => {
     const before = fortificationLevelFor({ ...p, outpost: { ...p.outpost, base: false, cells: [] } });
     p.outpost.cells[11].module = 'battery'; p.outpost.cells[11].terrain = 'flat';
     assert.strictEqual(fortificationLevelFor(p), before + BASE_FORTIFICATION + BATTERY_FORTIFICATION);
+    world.construction.planets.delete(p.id);
+});
+
+// ─── People and scars ────────────────────────────────────────────────────────
+
+const crisisCtx = (seed: number, extra: Partial<any> = {}): any => ({
+    rng: new RNG(seed), hasGovernor: false, charge: () => true, prisoners: 0, losePrisoners: () => 0,
+    researchBoost: () => null, experimentHours: () => 1, raidersNear: false, ...extra,
+});
+const dice = (...rolls: number[]) => { let i = 0; return { next: () => rolls[Math.min(i++, rolls.length - 1)], nextInt: (a: number, b: number) => a + Math.floor(rolls[Math.min(i++, rolls.length - 1)] * (b - a + 1)), check: (p: number) => rolls[Math.min(i++, rolls.length - 1)] < p } as any; };
+
+test('the landing crew has names and traits, and the roster follows the count', () => {
+    const s = createOutpostState({ id: 'p-people' }, 0);
+    assert.strictEqual(s.roster!.length, 3);
+    assert.ok(s.roster!.every(c => c.name && TRAITS.includes(c.trait) && c.status === 'well'));
+    assert.match(s.log[0].text, new RegExp(s.roster![0].name));
+    const again = createOutpostState({ id: 'p-people' }, 0);
+    assert.deepStrictEqual(again.roster!.map(c => c.name), s.roster!.map(c => c.name), 'the same world lands the same crew');
+    s.colonists = 6;
+    const added = ensureRoster(s);
+    assert.strictEqual(added.length, 3);
+    assert.strictEqual(s.roster!.length, 6);
+    s.colonists = 4;
+    ensureRoster(s);
+    assert.strictEqual(s.roster!.length, 4, 'the roster shrinks to the count');
+});
+
+test('an old outpost without a roster grows one on its next shift', () => {
+    const s = createOutpostState({ id: 'p-old' }, 0);
+    delete s.roster; delete s.graves; delete s.scars;
+    s.colonists = 5;
+    runShift(s);
+    assert.strictEqual(s.roster!.length, 5);
+    assert.ok(Array.isArray(s.graves) && Array.isArray(s.scars));
+});
+
+test('a death is a grave with a name, and the log says who', () => {
+    const s = createOutpostState({ id: 'p-grave' }, 0);
+    s.colonists = 4; ensureRoster(s);
+    const first = s.roster![0].name;
+    s.roster![0].status = 'hurt';
+    const names = killColonists(s, 1, 'test', new RNG(1));
+    assert.deepStrictEqual(names, [first], 'the hurt die first');
+    assert.strictEqual(s.colonists, 3);
+    assert.strictEqual(s.roster!.length, 3);
+    assert.strictEqual(s.stats.deaths, 1);
+    assert.strictEqual(s.graves![0].name, first);
+    // Starvation through the shift names the victim too.
+    s.food = 0; s.cells = s.cells.map(c => ({ terrain: c.terrain })); s.cells[CENTER_CELL].module = 'hub';
+    const before = s.colonists;
+    runShift(s);
+    assert.strictEqual(s.colonists, before - 1);
+    assert.ok(s.log.some(l => /starved/.test(l.text) && s.graves!.some(g => l.text.includes(g.name))), s.log[0].text);
+});
+
+test('the hurt and the sick do not work, and mend faster with a medbay', () => {
+    const s = createOutpostState({ id: 'p-hurt' }, 0);
+    s.colonists = 4; ensureRoster(s);
+    const well = computeBalance(s).workersFree;
+    s.roster![0].status = 'hurt'; s.roster![0].sinceShift = s.shift;
+    assert.strictEqual(computeBalance(s).workersFree, well - 1);
+    runShift(s); // 1 shift: still hurt
+    assert.strictEqual(s.roster![0].status, 'hurt');
+    runShift(s); // 2 shifts: mended
+    assert.strictEqual(s.roster![0].status, 'well');
+    assert.ok(s.log.some(l => /back on their feet/.test(l.text)));
+});
+
+test('a breach sealed and not mended scars the outpost: it leaks again, and a repair clears it', () => {
+    const s = createOutpostState({ id: 'p-seal' }, 0);
+    s.colonists = 6; s.shift = 5; ensureRoster(s);
+    s.cells[CENTER_CELL + 1].module = 'habitat';
+    s.roster!.forEach(c => { if (c.trait === 'engineer') c.trait = 'miner'; });
+    const ctx = crisisCtx(1);
+    const w0 = crisisWeight('air_leak', s, ctx);
+    s.crises.push({ id: 'air_leak-5', kind: 'air_leak', title: '', text: '', options: [{ id: 'seal', label: '', detail: '' }, { id: 'repair', label: '', detail: '' }, { id: 'volunteers', label: '', detail: '' }], openedShift: 5, deadlineShift: 7, fallback: 'none', steward: 'repair' });
+    assert.ok(resolveCrisis(s, ctx, 'air_leak-5', 'seal'));
+    assert.ok(hasScar(s, 'sealed_dome'));
+    assert.strictEqual(crisisWeight('air_leak', s, ctx), w0 * 2, 'a sealed dome doubles the odds of the next breach');
+    s.crises.push({ id: 'air_leak-6', kind: 'air_leak', title: '', text: '', options: [{ id: 'repair', label: '', detail: '' }], openedShift: 6, deadlineShift: 8, fallback: 'none', steward: 'repair' });
+    resolveCrisis(s, ctx, 'air_leak-6', 'repair');
+    assert.ok(!hasScar(s, 'sealed_dome'), 'a proper repair mends the old section');
+    assert.ok(s.log.some(l => /old weak section/.test(l.text)));
+    // Scars fade with time.
+    s.crises.push({ id: 'air_leak-7', kind: 'air_leak', title: '', text: '', options: [{ id: 'seal', label: '', detail: '' }], openedShift: 7, deadlineShift: 9, fallback: 'none', steward: 'repair' });
+    resolveCrisis(s, ctx, 'air_leak-7', 'seal');
+    for (let i = 0; i < 7; i++) runShift(s);
+    assert.ok(!hasScar(s, 'sealed_dome'), 'six shifts on, the scar has faded');
+});
+
+test('an engineer comes back from the breach; nobody else is sure to', () => {
+    const s = createOutpostState({ id: 'p-eng' }, 0);
+    s.colonists = 5; s.shift = 5; ensureRoster(s);
+    s.roster![0].trait = 'engineer';
+    const ctx = crisisCtx(1);
+    s.crises.push({ id: 'air_leak-5', kind: 'air_leak', title: '', text: '', options: [{ id: 'volunteers', label: '', detail: '' }], openedShift: 5, deadlineShift: 7, fallback: 'none', steward: 'repair' });
+    resolveCrisis(s, ctx, 'air_leak-5', 'volunteers');
+    assert.strictEqual(s.colonists, 5);
+    assert.ok(s.log.some(l => l.text.includes(s.roster![0].name) && /sealed it properly/.test(l.text)));
+});
+
+test('a broken strike makes sullen crews, and sabotage only follows that scar', () => {
+    const s = createOutpostState({ id: 'p-strike' }, 0);
+    s.colonists = 6; s.shift = 5; s.morale = 40; ensureRoster(s);
+    s.cells[CENTER_CELL + 1].module = 'mine';
+    const ctx = crisisCtx(2);
+    assert.strictEqual(crisisWeight('sabotage', s, ctx), 0, 'no sabotage without the grudge');
+    s.crises.push({ id: 'strike-5', kind: 'strike', title: '', text: '', options: [{ id: 'break', label: '', detail: '' }], openedShift: 5, deadlineShift: 7, fallback: 'wait', steward: 'pay' });
+    resolveCrisis(s, ctx, 'strike-5', 'break');
+    assert.ok(hasScar(s, 'sullen_crews'));
+    assert.ok(crisisWeight('sabotage', s, ctx) > 0, 'now the crews cut couplings');
+    assert.ok(crisisWeight('strike', s, ctx) > 3, 'and the next strike is likelier');
+    const crisis = openCrisisOfKind(s, ctx, 'sabotage');
+    assert.ok(crisis && crisis.cell === CENTER_CELL + 1);
+    resolveCrisis(s, ctx, crisis!.id, 'amnesty');
+    assert.ok(!hasScar(s, 'sullen_crews'), 'an amnesty forgives the grudge');
+});
+
+test('a death outside wants a grave, and the funeral clears it', () => {
+    const s = createOutpostState({ id: 'p-funeral' }, 0);
+    s.colonists = 6; s.shift = 5; ensureRoster(s);
+    s.cells[CENTER_CELL + 1].module = 'habitat';
+    const ctx = crisisCtx(3, { raidersNear: true });
+    assert.strictEqual(crisisWeight('funeral', s, ctx), 0);
+    // Raiders: 'shelter' with no bunker wrecks the module and, on this die, kills someone.
+    ctx.rng = dice(0.1, 0.1, 0.1);
+    s.crises.push({ id: 'raiders-5', kind: 'raiders', title: '', text: '', cell: CENTER_CELL + 1, options: [{ id: 'shelter', label: '', detail: '' }], openedShift: 5, deadlineShift: 7, fallback: 'shelter', steward: 'dark' });
+    resolveCrisis(s, ctx, 'raiders-5', 'shelter');
+    assert.strictEqual(s.colonists, 5, s.log[0].text);
+    assert.ok(hasScar(s, 'unburied'));
+    assert.ok(crisisWeight('funeral', s, ctx) > 0, 'a grave to dig');
+    const funeral = openCrisisOfKind(s, ctx, 'funeral');
+    assert.ok(funeral && funeral.text.includes(s.graves![0].name));
+    resolveCrisis(s, ctx, funeral!.id, 'service');
+    assert.ok(!hasScar(s, 'unburied'));
+});
+
+test('the sick are named, and a medic treats a fever like a medbay', () => {
+    const s = createOutpostState({ id: 'p-fever' }, 0);
+    s.colonists = 8; s.shift = 5; ensureRoster(s);
+    s.roster!.forEach(c => { c.trait = 'miner'; });
+    s.roster![0].trait = 'medic';
+    const ctx = crisisCtx(4);
+    const c = openCrisisOfKind(s, ctx, 'sickness')!;
+    assert.ok(s.roster!.some(x => x.status === 'sick'), 'someone went down');
+    assert.ok(c.text.includes(s.roster!.find(x => x.status === 'sick')!.name));
+    assert.match(c.options[1].label, /Let .* treat it/);
+    assert.strictEqual(c.options[1].detail, '100 credits.');
+    let charged = 0;
+    ctx.charge = (cost: any) => { charged = cost.CREDITS; return true; };
+    resolveCrisis(s, ctx, c.id, 'treat');
+    assert.strictEqual(charged, 100);
+    assert.ok(s.roster!.every(x => x.status === 'well'));
+});
+
+test('a drunk has accidents; a medbay dries them out', () => {
+    const s = createOutpostState({ id: 'p-drunk' }, 0);
+    s.colonists = 4; s.shift = 5; ensureRoster(s);
+    s.roster!.forEach(c => { c.trait = 'miner'; });
+    const ctx = crisisCtx(5);
+    assert.strictEqual(crisisWeight('drunk_accident', s, ctx), 0);
+    s.roster![1].trait = 'drunk';
+    s.cells[CENTER_CELL + 1].module = 'habitat'; s.cells[CENTER_CELL - 1].module = 'medbay'; // both inside the tier-1 3×3
+    assert.ok(crisisWeight('drunk_accident', s, ctx) > 0);
+    const c = openCrisisOfKind(s, ctx, 'drunk_accident')!;
+    assert.ok(c.title.includes(s.roster![1].name));
+    resolveCrisis(s, ctx, c.id, 'dry');
+    assert.strictEqual(s.roster![1].trait, 'engineer');
+});
+
+test('the people survive the shard round trip', () => {
+    const p: any = { ...site, id: 'p-roster-shard', ownerId: A, name: 'Roster', tags: ['outpost'], outpost: createOutpostState({ id: 'p-roster-shard' }, world.nowSeconds) };
+    world.construction.planets.set(p.id, p);
+    p.outpost.scars.push({ kind: 'sealed_dome', sinceShift: 0, untilShift: 9, text: 't' });
+    // The shard carries the outpost as JSON text; the names and scars must come back from it.
+    const shard = JSON.parse(extractFactionShard(world, A));
+    const entry = shard.outposts.find((o: any) => o.planetId === p.id);
+    assert.ok(entry, 'the outpost rides the shard');
+    delete p.outpost;
+    injectOutposts(world, { factionId: A, outposts: [entry] });
+    assert.strictEqual(p.outpost.roster.length, 3);
+    assert.strictEqual(p.outpost.scars[0].kind, 'sealed_dome');
+    assert.ok(p.outpost.roster[0].name);
     world.construction.planets.delete(p.id);
 });
 

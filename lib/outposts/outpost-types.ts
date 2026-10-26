@@ -51,6 +51,38 @@ export interface OpenCrisis {
     cell?: number;
 }
 
+/** What a colonist is good at, or bad at (lib/outposts/colonists.ts). */
+export type ColonistTrait = 'medic' | 'engineer' | 'miner' | 'botanist' | 'veteran' | 'zealot' | 'drunk' | 'scholar';
+export type ColonistStatus = 'well' | 'hurt' | 'sick';
+
+/** A named colonist. `state.colonists` stays the count the sim balances; the roster names them. */
+export interface Colonist {
+    id: string;
+    name: string;
+    trait: ColonistTrait;
+    status: ColonistStatus;
+    /** Shift the current status began. */
+    sinceShift: number;
+    arrivedShift: number;
+}
+
+/** A grave: who, when, how. */
+export interface Grave { name: string; shift: number; how: string }
+
+/**
+ * A scar: what an answered crisis left behind (lib/outposts/crises.ts). It
+ * changes the odds of the next crisis, opens follow-ups, and is cleared by
+ * the answer that mends it, or by time.
+ */
+export type ScarKind = 'sealed_dome' | 'patched_reactor' | 'sullen_crews' | 'bad_blood' | 'broken_promise' | 'unburied';
+export interface Scar {
+    kind: ScarKind;
+    sinceShift: number;
+    untilShift: number;
+    cell?: number;
+    text: string;
+}
+
 /** Timed effects a crisis leaves behind. */
 export interface OutpostEffect {
     kind: 'solar_down' | 'air_leak' | 'mines_down' | 'morale' | 'output_boost';
@@ -100,6 +132,12 @@ export interface OutpostState {
     drilled?: number;
     /** Running totals for the panel. */
     stats: { shipped: Record<string, number>; experiments: number; deaths: number; crisesFaced: number };
+    /** The people, by name (absent on outposts from before names; ensureRoster fills it). */
+    roster?: Colonist[];
+    /** Who died here. Newest last, capped. */
+    graves?: Grave[];
+    /** What past crises left behind. */
+    scars?: Scar[];
 }
 
 /** One shift's flows, computed from the grid (outpost-sim.ts). */

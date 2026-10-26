@@ -5,6 +5,7 @@
 import { RNG, seedFromString } from '../trade-system/rng';
 import type { CellTerrain, CharterId, OutpostCell, OutpostState } from './outpost-types';
 import { CELL_COUNT, CENTER_CELL, SHIFT_SIM_SECONDS, START_COLONISTS, START_FOOD, AIR_RESERVE_MAX } from './outpost-catalog';
+import { ensureRoster, listNames, TRAIT_LABEL } from './colonists';
 
 type Weights = Record<Exclude<CellTerrain, 'ruin'>, number>;
 
@@ -67,7 +68,7 @@ export function createOutpostState(
     const ground = generateOutpostGround(planet.id, planet.planetType, planet.tags ?? []);
     const cells: OutpostCell[] = ground.map(terrain => ({ terrain }));
     cells[CENTER_CELL].module = 'hub';
-    return {
+    const state: OutpostState = {
         version: 1,
         tier: 1,
         charter,
@@ -82,9 +83,16 @@ export function createOutpostState(
         nextShiftAt: nowSeconds + SHIFT_SIM_SECONDS,
         crises: [],
         effects: [],
-        log: [{ shift: 0, text: 'The landing crew is down. Three colonists, one dome, food for a dozen shifts.', tone: 'neutral' }],
+        log: [],
         prisonerGroupIds: [],
         experimentReadyShift: 0,
         stats: { shipped: {}, experiments: 0, deaths: 0, crisesFaced: 0 },
+        roster: [],
+        graves: [],
+        scars: [],
     };
+    // The landing crew, by name (lib/outposts/colonists.ts).
+    const crew = ensureRoster(state);
+    state.log.push({ shift: 0, text: `The landing crew is down: ${listNames(crew.map(c => `${c.name} (${TRAIT_LABEL[c.trait].toLowerCase()})`))}. One dome, food for a dozen shifts.`, tone: 'neutral' });
+    return state;
 }
