@@ -19,11 +19,13 @@ import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import {
     X, Home, BedDouble, Sun, Atom, Flame, Wind, Sprout, Pickaxe, Warehouse, Anchor, Coffee, HeartPulse, Shield, Lock,
     FlaskConical, Radar, Fuel, Users, Zap, Utensils, Smile, AlertTriangle, Package, ChevronUp, Power, Trash2, Hammer,
-    Mountain, Clock, Sparkles, Skull, Swords, Rocket, Crosshair, Flag, Lightbulb, CircleHelp, ChevronLeft, ChevronRight,
+    Mountain, Clock, Sparkles, Skull, Swords, Rocket, Crosshair, Flag, Lightbulb, CircleHelp, ChevronLeft, ChevronRight, Compass,
 } from 'lucide-react';
 import { tierName, BASE_REQUIREMENTS, BARRACKS_TROOP_CAP, drydockYardTier } from '@/lib/outposts/outpost-catalog';
 import { outpostAdvice } from '@/lib/outposts/outpost-advice';
 import { TRAIT_LABEL, TRAIT_BLURB } from '@/lib/outposts/colonists';
+import { adjacencyAt, adjacencyHints, shieldedByBunker } from '@/lib/outposts/adjacency';
+import { expeditionOptions } from '@/lib/outposts/expeditions';
 import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 /** How a crisis reads: an opportunity, a danger, or something that can kill. */
@@ -566,6 +568,13 @@ export default function OutpostView() {
                                                 {def.prison && <div>Holds {def.prison} prisoners</div>}
                                                 {yieldHere && <div>Yields {Object.entries(yieldHere).map(([k, v]) => `${v} ${k.toLowerCase()}`).join(', ')} a shift</div>}
                                                 {idleOf.get(selected) && <div className="text-red-300">Idle: {idleOf.get(selected) === 'workers' ? 'not enough colonists to crew it' : 'not enough power'}</div>}
+                                                {adjacencyAt(state, selected).map(({ rule, count }) => (
+                                                    <div key={rule.beside} className={rule.effect.kind === 'morale' && (rule.effect as any).value < 0 ? 'text-amber-300' : 'text-emerald-300'}>
+                                                        Beside: {rule.text}{count > 1 ? ` (×${count})` : ''}
+                                                    </div>
+                                                ))}
+                                                {sel.module === 'bunker' && <div className="text-emerald-300">Shelters its four neighbours from meteors and raiders.</div>}
+                                                {sel.module !== 'bunker' && shieldedByBunker(state, selected) && <div className="text-emerald-300">Under a bunker’s wing: meteors and raiders look elsewhere.</div>}
                                             </div>
                                             {sel.module !== 'hub' && !state.graduated && (
                                                 <div className="flex gap-2 pt-1">
@@ -605,6 +614,25 @@ export default function OutpostView() {
                                 <button disabled={busy || !mine || derelict} onClick={() => send({ op: 'supply' }, 'Supply drop')} className="w-full py-1.5 rounded-md border border-slate-600 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">
                                     Supply drop: +{SUPPLY_DROP.food} food · {fmtCost(Object.fromEntries(Object.entries(SUPPLY_DROP.cost).map(([k, v]) => [k, hasDock ? v : v * 2])))}
                                 </button>
+                            )}
+                            {/* Expeditions: two people off the grid for a shift or two */}
+                            {!state.graduated && !derelict && (
+                                state.expedition ? (
+                                    <div className="text-[11px] text-sky-300 flex items-center gap-1">
+                                        <Compass size={11} /> A crew is out ({state.expedition.kind === 'ruin' ? 'the ruins' : state.expedition.kind === 'vent' ? 'the vent' : 'the horizon'}): back in {Math.max(0, state.expedition.returnShift - state.shift)} shift{state.expedition.returnShift - state.shift === 1 ? '' : 's'}.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {expeditionOptions(state).map(o => (
+                                            <button key={o.kind} disabled={busy || !mine || !!o.blocker || besieged} onClick={() => send({ op: 'expedition', kind: o.kind }, o.label)}
+                                                title={o.blocker ?? `${o.crew.map(c => c.name).join(' and ')} would go`}
+                                                className="w-full text-left py-1.5 px-2 rounded-md border border-sky-500/30 text-xs text-sky-100 hover:bg-sky-500/10 disabled:opacity-50">
+                                                <span className="flex items-center gap-1"><Compass size={11} /> {o.label}</span>
+                                                <span className="block text-[10px] text-slate-400">{o.detail}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )
                             )}
                             {hasLab && (
                                 <div className="flex gap-2">
@@ -738,6 +766,7 @@ function BuildList({ state, cellIndex, reserves, busy, onBuild }: {
                             <span className="min-w-0 flex-1">
                                 <span className="flex justify-between gap-2 text-xs text-slate-100"><span>{def.name}</span><span className="text-[10px] text-slate-500 shrink-0">{def.buildShifts} shift{def.buildShifts === 1 ? '' : 's'}</span></span>
                                 <span className="block text-[10px] text-slate-400 leading-snug">{def.blurb}</span>
+                                {adjacencyHints(state, cellIndex, m).map(h => <span key={h} className="block text-[10px] text-emerald-300/90 leading-snug">Here: {h}</span>)}
                                 <span className={`block text-[10px] ${short ? 'text-red-300' : 'text-fuchsia-300/80'}`}>{baseLocked ? 'Military base only' : locked ? `Needs a ${TIERS[def.minTier!].name.toLowerCase()}` : fmtCost(def.cost)}</span>
                             </span>
                         </button>

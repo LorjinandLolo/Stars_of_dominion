@@ -5,10 +5,11 @@
 
 import type { ModuleId, OutpostBalance, OutpostState } from './outpost-types';
 import {
-    MODULES, cellOpen, neighborsOf, mineYield, COLONISTS_PER_UNIT, AIR_RESERVE_MAX, CHARTER_BONUS,
+    MODULES, cellOpen, mineYield, COLONISTS_PER_UNIT, AIR_RESERVE_MAX, CHARTER_BONUS,
     PRISON_LABOUR_METALS, LOG_KEEP,
 } from './outpost-catalog';
 import { ensureRoster, healRoster, killColonists, leaveColonists, listNames, TRAIT_LABEL } from './colonists';
+import { adjacencyValue } from './adjacency';
 
 export interface BalanceContext {
     /** The world carries rare minerals: ore yields rares too. */
@@ -75,7 +76,7 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
     const solarFactor = hasEffect(state, 'solar_down') ? 0.4 : 1;
     let powerMade = 0;
     for (const x of staffed) {
-        if (x.def!.power > 0) powerMade += x.def!.id === 'solar' ? x.def!.power * solarFactor : x.def!.power;
+        if (x.def!.power > 0) powerMade += (x.def!.id === 'solar' ? x.def!.power * solarFactor : x.def!.power) + adjacencyValue(state, x.i, 'power');
     }
     let powerUsed = 0;
     const running: number[] = [];
@@ -87,12 +88,14 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
     }
     const runs = (id: ModuleId) => running.filter(i => state.cells[i].module === id);
 
-    let airMade = 0, foodMade = 0, storage = 0, prisonCapacity = 0;
+    let airMade = 0, foodMade = 0, storage = 0, prisonCapacity = 0, adjacencyMorale = 0;
     for (const i of running) {
         const def = MODULES[state.cells[i].module!];
-        airMade += def.air ?? 0;
-        if (def.id === 'life_support' && neighborsOf(i).some(n => state.cells[n].terrain === 'ice')) airMade += 1;
-        foodMade += def.food ?? 0;
+        // Neighbours matter (adjacency.ts): ice by the scrubbers and the
+        // greenhouse, light on the crops, the commons among the domes.
+        airMade += (def.air ?? 0) + adjacencyValue(state, i, 'air');
+        foodMade += (def.food ?? 0) + adjacencyValue(state, i, 'food');
+        adjacencyMorale += adjacencyValue(state, i, 'morale');
         storage += def.storage ?? 0;
         prisonCapacity += (def.prison ?? 0) * (state.charter === 'prison' && def.prison ? CHARTER_BONUS : 1);
     }
@@ -116,8 +119,9 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
         if (!hasEffect(state, 'mines_down')) {
             const mult = (state.charter === 'mining' ? CHARTER_BONUS : 1) * (1 + effectSum(state, 'output_boost'));
             for (const i of runs('mine')) {
+                const here = mult * (1 + adjacencyValue(state, i, 'output'));
                 for (const [k, v] of Object.entries(mineYield(state.cells[i].terrain, !!ctx.rareWorld))) {
-                    output[k] = (output[k] ?? 0) + v * mult;
+                    output[k] = (output[k] ?? 0) + v * here;
                 }
             }
         }
@@ -139,6 +143,7 @@ export function computeBalance(state: OutpostState, ctx: BalanceContext = {}): O
         - (state.food <= 0 ? 15 : 0)
         - (state.prisonLabour ? 4 : 0)
         - (ctx.besieged ? 15 : 0)
+        + adjacencyMorale
         + effectSum(state, 'morale');
     moraleTarget = Math.max(0, Math.min(100, moraleTarget));
 

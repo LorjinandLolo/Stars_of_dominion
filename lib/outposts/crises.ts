@@ -10,6 +10,7 @@ import type { OpenCrisis, CrisisOption, OutpostState, ScarKind, ColonistTrait } 
 import { MODULES, CRISIS_DEADLINE_SHIFTS, MAX_OPEN_CRISES } from './outpost-catalog';
 import { countModules, log, moduleActive, moduleBuilt } from './outpost-sim';
 import { ensureRoster, hasTrait, withTrait, pickColonist, killColonists, leaveColonists, hurtColonist, listNames, roster } from './colonists';
+import { shieldedByBunker } from './adjacency';
 
 export interface CrisisContext {
     rng: RNG;
@@ -40,6 +41,13 @@ const opt = (id: string, label: string, detail: string): CrisisOption => ({ id, 
 
 function cellsWith(state: OutpostState, pred: (id: string) => boolean): number[] {
     return state.cells.map((c, i) => (c.module && pred(c.module) && moduleBuilt(state, i) ? i : -1)).filter(i => i >= 0);
+}
+
+/** Targets for something falling from the sky: anything not under a bunker's wing, else anything. */
+function strikeTargets(state: OutpostState): number[] {
+    const all = cellsWith(state, id => id !== 'hub' && id !== 'bunker');
+    const open = all.filter(i => !shieldedByBunker(state, i));
+    return open.length ? open : all;
 }
 
 function moraleFx(state: OutpostState, value: number, shifts: number): void {
@@ -130,7 +138,7 @@ const CRISES: CrisisDef[] = [
         kind: 'meteor_shower',
         weight: s => (s.cells.filter(c => c.module && c.module !== 'hub').length >= 2 ? 2 : 0),
         open: (s, ctx) => {
-            const targets = cellsWith(s, id => id !== 'hub' && id !== 'bunker');
+            const targets = strikeTargets(s);
             if (!targets.length) return null;
             const cell = targets[ctx.rng.nextInt(0, targets.length - 1)];
             const bunker = countModules(s, 'bunker') > 0;
@@ -436,7 +444,7 @@ const CRISES: CrisisDef[] = [
         kind: 'raiders',
         weight: (s, ctx) => (ctx.raidersNear ? 4 : 0),
         open: (s, ctx) => {
-            const targets = cellsWith(s, id => id !== 'hub' && id !== 'bunker');
+            const targets = strikeTargets(s);
             return {
                 title: 'Raiders overhead',
                 text: 'Enemy ships are in the system and one has turned toward the outpost.',
@@ -574,6 +582,108 @@ const CRISES: CrisisDef[] = [
             if (c.cell !== undefined) knockOut(s, c.cell, 1);
             moraleFx(s, -2, 2);
             log(s, `${drunk.name}'s pay was docked. ${nameAt(s, c.cell)} needs a shift to sort out.`, 'neutral');
+        },
+    },
+    // ── Visitors: short choices with a cost, between the disasters ───────────
+    {
+        kind: 'trader',
+        weight: s => (countModules(s, 'dock') > 0 ? 2 : 1),
+        open: s => {
+            const held = Object.entries(s.warehouse).filter(([, n]) => n > 0);
+            const worth = held.reduce((sum, [, n]) => sum + n, 0);
+            return {
+                title: 'A trader sets down',
+                text: `A battered freighter is on the pad. The captain has food to sell and an eye on your warehouse${worth ? ` (${held.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(', ')})` : ''}.`,
+                options: [
+                    opt('buy', 'Buy supplies', '300 credits for 10 food.'),
+                    opt('sell', worth ? 'Sell the warehouse' : 'Nothing to sell', worth ? `${Math.round(worth * 2.4)} credits, paid now, nothing shipped this cycle.` : 'The warehouse is empty.'),
+                    opt('decline', 'Send them on', 'Nothing.'),
+                ],
+                fallback: 'decline', steward: 'buy',
+            };
+        },
+        resolve: (s, ctx, o) => {
+            if (o === 'buy' && payOr(s, ctx, { CREDITS: 300 }, () => {}, 'the trader')) { s.food += 10; log(s, 'The trader sold 10 food and lifted off.', 'good'); return; }
+            if (o === 'sell') {
+                const worth = Object.values(s.warehouse).reduce((a, n) => a + n, 0);
+                if (worth > 0) { ctx.charge({ CREDITS: -Math.round(worth * 2.4) }); s.warehouse = {}; log(s, `The trader bought out the warehouse for ${Math.round(worth * 2.4)} credits.`, 'good'); return; }
+            }
+            log(s, 'The trader left with nothing.', 'neutral');
+        },
+    },
+    {
+        kind: 'pirate_skiff',
+        weight: (s, ctx) => (s.tier >= 2 || ctx.raidersNear ? 1 : 0),
+        open: (s, ctx) => {
+            const targets = strikeTargets(s);
+            const veteran = withTrait(s, 'veteran');
+            return {
+                title: 'A skiff with no markings',
+                text: 'A small armed craft has landed at the edge of the plain. Three people in it want a toll for "protection".',
+                cell: targets.length ? targets[ctx.rng.nextInt(0, targets.length - 1)] : undefined,
+                options: [
+                    opt('pay', 'Pay the toll', '200 credits.'),
+                    opt('refuse', veteran ? `Let ${veteran.name} see them off` : 'Refuse', veteran ? 'They leave.' : 'Three in ten they shoot up a module on the way out.'),
+                    opt('trade', 'Offer them food instead', 'Food −5; they leave.'),
+                ],
+                fallback: 'refuse', steward: 'pay',
+            };
+        },
+        resolve: (s, ctx, o, c) => {
+            if (o === 'pay' && payOr(s, ctx, { CREDITS: 200 }, () => {}, 'the toll')) { log(s, 'The skiff took its toll and left.', 'neutral'); return; }
+            if (o === 'trade' && s.food >= 5) { s.food -= 5; log(s, 'The skiff left with five crates of food.', 'neutral'); return; }
+            if (hasTrait(s, 'veteran')) { log(s, `${withTrait(s, 'veteran')!.name} walked out to the skiff. It left.`, 'good'); return; }
+            if (ctx.rng.check(0.3) && c.cell !== undefined && s.cells[c.cell]?.module) { knockOut(s, c.cell, 2); log(s, `The skiff shot up ${nameAt(s, c.cell)} on its way out.`, 'bad'); return; }
+            log(s, 'The skiff left, cursing.', 'neutral');
+        },
+    },
+    {
+        kind: 'refugee_pod',
+        weight: s => (s.colonists >= 4 ? 1 : 0),
+        open: () => ({
+            title: 'A pod on the plain',
+            text: 'An escape pod has come down a short walk from the domes. Two people inside, alive, from somewhere that is not here any more.',
+            options: [
+                opt('take', 'Take them in', 'Two colonists; food −4.'),
+                opt('turn', 'Turn them away', 'Morale −3 for 2 shifts.'),
+                opt('ransom', 'Hold them for a reward', '300 credits in a shift or two; morale −5.'),
+            ],
+            fallback: 'take', steward: 'take',
+        }),
+        resolve: (s, ctx, o) => {
+            if (o === 'turn') { moraleFx(s, -3, 2); log(s, 'The pod people were given water and pointed at the horizon.', 'bad'); return; }
+            if (o === 'ransom') { ctx.charge({ CREDITS: -300 }); moraleFx(s, -5, 2); log(s, 'Someone paid 300 credits for the pod people. Nobody asked who.', 'neutral'); return; }
+            s.food = Math.max(0, s.food - 4);
+            s.colonists += 2;
+            const named = ensureRoster(s);
+            log(s, `${listNames(named.map(c => c.name))} came in from the pod and took bunks.`, 'good');
+        },
+    },
+    {
+        kind: 'survey_team',
+        weight: s => (s.cells.some(c => c.terrain === 'ruin' && !c.module) ? 2 : 1),
+        open: s => {
+            const ruin = s.cells.some(c => c.terrain === 'ruin' && !c.module);
+            return {
+                title: 'A survey team with the wrong flag',
+                text: `A rival empire's survey team has set up instruments on your plain${ruin ? ', right over the worked stone' : ''}. They are polite, and they are not asking.`,
+                options: [
+                    opt('share', 'Share the data', 'Their readings push your research a little.'),
+                    opt('packing', 'Send them packing', 'Morale +2 for 2 shifts.'),
+                    opt('sell', ruin ? 'Sell them the ruins' : 'Sell them the survey', ruin ? '500 credits; the stones go.' : '200 credits.'),
+                ],
+                fallback: 'packing', steward: 'share',
+            };
+        },
+        resolve: (s, ctx, o) => {
+            if (o === 'share') { const tech = ctx.researchBoost(ctx.experimentHours()); log(s, tech ? `Their readings pushed ${tech} forward.` : 'Their readings were interesting and useless.', 'good'); return; }
+            if (o === 'sell') {
+                const ruin = s.cells.findIndex(c => c.terrain === 'ruin' && !c.module);
+                if (ruin >= 0) { s.cells[ruin].terrain = 'flat'; ctx.charge({ CREDITS: -500 }); log(s, 'They paid 500 credits and crated the stones.', 'neutral'); return; }
+                ctx.charge({ CREDITS: -200 }); log(s, 'They paid 200 credits for the survey and left.', 'neutral'); return;
+            }
+            moraleFx(s, 2, 2);
+            log(s, 'The survey team was walked back to its shuttle. The crew enjoyed that.', 'good');
         },
     },
 ];

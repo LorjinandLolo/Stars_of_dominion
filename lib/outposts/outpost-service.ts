@@ -21,6 +21,8 @@ import { fortificationLevelFor } from '../combat/siege/strongpoints';
 import { createOutpostState } from './outpost-map';
 import { computeBalance, countModules, log, moduleActive, runShift } from './outpost-sim';
 import { ensureRoster, killColonists, listNames } from './colonists';
+import { startExpedition, resolveExpedition, type ExpeditionKind } from './expeditions';
+import { adjacencyValue } from './adjacency';
 import { expireCrises, openCrisisOfKind, resolveCrisis, rollCrisis, type CrisisContext } from './crises';
 import { RNG, seedFromString } from '../trade-system/rng';
 import { isAtWar, shiftRivalry } from '../diplomacy/offer-service';
@@ -195,6 +197,9 @@ function runOneShift(world: GameWorldState, planet: AnyPlanet, state: OutpostSta
     if (state.colonists <= 0) { state.shift += 1; return; } // derelict until resettled
     const ctx = contextFor(world, planet, state);
     expireCrises(state, ctx);
+    // A crew whose time off the grid is up comes back (expeditions.ts).
+    // Checked before the shift advances so a two-shift walk is two shifts.
+    resolveExpedition(state, ctx);
     const bctx = balanceCtx(world, planet, state);
     if (bctx.besieged && !state.log.some(l => l.shift === state.shift && /siege/.test(l.text))) {
         log(state, 'Enemy troops are on the ground. Nobody lands; everyone waits.', 'bad');
@@ -296,7 +301,8 @@ export type OutpostOp =
     | { op: 'resettle' }
     | { op: 'experiment'; subjects: 'volunteers' | 'prisoners' }
     | { op: 'transfer_prisoners'; groupId: string }
-    | { op: 'labour'; on: boolean };
+    | { op: 'labour'; on: boolean }
+    | { op: 'expedition'; kind: ExpeditionKind };
 
 export interface OpResult { ok: boolean; reason?: string }
 const fail = (reason: string): OpResult => ({ ok: false, reason });
@@ -405,7 +411,9 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
             const project = currentProject(world, factionId);
             if (!project) return fail('There is no research under way to test for.');
             const ctx = contextFor(world, planet, state);
-            let hours = experimentHours(world, factionId, state) * labs;
+            // A lab beside the ruins reads more into every run (adjacency.ts).
+            const ruinBonus = state.cells.reduce((m, c, i) => (c.module === 'test_lab' && balance.running.includes(i) ? Math.max(m, adjacencyValue(state, i, 'experiment')) : m), 0);
+            let hours = experimentHours(world, factionId, state) * labs * (1 + ruinBonus);
             if (order.subjects === 'prisoners') {
                 if (ctx.prisoners <= 0) return fail('There are no prisoners here.');
                 hours *= SUBJECT_GAIN;
@@ -442,6 +450,11 @@ export function outpostOrder(world: GameWorldState, factionId: string, planetId:
             state.prisonLabour = !!order.on;
             log(state, order.on ? 'The prisoners were put to work in the extractors.' : 'Prison labour was stopped.', 'neutral');
             return { ok: true };
+        }
+        case 'expedition': {
+            if (outpostBesieged(planet)) return fail('Enemy troops are on the ground: nobody leaves the domes.');
+            const started = startExpedition(state, order.kind);
+            return started.ok ? { ok: true } : fail(started.message);
         }
     }
     return fail('Unknown outpost order.');

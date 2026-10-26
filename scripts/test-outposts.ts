@@ -20,6 +20,8 @@ import { extractFactionShard, cleanWorldForSave, injectOutposts } from '../lib/p
 import { projectShardForCaller } from '../lib/persistence/shard-privacy';
 import { expireCrises, rollCrisis, CRISIS_KINDS, crisisWeight, hasScar, openCrisisOfKind, resolveCrisis } from '../lib/outposts/crises';
 import { ensureRoster, killColonists, TRAITS } from '../lib/outposts/colonists';
+import { adjacencyValue, adjacencyHints, shieldedByBunker } from '../lib/outposts/adjacency';
+import { expeditionOptions, startExpedition, resolveExpedition } from '../lib/outposts/expeditions';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
 import { RNG } from '../lib/trade-system/rng';
 import { registry as techRegistry } from '../lib/tech/engine';
@@ -610,6 +612,150 @@ test('the people survive the shard round trip', () => {
     assert.strictEqual(p.outpost.scars[0].kind, 'sealed_dome');
     assert.ok(p.outpost.roster[0].name);
     world.construction.planets.delete(p.id);
+});
+
+// ─── Neighbours, expeditions, visitors ───────────────────────────────────────
+
+test('neighbours matter: ice feeds the greenhouse, the commons among domes, a dome by the reactor', () => {
+    const s = createOutpostState({ id: 'p-adj' }, 0);
+    s.tier = 2; s.colonists = 12; ensureRoster(s);
+    // Lay a known neighbourhood around the hub (12): 7 above, 17 below, 11 left, 13 right.
+    s.cells.forEach(c => { c.terrain = 'flat'; });
+    s.cells[7].module = 'hydroponics'; s.cells[2].terrain = 'ice';          // hydroponics with ice above it
+    s.cells[13].module = 'solar';                                          // and a solar array? no: 13 is beside 12, not 7. Put one beside 7:
+    s.cells[6].module = 'solar';                                           // 6 is left of 7
+    const food0 = MODULES.hydroponics.food!;
+    assert.strictEqual(adjacencyValue(s, 7, 'food'), 2, 'ice and light: +2 food');
+    assert.ok(computeBalance(s).foodMade >= food0 + 2);
+    s.cells[17].module = 'commons'; s.cells[16].module = 'habitat'; s.cells[18].module = 'habitat'; s.cells[22].module = 'habitat';
+    assert.strictEqual(adjacencyValue(s, 17, 'morale'), 4, 'two domes beside the commons, capped at two');
+    s.cells[22].module = 'reactor';
+    assert.strictEqual(adjacencyValue(s, 16, 'morale'), 0);
+    s.cells[21].module = 'habitat';
+    assert.strictEqual(adjacencyValue(s, 21, 'morale'), -3, 'a dome by the reactor');
+    const hints = adjacencyHints(s, 23, 'habitat');
+    assert.ok(hints.some(h => /reactor/.test(h)), 'the build list warns');
+    assert.deepStrictEqual(adjacencyHints(s, 3, 'life_support'), ['+1 air from the ice next door']);
+});
+
+test('an extractor beside the warehouse yields more; a bunker shelters its neighbours', () => {
+    const s = createOutpostState({ id: 'p-adj2' }, 0);
+    s.tier = 2; s.colonists = 12; ensureRoster(s);
+    s.cells.forEach(c => { c.terrain = 'flat'; });
+    s.cells[7].terrain = 'ore'; s.cells[7].module = 'mine'; s.cells[2].module = 'warehouse';
+    s.cells[13].module = 'solar'; s.cells[11].module = 'solar';
+    const alone = computeBalance(s).output.METALS;
+    assert.ok(alone > 0);
+    assert.strictEqual(Math.round(alone), Math.round(40 * 1.15));
+    s.cells[17].module = 'bunker';
+    assert.ok(shieldedByBunker(s, 16) && shieldedByBunker(s, 22) && !shieldedByBunker(s, 7));
+    // Meteors pick an unsheltered module while one stands.
+    s.cells[16].module = 'habitat'; s.cells[8].module = 'habitat';
+    const ctx = crisisCtx(9);
+    for (let i = 0; i < 20; i++) {
+        ctx.rng = new RNG(i);
+        const c = openCrisisOfKind(s, ctx, 'meteor_shower');
+        assert.ok(c && c.cell !== 16, 'the sheltered dome is never the target');
+        s.crises = [];
+    }
+});
+
+test('an expedition takes two people away and brings them back with something, or not', () => {
+    const s = createOutpostState({ id: 'p-exp' }, 0);
+    s.colonists = 5; s.shift = 3; ensureRoster(s);
+    s.cells.forEach(c => { c.terrain = 'flat'; });
+    s.cells[0].terrain = 'ruin';
+    const options = expeditionOptions(s);
+    assert.deepStrictEqual(options.map(o => o.kind), ['ruin', 'horizon']);
+    assert.ok(options.every(o => !o.blocker && o.crew.length === 2));
+    const workers = computeBalance(s).workersFree;
+    const started = startExpedition(s, 'ruin');
+    assert.ok(started.ok, started.message);
+    assert.strictEqual(s.roster!.filter(c => c.status === 'away').length, 2);
+    assert.strictEqual(computeBalance(s).workersFree, workers - 2, 'the crew away does not work');
+    assert.ok(expeditionOptions(s).every(o => o.blocker === 'A crew is already out.'));
+    assert.ok(!startExpedition(s, 'horizon').ok);
+    // Not back before their time.
+    const ctx = crisisCtx(1);
+    assert.strictEqual(resolveExpedition(s, ctx), null);
+    s.shift = s.expedition!.returnShift;
+    let credits = 0; let boosted = false;
+    ctx.charge = (c: any) => { credits -= c.CREDITS ?? 0; return true; };
+    ctx.researchBoost = () => { boosted = true; return 'Something'; };
+    ctx.rng = dice(0.5, 0.5, 0.5); // no misfortune; luck 0.4 (+0.15 with a scholar): salvage or notes
+    const line = resolveExpedition(s, ctx);
+    assert.ok(line && (credits > 0 || boosted), line ?? 'nothing');
+    assert.ok(!s.expedition);
+    assert.ok(s.roster!.every(c => c.status !== 'away'));
+    // Misfortune: a grave.
+    s.cells[0].terrain = 'ruin'; s.shift += 1;
+    startExpedition(s, 'ruin');
+    s.shift = s.expedition!.returnShift;
+    ctx.rng = dice(0.01, 0.0, 0.1); // danger, and the half that kills
+    const before = s.colonists;
+    resolveExpedition(s, ctx);
+    assert.strictEqual(s.colonists, before - 1);
+    assert.ok(s.graves!.some(g => /ruins/.test(g.how)));
+    // Too few to spare.
+    s.colonists = 2; ensureRoster(s);
+    assert.ok(expeditionOptions(s).every(o => o.blocker === 'Not enough people to spare.'));
+});
+
+test('a vent prospect can turn the plain to ore, and the worker runs the return through the shift', () => {
+    const p: any = { ...site, id: 'p-vent', ownerId: A, name: 'Vent', tags: ['outpost'], outpost: createOutpostState({ id: 'p-vent' }, world.nowSeconds) };
+    world.construction.planets.set(p.id, p);
+    const s = p.outpost; s.colonists = 5; ensureRoster(s); s.food = 30; s.air = 12;
+    s.cells.forEach((c: any, i: number) => { c.terrain = 'flat'; if (i !== CENTER_CELL) delete c.module; });
+    s.cells[CENTER_CELL + 1].terrain = 'vent';
+    rich();
+    silently(() => executeOrder(world, 'OUTPOST_ORDER', { planetId: p.id, op: 'expedition', kind: 'vent' }, A));
+    assert.ok(s.expedition, lastError());
+    const returnShift = s.expedition.returnShift;
+    while (s.shift < returnShift + 1) { world.nowSeconds = s.nextShiftAt; silently(() => tickOutposts(world)); s.crises = []; }
+    assert.ok(!s.expedition, 'the crew came back');
+    assert.ok(s.log.some((l: any) => /mapped the vent|ore seam|came back hurt|did not come back/.test(l.text)), s.log.slice(0, 5).map((l: any) => l.text).join(' | '));
+    world.construction.planets.delete(p.id);
+});
+
+test('visitors: a trader buys the warehouse, a pod brings two named people, a survey team pushes research', () => {
+    const s = createOutpostState({ id: 'p-visit' }, 0);
+    s.colonists = 6; s.shift = 5; ensureRoster(s);
+    s.cells[CENTER_CELL + 1].module = 'dock';
+    s.warehouse = { METALS: 100 };
+    const ctx = crisisCtx(2);
+    let credits = 0; ctx.charge = (c: any) => { credits -= c.CREDITS ?? 0; return true; };
+    const trader = openCrisisOfKind(s, ctx, 'trader')!;
+    assert.match(trader.text, /100 metals/);
+    resolveCrisis(s, ctx, trader.id, 'sell');
+    assert.strictEqual(credits, 240);
+    assert.deepStrictEqual(s.warehouse, {});
+    const pod = openCrisisOfKind(s, ctx, 'refugee_pod')!;
+    resolveCrisis(s, ctx, pod.id, 'take');
+    assert.strictEqual(s.colonists, 8);
+    assert.strictEqual(s.roster!.length, 8);
+    assert.ok(s.log[0].text.includes(s.roster![7].name));
+    let boosted = false; ctx.researchBoost = () => { boosted = true; return 'T'; };
+    const survey = openCrisisOfKind(s, ctx, 'survey_team')!;
+    resolveCrisis(s, ctx, survey.id, 'share');
+    assert.ok(boosted);
+    assert.ok(CRISIS_KINDS.length >= 21, `${CRISIS_KINDS.length} kinds`);
+});
+
+test('a veteran sees a pirate skiff off; without one it may shoot up a module', () => {
+    const s = createOutpostState({ id: 'p-skiff' }, 0);
+    s.colonists = 6; s.shift = 5; s.tier = 2; ensureRoster(s);
+    s.cells[CENTER_CELL + 1].module = 'habitat';
+    s.roster!.forEach(c => { c.trait = 'miner'; });
+    const ctx = crisisCtx(3);
+    ctx.rng = dice(0.1, 0.1); // picks a target, then the 30% that shoots
+    const skiff = openCrisisOfKind(s, ctx, 'pirate_skiff')!;
+    resolveCrisis(s, ctx, skiff.id, 'refuse');
+    assert.ok(s.log[0].text.includes('shot up'), s.log[0].text);
+    s.roster![0].trait = 'veteran';
+    const skiff2 = openCrisisOfKind(s, ctx, 'pirate_skiff')!;
+    assert.match(skiff2.options[1].label, new RegExp(s.roster![0].name));
+    resolveCrisis(s, ctx, skiff2.id, 'refuse');
+    assert.ok(s.log[0].text.includes('It left'), s.log[0].text);
 });
 
 test('the advisor says what matters most', () => {

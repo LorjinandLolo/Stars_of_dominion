@@ -53,7 +53,7 @@ export interface OpenCrisis {
 
 /** What a colonist is good at, or bad at (lib/outposts/colonists.ts). */
 export type ColonistTrait = 'medic' | 'engineer' | 'miner' | 'botanist' | 'veteran' | 'zealot' | 'drunk' | 'scholar';
-export type ColonistStatus = 'well' | 'hurt' | 'sick';
+export type ColonistStatus = 'well' | 'hurt' | 'sick' | 'away';
 
 /** A named colonist. `state.colonists` stays the count the sim balances; the roster names them. */
 export interface Colonist {
@@ -138,6 +138,8 @@ export interface OutpostState {
     graves?: Grave[];
     /** What past crises left behind. */
     scars?: Scar[];
+    /** A crew off the grid (lib/outposts/expeditions.ts). */
+    expedition?: { kind: 'ruin' | 'vent' | 'horizon'; crewIds: string[]; leftShift: number; returnShift: number; cell?: number };
 }
 
 /** One shift's flows, computed from the grid (outpost-sim.ts). */

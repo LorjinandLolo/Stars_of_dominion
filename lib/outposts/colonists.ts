@@ -157,7 +157,7 @@ export function healRoster(state: OutpostState): string[] {
     const medbay = countModules(state, 'medbay') > 0;
     const medic = hasTrait(state, 'medic');
     for (const c of roster(state)) {
-        if (c.status === 'well') continue;
+        if (c.status === 'well' || c.status === 'away') continue;
         const base = c.status === 'hurt' ? HEAL_HURT : HEAL_SICK;
         const need = medbay ? 1 : medic ? Math.max(1, base - 1) : base;
         if (state.shift - c.sinceShift >= need) { c.status = 'well'; c.sinceShift = state.shift; healed.push(c.name); }

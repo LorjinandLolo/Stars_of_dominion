@@ -72,6 +72,35 @@ petitioning to leave, a scholar pushes experiments through, a drunk has
 accidents. `state.colonists` stays the number the shift balances; the roster
 is reconciled to it after every shift, so old outposts simply grow one.
 
+## Neighbours
+
+Placement matters (`adjacency.ts`, one row per rule, shown on the cell and
+in the build list): life support and hydroponics gain beside ice,
+hydroponics beside a solar array, a geothermal tap beside a second vent; the
+commons gains morale per dome beside it (two at most), a medbay beside the
+commons too; a dome beside the reactor costs morale; an extractor beside the
+warehouse yields 15% more; a lab beside the ruins reads 50% more into each
+experiment; a bunker shelters its four neighbours from meteors and raiders
+(they pick something else while anything else stands).
+
+## Expeditions
+
+Two fit people can leave the grid (`expeditions.ts`, order `expedition`):
+dig the ruins (2 shifts: salvage, or notes for your research; a scholar
+reads the stones), prospect a vent (1 shift: may turn a flat square into ore;
+a miner knows where to look), or walk the horizon (2 shifts: salvage, a ruin
+found, or dust; a veteran brings everyone back). They are `away` and do not
+work until they return. One walk in ten ends badly — a wound, or a grave;
+one in twenty with the fitting trait along. Not while besieged.
+
+## Visitors
+
+Four crises are people, not disasters: a trader (buy food, or sell the
+warehouse for a premium), a skiff with no markings (a toll, or a veteran sees
+them off), an escape pod (two new colonists, or a reward), and a rival's
+survey team (share data for research, send them packing, or sell them the
+ruins).
+
 ## Scars
 
 An answer leaves something behind (`state.scars`, `crises.ts`): a dome sealed
