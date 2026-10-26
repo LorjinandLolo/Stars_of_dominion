@@ -26,6 +26,7 @@ import { outpostAdvice } from '@/lib/outposts/outpost-advice';
 import { TRAIT_LABEL, TRAIT_BLURB } from '@/lib/outposts/colonists';
 import { adjacencyAt, adjacencyHints, shieldedByBunker } from '@/lib/outposts/adjacency';
 import { expeditionOptions } from '@/lib/outposts/expeditions';
+import OutpostDiorama from '@/components/outpost/OutpostDiorama';
 import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 
 /** How a crisis reads: an opportunity, a danger, or something that can kill. */
@@ -362,6 +363,11 @@ export default function OutpostView() {
     const reserves: Record<string, number> = (factions as any)?.[playerFactionId ?? '']?.reserves ?? {};
 
     const [selected, setSelected] = React.useState<number | null>(null);
+    // The snow globe or the flat board; a per-browser preference.
+    const [view, setViewState] = React.useState<'diorama' | 'board'>(() => {
+        try { return (window.localStorage.getItem('sod-outpost-view') as 'diorama' | 'board') || 'diorama'; } catch { return 'diorama'; }
+    });
+    const setView = (v: 'diorama' | 'board') => { setViewState(v); try { window.localStorage.setItem('sod-outpost-view', v); } catch { /* private window */ } };
     const uiPrefs = useUIStore(s => s.uiPrefs);
     const [tutorialOpen, setTutorialOpen] = React.useState(false);
     // First visit: the walkthrough opens by itself, once per player (any device).
@@ -539,8 +545,20 @@ export default function OutpostView() {
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
                     {/* Grid */}
                     <div className="space-y-2">
-                        <div className="max-w-[540px] mx-auto w-full">
-                            <Board state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)} />
+                        <div className="max-w-[540px] mx-auto w-full space-y-2">
+                            {view === 'diorama' && (
+                                <OutpostDiorama state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)} />
+                            )}
+                            {view === 'board' && (
+                                <Board state={state} running={balance.running} idleOf={idleOf} selected={selected} onSelect={i => setSelected(selected === i ? null : i)} />
+                            )}
+                            <div className="flex justify-end gap-1">
+                                {(['diorama', 'board'] as const).map(v => (
+                                    <button key={v} onClick={() => setView(v)} className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded border ${view === v ? 'border-sky-400/60 text-sky-200 bg-sky-500/10' : 'border-slate-800 text-slate-500 hover:text-slate-300'}`}>
+                                        {v === 'diorama' ? 'Diorama' : 'Board'}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                         <Legend />
                         {state.tier === 1 && !state.graduated && <p className="text-[10px] text-slate-500 text-center">The outer ring opens when the outpost becomes a settlement.</p>}
