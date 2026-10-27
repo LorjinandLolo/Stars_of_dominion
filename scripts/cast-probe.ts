@@ -28,7 +28,7 @@ function check(label: string, ok: boolean, detail = ''): void {
 
 async function main() {
     // ── The data ────────────────────────────────────────────────────────────
-    check('six written people, one per office', CAST.length === 6 && CABINET_PORTFOLIOS.every(p => CAST.some(c => c.portfolio === p)));
+    check('twenty-four written people, four per office', CAST.length === 24 && CABINET_PORTFOLIOS.every(p => CAST.filter(c => c.portfolio === p).length === 4));
     check('every character has bio, want, fear and an appointment line', CAST.every(c => c.bio && c.want && c.fear && c.lines.appointed?.loyal?.length));
     check('starting numbers are in range', CAST.every(c => Object.values(c.numbers).every(n => n >= 0 && n <= 100)));
     const vane = CAST.find(c => c.id === 'thessaly-vane')!;
@@ -57,15 +57,21 @@ async function main() {
     check('each sits in the seat they were written for', after.every(m => characterOf(m)!.portfolio === m.portfolio));
     check('the generated ministers stood aside (retired, no grudge)', before.every(id => world.leadership.leaders.get(id)?.status === 'retired' && world.leadership.leaders.get(id)?.history.some((h: any) => /Stood aside/.test(h.description))));
     check('the character\'s numbers and background are on the leader', after.every(m => m.loyalty === characterOf(m)!.numbers.loyalty && m.background === characterOf(m)!.background && m.age === characterOf(m)!.age));
-    check('the draw is recorded', CAST.every(c => castState(world).drawn[c.id] === human) && castState(world).factions[human] === true);
+    check('the draw is recorded: six to this court, in file order', after.every(m => castState(world).drawn[m.characterId!] === human) && Object.keys(castState(world).drawn).length === 6 && castState(world).factions[human] === true);
     check('a second bootstrap draws nobody twice', (ensureCabinets(world), CABINET_PORTFOLIOS.map(p => getMinister(world, human, p)!.id).join() === after.map(m => m.id).join()));
 
     // ── The pool runs out ───────────────────────────────────────────────────
     world.claimedFactionIds = [human, second];
     tickCabinets(world, 60);
     const secondCabinet = CABINET_PORTFOLIOS.map(p => getMinister(world, second, p)!);
-    check('a later claim finds the pool empty and keeps the engine\'s people', secondCabinet.every(m => !characterOf(m)) && castState(world).factions[second] === true);
-    check('nextCharacterFor is empty for every seat now', CABINET_PORTFOLIOS.every(p => !nextCharacterFor(world, second, p)));
+    check('a second claim draws the next six, none shared with the first', secondCabinet.every(m => !!characterOf(m)) && !secondCabinet.some(m => after.some(a => a.characterId === m.characterId)) && castState(world).factions[second] === true, secondCabinet.map(m => m.characterId).join(','));
+    const more = plain.filter(id => id !== human && id !== second).slice(0, 3);
+    world.claimedFactionIds = [human, second, ...more];
+    tickCabinets(world, 60);
+    const fifth = more[2];
+    check('the pool runs out at the fifth court: it keeps the engine\'s people', Object.keys(castState(world).drawn).length === 24 && CABINET_PORTFOLIOS.every(p => !characterOf(getMinister(world, fifth, p))) && castState(world).factions[fifth] === true, `drawn ${Object.keys(castState(world).drawn).length}`);
+    check('nextCharacterFor is empty for every seat now', CABINET_PORTFOLIOS.every(p => !nextCharacterFor(world, fifth, p)));
+    world.claimedFactionIds = [human];
 
     // ── The card and the proposals speak in their words ─────────────────────
     world.economy.factions.get(human).reserves.CREDITS = 500_000;

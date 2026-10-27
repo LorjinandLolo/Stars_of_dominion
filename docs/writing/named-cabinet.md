@@ -455,6 +455,12 @@ back when the friend leaves via `courtierFor` in `appointMinisterInternal`).
 Vane plots a coup when dismissed after going public and joins plots from the
 corridor; Ness reports every plot while insured. Probe `scripts/brutus-probe.ts`.
 
+Step 4 landed 2026-10-27: all twenty-four are in `cabinet-cast.json` (four per
+office, 533 lines, 200 arc stages, 258 letters), each with a courtier stage
+and a dismissal exit on every in-office stage, written against the arc and
+cast probes. The first four claims draw six each; the fifth gets the engine.
+`fits`/`refuses` are all 'any' for now: the court-kind tuning slot is open.
+
 1. Data shape, the cast file with six characters (one per office), the
    draw, `characterOf`, the voice lookup. The card and proposals show
    written people. One day.

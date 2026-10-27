@@ -12,6 +12,7 @@ import { bootSoakWorld, empireIds, quietConsole, seedSimulation } from './soak-h
 import { CAST, castState, characterOf } from '../lib/leadership/cast';
 import { runCharacterArcs, arcStateOf, type Arc } from '../lib/government/arcs';
 import { lettersOf, MAX_LETTERS } from '../lib/government/letters';
+import { CABINET_PORTFOLIOS } from '../lib/government/types';
 import { ensureCabinets, generateCabinetAdvice, getMinister, dismissMinister } from '../lib/government/cabinet-service';
 import { getGovernment } from '../lib/government/government-service';
 import { advisorRecordFor, openProposals, resolveProposal } from '../lib/delegation/advisor-proposals';
@@ -57,7 +58,7 @@ async function main() {
 
     // ── Appointment letters ─────────────────────────────────────────────────
     const letters = lettersOf(world, human);
-    check('six appointment letters on the draw, one per character', letters.length === 6 && CAST.every(c => letters.some(l => l.characterId === c.id && l.body === c.letters!.appointed)));
+    check('six appointment letters on the draw, one per seated character', letters.length === 6 && CABINET_PORTFOLIOS.every(p => { const c = characterOf(getMinister(world, human, p))!; return !!c && letters.some(l => l.characterId === c.id && l.body === c.letters!.appointed); }));
     const brief = buildDailyBrief({ factionId: human, world, now: new Date() });
     check('the first brief carries the letters (capped at four, newest first)', brief.letters.length === 4 && brief.letters[0].from === letters[5].fromName && !brief.empty, brief.letters.map(l => l.from).join(' | '));
 
