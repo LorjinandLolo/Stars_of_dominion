@@ -19,6 +19,7 @@ import DistrictScenery from './DistrictScenery';
 import BuildingMotif from './BuildingMotif';
 import WarLayer from './WarLayer';
 import RiverLayer from './RiverLayer';
+import OrbitLayer from './OrbitLayer';
 import { buildRivers, portal } from './riverPaths';
 import type { CityTier } from './CityScenery';
 import WarHud from './WarHud';
@@ -67,6 +68,8 @@ export default function PlanetSurfaceView() {
     const setConstructionPlanet = useUIStore(s => s.setConstructionPlanet);
     const systemViewId = useUIStore(s => s.systemViewId);
     const armies = useUIStore(s => s.armies);
+    const fleets = useUIStore(s => s.fleets) as any[];
+    const nowSeconds = useUIStore(s => s.nowSeconds);
 
     const planet = planets.find((p: any) => p.id === surfacePlanetId);
 
@@ -320,6 +323,11 @@ export default function PlanetSurfaceView() {
     // A glassed world draws as glass whatever its terrain was.
     const worldClimate = planet.glassed ? 'glassed' : climateOf(surface.archetype);
     const isOwner = planet.ownerId === playerFactionId;
+    // Anything above the world worth drawing in orbit (OrbitLayer decides the rest).
+    const inOrbit = ((planet.orbital?.slots ?? []) as any[]).some(sl => sl.structureId && sl.state !== 'empty')
+        || (isOwner && (planet.orbital?.slots?.length ?? 0) > 0)
+        || (fleets ?? []).some((f: any) => f.orbitingPlanetId === planet.id
+            || (planet.siege && f.currentSystemId === planet.systemId && !f.destinationSystemId && f.factionId === planet.siege.attackerEmpireId));
     const ownerFaction = factions[planet.ownerId];
     const regionById = new Map(surface.regions.map(r => [r.id, r]));
     const [coreInner, coreOuter] = ARCHETYPE_CORE[surface.archetype];
@@ -432,10 +440,23 @@ export default function PlanetSurfaceView() {
                     className="flex-1 flex items-center justify-center overflow-hidden p-2"
                     style={planet.siege ? { paddingBottom: 172 } : undefined}
                 >
+                    {/* The board in a frame of its own size, with the orbit
+                        drawn around it in two layers that share its coordinates
+                        and spill into the margins (OrbitLayer): the far half
+                        behind the globe, the near half and the station in front.
+                        With anything in orbit the board narrows so the station
+                        fits beside the planet. */}
+                    <div className="relative w-full h-full max-h-[92vmin]"
+                        style={{ maxWidth: inOrbit ? 'min(92vmin, calc((100vw - 300px) / 1.7))' : '92vmin' }}>
+                    {inOrbit && (
+                        <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                            <OrbitLayer planet={planet} side="back" fleets={fleets} nowSeconds={nowSeconds} isOwner={isOwner} />
+                        </svg>
+                    )}
                     <svg
                         ref={boardRef}
                         viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`}
-                        className="w-full h-full max-w-[92vmin] max-h-[92vmin]"
+                        className="relative w-full h-full"
                         onMouseLeave={() => setHover(null)}
                         // Right-click is a game order, not a browser menu: it
                         // marches the selection to whatever district is under
@@ -857,6 +878,13 @@ export default function PlanetSurfaceView() {
                             }
                         `}</style>
                     </svg>
+                    {inOrbit && (
+                        <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                            <OrbitLayer planet={planet} side="front" fleets={fleets} nowSeconds={nowSeconds} isOwner={isOwner}
+                                onOpenOrbit={isOwner ? () => { useUIStore.setState({ constructionInitialTab: 'ORBITAL' }); setConstructionPlanet(planet.id); } : undefined} />
+                        </svg>
+                    )}
+                    </div>
                 </div>
 
                 {/* Ground-war command bar */}

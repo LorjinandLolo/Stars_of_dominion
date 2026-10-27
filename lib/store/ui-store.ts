@@ -108,6 +108,8 @@ export interface UIStore {
     setSelectedPlanet: (id: string | null) => void;
     constructionPlanetId: string | null;
     setConstructionPlanet: (id: string | null) => void;
+    /** Tab the construction panel opens on next time (e.g. 'ORBITAL' from the station in orbit); read once, then cleared. */
+    constructionInitialTab: string | null;
     /** Planet whose 64-sector surface board is open (Layer 2 planet view). */
     surfacePlanetId: string | null;
     setSurfacePlanet: (id: string | null) => void;
@@ -423,6 +425,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     setSelectedPlanet: (id: string | null) => set({ selectedPlanetId: id }),
     constructionPlanetId: null,
     setConstructionPlanet: (id: string | null) => set({ constructionPlanetId: id }),
+    constructionInitialTab: null,
     surfacePlanetId: null,
     setSurfacePlanet: (id: string | null) => set({ surfacePlanetId: id }),
     outpostPlanetId: null,
@@ -770,4 +773,3 @@ export const useUIStore = create<UIStore>((set, get) => ({
     focusTarget: null,
     setFocusTarget: (focusTarget) => set({ focusTarget }),
 }));
-

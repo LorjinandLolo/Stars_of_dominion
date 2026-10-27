@@ -62,7 +62,12 @@ export function PlanetConstructionPanel({
     onClose
 }: PlanetConstructionPanelProps) {
     const { playerFactionId, diplomacyState } = useUIStore();
-    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY' | 'ORBITAL' | 'INFRA' | 'LOGISTICS'>('BUILD');
+    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY' | 'ORBITAL' | 'INFRA' | 'LOGISTICS'>(() => {
+        // Opened from the station in orbit (OrbitLayer): start on the orbital tab, once.
+        const asked = useUIStore.getState().constructionInitialTab;
+        if (asked) useUIStore.setState({ constructionInitialTab: null });
+        return asked === 'ORBITAL' ? 'ORBITAL' : 'BUILD';
+    });
     const [buildings, setBuildings] = useState<PlacedBuilding[]>([]);
     const [queue, setQueue] = useState<ConstructionOrder[]>([]);
     const [spaceQueue, setSpaceQueue] = useState<any[]>([]);
