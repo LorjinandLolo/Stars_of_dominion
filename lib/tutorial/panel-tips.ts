@@ -7,8 +7,9 @@
 // that surprises people, where to look first. Shown once per player, whatever
 // the device (remembered in uiPrefs.opened as `tip:<tab>`).
 //
-// Research has its own in-panel fork explainer (ResearchPanel), so it is not
-// here. Pure data, safe in the client bundle.
+// Research also has its own in-panel help (a first-project card and the
+// Pick-a-path sheet); this tip is the three lines before any of that. Pure
+// data, safe in the client bundle.
 
 export interface PanelTip {
     /** NavTab the tip belongs to. */
@@ -20,6 +21,17 @@ export interface PanelTip {
 }
 
 export const PANEL_TIPS: readonly PanelTip[] = [
+    {
+        // The Research panel is the 'tech' tab (components/shell/GameShell.tsx).
+        tab: 'tech',
+        manual: 'research',
+        title: 'Research',
+        lines: [
+            'Pick one technology and it runs on its own for a few hours. The card at the top names a good first project; press Start.',
+            "Five trees, one slot to begin with. Finish a tree's tier I first: its forks stay shut until then, so nothing you do early is permanent.",
+            'Amber Fork cards are the only permanent choices. When one opens, Pick a path shows every option side by side, and what each one closes, before you commit.',
+        ],
+    },
     {
         tab: 'outposts',
         manual: 'expansion',

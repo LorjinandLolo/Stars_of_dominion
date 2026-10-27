@@ -111,7 +111,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         // the player's order takes the council's slot over.
         id: 'start_research',
         title: 'Choose your first research',
-        hint: 'Open Research and start a technology you want. Amber "Fork" cards are permanent choices: starting one closes the other path for the season.',
+        hint: 'Open Research: the card at the top names a good first project, press Start. Nothing early is permanent; the amber Fork cards stay shut until you finish that tree\'s tier I.',
         takes: 'Starts at once; a tier I project runs a few hours',
         meanwhile: 'Research runs on its own. When it finishes, your research council picks the next one unless you do.',
         metrics: [DEED_RESEARCH_STARTED],

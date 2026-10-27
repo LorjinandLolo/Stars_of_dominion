@@ -168,10 +168,13 @@ test('next steps advance on a policy, on troops, on an outpost, and on holding t
     assert.strictEqual(currentGoal(world, F), null);
 });
 
-test('every panel tip is short, and none duplicates the research fork explainer', () => {
+test('every panel tip is short, and research has one that points at the first project and Pick a path', () => {
     const tabs = PANEL_TIPS.map(t => t.tab);
     assert.strictEqual(new Set(tabs).size, tabs.length, 'one tip per tab');
-    assert.ok(!tabs.includes('tech'));
+    // Research once relied on its fork explainer alone; new players needed more hand-holding (2026-10-27).
+    const research = PANEL_TIPS.find(t => t.tab === 'tech');
+    assert.ok(research && research.manual === 'research');
+    assert.ok(research.lines.some(l => /first project/.test(l)) && research.lines.some(l => /Pick a path/.test(l)));
     for (const tip of PANEL_TIPS) {
         assert.ok(tip.lines.length >= 2 && tip.lines.length <= 3, `${tip.tab}: 2-3 lines`);
         for (const line of tip.lines) assert.ok(line.length <= 200, `${tip.tab}: line too long (${line.length})`);

@@ -138,3 +138,49 @@ export function forkChoices(forks: ReadonlyMap<string, Fork>, committedIds: Read
     }
     return out;
 }
+
+// ─── Held back until tier I ───────────────────────────────────────────────────
+//
+// A new player met a permanent three-way choice on their second project. Every
+// fork now waits until its tree's tier I is finished: by then the player knows
+// what the tree is for. The engine enforces it for every faction (the AI works
+// tier by tier anyway, and the research council never picks a fork).
+
+/** The tier I technologies of a tree that count toward opening its forks. */
+export function tierOneOf(techs: readonly Tech[], tree: string): Tech[] {
+    // The authored trees start at tier 1 (the _t1_ ids), not at the enum's
+    // FOUNDATION = 0, so 'tier I' is the lowest tier the tree actually has.
+    const own = techs.filter(t => t.tree === tree && !t.isHidden && !t.id.startsWith('emg_'));
+    const first = Math.min(...own.map(t => t.tier));
+    return own.filter(t => t.tier === first);
+}
+
+export interface ForkReadiness {
+    /** True for every tech that is not a fork option. */
+    open: boolean;
+    /** Tier I technologies of the tree still to research (empty when open). */
+    missing: Tech[];
+}
+
+/** Whether a fork option may be started yet: its tree's tier I must be done. */
+export function forkReadiness(techs: readonly Tech[], unlockedIds: ReadonlySet<string> | readonly string[], tech: Tech): ForkReadiness {
+    if (!tech.mutuallyExclusiveGroup) return { open: true, missing: [] };
+    const has = Array.isArray(unlockedIds) ? new Set(unlockedIds) : unlockedIds as ReadonlySet<string>;
+    const missing = tierOneOf(techs, tech.tree).filter(t => !has.has(t.id));
+    return { open: missing.length === 0, missing };
+}
+
+/** Every technology that needs this one, directly or further down, in authored order. */
+export function descendantsOf(techs: readonly Tech[], techId: string): Tech[] {
+    const reach = new Set<string>([techId]);
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const t of techs) {
+            if (reach.has(t.id)) continue;
+            if ((t.prerequisites ?? []).some(p => reach.has(p))) { reach.add(t.id); grew = true; }
+        }
+    }
+    reach.delete(techId);
+    return techs.filter(t => reach.has(t.id));
+}

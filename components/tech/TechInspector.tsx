@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Check, X, AlertTriangle, Clock, Sparkles, MousePointerClick, ArrowUpRight, Ban, Signpost } from 'lucide-react';
+import { Check, X, AlertTriangle, Clock, Sparkles, MousePointerClick, ArrowUpRight, Ban, Signpost, Hourglass } from 'lucide-react';
 import type { Tech, TechEffect } from '@/lib/tech/types';
 import { STATUS_META, type TechNodeStatus } from './TechNode';
 import { TIER_NAMES, TIER_NUMERALS } from './layout';
@@ -18,6 +18,8 @@ export interface InspectorForkInfo {
     closedByOption: Tech | null;
     /** For an open tech behind an undecided fork: the option it needs. */
     needsOption: Tech | null;
+    /** For a fork option still held back: its tree's tier I technologies not yet researched. */
+    held: Tech[] | null;
 }
 
 /** How many lost techs to name before summarising the rest. */
@@ -40,6 +42,8 @@ interface TechInspectorProps {
     onSelect: (techId: string) => void;
     onResearch: (techId: string) => void;
     forkInfo?: InspectorForkInfo | null;
+    /** Opens the Pick-a-path sheet for the selected tech's fork. */
+    onChoosePath?: () => void;
 }
 
 const humanize = (s: string) => s.replace(/_/g, ' ');
@@ -94,6 +98,7 @@ export default function TechInspector({
     onSelect,
     onResearch,
     forkInfo,
+    onChoosePath,
 }: TechInspectorProps) {
     // A fork option takes two clicks: the first shows the price, the second
     // commits. The panel is keyed by tech, so this resets on every selection.
@@ -119,6 +124,7 @@ export default function TechInspector({
             case 'available':
                 if (slotsFull) return { label: 'All research slots busy', enabled: false };
                 return { label: busy ? 'Authorizing…' : 'Authorize Research', enabled: !busy };
+            case 'held': return { label: `Opens after tier I · ${forkInfo?.held?.length ?? 0} left`, enabled: false };
             case 'researching': return { label: `In progress ${Math.round(progress)}%`, enabled: false };
             // The order is queued for the worker; the next sync poll turns this into a slot.
             case 'pending': return { label: 'Authorizing — awaiting the worker', enabled: false };
@@ -226,6 +232,31 @@ export default function TechInspector({
                         </ul>
                     )}
                 </section>
+
+                {/* A fork held back until the tree's tier I is done: say what is left, and let them read the paths now. */}
+                {status === 'held' && forkInfo?.held && (
+                    <section className="rounded border border-amber-700/50 border-dashed bg-amber-950/15 p-2.5 space-y-2">
+                        <h3 className="flex items-center gap-1.5 text-[8px] font-display text-amber-300/90 uppercase tracking-[0.25em]">
+                            <Hourglass size={11} /> Opens after tier I
+                        </h3>
+                        <p className="text-[10px] text-amber-100/80 leading-relaxed">
+                            Forks are the only permanent choices, so they wait until you know the tree. Finish its tier I first ({forkInfo.held.length} left):
+                        </p>
+                        <ul className="space-y-1">
+                            {forkInfo.held.slice(0, LOST_LISTED).map(t => (
+                                <li key={t.id}><TechLink tech={t} met={false} onSelect={onSelect} /></li>
+                            ))}
+                        </ul>
+                        {forkInfo.held.length > LOST_LISTED && (
+                            <p className="text-[9px] text-slate-500">…and {forkInfo.held.length - LOST_LISTED} more.</p>
+                        )}
+                        {onChoosePath && (
+                            <button type="button" onClick={onChoosePath} className="w-full py-1.5 rounded border border-amber-500/40 text-[9px] font-display uppercase tracking-[0.2em] text-amber-200 hover:bg-amber-500/10">
+                                Read the paths
+                            </button>
+                        )}
+                    </section>
+                )}
 
                 {/* An undecided fork: the price, named, before anyone clicks. */}
                 {forkInfo?.fork && forkInfo.cost && (
@@ -364,7 +395,7 @@ export default function TechInspector({
                     <button
                         type="button"
                         disabled={!action.enabled}
-                        onClick={() => (forkInfo?.cost ? setConfirming(true) : onResearch(tech.id))}
+                        onClick={() => (forkInfo?.cost ? (onChoosePath ? onChoosePath() : setConfirming(true)) : onResearch(tech.id))}
                         className={`w-full flex items-center justify-center gap-2 py-2.5 rounded text-[10px] font-display uppercase tracking-[0.2em] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                             action.enabled
                                 ? forkInfo?.cost
@@ -374,7 +405,7 @@ export default function TechInspector({
                         }`}
                     >
                         {forkInfo?.cost && action.enabled ? <Signpost size={12} /> : <Sparkles size={12} />}
-                        {forkInfo?.cost && action.enabled ? 'Choose this path…' : action.label}
+                        {forkInfo?.cost && action.enabled ? (onChoosePath ? 'Pick a path…' : 'Choose this path…') : action.label}
                     </button>
                 )}
                 {replacesCouncil && status === 'available' && (

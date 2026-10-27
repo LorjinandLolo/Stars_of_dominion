@@ -6,6 +6,7 @@ import {
 // time-config holds only constants and type-only imports, so pulling the tick
 // length in here cannot create a cycle back through the tick processor.
 import { TICK_INTERVAL_HOURS } from '../time/time-config';
+import { forkReadiness } from './forks';
 
 // --- DATA & REGISTRY ---
 
@@ -246,6 +247,13 @@ export class TechEngine {
                 return ut?.mutuallyExclusiveGroup === tech.mutuallyExclusiveGroup;
             });
             if (alreadyPickedInGroup) throw new Error("A different path in this branch has already been chosen");
+
+            // Forks wait until the tree's tier I is done (lib/tech/forks.ts).
+            const ready = forkReadiness(registry.getAll(), state.unlockedTechIds, tech);
+            if (!ready.open) {
+                const tree = tech.tree.charAt(0).toUpperCase() + tech.tree.slice(1);
+                throw new Error(`This fork opens when the ${tree} tree's tier I is finished: ${ready.missing.length} left (${ready.missing.slice(0, 3).map(t => t.name).join(', ')}${ready.missing.length > 3 ? ', …' : ''}).`);
+            }
         }
 
         // Prerequisite check. A reveal may have waived some of the chain —

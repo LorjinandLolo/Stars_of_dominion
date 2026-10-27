@@ -311,7 +311,7 @@ export const MANUAL_DATA: ManualSection[] = [
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Every tree splits twice, at tier II and at tier IV, into two or three options. You can only ever have one. The moment you START an option, the others close for the season, and so does every technology that needs them. Fork options carry an amber Fork badge and hang from a dashed amber rail; the panel tells you exactly what a choice closes before you commit.',
+                        content: 'Every tree splits twice, at tier II and at tier IV, into two or three options. You can only ever have one. The moment you START an option, the others close for the season, and so does every technology that needs them. A tree\'s forks stay shut until you have researched all of its tier I, so nothing you do in your first days is permanent. Fork options carry an amber Fork badge and hang from a dashed amber rail; once a fork opens, Pick a path (the Forks bar, or the button on a fork card) lays every option side by side with what it leads to and what it closes, and asks you to confirm.',
                     },
                     {
                         type: 'strategy_tip',

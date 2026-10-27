@@ -17,6 +17,7 @@ import {
     Plus,
     Maximize2,
     Signpost,
+    Sparkles,
 } from 'lucide-react';
 import { TechTreeType, TechTier, type Tech } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
@@ -27,7 +28,9 @@ import TechNode, { STATUS_META, STATUS_ORDER, type TechNodeEmphasis, type TechNo
 import TechConnectors from '../tech/TechConnectors';
 import TechInspector from '../tech/TechInspector';
 import ForkRails from '../tech/ForkRails';
-import { closedBy, closedTechIds, forkChoices, forkCost, forkLabel, forksOf, requiredForkOption } from '@/lib/tech/forks';
+import PathSheet from '../tech/PathSheet';
+import { closedBy, closedTechIds, forkChoices, forkCost, forkLabel, forkReadiness, forksOf, requiredForkOption } from '@/lib/tech/forks';
+import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
 import {
     GUTTER_W,
     TIER_NAMES,
@@ -71,6 +74,15 @@ interface NodeState { status: TechNodeStatus; progress: number }
 
 /** uiPrefs.opened id for the one-time fork explainer. */
 const FORK_EXPLAINER_ID = 'research-forks';
+/** uiPrefs.opened id once the first-project card has done its job (started, or waved away). */
+const FIRST_PROJECT_ID = 'research-first-project';
+/**
+ * A good first project, in order of preference: plain, useful, no strings.
+ * The card names the first of these the empire has not already got.
+ */
+const FIRST_PROJECTS = ['eco_t1_1', 'inf_t1_3', 'inf_t1_1', 'eco_t1_7', 'mil_t1_1'];
+/** A veteran opening the panel for the first time on a new device is not a new player. */
+const FIRST_PROJECT_MAX_UNLOCKED = 4;
 
 export default function ResearchPanel() {
     // Narrow selectors: the whole-store subscription re-rendered ~44 nodes and
@@ -78,7 +90,12 @@ export default function ResearchPanel() {
     const techState = useUIStore(s => s.techState);
     const playerFactionId = useUIStore(s => s.playerState.factionId);
 
-    const [activeBranch, setActiveBranch] = useState<TechTreeType>(TechTreeType.ESPIONAGE);
+    // A brand-new empire opens on Economy, where the first-project card points;
+    // anyone further along opens where they always did.
+    const [activeBranch, setActiveBranch] = useState<TechTreeType>(() =>
+        (useUIStore.getState().techState?.unlockedTechIds?.length ?? 0) === 0 ? TechTreeType.ECONOMY : TechTreeType.ESPIONAGE);
+    /** The fork the Pick-a-path sheet is open on. */
+    const [pathGroup, setPathGroup] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [availableOnly, setAvailableOnly] = useState(false);
@@ -127,7 +144,10 @@ export default function ResearchPanel() {
             else if (closedIds.has(tech.id)) status = 'closed';
             else if (slot) status = 'researching';
             else if (pendingIds.has(tech.id)) status = 'pending';
-            else if ((tech.prerequisites ?? []).every(pid => unlockedIds.has(pid))) status = 'available';
+            else if ((tech.prerequisites ?? []).every(pid => unlockedIds.has(pid))) {
+                // A fork option waits for its tree's tier I (lib/tech/forks.ts).
+                status = forkReadiness(allTechs, unlockedIds, tech).open ? 'available' : 'held';
+            }
             else status = 'unavailable';
 
             // Progress comes from the tick counters the worker actually
@@ -140,7 +160,7 @@ export default function ResearchPanel() {
             out.set(tech.id, { status, progress });
         }
         return out;
-    }, [techs, activeSlots, unlockedIds, lockedIds, closedIds, pendingIds]);
+    }, [techs, activeSlots, unlockedIds, lockedIds, closedIds, pendingIds, allTechs]);
 
     // A pending card settles the moment the worker's slot (or unlock) shows up
     // in the synced state.
@@ -173,8 +193,9 @@ export default function ResearchPanel() {
                 ? closedBy(allTechs, byId, selected.id, lockedIds)
                 : null,
             needsOption: !closedIds.has(selected.id) ? requiredForkOption(byId, selected.id, decidedGroups) : null,
+            held: fork && !decidedGroups.has(fork.group) ? (() => { const r = forkReadiness(allTechs, unlockedIds, selected); return r.open ? null : r.missing; })() : null,
         };
-    }, [selected, forks, decidedGroups, allTechs, lockedIds, choices, closedIds, byId]);
+    }, [selected, forks, decidedGroups, allTechs, lockedIds, choices, closedIds, byId, unlockedIds]);
 
     // Selected tech plus every ancestor, walked across trees so a chain that
     // dips into another branch still lights its visible segment.
@@ -225,6 +246,15 @@ export default function ResearchPanel() {
     const uiPrefs = useUIStore(s => s.uiPrefs);
     const showForkExplainer = !!uiPrefs && !uiPrefs.opened.includes(FORK_EXPLAINER_ID);
 
+    // The first-project card: until the player starts research of their own,
+    // one plain technology with a Start button. The council's work does not
+    // count; the player choosing does.
+    const ownStarted = pendingIds.size > 0 || activeSlots.some(s => s.techId && s.startedBy !== 'council');
+    const firstProject = useMemo(() => FIRST_PROJECTS.map(id => byId.get(id)).find((t): t is Tech =>
+        !!t && !unlockedIds.has(t.id) && !activeSlots.some(s => s.techId === t.id)) ?? null, [byId, unlockedIds, activeSlots]);
+    const showFirstProject = !!uiPrefs && !uiPrefs.opened.includes(FIRST_PROJECT_ID) && !ownStarted
+        && unlockedIds.size < FIRST_PROJECT_MAX_UNLOCKED && !!firstProject;
+
     const scrollNodeIntoView = useCallback((techId: string) => {
         // Defer a frame so a branch switch has painted the node before we look for it.
         requestAnimationFrame(() => {
@@ -232,6 +262,19 @@ export default function ResearchPanel() {
             el?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
         });
     }, []);
+
+    // Status of any tech, in any tree, for the Pick-a-path sheet.
+    const statusOf = useCallback((techId: string): TechNodeStatus | undefined => {
+        const tech = byId.get(techId);
+        if (!tech) return undefined;
+        if (unlockedIds.has(techId)) return 'unlocked';
+        if (lockedIds.has(techId)) return 'locked';
+        if (closedIds.has(techId)) return 'closed';
+        if (activeSlots.some(s => s.techId === techId)) return 'researching';
+        if (pendingIds.has(techId)) return 'pending';
+        if ((tech.prerequisites ?? []).every(pid => unlockedIds.has(pid))) return forkReadiness(allTechs, unlockedIds, tech).open ? 'available' : 'held';
+        return 'unavailable';
+    }, [byId, unlockedIds, lockedIds, closedIds, activeSlots, pendingIds, allTechs]);
 
     const handleNodeSelect = useCallback((techId: string) => {
         setError(null);
@@ -300,6 +343,11 @@ export default function ResearchPanel() {
         }
     };
 
+    const startFirstProject = (techId: string) => {
+        void patchUiPrefs({ opened: [FIRST_PROJECT_ID] });
+        void handleResearch(techId);
+    };
+
     const fitToWidth = () => {
         const viewport = scrollRef.current?.clientWidth;
         if (!viewport) return;
@@ -336,7 +384,8 @@ export default function ResearchPanel() {
     // panel. Document capture runs after a window-capture modal regardless of
     // registration order. Inside the search box Esc clears the query instead.
     useEffect(() => {
-        if (!selectedId) return;
+        // The Pick-a-path sheet owns Esc while it is open.
+        if (!selectedId || pathGroup) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || e.defaultPrevented) return;
             if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
@@ -345,13 +394,13 @@ export default function ResearchPanel() {
         };
         document.addEventListener('keydown', onKey, true);
         return () => document.removeEventListener('keydown', onKey, true);
-    }, [selectedId]);
+    }, [selectedId, pathGroup]);
 
     const scaledW = canvas.w * scale;
     const scaledH = canvas.h * scale;
 
     return (
-        <div className="h-full flex flex-col bg-slate-950/80 backdrop-blur-xl overflow-hidden border-l border-white/5">
+        <div className="relative h-full flex flex-col bg-slate-950/80 backdrop-blur-xl overflow-hidden border-l border-white/5">
             {/* Header */}
             <div className="px-6 pt-6 pb-2 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 via-transparent to-transparent">
                 <div className="flex items-center justify-between gap-4 font-display mb-4">
@@ -451,6 +500,49 @@ export default function ResearchPanel() {
                 </div>
             </div>
 
+            {showFirstProject && firstProject && (
+                <div id="first-project" className="flex flex-wrap items-start gap-3 px-6 py-3 border-b border-indigo-400/30 bg-indigo-950/40">
+                    <Sparkles size={16} className="text-indigo-300 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-[16rem] space-y-1">
+                        <p className="text-[10px] font-display uppercase tracking-[0.2em] text-indigo-200">A good first project</p>
+                        <p className="text-sm text-white">
+                            {firstProject.name}
+                            <span className="ml-2 text-[9px] font-mono uppercase text-slate-400">{firstProject.tree} · tier I</span>
+                        </p>
+                        <p className="text-[11px] text-slate-300 leading-relaxed">{firstProject.mechanicalEffect ?? firstProject.description}</p>
+                        <p className="text-[10px] text-slate-400 leading-relaxed">
+                            Takes about {Math.max(1, Math.round(firstProject.researchCost / SIM_SECONDS_PER_REAL_SECOND))} hours and runs on its own. Nothing in tier I is permanent;
+                            when it finishes, your research council picks the next one unless you do.
+                            {replacesCouncil && <> The council already started <span className="text-slate-200">{replacesCouncil}</span>; this takes its slot.</>}
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                        <button
+                            type="button"
+                            disabled={busy || slotsFull}
+                            onClick={() => startFirstProject(firstProject.id)}
+                            className="px-4 py-2 rounded-lg border border-indigo-400/60 bg-indigo-500/25 hover:bg-indigo-500/35 text-indigo-50 text-[10px] font-display uppercase tracking-[0.2em] disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            {busy ? 'Starting…' : slotsFull ? 'All slots busy' : `Start ${firstProject.name}`}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { if (activeBranch !== firstProject.tree) handleBranchChange(firstProject.tree); setSelectedId(firstProject.id); scrollNodeIntoView(firstProject.id); }}
+                            className="text-[10px] text-slate-400 hover:text-slate-200"
+                        >
+                            Show it on the tree
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { void patchUiPrefs({ opened: [FIRST_PROJECT_ID] }); }}
+                            className="text-[10px] text-slate-500 hover:text-slate-300"
+                        >
+                            I will pick my own
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {showForkExplainer && (
                 <div id="fork-explainer" className="flex items-start gap-3 px-6 py-3 border-b border-amber-400/30 bg-amber-950/40">
                     <Signpost size={16} className="text-amber-300 shrink-0 mt-0.5" />
@@ -459,7 +551,8 @@ export default function ResearchPanel() {
                         <p className="text-[11px] text-slate-300 leading-relaxed">
                             Every tree splits twice, at tier II and tier IV. Fork options carry an amber <span className="text-amber-300">Fork</span> badge
                             and hang from a dashed amber rail. The moment you <em>start</em> one, the other options close for the season,
-                            and so does everything that needs them. Closed cards turn red and struck through.
+                            and so does everything that needs them. A tree&apos;s forks stay shut until you finish its tier I, and when one opens,
+                            <span className="text-amber-200"> Pick a path</span> shows every option side by side before you commit.
                         </p>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
                             Everything else is safe to try. Your research council never picks a fork for you, and a project
@@ -488,11 +581,8 @@ export default function ResearchPanel() {
                             <button
                                 key={fork.group}
                                 type="button"
-                                onClick={() => {
-                                    const target = chosen ?? fork.options[0];
-                                    setSelectedId(target.id);
-                                    scrollNodeIntoView(target.id);
-                                }}
+                                onClick={() => setPathGroup(fork.group)}
+                                title="Pick a path: every option side by side"
                                 className={`px-2 py-0.5 rounded-full border text-[9px] transition-colors ${
                                     chosen
                                         ? 'border-white/10 text-slate-400 hover:text-slate-200'
@@ -503,7 +593,7 @@ export default function ResearchPanel() {
                             </button>
                         );
                     })}
-                    <span className="text-[8px] text-slate-500 ml-1">Starting research on a fork option closes the others for the season.</span>
+                    <span className="text-[8px] text-slate-500 ml-1">Click a fork to read its paths side by side. Starting one closes the others for the season.</span>
                 </div>
             )}
 
@@ -617,6 +707,7 @@ export default function ResearchPanel() {
                     error={error}
                     onSelect={handleInspectorSelect}
                     onResearch={handleResearch}
+                    onChoosePath={selected?.mutuallyExclusiveGroup ? () => setPathGroup(selected.mutuallyExclusiveGroup!) : undefined}
                 />
             </div>
 
@@ -629,6 +720,23 @@ export default function ResearchPanel() {
                     </div>
                 </div>
             </div>
+
+            {pathGroup && forks.get(pathGroup) && (
+                <PathSheet
+                    fork={forks.get(pathGroup)!}
+                    allTechs={allTechs}
+                    unlockedIds={unlockedIds}
+                    lockedIds={lockedIds}
+                    chosen={choices.get(pathGroup) ?? null}
+                    statusOf={statusOf}
+                    slotsFull={slotsFull}
+                    busy={busy}
+                    error={error}
+                    onCommit={techId => { void handleResearch(techId); setPathGroup(null); setSelectedId(techId); }}
+                    onShow={techId => { setPathGroup(null); handleInspectorSelect(techId); }}
+                    onClose={() => setPathGroup(null)}
+                />
+            )}
         </div>
     );
 }

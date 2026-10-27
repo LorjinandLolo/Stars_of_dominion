@@ -6,7 +6,7 @@
 import assert from 'assert';
 import '../lib/tech/techData';
 import { registry, TechEngine } from '../lib/tech/engine';
-import { closedTechIds, closedBy, forkCost, forkLabel, forksOf, requiredForkOption } from '../lib/tech/forks';
+import { closedTechIds, closedBy, forkCost, forkLabel, forksOf, forkReadiness, requiredForkOption, tierOneOf } from '../lib/tech/forks';
 
 let passed = 0;
 let failed = 0;
@@ -21,12 +21,13 @@ const forks = forksOf(all);
 const espT2 = forks.get('espionage_t2_path')!;
 const [optA, optB] = espT2.options;
 
-/** A state with every prerequisite of `techId` researched and one free slot. */
+/** A state with every prerequisite of `techId` researched, its tree's tier I done (forks wait for it), and two free slots. */
 function readyFor(techId: string) {
     let state = TechEngine.initPlayerState('faction-test');
     const need = new Set<string>();
     const stack = [...(byId.get(techId)!.prerequisites ?? [])];
     while (stack.length) { const id = stack.pop()!; if (need.has(id)) continue; need.add(id); stack.push(...(byId.get(id)!.prerequisites ?? [])); }
+    for (const t of tierOneOf(all, byId.get(techId)!.tree)) need.add(t.id);
     state.unlockedTechIds = [...need];
     if (state.activeSlots.length < 2) {
         state.activeSlots.push({ slotId: 'slot-test-2', techId: null, startTime: 0, progressHours: 0, ticksCompleted: 0, ticksRequired: 0, status: 'empty' } as any);
@@ -40,6 +41,20 @@ test('every tree has its two forks, named for players', () => {
     assert.strictEqual(forks.size, 10);
     assert.strictEqual(forkLabel(espT2), 'Specialization fork');
     assert.ok([...forks.values()].every(f => f.options.length >= 2));
+});
+
+test('a fork waits until its tree\'s tier I is finished, and says what is left', () => {
+    let state = TechEngine.initPlayerState('faction-test');
+    state.unlockedTechIds = [...(optA.prerequisites ?? [])];
+    const ready = forkReadiness(all, state.unlockedTechIds, optA);
+    assert.ok(!ready.open && ready.missing.length > 0);
+    assert.throws(() => TechEngine.assignResearch(state, state.activeSlots[0].slotId, optA.id, 1000), /tier I is finished: \d+ left/);
+    state.unlockedTechIds = [...new Set([...state.unlockedTechIds, ...tierOneOf(all, optA.tree).map(t => t.id)])];
+    assert.ok(forkReadiness(all, state.unlockedTechIds, optA).open);
+    state = TechEngine.assignResearch(state, state.activeSlots[0].slotId, optA.id, 1000);
+    assert.strictEqual(state.activeSlots[0].techId, optA.id);
+    assert.ok(forkReadiness(all, [], all.find(t => !t.mutuallyExclusiveGroup)!).open, 'ordinary techs are never held');
+    assert.strictEqual(tierOneOf(all, 'economy').length, 10);
 });
 
 test('starting research on a fork option closes the others at once', () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Lock, CheckCircle2, FlaskConical, Circle, CircleDashed, Loader2, Ban, Signpost } from 'lucide-react';
+import { Lock, CheckCircle2, FlaskConical, Circle, CircleDashed, Loader2, Ban, Signpost, Hourglass } from 'lucide-react';
 import type { Tech } from '@/lib/tech/types';
 import type { Rect } from './layout';
 
@@ -10,7 +10,11 @@ import type { Rect } from './layout';
  * the worker has not yet reported a slot for it through the sync poll. It
  * exists so the node does not snap back to Available for the seconds in between.
  */
-export type TechNodeStatus = 'unlocked' | 'researching' | 'pending' | 'available' | 'locked' | 'closed' | 'unavailable';
+/**
+ * 'held' is a fork option whose own prerequisites are met but whose tree's
+ * tier I is not finished yet (lib/tech/forks.ts forkReadiness).
+ */
+export type TechNodeStatus = 'unlocked' | 'researching' | 'pending' | 'available' | 'held' | 'locked' | 'closed' | 'unavailable';
 export type TechNodeEmphasis = 'normal' | 'highlight' | 'dim';
 
 interface StatusMeta {
@@ -71,6 +75,13 @@ export const STATUS_META: Record<TechNodeStatus, StatusMeta> = {
         title: 'text-slate-600 line-through decoration-slate-600',
         opacity: 0.5,
     },
+    held: {
+        label: 'Fork · opens after tier I',
+        swatch: 'bg-amber-950 border-amber-700/70 border-dashed',
+        card: 'bg-amber-950/20 border-dashed border-amber-700/50',
+        title: 'text-amber-200/70',
+        opacity: 0.8,
+    },
     unavailable: {
         label: 'Prerequisites missing',
         swatch: 'bg-slate-950 border-slate-700',
@@ -81,7 +92,7 @@ export const STATUS_META: Record<TechNodeStatus, StatusMeta> = {
 };
 
 /** Legend order. 'pending' is deliberately absent: it lasts a few seconds and the inspector names it. */
-export const STATUS_ORDER: TechNodeStatus[] = ['available', 'researching', 'unlocked', 'unavailable', 'locked', 'closed'];
+export const STATUS_ORDER: TechNodeStatus[] = ['available', 'researching', 'unlocked', 'held', 'unavailable', 'locked', 'closed'];
 
 const DIM_OPACITY = 0.35;
 
@@ -93,6 +104,7 @@ function StatusIcon({ status }: { status: TechNodeStatus }) {
         case 'available': return <Circle size={13} className="text-slate-200 shrink-0" />;
         case 'locked': return <Lock size={13} className="text-red-400 shrink-0" />;
         case 'closed': return <Ban size={13} className="text-red-900 shrink-0" />;
+        case 'held': return <Hourglass size={13} className="text-amber-500/80 shrink-0" />;
         default: return <CircleDashed size={13} className="text-slate-600 shrink-0" />;
     }
 }
