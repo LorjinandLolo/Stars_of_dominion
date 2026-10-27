@@ -116,6 +116,9 @@ export interface UIStore {
     /** Planet whose outpost screen is open (components/outpost/OutpostView.tsx). */
     outpostPlanetId: string | null;
     setOutpostPlanet: (id: string | null) => void;
+    /** A world the player just ordered settled: its outpost screen opens once the worker has founded it (OutpostGate). */
+    pendingOutpost: { planetId: string; since: number } | null;
+    awaitOutpost: (planetId: string | null) => void;
     /** System whose orbital view is open (galaxy → system → planet → surface). */
     systemViewId: string | null;
     setSystemView: (id: string | null) => void;
@@ -432,6 +435,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // An outpost's screen sits over the map: opening one (from the Outposts
     // tab or a notification) closes the workspace it would otherwise open behind.
     setOutpostPlanet: (id: string | null) => set(id ? { outpostPlanetId: id, activeTab: 'galaxy' } : { outpostPlanetId: null }),
+    pendingOutpost: null,
+    awaitOutpost: (planetId: string | null) => set({ pendingOutpost: planetId ? { planetId, since: Date.now() } : null }),
     systemViewId: null,
     setSystemView: (id: string | null) => set({ systemViewId: id }),
 
@@ -773,3 +778,4 @@ export const useUIStore = create<UIStore>((set, get) => ({
     focusTarget: null,
     setFocusTarget: (focusTarget) => set({ focusTarget }),
 }));
+

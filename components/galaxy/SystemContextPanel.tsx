@@ -4,6 +4,7 @@ import React from 'react';
 import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
+import QuickBuildMenu from '@/components/construction/QuickBuildMenu';
 import { X, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer, Home } from 'lucide-react';
 import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
 import { hasAsteroidBelt } from '@/lib/movement/belts';
@@ -146,6 +147,9 @@ function PlanetCard({
     const [recruiting, setRecruiting] = React.useState(false);
     const [actionBusy, setActionBusy] = React.useState<string | null>(null);
     const isOwnedByPlayer = planet.ownerId === playerFactionId;
+    // A young world (few buildings) shows its quick-build list open: that is when a player needs it.
+    const [quickBuildOpen, setQuickBuildOpen] = React.useState(() =>
+        isOwnedByPlayer && ((planet as any).tiles ?? []).filter((t: any) => t.buildingId).length < 4);
     const isUnowned = !planet.ownerId;
     const isNeutral = !planet.ownerId || planet.ownerId === 'faction-neutral' || planet.ownerId === '';
     const isEnemyOwned = !!planet.ownerId && planet.ownerId !== playerFactionId && planet.ownerId !== 'faction-neutral';
@@ -155,12 +159,14 @@ function PlanetCard({
     const runPlanetAction = async (key: string, actionId: string, payload: Record<string, any>, label: string) => {
         setActionBusy(key);
         try {
-            await dispatchOrder({
+            const res = await dispatchOrder({
                 actionId,
                 factionId: playerFactionId || 'PLAYER_FACTION',
                 payload,
                 label,
             });
+            // A new world opens its outpost screen once the worker has founded it (OutpostGate).
+            if (res.success && (actionId === 'PLANET_CLAIM' || actionId === 'CIV_FOUND_OUTPOST')) useUIStore.getState().awaitOutpost(planet.id);
         } finally {
             setActionBusy(null);
         }
@@ -225,7 +231,7 @@ function PlanetCard({
                             e.stopPropagation();
                             runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
                         }}
-                        title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
+                        title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food). It lands as a Settlement-tier outpost with ten settlers; grow it into a colony from the outpost screen."
                         className="shrink-0 px-2.5 py-1.5 rounded-md bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/40 text-[10px] text-sky-300 font-semibold transition-colors disabled:opacity-50"
                     >
                         {actionBusy === 'claim' ? 'Settling…' : 'Settle · 20k'}
@@ -382,6 +388,16 @@ function PlanetCard({
                             BUILD
                         </button>
                     )}
+                    {isOwnedByPlayer && !(planet.outpost && !planet.outpost.graduated) && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setQuickBuildOpen(o => !o); }}
+                            title="What to build next here, in order of priority, one click each"
+                            className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${quickBuildOpen ? 'bg-indigo-500/30 border-indigo-400/60 text-indigo-100' : 'bg-indigo-500/10 hover:bg-indigo-500/20 border-indigo-500/40 text-indigo-300'}`}
+                        >
+                            <Hammer size={10} />
+                            QUICK
+                        </button>
+                    )}
 
                     {/* Surface guns: what they fire on when enemy ships are overhead (lib/combat/surface-guns.ts) */}
                     {guns && guns.power > 0 && (
@@ -477,6 +493,13 @@ function PlanetCard({
                     )}
                 </div>
 
+                {/* Quick build: what to build next, in priority order (lib/construction/build-advice.ts) */}
+                {quickBuildOpen && isOwnedByPlayer && (
+                    <div className="mt-1.5">
+                        <QuickBuildMenu planetId={planet.id} compact onOpenFull={() => onConstruct(planet.id)} />
+                    </div>
+                )}
+
                 {/* Second action row: expansion & covert operations */}
                 {/* Empty worlds as battlefields and staging grounds (contested-ground.ts) */}
                 {isNeutral && (planet.siege?.contested || armiesPresent > 0) && (
@@ -495,7 +518,7 @@ function PlanetCard({
                                     e.stopPropagation();
                                     runPlanetAction('claim', 'PLANET_CLAIM', { planetId: planet.id }, `Claiming ${planet.name}`);
                                 }}
-                                title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food)"
+                                title="Settle this unowned world (20,000 credits, 1,000 metals, 1,000 food). It lands as a Settlement-tier outpost with ten settlers; grow it into a colony from the outpost screen."
                                 className="flex-1 py-1.5 bg-sky-600/20 hover:bg-sky-600/35 border border-sky-500/30 rounded text-[9px] text-sky-400 font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
                             >
                                 <Globe size={10} />
@@ -1223,6 +1246,7 @@ function SystemContextPanel() {
 
     return (
         <div
+            id="system-context-panel"
             className="absolute top-24 left-4 z-30 pointer-events-auto flex flex-col"
             // Stops above the Command Dock (4rem + gap) instead of running
             // under it: the old 75vh cut the last planet card in half.
@@ -1392,7 +1416,7 @@ function SystemContextPanel() {
                             {/* Exploration: ping → scan → survey, issued as a real order.
                                 Scan/survey need a fleet in-system or one hyperlane out, two
                                 with an exploration ship (the worker enforces the same rule). */}
-                            {revealStage !== 'surveyed' && (() => {
+                            {revealStage !== 'surveyed' && <div id="explore-action">{(() => {
                                 const nextMode: 'ping' | 'scan' | 'survey' =
                                     revealStage === 'unknown' ? 'ping' :
                                     revealStage === 'pinged' ? 'scan' : 'survey';
@@ -1503,7 +1527,7 @@ function SystemContextPanel() {
                                         </p>
                                     </div>
                                 );
-                            })()}
+                            })()}</div>}
 
                             {/* Resource Biosphere Modifiers */}
                             {hasActiveModifiers && revealStage === 'surveyed' && (

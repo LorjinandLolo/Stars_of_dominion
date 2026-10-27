@@ -22,6 +22,8 @@ export interface TutorialStep {
     /** NavTab to open before showing this step (optional). */
     requiredTab?: string;
     isOptional?: boolean;
+    /** Set the scene first: open the home system, a nearby uncharted one, or close the system panel. */
+    prepare?: 'select-home' | 'select-frontier' | 'clear-selection';
 }
 
 export interface TutorialState {

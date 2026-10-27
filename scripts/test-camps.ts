@@ -10,6 +10,7 @@ import { bootSoakWorld, empireIds, quietConsole } from './soak-harness';
 import { executeOrder, processSieges, startCampBreakout } from './game-loop';
 import { tickCamps, musterForged, breakoutChance, campBuildSpeed, CAMP_BUILD_SPEED, MORTALITY } from '../lib/camps/labour-camp';
 import { ensureLedger } from '../lib/combat/siege/prisoners';
+import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { aiCommandGroundWars } from '../lib/ai/war-ai';
 
 let passed = 0;
@@ -36,7 +37,8 @@ const empties: any[] = [...world.construction.planets.values()].filter((p: any) 
 function colony(): any {
     const p = empties.shift();
     world.movement.factionVisibility.get(A)[p.systemId] = { revealStage: 'surveyed' };
-    silently(() => executeOrder(world, 'PLANET_CLAIM', { planetId: p.id }, A));
+    // A full colony: PLANET_CLAIM now lands an outpost, and an outpost cannot be a camp.
+    silently(() => colonizePlanet(world, A, p.id));
     assert.strictEqual(p.ownerId, A, lastError(A));
     return p;
 }

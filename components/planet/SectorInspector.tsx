@@ -9,7 +9,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { baseBuildSeconds } from '@/lib/construction/build-time';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
-import { BUILDINGS } from '@/data/buildings';
+import { BUILDINGS, buildingOpenTo } from '@/data/buildings';
 import type { BuildingDefinition } from '@/lib/construction/construction-types';
 import type { PlanetSurface, SurfaceSector } from '@/lib/planet-surface/types';
 import type { SectorOccupant } from '@/lib/planet-surface/occupancy';
@@ -47,6 +47,8 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
     React.useEffect(() => { setCatalogOpen(false); }, [sector.index]);
 
     const isOwner = planet.ownerId === playerFactionId;
+    // Your civilization's unique building is offered; anyone else's is not.
+    const playerCivId = (playerFactionId ? (factions as any)[playerFactionId] : null)?.civilizationId as string | undefined;
     const region = surface.regions.find(r => r.id === sector.regionId);
     const terrain = TERRAIN_META[sector.terrain];
     const reserves: Record<string, number> = ((playerFactionId ? factions[playerFactionId] : null)?.reserves ?? {}) as Record<string, number>;
@@ -77,7 +79,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
         COST_KEYS.every(({ key, reserve }) => ((def.cost as any)[key] ?? 0) <= (reserves[reserve] ?? 0));
 
     const buildBlocked = (def: BuildingDefinition): string | null => {
-        if (def.civilizationId) return 'RESTRICTED';
+        if (!buildingOpenTo(def, playerCivId)) return 'RESTRICTED';
         if (def.techRequired && !unlockedTech.has(def.techRequired)) return 'TECH LOCKED';
         if ((def.infrastructureRequired ?? 0) > (planet.infrastructureLevel ?? 1)) return `INFRA ${def.infrastructureRequired} REQUIRED`;
         if (Array.isArray(def.tagRequirements) && def.tagRequirements.length > 0
@@ -104,7 +106,7 @@ export default function SectorInspector({ planet, surface, sector, occupant, onC
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-3">
                     {categories.map(cat => {
-                        const defs = BUILDINGS.filter(b => b.category === cat && !b.civilizationId);
+                        const defs = BUILDINGS.filter(b => b.category === cat && buildingOpenTo(b, playerCivId));
                         if (!defs.length) return null;
                         return (
                             <div key={cat}>

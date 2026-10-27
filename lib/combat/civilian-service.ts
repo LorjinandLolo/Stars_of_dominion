@@ -23,7 +23,7 @@ import { changeFleetCourse } from '../movement/movement-service';
 import { colonizePlanet } from '../exploration/colonize-service';
 import { fireNotification } from '../time/notification-hooks';
 import { RNG, seedFromString } from '../trade-system/rng';
-import { createOutpostState } from '../outposts/outpost-map';
+import { createOutpostState, createSettledOutpostState } from '../outposts/outpost-map';
 import { outpostSightSystems } from '../outposts/outpost-service';
 import { CHARTERS } from '../outposts/outpost-catalog';
 import type { CharterId } from '../outposts/outpost-types';
@@ -266,10 +266,44 @@ export function foundOutpost(world: GameWorldState, factionId: string, fleetId: 
     if (eco) { eco.demographics.population = 1; eco.demographics.housingCapacity = 5; }
     // The outpost itself: a small grid run by shifts until it grows into a colony.
     (planet as any).outpost = createOutpostState(planet, world.nowSeconds, CHARTERS[charter] ? charter : 'settlement');
+    announceOutpost(world, factionId, planet, `${planet.name}: outpost founded`, 'Three colonists and one dome. Open the outpost to place its first modules.');
 
     const left = civilianCount(fleet.composition, 'builder') - 1;
     for (const key of Object.keys(fleet.composition)) if (key.toLowerCase() === 'builder') delete fleet.composition[key];
     if (left > 0) fleet.composition.builder = left;
     if (!Object.values(fleet.composition).some(n => (Number(n) || 0) > 0)) world.movement.fleets.delete(fleet.id);
     return { ok: true };
+}
+
+/**
+ * PLANET_CLAIM: a paid settlement lands as an outpost that already stands at
+ * Settlement tier (createSettledOutpostState), so every new world goes through
+ * the outpost screen before it becomes a colony. The registry cost was charged
+ * by the caller.
+ */
+export function settleWorld(world: GameWorldState, factionId: string, planetId: string): OutpostResult {
+    const result = colonizePlanet(world, factionId, planetId);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    const planet = world.construction.planets.get(planetId)!;
+    if (!Array.isArray(planet.tags)) planet.tags = [];
+    if (!planet.tags.includes('outpost')) planet.tags.push('outpost');
+    const state = createSettledOutpostState(planet, world.nowSeconds);
+    (planet as any).outpost = state;
+    planet.population = 1;
+    planet.popCapacity = 5;
+    const eco = world.economy.planets.get(planetId);
+    if (eco) { eco.demographics.population = 1; eco.demographics.housingCapacity = 5; }
+    announceOutpost(world, factionId, planet, `${planet.name} settled`, `${state.colonists} settlers are down with power, air and food running. Grow it into a colony from the outpost screen.`);
+    return { ok: true };
+}
+
+/** A new outpost's news: clicking it opens the outpost (NotificationFeed). */
+function announceOutpost(world: GameWorldState, factionId: string, planet: { id: string }, title: string, body: string): void {
+    try {
+        fireNotification({
+            id: `outpost-founded-${planet.id}-${Math.floor(world.nowSeconds)}`, factionId, category: 'crisis', priority: 'normal', title, body,
+            createdAt: new Date(world.nowSeconds * 1000).toISOString(), read: false,
+            linkToTab: 'outposts', payload: { outpostPlanetId: planet.id },
+        } as any);
+    } catch { /* notification queue absent in probes */ }
 }

@@ -33,7 +33,7 @@ import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-ma
 import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
-import { foundOutpost, refreshDockedCivilians } from '../lib/combat/civilian-service';
+import { foundOutpost, refreshDockedCivilians, settleWorld } from '../lib/combat/civilian-service';
 import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
@@ -76,7 +76,6 @@ const ADVISOR_REPLAYS: Record<string, (world: any, factionId: string) => boolean
 };
 import { tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 import { unlocksForGoal } from '../lib/goals/dock-unlocks';
-import { colonizePlanet } from '../lib/exploration/colonize-service';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
     saveDesign as saveShipDesign,
@@ -6581,7 +6580,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
              // Colonization: unowned, surveyed worlds only — owned worlds must
              // be taken by invasion. The registry cost was already charged by
              // chargeOrderCost, so a refused claim must refund it.
-             const result = colonizePlanet(world, factionId, payload?.planetId);
+             const result = settleWorld(world, factionId, payload?.planetId); // lands as a Settlement-tier outpost
              if (!result.ok) {
                  refundOrderCost(world, factionId, 'PLANET_CLAIM');
                  recordOrderFailure(world, factionId, 'PLANET_CLAIM', result.reason ?? 'Colonization failed.');

@@ -120,7 +120,7 @@ export default function TopNav() {
             {/* ── Center: the empire's ledger ─────────────────────────────── */}
             {/* Not on a phone (casual-play Item 8): at 375 px the bar has room
                 for the brief, the bell and who you are, and those come first. */}
-            <div className="hidden md:flex items-stretch flex-1 justify-center max-w-fit mx-auto min-w-0 overflow-hidden">
+            <div id="resource-bar" className="hidden md:flex items-stretch flex-1 justify-center max-w-fit mx-auto min-w-0 overflow-hidden">
                 <ResourceChip icon={<Coins size={13} className="text-amber-400" />} label="Credits" {...res(Resource.CREDITS)} />
                 <ResourceChip icon={<Hammer size={13} className="text-slate-400" />} label="Metals" {...res(Resource.METALS)} />
                 <ResourceChip icon={<FlaskConical size={13} className="text-emerald-400" />} label="Chemicals" {...res(Resource.CHEMICALS)} />
@@ -135,7 +135,7 @@ export default function TopNav() {
             {/* ── Right: stability, date, alerts, identity ────────────────── */}
             <div className="flex items-center justify-end gap-2 md:gap-3 px-3 md:px-4 min-w-0 flex-1 md:flex-none md:flex-shrink-0">
                 {/* Stability */}
-                <div className="hidden lg:flex flex-col items-end leading-none" title="Empire stability">
+                <div id="stability-meter" className="hidden lg:flex flex-col items-end leading-none" title="Empire stability">
                     <span className="text-[7px] font-display text-slate-500 uppercase tracking-widest mb-1">Stability</span>
                     <div className="flex items-center gap-1.5">
                         <div className="h-1 w-16 bg-slate-900 rounded-full overflow-hidden border border-slate-800">

@@ -3,8 +3,8 @@
 // (same id, same ground) and leaning on what kind of world it is. Pure.
 
 import { RNG, seedFromString } from '../trade-system/rng';
-import type { CellTerrain, CharterId, OutpostCell, OutpostState } from './outpost-types';
-import { CELL_COUNT, CENTER_CELL, SHIFT_SIM_SECONDS, START_COLONISTS, START_FOOD, AIR_RESERVE_MAX } from './outpost-catalog';
+import type { CellTerrain, CharterId, ModuleId, OutpostCell, OutpostState } from './outpost-types';
+import { CELL_COUNT, CENTER_CELL, SHIFT_SIM_SECONDS, START_COLONISTS, START_FOOD, AIR_RESERVE_MAX, terrainOk } from './outpost-catalog';
 import { ensureRoster, listNames, TRAIT_LABEL } from './colonists';
 
 type Weights = Record<Exclude<CellTerrain, 'ruin'>, number>;
@@ -95,4 +95,38 @@ export function createOutpostState(
     const crew = ensureRoster(state);
     state.log.push({ shift: 0, text: `The landing crew is down: ${listNames(crew.map(c => `${c.name} (${TRAIT_LABEL[c.trait].toLowerCase()})`))}. One dome, food for a dozen shifts.`, tone: 'neutral' });
     return state;
+}
+
+/**
+ * What a paid settlement (PLANET_CLAIM) lands: an outpost that starts at
+ * Settlement, with the tier-1 essentials already standing and ten colonists.
+ * The bigger price buys the head start, not a skipped minigame.
+ */
+const SETTLED_KIT: ModuleId[] = ['solar', 'solar', 'life_support', 'hydroponics', 'hydroponics', 'habitat', 'habitat'];
+const SETTLED_COLONISTS = 10;
+
+export function createSettledOutpostState(
+    planet: { id: string; planetType?: string; tags?: string[] },
+    nowSeconds: number,
+): OutpostState {
+    const state = createOutpostState(planet, nowSeconds, 'settlement');
+    state.tier = 2;
+    state.colonists = SETTLED_COLONISTS;
+    state.food = START_FOOD * 2;
+    // Nearest cells first: the kit stands around the hub.
+    const byDistance = state.cells.map((_, i) => i).filter(i => i !== CENTER_CELL)
+        .sort((a, b) => cellDistance(a) - cellDistance(b) || a - b);
+    for (const id of SETTLED_KIT) {
+        const at = byDistance.find(i => !state.cells[i].module && terrainOk(id, state.cells[i].terrain));
+        if (at !== undefined) state.cells[at].module = id;
+    }
+    state.roster = [];
+    const crew = ensureRoster(state);
+    state.log = [{ shift: 0, text: `The settlers are down: ${crew.length} of them under ${SETTLED_KIT.filter(m => m === 'habitat').length + 1} domes, with power, air and food already running. ${listNames(crew.slice(0, 3).map(c => c.name))} lead the first shift.`, tone: 'neutral' }];
+    return state;
+}
+
+function cellDistance(i: number): number {
+    const c = CENTER_CELL % 5, r = Math.floor(CENTER_CELL / 5);
+    return Math.max(Math.abs((i % 5) - c), Math.abs(Math.floor(i / 5) - r));
 }

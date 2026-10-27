@@ -6,9 +6,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useTutorialStore } from '@/lib/tutorial/tutorial-store';
 import { useUIStore } from '@/lib/store/ui-store';
-import { TUTORIAL_STEPS } from '@/lib/tutorial/tutorial-data';
 import type { NavTab } from '@/types/ui-state';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import type { TutorialStep } from '@/lib/tutorial/tutorial-types';
 
 interface SpotlightRect {
     top: number;
@@ -37,6 +37,8 @@ export default function TutorialOverlay() {
     const setActiveTab = useUIStore(s => s.setActiveTab);
 
     const [rect, setRect] = useState<SpotlightRect | null>(null);
+    // The step whose target was already scrolled into view (once per step, so the player can still scroll).
+    const scrolledFor = React.useRef<string | null>(null);
     const step = currentStep();
 
     // Switch to required tab when step changes
@@ -44,6 +46,7 @@ export default function TutorialOverlay() {
         if (step?.requiredTab) {
             setActiveTab(step.requiredTab as NavTab);
         }
+        if (step?.prepare) prepareScene(step.prepare);
     }, [step?.id, setActiveTab]);
 
     // Find and track target element
@@ -52,11 +55,19 @@ export default function TutorialOverlay() {
             setRect(null);
             return;
         }
-        const el = document.getElementById(step.targetElementId);
-        if (!el) { setRect(null); return; }
-        const r = el.getBoundingClientRect();
+        // By id, or by data-tour where the element repeats (one per planet card).
+        const el = document.getElementById(step.targetElementId)
+            ?? document.querySelector<HTMLElement>(`[data-tour="${step.targetElementId}"]`);
+        const r = el?.getBoundingClientRect();
+        // Hidden at this width (display: none) measures as zero: centre the card instead.
+        if (!r || r.width === 0 || r.height === 0) { setRect(null); return; }
+        if (el && scrolledFor.current !== step.id) {
+            scrolledFor.current = step.id;
+            const off = r.bottom > window.innerHeight || r.top < 0;
+            if (off) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+        }
         setRect({ top: r.top - 8, left: r.left - 8, width: r.width + 16, height: r.height + 16 });
-    }, [step?.targetElementId]);
+    }, [step?.targetElementId, step?.id]);
 
     useEffect(() => {
         updateRect();
@@ -74,7 +85,9 @@ export default function TutorialOverlay() {
             {/* Dark overlay */}
             {/* Swallows clicks on the page behind, but does NOT skip: a stray
                 click used to throw away the whole tutorial. Only Skip skips. */}
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-[1px] pointer-events-auto" />
+            {/* With a spotlight the cutout's own shadow darkens the rest, so the
+                highlighted part stays lit; without one, dim everything. */}
+            <div className={`absolute inset-0 pointer-events-auto ${rect ? '' : 'bg-black/70 backdrop-blur-[1px]'}`} />
 
             {/* Spotlight cutout */}
             {rect && (
@@ -203,4 +216,37 @@ function getTooltipPosition(rect: SpotlightRect | null): React.CSSProperties {
     }
     // Fallback: left side
     return { top: Math.max(MARGIN, rect.top), left: Math.max(MARGIN, rect.left - CARD_WIDTH - MARGIN) };
+}
+
+/**
+ * Set the scene for a step (lib/tutorial/tutorial-types.ts prepare): open the
+ * home system, open the nearest system not yet surveyed so the explore button
+ * is on screen, or close the system panel.
+ */
+function prepareScene(kind: NonNullable<TutorialStep['prepare']>): void {
+    const ui = useUIStore.getState();
+    if (kind === 'clear-selection') { ui.setSelectedSystem(null); return; }
+    const faction: any = ui.playerFactionId ? (ui.factions as any)?.[ui.playerFactionId] : null;
+    const home: string | undefined = faction?.capitalSystemId
+        ?? (ui.planets as any[]).find(p => p.ownerId === ui.playerFactionId)?.systemId;
+    if (!home) return;
+    if (kind === 'select-home') { ui.setSelectedSystem(home); return; }
+    // Breadth-first along the hyperlanes from home: the closest uncharted star.
+    const byId = new Map((ui.systems as any[]).map(s => [s.id, s]));
+    const stage = (id: string) => (ui.factionVisibility as any)?.[id]?.revealStage ?? 'unknown';
+    const seen = new Set([home]);
+    let ring = [home];
+    while (ring.length) {
+        const nextRing: string[] = [];
+        for (const id of ring) {
+            for (const n of (byId.get(id)?.hyperlaneNeighbors ?? []) as string[]) {
+                if (seen.has(n)) continue;
+                seen.add(n);
+                if (stage(n) !== 'surveyed') { ui.setSelectedSystem(n); return; }
+                nextRing.push(n);
+            }
+        }
+        ring = nextRing;
+    }
+    ui.setSelectedSystem(home);
 }

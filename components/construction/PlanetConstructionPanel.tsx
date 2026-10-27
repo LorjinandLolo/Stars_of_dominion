@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap, Shield, Info, Activity, ShieldCheck, Globe } from 'lucide-react';
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
-import { BUILDINGS as BUILDING_DEFS } from '@/data/buildings';
+import { BUILDINGS as BUILDING_DEFS, buildingOpenTo } from '@/data/buildings';
+import QuickBuildMenu from './QuickBuildMenu';
 import { cancelBuildingAction } from '@/app/actions/construction';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Navigation, Satellite, Route, Truck } from 'lucide-react';
@@ -62,6 +63,8 @@ export function PlanetConstructionPanel({
     onClose
 }: PlanetConstructionPanelProps) {
     const { playerFactionId, diplomacyState } = useUIStore();
+    // Unique buildings show only to their own civilization (data/buildings.ts).
+    const playerCivId = useUIStore(s => (s.factions as any)?.[s.playerFactionId ?? '']?.civilizationId as string | undefined);
     const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY' | 'ORBITAL' | 'INFRA' | 'LOGISTICS'>(() => {
         // Opened from the station in orbit (OrbitLayer): start on the orbital tab, once.
         const asked = useUIStore.getState().constructionInitialTab;
@@ -444,6 +447,7 @@ export function PlanetConstructionPanel({
 
                     {activeTab === 'BUILD' && (
                         <div className="space-y-8">
+                            <QuickBuildMenu planetId={planetId} />
                             <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 rounded-xl border text-xs ${busySlots >= buildSlots ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-700/50 bg-slate-900/60'}`}>
                                 <span className="font-display tracking-widest uppercase text-slate-400">Build slots</span>
                                 <span className={`font-mono font-bold ${busySlots >= buildSlots ? 'text-amber-300' : 'text-cyan-300'}`}>{busySlots} / {buildSlots} busy</span>
@@ -464,7 +468,7 @@ export function PlanetConstructionPanel({
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                         {(BUILDING_DEFS.map(d => [d.id, d]) as [BuildingType, any][])
-                                            .filter(([_, def]) => def.category === cat)
+                                            .filter(([_, def]) => def.category === cat && buildingOpenTo(def, playerCivId))
                                             .map(([type, def]) => {
                                                 const afford = canAfford(type);
                                                 const reqsMet = hasPrereq(type);

@@ -587,6 +587,21 @@ function PlanetSurfaceGate() {
 /** Same narrow-subscription trick for an outpost's screen. */
 function OutpostGate() {
     const outpostPlanetId = useUIStore(s => s.outpostPlanetId);
+    // A settle or outpost order just went out: open the new outpost as soon as
+    // a sync shows it ours. A refused order stops waiting after two minutes.
+    const pending = useUIStore(s => s.pendingOutpost);
+    const founded = useUIStore(s => {
+        if (!s.pendingOutpost) return false;
+        const p: any = s.planets.find((pl: any) => pl.id === s.pendingOutpost!.planetId);
+        return !!p?.outpost && p.ownerId === s.playerFactionId;
+    });
+    React.useEffect(() => {
+        if (!pending) return;
+        const { awaitOutpost, setOutpostPlanet } = useUIStore.getState();
+        if (founded) { awaitOutpost(null); setOutpostPlanet(pending.planetId); return; }
+        const t = setTimeout(() => awaitOutpost(null), Math.max(0, pending.since + 120_000 - Date.now()));
+        return () => clearTimeout(t);
+    }, [pending, founded]);
     if (!outpostPlanetId) return null;
     return <OutpostView />;
 }

@@ -643,7 +643,7 @@ export const BUILDINGS: BuildingDefinition[] = [
     buildTimeSeconds: 200,
     effects: [{ type: 'food_output', value: 40 }],
     tags: ['unique', 'nexulan', 'biomass'],
-    civilizationId: 'nexulan_convergence',
+    civilizationId: 'civ-nexulan',
     uniquePerPlanet: false,
   },
 
@@ -770,3 +770,11 @@ export const BUILDINGS: BuildingDefinition[] = [
     uniquePerPlanet: true,
   },
 ];
+
+/**
+ * A civilization's unique building is for that civilization only. Every build
+ * list filters with this so nobody is shown a building the worker will refuse.
+ */
+export function buildingOpenTo(def: Pick<BuildingDefinition, 'civilizationId'>, civilizationId: string | undefined): boolean {
+  return !def.civilizationId || def.civilizationId === civilizationId;
+}

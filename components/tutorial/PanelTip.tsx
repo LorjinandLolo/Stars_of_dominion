@@ -21,14 +21,20 @@ export default function PanelTip() {
     const uiPrefs = useUIStore(s => s.uiPrefs);
     const observer = useUIStore(s => s.observer);
     const tourActive = useTutorialStore(s => s.isActive);
+    // The ? menu can bring a dismissed tip back ("About this panel").
+    const replayTab = useTutorialStore(s => s.tipReplayTab);
 
     const tip = panelTipFor(activeTab);
     // Prefs not loaded yet: say nothing rather than flash a tip already dismissed.
     if (!tip || !uiPrefs || observer || tourActive) return null;
     const prefId = panelTipPrefId(tip.tab);
-    if (uiPrefs.opened.includes(prefId)) return null;
+    const replaying = replayTab === tip.tab;
+    if (uiPrefs.opened.includes(prefId) && !replaying) return null;
 
-    const dismiss = () => { void patchUiPrefs({ opened: [prefId] }); };
+    const dismiss = () => {
+        if (replaying) useTutorialStore.getState().replayTip(null);
+        if (!uiPrefs.opened.includes(prefId)) void patchUiPrefs({ opened: [prefId] });
+    };
 
     return (
         <div
@@ -38,7 +44,7 @@ export default function PanelTip() {
         >
             <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
                 <span className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-[0.2em] text-amber-300">
-                    <Lightbulb size={12} /> First time here · {tip.title}
+                    <Lightbulb size={12} /> {replaying ? 'About this panel' : 'First time here'} · {tip.title}
                 </span>
                 <button onClick={dismiss} aria-label="Dismiss tip" className="text-slate-500 hover:text-slate-200 transition-colors">
                     <X size={14} />
