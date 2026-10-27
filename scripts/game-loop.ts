@@ -691,6 +691,10 @@ async function runGameTick() {
         // 2. Advance Simulation Time
         const oldNow = world.nowSeconds;
         world.nowSeconds += TIME_STEP_SECONDS;
+        // The movement layer keeps its own clock, and nothing advanced it: it sat
+        // at the galaxy's creation date, so every ping, scan and survey was stamped
+        // and resolved on a frozen clock and never landed. One clock, every cycle.
+        if (world.movement) world.movement.nowSeconds = world.nowSeconds;
 
         // 3a. Grave-sweep: failed orders are kept as processed=true rows (their
         // failure reason already reached the player via lastOrderError), and

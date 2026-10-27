@@ -10,7 +10,7 @@ import { isCivilianFleet } from '../combat/civilian-ships';
 import { fleetMass } from '../combat/engagement-rules';
 import { fireNotification } from '../time/notification-hooks';
 import * as chronicle from '../narrative/chronicle';
-import { isPirateGround, PIRATE_FACTION } from './pirate-ground';
+import { isPirateGround, pirateGroundKind, PIRATE_FACTION } from './pirate-ground';
 
 function atRest(f: Fleet): boolean {
     return !!f.currentSystemId && !f.destinationSystemId && !(f.transitProgress > 0);
@@ -38,7 +38,7 @@ export function pirateGroundEngages(world: GameWorldState, systemId: string, a: 
     const other = a === PIRATE_FACTION ? b : a;
     if (other === PIRATE_FACTION || other === 'faction-neutral') return false;
     const sys = world.movement.systems.get(systemId);
-    if (!sys || !isPirateGround(sys.tags)) return false;
+    if (!sys || !isPirateGround(sys.tags, systemId)) return false;
     const ongoing = world.activeCombats?.get?.(`combat-${systemId}-${a}-${b}`) ?? world.activeCombats?.get?.(`combat-${systemId}-${b}-${a}`);
     if (ongoing && !ongoing.resolved) return true;
     const pirates = armedMass(world, systemId, PIRATE_FACTION);
@@ -59,7 +59,7 @@ export function seizeCiviliansOnPirateGround(world: GameWorldState): Seizure[] {
         if (!atRest(fleet) || !isCivilianFleet(fleet)) continue;
         const systemId = fleet.currentSystemId!;
         const sys = world.movement.systems.get(systemId);
-        if (!sys || !isPirateGround(sys.tags)) continue;
+        if (!sys || !isPirateGround(sys.tags, systemId)) continue;
         const pirates = armedMass(world, systemId, PIRATE_FACTION);
         if (!(pirates > 0)) continue;
         if (armedMass(world, systemId, fleet.factionId) >= pirates) continue;
@@ -76,7 +76,7 @@ export function seizeCiviliansOnPirateGround(world: GameWorldState): Seizure[] {
                 category: 'military',
                 priority: 'urgent',
                 title: 'SEIZED BY PIRATES',
-                body: `${name} stopped at ${where}, ${sys.tags.includes('pirate_station') ? 'a Pirate Station' : 'a Corsair Den'}, and pirate ships resting there took it. Unarmed ships need an armed escort at least as strong as the pirates to stop on pirate ground.`,
+                body: `${name} stopped at ${where}, ${pirateGroundKind(sys.tags)}, and pirate ships resting there took it. Unarmed ships need an armed escort at least as strong as the pirates to stop on pirate ground.`,
                 createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                 read: false,
                 linkToTab: 'map',

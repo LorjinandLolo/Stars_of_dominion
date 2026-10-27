@@ -429,7 +429,8 @@ function surveyTarget(world: WorldLike, factionId: string): string | undefined {
     const get = (id: string) => systems?.get?.(id) ?? systems?.[id];
     const dangerous = (id: string) => {
         const tags: string[] = [...(get(id)?.tags ?? []), ...(vis[id]?.visibleTags ?? [])];
-        return tags.includes('corsair_den') || tags.includes('pirate_station');
+        // The named havens (ids pirate-N) as well as tagged ground; see lib/piracy/pirate-ground.ts.
+        return id.startsWith('pirate-') || tags.includes('corsair_den') || tags.includes('pirate_station');
     };
     const home = capitalPlanet(world, factionId).systemId;
     if (home && get(home)) {

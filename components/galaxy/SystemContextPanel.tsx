@@ -12,7 +12,8 @@ import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
-import { pirateGroundWarning } from '@/lib/piracy/pirate-ground';
+import { pirateGroundWarning, isPirateGround } from '@/lib/piracy/pirate-ground';
+import ExploreCountdown from './ExploreCountdown';
 import { formatPercent } from '@/lib/ui/format';
 import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
@@ -1376,7 +1377,7 @@ function SystemContextPanel() {
                             {/* Pirate ground: say what it means, because the red star alone reads as "keep out".
                                 Pirates resting here fight a weaker fleet and seize unescorted unarmed ships
                                 (lib/piracy/pirate-ground.ts). */}
-                            {revealStage !== 'unknown' && (system.tags.includes('corsair_den') || system.tags.includes('pirate_station')) && (
+                            {revealStage !== 'unknown' && isPirateGround(system.tags, system.id) && (
                                 <div id="pirate-ground-note" className="flex items-start gap-2 p-2.5 rounded-lg bg-red-950/30 border border-red-800/40">
                                     <AlertOctagon size={14} className="text-red-400 shrink-0 mt-0.5" />
                                     <div className="space-y-1">
@@ -1463,17 +1464,8 @@ function SystemContextPanel() {
                                 // that instead of a silent re-billable button.
                                 const inFlight = (explorationOrders ?? []).find(o => o.targetSystemId === system.id);
                                 if (inFlight) {
-                                    return (
-                                        <div className="py-2">
-                                            <div className="w-full py-3 bg-slate-800/80 border border-amber-600/30 text-amber-500/80 font-display text-[10px] tracking-[0.2em] rounded flex items-center justify-center gap-2">
-                                                <Search size={14} className="animate-pulse" />
-                                                {inFlight.mode.toUpperCase()} IN PROGRESS…
-                                            </div>
-                                            <p className="text-[9px] text-slate-500 mt-2 text-center italic">
-                                                Results arrive with the fleet&apos;s next telemetry burst.
-                                            </p>
-                                        </div>
-                                    );
+                                    // A live countdown, and a plain 'paused' when the server is not advancing.
+                                    return <ExploreCountdown mode={inFlight.mode} completesAt={inFlight.completesAt} issuedAt={(inFlight as any).issuedAt} source={inFlight.source} />;
                                 }
                                 // Unknown system: a relay ping from the nearest shipyard.
                                 // No fleet needed; the price climbs with distance and the
@@ -1520,7 +1512,7 @@ function SystemContextPanel() {
                                             <p className="text-[9px] text-slate-500 mt-1.5 text-center italic">
                                                 {RELAY_PING_BASE_CREDITS}cr + {RELAY_PING_PER_JUMP_CREDITS}cr per jump from your nearest shipyard
                                                 {!fromYard && capitalId ? ' — build a shipyard closer to ping cheaper' : ''}.
-                                                {' '}Charts the star; scanning and surveying its worlds still takes a fleet within one jump.
+                                                {' '}Charts the star in about two seconds, from afar; it never shows worlds. To map them, send your exploration ship: it surveys on arrival, free.
                                             </p>
                                         </div>
                                     );

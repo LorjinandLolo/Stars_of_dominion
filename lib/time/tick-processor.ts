@@ -137,6 +137,8 @@ export async function runStrategicTick(
 ): Promise<void> {
     const world = worldOverride ?? getGameWorldState();
     world.nowSeconds = Math.floor(now.getTime() / 1000);
+    // One clock: the movement layer's own copy was never advanced (see game-loop).
+    if (world.movement) world.movement.nowSeconds = world.nowSeconds;
 
     console.log(`[TickProcessor] Running tick #${tickIndex} at ${now.toISOString()}`);
 
@@ -826,6 +828,8 @@ function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
  * strategic tick still runs it too (idempotent: only orders already due land).
  */
 export function advanceExplorationNow(world: ReturnType<typeof getGameWorldState>): void {
+    // Orders are stamped and resolved on the movement clock; keep it on the game clock.
+    world.movement.nowSeconds = world.nowSeconds;
     try {
         autoSurveyOnArrival(world.movement);
     } catch (e) {

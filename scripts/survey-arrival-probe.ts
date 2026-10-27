@@ -37,7 +37,7 @@ async function main() {
     // ── 1. A relay ping lands on the next loop, not 24 minutes later ────────
     const far = [...world.movement.systems.keys()].find((id: string) => id !== capital && id !== target && stage(id) === 'unknown');
     issueRelayPing(me, far, capital, 250, world.movement);
-    world.nowSeconds += config.exploration.pingDurationSeconds; world.movement.nowSeconds = world.nowSeconds;
+    world.nowSeconds += config.exploration.pingDurationSeconds;
     advanceExplorationNow(world);
     check('a ping is pinged one loop after it is due', stage(far) === 'pinged', stage(far));
 
@@ -59,7 +59,7 @@ async function main() {
     check('it runs at the explorer speed', Date.parse(started[0].completesAt) / 1000 - world.nowSeconds === Math.round(config.exploration.surveyDurationSeconds * EXPLORER_TIME_FACTOR));
     check('nothing doubles up on the next loop', autoSurveyOnArrival(world.movement).length === 0 && world.movement.explorationOrders.filter((o: any) => o.targetSystemId === target).length === 1);
     const credits = world.economy.factions.get(me).reserves.CREDITS;
-    world.nowSeconds += config.exploration.surveyDurationSeconds; world.movement.nowSeconds = world.nowSeconds;
+    world.nowSeconds += config.exploration.surveyDurationSeconds;
     advanceExplorationNow(world);
     check('the survey lands on the loop it is due', stage(target) === 'surveyed', stage(target));
     // An anomaly on a first survey may PAY credits; the survey itself must never charge.

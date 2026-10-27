@@ -311,7 +311,7 @@ export interface UIStore {
     factionVisibility: FactionVisibility | null;
     setFactionVisibility: (vis: FactionVisibility | null) => void;
     /** The player's in-flight exploration orders (synced from the worker). */
-    explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; source?: 'fleet' | 'relay'; completesAt: string }>;
+    explorationOrders: Array<{ fleetId: string; factionId?: string; targetSystemId: string; mode: 'ping' | 'scan' | 'survey'; source?: 'fleet' | 'relay' | 'arrival'; completesAt: string; issuedAt?: string }>;
     /** Systems where the player has a working shipyard — relay pings are priced from the nearest one. */
     shipyardSystemIds: string[];
     /** The live season, straight from the worker's world.activeSeason. */

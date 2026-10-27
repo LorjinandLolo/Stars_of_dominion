@@ -20,8 +20,24 @@ import { isCivilianFleet } from '../combat/civilian-ships';
 export const PIRATE_FACTION = 'faction-pirates';
 export const PIRATE_GROUND_TAGS: readonly string[] = ['corsair_den', 'pirate_station'];
 
-export function isPirateGround(tags: readonly string[] | null | undefined): boolean {
-    return !!tags && tags.some(t => PIRATE_GROUND_TAGS.includes(t));
+/**
+ * The map's twenty named havens ('Corsair Den 10', ids pirate-N in
+ * generated-systems.json) are pirate ground by birth. They carry no tag of
+ * their own, and the corsair_den tag on other systems comes and goes with
+ * lawlessness (emergence-service), so the id is the lasting mark.
+ */
+export function isPirateHaven(systemId: string | null | undefined): boolean {
+    return !!systemId && systemId.startsWith('pirate-');
+}
+
+/** Pirate ground: a named haven, or any system tagged a den or a station. */
+export function isPirateGround(tags: readonly string[] | null | undefined, systemId?: string | null): boolean {
+    return isPirateHaven(systemId) || (!!tags && tags.some(t => PIRATE_GROUND_TAGS.includes(t)));
+}
+
+/** 'a Pirate Station' or 'a Corsair Den', for notices. */
+export function pirateGroundKind(tags: readonly string[] | null | undefined): string {
+    return tags?.includes('pirate_station') ? 'a Pirate Station' : 'a Corsair Den';
 }
 
 interface FleetLike {
@@ -43,8 +59,8 @@ export function pirateGroundWarning(
     fleet: (FleetLike & { name?: string }) | null | undefined,
     system: { name?: string; id?: string; tags?: readonly string[] } | null | undefined,
 ): string | null {
-    if (!fleet || !system || !isPirateGround(system.tags) || !isUnarmedFleet(fleet)) return null;
+    if (!fleet || !system || !isPirateGround(system.tags, system.id) || !isUnarmedFleet(fleet)) return null;
     const where = system.name ?? system.id ?? 'that system';
-    const kind = system.tags?.includes('pirate_station') ? 'a Pirate Station' : 'a Corsair Den';
+    const kind = pirateGroundKind(system.tags);
     return `${where} is ${kind}. Pirate ships resting there seize unarmed ships that stop, unless an armed fleet of yours at least as strong is there with them.\n\nSend ${fleet.name ?? 'this fleet'} anyway?`;
 }

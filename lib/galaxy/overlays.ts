@@ -271,7 +271,7 @@ export interface OverlayInputDiplomacy {
 }
 export interface OverlayInputOrder {
     targetSystemId: string; mode: 'ping' | 'scan' | 'survey';
-    source?: 'fleet' | 'relay'; completesAt: string; issuedAt?: string; relayFromSystemId?: string;
+    source?: 'fleet' | 'relay' | 'arrival'; completesAt: string; issuedAt?: string; relayFromSystemId?: string;
 }
 
 export interface OverlayInput {
