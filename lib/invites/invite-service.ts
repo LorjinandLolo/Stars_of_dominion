@@ -11,11 +11,14 @@ import { requestBreakawaySeat } from '@/lib/breakaway/seat-service';
 import { capitalSystemIdFor } from '@/lib/galaxy/faction-capitals';
 import { isCabinetPortfolio } from '@/lib/government/seat-scope';
 import {
+    GROUP_INVITE_MAX_USES,
+    GROUP_INVITE_TTL_MS,
     INVITE_REFUSALS,
     INVITE_TTL_MS,
     MAX_OPEN_INVITES,
     checkInvite,
     generateInviteCode,
+    isGroupInvite,
     nearestEmpire,
     type GalaxySystem,
 } from './invite-rules';
@@ -40,16 +43,21 @@ export interface InviteSummary {
     claimedFactionName: string | null;
     /** A seat link: the portfolio the friend takes. Null for an empire link. */
     seatPortfolio?: string | null;
+    /** A group link: how many have signed up through it, of how many. */
+    group?: { uses: number; maxUses: number };
 }
 
 /**
  * A player with a claim makes a link. "Next to you" needs a you. With a
  * `seatPortfolio` the link seats the friend in the inviter's cabinet instead
- * (lib/government/seat-scope.ts); one holder per portfolio.
+ * (lib/government/seat-scope.ts); one holder per portfolio. With `group` it is
+ * one link for a whole chat: anyone may sign up through it and picks their own
+ * empire. A new group link retires the caller's older ones.
  */
-export async function createInvite(userId: string, opts: { seatPortfolio?: string } = {}): Promise<ServiceResult<InviteSummary>> {
+export async function createInvite(userId: string, opts: { seatPortfolio?: string; group?: boolean } = {}): Promise<ServiceResult<InviteSummary>> {
     const profile = await prisma.playerProfile.findUnique({ where: { userId } });
     if (!profile) return fail(409, 'Claim your empire first — a friend starts next to it.');
+    if (opts.group) return createGroupInvite(userId, profile.factionId);
     const seatPortfolio = opts.seatPortfolio ?? null;
     if (seatPortfolio !== null) {
         if (!isCabinetPortfolio(seatPortfolio)) return fail(400, 'That is not a cabinet portfolio.');
@@ -58,7 +66,7 @@ export async function createInvite(userId: string, opts: { seatPortfolio?: strin
     }
 
     const open = await prisma.invite.count({
-        where: { createdBy: userId, usedBy: null, expiresAt: { gt: new Date() } },
+        where: { createdBy: userId, usedBy: null, maxUses: 1, expiresAt: { gt: new Date() } },
     });
     if (open >= MAX_OPEN_INVITES) {
         return fail(429, `You already have ${open} unused links out. Share one of those first.`);
@@ -84,15 +92,49 @@ export async function createInvite(userId: string, opts: { seatPortfolio?: strin
     return fail(500, 'Could not mint a code — try again.');
 }
 
+async function createGroupInvite(userId: string, factionId: string): Promise<ServiceResult<InviteSummary>> {
+    const now = new Date();
+    // One live group link per host: a new one shuts the old (a leaked link
+    // is closed by making another). Friends already in keep their accounts.
+    await prisma.invite.updateMany({
+        where: { createdBy: userId, maxUses: { gt: 1 }, expiresAt: { gt: now } },
+        data: { expiresAt: now },
+    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const invite = await prisma.invite.create({
+                data: {
+                    code: generateInviteCode(),
+                    createdBy: userId,
+                    inviterFactionId: factionId,
+                    expiresAt: new Date(now.getTime() + GROUP_INVITE_TTL_MS),
+                    maxUses: GROUP_INVITE_MAX_USES,
+                },
+            });
+            return {
+                ok: true,
+                value: {
+                    code: invite.code, expiresAt: invite.expiresAt.toISOString(), used: false, claimedFactionName: null,
+                    seatPortfolio: null, group: { uses: 0, maxUses: invite.maxUses },
+                },
+            };
+        } catch (e: any) {
+            if (e?.code !== 'P2002') throw e;
+        }
+    }
+    return fail(500, 'Could not mint a code — try again.');
+}
+
 /** The caller's own links, newest first. */
 export async function listInvites(userId: string): Promise<InviteSummary[]> {
     const rows = await prisma.invite.findMany({ where: { createdBy: userId }, orderBy: { createdAt: 'desc' }, take: 20 });
     return rows.map(row => ({
         code: row.code,
         expiresAt: row.expiresAt.toISOString(),
-        used: !!row.usedBy,
+        used: isGroupInvite(row) ? row.uses >= row.maxUses : !!row.usedBy,
         claimedFactionName: row.claimedFactionId ? empireName(row.claimedFactionId) : null,
         seatPortfolio: row.seatPortfolio ?? null,
+        ...(isGroupInvite(row) ? { group: { uses: row.uses, maxUses: row.maxUses } } : {}),
     }));
 }
 
@@ -106,6 +148,8 @@ export interface InvitePreview {
     expiresAt?: string;
     /** A seat link: the cabinet portfolio it offers. Null for an empire link. */
     seatPortfolio?: string | null;
+    /** A group link: the joiner picks any free empire; nobody is "next to" anyone. */
+    group?: boolean;
 }
 
 /**
@@ -129,7 +173,17 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
         inviterEmpire: empireName(invite.inviterFactionId),
         expiresAt: invite.expiresAt.toISOString(),
         seatPortfolio: invite.seatPortfolio ?? null,
+        group: isGroupInvite(invite),
     };
+}
+
+/**
+ * Registration gate, host side: a galaxy nobody has claimed yet (fresh, or
+ * just reseeded) is open, so the host can sign up and claim with
+ * INVITE_REQUIRED already on. The first claim closes it for everyone after.
+ */
+export async function galaxyHasNoPlayers(): Promise<boolean> {
+    return (await prisma.playerProfile.count()) === 0;
 }
 
 /** Registration gate: may someone who is not yet a user register with this code? */
@@ -140,8 +194,13 @@ export async function inviteOpenForSignup(code: string): Promise<ServiceResult<t
     return { ok: true, value: true };
 }
 
-/** After registration: the code is this new user's now. */
+/** After registration: the code is this new user's now — or, for a group link, one more sign-up on it. */
 export async function reserveInvite(code: string, userId: string): Promise<void> {
+    const invite = await prisma.invite.findUnique({ where: { code }, select: { maxUses: true } });
+    if (invite && isGroupInvite(invite)) {
+        await prisma.invite.update({ where: { code }, data: { uses: { increment: 1 }, usedAt: new Date() } });
+        return;
+    }
     await prisma.invite.updateMany({ where: { code, usedBy: null }, data: { usedBy: userId, usedAt: new Date() } });
 }
 
@@ -225,6 +284,8 @@ export async function claimThroughInvite(code: string, userId: string, displayNa
     const invite = await prisma.invite.findUnique({ where: { code } });
     const verdict = checkInvite(invite, userId);
     if (!invite || !verdict.ok) return fail(verdict.ok ? 404 : (verdict.reason === 'unknown' ? 404 : 410), INVITE_REFUSALS[verdict.ok ? 'unknown' : verdict.reason]);
+    // A group link only opens the door; the joiner picks from the lobby list.
+    if (isGroupInvite(invite)) return fail(400, 'This is a group link — pick any free empire from the list.');
 
     if (invite.seatPortfolio) {
         const host = await prisma.playerProfile.findUnique({ where: { factionId: invite.inviterFactionId } });

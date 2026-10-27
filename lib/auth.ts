@@ -6,7 +6,7 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { prisma } from '@/lib/db';
 import { inviteRequired, normaliseInviteCode } from '@/lib/invites/invite-rules';
-import { inviteOpenForSignup, reserveInvite } from '@/lib/invites/invite-service';
+import { galaxyHasNoPlayers, inviteOpenForSignup, reserveInvite } from '@/lib/invites/invite-service';
 
 /** The header the client puts a friend link's code in when registering. */
 export const INVITE_CODE_HEADER = 'x-invite-code';
@@ -18,19 +18,21 @@ export const auth = betterAuth({
     // new account needs a live invite code; the check is here, on the server's
     // sign-up endpoint itself, so a hand-rolled request cannot skip it. With it
     // off (the default) a code is optional, but one that is sent is still
-    // honoured and reserved for the new player.
+    // honoured and reserved for the new player. While nobody has claimed an
+    // empire (fresh or reseeded galaxy) sign-up stays open, so the host never
+    // needs a code to get in first.
     hooks: {
         before: createAuthMiddleware(async (ctx) => {
             if (ctx.path !== SIGN_UP_PATH) return;
             const code = normaliseInviteCode(ctx.headers?.get(INVITE_CODE_HEADER));
             if (!code) {
-                if (inviteRequired()) {
+                if (inviteRequired() && !(await galaxyHasNoPlayers())) {
                     throw new APIError('FORBIDDEN', { message: 'Registration is by invite only — ask a friend in the game for a link.' });
                 }
                 return;
             }
             const open = await inviteOpenForSignup(code);
-            if (!open.ok && inviteRequired()) throw new APIError('FORBIDDEN', { message: open.error });
+            if (!open.ok && inviteRequired() && !(await galaxyHasNoPlayers())) throw new APIError('FORBIDDEN', { message: open.error });
         }),
         after: createAuthMiddleware(async (ctx) => {
             if (ctx.path !== SIGN_UP_PATH) return;

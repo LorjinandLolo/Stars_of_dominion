@@ -4,10 +4,12 @@
 // Stars of Dominion — friend links in the lobby (casual-play Item 6a).
 //
 // Two jobs, depending on who is looking:
-//  - a player WITH an empire can make a link to send a friend;
-//  - a player WITHOUT one who arrived through a link is offered the seat next
-//    to the friend who sent it. The server picks that seat (the free empire
-//    nearest the inviter's capital); this component only asks for it.
+//  - a player WITH an empire can make a link: a group link for a chat (anyone,
+//    any empire), or one for a single friend;
+//  - a player WITHOUT one who arrived through a friend link is offered the
+//    seat next to the friend who sent it. The server picks that seat (the free
+//    empire nearest the inviter's capital); this component only asks for it.
+//    A group link only greets them: they pick from the list below.
 
 import React from 'react';
 import { Link2, Copy, Check, Users } from 'lucide-react';
@@ -39,10 +41,10 @@ interface Props {
 }
 
 export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props) {
-    const [pending, setPending] = React.useState<{ code: string; inviterName?: string; inviterEmpire?: string; seatPortfolio?: string | null } | null>(null);
+    const [pending, setPending] = React.useState<{ code: string; inviterName?: string; inviterEmpire?: string; seatPortfolio?: string | null; group?: boolean } | null>(null);
     const [link, setLink] = React.useState<string | null>(null);
-    /** What the next link offers: an empire next door, or a seat in the cabinet. */
-    const [offer, setOffer] = React.useState<'empire' | string>('empire');
+    /** What the next link offers: a group door, an empire next door, or a seat in the cabinet. */
+    const [offer, setOffer] = React.useState<'group' | 'empire' | string>('group');
     const [copied, setCopied] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -62,7 +64,7 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                 // link is good for a ruler too (a cabinet seat in another
                 // court); an empire link is not.
                 if (!data?.inviterName || (hasClaim && !data.seatPortfolio)) { forgetInvite(); return; }
-                setPending({ code, inviterName: data.inviterName, inviterEmpire: data.inviterEmpire, seatPortfolio: data.seatPortfolio ?? null });
+                setPending({ code, inviterName: data.inviterName, inviterEmpire: data.inviterEmpire, seatPortfolio: data.seatPortfolio ?? null, group: !!data.group });
             })
             .catch(() => { /* the lobby still works without the banner */ });
     }, [hasClaim]);
@@ -117,7 +119,7 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
             const res = await fetch('/api/invites', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(offer === 'empire' ? {} : { seatPortfolio: offer }),
+                body: JSON.stringify(offer === 'group' ? { group: true } : offer === 'empire' ? {} : { seatPortfolio: offer }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { setError(data.error ?? 'Could not make a link.'); return; }
@@ -132,6 +134,20 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
         if (!link) return;
         try { await navigator.clipboard.writeText(link); setCopied(true); } catch { /* the link is on screen to select */ }
     };
+
+    if (pending?.group && !hasClaim) {
+        return (
+            <div id="invite-banner" className="mt-6 mx-auto max-w-lg rounded-2xl border border-sky-500/40 bg-sky-950/40 p-5 text-left">
+                <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.3em] uppercase text-sky-300">
+                    <Users size={14} /> You were invited
+                </div>
+                <p className="mt-2 text-sm text-slate-200 leading-relaxed">
+                    <span className="font-semibold text-white">{pending.inviterName}</span> invited you to this galaxy.
+                    Pick any free empire below to start.
+                </p>
+            </div>
+        );
+    }
 
     if (pending && (!hasClaim || pending.seatPortfolio)) {
         const seat = pending.seatPortfolio;
@@ -175,7 +191,8 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                         className="min-h-[40px] px-3 rounded-full border border-slate-700 bg-slate-900 text-slate-200 text-xs"
                         title="What the link offers"
                     >
-                        <option value="empire">An empire next to mine</option>
+                        <option value="group">Group link: anyone, any empire</option>
+                        <option value="empire">One friend: an empire next to mine</option>
                         {PORTFOLIOS.map(p => <option key={p.id} value={p.id}>A seat: Minister of {p.label}</option>)}
                     </select>
                     <button
@@ -183,13 +200,15 @@ export default function InvitePanel({ hasClaim, displayName, onClaimed }: Props)
                         disabled={busy}
                         className="flex items-center gap-2 min-h-[40px] px-5 rounded-full border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-50 text-sky-200 text-sm font-semibold transition-colors"
                     >
-                        <Link2 size={15} /> {busy ? 'Making a link…' : 'Invite a friend'}
+                        <Link2 size={15} /> {busy ? 'Making a link…' : offer === 'group' ? 'Make a group link' : 'Invite a friend'}
                     </button>
                 </div>
             ) : (
                 <div className="rounded-xl border border-sky-500/30 bg-slate-950/70 p-4 space-y-2">
                     <p className="text-[11px] text-slate-400">
-                        {offer === 'empire'
+                        {offer === 'group'
+                            ? 'Post this in your group chat. Anyone with it can sign up and pick any free empire. Good for 30 sign-ups, for thirty days. Making a new group link shuts this one.'
+                            : offer === 'empire'
                             ? 'Send this to a friend. They start with the free empire nearest yours. Good for one friend, for seven days.'
                             : `Send this to a friend. They take the ${PORTFOLIOS.find(p => p.id === offer)?.label ?? offer} seat in your cabinet and can give that brief's orders in your name. A minister can serve you — or bury you. Good for one friend, for seven days.`}
                     </p>

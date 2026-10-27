@@ -153,6 +153,12 @@ model Invite {
   /// instead of claiming an empire (lib/government/seats). Null = empire link.
   seatPortfolio    String?
 
+  /// How many people may sign up through it. 1 = a friend link (usedBy is
+  /// that friend); more = a group link posted in a chat, where `uses` counts
+  /// sign-ups and every joiner picks their own empire.
+  maxUses          Int       @default(1)
+  uses             Int       @default(0)
+
   @@index([createdBy])
   @@map("invites")
 }

@@ -12,6 +12,14 @@ export const INVITE_TTL_MS = 7 * 24 * 3600 * 1000;
 /** Unspent links one player may hold at once. */
 export const MAX_OPEN_INVITES = 10;
 
+/**
+ * A group link: one link the host posts in a group chat. Everyone holding it
+ * may sign up and picks their own empire — it is a door, not a neighbour.
+ * Making a new one retires the old, so a leaked link can be shut.
+ */
+export const GROUP_INVITE_TTL_MS = 30 * 24 * 3600 * 1000;
+export const GROUP_INVITE_MAX_USES = 30;
+
 /** No 0/O, 1/I/L: people read these aloud and type them from phones. */
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
@@ -34,11 +42,18 @@ export interface InviteRecord {
     code: string;
     usedBy: string | null;
     expiresAt: Date;
+    /** Absent or 1 = a friend link; more = a group link. */
+    maxUses?: number;
+    uses?: number;
 }
 
 export type InviteVerdict =
     | { ok: true }
-    | { ok: false; reason: 'unknown' | 'expired' | 'used' };
+    | { ok: false; reason: 'unknown' | 'expired' | 'used' | 'full' };
+
+export function isGroupInvite(invite: Pick<InviteRecord, 'maxUses'>): boolean {
+    return (invite.maxUses ?? 1) > 1;
+}
 
 /**
  * May this user spend this invite now? A link is single use, but the friend it
@@ -48,14 +63,19 @@ export type InviteVerdict =
 export function checkInvite(invite: InviteRecord | null, userId: string | null, now: Date = new Date()): InviteVerdict {
     if (!invite) return { ok: false, reason: 'unknown' };
     if (invite.expiresAt.getTime() <= now.getTime()) return { ok: false, reason: 'expired' };
+    if (isGroupInvite(invite)) {
+        // Nobody owns a group link; it only runs out of room.
+        return (invite.uses ?? 0) >= invite.maxUses! ? { ok: false, reason: 'full' } : { ok: true };
+    }
     if (invite.usedBy && invite.usedBy !== userId) return { ok: false, reason: 'used' };
     return { ok: true };
 }
 
-export const INVITE_REFUSALS: Record<'unknown' | 'expired' | 'used', string> = {
+export const INVITE_REFUSALS: Record<'unknown' | 'expired' | 'used' | 'full', string> = {
     unknown: 'That invite code does not exist.',
     expired: 'That invite has expired — ask your friend for a fresh link.',
     used: 'That invite has already been used by someone else.',
+    full: 'That group link is full — ask the host for a fresh one.',
 };
 
 /** Is registration gated on an invite? Off unless INVITE_REQUIRED=true. */

@@ -22,6 +22,8 @@ interface Preview {
     inviteRequired?: boolean;
     /** A seat link: the cabinet portfolio offered (lib/government/seat-scope.ts). */
     seatPortfolio?: string | null;
+    /** A group link: anyone may join and pick any free empire. */
+    group?: boolean;
 }
 
 export default function JoinPage() {
@@ -63,6 +65,8 @@ export default function JoinPage() {
                         <p className="text-sm text-slate-400 leading-relaxed">
                             {preview.seatPortfolio
                                 ? <>You would hold the <span className="capitalize font-semibold text-slate-200">{preview.seatPortfolio}</span> seat: one brief, given in their name, five minutes a day. Serve them well — or not.</>
+                                : preview.group
+                                ? <>Create an account, then pick any free empire to lead. Five minutes a day is enough to play.</>
                                 : <>Take a seat and you start with the free empire nearest theirs — neighbours from day one. Five minutes a day is enough to play.</>}
                         </p>
                         <p className="text-[11px] font-mono tracking-widest text-slate-500">CODE {preview.code}</p>
