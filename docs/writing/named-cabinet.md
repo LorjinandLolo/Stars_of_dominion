@@ -427,6 +427,12 @@ replaced by the engine's generated person.
 
 ## Order of work
 
+Step 1 landed 2026-10-27: `data/leaders/cabinet-cast.json` (six people, one per
+office), `lib/leadership/cast.ts` (`drawCast` on claim from `ensureCabinets`
+and `tickCabinets`, `characterOf`, `world.cast` records the draw), the voice
+lookup in `minister-voices.ts`, probe `scripts/cast-probe.ts`. Displaced
+generated ministers retire rather than entering the pool.
+
 1. Data shape, the cast file with six characters (one per office), the
    draw, `characterOf`, the voice lookup. The card and proposals show
    written people. One day.

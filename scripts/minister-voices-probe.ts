@@ -71,6 +71,8 @@ async function main() {
     const plain = ids.filter(id => ![CIV_BANKING, CIV_SARRAK].includes(civ(id)) && id !== 'faction-buthari');
     const human = plain.includes('faction-movanites') ? 'faction-movanites' : plain[0];
     world.claimedFactionIds = [human];
+    // This probe is about the OFFICE personas: mark the draw done so no written character takes a seat (scripts/cast-probe.ts covers them).
+    (world as any).cast = { drawn: {}, factions: { [human]: true } };
     ensureCabinets(world);
     const defence: any = getMinister(world, human, 'defence');
     const economy: any = getMinister(world, human, 'economy');

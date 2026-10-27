@@ -87,6 +87,10 @@ export interface Leader {
     background?: string;
     /** Highest competence they can grow to in office. Written on first growth tick. */
     potential?: number;
+
+    // ── The named cabinet (2026-10-27) — lib/leadership/cast.ts ────────────
+    /** A written character from data/leaders/cabinet-cast.json, when this leader is one. */
+    characterId?: string;
 }
 
 export interface LeadershipWorldState {

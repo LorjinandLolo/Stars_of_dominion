@@ -15,6 +15,7 @@
 // minister says when you answered or did not).
 
 import type { CabinetPortfolio } from './types';
+import castData from '../../data/leaders/cabinet-cast.json';
 
 export type Register = 'loyal' | 'cooling' | 'brutus' | 'venal';
 
@@ -29,6 +30,8 @@ export interface MinisterLike {
     loyalty?: number;
     corruption?: number;
     ambitionDrive?: number;
+    /** A written character (lib/leadership/cast.ts): their own lines are tried first. */
+    characterId?: string;
 }
 
 /** The register a minister speaks in; `plotting` forces Brutus. */
@@ -332,6 +335,11 @@ export const MINISTER_LINES: Record<CabinetPortfolio, Sheet> = {
     },
 };
 
+/** The written characters' own lines, by character id: hook → register → sentences. */
+const CHARACTER_LINES: Record<string, Record<string, Partial<Record<Register, string[]>>>> = Object.fromEntries(
+    ((castData as unknown as { characters: Array<{ id: string; lines: Record<string, Partial<Record<Register, string[]>>> }> }).characters).map(c => [c.id, c.lines]),
+);
+
 export type Vars = Partial<Record<'target' | 'world' | 'portfolio', string>>;
 
 function fill(line: string, vars: Vars): string {
@@ -351,7 +359,12 @@ function pick<T>(arr: T[], seed: number): T {
  * register (a venal Treasury still answers a strike), and to '' when the
  * hook has no lines for this office at all.
  */
-export function ministerLine(portfolio: CabinetPortfolio, hook: Hook, register: Register, vars: Vars = {}, seed = 0): string {
+export function ministerLine(portfolio: CabinetPortfolio, hook: Hook, register: Register, vars: Vars = {}, seed = 0, characterId?: string): string {
+    // A written person speaks in their own words where they have them; the
+    // office persona covers the hooks they do not.
+    const own = characterId ? CHARACTER_LINES[characterId]?.[hook] : undefined;
+    const ownPool = own ? (own[register]?.length ? own[register] : own.loyal) ?? [] : [];
+    if (ownPool.length) return fill(pick(ownPool, seed), vars);
     const lines = MINISTER_LINES[portfolio]?.[hook];
     if (!lines) return '';
     const pool = (lines[register]?.length ? lines[register] : lines.loyal) ?? [];
@@ -362,7 +375,7 @@ export function ministerLine(portfolio: CabinetPortfolio, hook: Hook, register: 
 /** ` Name: “line”` for appending to a card, or '' when the minister has nothing to say. */
 export function ministerSays(m: MinisterLike | undefined, portfolio: CabinetPortfolio, hook: Hook, vars: Vars = {}, seed = 0, plotting = false): string {
     if (!m) return '';
-    const line = ministerLine(portfolio, hook, registerOf(m, plotting), vars, seed);
+    const line = ministerLine(portfolio, hook, registerOf(m, plotting), vars, seed, m.characterId);
     return line ? ` ${m.name}: “${line}”` : '';
 }
 

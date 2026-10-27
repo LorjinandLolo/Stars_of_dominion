@@ -20,6 +20,7 @@ import { isDelegated } from '@/lib/delegation/delegation-service';
 import { espionagePressureOn } from '@/lib/espionage/pressure';
 import { adminStatus } from './admin-capacity';
 import { ministerLine, registerOf, seedOf, type Hook } from './minister-voices';
+import { drawCastForClaimed } from '@/lib/leadership/cast';
 
 /**
  * A delegated cabinet's loyalty floor. Above the coup-risk trigger for a
@@ -88,6 +89,16 @@ export function ensureCabinets(world: GameWorldState): void {
     }
 
     if (appointed > 0) console.log(`[Government] Filled ${appointed} cabinet seat(s).`);
+    seatTheCast(world);
+}
+
+/** The written cabinet for every claimed empire that has not had its draw (lib/leadership/cast.ts). */
+function seatTheCast(world: GameWorldState): void {
+    for (const r of drawCastForClaimed(world)) {
+        console.log(`[Government] ${r.factionId}: ${r.seated.map(s => `${s.characterId} (${s.portfolio})`).join(', ')} take their seats.`);
+        const gov = getGovernment(world, r.factionId);
+        if (gov) gov.cabinetAdvice = generateCabinetAdvice(world, r.factionId);
+    }
 }
 
 /** Fill a vacant chair with the AI's pick (lib/government/human-ministers.ts uses it when a seat is given up). */
@@ -228,6 +239,8 @@ export function dismissMinister(
 export function tickCabinets(world: GameWorldState, deltaSeconds: number): void {
     if (!(world.government instanceof Map)) return;
     const days = deltaSeconds / 86400;
+    // A faction claimed since the last tick gets its written people now.
+    seatTheCast(world);
 
     for (const gov of world.government.values()) {
         const intelligence = getMinister(world, gov.factionId, 'intelligence');
@@ -426,7 +439,7 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
         // The minister says it in their own voice when the sheet has a line for
         // this moment; the plain sentence stays as the fallback.
         const register = registerOf(minister, plotting(minister.id));
-        const voiced = ministerLine(portfolio, hook, register, vars, seedOf(factionId, portfolio, hook, week));
+        const voiced = ministerLine(portfolio, hook, register, vars, seedOf(factionId, portfolio, hook, week), minister.characterId);
 
         out.push({
             portfolio,
