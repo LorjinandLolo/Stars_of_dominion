@@ -390,6 +390,8 @@ export interface CabinetAdviceSnapshot {
     advice: string;
     suggestedPolicyId?: string;
     reliability: number;
+    /** How the minister is talking: loyal, cooling, brutus, venal. */
+    register?: string;
 }
 
 /** One named cause pulling the empire together or apart. */

@@ -46,6 +46,8 @@ export interface CabinetAdvice {
     suggestedPolicyId?: string;
     /** 0–100. Competence tempered by what they personally stand to gain. */
     reliability: number;
+    /** How the minister is talking to you (lib/government/minister-voices.ts). */
+    register?: 'loyal' | 'cooling' | 'brutus' | 'venal';
 }
 
 /**

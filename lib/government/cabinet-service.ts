@@ -18,6 +18,8 @@ import { refillRecruitmentPool } from './succession-service';
 import { isFactionAtWar } from './cohesion-service';
 import { isDelegated } from '@/lib/delegation/delegation-service';
 import { espionagePressureOn } from '@/lib/espionage/pressure';
+import { adminStatus } from './admin-capacity';
+import { ministerLine, registerOf, seedOf, type Hook } from './minister-voices';
 
 /**
  * A delegated cabinet's loyalty floor. Above the coup-risk trigger for a
@@ -332,6 +334,12 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
     // silently made every cabinet talk as if the empire were always at peace.
     const atWar = isFactionAtWar(world, factionId);
     const out: CabinetAdvice[] = [];
+    // The week the line rotates on, and who is in a plot (a plotter talks like Brutus whatever the number says).
+    const week = Math.floor(Number((world as any).nowSeconds ?? 0) / (7 * 86400));
+    const plots: Map<string, any> = (world as any).plots instanceof Map ? (world as any).plots : new Map();
+    const plotting = (leaderId: string) => [...plots.values()].some(p => p.factionId === factionId && p.status === 'preparing' && (p.plotterLeaderId === leaderId || p.recruits?.[leaderId] === 'joined'));
+    const admin = adminStatus(world.construction?.planets?.values?.() ?? [], factionId);
+    const credits = Number((world.economy.factions.get(factionId) as any)?.reserves?.CREDITS ?? 0);
 
     for (const portfolio of CABINET_PORTFOLIOS) {
         const minister = getMinister(world, factionId, portfolio);
@@ -339,21 +347,32 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
 
         let advice = '';
         let suggestedPolicyId: string | undefined;
+        let hook: Hook = 'routine';
+        const vars: Record<string, string> = {};
 
         switch (portfolio) {
             case 'defence':
                 if (gov.warFatigue > 60) {
                     advice = 'The fleet has been at readiness too long. Rotate crews or we lose them.';
+                    hook = 'peace_proposal';
                 } else if (atWar) {
                     advice = 'We are at war and still building at peacetime rates. Mobilise.';
                     suggestedPolicyId = 'war_mobilization';
+                    hook = 'idle_war';
                 } else {
                     advice = 'Yards are idle. A standing programme now saves us a scramble later.';
                     suggestedPolicyId = 'militarize';
+                    hook = 'idle_peace';
                 }
                 break;
             case 'economy':
-                if (shared.tradeEfficiency < 0.6) {
+                if (admin.over > 0) {
+                    advice = 'We govern more systems than the offices can hold. Build administration or stop taking worlds.';
+                    hook = 'overextended';
+                } else if (credits < 500) {
+                    advice = 'The reserve is nearly empty. Nothing new this month.';
+                    hook = 'reserves_low';
+                } else if (shared.tradeEfficiency < 0.6) {
                     advice = 'Lanes are congested and revenue is falling with them. Open the corridors.';
                     suggestedPolicyId = 'open_trade';
                 } else if (gov.corruption > 45) {
@@ -371,14 +390,21 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
                 suggestedPolicyId = 'research_push';
                 break;
             case 'intelligence':
-                advice = espionagePressureOn(world, factionId) > 0.4
-                    ? 'Foreign networks are operating inside our institutions. I need authority to sweep.'
-                    : 'We are quiet, which is exactly when services get cut. Do not cut mine.';
+                if (espionagePressureOn(world, factionId) > 0.4) {
+                    advice = 'Foreign networks are operating inside our institutions. I need authority to sweep.';
+                    hook = 'networks_inside';
+                } else {
+                    advice = 'We are quiet, which is exactly when services get cut. Do not cut mine.';
+                }
                 break;
             case 'interior':
                 if (gov.approval < 40) {
                     advice = 'The public has stopped believing us. Give them something material.';
                     suggestedPolicyId = 'welfare_expansion';
+                    hook = 'approval_falling';
+                } else if ((gov.cohesion ?? 100) < 40) {
+                    advice = 'The outer worlds are drifting. Give them a reason to stay before they find one to go.';
+                    hook = 'cohesion_falling';
                 } else {
                     advice = 'Stability holds. Spend that credit on reform while it is worth something.';
                     suggestedPolicyId = 'civil_reforms';
@@ -388,6 +414,7 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
                 advice = atWar
                     ? 'Every month of this war costs us a friend abroad. Find me terms to offer.'
                     : 'Our word still carries. Treaties signed now cost nothing and buy years.';
+                hook = atWar ? 'idle_war' : 'routine';
                 break;
         }
 
@@ -396,13 +423,19 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
             (minister.competence ?? 50) - (minister.corruption ?? 0) * 0.5 - Math.max(0, (minister.ambitionDrive ?? 50) - 60) * 0.3
         );
 
+        // The minister says it in their own voice when the sheet has a line for
+        // this moment; the plain sentence stays as the fallback.
+        const register = registerOf(minister, plotting(minister.id));
+        const voiced = ministerLine(portfolio, hook, register, vars, seedOf(factionId, portfolio, hook, week));
+
         out.push({
             portfolio,
             portfolioLabel: portfolioLabel(portfolio),
             ministerName: minister.name,
-            advice,
+            advice: voiced || advice,
             suggestedPolicyId,
             reliability: Math.round(reliability),
+            register,
         });
     }
 

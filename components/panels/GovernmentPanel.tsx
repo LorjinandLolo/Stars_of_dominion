@@ -965,7 +965,7 @@ export default function GovernmentPanel() {
                         </div>
                         <div className="space-y-2">
                             {gov!.cabinetAdvice.map(entry => (
-                                <div key={entry.portfolio} className="bg-slate-900/30 border-l-2 border-slate-700 pl-3 py-2">
+                                <div key={entry.portfolio} className={`bg-slate-900/30 border-l-2 pl-3 py-2 ${entry.register === 'brutus' ? 'border-red-800' : entry.register === 'venal' ? 'border-amber-700' : entry.register === 'cooling' ? 'border-slate-500' : 'border-slate-700'}`} title={entry.register && entry.register !== 'loyal' ? `This minister is ${entry.register === 'brutus' ? 'not yours any more' : entry.register === 'venal' ? 'for sale' : 'cooling on you'}` : undefined}>
                                     <div className="flex justify-between items-baseline gap-2">
                                         <span className="text-[10px] font-display text-slate-300 uppercase tracking-wide">
                                             {entry.portfolioLabel} — {entry.ministerName}

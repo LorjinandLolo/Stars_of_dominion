@@ -34,6 +34,11 @@ holding the seat (`FactionSeat`) speaks in their own words; these are the
 generated minister's, and the steward's fallback when a seat holder is
 silent.
 
+Wired: `lib/government/minister-voices.ts` holds the subset with a code hook
+(362 lines) and picks the register from the minister's numbers; the cabinet
+debate card, the advisor desk's proposals and the brief's ledger read it.
+Probe: `npx tsx scripts/minister-voices-probe.ts`.
+
 Hook names map to code: `advisor-desk.ts` proposals, `ministryAdvice` on
 offers, `CabinetAdvice.advice` each tick, the daily brief, gazette
 reactions (`reactions.ts`), `GOV_DISMISS_MINISTER`, the crisis window

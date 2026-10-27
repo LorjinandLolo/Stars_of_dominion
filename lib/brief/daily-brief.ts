@@ -21,6 +21,8 @@ import { empireWithPlayer, type HumanPlayers } from '@/lib/players/player-label'
 import { openProposals, advisorLedger } from '@/lib/delegation/advisor-proposals';
 import { POLITICAL_CAPITAL_COSTS } from '@/lib/actions/political-costs';
 import { wouldAccept } from '@/lib/ai/diplomatic-ai-service';
+import { ministerSays, seedOf, type Hook } from '@/lib/government/minister-voices';
+import type { CabinetPortfolio } from '@/lib/government/types';
 import type {
     BriefAction,
     BriefAdvisorLine,
@@ -155,10 +157,26 @@ export function collectAdvisorLedger(input: BriefInput, since: Date, now: Date):
     for (const entry of advisorLedger(input.world, input.factionId)) {
         const at = realDateFor(entry.atSeconds, nowSeconds, now);
         if (at < since) break; // newest first: the rest are older
-        out.push({ id: entry.id, text: ledgerText(entry.title, entry.outcome), at: at.toISOString(), outcome: entry.outcome });
+        out.push({ id: entry.id, text: ledgerText(entry.title, entry.outcome) + ledgerVoice(input, entry), at: at.toISOString(), outcome: entry.outcome });
         if (out.length >= MAX_ADVISOR_LINES) break;
     }
     return out;
+}
+
+/** Which office spoke for a delegated system. */
+const SYSTEM_PORTFOLIO: Record<string, CabinetPortfolio> = { military: 'defence', diplomacy: 'foreign', development: 'economy' };
+const OUTCOME_HOOK: Partial<Record<BriefAdvisorLine['outcome'], Hook>> = { approved: 'approved', always: 'approved', declined: 'declined', expired: 'lapsed' };
+
+/** The minister's one line about what you did with their advice; '' for a standing order or no minister. */
+function ledgerVoice(input: BriefInput, entry: { id: string; system: string; outcome: BriefAdvisorLine['outcome'] }): string {
+    const portfolio = SYSTEM_PORTFOLIO[entry.system];
+    const hook = OUTCOME_HOOK[entry.outcome];
+    if (!portfolio || !hook) return '';
+    const world: any = input.world;
+    const id = world?.government?.get?.(input.factionId)?.cabinet?.[portfolio];
+    const minister = id ? world?.leadership?.leaders?.get?.(id) : undefined;
+    if (!minister || minister.status !== 'active') return '';
+    return ministerSays(minister, portfolio, hook, {}, seedOf(entry.id));
 }
 
 function ledgerText(title: string, outcome: BriefAdvisorLine['outcome']): string {

@@ -26,6 +26,9 @@ import { factionFleetPower } from '@/lib/diplomacy/gambit-service';
 import { warEnemiesOf } from '@/lib/ai/belt-ambush-ai';
 import { checkOrderTechGate } from '@/lib/tech/order-gates';
 import { POLITICAL_CAPITAL_COSTS } from '@/lib/actions/political-costs';
+import { getMinister } from '@/lib/government/cabinet-service';
+import { ministerSays, seedOf, type Hook } from '@/lib/government/minister-voices';
+import type { CabinetPortfolio } from '@/lib/government/types';
 import {
     WAR, aiWarWantsPeace, isWarfleetId, seasonAgeSeconds, warCandidates, warFatigueOf, warfleetQuoteFor,
     type WarMotive,
@@ -68,6 +71,12 @@ function canBeOrdered(world: GameWorldState, factionId: string, actionId: string
     return !(price > 0 && Number.isFinite(pc) && pc < price);
 }
 
+/** The minister's own line in front of the proposal's plain detail, when they have one. */
+function voiced(world: GameWorldState, factionId: string, portfolio: CabinetPortfolio, hook: Hook, detail: string, vars: Record<string, string>, ...seed: string[]): string {
+    const said = ministerSays(getMinister(world, factionId, portfolio), portfolio, hook, vars, seedOf(factionId, hook, ...seed)).trim();
+    return said ? `${said} ${detail}` : detail;
+}
+
 const MOTIVE_LINE: Record<WarMotive, string> = {
     transcendence: 'is close to transcending, and will not stop on its own. A war now is the last chance to stop the clock.',
     grievance: 'has given us grievance enough, and our fleets outmatch theirs. The staff judge a war winnable.',
@@ -92,7 +101,7 @@ function adviseOnWar(world: GameWorldState, factionId: string, out: AdvisorDeskR
         actionId: 'DIP_DECLARE_WAR',
         payload: { targetFactionId: candidate.targetId },
         title: `The Admiralty advises war on ${target}`,
-        detail: `${target} ${MOTIVE_LINE[candidate.motive]} Declaring costs ${POLITICAL_CAPITAL_COSTS.DIP_DECLARE_WAR ?? 0} political capital and breaks any non-aggression pact.`,
+        detail: voiced(world, factionId, 'defence', 'war_proposal', `${target} ${MOTIVE_LINE[candidate.motive]} Declaring costs ${POLITICAL_CAPITAL_COSTS.DIP_DECLARE_WAR ?? 0} political capital and breaks any non-aggression pact.`, { target }, candidate.targetId),
         reason: `advises war of ${candidate.motive} on ${candidate.targetId}`,
     });
     out.push({ factionId, advice: `war on ${candidate.targetId} (${candidate.motive})`, result });
@@ -119,7 +128,7 @@ function adviseOnPeace(world: GameWorldState, factionId: string, out: AdvisorDes
             actionId: 'DIP_OFFER_PEACE',
             payload: { targetFactionId: enemyId },
             title: `The Foreign Office advises peace with ${enemy}`,
-            detail: `Sue ${enemy} for peace: ${why}. They may still refuse.`,
+            detail: voiced(world, factionId, 'foreign', 'peace_proposal', `Sue ${enemy} for peace: ${why}. They may still refuse.`, { target: enemy }, enemyId),
             reason: `advises peace with ${enemyId}: ${why}`,
         });
         out.push({ factionId, advice: `peace with ${enemyId}`, result });
@@ -149,7 +158,7 @@ function adviseOnArming(world: GameWorldState, factionId: string, out: AdvisorDe
         replay: 'warfleet',
         topic: 'MIL_BUILD_FLEET:warfleet',
         title: atWar ? 'The Admiralty asks for a battle group' : 'The Admiralty asks for a battle group before the storm',
-        detail: `${atWar ? 'We are at war with no battle group.' : 'A war is on the table and we have no battle group.'} The capital yard can lay ${mix} for about ${price}; the hulls take their usual time to build.`,
+        detail: voiced(world, factionId, 'defence', 'battle_group', `${atWar ? 'We are at war with no battle group.' : 'A war is on the table and we have no battle group.'} The capital yard can lay ${mix} for about ${price}; the hulls take their usual time to build.`, {}, String(Math.floor(seasonAgeSeconds(world) / (7 * DAY)))),
         reason: 'advises a battle group',
     });
     out.push({ factionId, advice: 'battle group', result });
