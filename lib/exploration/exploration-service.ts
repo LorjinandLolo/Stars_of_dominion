@@ -123,7 +123,8 @@ export function autoSurveyOnArrival(world: MovementWorldState): ExplorationOrder
             (o.targetSystemId === here && (o.factionId ?? world.fleets.get(o.fleetId)?.factionId) === fleet.factionId));
         if (busy) continue;
         const order = issueExploreOrder(fleet.id, here, 'survey', world, EXPLORER_TIME_FACTOR);
-        if (order) started.push(order);
+        // Free: a lost arrival survey refunds nothing (tick-processor's lost hook).
+        if (order) { order.source = 'arrival'; started.push(order); }
     }
     return started;
 }

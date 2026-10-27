@@ -12,6 +12,7 @@ import { calculateBiosphereModifiers } from '@/lib/economy/biosphere-traits';
 import { ResourceId } from '@/lib/economy/economy-types';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
+import { pirateGroundWarning } from '@/lib/piracy/pirate-ground';
 import { formatPercent } from '@/lib/ui/format';
 import { civilianCount, scanReachFrom, OUTPOST_COST } from '@/lib/combat/civilian-ships';
 import { classifyStar, factionColor } from './starVisuals';
@@ -1075,6 +1076,10 @@ function SystemContextPanel() {
     // ── Handlers ───────────────────────────────────────────────────────────────
     const handleMoveFleetToSystem = async () => {
         if (!selectedFleetId) return;
+        // Unarmed ships are seized on pirate ground (lib/piracy/pirate-ground.ts): ask first.
+        const movingFleet = useUIStore.getState().fleets.find((f: any) => f.id === selectedFleetId);
+        const warning = pirateGroundWarning(movingFleet as any, system as any);
+        if (warning && !window.confirm(warning)) return;
         setMoving(true);
         try {
             // dispatchOrder = optimistic path: the fleet arrow appears the same
@@ -1369,8 +1374,8 @@ function SystemContextPanel() {
                             )}
 
                             {/* Pirate ground: say what it means, because the red star alone reads as "keep out".
-                                Pirates raid trade lanes and convoys (lib/piracy/raid-service.ts); nothing in
-                                combat makes them fight a visiting fleet, so this is a note, not a warning. */}
+                                Pirates resting here fight a weaker fleet and seize unescorted unarmed ships
+                                (lib/piracy/pirate-ground.ts). */}
                             {revealStage !== 'unknown' && (system.tags.includes('corsair_den') || system.tags.includes('pirate_station')) && (
                                 <div id="pirate-ground-note" className="flex items-start gap-2 p-2.5 rounded-lg bg-red-950/30 border border-red-800/40">
                                     <AlertOctagon size={14} className="text-red-400 shrink-0 mt-0.5" />
@@ -1382,7 +1387,7 @@ function SystemContextPanel() {
                                             {system.tags.includes('pirate_station')
                                                 ? 'A pirate band’s fortified base, where its raiders come home to repair.'
                                                 : 'Lawless ground where pirate crews rest and repair between raids.'}
-                                            {' '}They prey on trade lanes and convoys, not on ships passing through: your fleets can travel, survey and stay here.
+                                            {' '}Pirate ships resting here attack any fleet they outgun, and seize unarmed ships that stop without an armed escort at least as strong. A stronger fleet passes unchallenged.
                                         </p>
                                         <p className="text-[10px] text-slate-400 leading-snug">
                                             A fleet parked here makes raids launched from this system harder.

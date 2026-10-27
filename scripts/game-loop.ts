@@ -5,6 +5,7 @@ import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShar
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick, advanceExplorationNow } from '../lib/time/tick-processor';
+import { seizeCiviliansOnPirateGround } from '../lib/piracy/pirate-ground-strikes';
 import * as chronicle from '../lib/narrative/chronicle';
 import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { peekBuffer } from '../lib/narrative/chronicle';
@@ -889,6 +890,11 @@ async function runGameTick() {
         // pings land in seconds and an exploration ship surveys where it
         // arrives (lib/time/tick-processor.ts advanceExplorationNow).
         try { advanceExplorationNow(world); } catch (e: any) { console.warn('[Tick Worker] exploration step failed:', e.message); }
+        // 5.6. Pirates on their own ground take unescorted unarmed ships
+        // (armed visitors they outgun are fought by processSectorCombats).
+        try {
+            for (const s of seizeCiviliansOnPirateGround(world)) console.log(`[Piracy] ${s.fleetName} (${s.factionId}) seized at ${s.systemId}.`);
+        } catch (e: any) { console.warn('[Tick Worker] pirate ground step failed:', e.message); }
 
         // 6. Advance air sorties (static import — runs before the save, always)
         try {

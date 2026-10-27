@@ -40,6 +40,7 @@ import {
     PURSUIT_STRENGTH_LOSS,
 } from './engagement-rules';
 import { areAtWar as factionsAtWar } from './war-status';
+import { pirateGroundEngages } from '../piracy/pirate-ground-strikes';
 import { orbitalDamageScale } from '../orbital/orbital-service';
 import { experienceMultiplier, gainExperience, EXPERIENCE_CAP, EXPERIENCE_FOR_VICTORY } from './veterancy';
 import { commandingAdmiral, admiralPowerBonus, admiralBattleXp, ADMIRAL_PREDICTION_POINTS } from './admiralty';
@@ -106,7 +107,9 @@ export function processSectorCombats(world: GameWorldState) {
                     continue;
                 }
 
-                if (areAtWar(fA, fB, world)) {
+                // Pirates are at war with nobody, but on their own ground they
+                // fall on a weaker fleet (lib/piracy/pirate-ground.ts).
+                if (areAtWar(fA, fB, world) || pirateGroundEngages(world, systemId, fA, fB)) {
                     handleEngagement(systemId, fA, fB, fleets, world);
                 }
             }

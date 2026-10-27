@@ -6,6 +6,7 @@ import { usePageVisible, useVisibleInterval } from '@/hooks/usePageVisible';
 import { categoryForTab } from '@/components/shell/dockConfig';
 import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { isFleetOperational } from '@/lib/movement/movement-service';
+import { pirateGroundWarning } from '@/lib/piracy/pirate-ground';
 import OverlayPicker from './OverlayPicker';
 import FleetCommandBar from './FleetCommandBar';
 import SystemContextPanel from './SystemContextPanel';
@@ -432,7 +433,11 @@ export default function GalaxyShell() {
             // Empty fleets can't move; skip the order so no ghost transit arrow
             // lingers while the worker rejects it.
             if (!isFleetOperational(fleet)) return;
-            const sysName = state.systems.find((s: any) => s.id === systemId)?.name ?? systemId;
+            const target = state.systems.find((s: any) => s.id === systemId);
+            const sysName = target?.name ?? systemId;
+            // Unarmed ships are seized on pirate ground (lib/piracy/pirate-ground.ts): ask first.
+            const warning = pirateGroundWarning(fleet as any, target as any);
+            if (warning && !window.confirm(warning)) return;
             dispatchOrder({
                 actionId: 'MIL_MOVE_FLEET',
                 factionId: state.playerFactionId || 'PLAYER_FACTION',

@@ -851,7 +851,8 @@ function resolveExplorationOrders(world: ReturnType<typeof getGameWorldState>): 
             const factionId = order.factionId;
             if (!factionId) return;
             const reserves = world.economy.factions.get(factionId)?.reserves as Record<string, number> | undefined;
-            const cost = (ACTION_DEFINITIONS as any).EXPLORE_ISSUE_ORDER?.cost ?? {};
+            // An arrival survey cost nothing, so a lost one refunds nothing.
+            const cost = order.source === 'arrival' ? {} : (ACTION_DEFINITIONS as any).EXPLORE_ISSUE_ORDER?.cost ?? {};
             if (reserves) {
                 for (const [res, amt] of Object.entries(cost)) {
                     const key = res.toUpperCase();
@@ -865,7 +866,7 @@ function resolveExplorationOrders(world: ReturnType<typeof getGameWorldState>): 
                 category: 'military',
                 priority: 'normal',
                 title: 'SURVEY MISSION LOST',
-                body: `The fleet conducting the ${order.mode} of ${world.movement.systems.get(order.targetSystemId)?.name ?? order.targetSystemId} no longer exists. The order fee has been refunded.`,
+                body: `The fleet conducting the ${order.mode} of ${world.movement.systems.get(order.targetSystemId)?.name ?? order.targetSystemId} no longer exists.${order.source === 'arrival' ? '' : ' The order fee has been refunded.'}`,
                 createdAt: new Date(world.nowSeconds * 1000).toISOString(),
                 read: false,
                 linkToTab: 'map',

@@ -475,7 +475,7 @@ export interface ExplorationOrder {
      * from the faction's nearest shipyard, priced by distance; it needs no
      * fleet and resolves on completesAt regardless of what the navy is doing.
      */
-    source?: 'fleet' | 'relay';
+    source?: 'fleet' | 'relay' | 'arrival';
     /** For relay pings: the shipyard system the ping was sent from. */
     relayFromSystemId?: string;
     /** For relay pings: what the treasury paid, so the notice can say so. */
