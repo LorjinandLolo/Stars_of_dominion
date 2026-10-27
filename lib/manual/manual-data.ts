@@ -1,7 +1,9 @@
 // lib/manual/manual-data.ts
 // Stars of Dominion — the player's guidebook (GUIDE on the command dock).
 //
-// Rewritten 2026-10-15 against the code: every rule below was checked in the
+// Rewritten 2026-10-15 against the code (and brought up to date 2026-10-27 for
+// advisor proposals, the written cabinet, seats for friends, gazette reactions
+// and the outpost additions): every rule below was checked in the
 // source it describes, and the chapters run in the order a player meets
 // things. The previous edition described systems that never existed (an
 // "Economic Hegemony" victory, an administrative burden per planet) and an
@@ -59,6 +61,14 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'paragraph',
                         content: 'BRIEF in the top bar opens what happened while you were away, what is waiting on your answer, and one suggested next move. Anything that needs you stays open for at least a full day. The bell holds notifications; an order the server refused says why there, and on the order\'s own chip.',
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'Proposals: your advisors write up what they would do (a war, peace, a battle group, a policy a minister wants) as a card with Approve, Decline and Always. Approve runs it as the same order you could give yourself, at the same political price. Decline hides that advice for five days. Always makes it a standing order: it runs without asking from then on, and the brief\'s advisors ledger says what ran. A proposal lapses unanswered after two days.',
+                            'Letters: your written ministers (see Leaders → Your cabinet) write to you when something moves them: on taking office, when you ignore them, when you listen, when they are about to leave. The newest four show under Letters. They are text with a name on them; there is nothing to click.',
+                            'The ledger under Your advisors says what you approved, declined or let lapse, with the minister\'s one-line reaction.',
+                        ],
                     },
                 ],
             },
@@ -206,6 +216,11 @@ export const MANUAL_DATA: ManualSection[] = [
                             'Prisoners can be moved to cell blocks (needs a landing dock) and stay ransomable. A test lab pushes your current research; using prisoners as subjects doubles it, and their homeland hears of it.',
                             'Grow: 10 colonists, morale 50, a habitat, life support and hydroponics make a settlement (3,000 Cr) and open the whole grid. 30 colonists, morale 60, a dock and a warehouse make a colony (10,000 Cr): the world gets its full surface for districts and the old modules keep working.',
                             'Or make a settlement a military base (15 colonists, morale 50, a bunker and a dock; 8,000 Cr). It stays an outpost and unlocks barracks (a garrison drilled every shift), drydocks (warships built there), defence batteries and a command post.',
+                            'Colonists are people: each has a name and one trait (medic, engineer, miner, botanist, veteran, zealot, drunk, scholar). A crisis names who is in it, a trait changes its odds, and the one who knows speaks on the card. The hurt and the sick mend in a few shifts (faster with a medbay or a medic); a death is a grave with a name, and a crisis handled badly leaves a scar the outpost remembers.',
+                            'Neighbours matter: a bunker shelters its four neighbours from meteors and raiders; life support and hydroponics beside ice give an extra unit of air or food; hydroponics in a solar array\'s light grow more; a mine beside the warehouse yields 15% more; a commons lifts morale for the domes beside it and a medbay beside the commons lifts it again; nobody sleeps well beside a reactor; a test lab beside ruins runs its experiments half again as fast. The board shows the bonus when you place a module.',
+                            'Expeditions: two fit people walk the horizon (2 shifts), dig the ruins (2) or trace a vent (1). They come back with salvage, research notes, a new ore square or worked stone nobody here made; sometimes one comes back hurt, sometimes not at all. A veteran, a scholar or a miner leads the right walk.',
+                            'Visitors: a trader buys your warehouse, a skiff wants a toll, a pod brings two named refugees, a rival\'s survey team sets up on your plain. Each is a crisis with its own answers.',
+                            'The screen shows the outpost as a small 3D diorama or as the board (toggle at the top). When the outpost becomes a colony, the diorama pulls back and dissolves into the world\'s surface.',
                             'The outpost screen has a How to play walkthrough and an advisor that always names the next thing to do.',
                         ],
                     },
@@ -434,6 +449,43 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'paragraph',
                         content: 'The head of state ages, wears down and eventually dies, retires or is overthrown. Succession costs legitimacy, more when it is violent, and halves your political capital.',
+                    },
+                ],
+            },
+            {
+                id: 'cabinet',
+                title: 'Your cabinet: written ministers, friends in the seats, and Brutus',
+                blocks: [
+                    {
+                        type: 'paragraph',
+                        content: 'The first time you claim an empire, six written ministers take the seats: people with a past, a want and a fear, drawn from a cast of twenty-four (four per office) that the galaxy shares. The first four empires claimed get them; later claims, and every chair they leave, get the ordinary generated ministers. They sit in the same records with the same numbers, so everything above still applies. What is different is that they talk and they act.',
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'The cabinet debate card (Empire → Government) is in their own words, and its tone follows their numbers: loyal, cooling (loyalty under 60), Brutus (under 35, or in a plot; the card\'s edge turns red) or venal (corruption 50 and over; amber). Hover the edge to see which.',
+                            'They write letters (see the brief), propose policies in their own name, and stand by you, with a loyalty floor, when you take their advice. Ignore the Admiralty twice and the admiral writes once; lose a field after that and she goes to the press; lose a second and she resigns. Each of the twenty-four has a story like that, and the story is reading the chronicle, your government\'s numbers and the advisors ledger, not the dice.',
+                            'They can turn. A dismissed admiral may open a plot; a Treasury that pays for plots never joins them; a minister ignored for a season may start writing to another court (your Intelligence minister catches that, sooner if competent, and names them in a loyalty report); a corrupt one takes money, and the chronicle keeps a rumour of it.',
+                            'Dismissing a written minister (10 PC) ends their story with a letter, and the engine fills the chair. When one resigns, legitimacy pays as for anyone.',
+                        ],
+                    },
+                    {
+                        type: 'paragraph',
+                        content: 'A friend can hold a seat. From the lobby, Invite a friend and pick a portfolio: the link seats them as your Minister of that office. They see your empire through that desk and can give its orders, except the sovereign ones (declaring war, breaking a treaty, changing your delegation). Their loyalty is theirs: nothing in the game moves it. A written minister a friend displaces stays at court as a courtier, writes from the corridor, and takes the chair back when the friend leaves.',
+                    },
+                    {
+                        type: 'bullet_list',
+                        content: [
+                            'A seat can plot (a coup, or taking a province out), and so can a turned written minister. One person is sounded out a day. The loyal refuse and may report it; a loyal servant\'s report names the plotter when they can, and your Intelligence minister\'s competence helps them.',
+                            'A plot can strike with two inside it and a rotten court: coup pressure 50 or more, legitimacy under 40, or cohesion under 45. The strike opens a three-day crisis window in which every minister, governor, admiral and the officer corps starts on a side or undecided, and both of you work the undecided.',
+                            'Three endings: you hold (the plotters lose their seats), the plotter wins the throne (you are exiled; a friend who won rules your empire), or the court splits and it is civil war.',
+                            'A friend who also rules an empire of their own is a foreign ruler in your cabinet. A named report, a war between your empires, or a case can expose that; the exposure costs their legitimacy at home and gives your court its grievance.',
+                        ],
+                    },
+                    {
+                        type: 'strategy_tip',
+                        title: 'Read the loyalty desk',
+                        content: 'Loyal servants report being sounded out, and the Desk reports letters abroad. The reports name a suspect when they can. A plot you act on before it strikes never reaches the window.',
                     },
                 ],
             },
@@ -903,6 +955,10 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'paragraph',
                         content: 'Comms → Press. Outlets (state, neutral, rebel, sensational) cover what your empire does, and public trust in your government feeds approval. Journalists investigate; when one digs into you, you can cooperate, obstruct, sacrifice an official or publish first. Your Press office (an advisor) answers on your behalf unless you take it back. The Gazette shows the galaxy\'s papers to anyone.',
+                    },
+                    {
+                        type: 'paragraph',
+                        content: 'The front page answers back: under each story, up to three buttons that are real orders fitted to what happened and where you stand in it. The attacked can sue for terms or rally the press; a bystander can condemn with sanctions or send an envoy to the loser; the loser of a battle can blame the admiral. Each shows its political price and greys out when you cannot pay. A button is the same click as the panel\'s, and the chronicle remembers it was an answer to the news.',
                     },
                 ],
             },
