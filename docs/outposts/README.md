@@ -72,6 +72,14 @@ petitioning to leave, a scholar pushes experiments through, a drunk has
 accidents. `state.colonists` stays the number the shift balances; the roster
 is reconciled to it after every shift, so old outposts simply grow one.
 
+The people also talk (`voices.ts`, lines in `docs/writing/character-lines.md`):
+every crisis card ends with one quoted line from the first well colonist
+whose trait has something to say about that kind of trouble, in a fixed
+order of who is believed first (the medic on a fever, the veteran on
+raiders, the drunk on their own accident). Expedition outcomes do the same
+for the crew that went. A hurt or sick speaker stays silent, so the card
+reads as the steward's alone.
+
 ## Neighbours
 
 Placement matters (`adjacency.ts`, one row per rule, shown on the cell and

@@ -574,6 +574,8 @@ test('the sick are named, and a medic treats a fever like a medbay', () => {
     const c = openCrisisOfKind(s, ctx, 'sickness')!;
     assert.ok(s.roster!.some(x => x.status === 'sick'), 'someone went down');
     assert.ok(c.text.includes(s.roster!.find(x => x.status === 'sick')!.name));
+    const medic = s.roster![0];
+    assert.ok(medic.status === 'well' ? c.text.includes(medic.name + ': “Fever in bunk four') : !c.text.includes('bunk four'), 'the medic speaks on the card when well: ' + c.text);
     assert.match(c.options[1].label, /Let .* treat it/);
     assert.strictEqual(c.options[1].detail, '100 credits.');
     let charged = 0;

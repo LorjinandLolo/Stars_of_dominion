@@ -11,6 +11,7 @@ import { MODULES, CRISIS_DEADLINE_SHIFTS, MAX_OPEN_CRISES } from './outpost-cata
 import { countModules, log, moduleActive, moduleBuilt } from './outpost-sim';
 import { ensureRoster, hasTrait, withTrait, pickColonist, killColonists, leaveColonists, hurtColonist, listNames, roster } from './colonists';
 import { shieldedByBunker } from './adjacency';
+import { crisisVoice } from './voices';
 
 export interface CrisisContext {
     rng: RNG;
@@ -112,9 +113,9 @@ const CRISES: CrisisDef[] = [
     {
         kind: 'dust_storm',
         weight: s => (countModules(s, 'solar') > 0 ? 3 : 0),
-        open: () => ({
+        open: s => ({
             title: 'Dust storm',
-            text: 'A wall of dust is rolling over the plain. The solar arrays will be at a fraction of their output for three shifts.',
+            text: 'A wall of dust is rolling over the plain. The solar arrays will be at a fraction of their output for three shifts.' + crisisVoice(s, 'dust_storm'),
             options: [
                 opt('ride', 'Ride it out', 'Solar at 40% for 3 shifts.'),
                 opt('burn', 'Burn reserve fuel', '300 energy from your reserves keeps the lights on.'),
@@ -145,7 +146,7 @@ const CRISES: CrisisDef[] = [
             const who = pickColonist(s, ctx.rng);
             return {
                 title: 'Meteor shower',
-                text: `Tracking shows a debris swarm crossing the outpost. ${nameAt(s, cell)} is in the strike zone${who ? `, and ${who.name} is on shift in it` : ''}.`,
+                text: `Tracking shows a debris swarm crossing the outpost. ${nameAt(s, cell)} is in the strike zone${who ? `, and ${who.name} is on shift in it` : ''}.${crisisVoice(s, 'meteor_shower', who ? [who.id] : [])}`,
                 cell,
                 options: [
                     opt('shelter', bunker ? 'Into the bunker' : 'Brace and hope', bunker ? 'Nobody hurt; the module is knocked out 2 shifts.' : 'The module is likely wrecked; colonists may die.'),
@@ -176,9 +177,9 @@ const CRISES: CrisisDef[] = [
             const engineer = withTrait(s, 'engineer');
             return {
                 title: hasScar(s, 'sealed_dome') ? 'The sealed dome is leaking again' : 'Hull breach',
-                text: hasScar(s, 'sealed_dome')
+                text: (hasScar(s, 'sealed_dome')
                     ? 'The section you sealed never got a proper fix. The patch has let go and the air reserve is bleeding out again.'
-                    : 'A seal has failed somewhere in the domes and the air reserve is bleeding out.',
+                    : 'A seal has failed somewhere in the domes and the air reserve is bleeding out.') + crisisVoice(s, 'air_leak'),
                 options: [
                     opt('seal', 'Seal off the section', 'A habitat is closed for 2 shifts; it stays a weak point.'),
                     opt('repair', 'Emergency repair', '300 credits; fixed properly.'),
@@ -219,7 +220,7 @@ const CRISES: CrisisDef[] = [
             const medic = withTrait(s, 'medic');
             return {
                 title: 'Fever in the domes',
-                text: `${first ? `${first.name} went down with a fever this shift and three more are coughing` : 'A fever is spreading through the bunks'}. The recycled air carries it everywhere.`,
+                text: `${first ? `${first.name} went down with a fever this shift and three more are coughing` : 'A fever is spreading through the bunks'}. The recycled air carries it everywhere.${crisisVoice(s, 'sickness', first ? [first.id] : [])}`,
                 options: [
                     opt('quarantine', 'Quarantine', 'Nobody dies; morale −10 for 3 shifts.'),
                     opt('treat', countModules(s, 'medbay') > 0 ? 'Treat in the medbay' : medic ? `Let ${medic.name} treat it` : 'Ship in medicine', care ? '100 credits.' : '600 credits.'),
@@ -246,9 +247,9 @@ const CRISES: CrisisDef[] = [
             const patched = hasScar(s, 'patched_reactor');
             return {
                 title: patched ? 'The patched reactor again' : 'Reactor fault',
-                text: patched
+                text: (patched
                     ? 'The live patch on the coolant loop is weeping. The engineers say they told you so.'
-                    : 'The reactor’s coolant loop is reading wrong. The engineers want a decision.',
+                    : 'The reactor’s coolant loop is reading wrong. The engineers want a decision.') + crisisVoice(s, 'reactor_fault'),
                 cell: cellsWith(s, id => id === 'reactor')[0],
                 options: [
                     opt('scram', 'Scram it', 'Reactor off for 3 shifts; inspected properly.'),
@@ -277,9 +278,9 @@ const CRISES: CrisisDef[] = [
     {
         kind: 'supply_delay',
         weight: s => (s.food < 8 ? 2 : 1),
-        open: () => ({
+        open: s => ({
             title: 'Supply run delayed',
-            text: 'The freighter with the next food shipment has been held up. The stores will run short.',
+            text: 'The freighter with the next food shipment has been held up. The stores will run short.' + crisisVoice(s, 'supply_delay'),
             options: [
                 opt('ration', 'Ration', 'Food −4; morale −8 for 3 shifts.'),
                 opt('premium', 'Pay for a fast courier', '500 credits; nothing lost.'),
@@ -317,9 +318,9 @@ const CRISES: CrisisDef[] = [
     {
         kind: 'riot',
         weight: (s, ctx) => (ctx.prisoners > 0 ? (s.prisonLabour ? 4 : 2) * (hasScar(s, 'bad_blood') ? 2 : 1) : 0),
-        open: () => ({
+        open: s => ({
             title: 'Riot in the cell blocks',
-            text: 'The prisoners have taken a wing and are holding two wardens.',
+            text: 'The prisoners have taken a wing and are holding two wardens.' + crisisVoice(s, 'riot'),
             options: [
                 opt('lockdown', 'Lock down and starve them out', 'Morale −5; a few may slip out.'),
                 opt('negotiate', 'Negotiate', '300 credits; it ends quietly.'),
@@ -347,7 +348,7 @@ const CRISES: CrisisDef[] = [
         weight: s => (countModules(s, 'test_lab') > 0 ? 1 : 0),
         open: s => ({
             title: 'Containment alarm',
-            text: 'Something in the test lab is not behaving. The scientists think they are close to something.',
+            text: 'Something in the test lab is not behaving. The scientists think they are close to something.' + crisisVoice(s, 'lab_accident'),
             cell: cellsWith(s, id => id === 'test_lab')[0],
             options: [
                 opt('contain', 'Seal the lab', 'Lab off for 2 shifts.'),
@@ -372,9 +373,9 @@ const CRISES: CrisisDef[] = [
     {
         kind: 'rich_vein',
         weight: s => (countModules(s, 'mine') > 0 ? (hasTrait(s, 'miner') ? 3 : 2) : 0),
-        open: () => ({
+        open: s => ({
             title: 'A rich seam',
-            text: 'The extractor crews have broken into a seam far richer than the survey promised.',
+            text: 'The extractor crews have broken into a seam far richer than the survey promised.' + crisisVoice(s, 'rich_vein'),
             options: [
                 opt('dig', 'Dig it out fast', 'Extractors +100% for 2 shifts; morale −3.'),
                 opt('steady', 'Work it properly', 'Extractors +40% for 6 shifts.'),
@@ -394,7 +395,7 @@ const CRISES: CrisisDef[] = [
         weight: s => (s.cells.some((c, i) => c.terrain === 'ruin' && !c.module && s.tier >= 1 && i >= 0) ? 1 : 0),
         open: s => ({
             title: 'Something under the dust',
-            text: 'Survey drones have found worked stone at the edge of the outpost. Nobody here made it.',
+            text: 'Survey drones have found worked stone at the edge of the outpost. Nobody here made it.' + crisisVoice(s, 'ruins'),
             cell: s.cells.findIndex(c => c.terrain === 'ruin'),
             options: [
                 opt('excavate', 'Excavate', '300 credits; what is found goes to your research.'),
@@ -419,7 +420,7 @@ const CRISES: CrisisDef[] = [
         weight: s => (s.morale < 45 && s.colonists >= 4 ? (hasScar(s, 'broken_promise') ? 5 : hasTrait(s, 'zealot') ? 1 : 3) : 0),
         open: (s, ctx) => ({
             title: 'They want to go home',
-            text: `${pickColonist(s, ctx.rng, undefined, roster(s).filter(c => c.trait === 'zealot').map(c => c.id))?.name ?? 'Someone'} is passing a petition round the bunks. A good number of colonists want passage back.${hasScar(s, 'broken_promise') ? ' They quote your last promise back at you.' : ''}`,
+            text: `${pickColonist(s, ctx.rng, undefined, roster(s).filter(c => c.trait === 'zealot').map(c => c.id))?.name ?? 'Someone'} is passing a petition round the bunks. A good number of colonists want passage back.${hasScar(s, 'broken_promise') ? ' They quote your last promise back at you.' : ''}${crisisVoice(s, 'homesick')}`,
             options: [
                 opt('festival', 'Throw a festival', '300 credits; morale +15 for 3 shifts.'),
                 opt('promise', 'Make promises', 'Morale +6 now, −10 later.'),
@@ -447,7 +448,7 @@ const CRISES: CrisisDef[] = [
             const targets = strikeTargets(s);
             return {
                 title: 'Raiders overhead',
-                text: 'Enemy ships are in the system and one has turned toward the outpost.',
+                text: 'Enemy ships are in the system and one has turned toward the outpost.' + crisisVoice(s, 'raiders'),
                 cell: targets.length ? targets[ctx.rng.nextInt(0, targets.length - 1)] : undefined,
                 options: [
                     opt('dark', 'Go dark', 'Everything off for a shift; they may pass.'),
@@ -484,7 +485,7 @@ const CRISES: CrisisDef[] = [
             const veteran = withTrait(s, 'veteran');
             return {
                 title: 'Sabotage in the extractor',
-                text: 'Someone has cut the power couplings on an extractor in the night. The crews you broke are not saying who.',
+                text: 'Someone has cut the power couplings on an extractor in the night. The crews you broke are not saying who.' + crisisVoice(s, 'sabotage'),
                 cell,
                 options: [
                     opt('repair', 'Repair and say nothing', '200 metals; the grudge stays.'),
@@ -514,7 +515,7 @@ const CRISES: CrisisDef[] = [
             const warden = withTrait(s, 'veteran') ?? roster(s)[0];
             return {
                 title: 'Breakout',
-                text: `The cell blocks have been planning since the last time. A door is off its track and ${warden?.name ?? 'a warden'} is in the corridor with them.`,
+                text: `The cell blocks have been planning since the last time. A door is off its track and ${warden?.name ?? 'a warden'} is in the corridor with them.${crisisVoice(s, 'breakout', warden ? [warden.id] : [])}`,
                 options: [
                     opt('hold', warden ? `${warden.name} holds the corridor` : 'Hold the corridor', 'A warden may be hurt; a few get out.'),
                     opt('open', 'Open the outer doors', 'A tenth escape into the dust; nobody is hurt.'),
@@ -538,7 +539,7 @@ const CRISES: CrisisDef[] = [
         weight: s => (hasScar(s, 'unburied') ? 4 : 0),
         open: s => ({
             title: 'A grave to dig',
-            text: `${s.scars?.find(x => x.kind === 'unburied')?.text ?? 'Someone lies unburied.'} The crew will not settle until it is done.`,
+            text: `${s.scars?.find(x => x.kind === 'unburied')?.text ?? 'Someone lies unburied.'} The crew will not settle until it is done.${crisisVoice(s, 'funeral')}`,
             options: [
                 opt('service', 'Hold a service', '100 credits; morale +6 for 3 shifts.'),
                 opt('quiet', 'A quiet burial', 'An hour lost; nothing else.'),
@@ -564,7 +565,7 @@ const CRISES: CrisisDef[] = [
             const cell = targets[ctx.rng.nextInt(0, targets.length - 1)];
             return {
                 title: `${drunk.name} again`,
-                text: `${drunk.name} was found asleep in ${nameAt(s, cell)} with the hatch open and a bottle. It is not the first time.`,
+                text: `${drunk.name} was found asleep in ${nameAt(s, cell)} with the hatch open and a bottle. It is not the first time.${crisisVoice(s, 'drunk_accident')}`,
                 cell,
                 options: [
                     opt('dock', 'Dock their pay', 'The module is knocked out a shift; morale −2.'),
@@ -593,7 +594,7 @@ const CRISES: CrisisDef[] = [
             const worth = held.reduce((sum, [, n]) => sum + n, 0);
             return {
                 title: 'A trader sets down',
-                text: `A battered freighter is on the pad. The captain has food to sell and an eye on your warehouse${worth ? ` (${held.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(', ')})` : ''}.`,
+                text: `A battered freighter is on the pad. The captain has food to sell and an eye on your warehouse${worth ? ` (${held.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(', ')})` : ''}.${crisisVoice(s, 'trader')}`,
                 options: [
                     opt('buy', 'Buy supplies', '300 credits for 10 food.'),
                     opt('sell', worth ? 'Sell the warehouse' : 'Nothing to sell', worth ? `${Math.round(worth * 2.4)} credits, paid now, nothing shipped this cycle.` : 'The warehouse is empty.'),
@@ -619,7 +620,7 @@ const CRISES: CrisisDef[] = [
             const veteran = withTrait(s, 'veteran');
             return {
                 title: 'A skiff with no markings',
-                text: 'A small armed craft has landed at the edge of the plain. Three people in it want a toll for "protection".',
+                text: 'A small armed craft has landed at the edge of the plain. Three people in it want a toll for "protection".' + crisisVoice(s, 'pirate_skiff'),
                 cell: targets.length ? targets[ctx.rng.nextInt(0, targets.length - 1)] : undefined,
                 options: [
                     opt('pay', 'Pay the toll', '200 credits.'),
@@ -640,9 +641,9 @@ const CRISES: CrisisDef[] = [
     {
         kind: 'refugee_pod',
         weight: s => (s.colonists >= 4 ? 1 : 0),
-        open: () => ({
+        open: s => ({
             title: 'A pod on the plain',
-            text: 'An escape pod has come down a short walk from the domes. Two people inside, alive, from somewhere that is not here any more.',
+            text: 'An escape pod has come down a short walk from the domes. Two people inside, alive, from somewhere that is not here any more.' + crisisVoice(s, 'refugee_pod'),
             options: [
                 opt('take', 'Take them in', 'Two colonists; food −4.'),
                 opt('turn', 'Turn them away', 'Morale −3 for 2 shifts.'),
@@ -666,7 +667,7 @@ const CRISES: CrisisDef[] = [
             const ruin = s.cells.some(c => c.terrain === 'ruin' && !c.module);
             return {
                 title: 'A survey team with the wrong flag',
-                text: `A rival empire's survey team has set up instruments on your plain${ruin ? ', right over the worked stone' : ''}. They are polite, and they are not asking.`,
+                text: `A rival empire's survey team has set up instruments on your plain${ruin ? ', right over the worked stone' : ''}. They are polite, and they are not asking.${crisisVoice(s, 'survey_team')}`,
                 options: [
                     opt('share', 'Share the data', 'Their readings push your research a little.'),
                     opt('packing', 'Send them packing', 'Morale +2 for 2 shifts.'),

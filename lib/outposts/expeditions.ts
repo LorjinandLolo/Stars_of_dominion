@@ -14,6 +14,7 @@ import type { Colonist, OutpostState, ColonistTrait } from './outpost-types';
 import type { CrisisContext } from './crises';
 import { log } from './outpost-sim';
 import { killColonists, hurtColonist, listNames, roster } from './colonists';
+import { crewVoice } from './voices';
 
 export type ExpeditionKind = 'ruin' | 'vent' | 'horizon';
 
@@ -91,7 +92,7 @@ export function resolveExpedition(state: OutpostState, ctx: CrisisContext): stri
             return line;
         }
         hurtColonist(state, victim);
-        const line = `${victim.name} came back hurt. Nothing found.`;
+        const line = `${victim.name} came back hurt. Nothing found.${crewVoice(crew.filter(c => c.id !== victim.id), 'expedition_hurt')}`;
         log(state, line, 'bad');
         return line;
     }
@@ -101,12 +102,13 @@ export function resolveExpedition(state: OutpostState, ctx: CrisisContext): stri
         if (luck > 0.55) {
             const tech = ctx.researchBoost(ctx.experimentHours() * (lead ? 3 : 2));
             const line = tech ? `${listNames(names)} brought back notes from the ruins: ${tech} leapt ahead.` : `${listNames(names)} brought back curiosities from the ruins.`;
-            log(state, line, 'good');
-            return line;
+            const spoken = line + crewVoice(crew, 'expedition_ruin_notes');
+            log(state, spoken, 'good');
+            return spoken;
         }
         const credits = 200 + rng.nextInt(0, 4) * 100;
         ctx.charge({ CREDITS: -credits });
-        const line = `${listNames(names)} dug ${credits} credits of salvage out of the ruins.`;
+        const line = `${listNames(names)} dug ${credits} credits of salvage out of the ruins.${crewVoice(crew, 'expedition_ruin_salvage')}`;
         log(state, line, 'good');
         return line;
     }
@@ -115,11 +117,11 @@ export function resolveExpedition(state: OutpostState, ctx: CrisisContext): stri
         if (luck > 0.45 && flats.length) {
             const cell = flats[rng.nextInt(0, flats.length - 1)];
             state.cells[cell].terrain = 'ore';
-            const line = `${listNames(names)} traced the vent to an ore seam. A square of the plain is ore now.`;
+            const line = `${listNames(names)} traced the vent to an ore seam. A square of the plain is ore now.${crewVoice(crew, 'expedition_vent_ore')}`;
             log(state, line, 'good');
             return line;
         }
-        const line = `${listNames(names)} mapped the vent. Nothing worth digging.`;
+        const line = `${listNames(names)} mapped the vent. Nothing worth digging.${crewVoice(crew, 'expedition_vent_dust')}`;
         log(state, line, 'neutral');
         return line;
     }
@@ -129,7 +131,7 @@ export function resolveExpedition(state: OutpostState, ctx: CrisisContext): stri
         if (flats.length && !state.cells.some(c => c.terrain === 'ruin')) {
             const cell = flats[rng.nextInt(0, flats.length - 1)];
             state.cells[cell].terrain = 'ruin';
-            const line = `${listNames(names)} found worked stone under the dust at the edge of the plain. Nobody here made it.`;
+            const line = `${listNames(names)} found worked stone under the dust at the edge of the plain. Nobody here made it.${crewVoice(crew, 'expedition_found_ruin')}`;
             log(state, line, 'good');
             return line;
         }
@@ -141,7 +143,7 @@ export function resolveExpedition(state: OutpostState, ctx: CrisisContext): stri
         log(state, line, 'good');
         return line;
     }
-    const line = `${listNames(names)} walked the horizon and found dust.`;
+    const line = `${listNames(names)} walked the horizon and found dust.${crewVoice(crew, 'expedition_dust')}`;
     log(state, line, 'neutral');
     return line;
 }
