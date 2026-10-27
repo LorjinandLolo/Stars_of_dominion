@@ -334,6 +334,13 @@ export interface UIStore {
     /** The brief is open. It opens itself once per sign-in when it has news. */
     briefOpen: boolean;
     setBriefOpen: (open: boolean) => void;
+    /**
+     * The faction the brief already opened itself for this sign-in. Lives in
+     * the store, not the component: a remount or a hot reload of DailyBrief
+     * must not open it again over whatever the player is doing.
+     */
+    briefAutoOpenedFor: string | null;
+    setBriefAutoOpenedFor: (factionId: string | null) => void;
 
     // ── Multiplayer Mode ──
     isMultiplayer: boolean;
@@ -728,6 +735,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     // ── Daily brief ──
     briefOpen: false,
     setBriefOpen: (open) => set({ briefOpen: open }),
+    briefAutoOpenedFor: null,
+    setBriefAutoOpenedFor: (factionId) => set({ briefAutoOpenedFor: factionId }),
 
     // ── Multiplayer Mode ──
     isMultiplayer: false,

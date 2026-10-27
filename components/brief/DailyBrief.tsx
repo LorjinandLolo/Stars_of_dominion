@@ -67,7 +67,11 @@ export default function DailyBrief() {
     // "Share today": the public card the server built, and the text last copied.
     const [share, setShare] = React.useState<ShareCard | null>(null);
     const [shared, setShared] = React.useState<{ text: string; copied: boolean } | null>(null);
-    const autoOpenedRef = React.useRef(false);
+    // Once per sign-in, remembered in the store: a remount of this component
+    // (a hot reload in dev, a shell re-render) must not open it again.
+    const briefAutoOpenedFor = useUIStore(s => s.briefAutoOpenedFor);
+    const setBriefAutoOpenedFor = useUIStore(s => s.setBriefAutoOpenedFor);
+    const autoOpened = !!playerFactionId && briefAutoOpenedFor === playerFactionId;
     const tutorialActive = useTutorialStore(s => s.isActive);
     const tutorialEverStarted = useTutorialStore(s => s.hasEverStarted);
     // Re-render once a minute so the countdowns stay honest.
@@ -95,14 +99,14 @@ export default function DailyBrief() {
     }, [playerFactionId, load]);
 
     React.useEffect(() => {
-        if (!brief || autoOpenedRef.current) return;
+        if (!brief || !playerFactionId || autoOpened) return;
         // A first-time player gets the three-step tour first (it auto-starts
         // 1.5 s after login and ends by pointing at the BRIEF button); the
         // brief waits for it instead of opening underneath it.
         if (tutorialActive || !tutorialEverStarted) return;
-        autoOpenedRef.current = true;
+        setBriefAutoOpenedFor(playerFactionId);
         if (!brief.empty) setBriefOpen(true);
-    }, [brief, setBriefOpen, tutorialActive, tutorialEverStarted]);
+    }, [brief, playerFactionId, autoOpened, setBriefAutoOpenedFor, setBriefOpen, tutorialActive, tutorialEverStarted]);
 
     React.useEffect(() => {
         if (!briefOpen) return;
@@ -112,7 +116,7 @@ export default function DailyBrief() {
 
     // Opening it by hand always shows the latest.
     React.useEffect(() => {
-        if (briefOpen && !loading && autoOpenedRef.current) load();
+        if (briefOpen && !loading && autoOpened) load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [briefOpen]);
 
