@@ -1,0 +1,1335 @@
+{
+  "defence": {
+    "appointed": {
+      "loyal": [
+        "Assumed command of the Admiralty at 0600. Fleet status: all squadrons answering, awaiting your heading. One order per heading, please; captains who receive two tend to stop listening."
+      ],
+      "cooling": [
+        "For the record: I took this chair because the previous admiral left it empty for 19 days, not because anyone asked. Duty officer's log will confirm."
+      ],
+      "brutus": [
+        "Command assumed, 0800. Personal note: I have wanted this chair since before you held yours, and I intend to keep it."
+      ],
+      "venal": [
+        "First order of business: a full procurement review, effective immediately. Second order of business: dinner with the three yards most likely to win it."
+      ]
+    },
+    "war_proposal": {
+      "loyal": [
+        "Assessment: {target} has drawn down its border squadrons to roughly half strength. Recommend we move now; we will not see a cheaper war than this one.",
+        "Plan of operations: three systems, forty days, one fleet of 2 cruisers and 9 frigates. Staff have checked the arithmetic twice. Recommend approval before the enemy does the same sums."
+      ],
+      "cooling": [
+        "Signal, third of its kind: I can deliver {target} if the hulls are delivered to me. Requests one and two remain unanswered on the Admiralty file.",
+        "Revised assessment: war with {target} rated good last season, rated adequate as of this morning. The rating will not improve with further delay."
+      ],
+      "brutus": [
+        "Readiness report: the fleet is prepared to move against {target} at 12 hours' notice. Frankly, it is prepared to move against anything I point it at.",
+        "Proposal: grant me the war and I return you the victory. The question of whose name is on the parades can be settled after the fleet comes home."
+      ],
+      "venal": [
+        "Strategic note: a campaign against {target} would keep four shipyards at full employment. I am, as it happens, acquainted with all four owners.",
+        "Intelligence annex: {target}'s convoys carry cargo of considerable value. A separate manifest of prize priorities exists and has been omitted from this proposal."
+      ]
+    },
+    "battle_group": {
+      "loyal": [
+        "Requisition: 3 cruisers with a destroyer screen. If signed before 2200 tonight, the group clears the yards ahead of the ion storm.",
+        "Request is for hulls, not for permission to lose. Supply the former and the Admiralty will have no need to ask for the latter."
+      ],
+      "cooling": [
+        "I will not commit crews to the enemy's guns with present strength. Either the order is signed or the Admiralty will require a different admiral.",
+        "Resubmission: this is the battle group first requested in spring. Since then the cost has risen 30 percent, and the operational need has risen with it."
+      ],
+      "brutus": [
+        "Request: a battle group under my flag, reporting to me alone in the field. Command from the capital at this distance would only slow the war down.",
+        "Doctrine note: crews loyal to their admiral fight harder than crews loyal to a court. I am requesting ships of the first kind."
+      ],
+      "venal": [
+        "Procurement recommendation: Harrow Yards for all hulls. Their tender is 18 percent above the lowest bid, but their captains report to me personally.",
+        "Order placed for 6 hulls. Expected delivery: 5. The whereabouts of the sixth are a long story and will be covered in a later dispatch."
+      ]
+    },
+    "peace_proposal": {
+      "loyal": [
+        "Assessment: we hold everything the fleet can garrison; beyond this line we would be policing dust. Recommend peace now, while terms still read as strength."
+      ],
+      "cooling": [
+        "Formal note: I did not request this war and I decline responsibility for its duration. The Admiralty's recommendation is that it be ended."
+      ],
+      "brutus": [
+        "Recommendation: peace, and the fleet recalled to home stations. There is work for it at home that cannot wait much longer."
+      ],
+      "venal": []
+    },
+    "battle_won": {
+      "loyal": [
+        "Action report: {target} has abandoned the field. Our losses are 2 frigates and one good captain. Recommend we press the advance, since their yards rebuild slower than ours.",
+        "Engagement concluded, losses light. Advise against public comment; the next action will cost more, and the public will remember what was promised."
+      ],
+      "cooling": [
+        "Action report: victory. The cabinet's contribution to it has been entered in the log as nil."
+      ],
+      "brutus": [
+        "Action report: the fleet carried the day. Every crew knows who led it, and so, by tomorrow's edition, will the gazette."
+      ],
+      "venal": [
+        "Action report: victory confirmed. Salvage rights on the wrecks are being administered by this office, under my personal supervision."
+      ]
+    },
+    "battle_lost": {
+      "loyal": [
+        "Action report: we lost the field, and the responsibility is mine. Awaiting your decision whether to rebuild the fleet or end the war; I will carry out either.",
+        "Assessment: the enemy held the better position. In future the Admiralty will choose the ground for engagements, not the Foreign Office."
+      ],
+      "cooling": [
+        "Reference: cabinet minutes of last quarter, item 4, my warning on {target}'s torpedo boats. The minutes will show it was given and not acted on.",
+        "Action report: defeat, as forecast in my staff appreciation of last month. The forecast was accurate in every particular."
+      ],
+      "brutus": [
+        "Assessment: a defeat of this size leads officers to ask who is really in command. Several have put the question to me. I have not yet given them an answer.",
+        "Morale report: the captains attribute the loss to orders issued by the court. I have not seen fit to correct that impression."
+      ],
+      "venal": [
+        "Finding: the ships went into action underpowered, because the refit allocation went elsewhere. I shall be conducting the inquiry into where myself.",
+        "Action report: defeat. The insurers will require a loss statement, and most of it, I am pleased to say, was drafted before the battle."
+      ]
+    },
+    "fleet_destroyed": {
+      "loyal": [
+        "Third Fleet lost with all hands; I knew every captain by name. Given one season and the yards, the Admiralty will put a Fourth Fleet in their place."
+      ],
+      "cooling": [
+        "For the record, stated once: the fleet was destroyed in the sector I advised in writing it should not enter."
+      ],
+      "brutus": [
+        "Casualty report: an entire fleet lost under this government. The remaining fleets are discussing it among themselves, and I am listening closely."
+      ],
+      "venal": []
+    },
+    "siege_defending": {
+      "loyal": [
+        "Situation at {world}: enemy landed, garrison entrenched, planetary shield holding. Recommend we contest the orbit; once we have it back, their beachhead starves."
+      ],
+      "cooling": [
+        "Had Second Fleet been stationed at {world} as I requested, this dispatch would not be on your desk."
+      ],
+      "brutus": [
+        "Assessment: {world} may hold or may fall. Either way, the army will recall who stood on that ground and who remained in the palace."
+      ],
+      "venal": [
+        "Situation at {world}: under siege. The relief convoy is loaded and ready to sail, as is the invoice for its services."
+      ]
+    },
+    "siege_attacking": {
+      "loyal": [
+        "Landing at {world} complete. Hold the orbit and the shield comes down within weeks; lose the orbit and the Admiralty loses the army on the ground."
+      ],
+      "cooling": [
+        "The landing has gone in on schedule. We now enter the phase in which the cabinet grows impatient, usually around day four."
+      ],
+      "brutus": [
+        "Ground forces established on {world}, under my direct command. I would bear that in mind when you are counting what belongs to you."
+      ],
+      "venal": []
+    },
+    "capital_captured": {
+      "loyal": [
+        "The capital has fallen to the enemy; the fleet has not. Operations continue from the next world in line, and from the one after that if necessary."
+      ],
+      "cooling": [
+        "The capital has fallen, as I forecast twelve months ago. I was instructed at the time to stop forecasting it."
+      ],
+      "brutus": [
+        "The capital is lost. Someone must now hold together what remains, and the fleet's senior officers have a candidate in mind."
+      ],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "Order received and acknowledged. The duty rosters are on your desk; whatever you do, do not let them put a politician in this chair.",
+        "Understood: you need someone to blame, and I am the only one present in uniform. Very well. Please note that the fleet remains in good order."
+      ],
+      "cooling": [
+        "Acknowledged: the fault is mine, then. The deployment order in question carries a signature, and it is not mine."
+      ],
+      "brutus": [
+        "You may take the chair. The captains will go on knowing whose orders they trusted under fire."
+      ],
+      "venal": [
+        "Acknowledged. I trust the pension arrangements remain in order, and I would advise that they very much do."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "I have served three governments and will not serve this one further. The fleet is in good hands; I regret to report they are not yours."
+      ],
+      "cooling": [],
+      "brutus": [
+        "Resignation tendered, effective at the end of the watch. The fleet has tendered nothing."
+      ],
+      "venal": []
+    },
+    "idle_peace": {
+      "loyal": [
+        "Border report: quiet. Reserves are drilling regardless, because the quiet stretches are when attacks come.",
+        "No hostilities this month. The staff plan for the next war is complete and filed, should you find yourself with an idle afternoon."
+      ],
+      "cooling": [
+        "Peacetime status: the navy is rusting at its moorings, and so, I suspect, is its admiral."
+      ],
+      "brutus": [
+        "Notice of exercises: the fleet will manoeuvre within a day's flight of the capital this season, purely for the look of it."
+      ],
+      "venal": [
+        "Readiness: all squadrons at standard. Please note the readiness reports themselves carry a surcharge this quarter."
+      ]
+    },
+    "idle_war": {
+      "loyal": [
+        "Front report: no movement in the last 24 hours. That suits us, as it suggests the enemy is as exhausted as we are."
+      ],
+      "cooling": [
+        "Day's summary: another day spent holding position, which is what a fleet does while the cabinet fails to make up its mind."
+      ],
+      "brutus": [
+        "The war drags on and the captains ask me when it will end. I tell them the decision is not mine. I have taken care to add the word yet."
+      ],
+      "venal": [
+        "Front report: hostilities continue, and the supply contracts continue with them, at the usual rates."
+      ]
+    },
+    "approved": {
+      "loyal": [
+        "Approval received. The fleet weighs anchor at 2300 tonight."
+      ],
+      "cooling": [
+        "Approval received, some days after it was needed. The order will be executed all the same."
+      ],
+      "brutus": [
+        "Approval received. The fleet will remember who it was that asked for it."
+      ],
+      "venal": [
+        "Approval received. Invoices will follow under separate cover."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "Refusal received. The fleet holds its present station, and I will not raise the matter again unless the situation changes."
+      ],
+      "cooling": [
+        "Refusal received. I shall enter it in the Admiralty log, so the record shows who made the decision."
+      ],
+      "brutus": [
+        "Refusal received. The captains will be informed that the request was refused, and by whom."
+      ],
+      "venal": [
+        "Refusal received. A regrettable outcome for the yards, which had already begun cutting steel."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "Proposal has lapsed without decision. I will resubmit when the need is twice as urgent and the price is half as steep."
+      ],
+      "cooling": [
+        "No reply received by the deadline. I am beginning to treat silence from the cabinet as the reply itself."
+      ],
+      "brutus": [
+        "Signal unanswered. A government that cannot answer its admirals invites someone else to answer for it."
+      ],
+      "venal": [
+        "Proposal unanswered. The yards remain patient; I regret their legal counsel does not."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "Overnight report: no fires, no incursions, all pickets on station. I checked each one personally."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  },
+  "economy": {
+    "appointed": {
+      "loyal": [
+        "The books have now been read in their entirety. It is the Treasury's view that a week, and a quiet room, should be allowed before anything hopeful is said about them."
+      ],
+      "cooling": [
+        "The appointment was accepted, it should be said, chiefly because the alternative would have been to watch the office run by someone less able."
+      ],
+      "brutus": [
+        "It is perhaps worth recalling that the Treasury is the one department which knows what everything costs, loyalty not excepted."
+      ],
+      "venal": [
+        "The honour is noted with gratitude. A first audit has been commissioned, and it is expected to take some time, its subject being the previous audit."
+      ]
+    },
+    "routine": {
+      "loyal": [
+        "The accounts are found to balance, though by a margin the Treasury would describe as slender. It would be prudent, this month, to avoid commitments of any size.",
+        "Revenue is reported up two percent and upkeep up three. Where the Treasury sees the beginnings of a trend, it is understood the palace may see only another week."
+      ],
+      "cooling": [
+        "Orders continue to be found of which the Treasury was not informed. It will be appreciated that a budget so composed is not easily defended.",
+        "The state remains solvent. How long that may continue is not certain, and it is not clear to the Treasury that anyone else has thought to ask."
+      ],
+      "brutus": [
+        "The ledger states what it states. Certain of its findings, it has been judged, are better retained within the Treasury for the present."
+      ],
+      "venal": [
+        "All receipts are understood to be in order, though it should perhaps be disclosed that the order in question was arranged by this office."
+      ]
+    },
+    "overextended": {
+      "loyal": [
+        "More worlds are now governed than can reliably be counted. Unless provision is made for additional offices, it would be the Treasury's advice that annexations be suspended.",
+        "Each new world is found to require at least one clerk. The supply of clerks has been exhausted; the supply of worlds, regrettably, has not."
+      ],
+      "cooling": [
+        "Each acquisition brings a further ledger which is not read. The Treasury has ceased, it may as well be admitted, to pretend otherwise."
+      ],
+      "brutus": [
+        "An empire of this extent would seem to require more hands at the top. It has been remarked, by several parties, that the Treasury's hands are good ones."
+      ],
+      "venal": [
+        "Overextension, it should be noted, generates contracts for administration in some volume. A suitable firm has been identified; its principal is a cousin."
+      ]
+    },
+    "reserves_low": {
+      "loyal": [
+        "At current rates of expenditure, the reserve would be exhausted in approximately three weeks. The Treasury is not alarmed, though it would ask that this be read in the tone it reserves for alarm."
+      ],
+      "cooling": [
+        "The thinness of the reserve may be attributed, without undue simplification, to the fullness of the fleet. A choice between the two would be welcomed."
+      ],
+      "brutus": [
+        "Should the reserve remain at its present level, it will be noticed, and it would not be surprising if questions followed as to who might manage it better."
+      ],
+      "venal": [
+        "The shortfall could be bridged by a short-term loan. A lender has been identified who is known to the Treasury, and to whom the Treasury is known."
+      ]
+    },
+    "loan": {
+      "loyal": [
+        "The Clan's terms are considered fair over the first year and ruinous thereafter. Were the war expected to be short, acceptance might be recommended; otherwise it could not."
+      ],
+      "cooling": [
+        "If borrowing is judged unavoidable, the Treasury will arrange it. It would ask only that the word temporary not be used, nothing in this office having ever proved so."
+      ],
+      "brutus": [],
+      "venal": [
+        "The Clan's terms are, it should be said, unusually generous. They were negotiated by the Minister in person, over a period of some weeks."
+      ]
+    },
+    "sanctions_on_us": {
+      "loyal": [
+        "The closure of {target}'s markets is expected to be felt within two months. On the Treasury's estimates, it would be absorbed within six."
+      ],
+      "cooling": [
+        "Sanctions have again been imposed. It will be recalled that reservations were expressed at the time regarding the choice of envoy."
+      ],
+      "brutus": [
+        "Following the sanctions from {target}, the merchant houses have asked who might remedy matters. They have been advised that the chair in question is not, at present, the Treasury's."
+      ],
+      "venal": []
+    },
+    "sanctions_by_us": {
+      "loyal": [
+        "It should be noted that sanctions impose costs on the issuing party also. The Treasury assumes this is understood, and that the measure is desired regardless."
+      ],
+      "cooling": [
+        "The instruction is accepted. Trade figures will be omitted from the next quarterly report, so that no one need be troubled by them."
+      ],
+      "brutus": [],
+      "venal": [
+        "Sanctions on {target} may be expected to produce a smuggling trade within the month. Introductions to several of its likely participants have already been made."
+      ]
+    },
+    "subsidy": {
+      "loyal": [
+        "The company may of course be subsidised. It should be understood, however, that once supported in this manner it is unlikely ever again to operate without support."
+      ],
+      "cooling": [
+        "A further subsidy has been requested, and the funds will be found; they invariably are. It is the Treasury's view that this is precisely the difficulty."
+      ],
+      "brutus": [],
+      "venal": [
+        "The company's directors have expressed their gratitude for the policy in writing. The writing, it may be mentioned, took the form of a cheque."
+      ]
+    },
+    "strike": {
+      "loyal": [
+        "The crews' wage demand is estimated to cost less than a single month of lost extraction. On that basis, settlement would be the Treasury's recommendation."
+      ],
+      "cooling": [
+        "The stoppage arose, as was set out in a memorandum of the spring, from wages lagging prices. The memorandum was received, and duly filed."
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "peace_proposal": {
+      "loyal": [
+        "The war is estimated to cost the output of one world per month, whereas peace would cost chiefly pride. The Treasury is in no doubt as to which of the two it can afford."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "The decision is accepted. It may be useful to know that the left-hand drawer of the desk contains the true figures, which have not been seen by anyone else."
+      ],
+      "cooling": [
+        "It is assumed a successor will be sought who is more inclined to agree. It would be advisable to confirm that the successor can also count."
+      ],
+      "brutus": [
+        "The office may be taken. It should be borne in mind, however, that the ledgers kept by the Treasury are not all kept within it."
+      ],
+      "venal": [
+        "The instruction is noted. Certain files may take some days to locate; arrangements for their finding are, at this moment, in hand."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "A budget known to be false cannot in conscience be signed by this office. Another signatory will no doubt be found, and is wished every success with the appendices."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "The resignation is tendered for family reasons. The family, it may be noted, has grown considerably over the term of office."
+      ]
+    },
+    "approved": {
+      "loyal": [
+        "Approval is noted and the funds have been transferred. Their source, it is suggested, need not be made a subject of inquiry."
+      ],
+      "cooling": [
+        "Approval is noted. The money will be found, as it has always been found, though it is not clear how much longer that may be said."
+      ],
+      "brutus": [
+        "Approval is noted, and has been entered in a ledger maintained privately by the Treasury for such purposes."
+      ],
+      "venal": [
+        "Approval is noted. Fees incidental to the transaction will be modest, by the standards the Treasury has lately set."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "The decision to decline is noted. The funds will remain where they are, which, it should be said, is not in any great quantity anywhere."
+      ],
+      "cooling": [
+        "The proposal having been declined, the Treasury will discontinue costing it, and would ask to be told should it return."
+      ],
+      "brutus": [
+        "The proposal was declined. Should the merchant houses inquire as to the reasons, it will be said that the Treasury was not told them."
+      ],
+      "venal": [
+        "The proposal was declined. It is expected that this will occasion some disappointment to a cousin of the Minister."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "The proposal has been allowed to lapse. Its cost, it should be noted, has not lapsed with it and continues to be carried."
+      ],
+      "cooling": [
+        "No answer has been received. Provision for no answer had, in anticipation, already been made in the estimates."
+      ],
+      "brutus": [
+        "The proposal has gone unanswered. It may be observed that money, unlike the business of government, does not wait."
+      ],
+      "venal": [
+        "The proposal has gone unanswered. Interest on the associated arrangements has, however, continued to accrue in the interim."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "It is regretted that the figures did not improve overnight. Experience suggests they seldom do, though the Treasury continues to check each morning."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  },
+  "science": {
+    "appointed": {
+      "loyal": [
+        "We are honoured, and (one must admit) somewhat surprised. I shall endeavour to attend cabinet, though the evidence of past calendars suggests a colleague ought to remind me which day it is."
+      ],
+      "cooling": [
+        "I accepted on the stated condition that the programme would not be cut, and was assured it would not be; the prior literature on such assurances is, regrettably, not encouraging."
+      ],
+      "brutus": [
+        "It emerges (rather to my surprise) that the minister of science may consult every file in the government. I was unaware of this when I accepted; the Academy is, as a rule, quick to learn."
+      ],
+      "venal": [
+        "A considerable honour. Patents, by long-standing convention, remain with the inventor, a category in which I happen to be fairly well represented."
+      ]
+    },
+    "routine": {
+      "loyal": [
+        "On present projections the current programme concludes within a season. We would welcome a fuller discussion of its successor, which (I confess) has already been drafted at some length.",
+        "Progress remains steady, which is to say reliable and, from a theoretical standpoint, somewhat unremarkable. The Academy has a proposal whose variance would be considerably higher."
+      ],
+      "cooling": [
+        "The Academy's budget was reallocated to hull construction. One notes, without rancour, that the hulls are built largely on ideas the Academy is no longer funded to pursue.",
+        "The Academy continues its work, though the evidence suggests that habit, rather than support, is now the principal sustaining factor."
+      ],
+      "brutus": [
+        "There is a growing view within the faculty (expressed, I fear, rather audibly) that the advancement of knowledge ought not to depend upon any single signature."
+      ],
+      "venal": [
+        "Research proceeds on schedule, a proportion of it under contract to private clients whose discretion, I can attest, is exemplary."
+      ]
+    },
+    "research_choice": {
+      "loyal": [
+        "We would recommend the drive work: unglamorous, admittedly, but on any reasonable model it is the line most likely to matter in three years, by which time the alternatives will have plateaued.",
+        "The weapons line yields sooner; the theoretical line, on the balance of evidence, yields more. Precedent suggests rulers choose the former, though I should be delighted to record a counterexample."
+      ],
+      "cooling": [
+        "Any selection will do, frankly. I shall describe it to the faculty as a strategic decision, which is (in the loosest possible sense) accurate."
+      ],
+      "brutus": [
+        "Were the Academy's request funded, there would be no need for you to understand it; the historical record suggests most rulers find that arrangement rather congenial."
+      ],
+      "venal": []
+    },
+    "rival_transcending": {
+      "loyal": [
+        "On the available data, {target} is approaching Enlightenment; should they arrive, one would expect nothing we have built to retain much significance. We must either impede them or outpace them.",
+        "Curiously, {target} appears to have bypassed two stages we had regarded as necessary. We should very much like to understand the method, ideally before they have finished applying it."
+      ],
+      "cooling": [
+        "{target}'s lead is, on any honest reading, the product of funding decisions taken a decade ago. The Academy's memorandum of that date recommending the same is (one notes) still on file."
+      ],
+      "brutus": [],
+      "venal": [
+        "{target}'s programme is demonstrably ahead of ours. Their principal investigator is, I understand, open to offers; in the strictly descriptive sense, so are most scientists, myself included."
+      ]
+    },
+    "our_transcending": {
+      "loyal": [
+        "We are close (closer, I think, than any civilisation on record), and one would expect the whole galaxy to oppose us now. If the line holds a little longer, we shall observe what no one has observed before."
+      ],
+      "cooling": [
+        "Success is now plausible. I should find it more gratifying were the cabinet in a position to say what, precisely, would have succeeded."
+      ],
+      "brutus": [
+        "When the threshold is crossed, history will attach a name to the achievement, and the Academy holds views (strong ones) as to whose name the evidence supports."
+      ],
+      "venal": []
+    },
+    "tech_gate": {
+      "loyal": [
+        "That capability does not yet exist, I am afraid, though on our estimates a single season of Academy work would suffice to bring it within reach."
+      ],
+      "cooling": [
+        "The request presupposes an invention we have not made. The Academy did propose funding it, in writing, on two separate occasions (the citations are available on request)."
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "lab_accident": {
+      "loyal": [
+        "There has been an explosion, minor in scale though highly informative. No one of consequence was injured; the injuries to those of lesser consequence I regret sincerely, and their data are excellent."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "A containment failure, attributable (on preliminary analysis) to second-hand equipment, which is curious, given that the invoice specified new."
+      ]
+    },
+    "ruins": {
+      "loyal": [
+        "The notes recovered from the ruins appear to predate our calendar altogether. We would ask that they be deposited with the Academy before anyone has the opportunity to price them.",
+        "Worked stone on {world}, of no provenance we can identify. I am advised that ministers do not conduct fieldwork in person; I should nonetheless like to request an exception, on purely methodological grounds."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "The artefacts are quite remarkable. I have undertaken a preliminary appraisal of their value, conducted (for reasons of discretion) in a private capacity."
+      ]
+    },
+    "battle_won": {
+      "loyal": [
+        "We are informed of a victory, which is most welcome. Might the fleet, in its present happy circumstances, spare a vessel to relocate the telescope?"
+      ],
+      "cooling": [
+        "A battle, I gather. Was there, by any chance, some aspect of it that the Academy ought to regard as of scientific interest?"
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "battle_lost": {
+      "loyal": [
+        "We are informed of a defeat, and I am sorry for it. One hesitates to ask, but does the observatory remain in our possession?"
+      ],
+      "cooling": [
+        "Another battle, I gather. Was there some aspect of it, one wonders, that might be of scientific interest to the Academy?"
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "Ah. Well. The programme is documented in the blue folder, and I would ask (most earnestly) that the drive work not be cut, since on every model we have run it is the work that matters."
+      ],
+      "cooling": [
+        "Dismissed, then. I shall return to the laboratory, which on the available evidence missed me; I would not expect the cabinet to exhibit the same effect."
+      ],
+      "brutus": [
+        "Dismissed. The faculty will wish to understand the reasoning, as (in due course, and perhaps less comfortably) will you."
+      ],
+      "venal": [
+        "Very well. The patents depart with me, as was (I believe the record will show) always the arrangement."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "I find myself a scientist in a government that has, by every available measure, stopped reading. I shall continue my reading elsewhere, and tender my resignation accordingly."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "approved": {
+      "loyal": [
+        "Approved, splendid. We shall commence at once, before (as experience suggests is entirely possible) the decision is revisited."
+      ],
+      "cooling": [
+        "Approved. I confess I had revised my expectations downward some considerable time ago."
+      ],
+      "brutus": [
+        "Approved. The faculty will, of course, record whose signature appears on it."
+      ],
+      "venal": [
+        "Approved. The equipment supplier (an old acquaintance, as it happens) will be delighted."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "Declined. The proposal will be retained in our archive; ideas, in our experience, tend to outlast the governments that decline them."
+      ],
+      "cooling": [
+        "Declined, precisely as the prior distribution would have predicted."
+      ],
+      "brutus": [
+        "Declined. A curious result, and one the faculty will (I suspect) find equally curious."
+      ],
+      "venal": [
+        "Declined. The private clients, one anticipates, will take a less accommodating view of the matter."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "The proposal appears to have lapsed; I very nearly failed to observe it, having been occupied in the laboratory."
+      ],
+      "cooling": [
+        "No reply. Science has, over the centuries, grown thoroughly accustomed to unanswered correspondence."
+      ],
+      "brutus": [
+        "Unanswered. The faculty will draw its own inferences, a task at which it is (by training) rather proficient."
+      ],
+      "venal": [
+        "Unanswered. The supplier has, in the interim, levied a holding fee, which the Academy will (naturally) pass on."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "Good morning, assuming the term applies. I have been in the laboratory, and my estimate of the hour carries a rather wide margin of error."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  },
+  "intelligence": {
+    "appointed": {
+      "loyal": [
+        "I spent last night with my predecessor's files, all of them. Has anyone told you what is in the ones about the Foreign Office? No? Then perhaps we should speak, somewhere quiet."
+      ],
+      "cooling": [
+        "I accepted. The Desk serves the state, of course, and the state is you, for the present. How long the present lasts is the sort of thing the Desk is paid to wonder about."
+      ],
+      "brutus": [
+        "Thank you. The Desk will go on keeping files on everyone, as it always has; it would be odd, wouldn't it, if 'everyone' were suddenly to exclude the ruler."
+      ],
+      "venal": [
+        "An honour. Everything that is known has a price, and it would surprise you, I think, how precisely I know each one."
+      ]
+    },
+    "routine": {
+      "loyal": [
+        "Nothing to report, which is itself rather telling. Silence this complete is never free, so one does wonder who is paying for it.",
+        "Two networks uncovered, and one left running, since a living network tells us more than a dead one. Which one? It would be safer, for you, not to know."
+      ],
+      "cooling": [
+        "I could tell you more, of course. But it would reach the cabinet by supper and a foreign capital by breakfast, and where would that leave either of us?",
+        "The Desk is understaffed, as I have mentioned. There is an entire file of my mentioning it. Who do you suppose reads that one?"
+      ],
+      "brutus": [
+        "Very little happens in this government without reaching the Desk. Very little. You might ask yourself which of your own affairs fall inside that little, and which do not."
+      ],
+      "venal": [
+        "The reports are complete. Whether the copy that reaches you is quite as complete as the one in my safe is a question of editing, and editing takes time."
+      ]
+    },
+    "networks_inside": {
+      "loyal": [
+        "Foreign networks are in our institutions, and they will hear of cabinet before cabinet meets. Give me authority to sweep tonight, and they will learn of it only afterwards."
+      ],
+      "cooling": [
+        "Foreign networks inside the ministries, found rather late. Would they have been found sooner with the staff I asked for? One can only speculate, and I have."
+      ],
+      "brutus": [
+        "Foreign networks inside the court. They had friends here, naturally. Whether those friendships have ended is a question I am in no hurry to answer."
+      ],
+      "venal": [
+        "Several foreign networks, one of which has been kind enough to make me an offer. It would be careless, wouldn't it, not to learn what the other side might counter with?"
+      ]
+    },
+    "op_exposed_ours": {
+      "loyal": [
+        "They caught our hand in {target}'s pocket. We will deny it, of course, and by the time I have finished it will be {target} explaining why anyone ever believed them.",
+        "Exposed. The agent is out and the method burned. But the method was old, and did you ever suppose it was the only one we had?"
+      ],
+      "cooling": [
+        "The leak came from this building, though not from the Desk. From a room with rather better carpet, shall we say, and rather worse discretion."
+      ],
+      "brutus": [],
+      "venal": [
+        "Someone was paid for the leak, and handsomely. I am looking into the payment with great interest; one learns so much from the size of a sum."
+      ]
+    },
+    "op_exposed_theirs": {
+      "loyal": [
+        "A {target} network inside the Admiralty, rolled up last night. Two of them would be worth more turned than shot, wouldn't they? The dead file no reports, to {target} or to us.",
+        "Their agent was good; their handler, less so. It is the handler we have, and handlers, in my experience, remember a great many names."
+      ],
+      "cooling": [
+        "A {target} network, found late. One does wonder how much sooner, had the Desk been given the staff it asked for, more than once."
+      ],
+      "brutus": [
+        "A {target} network inside the court, with friends here. Some of those friendships, I suspect, have survived the arrests. Wouldn't it be interesting to know whose?"
+      ],
+      "venal": []
+    },
+    "agent_captured": {
+      "loyal": [
+        "One of ours is in a {target} cell. They will say nothing for nine days; that is the training. What they say on the tenth rather depends on what you decide on the ninth."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "An agent captured, though recoverable at a price, which has already been quoted. My own fee for the arranging of it is, of course, a separate matter."
+      ]
+    },
+    "loyalty_report": {
+      "loyal": [
+        "A loyal officer was approached about a 'change of leadership'. The name of the one who approached him is in the file, and you will recognise it; you have trusted it for years.",
+        "Someone is recruiting, and clumsily. I have let them continue. Clumsy recruiters always end by naming their friends, and it is the friends who interest me."
+      ],
+      "cooling": [
+        "There is talk of a plot. I would look into it, naturally, were the Desk funded to look into things. Is it, would you say?"
+      ],
+      "brutus": [
+        "Rumours of a plot, nothing yet I would call solid. I shall keep looking, though where one looks, and how hard, is always a matter of judgement."
+      ],
+      "venal": [
+        "A plot, possibly. The informant would like to be paid before saying more, and so, as it happens, would I."
+      ]
+    },
+    "foreign_tie": {
+      "loyal": [
+        "Your minister of {portfolio} has been living on {target}'s money for a year, and the proof is clean. How long, do you suppose, before they learn that I have it?"
+      ],
+      "cooling": [
+        "The {portfolio} minister has been bought. I could have said so in the spring, had anyone thought to ask in the spring. Nobody did, did they?"
+      ],
+      "brutus": [],
+      "venal": [
+        "I hold evidence against a colleague. What it is worth, and to whom, I am still weighing; evidence ages, you know, though not always in the same direction."
+      ]
+    },
+    "crackdown": {
+      "loyal": [
+        "The cells are mapped. A word from you and by morning they will simply not be there; no word, and by spring there will be twice as many."
+      ],
+      "cooling": [],
+      "brutus": [
+        "The crackdown has given the Desk a complete list of dissidents, and, of course, of every official who ever sat down to talk with one. Remarkable, what such a list contains."
+      ],
+      "venal": []
+    },
+    "crisis_window": {
+      "loyal": [
+        "It is tonight. I have three names and the commander of the guard. Which door would you like locked, and from which side?"
+      ],
+      "cooling": [
+        "Something moves tonight. I have the names. Whether I also have the guard is, I find, rather less certain than I would like."
+      ],
+      "brutus": [
+        "It is tonight. If I were you, I would stay in your rooms. But then, I am not you, am I?"
+      ],
+      "venal": []
+    },
+    "case_opened": {
+      "loyal": [
+        "A case is open. Give it a week before you ask who; names offered early are usually the names someone wished us to find."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "Understood. The files remain in the safe, and the Interior minister holds the combination. If I were you, I would wonder why, and have it changed before nightfall."
+      ],
+      "cooling": [
+        "You are dismissing the one person who knows whom else you ought to dismiss. It has been noted, in the usual place."
+      ],
+      "brutus": [
+        "The office is yours, of course. As for the files, did you imagine they were still in it?"
+      ],
+      "venal": [
+        "Very well. Some files will find their way back to you; others will find buyers. Which are which, I have not yet decided."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "I cannot protect a government that recites its plans to its enemies over dinner, and so I resign. Before you appoint my successor, you might consider who else holds a key to the safe."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "approved": {
+      "loyal": [
+        "Approved, then. It was already under way, as it happens; it was under way before you were asked."
+      ],
+      "cooling": [
+        "Approved, good. You will forgive me for having started without you; at the Desk one learns not to wait."
+      ],
+      "brutus": [
+        "Approved. The file will record that it was you who approved it, should anyone ever think to ask."
+      ],
+      "venal": [
+        "Approved. The informants will be paid, and the payments, naturally, will pass through my hands on their way."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "Declined. The file stays open nonetheless; files at the Desk do not close merely because someone has said no."
+      ],
+      "cooling": [
+        "Declined. I shall note it, as I note everything, and you would be surprised how much everything turns out to be."
+      ],
+      "brutus": [
+        "Declined, and noted, in a file whose subject you would recognise if you caught sight of it in a mirror."
+      ],
+      "venal": [
+        "Declined. The informant has other customers, of course, and is not known for patience."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "No answer. But silence is an answer of a kind, isn't it? I have filed it as one."
+      ],
+      "cooling": [
+        "No answer, so the Desk proceeds on its own assumptions, as it so often has to. One hopes they are the right ones."
+      ],
+      "brutus": [
+        "Unanswered. A ruler who does not answer is a ruler the files begin, quietly, to describe as absent."
+      ],
+      "venal": [
+        "Unanswered. Information that is not acted on does not simply vanish; it finds another buyer."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "Good morning. You were followed yesterday, from the palace to the archive and back. Nothing to worry about; it was one of ours, this time."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  },
+  "interior": {
+    "appointed": {
+      "loyal": [
+        "My friend, the provinces are quiet, and I mean to keep them so: quiet in the markets, quiet in the squares, quiet in our people's hearts. Quiet is labour that looks like nothing, and I will do that labour gladly."
+      ],
+      "cooling": [
+        "I took the Home Office when no one else would carry the provinces, the far ones, the poor ones, the forgotten ones. Remember who carried them on the day they are all you have left."
+      ],
+      "brutus": [
+        "The guard, the press, the governors: three pillars of our people's peace, and you have placed all three in my hands. I thank you, as the provinces will one day thank me."
+      ],
+      "venal": [
+        "What an honour, and what a duty! Every governorship in the land shall be reviewed, every application welcomed, and every fee, of course, collected in good order."
+      ]
+    },
+    "routine": {
+      "loyal": [
+        "Approval holds, the provinces are calm, and our people go about their work in peace. Never forget that calm provinces are the ones that come out to vote.",
+        "Three worlds are muttering, and let them mutter; muttering is the music of a free people. It is when the muttering picks up banners that I will be at the gates, and I am watching for banners."
+      ],
+      "cooling": [
+        "The provinces come to me and ask, what does the capital want of us? Once I had an answer for them; these days I have only a shrug, and they have learned to read it.",
+        "Approval stands where it stands. I could lift it, I could lift it high, if only I served a government that would listen to the people it governs."
+      ],
+      "brutus": [
+        "Our people want a steady hand on the rail, a firm voice at the window, a face they can trust. Whose hand, whose voice, whose face? On that, I find, they are wonderfully flexible."
+      ],
+      "venal": [
+        "Order is kept, in the cities, on the roads, in the quiet towns. Order has its costs, and those costs, I assure you, rest in the hands of people we know by name."
+      ]
+    },
+    "approval_falling": {
+      "loyal": [
+        "They are weary of the war, weary of the prices, and weary, forgive me, of your face, in that order. Mend the first two and the third will mend itself."
+      ],
+      "cooling": [
+        "Approval is down again, as it was last month, as it was the month before. I brought you a plan then; it lies unread on your desk, gathering the dust of our people's patience."
+      ],
+      "brutus": [
+        "Approval is falling, and listen to the crowds: they do not curse the ministries, they do not curse the governors. They curse the one name at the very top."
+      ],
+      "venal": [
+        "Approval falls, and what lifts a people's heart like a festival? Lanterns, music, bread in the squares, and as it happens I know just the contractor to provide all three."
+      ]
+    },
+    "cohesion_falling": {
+      "loyal": [
+        "The outer worlds are drifting from us, slowly, the way a tide goes out. Give them a governor of their own choosing, or one fine morning they will choose far more than a governor.",
+        "{world} speaks of going its own way. Talk costs them nothing; let us make staying cost them even less, with roads, with grain, with a voice in this hall."
+      ],
+      "cooling": [
+        "Secession talk on three worlds. I warned you in writing, I warned you in person, I warned you before the whole council; the warning, I am sorry to say, has become a fact."
+      ],
+      "brutus": [
+        "The provinces drift from the capital, it is true. But not from me; I walk their streets, I eat at their tables, and they know my face far better than they know yours."
+      ],
+      "venal": [
+        "The provinces are restless, and restless provinces need calming. Our governors can be persuaded to calm them, and persuasion, as any good governor will tell you, has its going rate."
+      ]
+    },
+    "secession": {
+      "loyal": [
+        "{world} has gone from us. Do not send the fleet first; send me, with bread and with promises we mean to keep, and only if I fail, then send the fleet."
+      ],
+      "cooling": [
+        "A world has left us, a world I named in four reports to this office. I will not name it in a fifth, for nobody at this address was reading the first four."
+      ],
+      "brutus": [
+        "{world} has left. Every other province is watching to see what you will do, every governor, every crowd, and, I confess, so am I."
+      ],
+      "venal": []
+    },
+    "press_campaign": {
+      "loyal": [
+        "For one week the gazette is ours, its columns, its headlines, its morning readers. Use it well, because our people always remember the weeks they were used.",
+        "The editors will print it, the readers will believe half of it, and in a realm of a hundred worlds, my friend, half is a landslide."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "The press will speak with one voice for us. Two editors required some convincing, and that convincing, should anyone ask, appears in the books under the honest word 'paper'."
+      ]
+    },
+    "crackdown": {
+      "loyal": [
+        "The cells are broken, the plotters scattered, the streets our own again; and beside them lies a great deal of our people's trust, broken too. Never ask me to do this a second time."
+      ],
+      "cooling": [
+        "The crackdown worked, as crackdowns always work, the first time. It is the second time, and the third, that a people remembers."
+      ],
+      "brutus": [
+        "The crackdown worked. The guard, the inspectors, the secret files: all of them answer to the Home Office now, which seemed, in the moment, simply efficient."
+      ],
+      "venal": []
+    },
+    "riot": {
+      "loyal": [
+        "A riot on {world}. Bread first, then the guard; send the guard first and we will spend a year explaining the bodies to every province in the realm."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "A riot, and the guard stands ready, brave men and women all. Their overtime, alas, was never in the budget; I can find it, of course, for a small consideration."
+      ]
+    },
+    "battle_won": {
+      "loyal": [
+        "The victory has bought us two months of our people's goodwill. Spend it on the provinces, on their roads and their harvests, and not on chasing another victory."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "battle_lost": {
+      "loyal": [
+        "Our people heard of the defeat before I did; the gazette outruns the Admiralty every time. Speak to them tonight, from the balcony, before the rumours speak for you."
+      ],
+      "cooling": [
+        "A defeat, and the provinces ask me what it was for: what it cost, whose sons, and why. I would dearly like to have an answer to give them."
+      ],
+      "brutus": [
+        "A defeat, and the provinces ask who must answer for it. I have not yet told them it was not me, and I notice they have not yet asked."
+      ],
+      "venal": []
+    },
+    "crisis_window": {
+      "loyal": [
+        "Troops are moving through the capital on no one's order. I hold the guard, I hold the streets, I hold the gates; tell me now whose side I am to put them on."
+      ],
+      "cooling": [
+        "Something is stirring in the capital tonight. I have the guard, yes, but the guard has questions, and I am not sure I have the answers they want."
+      ],
+      "brutus": [
+        "It is done. Stay in your rooms, keep your doors closed, and all of this will go very gently for you."
+      ],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "The provinces will ask me why. Give me a reason I can carry to them, to every town square and every governor's hall, and I will carry it faithfully."
+      ],
+      "cooling": [
+        "You are dismissing the one minister the governors still trust. Then you must stand before them and tell them yourself, because I will not."
+      ],
+      "brutus": [
+        "Take the office, then, and the seal, and the desk. The governors, I think you will find, still know where I live."
+      ],
+      "venal": [
+        "Understood, and accepted with grace. The governors I appointed will, naturally, want to know whether their little arrangements still stand."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "I will not run the provinces for a government that forgets they exist. I resign, here and now, and our people will notice my absence long before you do."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "approved": {
+      "loyal": [
+        "Approved! The governors will hear it tonight, and they will hear it from my own lips, so that every province knows the capital has kept faith."
+      ],
+      "cooling": [
+        "Approved. I shall tell the provinces it was my idea, and for once that will be nothing but the truth."
+      ],
+      "brutus": [
+        "Approved. And the provinces will know, every one of them, exactly whose hand made it happen."
+      ],
+      "venal": [
+        "Approved, and splendid news for our people. The arrangements, rest assured, are already in hand."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "Declined. I will tell the provinces to wait; our people are good at waiting, patient and proud, right up to the day when they are not."
+      ],
+      "cooling": [
+        "Declined, again. Very well; I will stop bringing the people's business to a door that will not open."
+      ],
+      "brutus": [
+        "Declined. The governors asked for this, and when they ask me who said no, I will give them the name."
+      ],
+      "venal": [
+        "Declined. A sad day, and I fear someone besides the provinces will be disappointed by it."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "No answer came. The provinces noticed the silence, my friend, long before you did."
+      ],
+      "cooling": [
+        "No answer. The governors have stopped asking me what the capital wants, and I have stopped pretending to know."
+      ],
+      "brutus": [
+        "Unanswered. Mark it well: a capital that never answers soon becomes a capital the provinces never ask."
+      ],
+      "venal": [
+        "Unanswered, and some arrangements lapsed along with it, quietly, as such things do."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "Good morning! Three provinces are happy and one is not, and I will tell you which one once you have eaten your breakfast."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  },
+  "foreign": {
+    "appointed": {
+      "loyal": [
+        "I am delighted, and honoured to know every ambassador's favourite vintage and every court's oldest grudge; I suspect, in the seasons ahead, we shall have need of both."
+      ],
+      "cooling": [
+        "I have accepted, with the gratitude the occasion requires, and shall represent this government abroad with scrupulous accuracy, which may not, I fear, always be to its liking."
+      ],
+      "brutus": [
+        "A singular honour. Foreign courts, as you know, reserve their respect for the person across the table, and it is, I think, my person they will find there."
+      ],
+      "venal": [
+        "Charmed, utterly charmed. The embassies are in some want of refurbishment, I notice, and I happen to count the finest contractors among my oldest and dearest friends."
+      ]
+    },
+    "routine": {
+      "loyal": [
+        "Our word, I am pleased to report, still carries; a treaty signed in this happy season would cost us very little and might, with a little care, purchase us years.",
+        "Two courts send their warmest regards, and one of them, I believe, even means it; permit me a little more time before I venture to say which."
+      ],
+      "cooling": [
+        "I have kept five courts comfortably warm without the inconvenience of instructions, which is, I flatter myself, a considerable skill, though no one could mistake it for a policy."
+      ],
+      "brutus": [
+        "Foreign courts inquire, ever so delicately, who precisely speaks for this empire. I have taken to answering that I do, which spares everyone a great deal of time."
+      ],
+      "venal": [
+        "Relations remain most cordial, and cordiality, as you will appreciate, is sustained by small tokens of esteem, which, I am happy to say, flow in both directions."
+      ]
+    },
+    "idle_war": {
+      "loyal": [
+        "With each month this war continues we lose, to my infinite regret, another friend abroad; should you see your way to furnishing me with terms, I would be glad to offer them."
+      ],
+      "cooling": [
+        "Might I propose, with the utmost respect, a peace? I have spent a full season apologising to five courts for this war, and my store of graceful phrases is running low."
+      ],
+      "brutus": [
+        "The war continues, and abroad they ask me, in the gentlest tones, whether it is your war or the empire's; I confess I have not yet settled on a reply."
+      ],
+      "venal": []
+    },
+    "offer_accept": {
+      "loyal": [
+        "I would counsel acceptance; their terms are, if you will forgive the observation, rather more generous than their position, and such generosity seldom survives a second reading.",
+        "Accept, I beg you, and graciously, letting them believe the whole happy notion was their own; it was not, of course, it was mine, but there is no need to trouble them with that."
+      ],
+      "cooling": [
+        "My counsel is in the file, as before; and since it went unread on the last occasion, I have reduced it to a single word, which is that we accept."
+      ],
+      "brutus": [
+        "In your place I should accept; it frees your hands for other matters and, as it happens, it frees mine for a few of my own."
+      ],
+      "venal": [
+        "I recommend acceptance most warmly. {target}'s ambassador has shown my household such touching attention of late that it would seem almost ungracious to refuse."
+      ]
+    },
+    "offer_refuse": {
+      "loyal": [
+        "I fear we must decline, with every courtesy, for they ask of us the one thing that, once given, could never be asked back.",
+        "Perhaps not quite yet. Let the offer rest a week upon the table; a week either sweetens a proposal or quietly dissolves it, and either outcome, I find, is most instructive."
+      ],
+      "cooling": [
+        "My counsel is in the file, as before; and since it went unread on the last occasion, I have reduced it to a single word, and the word, alas, is that we refuse."
+      ],
+      "brutus": [
+        "I would suggest a refusal, with the gravest courtesy; a feeble government accepts whatever is set before it, and it would do them good to see that this one is not feeble. Not yet, at any rate."
+      ],
+      "venal": [
+        "I would decline, for the present; a more agreeable offer is, I have every confidence, on its way, since I have taken some small pains to see that it arrives."
+      ]
+    },
+    "peace_proposal": {
+      "loyal": [
+        "The war with {target}, if I may be candid, has cost more than it can ever repay; they would receive terms graciously today, and next month, I suspect, would not receive them at all.",
+        "{target} is weary, though far too proud to say so; allow me the privilege of saying it for them, in a quiet room, with excellent chairs and a better wine."
+      ],
+      "cooling": [
+        "Might I raise once more, with all due deference, the matter of peace? I have spent a season apologising to five courts for this war, and they have begun to recognise my handwriting."
+      ],
+      "brutus": [
+        "A peace with {target} would, I need hardly point out, release the fleet for other duties, of a more domestic character, shall we say."
+      ],
+      "venal": [
+        "A peace with {target} seems most desirable. Their envoy has been so very generous to me personally that I should like, in the spirit of friendship, to be generous in return."
+      ]
+    },
+    "war_proposal": {
+      "loyal": [
+        "I have approached {target} with every courtesy at my disposal, and they have, regrettably, mistaken courtesy for weakness; perhaps the Admiralty might be invited to correct the misunderstanding."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "envoy": {
+      "loyal": [
+        "Our envoy is already on the road to {target}, laden with gifts and blessedly unencumbered by instructions, which is, in my long experience, the most persuasive way to travel."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "An envoy to {target}, yes; I have chosen a cousin of mine, a person of unimpeachable discretion and of correspondingly considerable expense."
+      ]
+    },
+    "treaty_signed": {
+      "loyal": [
+        "It is signed, and {target} is now our friend, which means that should they ever betray us, they will at least have the decency to do so politely."
+      ],
+      "cooling": [
+        "A treaty, at last. I drafted it twice before anyone troubled to read it, and it was, I note with some quiet satisfaction, the second draft they signed."
+      ],
+      "brutus": [
+        "Signed, and {target}'s court knows perfectly well whose pen it was; friendships of that kind, I have observed, have a way of outlasting governments."
+      ],
+      "venal": []
+    },
+    "treaty_broken_them": {
+      "loyal": [
+        "They have torn it up. I would urge us to say so, and with some volume, for every court that ever trusted their word is listening with the keenest attention.",
+        "{target} has broken faith, which surprises me rather less than it ought to; I have kept, against just such a day, the charming letter they wrote when they pledged it."
+      ],
+      "cooling": [
+        "The treaty I laboured over is now ash, and I should be obliged if the record would reflect that I asked, more than once and in writing, for guarantees."
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "treaty_broken_us": {
+      "loyal": [
+        "We have broken our word, which is unfortunate. I shall devote the coming year to making it appear, by degrees, that the fault was theirs, and I would ask, most gently, that nobody help me."
+      ],
+      "cooling": [
+        "We have torn up a treaty I spent an entire season composing. Abroad I shall smile about it with every appearance of serenity; you will forgive me if I do not smile here."
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "sanctions_by_us": {
+      "loyal": [
+        "Sanctions, if I may say so, are the letter one sends when one has run out of words; I have not yet run out of words, and I should very much like the chance to try a few more."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    },
+    "breakaway": {
+      "loyal": [
+        "A new state begs the honour of our recognition; to grant it would win us a friend and an enemy on the very same afternoon, which is an economy of sorts, if not a comfortable one."
+      ],
+      "cooling": [
+        "The rebels desire our recognition, their former masters desire that we withhold it, and both, with a symmetry I find almost touching, have sent fruit."
+      ],
+      "brutus": [],
+      "venal": [
+        "The rebels' request for recognition arrived accompanied by a gift, most beautifully wrapped; I have not opened it as yet, out of a proper sense of decorum."
+      ]
+    },
+    "gambit": {
+      "loyal": [
+        "{target} has presented us with an ultimatum. A little elegant delay will buy us a week, and I would only ask that we decide, before the week begins, what we intend to buy with it.",
+        "{target} accuses us of espionage and, between ourselves, they are not mistaken; I propose we deny it with such warmth and sincerity that they end by apologising to us.",
+        "A show of force upon the border, meant to make us flinch; I would suggest instead a small, well-bred yawn, and if you will permit me, I shall do the yawning personally."
+      ],
+      "cooling": [
+        "An ultimatum from {target}. I dare say I might have seen it approaching, had I been invited into the room where such things are discussed."
+      ],
+      "brutus": [
+        "{target} awaits our answer. There are those here, I am told, who feel the answer might carry more weight if it came from a different chair."
+      ],
+      "venal": []
+    },
+    "battle_won": {
+      "loyal": [
+        "A victory, and how suddenly fond of us every court has become; fondness is a currency of the most perishable kind, and I would counsel spending it before the week is out."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": [
+        "A triumph. {target}'s neighbours are now most eager to talk, and talks, as you know, require a suitable venue, of which I happen to own a rather lovely example."
+      ]
+    },
+    "battle_lost": {
+      "loyal": [
+        "A defeat, and three ambassadors have discovered prior engagements at lunch. I am rescheduling them all, but I should be grateful for something worthy to serve when they come."
+      ],
+      "cooling": [
+        "A defeat, and it falls to me, as ever, to explain it abroad; I would be most obliged if someone could furnish me with something that might be explained."
+      ],
+      "brutus": [],
+      "venal": []
+    },
+    "dismissed": {
+      "loyal": [
+        "But of course. The courts will inquire after me, and I shall tell them I am resting, and they, being well-bred, will pretend to believe it."
+      ],
+      "cooling": [
+        "Dismissed, then. Several courts will be quite sorry to hear it, and I shall, with the greatest restraint, allow them their sorrow."
+      ],
+      "brutus": [
+        "The office is yours, naturally. The ambassadors, I might mention, have my private address, and most of them, over the years, have found occasion to use it."
+      ],
+      "venal": [
+        "Understood, perfectly. The embassy accounts will be found in impeccable order, though putting them into that order may, I regret, require a little time."
+      ]
+    },
+    "resigned": {
+      "loyal": [
+        "I cannot represent abroad a government I can no longer explain at home, and so, with every courtesy and no small regret, I tender my resignation."
+      ],
+      "cooling": [],
+      "brutus": [
+        "I resign, with the warmest wishes for your continued health; you will hear from me again, I expect, from a rather better address."
+      ],
+      "venal": []
+    },
+    "approved": {
+      "loyal": [
+        "Approved, splendidly. By tonight it will have been said, softly and in the right rooms, to precisely the right ears."
+      ],
+      "cooling": [
+        "Approved. I shall present it abroad as though it had always been the plan, which is, after all, what I am for."
+      ],
+      "brutus": [
+        "Approved; and the courts, I assure you, will know exactly whose hand held the pen."
+      ],
+      "venal": [
+        "Approved, and such an occasion surely deserves to be marked; the embassy will host a modest little reception, which I shall arrange myself."
+      ]
+    },
+    "declined": {
+      "loyal": [
+        "Declined, very well. I shall inform the courts that the matter is under the most serious consideration, a condition in which, happily, it may remain for years."
+      ],
+      "cooling": [
+        "Declined. Then I shall cease asking here and begin, as is now my custom, apologising abroad."
+      ],
+      "brutus": [
+        "Declined. Abroad they will wonder why, and I may, if the moment seems right, find it in me to tell them."
+      ],
+      "venal": [
+        "Declined. What a pity; the venue had been so very carefully booked."
+      ]
+    },
+    "lapsed": {
+      "loyal": [
+        "No answer has come. Abroad, silence is read either as weakness or as cunning, and I have taken the liberty of assuring them it is cunning."
+      ],
+      "cooling": [
+        "No answer. I have now exhausted every graceful way of saying 'presently' in six languages, and am beginning, I confess, on the less graceful ones."
+      ],
+      "brutus": [
+        "Unanswered. The courts ask me, with exquisite tact, who in fact decides matters here, and I find I am beginning to wonder myself."
+      ],
+      "venal": [
+        "Unanswered. The ambassador's kind gift went without acknowledgement, so I thanked them myself, in the manner their generosity seemed to merit."
+      ]
+    },
+    "morning": {
+      "loyal": [
+        "Good morning, and a fine one. Two courts send their regards, and one of them has sent, I notice, a warning very prettily dressed as regards."
+      ],
+      "cooling": [],
+      "brutus": [],
+      "venal": []
+    }
+  }
+}
