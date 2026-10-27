@@ -319,6 +319,8 @@ export function extractFactionShard(world: GameWorldState, factionId: string): s
         // Their advisors' desk: open proposals, the Always list, the ledger
         // (lib/delegation/advisor-proposals.ts). Same rule as delegation.
         advisors: world.advisors?.get(factionId) ?? null,
+        // The ruler's post from their written ministers (lib/government/letters.ts).
+        ministerLetters: world.ministerLetters?.get(factionId) ?? null,
         // Ministers' plots against this ruler (lib/government/plots.ts). In the
         // shard because that is where private state lives; the sync route
         // gives the ruler NONE of them and each plotter only their own.
@@ -445,6 +447,10 @@ export function injectFactionShard(world: GameWorldState, shardJson: string) {
         if (!world.advisors) world.advisors = new Map();
         world.advisors.set(shard.factionId, shard.advisors);
     }
+    if (Array.isArray(shard.ministerLetters)) {
+        if (!world.ministerLetters) world.ministerLetters = new Map();
+        world.ministerLetters.set(shard.factionId, shard.ministerLetters);
+    }
     if (Array.isArray(shard.plots)) {
         if (!world.plots) world.plots = new Map();
         for (const plot of shard.plots) if (plot?.id) world.plots.set(plot.id, plot);
@@ -543,6 +549,7 @@ export function cleanWorldForSave(world: GameWorldState): GameWorldState {
     // client polls does not need to say who is letting their cabinet drive.
     if (cloned.delegation instanceof Map) cloned.delegation.clear();
     if (cloned.advisors instanceof Map) cloned.advisors.clear();
+    if (cloned.ministerLetters instanceof Map) cloned.ministerLetters.clear();
     if (cloned.plots instanceof Map) cloned.plots.clear();
     if (cloned.seatNotes instanceof Map) cloned.seatNotes.clear();
     // Drained by the worker the same tick it is written; never news.

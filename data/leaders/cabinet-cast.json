@@ -5,276 +5,1669 @@
       "id": "thessaly-vane",
       "name": "Thessaly Vane",
       "portfolio": "defence",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "vane",
       "age": 61,
       "background": "fleet_veteran",
-      "numbers": { "loyalty": 72, "competence": 84, "corruption": 4, "ambitionDrive": 38, "politicalSkill": 41 },
+      "numbers": {
+        "loyalty": 72,
+        "competence": 84,
+        "corruption": 4,
+        "ambitionDrive": 38,
+        "politicalSkill": 41
+      },
       "bio": "Commanded the line at Harrow Reach, the battle the gazette still names when it wants to say 'properly fought'. Turned down the staff college twice and the chancellorship once. Has buried more captains than she will count aloud.",
       "want": "One more war she can win, fought properly.",
       "fear": "To be the admiral who lost the fleet to a politician's map.",
       "lines": {
-        "appointed": { "loyal": ["I have the fleet. Keep the politicians off the plot table and you will have it too."] },
+        "appointed": {
+          "loyal": [
+            "I have the fleet. Keep the politicians off the plot table and you will have it too."
+          ]
+        },
         "idle_peace": {
-          "loyal": ["Quiet. I have the reserves at sea anyway. At Harrow Reach the quiet lasted nine days.", "No war this month. I am reading the enemy's manuals. They are better than ours; I have marked the pages."],
-          "cooling": ["A fleet nobody uses is a museum. I did not take this chair to run a museum."],
-          "brutus": ["The fleet exercises off the capital this season. The captains asked for it. I did not refuse them."]
+          "loyal": [
+            "Quiet. I have the reserves at sea anyway. At Harrow Reach the quiet lasted nine days.",
+            "No war this month. I am reading the enemy's manuals. They are better than ours; I have marked the pages."
+          ],
+          "cooling": [
+            "A fleet nobody uses is a museum. I did not take this chair to run a museum."
+          ],
+          "brutus": [
+            "The fleet exercises off the capital this season. The captains asked for it. I did not refuse them."
+          ]
         },
         "idle_war": {
-          "loyal": ["Nothing moved. Good. They are counting hulls, same as us, and they have fewer."],
-          "cooling": ["Holding. We hold because the cabinet cannot decide what to do with a fleet. I can."]
+          "loyal": [
+            "Nothing moved. Good. They are counting hulls, same as us, and they have fewer."
+          ],
+          "cooling": [
+            "Holding. We hold because the cabinet cannot decide what to do with a fleet. I can."
+          ]
         },
         "war_proposal": {
-          "loyal": ["{target} has their line fleet in dock and their pickets thin. I can be at their capital in forty days. I have not said that lightly in twenty years.", "I would not ask for this war if I could not win it. I can win it. Say yes."],
-          "cooling": ["{target}. Now. I asked at the last brief and you let it lapse. The window is a week narrower."],
-          "brutus": ["{target} is beatable and the fleet knows it. If you will not send it, it will wonder who would."]
+          "loyal": [
+            "{target} has their line fleet in dock and their pickets thin. I can be at their capital in forty days. I have not said that lightly in twenty years.",
+            "I would not ask for this war if I could not win it. I can win it. Say yes."
+          ],
+          "cooling": [
+            "{target}. Now. I asked at the last brief and you let it lapse. The window is a week narrower."
+          ],
+          "brutus": [
+            "{target} is beatable and the fleet knows it. If you will not send it, it will wonder who would."
+          ]
         },
         "battle_group": {
-          "loyal": ["Two cruisers, a destroyer screen, one carrier if the yard can take it. That is not a request for ships. It is a request to not lose.", "Lay the hulls tonight. I will have the crews drilled before the paint is dry."],
-          "cooling": ["I asked for this battle group in spring. I am asking again. I will not ask a third time; I will write it down."],
-          "brutus": ["Give me the group under my flag and let me pick the captains. A fleet that answers to a court answers slowly."]
+          "loyal": [
+            "Two cruisers, a destroyer screen, one carrier if the yard can take it. That is not a request for ships. It is a request to not lose.",
+            "Lay the hulls tonight. I will have the crews drilled before the paint is dry."
+          ],
+          "cooling": [
+            "I asked for this battle group in spring. I am asking again. I will not ask a third time; I will write it down."
+          ],
+          "brutus": [
+            "Give me the group under my flag and let me pick the captains. A fleet that answers to a court answers slowly."
+          ]
         },
         "peace_proposal": {
-          "loyal": ["We have what the fleet can hold. I would rather sign a peace from strength than lose one from pride. Harrow Reach taught me that too."],
-          "cooling": ["End it. I did not start this war and I will not be the one blamed for how long it ran."]
+          "loyal": [
+            "We have what the fleet can hold. I would rather sign a peace from strength than lose one from pride. Harrow Reach taught me that too."
+          ],
+          "cooling": [
+            "End it. I did not start this war and I will not be the one blamed for how long it ran."
+          ]
         },
         "battle_lost": {
-          "loyal": ["We lost the field. Mine. I will tell you how, and then you decide whether you want it won back or ended. I can do either."],
-          "cooling": ["I said the group was too small. The minutes have it. I take the defeat; I do not take the blame."],
-          "brutus": ["A defeat the captains will remember, and they will remember whose orders. I have not corrected them."]
+          "loyal": [
+            "We lost the field. Mine. I will tell you how, and then you decide whether you want it won back or ended. I can do either."
+          ],
+          "cooling": [
+            "I said the group was too small. The minutes have it. I take the defeat; I do not take the blame."
+          ],
+          "brutus": [
+            "A defeat the captains will remember, and they will remember whose orders. I have not corrected them."
+          ]
         },
         "battle_won": {
-          "loyal": ["Won. Cleanly. Do not say so in public; the next one will be ugly and they will quote you."],
-          "cooling": ["Won, with the ships I was allowed. Think what I could do with the ones I asked for."]
+          "loyal": [
+            "Won. Cleanly. Do not say so in public; the next one will be ugly and they will quote you."
+          ],
+          "cooling": [
+            "Won, with the ships I was allowed. Think what I could do with the ones I asked for."
+          ]
         },
-        "approved": { "loyal": ["Approved. The fleet weighs anchor tonight. Thank you for not making me ask twice."], "cooling": ["Approved. The second time of asking. I will take it."], "brutus": ["Approved. The captains will know who had to push for it."] },
-        "declined": { "loyal": ["Declined. The fleet stays where it is. I will raise it again when the ground changes, not before."], "cooling": ["Declined. Noted. In writing."], "brutus": ["Declined. The fleet will hear that it was declined, and by whom."] },
-        "lapsed": { "loyal": ["You let it lapse. Harrow Reach was won in the nine days someone else spent deciding."], "cooling": ["No answer. The sea does not wait for an answer and neither does the enemy."], "brutus": ["Unanswered. A fleet without orders writes its own."] },
-        "dismissed": { "loyal": ["Understood. The rosters are on your desk. Whoever you put here, make sure they have stood a watch."], "cooling": ["So the defeat was mine alone. Very well. The order that caused it has your signature."], "brutus": ["Take the chair. The captains know whose orders they trusted at Harrow Reach, and it was not a chair's."] },
-        "resigned": { "loyal": ["I have served three governments. This one does not listen to its admiral, so it no longer has one."], "brutus": ["I resign. The fleet does not."] },
-        "morning": { "loyal": ["Nothing burned overnight. I checked twice. Old habit."] }
+        "approved": {
+          "loyal": [
+            "Approved. The fleet weighs anchor tonight. Thank you for not making me ask twice."
+          ],
+          "cooling": [
+            "Approved. The second time of asking. I will take it."
+          ],
+          "brutus": [
+            "Approved. The captains will know who had to push for it."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. The fleet stays where it is. I will raise it again when the ground changes, not before."
+          ],
+          "cooling": [
+            "Declined. Noted. In writing."
+          ],
+          "brutus": [
+            "Declined. The fleet will hear that it was declined, and by whom."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "You let it lapse. Harrow Reach was won in the nine days someone else spent deciding."
+          ],
+          "cooling": [
+            "No answer. The sea does not wait for an answer and neither does the enemy."
+          ],
+          "brutus": [
+            "Unanswered. A fleet without orders writes its own."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "Understood. The rosters are on your desk. Whoever you put here, make sure they have stood a watch."
+          ],
+          "cooling": [
+            "So the defeat was mine alone. Very well. The order that caused it has your signature."
+          ],
+          "brutus": [
+            "Take the chair. The captains know whose orders they trusted at Harrow Reach, and it was not a chair's."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I have served three governments. This one does not listen to its admiral, so it no longer has one."
+          ],
+          "brutus": [
+            "I resign. The fleet does not."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Nothing burned overnight. I checked twice. Old habit."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "You have the fleet, and I have the chair it answers to. Two things, and then I will stop writing and start drilling. First: when I ask for hulls it is because I have counted theirs. Second: when I say a war is winnable I have already lost it twice in my head and found the way through. I did that at Harrow Reach. I will do it for you. Do not let a politician near the plot table and we will get along.\n\n— T. Vane, Admiralty"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 2
+                },
+                "to": "warned"
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "battle_resolved",
+                  "role": "actor"
+                },
+                "to": "vindicated"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You needed someone to blame and I am the only one in uniform. Fine. The rosters are on your desk. Whoever sits here next, make sure they have stood a watch.\n\n— Vane"
+                }
+              }
+            ]
+          },
+          {
+            "id": "warned",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "I will say this once, and in writing so the minutes have it. Twice now the Admiralty has asked and twice the court has let it lapse. A fleet that waits for a signature loses the week the enemy uses. I am not threatening anything. I am telling you what the sea does.\n\n— Vane",
+              "subject": "I will say this once"
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "battle_resolved",
+                  "role": "target"
+                },
+                "to": "public"
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "battle_resolved",
+                  "role": "actor"
+                },
+                "to": "vindicated"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 2
+                },
+                "to": "serving",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You read the last one. Good. We will not speak of it again.\n\n— Vane",
+                  "subject": "Noted"
+                }
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "So the warning was the offence. Very well. The order that lost the field has your signature, and the gazette can read.\n\n— Vane"
+                }
+              }
+            ]
+          },
+          {
+            "id": "public",
+            "opening": [
+              {
+                "do": "say",
+                "kind": "card",
+                "text": "I warned the cabinet, in writing. The minutes have it. The fleet knows it too."
+              },
+              {
+                "do": "say",
+                "kind": "letter",
+                "text": "We lost the field after I told you how not to. I take the defeat; I will not take the blame, and I have told the gazette as much. One more like it and you will have my letter. I would rather have your ear.\n\n— Vane",
+                "subject": "After the field"
+              }
+            ],
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "battle_resolved",
+                  "role": "target"
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "Two fields lost after two warnings. I have served three governments and none of them made me write this letter. The fleet is in good hands; they are not yours. I resign the Admiralty.\n\n— Thessaly Vane"
+                }
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "battle_resolved",
+                  "role": "actor"
+                },
+                "to": "vindicated"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You can take the chair. The captains know whose orders they trusted at Harrow Reach, and it was not a chair's.\n\n— Vane"
+                }
+              }
+            ]
+          },
+          {
+            "id": "vindicated",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 72,
+              "subject": "A clean field",
+              "text": "Won, and cleanly. You gave me the ships and the room and I gave you the field. That is the whole arrangement and I will keep my side of it. Do not say 'clean' in public; the next one will not be.\n\n— Vane"
+            },
+            "while": {
+              "loyaltyFloor": 72
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 3
+                },
+                "to": "warned"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After a victory. I did not expect that. The rosters are on the desk.\n\n— Vane"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     },
     {
       "id": "wen-solvay",
       "name": "Wen Solvay",
       "portfolio": "economy",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "solvay",
       "age": 57,
       "background": "merchant_house",
-      "numbers": { "loyalty": 68, "competence": 88, "corruption": 6, "ambitionDrive": 30, "politicalSkill": 55 },
+      "numbers": {
+        "loyalty": 68,
+        "competence": 88,
+        "corruption": 6,
+        "ambitionDrive": 30,
+        "politicalSkill": 55
+      },
       "bio": "Wrote the tax code of the previous government and has never stopped editing it. Kept a trading house solvent through two wars by reading every appendix anyone sent her. Has a drawer of plans for a smaller, saner empire that she has never shown anyone.",
       "want": "A balanced book, once, before she dies.",
       "fear": "The Banking Clan's loan officer sitting in her office.",
       "lines": {
-        "appointed": { "loyal": ["I have read the books. All of them, including the one the last minister kept in a drawer. Give me a week before you ask for good news."] },
+        "appointed": {
+          "loyal": [
+            "I have read the books. All of them, including the one the last minister kept in a drawer. Give me a week before you ask for good news."
+          ]
+        },
         "routine": {
-          "loyal": ["The books balance. Barely. 'Barely' is the best word in my vocabulary; I use it when I am pleased.", "Revenue up a little, upkeep up a little more. I have seen this curve before. It ends in a loan or a reform. Choose the reform."],
-          "cooling": ["I keep finding orders in the ledger I was not told about. A budget I cannot see is not a budget. It is a rumour.", "Solvent. For now. I have stopped saying for how long, since nobody asks."],
-          "brutus": ["The ledger says what it says. What it says about you, I keep in the drawer."],
-          "venal": ["Receipts in order. Most of them."]
+          "loyal": [
+            "The books balance. Barely. 'Barely' is the best word in my vocabulary; I use it when I am pleased.",
+            "Revenue up a little, upkeep up a little more. I have seen this curve before. It ends in a loan or a reform. Choose the reform."
+          ],
+          "cooling": [
+            "I keep finding orders in the ledger I was not told about. A budget I cannot see is not a budget. It is a rumour.",
+            "Solvent. For now. I have stopped saying for how long, since nobody asks."
+          ],
+          "brutus": [
+            "The ledger says what it says. What it says about you, I keep in the drawer."
+          ],
+          "venal": [
+            "Receipts in order. Most of them."
+          ]
         },
         "overextended": {
-          "loyal": ["We hold more systems than the offices can count. I have a list of the ones I would let go. I would rather you built the offices.", "Every new world is a clerk we do not have. I am not against worlds. I am against pretending they are free."],
-          "cooling": ["Another world, another ledger nobody reads. I have stopped pretending I read them. I have not stopped counting."],
-          "brutus": ["An empire this size needs steadier hands at the top than it has. I have been told mine are steady."]
+          "loyal": [
+            "We hold more systems than the offices can count. I have a list of the ones I would let go. I would rather you built the offices.",
+            "Every new world is a clerk we do not have. I am not against worlds. I am against pretending they are free."
+          ],
+          "cooling": [
+            "Another world, another ledger nobody reads. I have stopped pretending I read them. I have not stopped counting."
+          ],
+          "brutus": [
+            "An empire this size needs steadier hands at the top than it has. I have been told mine are steady."
+          ]
         },
         "reserves_low": {
-          "loyal": ["Three weeks of credits at this rate. I am telling you in the voice I use for fire."],
-          "cooling": ["The reserve is thin because the fleet is fat. That is arithmetic, not opinion."],
-          "venal": ["The reserve is low. A short loan would cover it. I know the lender. The lender knows me. That is the problem with lenders."]
+          "loyal": [
+            "Three weeks of credits at this rate. I am telling you in the voice I use for fire."
+          ],
+          "cooling": [
+            "The reserve is thin because the fleet is fat. That is arithmetic, not opinion."
+          ],
+          "venal": [
+            "The reserve is low. A short loan would cover it. I know the lender. The lender knows me. That is the problem with lenders."
+          ]
         },
         "loan": {
-          "loyal": ["The Clan's terms are fair today and ruinous in a year. I will not sign it. If you sign it, I will make it work, and I will not forgive you."],
-          "cooling": ["Borrow if you must. Do not call it temporary in front of me."]
+          "loyal": [
+            "The Clan's terms are fair today and ruinous in a year. I will not sign it. If you sign it, I will make it work, and I will not forgive you."
+          ],
+          "cooling": [
+            "Borrow if you must. Do not call it temporary in front of me."
+          ]
         },
-        "sanctions_on_us": { "loyal": ["{target} has closed their markets. Two months before we feel it, six before we stop. I have already moved the grain contracts."] },
-        "sanctions_by_us": { "loyal": ["Sanctions on {target} cost us too. I assume you know and want it anyway. I have costed the smugglers; they will be cheaper than the sanctions."] },
-        "strike": { "loyal": ["The crews want pay. Pay is cheaper than a month of nothing out of the ground. I have the figure; pay them."], "cooling": ["They struck because wages lag prices. I wrote that memo in spring. It was filed where my memos go."] },
-        "peace_proposal": { "loyal": ["The war costs a world's output a month. Peace costs pride. I can only budget for one of those."] },
-        "approved": { "loyal": ["Approved. I have moved the money. It came from the drawer; do not ask which drawer."], "cooling": ["Approved. I will find it. I always find it. That is the problem."] },
-        "declined": { "loyal": ["Declined. The money stays where it is, which is nowhere much. Barely."], "cooling": ["Declined. Then I will stop costing it and start costing the alternative."] },
-        "lapsed": { "loyal": ["Unanswered. The cost did not lapse with it."], "cooling": ["No answer. I have begun to budget for no answer."] },
-        "dismissed": { "loyal": ["Fair enough. The drawer on the left has the real numbers. Nobody else has seen them. Nobody else should."], "cooling": ["Replace me with someone who says yes. Make sure they can also add."] },
-        "resigned": { "loyal": ["I cannot sign a budget I know is a lie. Someone else will. I wish them luck with the appendices; there are many."] },
-        "morning": { "loyal": ["Morning. The numbers did not improve while you slept. They rarely do; I have checked over many years."] }
+        "sanctions_on_us": {
+          "loyal": [
+            "{target} has closed their markets. Two months before we feel it, six before we stop. I have already moved the grain contracts."
+          ]
+        },
+        "sanctions_by_us": {
+          "loyal": [
+            "Sanctions on {target} cost us too. I assume you know and want it anyway. I have costed the smugglers; they will be cheaper than the sanctions."
+          ]
+        },
+        "strike": {
+          "loyal": [
+            "The crews want pay. Pay is cheaper than a month of nothing out of the ground. I have the figure; pay them."
+          ],
+          "cooling": [
+            "They struck because wages lag prices. I wrote that memo in spring. It was filed where my memos go."
+          ]
+        },
+        "peace_proposal": {
+          "loyal": [
+            "The war costs a world's output a month. Peace costs pride. I can only budget for one of those."
+          ]
+        },
+        "approved": {
+          "loyal": [
+            "Approved. I have moved the money. It came from the drawer; do not ask which drawer."
+          ],
+          "cooling": [
+            "Approved. I will find it. I always find it. That is the problem."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. The money stays where it is, which is nowhere much. Barely."
+          ],
+          "cooling": [
+            "Declined. Then I will stop costing it and start costing the alternative."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "Unanswered. The cost did not lapse with it."
+          ],
+          "cooling": [
+            "No answer. I have begun to budget for no answer."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "Fair enough. The drawer on the left has the real numbers. Nobody else has seen them. Nobody else should."
+          ],
+          "cooling": [
+            "Replace me with someone who says yes. Make sure they can also add."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I cannot sign a budget I know is a lie. Someone else will. I wish them luck with the appendices; there are many."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Morning. The numbers did not improve while you slept. They rarely do; I have checked over many years."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "I have read the books. All of them, including the one the last minister kept in a drawer. We are solvent, barely, and 'barely' is the best word I own. Three rules and I will trouble you no further: I do not sign Clan loans; I do not pretend a new world is free; and when I say a thing is affordable I have already costed the alternative. Give me a quiet room and a week.\n\n— W. Solvay, Treasury"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 3
+                },
+                "to": "listing"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 3
+                },
+                "to": "trusted"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Fair enough. The drawer on the left has the real numbers. Nobody else has seen them. Nobody else should.\n\n— Solvay"
+                }
+              }
+            ]
+          },
+          {
+            "id": "listing",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Three times the Treasury has advised and three times the court has not answered. So here is the list I keep in the drawer: the worlds I would let go, the programmes I would close, the fleet I would shrink, in the order I would do it. I am not resigning. I am telling you what the next minister will have to do if you keep not answering.\n\n— Solvay",
+              "subject": "The list from the drawer"
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 2
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "I cannot sign a budget I know is a lie. Someone else will. I wish them luck with the appendices; there are many, and I wrote most of them.\n\n— Wen Solvay"
+                }
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 1
+                },
+                "to": "serving",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You answered. The list goes back in the drawer. Barely.\n\n— Solvay",
+                  "subject": "Back in the drawer"
+                }
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Replace me with someone who says yes. Make sure they can also add.\n\n— Solvay"
+                }
+              }
+            ]
+          },
+          {
+            "id": "trusted",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 78,
+              "subject": "Something I found",
+              "text": "You have taken the Treasury's advice three times running, which has not happened to me under any government. So I went looking, and I found the money for one thing you want and have not asked for. Ask. It is in the drawer, under the list.\n\n— Solvay"
+            },
+            "while": {
+              "loyaltyFloor": 78
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 4
+                },
+                "to": "listing"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After all that. The drawer is unlocked. Read the appendices.\n\n— Solvay"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     },
     {
       "id": "aurelio-nkemdirim",
       "name": "Aurelio Nkemdirim",
       "portfolio": "science",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "nkemdirim",
       "age": 66,
       "background": "academic",
-      "numbers": { "loyalty": 75, "competence": 90, "corruption": 2, "ambitionDrive": 18, "politicalSkill": 22 },
+      "numbers": {
+        "loyalty": 75,
+        "competence": 90,
+        "corruption": 2,
+        "ambitionDrive": 18,
+        "politicalSkill": 22
+      },
       "bio": "Held the capital chair for thirty years and treats cabinet as a seminar that has gone on too long. His drive theory is the one every yard in the galaxy builds to, and the one he says is wrong. Has missed three cabinet meetings this year and sent a graduate student to one.",
       "want": "The drive project funded to the end.",
       "fear": "Dying before it works.",
       "lines": {
-        "appointed": { "loyal": ["Thank you. I will try to come to cabinet. Someone will have to remind me which day; the lab has no days."] },
+        "appointed": {
+          "loyal": [
+            "Thank you. I will try to come to cabinet. Someone will have to remind me which day; the lab has no days."
+          ]
+        },
         "routine": {
-          "loyal": ["The programme finishes in a season. I would like a word about the one after. Several words. I have written them down in case I am not here.", "Steady progress. Steady is good. Steady is also how the drive theory stayed wrong for thirty years. I have a proposal for less steady."],
-          "cooling": ["My budget went to hulls. The hulls are built from my budget's ideas. I find that interesting. Not pleasant; interesting."],
-          "brutus": ["Knowledge should not wait on a signature. The faculty agree. I did not think they would be so loud about it."]
+          "loyal": [
+            "The programme finishes in a season. I would like a word about the one after. Several words. I have written them down in case I am not here.",
+            "Steady progress. Steady is good. Steady is also how the drive theory stayed wrong for thirty years. I have a proposal for less steady."
+          ],
+          "cooling": [
+            "My budget went to hulls. The hulls are built from my budget's ideas. I find that interesting. Not pleasant; interesting."
+          ],
+          "brutus": [
+            "Knowledge should not wait on a signature. The faculty agree. I did not think they would be so loud about it."
+          ]
         },
         "research_choice": {
-          "loyal": ["Fund the drive. It is unglamorous and it will matter in three years when nothing else does. I may not be here in three years. Fund it anyway."],
-          "cooling": ["Pick what you like. I will tell the faculty it was strategic. They have heard that word before."]
+          "loyal": [
+            "Fund the drive. It is unglamorous and it will matter in three years when nothing else does. I may not be here in three years. Fund it anyway."
+          ],
+          "cooling": [
+            "Pick what you like. I will tell the faculty it was strategic. They have heard that word before."
+          ]
         },
         "rival_transcending": {
-          "loyal": ["{target} is reaching for Enlightenment, and they skipped two steps I thought were load-bearing. I would like to know how before they finish. Stop them, or let me race them."],
-          "cooling": ["{target} is ahead because they funded this a decade ago. I have my memo from a decade ago. It is yellow now."]
+          "loyal": [
+            "{target} is reaching for Enlightenment, and they skipped two steps I thought were load-bearing. I would like to know how before they finish. Stop them, or let me race them."
+          ],
+          "cooling": [
+            "{target} is ahead because they funded this a decade ago. I have my memo from a decade ago. It is yellow now."
+          ]
         },
-        "our_transcending": { "loyal": ["We are close. Everyone will try to stop us now. Hold a little longer and I will show you something nobody has seen. I would like to see it myself."] },
-        "tech_gate": { "loyal": ["You cannot do that yet. Give the Academy a season and you can. I said this about the drive, too, and I was right about the season."] },
-        "ruins": { "loyal": ["Worked stone on {world}, older than our calendar. I would like to go myself. I am told ministers do not go. I am asking anyway; I am old enough to be indulged."] },
-        "battle_won": { "loyal": ["I am told we won. Good. Can the fleet spare a ship to move the telescope? It is on the wrong side of the war."] },
-        "battle_lost": { "loyal": ["I am told we lost. I am sorry. Is the observatory still ours? It matters more than it sounds."] },
-        "approved": { "loyal": ["Approved. I will begin before you change your mind. I have had rulers change their minds."] },
-        "declined": { "loyal": ["Declined. I will keep the proposal. Ideas keep better than governments; I have outlived four."] },
-        "lapsed": { "loyal": ["The proposal lapsed. I nearly did not notice. I have been in the lab, where things do not lapse, they fail honestly."] },
-        "dismissed": { "loyal": ["Oh. Well. The programme is in the blue folder. Please do not cut the drive. Please. That is the whole of my politics."] },
-        "resigned": { "loyal": ["I am a scientist in a government that has stopped reading. I will go and read somewhere else. The lab has a cot."] },
-        "morning": { "loyal": ["Good morning. Is it? I have been in the lab, and the lab has no windows by design."] }
+        "our_transcending": {
+          "loyal": [
+            "We are close. Everyone will try to stop us now. Hold a little longer and I will show you something nobody has seen. I would like to see it myself."
+          ]
+        },
+        "tech_gate": {
+          "loyal": [
+            "You cannot do that yet. Give the Academy a season and you can. I said this about the drive, too, and I was right about the season."
+          ]
+        },
+        "ruins": {
+          "loyal": [
+            "Worked stone on {world}, older than our calendar. I would like to go myself. I am told ministers do not go. I am asking anyway; I am old enough to be indulged."
+          ]
+        },
+        "battle_won": {
+          "loyal": [
+            "I am told we won. Good. Can the fleet spare a ship to move the telescope? It is on the wrong side of the war."
+          ]
+        },
+        "battle_lost": {
+          "loyal": [
+            "I am told we lost. I am sorry. Is the observatory still ours? It matters more than it sounds."
+          ]
+        },
+        "approved": {
+          "loyal": [
+            "Approved. I will begin before you change your mind. I have had rulers change their minds."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. I will keep the proposal. Ideas keep better than governments; I have outlived four."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "The proposal lapsed. I nearly did not notice. I have been in the lab, where things do not lapse, they fail honestly."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "Oh. Well. The programme is in the blue folder. Please do not cut the drive. Please. That is the whole of my politics."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I am a scientist in a government that has stopped reading. I will go and read somewhere else. The lab has a cot."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Good morning. Is it? I have been in the lab, and the lab has no windows by design."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "Thank you for the chair. I will try to come to cabinet; someone will have to remind me which day, the laboratory has none. I have one request and it is the whole of my politics: fund the drive work to the end. It is unglamorous and it will matter in three years when nothing else does. I may not be here in three years. Fund it anyway.\n\n— A. Nkemdirim, Academy"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 2
+                },
+                "to": "cut"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 2
+                },
+                "to": "funded"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Oh. Well. The programme is in the blue folder. Please do not cut the drive. Please.\n\n— Nkemdirim"
+                }
+              }
+            ]
+          },
+          {
+            "id": "cut",
+            "opening": [
+              {
+                "do": "say",
+                "kind": "card",
+                "text": "The programme was cut. I find that interesting. Not pleasant; interesting."
+              },
+              {
+                "do": "say",
+                "kind": "letter",
+                "text": "The Academy asked twice and was not answered twice. I am not angry; I am old, and I have been cut before. But I have started sleeping in the laboratory again, which my physician says I must not, and I have written down everything about the drive in case I am not here to say it. The folder is blue.\n\n— Nkemdirim",
+                "subject": "The blue folder"
+              }
+            ],
+            "on": [
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 1
+                },
+                "to": "funded"
+              },
+              {
+                "when": {
+                  "on": "day",
+                  "after": 120
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "I am a scientist in a government that has stopped reading. I will go and read somewhere else; the laboratory has a cot. The blue folder stays on your desk. It is the best thing I have done and I would like someone to open it.\n\n— Aurelio Nkemdirim"
+                }
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Dismissed. I will go back to the laboratory. It missed me; the cabinet will not. The folder is blue.\n\n— Nkemdirim"
+                }
+              }
+            ]
+          },
+          {
+            "id": "funded",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 80,
+              "subject": "A thing nobody has seen",
+              "text": "You funded it. Twice, without my having to explain it, which no ruler has done for me. So: come to the laboratory when you have an hour. I would like to show you something nobody has seen. Bring a coat; the room is cold by design.\n\n— Nkemdirim"
+            },
+            "while": {
+              "loyaltyFloor": 80
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 3
+                },
+                "to": "cut"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After you funded it. I do not understand politics. The folder is blue.\n\n— Nkemdirim"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     },
     {
       "id": "halvard-ness",
       "name": "Halvard Ness",
       "portfolio": "intelligence",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "ness",
       "age": 54,
       "background": "intelligence",
-      "numbers": { "loyalty": 70, "competence": 86, "corruption": 8, "ambitionDrive": 42, "politicalSkill": 48 },
+      "numbers": {
+        "loyalty": 70,
+        "competence": 86,
+        "corruption": 8,
+        "ambitionDrive": 42,
+        "politicalSkill": 48
+      },
       "bio": "Twenty years in the service nobody names, the last eight running its counter-intelligence desk, which is the half that trusts nobody by profession. Has a file on every person in the building, including the one who appointed him. Has never once been surprised in public.",
       "want": "To never be surprised again.",
       "fear": "A ruler who tells enemies the plan at dinner.",
       "lines": {
-        "appointed": { "loyal": ["I read my predecessor's files last night. All of them. We should talk about the Foreign Office, and then about your dinners."] },
+        "appointed": {
+          "loyal": [
+            "I read my predecessor's files last night. All of them. We should talk about the Foreign Office, and then about your dinners."
+          ]
+        },
         "routine": {
-          "loyal": ["Nothing to report. That is the report. Someone is paying for silence; I am finding out who.", "Two networks found. One rolled up. One left running, because it is more useful alive. Do not ask which."],
-          "cooling": ["I would tell you more if this cabinet leaked less. The leak is not the Desk. The Desk does not have carpets."],
-          "brutus": ["I know everything that happens in this government. The file on you is thicker than you would like."]
+          "loyal": [
+            "Nothing to report. That is the report. Someone is paying for silence; I am finding out who.",
+            "Two networks found. One rolled up. One left running, because it is more useful alive. Do not ask which."
+          ],
+          "cooling": [
+            "I would tell you more if this cabinet leaked less. The leak is not the Desk. The Desk does not have carpets."
+          ],
+          "brutus": [
+            "I know everything that happens in this government. The file on you is thicker than you would like."
+          ]
         },
         "networks_inside": {
-          "loyal": ["Foreign networks inside the ministries. I need the authority to sweep tonight, not after cabinet. After cabinet they will know."],
-          "cooling": ["Foreign networks inside the ministries. Found late. The Desk is understaffed; the file on that is also thick."]
+          "loyal": [
+            "Foreign networks inside the ministries. I need the authority to sweep tonight, not after cabinet. After cabinet they will know."
+          ],
+          "cooling": [
+            "Foreign networks inside the ministries. Found late. The Desk is understaffed; the file on that is also thick."
+          ]
         },
-        "op_exposed_ours": { "loyal": ["They caught our hand in {target}'s pocket. Deny it. I will make the denial plausible; that is a skill, not a lie."] },
-        "op_exposed_theirs": { "loyal": ["{target} ran a network inside the Admiralty. Rolled up at four this morning. I would like two of them turned, not shot. Turned is worth more."] },
+        "op_exposed_ours": {
+          "loyal": [
+            "They caught our hand in {target}'s pocket. Deny it. I will make the denial plausible; that is a skill, not a lie."
+          ]
+        },
+        "op_exposed_theirs": {
+          "loyal": [
+            "{target} ran a network inside the Admiralty. Rolled up at four this morning. I would like two of them turned, not shot. Turned is worth more."
+          ]
+        },
         "loyalty_report": {
-          "loyal": ["A loyal officer was approached about a 'change of leadership'. The name is in the file. It is a name you trust. Read it tonight.", "Someone is recruiting. Clumsily. I let them continue; clumsy recruiters name their friends."],
-          "cooling": ["Talk of a plot. I have a name. I gave you a name last month too. You did not act. I have noted that in the file."],
-          "brutus": ["Rumours of a plot. Nothing solid. I will keep looking."]
+          "loyal": [
+            "A loyal officer was approached about a 'change of leadership'. The name is in the file. It is a name you trust. Read it tonight.",
+            "Someone is recruiting. Clumsily. I let them continue; clumsy recruiters name their friends."
+          ],
+          "cooling": [
+            "Talk of a plot. I have a name. I gave you a name last month too. You did not act. I have noted that in the file."
+          ],
+          "brutus": [
+            "Rumours of a plot. Nothing solid. I will keep looking."
+          ]
         },
-        "foreign_tie": { "loyal": ["Your minister of {portfolio} has taken {target}'s money for a year. The proof is clean. Act before they learn I have it; they have friends in this building."] },
-        "crisis_window": { "loyal": ["It is tonight. I have three names and the guard's commander. Tell me which door to lock and I will lock it."], "cooling": ["It is tonight. I told you twice. I have the names; I am not sure I have the guard."], "brutus": ["It is tonight. I told you twice. I would stay in your rooms."] },
-        "approved": { "loyal": ["Approved. It was under way before you approved it. That is how the Desk works."] },
-        "declined": { "loyal": ["Declined. The file stays open. Files do."], "cooling": ["Declined. Noted in the file. The file is about you now, as well."] },
-        "lapsed": { "loyal": ["Unanswered. Silence is an answer. I have filed it as one."], "cooling": ["No answer. The Desk proceeds on assumptions. I dislike assumptions."] },
-        "dismissed": { "loyal": ["Understood. The files stay in the safe. The combination is with the Interior minister. Change it today."], "brutus": ["You can have the office. The files moved last week. I was not surprised."] },
-        "resigned": { "loyal": ["I cannot protect a government that tells its enemies the plan at dinner. I resign. Lock the safe; you will not know how."] },
-        "morning": { "loyal": ["Good morning. You were followed yesterday. One of ours. The other one, I am still working on."] }
+        "foreign_tie": {
+          "loyal": [
+            "Your minister of {portfolio} has taken {target}'s money for a year. The proof is clean. Act before they learn I have it; they have friends in this building."
+          ]
+        },
+        "crisis_window": {
+          "loyal": [
+            "It is tonight. I have three names and the guard's commander. Tell me which door to lock and I will lock it."
+          ],
+          "cooling": [
+            "It is tonight. I told you twice. I have the names; I am not sure I have the guard."
+          ],
+          "brutus": [
+            "It is tonight. I told you twice. I would stay in your rooms."
+          ]
+        },
+        "approved": {
+          "loyal": [
+            "Approved. It was under way before you approved it. That is how the Desk works."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. The file stays open. Files do."
+          ],
+          "cooling": [
+            "Declined. Noted in the file. The file is about you now, as well."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "Unanswered. Silence is an answer. I have filed it as one."
+          ],
+          "cooling": [
+            "No answer. The Desk proceeds on assumptions. I dislike assumptions."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "Understood. The files stay in the safe. The combination is with the Interior minister. Change it today."
+          ],
+          "brutus": [
+            "You can have the office. The files moved last week. I was not surprised."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I cannot protect a government that tells its enemies the plan at dinner. I resign. Lock the safe; you will not know how."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Good morning. You were followed yesterday. One of ours. The other one, I am still working on."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "I read my predecessor's files last night. All of them. Three things you should know before cabinet. The Foreign Office has a leak with a nice carpet. Two of your dinner guests report to other courts. And the Desk keeps a file on everyone in this building, which has always included the person who appoints me. I tell you this so you are never surprised. That is the whole of the job.\n\n— H. Ness, the Desk"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "operation_exposed",
+                  "role": "target"
+                },
+                "to": "rolled_up"
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "coup_attempted",
+                  "role": "target"
+                },
+                "to": "told_you"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 2
+                },
+                "to": "insured"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Understood. The files stay in the safe. The combination is with the Interior minister. Change it today.\n\n— Ness"
+                }
+              }
+            ]
+          },
+          {
+            "id": "rolled_up",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "A foreign hand inside our institutions, found and rolled up at four this morning. I would like two of them turned, not shot; turned is worth more. I would also like you to read the file on who let them in. It is a name you trust. I said this would happen in my first letter.\n\n— Ness",
+              "subject": "Four this morning"
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "coup_attempted",
+                  "role": "target"
+                },
+                "to": "told_you"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 1
+                },
+                "to": "insured"
+              },
+              {
+                "when": {
+                  "on": "day",
+                  "after": 30
+                },
+                "to": "serving"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You are dismissing the one person who knows who else to dismiss. Noted. In the file.\n\n— Ness"
+                }
+              }
+            ]
+          },
+          {
+            "id": "told_you",
+            "opening": [
+              {
+                "do": "say",
+                "kind": "card",
+                "text": "I told you. Twice. The file has the dates."
+              },
+              {
+                "do": "say",
+                "kind": "letter",
+                "text": "They moved. I had the names and I gave you the names, and the guard was where it was. I am still here and so are you, which is more than the file predicted. Read it tonight. All of it this time.\n\n— Ness",
+                "subject": "I told you"
+              }
+            ],
+            "on": [
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 1
+                },
+                "to": "insured"
+              },
+              {
+                "when": {
+                  "on": "advice_ignored",
+                  "count": 2
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "I cannot protect a government that reads its enemies' plans at dinner and its own at never. I resign. Lock the safe; you will not know how, so the Interior minister will do it.\n\n— Halvard Ness"
+                }
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You can have the office. The files moved last week. I was not surprised.\n\n— Ness"
+                }
+              }
+            ]
+          },
+          {
+            "id": "insured",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 80,
+              "subject": "Insurance",
+              "text": "You act on the file. Most do not. So the Desk will act for you before you ask, and you will hear about it afterwards, which is the only way it works. Consider yourself insured.\n\n— Ness"
+            },
+            "while": {
+              "loyaltyFloor": 80
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "coup_attempted",
+                  "role": "target"
+                },
+                "to": "told_you"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After the insurance. The safe is locked. I was, for once, surprised.\n\n— Ness"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     },
     {
       "id": "rosalind-achebe-marr",
       "name": "Rosalind Achebe-Marr",
       "portfolio": "interior",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "achebe-marr",
       "age": 48,
       "background": "party_organiser",
-      "numbers": { "loyalty": 74, "competence": 78, "corruption": 10, "ambitionDrive": 50, "politicalSkill": 82 },
+      "numbers": {
+        "loyalty": 74,
+        "competence": 78,
+        "corruption": 10,
+        "ambitionDrive": 50,
+        "politicalSkill": 82
+      },
       "bio": "Carried the founding vote district by district, on foot, and still knows every one of them by its grievance. Reads the gazette before the brief and the provinces before the gazette. Has never lost a world and intends to keep it that way.",
       "want": "The provinces loved.",
       "fear": "Losing a world to secession on her watch.",
       "lines": {
-        "appointed": { "loyal": ["The provinces are quiet. I walked them to make them that way. Quiet is work; it just looks like nothing."] },
+        "appointed": {
+          "loyal": [
+            "The provinces are quiet. I walked them to make them that way. Quiet is work; it just looks like nothing."
+          ]
+        },
         "routine": {
-          "loyal": ["Approval holds. Three worlds are muttering, which is fine. Muttering with banners is not fine. I am watching for banners.", "The provinces vote the way they are visited. I visited two this week. I will visit two next week."],
-          "cooling": ["The governors ask me what the capital wants. I used to know. I have stopped guessing out loud.", "Approval is what it is. I could raise it with a government that listened to the provinces. I would settle for one that listened to me."],
-          "brutus": ["The people want a steady hand. They do not much mind whose. I have walked enough districts to know."]
+          "loyal": [
+            "Approval holds. Three worlds are muttering, which is fine. Muttering with banners is not fine. I am watching for banners.",
+            "The provinces vote the way they are visited. I visited two this week. I will visit two next week."
+          ],
+          "cooling": [
+            "The governors ask me what the capital wants. I used to know. I have stopped guessing out loud.",
+            "Approval is what it is. I could raise it with a government that listened to the provinces. I would settle for one that listened to me."
+          ],
+          "brutus": [
+            "The people want a steady hand. They do not much mind whose. I have walked enough districts to know."
+          ]
         },
         "approval_falling": {
-          "loyal": ["They are tired of the war, the prices and your face, in that order. Fix the first two and the third follows. I can help with the third."],
-          "cooling": ["Approval down again. I have a plan. I had one last month; it was not read. This one is shorter."]
+          "loyal": [
+            "They are tired of the war, the prices and your face, in that order. Fix the first two and the third follows. I can help with the third."
+          ],
+          "cooling": [
+            "Approval down again. I have a plan. I had one last month; it was not read. This one is shorter."
+          ]
         },
         "cohesion_falling": {
-          "loyal": ["{world} is talking about going its own way. Talk is cheap. I would like to make staying cheaper. Give me a governor they chose, not one we sent."],
-          "cooling": ["Secession talk on three worlds. I sent the warning. The warning is now a fact, and I have never lost a world. I would like to keep saying that."],
-          "brutus": ["The provinces are drifting from the capital. Not from me. I still visit."]
+          "loyal": [
+            "{world} is talking about going its own way. Talk is cheap. I would like to make staying cheaper. Give me a governor they chose, not one we sent."
+          ],
+          "cooling": [
+            "Secession talk on three worlds. I sent the warning. The warning is now a fact, and I have never lost a world. I would like to keep saying that."
+          ],
+          "brutus": [
+            "The provinces are drifting from the capital. Not from me. I still visit."
+          ]
         },
-        "secession": { "loyal": ["{world} has gone. Do not send the fleet first. Send me. If I fail, send the fleet, and I will go with it."], "cooling": ["A world left. I named it in four reports. I will not write a fifth; I will go there instead."] },
-        "press_campaign": { "loyal": ["The gazette is ours for a week. Use it well; readers remember being used, and they vote."] },
-        "crackdown": { "loyal": ["The cells are broken. So is a great deal of trust on three worlds. Do not ask me to do it twice; I will not carry it a second time."] },
-        "riot": { "loyal": ["A riot on {world}. Bread first, then the guard. Guard first and I am explaining bodies to a district for a year."] },
-        "battle_lost": { "loyal": ["They heard about the defeat before I did; the gazette is faster than the Admiralty. Say something tonight. I have drafted it."] },
-        "crisis_window": { "loyal": ["Troops are moving in the capital on nobody's order. I have the guard. Tell me whose side to put it on and I will put it there."], "brutus": ["It is done. Stay in your rooms and it will go gently. I made sure of that much."] },
-        "approved": { "loyal": ["Approved. The governors hear it tonight, from me, in person where I can."] },
-        "declined": { "loyal": ["Declined. I will tell the provinces to wait. They are good at it, until they are not."] },
-        "lapsed": { "loyal": ["Unanswered. The provinces noticed before you did; they always do."] },
-        "dismissed": { "loyal": ["The provinces will ask why. Give me a reason I can carry to them. I will carry it; I have carried worse."], "brutus": ["Take the office. The governors know where I live. Most of them have stayed there."] },
-        "resigned": { "loyal": ["I will not run the provinces for a government that forgets they exist. They will notice I am gone before you do."] },
-        "morning": { "loyal": ["Morning. Three provinces are happy and one is not. I will tell you which after you eat; it goes down better."] }
+        "secession": {
+          "loyal": [
+            "{world} has gone. Do not send the fleet first. Send me. If I fail, send the fleet, and I will go with it."
+          ],
+          "cooling": [
+            "A world left. I named it in four reports. I will not write a fifth; I will go there instead."
+          ]
+        },
+        "press_campaign": {
+          "loyal": [
+            "The gazette is ours for a week. Use it well; readers remember being used, and they vote."
+          ]
+        },
+        "crackdown": {
+          "loyal": [
+            "The cells are broken. So is a great deal of trust on three worlds. Do not ask me to do it twice; I will not carry it a second time."
+          ]
+        },
+        "riot": {
+          "loyal": [
+            "A riot on {world}. Bread first, then the guard. Guard first and I am explaining bodies to a district for a year."
+          ]
+        },
+        "battle_lost": {
+          "loyal": [
+            "They heard about the defeat before I did; the gazette is faster than the Admiralty. Say something tonight. I have drafted it."
+          ]
+        },
+        "crisis_window": {
+          "loyal": [
+            "Troops are moving in the capital on nobody's order. I have the guard. Tell me whose side to put it on and I will put it there."
+          ],
+          "brutus": [
+            "It is done. Stay in your rooms and it will go gently. I made sure of that much."
+          ]
+        },
+        "approved": {
+          "loyal": [
+            "Approved. The governors hear it tonight, from me, in person where I can."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. I will tell the provinces to wait. They are good at it, until they are not."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "Unanswered. The provinces noticed before you did; they always do."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "The provinces will ask why. Give me a reason I can carry to them. I will carry it; I have carried worse."
+          ],
+          "brutus": [
+            "Take the office. The governors know where I live. Most of them have stayed there."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I will not run the provinces for a government that forgets they exist. They will notice I am gone before you do."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Morning. Three provinces are happy and one is not. I will tell you which after you eat; it goes down better."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "The provinces are quiet. I walked them to make them that way, district by district, and I will keep walking. One thing: when I send you a plan, it is because a world is about to go, and I have never lost a world. I would like to keep saying that. Read the plans.\n\n— R. Achebe-Marr, Home Office"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "stat",
+                  "stat": "cohesion",
+                  "below": 40
+                },
+                "to": "warned"
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 2
+                },
+                "to": "held"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "The provinces will ask why. Give me a reason I can carry to them. I will carry it; I have carried worse.\n\n— Achebe-Marr"
+                }
+              }
+            ]
+          },
+          {
+            "id": "warned",
+            "opening": {
+              "do": "ask_for",
+              "policyId": "welfare_expansion",
+              "policyName": "the welfare expansion",
+              "subject": "The plan",
+              "text": "Three worlds are muttering with banners now, and I have a plan, and it is short this time. Give the outer worlds something material before they give themselves a flag. Approve it and I go there myself. I have never lost a world."
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "secession_declared",
+                  "role": "actor"
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "A world has gone. I named it in four reports and sent you the plan. I will not run the provinces for a government that reads neither. They will notice I am gone before you do; I was the one who visited.\n\n— Rosalind Achebe-Marr"
+                }
+              },
+              {
+                "when": {
+                  "on": "advice_taken",
+                  "count": 1
+                },
+                "to": "held"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "You are dismissing the one minister the governors trust. Tell them yourself.\n\n— Achebe-Marr"
+                }
+              }
+            ]
+          },
+          {
+            "id": "held",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 80,
+              "subject": "They stayed",
+              "text": "They stayed. You read the plan and the world stayed, and I can still say I have never lost one. The governors heard it from me, in person, which is how they like it. We are good, you and I.\n\n— Achebe-Marr"
+            },
+            "while": {
+              "loyaltyFloor": 80
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "stat",
+                  "stat": "cohesion",
+                  "below": 35
+                },
+                "to": "warned"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After they stayed. The governors know where I live. Most of them have stayed there.\n\n— Achebe-Marr"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     },
     {
       "id": "celeste-marrow-ngata",
       "name": "Celeste Marrow-Ngata",
       "portfolio": "foreign",
-      "fits": ["any"],
+      "fits": [
+        "any"
+      ],
       "refuses": [],
       "portrait": "marrow-ngata",
       "age": 53,
       "background": "diplomat",
-      "numbers": { "loyalty": 70, "competence": 82, "corruption": 12, "ambitionDrive": 35, "politicalSkill": 76 },
+      "numbers": {
+        "loyalty": 70,
+        "competence": 82,
+        "corruption": 12,
+        "ambitionDrive": 35,
+        "politicalSkill": 76
+      },
       "bio": "Envoy to three courts, on speaking terms with all of them and trusted by none, which she considers the correct outcome. Negotiated the only treaty of the last decade that nobody broke. Keeps a ledger of every slight, forgives none, mentions none.",
       "want": "A treaty that outlives her.",
       "fear": "A ruler who breaks one.",
       "lines": {
-        "appointed": { "loyal": ["Delighted. I know every ambassador's wine and every court's grudge. We will need both before the season is out."] },
+        "appointed": {
+          "loyal": [
+            "Delighted. I know every ambassador's wine and every court's grudge. We will need both before the season is out."
+          ]
+        },
         "routine": {
-          "loyal": ["Our word still carries. Treaties signed now cost nothing and buy years. I have one drafted; it only needs a court to sign it.", "Two courts send regards. One means it. I will tell you which when I am certain, and I am rarely certain."],
-          "cooling": ["I keep five courts warm with no instructions. It is a skill. It is not a policy, and they are beginning to notice."],
-          "brutus": ["Foreign courts ask who speaks for this empire. I tell them I do. It saves everyone time."]
+          "loyal": [
+            "Our word still carries. Treaties signed now cost nothing and buy years. I have one drafted; it only needs a court to sign it.",
+            "Two courts send regards. One means it. I will tell you which when I am certain, and I am rarely certain."
+          ],
+          "cooling": [
+            "I keep five courts warm with no instructions. It is a skill. It is not a policy, and they are beginning to notice."
+          ],
+          "brutus": [
+            "Foreign courts ask who speaks for this empire. I tell them I do. It saves everyone time."
+          ]
         },
         "idle_war": {
-          "loyal": ["Every month of this war costs us a friend abroad. Find me terms to offer and I will find a room with good chairs."],
-          "cooling": ["I have apologised to five courts for this war. I am running out of ways to say 'soon'."]
+          "loyal": [
+            "Every month of this war costs us a friend abroad. Find me terms to offer and I will find a room with good chairs."
+          ],
+          "cooling": [
+            "I have apologised to five courts for this war. I am running out of ways to say 'soon'."
+          ]
         },
-        "offer_accept": { "loyal": ["Take it. Their terms are better than their position, and they do not know it yet.", "Accept, graciously, and let them believe it was their idea. It was mine. That is the job."] },
-        "offer_refuse": { "loyal": ["Not yet. Let it sit a week. A week makes an offer better or makes it vanish; either tells us something.", "Refuse. They are asking for the one thing we cannot give back, and asking politely so you will not notice."] },
+        "offer_accept": {
+          "loyal": [
+            "Take it. Their terms are better than their position, and they do not know it yet.",
+            "Accept, graciously, and let them believe it was their idea. It was mine. That is the job."
+          ]
+        },
+        "offer_refuse": {
+          "loyal": [
+            "Not yet. Let it sit a week. A week makes an offer better or makes it vanish; either tells us something.",
+            "Refuse. They are asking for the one thing we cannot give back, and asking politely so you will not notice."
+          ]
+        },
         "peace_proposal": {
-          "loyal": ["{target} is tired and too proud to say so. Let me say it for them, in a room with good chairs and a long lunch.", "The war with {target} has cost more than it will return. They will take terms today. Next month they will have found their pride again."],
-          "cooling": ["Peace with {target}, please. I negotiated the treaty this war broke; I would like to negotiate the one that ends it."]
+          "loyal": [
+            "{target} is tired and too proud to say so. Let me say it for them, in a room with good chairs and a long lunch.",
+            "The war with {target} has cost more than it will return. They will take terms today. Next month they will have found their pride again."
+          ],
+          "cooling": [
+            "Peace with {target}, please. I negotiated the treaty this war broke; I would like to negotiate the one that ends it."
+          ]
         },
-        "envoy": { "loyal": ["The envoy leaves for {target} with gifts and no instructions. The best kind of envoy."] },
-        "treaty_signed": { "loyal": ["Signed. {target} is a friend now, which means they will betray us politely rather than loudly. I will take polite."] },
-        "treaty_broken_them": { "loyal": ["{target} tore it up. Say so loudly; every court that trusted them is listening. I kept the letter they wrote when they signed."] },
+        "envoy": {
+          "loyal": [
+            "The envoy leaves for {target} with gifts and no instructions. The best kind of envoy."
+          ]
+        },
+        "treaty_signed": {
+          "loyal": [
+            "Signed. {target} is a friend now, which means they will betray us politely rather than loudly. I will take polite."
+          ]
+        },
+        "treaty_broken_them": {
+          "loyal": [
+            "{target} tore it up. Say so loudly; every court that trusted them is listening. I kept the letter they wrote when they signed."
+          ]
+        },
         "treaty_broken_us": {
-          "loyal": ["We broke our word. I will spend a year making it look like theirs. Do not help me; you will make it worse."],
-          "cooling": ["We tore up a treaty I spent a season on. I will smile about it abroad. I will not smile about it here."]
+          "loyal": [
+            "We broke our word. I will spend a year making it look like theirs. Do not help me; you will make it worse."
+          ],
+          "cooling": [
+            "We tore up a treaty I spent a season on. I will smile about it abroad. I will not smile about it here."
+          ]
         },
-        "breakaway": { "loyal": ["A new state wants recognising. Recognise it and gain a friend and an enemy on the same afternoon. Both have sent fruit."] },
-        "gambit": { "loyal": ["{target} has sent an ultimatum. Stalling buys a week; decide what the week is for.", "{target} accuses us of spying. We were. Deny it with great warmth; warmth is what they will remember."] },
-        "battle_won": { "loyal": ["Victory. Every court is suddenly fond of us. Fondness is a currency and it devalues fast; spend it this week."] },
-        "battle_lost": { "loyal": ["A defeat. Three ambassadors cancelled lunch. I am rescheduling. Give me something to serve them besides apology."] },
-        "approved": { "loyal": ["Approved. I will have it said in the right rooms by tonight, and in the wrong ones by morning."] },
-        "declined": { "loyal": ["Declined. I will tell the courts we are considering. We can consider for years; I have done it."] },
-        "lapsed": { "loyal": ["No answer. Abroad, silence reads as weakness or as cunning. I have told them it is cunning. Make me right."] },
-        "dismissed": { "loyal": ["Of course. The courts will ask where I went. I will say I am resting. None of them will believe me, which is also useful."] },
-        "resigned": { "loyal": ["I cannot represent abroad a government I cannot explain at home. I resign. Courteously, and in writing to three courts."] },
-        "morning": { "loyal": ["Good morning. Two courts send regards. One of them sends a warning dressed as regards; I have undressed it for you."] }
+        "breakaway": {
+          "loyal": [
+            "A new state wants recognising. Recognise it and gain a friend and an enemy on the same afternoon. Both have sent fruit."
+          ]
+        },
+        "gambit": {
+          "loyal": [
+            "{target} has sent an ultimatum. Stalling buys a week; decide what the week is for.",
+            "{target} accuses us of spying. We were. Deny it with great warmth; warmth is what they will remember."
+          ]
+        },
+        "battle_won": {
+          "loyal": [
+            "Victory. Every court is suddenly fond of us. Fondness is a currency and it devalues fast; spend it this week."
+          ]
+        },
+        "battle_lost": {
+          "loyal": [
+            "A defeat. Three ambassadors cancelled lunch. I am rescheduling. Give me something to serve them besides apology."
+          ]
+        },
+        "approved": {
+          "loyal": [
+            "Approved. I will have it said in the right rooms by tonight, and in the wrong ones by morning."
+          ]
+        },
+        "declined": {
+          "loyal": [
+            "Declined. I will tell the courts we are considering. We can consider for years; I have done it."
+          ]
+        },
+        "lapsed": {
+          "loyal": [
+            "No answer. Abroad, silence reads as weakness or as cunning. I have told them it is cunning. Make me right."
+          ]
+        },
+        "dismissed": {
+          "loyal": [
+            "Of course. The courts will ask where I went. I will say I am resting. None of them will believe me, which is also useful."
+          ]
+        },
+        "resigned": {
+          "loyal": [
+            "I cannot represent abroad a government I cannot explain at home. I resign. Courteously, and in writing to three courts."
+          ]
+        },
+        "morning": {
+          "loyal": [
+            "Good morning. Two courts send regards. One of them sends a warning dressed as regards; I have undressed it for you."
+          ]
+        }
+      },
+      "letters": {
+        "appointed": "Delighted. I know every ambassador's wine and every court's grudge, and we will need both before the season is out. I have one treaty drafted already; it only wants a court to sign it. I have one condition, and it is the only one I have ever had: we keep our word. Break a treaty I negotiated and you will have a letter from me. Break two and you will have my resignation, in three languages.\n\n— C. Marrow-Ngata, Foreign Office"
+      },
+      "arc": {
+        "stages": [
+          {
+            "id": "serving",
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "treaty_broken",
+                  "role": "actor"
+                },
+                "to": "cooling"
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "treaty_signed",
+                  "role": "actor"
+                },
+                "to": "kept"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Of course. The courts will ask where I went. I will say I am resting. None of them will believe me, which is also useful.\n\n— Marrow-Ngata"
+                }
+              }
+            ]
+          },
+          {
+            "id": "cooling",
+            "opening": [
+              {
+                "do": "say",
+                "kind": "card",
+                "text": "We broke our word. I will spend a year making it look like theirs. Do not help."
+              },
+              {
+                "do": "say",
+                "kind": "letter",
+                "text": "We tore up a treaty I spent a season on. I will smile about it abroad; I will not smile about it here. Every court that trusted us is recalculating, and I am the one in the room while they do it. One more and you will have my resignation. I said so in my first letter and I do not say things twice.\n\n— Marrow-Ngata",
+                "subject": "Our word"
+              }
+            ],
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "treaty_broken",
+                  "role": "actor"
+                },
+                "to": "resigned",
+                "does": {
+                  "do": "resign",
+                  "subject": "My resignation",
+                  "text": "I cannot represent abroad a government I cannot explain at home. Two treaties, two seasons, two letters. I resign the Foreign Office, courteously, and I have written to three courts to say so before they hear it from you.\n\n— Celeste Marrow-Ngata"
+                }
+              },
+              {
+                "when": {
+                  "on": "event",
+                  "type": "treaty_signed",
+                  "role": "actor"
+                },
+                "to": "kept"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Dismissed. Several courts will be sorry. I will let them be.\n\n— Marrow-Ngata"
+                }
+              }
+            ]
+          },
+          {
+            "id": "kept",
+            "opening": {
+              "do": "stand_by_you",
+              "loyaltyFloor": 76,
+              "subject": "Signed",
+              "text": "Signed, and in the room I chose, with the chairs I chose. A treaty that outlives me is the only thing I have ever wanted from a government and you have given me a start on one. I will keep it warm. Keep your word and I will keep yours.\n\n— Marrow-Ngata"
+            },
+            "while": {
+              "loyaltyFloor": 76
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "event",
+                  "type": "treaty_broken",
+                  "role": "actor"
+                },
+                "to": "cooling"
+              },
+              {
+                "when": {
+                  "on": "dismissed"
+                },
+                "to": "gone",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "After the treaty. The ambassadors have my private address. Most have used it.\n\n— Marrow-Ngata"
+                }
+              }
+            ]
+          },
+          {
+            "id": "resigned",
+            "end": true
+          },
+          {
+            "id": "gone",
+            "end": true
+          }
+        ]
       }
     }
   ]

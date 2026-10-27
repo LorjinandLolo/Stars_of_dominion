@@ -131,6 +131,11 @@ export function resetChronicleBuffer(): void {
  * record() calls that land during the write belong to the next batch, not this
  * one. Returns the drained rows and how many were dropped to the cap.
  */
+/** The cycle's rows as they stand, for a reader that runs before the flush (the character arcs). */
+export function peekBuffer(): readonly ChronicleRow[] {
+    return buffer;
+}
+
 export function drainBuffer(): { rows: ChronicleRow[]; dropped: number } {
     const rows = buffer;
     const dropped = droppedSinceLastFlush;

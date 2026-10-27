@@ -297,7 +297,7 @@ export function tickCabinets(world: GameWorldState, deltaSeconds: number): void 
     }
 }
 
-function resignMinister(
+export function resignMinister(
     world: GameWorldState,
     gov: GovernmentState,
     portfolio: CabinetPortfolio,
@@ -439,7 +439,8 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
         // The minister says it in their own voice when the sheet has a line for
         // this moment; the plain sentence stays as the fallback.
         const register = registerOf(minister, plotting(minister.id));
-        const voiced = ministerLine(portfolio, hook, register, vars, seedOf(factionId, portfolio, hook, week), minister.characterId);
+        // A written character's arc may have fixed what they say this stage.
+        const voiced = (minister as any).arc?.cardLine ?? ministerLine(portfolio, hook, register, vars, seedOf(factionId, portfolio, hook, week), minister.characterId);
 
         out.push({
             portfolio,

@@ -24,6 +24,7 @@ import type { SecessionCrisis } from './government/secession-types';
 import type { EmpireDoctrines } from './doctrine/types';
 import type { DelegationState } from './delegation/delegation-types';
 import type { AdvisorRecord } from './delegation/advisor-proposals';
+import type { MinisterLetter } from './government/letters';
 import type { Plot, SeatNote } from './government/plot-view';
 import type { CoupCrisis } from './government/crisis-view';
 import type { PendingCrisisOutcome } from './government/crisis';
@@ -248,6 +249,13 @@ export interface GameWorldState {
      * like `delegation`; never the shared snapshot.
      */
     advisors?: Map<string, AdvisorRecord>;
+
+    /**
+     * Letters from a ruler's written ministers (lib/government/letters.ts,
+     * the named cabinet). The ruler's private post: rides their shard, never
+     * the shared snapshot, and a seat holder does not read it.
+     */
+    ministerLetters?: Map<string, MinisterLetter[]>;
 
     /**
      * Ministers' plots against their rulers (lib/government/plots.ts), keyed

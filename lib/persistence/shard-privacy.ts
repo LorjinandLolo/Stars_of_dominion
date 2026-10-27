@@ -192,13 +192,15 @@ export interface ShardAccess {
  */
 export function scrubForRole(shard: any, access?: ShardAccess): any {
     if (!shard || typeof shard !== 'object') return shard;
-    if (!Array.isArray(shard.plots) && !shard.seatNotes) return shard;
+    if (!Array.isArray(shard.plots) && !shard.seatNotes && !shard.ministerLetters) return shard;
     const out = { ...shard };
     if (!access || access.role === 'ruler' || !access.seatId) {
         delete out.plots;
         delete out.seatNotes;
         return out;
     }
+    // The ruler's letters from their ministers are the ruler's.
+    delete out.ministerLetters;
     const me = `seat-${access.seatId}`;
     // The worker's private word to THIS seat only.
     out.seatNotes = shard.seatNotes?.[access.seatId] ? { [access.seatId]: shard.seatNotes[access.seatId] } : {};

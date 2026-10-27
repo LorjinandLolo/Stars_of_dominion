@@ -26,6 +26,7 @@ import type { CabinetPortfolio } from '@/lib/government/types';
 import type {
     BriefAction,
     BriefAdvisorLine,
+    BriefLetter,
     BriefDeadline,
     BriefDecision,
     BriefLine,
@@ -96,6 +97,7 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
     const happened = collectHappened(input, since, now);
     const decisions = collectDecisions(input, nowSeconds, now);
     const advisors = collectAdvisorLedger(input, since, now);
+    const letters = collectLetters(input, since, now);
     const suggestion = pickSuggestion(input);
 
     return {
@@ -107,9 +109,10 @@ export function buildDailyBrief(input: BriefInput): DailyBrief {
         happened,
         decisions,
         advisors,
+        letters,
         suggestion,
         nextTickInSeconds: realSecondsToNextTick(nowSeconds),
-        empty: messages.length === 0 && happened.length === 0 && decisions.length === 0 && advisors.length === 0,
+        empty: messages.length === 0 && happened.length === 0 && decisions.length === 0 && advisors.length === 0 && letters.length === 0,
     };
 }
 
@@ -148,6 +151,22 @@ function advisorProposals(input: BriefInput, nowSeconds: number): BriefDecision[
             ],
         };
     });
+}
+
+const MAX_LETTERS_SHOWN = 4;
+
+/** Letters from written ministers in the window, newest first (lib/government/letters.ts). */
+export function collectLetters(input: BriefInput, since: Date, now: Date): BriefLetter[] {
+    const nowSeconds = Number(input.world?.nowSeconds ?? 0);
+    const all: any[] = input.world?.ministerLetters?.get?.(input.factionId) ?? [];
+    const out: BriefLetter[] = [];
+    for (const l of [...all].reverse()) {
+        const at = realDateFor(l.atSeconds, nowSeconds, now);
+        if (at < since) break;
+        out.push({ id: l.id, from: l.fromName, portfolio: l.portfolio, characterId: l.characterId, subject: l.subject, body: l.body, at: at.toISOString() });
+        if (out.length >= MAX_LETTERS_SHOWN) break;
+    }
+    return out;
 }
 
 /** What the advisors did in the window, newest first; a few lines at most. */

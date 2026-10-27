@@ -289,6 +289,30 @@ export default function DailyBrief() {
                             </section>
                         )}
 
+                        {/* ── Letters from the cabinet ─────────────────── */}
+                        {(brief.letters?.length ?? 0) > 0 && (
+                            <section id="brief-letters">
+                                <h3 className="text-[10px] font-display uppercase tracking-[0.2em] text-slate-500 mb-3">
+                                    Letters
+                                </h3>
+                                <div className="space-y-3">
+                                    {brief.letters.map(letter => (
+                                        <div key={letter.id} className="brief-letter rounded-xl border border-amber-500/20 bg-amber-950/10 p-4">
+                                            <div className="flex items-start justify-between gap-3 mb-1.5">
+                                                <p className="text-[10px] font-mono text-amber-200/90">{letter.from} · {letter.portfolio}</p>
+                                                <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap">{whenLine(letter.at)}</span>
+                                            </div>
+                                            <p className="text-[11px] font-display uppercase tracking-wide text-slate-300 mb-2">{letter.subject}</p>
+                                            {/* A text node: the letter is shown as written. */}
+                                            <p className="text-sm text-slate-100 leading-relaxed whitespace-pre-wrap break-words">
+                                                {letter.body}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
                         {/* ── What happened ─────────────────────────────── */}
                         {brief.happened.length > 0 && (
                             <section>

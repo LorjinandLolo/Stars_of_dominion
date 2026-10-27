@@ -18,6 +18,8 @@
 
 import type { GameWorldState } from '../game-world-state';
 import type { Leader } from './types';
+import type { Arc } from '../government/arcs';
+import { pushLetter } from '../government/letters';
 import { generateLeader } from './leader-generator';
 import { CABINET_PORTFOLIOS, type CabinetPortfolio } from '../government/types';
 import castData from '../../data/leaders/cabinet-cast.json';
@@ -42,6 +44,10 @@ export interface CabinetCharacter {
     fear: string;
     /** hook → register → sentences; tried before the office persona's lines. */
     lines: Record<string, Partial<Record<'loyal' | 'cooling' | 'brutus' | 'venal', string[]>>>;
+    /** Letters with their name on them: `appointed` goes in the first brief. */
+    letters?: { appointed?: string };
+    /** Their arc (lib/government/arcs.ts); none means they only talk. */
+    arc?: Arc;
 }
 
 export const CAST: readonly CabinetCharacter[] = (castData as unknown as { characters: CabinetCharacter[] }).characters;
@@ -148,6 +154,9 @@ export function drawCast(world: GameWorldState, factionId: string): CastDrawRepo
             current.status = 'retired';
             current.leftOfficeAtSeconds = world.nowSeconds;
             current.history.push({ timestamp: world.nowSeconds, description: `Stood aside for ${c.name}.` });
+        }
+        if (c.letters?.appointed) {
+            pushLetter(world as any, factionId, { fromLeaderId: leader.id, fromName: c.name, portfolio, characterId: c.id, subject: `On taking the ${portfolio} brief`, body: c.letters.appointed });
         }
         report.seated.push({ portfolio, characterId: c.id, displacedLeaderId: current?.id });
     }

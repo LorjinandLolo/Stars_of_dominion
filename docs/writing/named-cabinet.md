@@ -433,6 +433,15 @@ and `tickCabinets`, `characterOf`, `world.cast` records the draw), the voice
 lookup in `minister-voices.ts`, probe `scripts/cast-probe.ts`. Displaced
 generated ministers retire rather than entering the pool.
 
+Step 2 landed 2026-10-27: `lib/government/arcs.ts` (the runner, called from the
+worker right before the chronicle flush with `peekBuffer()`, so each cycle's
+events are read once; triggers event / stat / advice_ignored / advice_taken /
+dismissed / day; actions say (letter or card line) / resign / ask_for /
+stand_by_you), `lib/government/letters.ts` (`world.ministerLetters`, shard only,
+scrubbed for seats, the brief's Letters section), arcs and appointment letters
+on all six characters. Offices that share the 'government' delegated system
+count only proposals made in their own name. Probe `scripts/arc-probe.ts`.
+
 1. Data shape, the cast file with six characters (one per office), the
    draw, `characterOf`, the voice lookup. The card and proposals show
    written people. One day.

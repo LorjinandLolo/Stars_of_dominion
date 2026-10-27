@@ -90,6 +90,19 @@ export interface BriefMessage {
 }
 
 /** One line of what the advisors did (or were told), newest first. */
+/** A letter from a written minister (lib/government/letters.ts): text with a name on it, no buttons. */
+export interface BriefLetter {
+    id: string;
+    from: string;
+    portfolio: string;
+    characterId?: string;
+    subject: string;
+    /** Plain text. Render as text, never as markup. */
+    body: string;
+    /** ISO timestamp, real clock. */
+    at: string;
+}
+
 export interface BriefAdvisorLine {
     id: string;
     text: string;
@@ -122,6 +135,8 @@ export interface DailyBrief {
     decisions: BriefDecision[];
     /** What the advisors did since the last brief (the veto feed's ledger). */
     advisors: BriefAdvisorLine[];
+    /** Letters from written ministers in the window, newest first. */
+    letters: BriefLetter[];
     suggestion: BriefSuggestion | null;
     /** Real seconds until the next strategic tick. */
     nextTickInSeconds: number;

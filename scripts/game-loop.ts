@@ -7,6 +7,8 @@ import { ensureLaneGraph } from '../lib/movement/lane-graph';
 import { runStrategicTick } from '../lib/time/tick-processor';
 import * as chronicle from '../lib/narrative/chronicle';
 import { flushChronicle } from '../lib/narrative/chronicle-flush';
+import { peekBuffer } from '../lib/narrative/chronicle';
+import { runCharacterArcs } from '../lib/government/arcs';
 import { bufferWorkerEvent, flushWorkerTelemetry } from '../lib/telemetry/telemetry-store';
 import { TechEngine } from '../lib/tech/engine';
 import { hasTechFlag } from '../lib/tech/flags';
@@ -1280,6 +1282,12 @@ async function runGameTick() {
         // show. A failed flush keeps its rows buffered and retries next cycle;
         // the chronicle is allowed to lag, never to lie. See
         // docs/narrative-system/README.md, Invariant 2.
+        // The written ministers read the cycle's events before they are flushed
+        // (lib/government/arcs.ts): one look at each event, never two. What they
+        // do lands in the next snapshot.
+        try {
+            for (const r of runCharacterArcs(world, [...peekBuffer()])) console.log(`[Cast] ${r.name} (${r.factionId}): ${r.from} → ${r.to}${r.did.length ? ` (${r.did.join(', ')})` : ''}`);
+        } catch (e: any) { console.error('[Tick Worker] character arcs failed:', e?.message ?? e); }
         const eventsWritten = await flushChronicle();
         // How players are getting on: orders the worker refused this cycle.
         await flushWorkerTelemetry();
