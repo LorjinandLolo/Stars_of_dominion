@@ -135,7 +135,7 @@ const EXPLORATION: TutorialStep[] = [
     {
         id: 'explore-ship',
         title: 'Exploration Ships',
-        body: 'You start with one. Pick it in this fleet bar, click a star next door, and it flies there and surveys on arrival: no ping, no scan, no fee. Steer clear of Corsair Dens and pirate stations; it is unarmed. Want more? Lay another down at any world with a shipyard.',
+        body: 'You start with one. Pick it in this fleet bar, click a star next door, and it flies there and surveys on arrival: no ping, no scan, no fee. Corsair Dens are safe to survey: pirates raid trade lanes, not passing ships. Want more? Lay another down at any world with a shipyard.',
         targetElementId: 'fleet-command-bar',
         category: 'galaxy',
     },

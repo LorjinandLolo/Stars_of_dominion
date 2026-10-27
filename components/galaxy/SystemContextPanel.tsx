@@ -1368,6 +1368,29 @@ function SystemContextPanel() {
                                 </div>
                             )}
 
+                            {/* Pirate ground: say what it means, because the red star alone reads as "keep out".
+                                Pirates raid trade lanes and convoys (lib/piracy/raid-service.ts); nothing in
+                                combat makes them fight a visiting fleet, so this is a note, not a warning. */}
+                            {revealStage !== 'unknown' && (system.tags.includes('corsair_den') || system.tags.includes('pirate_station')) && (
+                                <div id="pirate-ground-note" className="flex items-start gap-2 p-2.5 rounded-lg bg-red-950/30 border border-red-800/40">
+                                    <AlertOctagon size={14} className="text-red-400 shrink-0 mt-0.5" />
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-display tracking-widest text-red-300">
+                                            {system.tags.includes('pirate_station') ? 'PIRATE STATION' : 'CORSAIR DEN'}
+                                        </p>
+                                        <p className="text-[11px] text-slate-300 leading-snug">
+                                            {system.tags.includes('pirate_station')
+                                                ? 'A pirate band’s fortified base, where its raiders come home to repair.'
+                                                : 'Lawless ground where pirate crews rest and repair between raids.'}
+                                            {' '}They prey on trade lanes and convoys, not on ships passing through: your fleets can travel, survey and stay here.
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 leading-snug">
+                                            A fleet parked here makes raids launched from this system harder.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Traits — the owner moved up into the header */}
                             {system.tags.length > 0 && revealStage !== 'unknown' && (
                                 <div>

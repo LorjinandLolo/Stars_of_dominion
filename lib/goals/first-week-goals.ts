@@ -423,8 +423,9 @@ function surveyTarget(world: WorldLike, factionId: string): string | undefined {
     // An exploration ship surveys where it arrives (lib/exploration/
     // exploration-service.ts autoSurveyOnArrival), so the best suggestion is
     // the NEAREST system not yet surveyed, walked out from the capital by
-    // hyperlane, and never a pirate haven: the first pick used to be whatever
-    // charted system came first, and sent new explorers into a Corsair Den.
+    // hyperlane. Pirate ground is skipped for a first suggestion: it is not
+    // dangerous to a visiting ship (pirates raid lanes, lib/piracy/raid-service.ts),
+    // but a red lawless star is a poor first lesson; any system can still be chosen.
     const systems = world?.movement?.systems;
     const get = (id: string) => systems?.get?.(id) ?? systems?.[id];
     const dangerous = (id: string) => {
