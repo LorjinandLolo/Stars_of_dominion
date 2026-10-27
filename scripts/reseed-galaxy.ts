@@ -7,7 +7,7 @@
 //
 // Cleared: the worker lease, the written history (chronicle, articles, feuds,
 // gazette front pages), messages between empires, invite links (they point
-// at the inviter's old empire), old manual saves, and (unless --keep-claims)
+// at the inviter's old empire), cabinet seats, old manual saves, and (unless --keep-claims)
 // every faction claim. push-init-state.ts then clears shards and orders and
 // overwrites the snapshot.
 //
@@ -43,6 +43,8 @@ async function main(): Promise<void> {
         c.gazettes = (await tx.gazette.deleteMany()).count;
         c.messages = (await tx.empireMessage.deleteMany()).count;
         c.invites = (await tx.invite.deleteMany()).count;
+        // Cabinet seats name a friend as minister of an empire in the OLD galaxy.
+        c.seats = (await tx.factionSeat.deleteMany()).count;
         c.saves = (await tx.gameSave.deleteMany()).count;
         if (!keepClaims) c.claims = (await tx.playerProfile.deleteMany()).count;
         if (dropDev) {
