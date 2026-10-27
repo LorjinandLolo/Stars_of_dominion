@@ -15,7 +15,7 @@ import { RNG } from '@/lib/trade-system/rng';
 import { fireNotification } from '@/lib/time/notification-hooks';
 import { getGovernment } from './government-service';
 import { refillRecruitmentPool } from './succession-service';
-import { isFactionAtWar } from './cohesion-service';
+import { isFactionAtWar, weakestWorlds } from './cohesion-service';
 import { isDelegated } from '@/lib/delegation/delegation-service';
 import { espionagePressureOn } from '@/lib/espionage/pressure';
 import { adminStatus } from './admin-capacity';
@@ -428,6 +428,10 @@ export function generateCabinetAdvice(world: GameWorldState, factionId: string):
                 } else if ((gov.cohesion ?? 100) < 40) {
                     advice = 'The outer worlds are drifting. Give them a reason to stay before they find one to go.';
                     hook = 'cohesion_falling';
+                    // The minister names the world that is nearest to going.
+                    const weakest = weakestWorlds(world, factionId, 1)[0];
+                    const name = weakest ? (world.construction?.planets?.get?.(weakest.planetId) as any)?.name : undefined;
+                    if (name) vars.world = name;
                 } else {
                     advice = 'Stability holds. Spend that credit on reform while it is worth something.';
                     suggestedPolicyId = 'civil_reforms';

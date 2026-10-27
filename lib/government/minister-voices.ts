@@ -343,7 +343,9 @@ const CHARACTER_LINES: Record<string, Record<string, Partial<Record<Register, st
 export type Vars = Partial<Record<'target' | 'world' | 'portfolio', string>>;
 
 function fill(line: string, vars: Vars): string {
-    return line.replace(/\{(target|world|portfolio)\}/g, (_, k: keyof Vars) => vars[k] ?? (k === 'target' ? 'them' : k === 'world' ? 'the world' : 'that office'));
+    const out = line.replace(/\{(target|world|portfolio)\}/g, (_, k: keyof Vars) => vars[k] ?? (k === 'target' ? 'them' : k === 'world' ? 'the world' : 'that office'));
+    // A fallback at the start of a sentence still starts the sentence.
+    return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
 /** Deterministic pick: the same seed gives the same line, so a card does not flicker between syncs. */
