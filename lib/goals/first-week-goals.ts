@@ -420,11 +420,40 @@ function stageOf(entry: any): string | undefined {
 /** A system this faction has scanned but not surveyed — the next thing to chart. */
 function surveyTarget(world: WorldLike, factionId: string): string | undefined {
     const vis = visibilityOf(world, factionId);
-    for (const [systemId, entry] of Object.entries(vis)) {
-        if (stageOf(entry) === 'scanned') return systemId;
+    // An exploration ship surveys where it arrives (lib/exploration/
+    // exploration-service.ts autoSurveyOnArrival), so the best suggestion is
+    // the NEAREST system not yet surveyed, walked out from the capital by
+    // hyperlane, and never a pirate haven: the first pick used to be whatever
+    // charted system came first, and sent new explorers into a Corsair Den.
+    const systems = world?.movement?.systems;
+    const get = (id: string) => systems?.get?.(id) ?? systems?.[id];
+    const dangerous = (id: string) => {
+        const tags: string[] = [...(get(id)?.tags ?? []), ...(vis[id]?.visibleTags ?? [])];
+        return tags.includes('corsair_den') || tags.includes('pirate_station');
+    };
+    const home = capitalPlanet(world, factionId).systemId;
+    if (home && get(home)) {
+        const seen = new Set<string>([home]);
+        let frontier = [home];
+        for (let hop = 0; hop < 6 && frontier.length; hop++) {
+            const next: string[] = [];
+            for (const id of frontier) {
+                for (const n of get(id)?.hyperlaneNeighbors ?? []) {
+                    if (seen.has(n)) continue;
+                    seen.add(n);
+                    next.push(n);
+                }
+            }
+            const pick = next.filter(id => stageOf(vis[id]) !== 'surveyed' && !dangerous(id)).sort()[0];
+            if (pick) return pick;
+            frontier = next;
+        }
     }
     for (const [systemId, entry] of Object.entries(vis)) {
-        if (stageOf(entry) === 'pinged') return systemId;
+        if (stageOf(entry) === 'scanned' && !dangerous(systemId)) return systemId;
+    }
+    for (const [systemId, entry] of Object.entries(vis)) {
+        if (stageOf(entry) === 'pinged' && !dangerous(systemId)) return systemId;
     }
     return undefined;
 }

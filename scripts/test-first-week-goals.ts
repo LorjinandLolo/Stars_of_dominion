@@ -12,7 +12,7 @@ import { bumpMetric } from '../lib/tech/history-ledger';
 import { DEED_POLICIES_PROPOSED, DEED_RESEARCH_STARTED, DEED_SHIPS_COMMISSIONED, DEED_TROOPS_RAISED } from '../lib/tech/deed-metrics';
 import { PANEL_TIPS } from '../lib/tutorial/panel-tips';
 import { MANUAL_DATA } from '../lib/manual/manual-data';
-import { FIRST_WEEK_GOALS, currentGoal, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
+import { FIRST_WEEK_GOALS, currentGoal, deepLinkFor, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
 
 let passed = 0;
 let failed = 0;
@@ -166,6 +166,19 @@ test('next steps advance on a policy, on troops, on an outpost, and on holding t
     assert.deepStrictEqual(done.map(a => a.completed.id), ['three_worlds']);
     assert.strictEqual(done[0].next, null);
     assert.strictEqual(currentGoal(world, F), null);
+});
+
+test('the survey goal points at the nearest unsurveyed system, never a pirate den', () => {
+    const w = freshWorld();
+    // home -- den (corsair_den) -- far ; home -- quiet -- beyond
+    const sys = (id: string, n: string[], tags: string[] = []) => w.movement.systems.set(id, { id, name: id, tags, hyperlaneNeighbors: n });
+    sys('home', ['den', 'quiet']); sys('den', ['home', 'far'], ['corsair_den']); sys('quiet', ['home', 'beyond']); sys('far', ['den']); sys('beyond', ['quiet']);
+    w.economy.factions.set(F, { capitalSystemId: 'home' });
+    w.construction.planets.set('p-home', { id: 'p-home', ownerId: F, systemId: 'home' });
+    w.movement.factionVisibility = new Map([[F, { home: { revealStage: 'surveyed' } }]]);
+    assert.strictEqual(deepLinkFor(w, F, 'survey_three').selectSystemId, 'quiet', 'nearest, not the den');
+    w.movement.factionVisibility.get(F).quiet = { revealStage: 'surveyed' };
+    assert.strictEqual(deepLinkFor(w, F, 'survey_three').selectSystemId, 'beyond', 'one jump further once the next door is done');
 });
 
 test('every panel tip is short, and research has one that points at the first project and Pick a path', () => {

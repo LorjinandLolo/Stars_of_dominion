@@ -112,7 +112,7 @@ const EXPLORATION: TutorialStep[] = [
     {
         id: 'explore-intro',
         title: 'Exploring the Stars',
-        body: 'Beyond your home the galaxy is dark. Each system is revealed in three steps: PING charts the star, SCAN shows what orbits it, SURVEY maps its worlds and says which can be settled. Only surveyed worlds can be settled.',
+        body: 'Beyond your home the galaxy is dark, and only surveyed worlds can be settled. The quick way: send your exploration ship to a nearby system. The moment it arrives it surveys the system, for free, and you get a notice when its worlds are mapped (a few minutes).',
         targetElementId: null,
         category: 'galaxy',
         requiredTab: 'galaxy',
@@ -128,14 +128,14 @@ const EXPLORATION: TutorialStep[] = [
     {
         id: 'explore-action',
         title: 'Ping, Scan, Survey',
-        body: 'The button here always offers the next step. A ping needs no ship: it is bounced from your nearest shipyard and costs more the further it goes. A scan or survey needs one of your fleets in the system or one jump away, and takes a few minutes.',
+        body: 'Without an exploration ship, this button offers the next step. PING charts a far star in seconds, with no ship, so you can see what it is and plan a route; it never shows worlds, and costs more the further it goes. SCAN and SURVEY need a fleet in the system or one jump away, cost credits, and take a few minutes.',
         targetElementId: 'explore-action',
         category: 'galaxy',
     },
     {
         id: 'explore-ship',
         title: 'Exploration Ships',
-        body: 'An exploration ship scans and surveys twice as fast, from two jumps away. Lay one down at any world with a shipyard (the QUICK build list on your home world suggests it), then send it outward from this fleet bar.',
+        body: 'You start with one. Pick it in this fleet bar, click a star next door, and it flies there and surveys on arrival: no ping, no scan, no fee. Steer clear of Corsair Dens and pirate stations; it is unarmed. Want more? Lay another down at any world with a shipyard.',
         targetElementId: 'fleet-command-bar',
         category: 'galaxy',
     },
