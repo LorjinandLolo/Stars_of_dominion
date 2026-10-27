@@ -104,7 +104,10 @@ async function main() {
     } else {
         check('plant: a war candidate', false, 'none');
     }
-    check('ministerSays carries the character through the minister record', ministerSays(getMinister(world, human, 'foreign'), 'foreign', 'morning').includes('undressed it for you'));
+    // Read the expected words from the cast file, so rewriting a voice does not break the probe.
+    const foreignMinister = getMinister(world, human, 'foreign')!;
+    const morning = characterOf(foreignMinister)!.lines.morning!.loyal![0];
+    check('ministerSays carries the character through the minister record', ministerSays(foreignMinister, 'foreign', 'morning').includes(morning));
 
     // ── The snapshot ────────────────────────────────────────────────────────
     const back: any = deserializeWorld(serializeWorld(world));
