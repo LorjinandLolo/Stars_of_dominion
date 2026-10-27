@@ -97,12 +97,20 @@ export function syncHumanMinisters(world: GameWorldState, seats: SeatRecord[]): 
         }
         const sitting = getMinister(world, seat.factionId, portfolio);
         if (sitting && sitting.id !== leaderId) {
-            // Back to the pool without the dismissal grudge: the ruler did not
-            // sack them, a friend took the chair.
             sitting.portfolio = undefined;
-            sitting.history.push({ timestamp: world.nowSeconds, description: `Stood aside as Minister of ${portfolioLabel(portfolio)}.` });
-            world.leadership.leaders.delete(sitting.id);
-            world.leadership.recruitmentPool.push(sitting);
+            if (sitting.characterId) {
+                // A written character stays at court as a courtier: no office,
+                // their arc still running (lib/government/arcs.ts `friend_seated`),
+                // the chair theirs again when the friend leaves.
+                sitting.courtier = true;
+                sitting.history.push({ timestamp: world.nowSeconds, description: `Stood aside for ${seat.persona}; stays at court.` });
+            } else {
+                // Back to the pool without the dismissal grudge: the ruler did not
+                // sack them, a friend took the chair.
+                sitting.history.push({ timestamp: world.nowSeconds, description: `Stood aside as Minister of ${portfolioLabel(portfolio)}.` });
+                world.leadership.leaders.delete(sitting.id);
+                world.leadership.recruitmentPool.push(sitting);
+            }
         }
         if (!leader) {
             leader = {

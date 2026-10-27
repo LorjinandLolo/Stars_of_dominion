@@ -442,6 +442,19 @@ scrubbed for seats, the brief's Letters section), arcs and appointment letters
 on all six characters. Offices that share the 'government' delegated system
 count only proposals made in their own name. Probe `scripts/arc-probe.ts`.
 
+Step 3 landed 2026-10-27: a written minister can plot without a seat
+(`startLeaderPlot`, synthetic seat id `leader:<id>`, the same strike through
+`strikePlot`), and the arc actions `start_plot` / `join_plot` / `report_plot` /
+`leak` (a `foreignTie` on the leader the Desk catches by competence, into a
+loyalty report) / `take_bribe` (corruption, an invisible chronicle rumour);
+standing behaviours `while.plots` (one approach a day, strike when ready),
+`while.reportsPlots`, `while.joinsPlots`; triggers `friend_seated`,
+`in_office`, `sounded_out`, `plot_struck`. A friend's seat makes a written
+minister a **courtier** (`Leader.courtier`, still at court, arc running, chair
+back when the friend leaves via `courtierFor` in `appointMinisterInternal`).
+Vane plots a coup when dismissed after going public and joins plots from the
+corridor; Ness reports every plot while insured. Probe `scripts/brutus-probe.ts`.
+
 1. Data shape, the cast file with six characters (one per office), the
    draw, `characterOf`, the voice lookup. The card and proposals show
    written people. One day.

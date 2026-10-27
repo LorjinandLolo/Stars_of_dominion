@@ -105,6 +105,31 @@ export function plotActors(world: GameWorldState, factionId: string, plot?: Plot
 
 export interface PlotResult { ok: boolean; message: string; plot?: Plot }
 
+/** The synthetic seat id a seatless plotter (a written minister) plots under; never a FactionSeat. */
+export function leaderSeatId(leaderId: string): string { return `leader:${leaderId}`; }
+
+/** A written character's own plot (lib/government/arcs.ts `start_plot`): the same record, the same strike, no seat. */
+export function startLeaderPlot(world: GameWorldState, factionId: string, leaderId: string, kind: PlotKind): PlotResult {
+    if (!getGovernment(world, factionId)) return { ok: false, message: 'This faction has no government to plot against.' };
+    const leader = world.leadership.leaders.get(leaderId);
+    if (!leader || leader.status !== 'active' || leader.factionId !== factionId) return { ok: false, message: 'No such person in this court.' };
+    const seatId = leaderSeatId(leaderId);
+    if (plotBySeat(world, factionId, seatId)) return { ok: false, message: `${leader.name} already has a plot in hand.` };
+    if (kind !== 'coup' && kind !== 'secession') return { ok: false, message: 'Plot what, exactly?' };
+    const plot: Plot = {
+        id: `plot-${factionId}-${seatId}-${world.nowSeconds}`,
+        factionId, plotterSeatId: seatId, plotterLeaderId: leaderId, kind,
+        openedAtSeconds: world.nowSeconds, recruits: {}, lastSoundOutSeconds: -Infinity, warnings: [], status: 'preparing',
+    };
+    ensurePlots(world).set(plot.id, plot);
+    return { ok: true, message: `${leader.name} is plotting.`, plot };
+}
+
+/** The preparing plot a leader runs, by seat or by their own hand. */
+export function plotByLeader(world: GameWorldState, factionId: string, leaderId: string): Plot | undefined {
+    return plotsOf(world, factionId).find(p => p.plotterLeaderId === leaderId && p.status === 'preparing');
+}
+
 export function startPlot(world: GameWorldState, factionId: string, seatId: string, kind: PlotKind): PlotResult {
     if (!getGovernment(world, factionId)) return { ok: false, message: 'This faction has no government to plot against.' };
     if (!seatsOf(world, factionId).some(s => s.id === seatId)) return { ok: false, message: 'You hold no seat in this court.' };
@@ -146,6 +171,34 @@ export function soundOutOdds(leader: Pick<Leader, 'loyalty' | 'corruption' | 'am
 export function soundOut(world: GameWorldState, factionId: string, seatId: string, actorId: string, rand?: () => number): PlotResult {
     const plot = plotBySeat(world, factionId, seatId);
     if (!plot) return { ok: false, message: 'Start a plot first.' };
+    return soundOutInPlot(world, factionId, plot, actorId, rand);
+}
+
+/**
+ * A seatless plotter's approach (the arcs): the likeliest recruit not yet
+ * approached, never themselves, one a day as for anyone.
+ */
+export function soundOutByLeader(world: GameWorldState, factionId: string, leaderId: string, rand?: () => number): PlotResult {
+    const plot = plotByLeader(world, factionId, leaderId);
+    if (!plot) return { ok: false, message: 'No plot in hand.' };
+    if (world.nowSeconds - plot.lastSoundOutSeconds < SOUND_OUT_EVERY_SECONDS) return { ok: false, message: 'One approach a day.' };
+    const candidates = plotActors(world, factionId, plot).filter(a => a.id !== leaderId && plot.recruits[a.id] === undefined);
+    if (!candidates.length) return { ok: false, message: 'Nobody left to ask.' };
+    const odds = (a: PlotActor) => a.kind === 'officers' ? 0.3 : a.kind === 'human' ? 0.2 : soundOutOdds(world.leadership.leaders.get(a.id) ?? { loyalty: 50 }).join;
+    const pick = [...candidates].sort((x, y) => odds(y) - odds(x))[0];
+    return soundOutInPlot(world, factionId, plot, pick.id, rand);
+}
+
+/** A loyal servant's unprompted report of a plot they were not even asked to join (an arc's `report_plot`). Names the plotter. */
+export function reportPlot(world: GameWorldState, factionId: string, plot: Plot, reporter: Leader): boolean {
+    if (plot.status !== 'preparing' || plot.recruits[reporter.id] === 'reported' || plot.plotterLeaderId === reporter.id) return false;
+    plot.recruits[reporter.id] = 'reported';
+    const actor: PlotActor = { id: reporter.id, kind: 'minister', name: reporter.name, detail: '', state: 'reported' };
+    reportToRuler(world, factionId, plot, actor, () => 0.5, true);
+    return true;
+}
+
+function soundOutInPlot(world: GameWorldState, factionId: string, plot: Plot, actorId: string, rand?: () => number): PlotResult {
     if (world.nowSeconds - plot.lastSoundOutSeconds < SOUND_OUT_EVERY_SECONDS) {
         return { ok: false, message: 'One approach a day. Any more and the corridors talk.' };
     }
@@ -212,11 +265,11 @@ function pushWarning(plot: Plot, atSeconds: number, text: string): void {
     if (plot.warnings.length > MAX_WARNINGS) plot.warnings.splice(0, plot.warnings.length - MAX_WARNINGS);
 }
 
-function reportToRuler(world: GameWorldState, factionId: string, plot: Plot, actor: PlotActor, roll: () => number): void {
+function reportToRuler(world: GameWorldState, factionId: string, plot: Plot, actor: PlotActor, roll: () => number, forceNamed = false): void {
     const gov = getGovernment(world, factionId)!;
     const reporter = actor.kind === 'officers' ? null : world.leadership.leaders.get(actor.id);
     // Whether the reporter can NAME the plotter: the loyal and the sharp can.
-    const named = roll() < 0.35 + ((reporter?.loyalty ?? 60) - 50) / 200 + ((getMinister(world, factionId, 'intelligence')?.competence ?? 50) - 50) / 200;
+    const named = forceNamed || roll() < 0.35 + ((reporter?.loyalty ?? 60) - 50) / 200 + ((getMinister(world, factionId, 'intelligence')?.competence ?? 50) - 50) / 200;
     const suspect = named ? plot.plotterLeaderId : null;
     const text = named
         ? `${actor.name} reports that ${leaderName(world, plot.plotterLeaderId)} sounded them out about ${plot.kind === 'coup' ? 'moving against you' : 'taking a province out'}.`

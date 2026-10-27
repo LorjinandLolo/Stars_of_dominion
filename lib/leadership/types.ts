@@ -91,6 +91,10 @@ export interface Leader {
     // ── The named cabinet (2026-10-27) — lib/leadership/cast.ts ────────────
     /** A written character from data/leaders/cabinet-cast.json, when this leader is one. */
     characterId?: string;
+    /** A written character a friend's seat displaced: active, no portfolio, still in the court (lib/government/arcs.ts). */
+    courtier?: boolean;
+    /** They have been writing to another court (an arc's `leak`); the Desk may catch it. */
+    foreignTie?: { factionId: string; sinceSeconds: number; caught?: boolean };
 }
 
 export interface LeadershipWorldState {

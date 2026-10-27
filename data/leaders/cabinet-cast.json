@@ -190,6 +190,12 @@
                   "kind": "letter",
                   "text": "You needed someone to blame and I am the only one in uniform. Fine. The rosters are on your desk. Whoever sits here next, make sure they have stood a watch.\n\n— Vane"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -241,6 +247,12 @@
                   "kind": "letter",
                   "text": "So the warning was the offence. Very well. The order that lost the field has your signature, and the gazette can read.\n\n— Vane"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -283,13 +295,19 @@
               },
               {
                 "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
+              },
+              {
+                "when": {
                   "on": "dismissed"
                 },
-                "to": "gone",
+                "to": "plotting",
                 "does": {
                   "do": "say",
                   "kind": "letter",
-                  "text": "You can take the chair. The captains know whose orders they trusted at Harrow Reach, and it was not a chair's.\n\n— Vane"
+                  "text": "You can take the chair. The captains know whose orders they trusted at Harrow Reach, and it was not a chair's. I will be at the Admiralty club, where the captains drink. Do not send anyone to ask what we talk about.\n\n— Vane"
                 }
               }
             ]
@@ -323,6 +341,12 @@
                   "kind": "letter",
                   "text": "After a victory. I did not expect that. The rosters are on the desk.\n\n— Vane"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -333,6 +357,86 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Admiralty. I have a chair in the corridor and the captains' addresses. I will not pretend to like it. I will say this: a fleet answers to whoever it trusts, and it has not met your friend. If anyone in this court moves, I will hear of it before you do, and I have not yet decided what I will do with that.\n\n— Vane, lately of the Admiralty",
+              "subject": "From the corridor"
+            },
+            "while": {
+              "joinsPlots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "sounded_out"
+                },
+                "to": "courtier_committed",
+                "does": {
+                  "do": "say",
+                  "kind": "letter",
+                  "text": "Someone in this court asked me a question that is not in anyone's brief. I gave them an answer. I will not tell you which; you took the chair away, and a chair was all I ever asked for.\n\n— Vane",
+                  "subject": "A question in the corridor"
+                }
+              },
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
+          },
+          {
+            "id": "plotting",
+            "opening": {
+              "do": "start_plot",
+              "kind": "coup"
+            },
+            "while": {
+              "plots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "plot_struck"
+                },
+                "to": "struck"
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
+              }
+            ]
+          },
+          {
+            "id": "struck",
+            "end": true
+          },
+          {
+            "id": "courtier_committed",
+            "while": {
+              "joinsPlots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "plot_struck"
+                },
+                "to": "struck"
+              },
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }
@@ -509,6 +613,12 @@
                   "kind": "letter",
                   "text": "Fair enough. The drawer on the left has the real numbers. Nobody else has seen them. Nobody else should.\n\n— Solvay"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -556,6 +666,12 @@
                   "kind": "letter",
                   "text": "Replace me with someone who says yes. Make sure they can also add.\n\n— Solvay"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -588,6 +704,12 @@
                   "kind": "letter",
                   "text": "After all that. The drawer is unlocked. Read the appendices.\n\n— Solvay"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -598,6 +720,26 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Treasury. I have kept the drawer. Nobody else can read the appendices and your friend will find that out by the second month. I will be in the building; I am too old to go anywhere else, and the books need someone who knows which lies are old.\n\n— Solvay, lately of the Treasury",
+              "subject": "From the corridor"
+            },
+            "while": {
+              "reportsPlots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }
@@ -745,6 +887,12 @@
                   "kind": "letter",
                   "text": "Oh. Well. The programme is in the blue folder. Please do not cut the drive. Please.\n\n— Nkemdirim"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -793,6 +941,12 @@
                   "kind": "letter",
                   "text": "Dismissed. I will go back to the laboratory. It missed me; the cabinet will not. The folder is blue.\n\n— Nkemdirim"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -825,6 +979,12 @@
                   "kind": "letter",
                   "text": "After you funded it. I do not understand politics. The folder is blue.\n\n— Nkemdirim"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -835,6 +995,24 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Academy. Good; I was not using the chair. I have moved back to the laboratory, where the drive work is, and I will keep sending the blue folder to whoever sits in cabinet. Please make sure your friend opens it.\n\n— Nkemdirim, lately of the Academy",
+              "subject": "From the corridor"
+            },
+            "while": {},
+            "on": [
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }
@@ -1005,6 +1183,12 @@
                   "kind": "letter",
                   "text": "Understood. The files stay in the safe. The combination is with the Interior minister. Change it today.\n\n— Ness"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1049,6 +1233,12 @@
                   "kind": "letter",
                   "text": "You are dismissing the one person who knows who else to dismiss. Noted. In the file.\n\n— Ness"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1097,8 +1287,17 @@
                   "kind": "letter",
                   "text": "You can have the office. The files moved last week. I was not surprised.\n\n— Ness"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
-            ]
+            ],
+            "while": {
+              "reportsPlots": true
+            }
           },
           {
             "id": "insured",
@@ -1109,7 +1308,8 @@
               "text": "You act on the file. Most do not. So the Desk will act for you before you ask, and you will hear about it afterwards, which is the only way it works. Consider yourself insured.\n\n— Ness"
             },
             "while": {
-              "loyaltyFloor": 80
+              "loyaltyFloor": 80,
+              "reportsPlots": true
             },
             "on": [
               {
@@ -1130,6 +1330,12 @@
                   "kind": "letter",
                   "text": "After the insurance. The safe is locked. I was, for once, surprised.\n\n— Ness"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1140,6 +1346,26 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Desk. I have given them the safe, the combination and half the files; the other half are the ones about your friend, which I will keep until I know them. I remain at court. Somebody has to read the room while the new director learns where it is.\n\n— Ness, lately of the Desk",
+              "subject": "From the corridor"
+            },
+            "while": {
+              "reportsPlots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }
@@ -1306,6 +1532,12 @@
                   "kind": "letter",
                   "text": "The provinces will ask why. Give me a reason I can carry to them. I will carry it; I have carried worse.\n\n— Achebe-Marr"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1349,6 +1581,12 @@
                   "kind": "letter",
                   "text": "You are dismissing the one minister the governors trust. Tell them yourself.\n\n— Achebe-Marr"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1382,6 +1620,12 @@
                   "kind": "letter",
                   "text": "After they stayed. The governors know where I live. Most of them have stayed there.\n\n— Achebe-Marr"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1392,6 +1636,26 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Home Office. The governors do not know your friend and will keep writing to me, and I will keep answering, because the provinces do not care who holds the chair; they care who visits. I will keep visiting. If something moves in the capital, I will hear it from a district before the Desk does.\n\n— Achebe-Marr, lately of the Home Office",
+              "subject": "From the corridor"
+            },
+            "while": {
+              "reportsPlots": true
+            },
+            "on": [
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }
@@ -1573,6 +1837,12 @@
                   "kind": "letter",
                   "text": "Of course. The courts will ask where I went. I will say I am resting. None of them will believe me, which is also useful.\n\n— Marrow-Ngata"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1623,6 +1893,12 @@
                   "kind": "letter",
                   "text": "Dismissed. Several courts will be sorry. I will let them be.\n\n— Marrow-Ngata"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1656,6 +1932,12 @@
                   "kind": "letter",
                   "text": "After the treaty. The ambassadors have my private address. Most have used it.\n\n— Marrow-Ngata"
                 }
+              },
+              {
+                "when": {
+                  "on": "friend_seated"
+                },
+                "to": "courtier"
               }
             ]
           },
@@ -1666,6 +1948,24 @@
           {
             "id": "gone",
             "end": true
+          },
+          {
+            "id": "courtier",
+            "opening": {
+              "do": "say",
+              "kind": "letter",
+              "text": "Your friend has the Foreign Office. The ambassadors have my private address and will keep using it; I will pass on what is useful and keep what is not. I am not sulking. I am resting, which abroad means the same thing, and which nobody believes.\n\n— Marrow-Ngata, lately of the Foreign Office",
+              "subject": "From the corridor"
+            },
+            "while": {},
+            "on": [
+              {
+                "when": {
+                  "on": "in_office"
+                },
+                "to": "serving"
+              }
+            ]
           }
         ]
       }

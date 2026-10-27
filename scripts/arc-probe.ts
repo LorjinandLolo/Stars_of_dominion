@@ -37,7 +37,9 @@ async function main() {
         const ids = new Set(arc?.stages.map(s => s.id) ?? []);
         const dangling = (arc?.stages ?? []).flatMap(s => (s.on ?? []).map(t => t.to)).filter(to => !ids.has(to));
         check(`${c.id}: has a letter, an arc, and every transition lands on a stage`, !!c.letters?.appointed && !!arc?.stages.length && dangling.length === 0, dangling.join(','));
-        check(`${c.id}: every stage but the ends has a way out, and a dismissal exit`, (arc?.stages ?? []).every(s => s.end || ((s.on?.length ?? 0) > 0 && s.on!.some(t => t.when.on === 'dismissed'))));
+        // In-office stages need a dismissal exit; the corridor (courtier*) and a plot in hand do not.
+        const inOffice = (id: string) => !/^(courtier|serving_again|plotting|struck)/.test(id);
+        check(`${c.id}: every stage but the ends has a way out, and in-office stages a dismissal exit`, (arc?.stages ?? []).every(s => s.end || ((s.on?.length ?? 0) > 0 && (!inOffice(s.id) || s.on!.some(t => t.when.on === 'dismissed')))));
     }
 
     seedSimulation('arcs');

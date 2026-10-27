@@ -20,7 +20,7 @@ import { isDelegated } from '@/lib/delegation/delegation-service';
 import { espionagePressureOn } from '@/lib/espionage/pressure';
 import { adminStatus } from './admin-capacity';
 import { ministerLine, registerOf, seedOf, type Hook } from './minister-voices';
-import { drawCastForClaimed } from '@/lib/leadership/cast';
+import { drawCastForClaimed, courtierFor } from '@/lib/leadership/cast';
 
 /**
  * A delegated cabinet's loyalty floor. Above the coup-risk trigger for a
@@ -112,6 +112,16 @@ function appointMinisterInternal(
     gov: GovernmentState,
     portfolio: CabinetPortfolio
 ): Leader {
+    // A written character a friend displaced takes their chair back first.
+    const courtier = courtierFor(world, gov.factionId, portfolio);
+    if (courtier) {
+        courtier.courtier = false;
+        courtier.portfolio = portfolio;
+        courtier.history.push({ timestamp: world.nowSeconds, description: `Returned to the ${portfolioLabel(portfolio)} brief.` });
+        gov.cabinet[portfolio] = courtier.id;
+        return courtier;
+    }
+
     const pool = world.leadership.recruitmentPool;
     const fit = PORTFOLIO_ROLE_FIT[portfolio] ?? [];
 

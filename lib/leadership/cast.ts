@@ -50,8 +50,23 @@ export interface CabinetCharacter {
     arc?: Arc;
 }
 
-export const CAST: readonly CabinetCharacter[] = (castData as unknown as { characters: CabinetCharacter[] }).characters;
+export const CAST: CabinetCharacter[] = (castData as unknown as { characters: CabinetCharacter[] }).characters;
 const BY_ID = new Map(CAST.map(c => [c.id, c]));
+
+/** Add a character at runtime (probes, mods). Not persisted; the data file is the cast. */
+export function registerCharacter(c: CabinetCharacter): void {
+    if (BY_ID.has(c.id)) return;
+    CAST.push(c);
+    BY_ID.set(c.id, c);
+}
+
+/** A written character a friend displaced from this seat, still at court. */
+export function courtierFor(world: GameWorldState, factionId: string, portfolio: CabinetPortfolio): Leader | undefined {
+    for (const l of world.leadership?.leaders?.values?.() ?? []) {
+        if (l.factionId === factionId && l.status === 'active' && l.courtier && !l.portfolio && characterOf(l)?.portfolio === portfolio) return l;
+    }
+    return undefined;
+}
 
 /** The written person behind a leader, if there is one. */
 export function characterOf(leader: Pick<Leader, 'characterId'> | undefined | null): CabinetCharacter | undefined {
