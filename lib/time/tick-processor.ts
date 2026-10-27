@@ -18,7 +18,7 @@ import { tickForwardBases } from '../movement/forward-base-service';
 import { fireNotification } from './notification-hooks';
 import { expireAllStaleCrises } from './crisis-engine';
 import { computeVisibility } from '../movement/visibility-service';
-import { advanceExploration, tickFrontierClaims } from '../exploration/exploration-service';
+import { advanceExploration, autoSurveyOnArrival, tickFrontierClaims } from '../exploration/exploration-service';
 import { seedAnomalyPool } from '../exploration/anomaly-catalog';
 import { materializeSystemBodies, systemHasBodies } from '../exploration/body-generator';
 import { tickAIColonization } from '../exploration/colonize-service';
@@ -818,8 +818,28 @@ function step10_visibility(world: ReturnType<typeof getGameWorldState>) {
  * Step 12: Pirate Tactical AI
  * Processes autonomous behavior for all pirate-faction fleets.
  */
-function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
-    // Older snapshots predate the anomaly catalog — seed once, idempotent.
+/**
+ * Exploration on the worker's own loop, not only at the strategic tick. A ping
+ * takes 30 sim seconds and a survey a few real minutes, but orders were only
+ * resolved every strategic tick (24 real minutes), so every ping sat on
+ * 'pinging' for up to that long. The worker calls this each cycle; the
+ * strategic tick still runs it too (idempotent: only orders already due land).
+ */
+export function advanceExplorationNow(world: ReturnType<typeof getGameWorldState>): void {
+    try {
+        autoSurveyOnArrival(world.movement);
+    } catch (e) {
+        console.error('[TickProcessor] autoSurveyOnArrival failed:', e);
+    }
+    resolveExplorationOrders(world);
+}
+
+/**
+ * Land every exploration order that is due, with its notices, refunds,
+ * anomalies and the first-survey deed. Only this: the AI expansion that
+ * shares the strategic step must keep the strategic cadence.
+ */
+function resolveExplorationOrders(world: ReturnType<typeof getGameWorldState>): void {
     seedAnomalyPool(world.movement);
     advanceExploration(
         world.movement,
@@ -883,7 +903,7 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
                 ? `Relayed from ${world.movement.systems.get(order.relayFromSystemId ?? '')?.name ?? 'your sensor net'}${order.creditsPaid ? ` for ${order.creditsPaid} credits` : ''}.`
                 : `Reported by ${world.movement.fleets.get(order.fleetId)?.name ?? 'the fleet'}.`;
             const next = stage === 'pinged'
-                ? ' Move a fleet within one jump to scan it.'
+                ? ' Send your exploration ship there: it surveys the moment it arrives.'
                 : stage === 'scanned' ? ' Survey it to map its worlds.' : ' Its worlds are mapped — colonizable ones can be settled.';
             fireNotification({
                 id: `explore-done-${factionId}-${order.targetSystemId}-${order.mode}-${world.nowSeconds}`,
@@ -899,6 +919,12 @@ function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
             } as any);
         }
     );
+}
+
+function step10b_exploration(world: ReturnType<typeof getGameWorldState>) {
+    // Older snapshots predate the anomaly catalog — seed once, idempotent.
+    seedAnomalyPool(world.movement);
+    resolveExplorationOrders(world);
     tickFrontierClaims(world.movement, TICK_DELTA_SECONDS);
     // A system can reach 'surveyed' without a survey ORDER — passive sensor
     // strength ≥ 0.8 (visibility-service) or the Buthari council override write

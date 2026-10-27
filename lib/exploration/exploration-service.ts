@@ -104,6 +104,31 @@ export function issueRelayPing(
 }
 
 /**
+ * An exploration ship that comes to rest in a system its empire has not yet
+ * surveyed surveys it at once, for nothing: the ship is the expense. Players
+ * sent the ship and then had to find a button, pay again, and wait for a
+ * strategic tick; arriving now IS surveying. Fleets without an explorer still
+ * use the panel's scan and survey orders. Returns the orders it started.
+ */
+export function autoSurveyOnArrival(world: MovementWorldState): ExplorationOrder[] {
+    const started: ExplorationOrder[] = [];
+    for (const fleet of world.fleets.values()) {
+        const here = fleet.currentSystemId;
+        if (!here || fleet.destinationSystemId || (fleet.plannedPath?.length ?? 0) > 0) continue;
+        if (civilianCount((fleet as any).composition, 'explorer') <= 0) continue;
+        const vis = world.factionVisibility.get(fleet.factionId);
+        if (!vis || vis[here]?.revealStage === 'surveyed') continue;
+        const busy = world.explorationOrders.some(o =>
+            o.fleetId === fleet.id ||
+            (o.targetSystemId === here && (o.factionId ?? world.fleets.get(o.fleetId)?.factionId) === fleet.factionId));
+        if (busy) continue;
+        const order = issueExploreOrder(fleet.id, here, 'survey', world, EXPLORER_TIME_FACTOR);
+        if (order) started.push(order);
+    }
+    return started;
+}
+
+/**
  * Called when any stage lands — the tick layer tells the player who ordered
  * it. `prevStage` is what this faction knew before the order, so a caller can
  * tell a first survey from a re-survey (the saga counts only the first).

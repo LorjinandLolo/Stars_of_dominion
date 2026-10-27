@@ -120,7 +120,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
         id: 'survey_three',
         title: 'Survey three systems',
-        hint: 'Select a system you have scanned and survey it with your exploration ship (or any fleet). Only surveyed worlds can be settled.',
+        hint: 'Send your exploration ship to a nearby system: it surveys the moment it arrives, for free. Only surveyed worlds can be settled.',
         takes: 'A few minutes per system, travel included',
         meanwhile: 'Open your capital and queue a building: they take 10 minutes to a few hours, so keep one going.',
         metrics: [DEED_SYSTEMS_SURVEYED],

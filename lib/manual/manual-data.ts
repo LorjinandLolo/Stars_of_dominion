@@ -233,8 +233,9 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'Ping: charts an unknown star. A relay ping needs no fleet: it costs 250 credits plus 150 for every jump from your nearest shipyard (or your capital if you have none).',
-                            'Scan and survey: need a fleet in the system or one hyperlane away, and cost 500 credits each. A survey reveals the system\'s worlds; the first survey of a system can turn up an anomaly.',
+                            'The quick way: send your exploration ship to a system. It surveys the system the moment it arrives, for free, and you get a notice when the worlds are mapped (a few minutes). Every empire starts with one.',
+                            'Ping: charts an unknown star from afar, so you can see what it is and plan a route there. A relay ping needs no fleet: it costs 250 credits plus 150 for every jump from your nearest shipyard (or your capital if you have none). It lands within seconds.',
+                            'Scan and survey from the system panel, without an exploration ship: need a fleet in the system or one hyperlane away, and cost 500 credits each. A survey reveals the system\'s worlds; the first survey of a system can turn up an anomaly.',
                             'If your scout is destroyed before it finishes, the cost is refunded.',
                             'Your Survey office (an advisor) keeps idle fleets charting nearby systems unless you take it back.',
                         ],

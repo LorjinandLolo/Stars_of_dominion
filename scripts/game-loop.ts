@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { deserializeWorld, serializeWorld, cleanWorldForSave, extractFactionShard, injectFactionShard, serializePiracyState, applyPiracySnapshot } from '../lib/persistence/save-service';
 import { advanceFleet, issueMoveOrder, changeFleetCourse, isFleetOperational } from '../lib/movement/movement-service';
 import { ensureLaneGraph } from '../lib/movement/lane-graph';
-import { runStrategicTick } from '../lib/time/tick-processor';
+import { runStrategicTick, advanceExplorationNow } from '../lib/time/tick-processor';
 import * as chronicle from '../lib/narrative/chronicle';
 import { flushChronicle } from '../lib/narrative/chronicle-flush';
 import { peekBuffer } from '../lib/narrative/chronicle';
@@ -884,6 +884,11 @@ async function runGameTick() {
 
         // 5. Process Ground Recruitment
         RecruitmentService.tick(world);
+
+        // 5.5. Exploration resolves every cycle, not only at the strategic tick:
+        // pings land in seconds and an exploration ship surveys where it
+        // arrives (lib/time/tick-processor.ts advanceExplorationNow).
+        try { advanceExplorationNow(world); } catch (e: any) { console.warn('[Tick Worker] exploration step failed:', e.message); }
 
         // 6. Advance air sorties (static import — runs before the save, always)
         try {
