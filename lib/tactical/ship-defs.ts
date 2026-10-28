@@ -349,13 +349,20 @@ export function isOmniMount(weapon: WeaponDef): boolean {
     return weapon.arc >= Math.PI * 2 - 1e-6;
 }
 
-/** Map a strategic composition key to a tactical ship class (V2 mapping). */
+/**
+ * Map a strategic composition key to a tactical ship class (V2 mapping). The
+ * newer light hulls fight as the nearest tactical class until they get their
+ * own (docs/ship-design/ship-classes-plan.md, work package 5).
+ */
 export function classForCompositionKey(key: string): ShipClassId {
     switch (key.toLowerCase()) {
+        case 'patrol':
         case 'corvette':
         case 'interceptor':
         case 'bomber':
             return 'corvette';
+        case 'frigate':
+        case 'assault':
         case 'destroyer':
             return 'destroyer';
         case 'cruiser':

@@ -130,6 +130,21 @@
   },
   "occupationEfficiency": 0.3
  },
+ "PATROL": {
+  "name": "Patrol Craft",
+  "description": "Cheapest hull. Pickets, pirate hunting and customs work.",
+  "baseStrength": 1,
+  "supplyConsumption": 0.3,
+  "moraleWeight": 0.5,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 450,
+   "metals": 160
+  },
+  "buildTime": 200,
+  "power": 6
+ },
  "CORVETTE": {
   "name": "Corvette",
   "description": "Fast escort and scout hull.",
@@ -144,6 +159,36 @@
   },
   "buildTime": 300,
   "power": 10
+ },
+ "FRIGATE": {
+  "name": "Frigate",
+  "description": "Escort with point defence: shoots down strike craft and torpedoes.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.7,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1200,
+   "metals": 480
+  },
+  "buildTime": 420,
+  "power": 15
+ },
+ "ASSAULT": {
+  "name": "Assault Ship",
+  "description": "Armoured troop carrier that boards stations and lands armies under fire.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.8,
+  "moraleWeight": 1.2,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1600,
+   "metals": 650
+  },
+  "buildTime": 540,
+  "power": 14
  },
  "DESTROYER": {
   "name": "Destroyer",
@@ -175,6 +220,21 @@
   "buildTime": 1200,
   "power": 45
  },
+ "CARRIER": {
+  "name": "Carrier",
+  "description": "Capital hull that fields interceptor and bomber squadrons.",
+  "baseStrength": 12,
+  "supplyConsumption": 3.5,
+  "moraleWeight": 2.5,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 6500,
+   "metals": 2600
+  },
+  "buildTime": 2200,
+  "power": 70
+ },
  "BATTLESHIP": {
   "name": "Battleship",
   "description": "Capital ship. Slow, ruinous, decisive.",
@@ -189,5 +249,20 @@
   },
   "buildTime": 2400,
   "power": 90
+ },
+ "DREADNOUGHT": {
+  "name": "Dreadnought",
+  "description": "Flagship. One to a fleet, and the fleet fights around it.",
+  "baseStrength": 30,
+  "supplyConsumption": 7,
+  "moraleWeight": 5,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 14000,
+   "metals": 6000
+  },
+  "buildTime": 4200,
+  "power": 160
  }
 }

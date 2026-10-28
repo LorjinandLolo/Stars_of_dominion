@@ -126,7 +126,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
     // ─── Shipyards ────────────────────────────────────────────────────────────
     // Pricing rule (2026-09-13): a fresh faction holds 3,000 metals / 1,500
     // chemicals / 50,000 credits (lib/game-world-state-singleton.ts) and its
-    // capital starts with a Spaceyard in orbit (yard tier 1). Station +
+    // capital starts with a Fleet Drydock in orbit (light tier 1). Station +
     // Spaceyard must fit in under a third of that metal so the player can still
     // commission a starter squadron (a standard corvette is 480 metals) or a
     // colony (1,000 metals). Each rung is ~2.5× the last; the Capital Spaceyard
@@ -152,6 +152,71 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
         requiresStation: false,
         infrastructureRequired: 2,
         tags: ['orbital', 'shipyard'],
+    },
+    // ─── The light line: Fleet Drydocks ──────────────────────────────────────
+    // Each rung unlocks another small hull (light_yard_tier, read by
+    // lib/combat/shipyard-gate HULL_YARD) and repairs and refits fleets
+    // holding in the system faster (refit_speed via yardRefitBonus). Every
+    // capital starts with the first rung (seedStarterDrydock).
+    {
+        id: 'fleet_drydock',
+        name: 'Fleet Drydock',
+        description: 'Pressurised cradles and magnetic scaffolding that take a whole hull in. Lays patrol craft and corvettes, patches battle damage and speeds refits.',
+        category: 'shipyard',
+        tier: 1,
+        cost: { metals: 350, chemicals: 120, food: 0, manpower: 120, credits: 600 },
+        upkeep: { energy: 20, manpower: 60, credits: 10 },
+        buildTimeSeconds: 1200,
+        effects: [
+            { type: 'light_yard_tier', value: 1 },
+            { type: 'fleet_repair_rate', value: 0.08 },
+            { type: 'refit_speed', value: 25 },
+        ],
+        hullStrength: 900,
+        requiresStation: false,
+        infrastructureRequired: 1,
+        uniquePerPlanet: true,
+        tags: ['orbital', 'shipyard', 'fleet'],
+    },
+    {
+        id: 'reinforced_drydock',
+        name: 'Reinforced Drydock',
+        description: 'Doubled cradles and a point-defence foundry. Lays frigates; repairs and refits faster.',
+        category: 'shipyard',
+        tier: 2,
+        cost: { metals: 650, chemicals: 250, food: 0, manpower: 220, credits: 1300 },
+        upkeep: { energy: 35, manpower: 100, credits: 20 },
+        buildTimeSeconds: 1800,
+        effects: [
+            { type: 'light_yard_tier', value: 2 },
+            { type: 'fleet_repair_rate', value: 0.12 },
+            { type: 'refit_speed', value: 50 },
+        ],
+        hullStrength: 1100,
+        requiresStation: false,
+        upgradesFrom: 'fleet_drydock',
+        infrastructureRequired: 2,
+        tags: ['orbital', 'shipyard', 'fleet'],
+    },
+    {
+        id: 'assault_drydock',
+        name: 'Assault Drydock',
+        description: 'Armoured slips and troop decks. Lays assault ships that carry armies down under fire.',
+        category: 'shipyard',
+        tier: 3,
+        cost: { metals: 1100, chemicals: 450, food: 50, manpower: 350, credits: 2400 },
+        upkeep: { energy: 50, manpower: 140, credits: 35 },
+        buildTimeSeconds: 2400,
+        effects: [
+            { type: 'light_yard_tier', value: 3 },
+            { type: 'fleet_repair_rate', value: 0.15 },
+            { type: 'refit_speed', value: 60 },
+        ],
+        hullStrength: 1300,
+        requiresStation: false,
+        upgradesFrom: 'reinforced_drydock',
+        infrastructureRequired: 3,
+        tags: ['orbital', 'shipyard', 'fleet'],
     },
     {
         id: 'advanced_spaceyard',

@@ -45,7 +45,7 @@ function hullWeight(key: string): number {
 }
 
 /**
- * Share of a roster's hull weight that is screens (corvettes + destroyers).
+ * Share of a roster's hull weight that is screens (the light hulls + destroyers).
  * Screens carry the torpedoes, so this scales the bonus a side earns against
  * unscreened capitals. 0 for an empty or wings-only roster.
  */
@@ -58,7 +58,7 @@ export function screenPowerShare(composition: UnitComposition | null | undefined
         const w = hullWeight(key) * n;
         total += w;
         const k = key.toLowerCase();
-        if (k === 'corvette' || k === 'destroyer') screens += w;
+        if (SCREEN_HULLS.has(k)) screens += w;
     }
     return total > 0 ? screens / total : 0;
 }
@@ -145,10 +145,15 @@ export interface ForceSnapshot {
     screeningEfficiency: number;
 }
 
+/** Hulls that screen the line, and the capitals they screen. Assault ships are neither. */
+const SCREEN_HULLS = new Set(['patrol', 'corvette', 'frigate', 'destroyer']);
+const CAPITAL_HULLS = ['cruiser', 'carrier', 'battleship', 'dreadnought'] as const;
+
 /** HOI4 naval rule: three screens per capital is fully efficient. */
 export function screeningEfficiencyOf(comp: UnitComposition): number {
-    const screens = (comp.destroyer || 0) + (comp.corvette || 0);
-    const capitals = (comp.cruiser || 0) + (comp.carrier || 0) + (comp.battleship || 0);
+    let screens = 0;
+    for (const k of SCREEN_HULLS) screens += (comp as any)[k] || 0;
+    const capitals = CAPITAL_HULLS.reduce((n, k) => n + ((comp as any)[k] || 0), 0);
     if (capitals <= 0) return 1;
     return Math.min(1, screens / (capitals * 3));
 }

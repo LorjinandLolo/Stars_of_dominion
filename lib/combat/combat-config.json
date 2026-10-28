@@ -55,21 +55,46 @@
             "bomber": {
                 "cruiser": 0.15,
                 "battleship": 0.15,
+                "dreadnought": 0.15,
                 "interceptor": -0.15,
-                "corvette": -0.15
+                "corvette": -0.15,
+                "frigate": -0.2
+            },
+            "patrol": {
+                "corvette": 0.05,
+                "bomber": 0.05,
+                "destroyer": -0.15,
+                "frigate": -0.10
             },
             "corvette": {
                 "bomber": 0.15,
                 "interceptor": 0.10,
+                "assault": 0.10,
                 "destroyer": -0.15
+            },
+            "frigate": {
+                "bomber": 0.2,
+                "interceptor": 0.15,
+                "corvette": 0.05,
+                "carrier": 0.10,
+                "cruiser": -0.15
+            },
+            "assault": {
+                "cruiser": 0.05,
+                "battleship": 0.05,
+                "destroyer": -0.15,
+                "corvette": -0.10
             },
             "destroyer": {
                 "corvette": 0.15,
                 "interceptor": 0.15,
+                "patrol": 0.15,
+                "assault": 0.15,
                 "cruiser": -0.15
             },
             "cruiser": {
                 "destroyer": 0.15,
+                "frigate": 0.15,
                 "bomber": -0.15,
                 "battleship": -0.15
             },
@@ -77,9 +102,23 @@
                 "cruiser": 0.15,
                 "destroyer": 0.10,
                 "bomber": -0.15,
+                "corvette": -0.10,
+                "carrier": -0.15
+            },
+            "carrier": {
+                "battleship": 0.15,
+                "dreadnought": 0.10,
+                "cruiser": 0.05,
+                "frigate": -0.15,
                 "corvette": -0.10
             },
-            "carrier": {}
+            "dreadnought": {
+                "cruiser": 0.15,
+                "battleship": 0.10,
+                "destroyer": 0.05,
+                "bomber": -0.15,
+                "carrier": -0.10
+            }
         },
         "ground": {
             "infantry": {

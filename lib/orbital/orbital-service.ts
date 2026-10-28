@@ -101,9 +101,11 @@ const ZERO_RATINGS: OrbitalRatings = {
     shieldStrength: 0,
     sensorStrength: 0,
     shipyardTier: 0,
+    lightYardTier: 0,
     shipProductionBonus: 0,
     fleetCapacity: 0,
     fleetRepairRate: 0,
+    refitSpeedBonus: 0,
     researchOutput: 0,
     logisticsCapacity: 0,
     tradeEfficiency: 0,
@@ -126,6 +128,23 @@ export const SURFACE_YARD_TO_ORBITAL: Readonly<Record<string, string>> = {
     fleet_drydock: 'advanced_spaceyard',
 };
 const YARD_LADDER = ['spaceyard', 'advanced_spaceyard', 'capital_spaceyard'];
+/** The light line: each upgrade unlocks another small hull (lib/combat/shipyard-gate HULL_YARD). */
+export const DRYDOCK_LINE = ['fleet_drydock', 'reinforced_drydock', 'assault_drydock'];
+
+/**
+ * Every capital starts with a Fleet Drydock in orbit (patrol craft and
+ * corvettes); the Spaceyard is built later. Places one in a free slot when
+ * the world has no drydock of any rung. Returns true when it placed one.
+ */
+export function seedStarterDrydock(planet: ConstructionPlanet): boolean {
+    const orbital = ensureOrbitalState(planet);
+    if (orbital.slots.some(s => s.structureId && DRYDOCK_LINE.includes(s.structureId) && s.state !== 'destroyed' && s.state !== 'empty')) return false;
+    if (orbital.buildQueue.some(o => DRYDOCK_LINE.includes(o.structureId))) return false;
+    const free = orbital.slots.find(s => (s.state === 'empty' || s.state === 'destroyed') && !orbital.buildQueue.some(o => o.slotId === s.slotId));
+    if (!free) return false;
+    Object.assign(free, { structureId: 'fleet_drydock', state: 'active', completesAt: null, integrity: 100 });
+    return true;
+}
 
 /**
  * Move a world's finished ground yards into its orbit. Idempotent (the worker
@@ -156,6 +175,14 @@ export function foldSurfaceYards(planet: ConstructionPlanet): boolean {
         slot.state = ruined ? 'damaged' : 'active';
         slot.completesAt = null;
         slot.integrity = ruined ? 25 : 100;
+    }
+    // A ground Fleet Drydock also comes up as the orbital Fleet Drydock (the
+    // repair and refit dock), room permitting: its cruiser keels went to the
+    // Advanced Spaceyard above.
+    if (tiles.some(t => t.buildingId === 'fleet_drydock')
+        && !orbital.slots.some(s => s.structureId && DRYDOCK_LINE.includes(s.structureId) && s.state !== 'destroyed')) {
+        const dock = orbital.slots.find(s => (s.state === 'empty' || s.state === 'destroyed') && !busy.has(s.slotId));
+        if (dock) Object.assign(dock, { structureId: 'fleet_drydock', state: ruined ? 'damaged' : 'active', completesAt: null, integrity: ruined ? 25 : 100 });
     }
     for (const t of tiles) {
         t.buildingId = null;
@@ -194,6 +221,7 @@ export function computeOrbitalRatings(
                 case ORBITAL_SENSOR_EFFECT: ratings.sensorStrength += value; break;
                 case FLEET_CAPACITY_EFFECT: ratings.fleetCapacity += value; break;
                 case FLEET_REPAIR_EFFECT: ratings.fleetRepairRate += value; break;
+                case 'refit_speed': ratings.refitSpeedBonus += value; break;
                 case TRADE_EFFICIENCY_EFFECT: ratings.tradeEfficiency += value; break;
                 case 'research_output': ratings.researchOutput += value; break;
                 case 'logistics_capacity': ratings.logisticsCapacity += value; break;
@@ -204,6 +232,11 @@ export function computeOrbitalRatings(
                     ratings.storageCapacity[target] = (ratings.storageCapacity[target] ?? 0) + value;
                     break;
                 }
+                case 'light_yard_tier':
+                    if (slot.integrity >= DAMAGED_INTEGRITY_THRESHOLD) {
+                        ratings.lightYardTier = Math.max(ratings.lightYardTier, effect.value);
+                    }
+                    break;
                 case SHIPYARD_TIER_EFFECT:
                     // Tier is a threshold, not a sum — and a half-wrecked yard cannot
                     // lay a keel it could when intact.

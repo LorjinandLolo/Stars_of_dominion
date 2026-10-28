@@ -24,7 +24,7 @@
 import type { Fleet } from '../movement/types';
 import { queueAIOrder, hasQueuedAIOrder } from './ai-orders';
 import { resolveRecruitSpec } from '../combat/ship-design-service';
-import { minYardTierFor, systemYardFor } from '../combat/shipyard-gate';
+import { yardCanLay as yardLays, systemYardFor } from '../combat/shipyard-gate';
 import { SHIP_CLASS_IDS } from '../combat/ship-registry';
 
 /** The shell fee MIL_BUILD_FLEET charges (lib/actions/registry.ts) and its rating (FLEET_SHELL_POWER). */
@@ -79,8 +79,8 @@ function yardWorldIn(world: any, factionId: string, systemId: string): any | nul
 
 /** The hull classes of `composition` the yard in `systemId` can lay. */
 export function yardCanLay(world: any, factionId: string, systemId: string, composition: Record<string, number>): boolean {
-    const tier = systemYardFor(world.construction.planets.values(), factionId, systemId, world.nowSeconds).tier;
-    return Object.keys(composition).every(cls => minYardTierFor(cls) <= tier);
+    const yard = systemYardFor(world.construction.planets.values(), factionId, systemId, world.nowSeconds);
+    return Object.keys(composition).every(cls => yardLays(yard, cls));
 }
 
 export interface AIFleetBuild {

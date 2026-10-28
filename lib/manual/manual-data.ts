@@ -505,16 +505,21 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'table',
                         content: [
-                            { hull: 'Corvette', yard: 'Any shipyard', time: 'about 10 minutes' },
-                            { hull: 'Destroyer', yard: 'Any shipyard', time: 'about 25 minutes' },
-                            { hull: 'Cruiser', yard: 'Advanced Spaceyard (orbit)', time: 'about 1 hour' },
-                            { hull: 'Battleship', yard: 'Capital Spaceyard (orbit)', time: 'about 3 hours' },
+                            { hull: 'Patrol Craft', yard: 'Fleet Drydock', time: 'about 7 minutes' },
+                            { hull: 'Corvette', yard: 'Fleet Drydock', time: 'about 10 minutes' },
+                            { hull: 'Frigate', yard: 'Reinforced Drydock', time: 'about 20 minutes' },
+                            { hull: 'Assault Ship', yard: 'Assault Drydock', time: 'about 25 minutes' },
+                            { hull: 'Destroyer', yard: 'Spaceyard', time: 'about 25 minutes' },
+                            { hull: 'Cruiser', yard: 'Advanced Spaceyard', time: 'about 1 hour' },
+                            { hull: 'Carrier', yard: 'Capital Spaceyard', time: 'about 2½ hours' },
+                            { hull: 'Battleship', yard: 'Capital Spaceyard', time: 'about 3 hours' },
+                            { hull: 'Dreadnought', yard: 'Capital Spaceyard + Command Chain Optimization', time: 'about 8 hours' },
                         ],
                     },
                     {
                         type: 'bullet_list',
                         content: [
-                            'Every capital starts with a Spaceyard in orbit; bigger yards are built from the Orbital tab. Ships cost credits, metals and materiel.',
+                            'Yards are built in orbit (the Orbital tab) in two lines. Fleet Drydocks lay the light hulls and repair and refit fleets; every capital starts with one. Spaceyards lay destroyers and up; build your first when you want a line of battle. Ships cost credits, metals and materiel.',
                             'Commission ships from a world with a shipyard: its Shipyard tab in Planetary Construction, or UNITS on the world\'s card.',
                             'The Ship Designer (Military) builds your own patterns: a hull plus weapons, utility modules and a reactor core. Modules add power and draw energy; a design may overdraw its reactor by up to 25%, losing combat power for every percent over. Better modules come from research.',
                             'A design that ships are using cannot be changed (it can be renamed). To upgrade ships already built, save a new design and refit them at a yard: you pay only for what is added, and they fight with the old fit until the refit is done.',

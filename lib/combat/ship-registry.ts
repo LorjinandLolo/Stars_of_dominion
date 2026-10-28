@@ -19,7 +19,10 @@ import type {
 
 // ─── Ship classes ────────────────────────────────────────────────────────────
 
-export const SHIP_CLASS_IDS: readonly ShipClassId[] = ['corvette', 'destroyer', 'cruiser', 'battleship'];
+export const SHIP_CLASS_IDS: readonly ShipClassId[] = [
+    'patrol', 'corvette', 'frigate', 'assault',
+    'destroyer', 'cruiser', 'carrier', 'battleship', 'dreadnought',
+];
 
 const SHIP_CLASS_SET = new Set<string>(SHIP_CLASS_IDS);
 
@@ -80,10 +83,15 @@ export function unitConfigFor(unitKey: string): UnitConfigEntry | undefined {
  * scale by the hull being refitted, so the multiplier rides the whole quote.
  */
 export const HULL_BUILD_TIME_MULTIPLIER: Readonly<Record<ShipClassId, number>> = {
+    patrol: 20,
     corvette: 23,
+    frigate: 26,
+    assault: 28,
     destroyer: 30,
     cruiser: 40,
+    carrier: 55,
     battleship: 60,
+    dreadnought: 80,
 };
 
 function hullTimeMultiplier(id: ShipClassId): number {
@@ -106,6 +114,18 @@ function hullBase(id: ShipClassId) {
 
 export const SHIP_HULLS: HullDefinition[] = [
     {
+        id: 'patrol',
+        name: 'Patrol Craft',
+        size: 'S',
+        description: 'The cheapest hull. Pickets, pirate hunting and customs; weak in a line fight.',
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 8,
+        ...hullBase('patrol'),
+    },
+    {
         id: 'corvette',
         name: 'Corvette',
         size: 'S',
@@ -117,6 +137,34 @@ export const SHIP_HULLS: HullDefinition[] = [
         ],
         baseEnergy: 10,
         ...hullBase('corvette'),
+    },
+    {
+        id: 'frigate',
+        name: 'Frigate',
+        size: 'S',
+        description: 'Escort with point defence: shoots down strike craft and torpedoes before they reach the line.',
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 14,
+        ...hullBase('frigate'),
+    },
+    {
+        id: 'assault',
+        name: 'Assault Ship',
+        size: 'M',
+        description: 'Armoured troop carrier. Boards stations and puts armies down under fire.',
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 16,
+        ...hullBase('assault'),
     },
     {
         id: 'destroyer',
@@ -149,6 +197,22 @@ export const SHIP_HULLS: HullDefinition[] = [
         ...hullBase('cruiser'),
     },
     {
+        id: 'carrier',
+        name: 'Carrier',
+        size: 'XL',
+        description: 'Capital hull that hangs back and fights through its interceptor and bomber squadrons.',
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 42,
+        ...hullBase('carrier'),
+    },
+    {
         id: 'battleship',
         name: 'Battleship',
         size: 'XL',
@@ -165,6 +229,29 @@ export const SHIP_HULLS: HullDefinition[] = [
         ],
         baseEnergy: 45,
         ...hullBase('battleship'),
+    },
+    {
+        id: 'dreadnought',
+        name: 'Dreadnought',
+        size: 'XL',
+        description: 'Flagship. One to a fleet, and the fleet fights around it.',
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'w3', type: 'weapon' },
+            { id: 'w4', type: 'weapon' },
+            { id: 'w5', type: 'weapon' },
+            { id: 'w6', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'u4', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 85,
+        ...hullBase('dreadnought'),
+        // Command Chain Optimization: the doctrine a flagship needs.
+        techRequired: 'mil_t3_9',
     },
 ];
 
@@ -372,7 +459,54 @@ export function getComponent(id: string | null | undefined): ComponentDefinition
 
 export const DEFAULT_DESIGN_FACTION = '*';
 
-export const DEFAULT_DESIGNS: ShipDesign[] = [
+export const DEFAULT_DESIGNS: ShipDesign[] = ([
+    {
+        id: 'default-patrol',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: 'Customs Cutter',
+        hullId: 'patrol',
+        components: { w1: 'wpn-pulse-laser', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-frigate',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: 'Escort Frigate',
+        hullId: 'frigate',
+        components: { w1: 'wpn-autocannon', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-assault',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: 'Boarding Lander',
+        hullId: 'assault',
+        components: { w1: 'wpn-autocannon', u1: 'util-plating', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-carrier',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: 'Fleet Carrier',
+        hullId: 'carrier',
+        components: {
+            w1: 'wpn-pulse-laser', w2: 'wpn-autocannon',
+            u1: 'util-deflector', u2: 'util-plating', u3: 'util-deflector', c1: 'core-fission',
+        },
+        isDefault: true,
+    },
+    {
+        id: 'default-dreadnought',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: 'Imperator Dreadnought',
+        hullId: 'dreadnought',
+        components: {
+            w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', w3: 'wpn-missile-rack',
+            w4: 'wpn-autocannon', w5: 'wpn-pulse-laser', w6: 'wpn-missile-rack',
+            u1: 'util-deflector', u2: 'util-plating', u3: 'util-deflector', u4: 'util-plating', c1: 'core-fission',
+        },
+        isDefault: true,
+    },
     {
         id: 'default-corvette',
         factionId: DEFAULT_DESIGN_FACTION,
@@ -411,7 +545,9 @@ export const DEFAULT_DESIGNS: ShipDesign[] = [
         },
         isDefault: true,
     },
-];
+] as ShipDesign[])
+    // One per hull, in hull order (smallest first).
+    .sort((a, b) => SHIP_CLASS_IDS.indexOf(a.hullId) - SHIP_CLASS_IDS.indexOf(b.hullId));
 
 const DEFAULT_BY_HULL = new Map(DEFAULT_DESIGNS.map(d => [d.hullId, d]));
 
@@ -637,6 +773,9 @@ export function summarizeDesign(
     if (lockedComponentIds.length > 0) {
         const names = lockedComponentIds.map(id => getComponent(id)?.name ?? id);
         issues.push(`Research required for: ${names.join(', ')}.`);
+    }
+    if (hull.techRequired && unlockedTechIds && !unlockedTechIds.has(hull.techRequired)) {
+        issues.push(`The ${hull.name} hull needs research first.`);
     }
 
     // Brownout. A reactor can be pushed past its rated output, and the ship

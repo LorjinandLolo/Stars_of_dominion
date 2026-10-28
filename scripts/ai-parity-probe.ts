@@ -23,7 +23,7 @@ import { aiDeclareWar, aiFleetTactics, aiWarTurn, isWarfleetId, WAR, warFatigueO
 import { hasAsteroidBelt } from '../lib/movement/belts';
 import { beltAmbushTurn } from '../lib/ai/belt-ambush-ai';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
-import { minYardTierFor, systemYardFor } from '../lib/combat/shipyard-gate';
+import { yardCanLay, systemYardFor } from '../lib/combat/shipyard-gate';
 import { wouldAccept } from '../lib/ai/diplomatic-ai-service';
 import { isAtWar } from '../lib/diplomacy/offer-service';
 import { ensurePressState } from '../lib/press-system/integration';
@@ -180,8 +180,8 @@ async function main() {
     check('it paid the player\'s price (shell + per-hull)', Math.round(paid.CREDITS - reserves.CREDITS) === Math.round(quote.cost.CREDITS)
         && Math.round(paid.METALS - reserves.METALS) === Math.round(quote.cost.METALS),
         `credits ${Math.round(paid.CREDITS - reserves.CREDITS)} vs ${quote.cost.CREDITS}, metals ${Math.round(paid.METALS - reserves.METALS)} vs ${quote.cost.METALS}`);
-    check('the yard rule held: every hull fits the capital yard', Object.keys(planned).every(c => minYardTierFor(c)
-        <= systemYardFor(world.construction.planets.values(), ai, world.economy.factions.get(ai).capitalSystemId, world.nowSeconds).tier));
+    check('the yard rule held: every hull fits the capital yard', Object.keys(planned).every(c => yardCanLay(
+        systemYardFor(world.construction.planets.values(), ai, world.economy.factions.get(ai).capitalSystemId, world.nowSeconds), c)));
 
     // Muster long over: a ready battle group would sail now. This one waits for its hulls.
     rec.declared[target] = world.nowSeconds - 10 * 86400;

@@ -30,7 +30,7 @@ import { ORBITAL_STRUCTURES, ORBITAL_STRUCTURE_BY_ID } from '../data/orbital-str
 import { computeStorageCapacity } from '../lib/logistics/storage-service';
 import { updatePlanetLogistics } from '../lib/logistics/distribution-service';
 import { startSpaceConstruction } from '../lib/construction/ship-production-service';
-import { hullsBuildableAt, planetYardTier } from '../lib/combat/shipyard-gate';
+import { hullsBuildableAt, planetYardSource } from '../lib/combat/shipyard-gate';
 import { DEFAULT_DESIGNS, summarizeDesign } from '../lib/combat/ship-registry';
 import { baseBuildSeconds } from '../lib/construction/build-time';
 import { STARTING_AMMO, STARTING_MATERIEL } from '../lib/economy/procurement';
@@ -135,8 +135,8 @@ console.log('\n1. Orbital catalog');
         .filter(s => s.category === 'station').every(s => !s.requiresStation));
     // The Spaceyard is the one exception: the first shipyard rung stands alone
     // (it replaced the surface yard, which never needed a station).
-    check('non-stations require a station (bar the Spaceyard)', ORBITAL_STRUCTURES
-        .filter(s => s.category !== 'station' && s.id !== 'spaceyard').every(s => s.requiresStation));
+    check('non-stations require a station (bar the Spaceyard and Drydock)', ORBITAL_STRUCTURES
+        .filter(s => s.category !== 'station' && s.id !== 'spaceyard' && !s.tags.includes('fleet')).every(s => s.requiresStation));
     check('a spaceyard needs no station', !ORBITAL_STRUCTURE_BY_ID['spaceyard'].requiresStation);
     check('the doc\'s named structures are all present',
         ['space_station', 'spaceyard', 'orbital_defense_network', 'orbital_logistics_hub',
@@ -322,8 +322,8 @@ console.log('\n5. Derived ratings');
     check('logistics capacity is reported', near(ratings.logisticsCapacity, 30));
 
     check('tier 1 lays destroyers but not cruisers',
-        hullsBuildableAt(planetYardTier(planet)).includes('destroyer') &&
-        !hullsBuildableAt(planetYardTier(planet)).includes('cruiser'));
+        hullsBuildableAt(planetYardSource(planet)).includes('destroyer') &&
+        !hullsBuildableAt(planetYardSource(planet)).includes('cruiser'));
 
     // Integrity scales effects linearly.
     const defenseSlot = planet.orbital!.slots.find(s => s.structureId === 'orbital_defense_network')!;
@@ -345,8 +345,8 @@ console.log('\n5. Derived ratings');
     place(planet, 'advanced_spaceyard');
     check('upgrading the yard raises the tier', computeOrbitalRatings(planet).shipyardTier === 2);
     check('tier 2 lays cruisers but still not battleships',
-        hullsBuildableAt(planetYardTier(planet)).includes('cruiser') &&
-        !hullsBuildableAt(planetYardTier(planet)).includes('battleship'));
+        hullsBuildableAt(planetYardSource(planet)).includes('cruiser') &&
+        !hullsBuildableAt(planetYardSource(planet)).includes('battleship'));
 }
 
 // ─── 6. Battle damage ─────────────────────────────────────────────────────────
@@ -495,8 +495,11 @@ console.log('\n8. Cross-system integration');
     check('no shipyard means no ships', !noYard.success, noYard.error);
 
     place(yardPlanet, 'spaceyard');
-    const tier1 = startSpaceConstruction(world, 'yard', 'corvette', cost, 600);
-    check('a tier 1 yard builds corvettes', tier1.success, tier1.error);
+    const tier1 = startSpaceConstruction(world, 'yard', 'destroyer', cost, 600);
+    check('a tier 1 spaceyard builds destroyers', tier1.success, tier1.error);
+    check('a spaceyard lays no corvettes (the drydock line does)', !startSpaceConstruction(world, 'yard', 'corvette', cost, 600).success);
+    place(yardPlanet, 'fleet_drydock');
+    check('a fleet drydock builds corvettes', startSpaceConstruction(world, 'yard', 'corvette', cost, 600).success);
     const tier1Destroyer = startSpaceConstruction(world, 'yard', 'destroyer', cost, 600);
     check('a tier 1 yard builds destroyers too', tier1Destroyer.success, tier1Destroyer.error);
     const tier1Cruiser = startSpaceConstruction(world, 'yard', 'cruiser' as any, cost, 600);

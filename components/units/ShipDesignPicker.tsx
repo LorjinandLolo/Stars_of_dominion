@@ -18,6 +18,7 @@ import type { DesignSummary, ShipDesign } from '@/lib/combat/ship-types';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import {
     checkShipyardGate,
+    hasAnyYard,
     hullsBuildableAt,
     nextHullAfter,
     systemYardFor,
@@ -102,25 +103,25 @@ function YardHeader({ anchor, yard }: { anchor: YardAnchor; yard: YardSource }) 
             </div>
         );
     }
-    if (yard.tier < 1) {
+    if (!hasAnyYard(yard)) {
         return (
             <div className="w-full mb-3 px-3 py-2 rounded-lg border border-red-500/20 bg-red-500/5 text-[10px] text-red-300 flex items-center gap-2">
                 <Anchor size={11} className="shrink-0" />
-                No shipyard in {sys} — build a Spaceyard in orbit of a world you own here, or move the fleet to a yard system.
+                No shipyard in {sys} — build a Fleet Drydock or a Spaceyard in orbit of a world you own here, or move the fleet to a yard system.
             </div>
         );
     }
-    const next = nextHullAfter(yard.tier);
+    const next = nextHullAfter(yard);
     return (
         <div className="w-full mb-3 px-3 py-2 rounded-lg border border-white/5 bg-black/30 text-[10px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-1">
             <Anchor size={11} className="shrink-0 text-indigo-300" />
             <span>
-                <span className="text-slate-200">Shipyard tier {yard.tier}</span> in {sys}
+                <span className="text-slate-200">{yard.light > 0 ? `Drydock tier ${yard.light}` : 'No drydock'}, {yard.tier > 0 ? `spaceyard tier ${yard.tier}` : 'no spaceyard'}</span> in {sys}
                 {yard.structureName && yard.planetName ? <> — {yard.structureName} at {yard.planetName}</> : null}.
-                {' '}Lays {hullNames(hullsBuildableAt(yard.tier))}.
+                {' '}Lays {hullNames(hullsBuildableAt(yard))}.
             </span>
             {next
-                ? <span className="text-amber-300/90">Next: {next.yardName} → {getHull(next.hull)?.name.toLowerCase() ?? next.hull}s.</span>
+                ? <span className="text-amber-300/90">Next: {next.yardName.replace(/ \(Orbital tab\)$/, '')} → {getHull(next.hull)?.name.toLowerCase() ?? next.hull}s.</span>
                 : <span className="text-emerald-300/90">Lays every hull.</span>}
         </div>
     );

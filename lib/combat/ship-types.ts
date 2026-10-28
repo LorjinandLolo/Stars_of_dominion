@@ -8,7 +8,11 @@
 // occupies in a fleet's `composition` (always lowercase — see
 // normalizeComposition in ship-registry.ts for why that matters).
 
-export type ShipClassId = 'corvette' | 'destroyer' | 'cruiser' | 'battleship';
+// Light hulls come from the Fleet Drydock line, heavy hulls from the
+// Spaceyard line (lib/combat/shipyard-gate.ts HULL_YARD).
+export type ShipClassId =
+    | 'patrol' | 'corvette' | 'frigate' | 'assault'
+    | 'destroyer' | 'cruiser' | 'carrier' | 'battleship' | 'dreadnought';
 
 export type HullSize = 'S' | 'M' | 'L' | 'XL';
 
@@ -46,6 +50,8 @@ export interface HullDefinition {
     baseCost: { credits: number; metals: number };
     /** Seconds to lay down a bare hull. */
     baseBuildTime: number;
+    /** Research needed before any design on this hull can be laid down. */
+    techRequired?: string;
 }
 
 export interface ComponentDefinition {

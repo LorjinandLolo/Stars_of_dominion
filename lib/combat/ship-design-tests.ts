@@ -14,13 +14,14 @@ import {
     getHull,
     normalizeComposition,
     summarizeDesign,
+    defaultDesignFor,
     addProfile,
     scaleProfile,
 } from './ship-registry';
 import { deleteDesign, resolveRecruitSpec, saveDesign } from './ship-design-service';
 import { calculateCompositionModifier, calculateDesignModifier } from './combat-engine';
 import {
-    HULL_MIN_YARD_TIER,
+    HULL_YARD,
     MAX_YARD_TIER,
     checkShipyardGate,
     hullsBuildableAt,
@@ -92,8 +93,12 @@ test('every hull mirrors the unit config power and cost', () => {
 
 test('standard patterns are valid with NO tech and use no gated module', () => {
     for (const d of DEFAULT_DESIGNS) {
-        const s = summarizeDesign(d, new Set());
+        // A hull that itself needs research (the dreadnought) is checked with
+        // only that research: the pattern's modules must still be ungated.
+        const hullTech = getHull(d.hullId)!.techRequired;
+        const s = summarizeDesign(d, new Set(hullTech ? [hullTech] : []));
         expectTrue(s.valid, `${d.name}: ${s.issues.join(' | ')}`);
+        if (hullTech) expectTrue(!summarizeDesign(d, new Set()).valid, `${d.name} must need ${hullTech}`);
         expectTrue(s.energyBalance >= 0, `${d.name} energy ${s.energyBalance}`);
         expectTrue(s.power > getHull(d.hullId)!.basePower, `${d.name} should beat a bare hull`);
     }
@@ -297,7 +302,7 @@ test('fleet: a bare hull name builds the standard pattern, priced from the desig
     expectEq(spec.unitType, 'CORVETTE');
     expectEq(spec.classKey, 'corvette');
     expectEq(spec.designId, 'default-corvette');
-    expectEq(spec.unitPower, summarizeDesign(DEFAULT_DESIGNS[0], null).power);
+    expectEq(spec.unitPower, summarizeDesign(defaultDesignFor('corvette')!, null).power);
     expectTrue(spec.cost.CREDITS > 800, 'modules cost extra over the bare hull');
 });
 
@@ -346,15 +351,20 @@ function yardPlanet(
     } as any;
 }
 
-test('hull → yard tier table covers every hull, is monotone, and matches the orbital catalog', () => {
-    for (const h of SHIP_CLASS_IDS) expectTrue(Number.isFinite(HULL_MIN_YARD_TIER[h]), `missing tier for ${h}`);
-    const tiers = SHIP_CLASS_IDS.map(h => HULL_MIN_YARD_TIER[h]);
-    for (let i = 1; i < tiers.length; i++) expectTrue(tiers[i] >= tiers[i - 1], 'tiers must not decrease corvette → battleship');
-    expectEq(Math.max(...tiers), MAX_YARD_TIER);
+test('hull → yard table covers every hull, is monotone per line, and matches the orbital catalog', () => {
+    for (const h of SHIP_CLASS_IDS) expectTrue(!!HULL_YARD[h] && Number.isFinite(HULL_YARD[h].tier), `missing yard for ${h}`);
+    for (const line of ['light', 'heavy'] as const) {
+        const tiers = SHIP_CLASS_IDS.filter(h => HULL_YARD[h].line === line).map(h => HULL_YARD[h].tier);
+        for (let i = 1; i < tiers.length; i++) expectTrue(tiers[i] >= tiers[i - 1], `${line} tiers must not decrease`);
+    }
+    const heavyTiers = SHIP_CLASS_IDS.filter(h => HULL_YARD[h].line === 'heavy').map(h => HULL_YARD[h].tier);
+    expectEq(Math.max(...heavyTiers), MAX_YARD_TIER);
+    const lightMax = Math.max(...ORBITAL_STRUCTURES.flatMap(s => s.effects.filter(e => e.type === 'light_yard_tier').map(e => e.value)));
+    expectEq(lightMax, Math.max(...SHIP_CLASS_IDS.filter(h => HULL_YARD[h].line === 'light').map(h => HULL_YARD[h].tier)), 'every light tier has a drydock that grants it');
     const catalogMax = Math.max(...ORBITAL_STRUCTURES.flatMap(s => s.effects.filter(e => e.type === 'shipyard_tier').map(e => e.value)));
     expectEq(catalogMax, MAX_YARD_TIER, 'MAX_YARD_TIER must equal the biggest shipyard_tier effect in data/orbital-structures.ts');
     expectEq(minYardTierFor('CORVETTE'), 1, 'case-insensitive');
-    for (const bogus of ['frigate', 'capital', 'trade_fleet', '', undefined]) {
+    for (const bogus of ['frigates', 'capital', 'trade_fleet', '', undefined]) {
         expectEq(minYardTierFor(bogus as any), Infinity, `${bogus} must fail closed`);
     }
 });
@@ -407,12 +417,12 @@ test('checkShipyardGate: transit, no yard, tier, ok — and the bare task force'
     expectTrue(!transit.ok && transit.code === 'transit' && transit.reason.includes('under way'));
 
     const noYard = checkShipyardGate([], 'f1', home, 'corvette');
-    expectTrue(!noYard.ok && noYard.code === 'no_yard' && noYard.reason.includes('Orbital Shipyard') && noYard.reason.includes('Home'), (noYard as any).reason);
+    expectTrue(!noYard.ok && noYard.code === 'no_yard' && noYard.reason.includes('Fleet Drydock') && noYard.reason.includes('Home'), (noYard as any).reason);
 
     expectTrue(checkShipyardGate(tier1, 'f1', home, 'corvette').ok);
     expectTrue(checkShipyardGate(tier1, 'f1', home, 'DESTROYER').ok, 'case-insensitive hull');
     const cruiserAt1 = checkShipyardGate(tier1, 'f1', home, 'cruiser');
-    expectTrue(!cruiserAt1.ok && cruiserAt1.code === 'tier' && cruiserAt1.reason.includes('tier 2') && cruiserAt1.reason.includes('Advanced Spaceyard'), (cruiserAt1 as any).reason);
+    expectTrue(!cruiserAt1.ok && cruiserAt1.code === 'tier' && cruiserAt1.reason.includes('tier 2 spaceyard') && cruiserAt1.reason.includes('Advanced Spaceyard'), (cruiserAt1 as any).reason);
     const bbAt2 = checkShipyardGate(tier2, 'f1', home, 'battleship');
     expectTrue(!bbAt2.ok && bbAt2.reason.includes('Capital Spaceyard'), (bbAt2 as any).reason);
     expectTrue(checkShipyardGate(tier2, 'f1', home, 'cruiser').ok);
@@ -427,11 +437,18 @@ test('checkShipyardGate: transit, no yard, tier, ok — and the bare task force'
     const yard1 = systemYardFor(tier1, 'f1', 'home');
     expectEq(yardLockReason(yard1, { ...home, holding: false }, 'corvette'), 'Fleet under way');
     expectEq(yardLockReason(systemYardFor([], 'f1', 'home'), home, 'corvette'), 'No shipyard here');
-    expectEq(yardLockReason(yard1, home, 'battleship'), 'Needs tier-3 yard');
+    expectEq(yardLockReason(yard1, home, 'battleship'), 'Needs Capital Spaceyard');
+    expectEq(yardLockReason(yard1, home, 'frigate'), 'Needs Reinforced Drydock');
     expectEq(yardLockReason(yard1, home, 'destroyer'), null);
-    expectEq(hullsBuildableAt(1), ['corvette', 'destroyer']);
-    expectEq(nextHullAfter(1)?.hull, 'cruiser');
-    expectEq(nextHullAfter(3), null);
+    // A retired surface Orbital Shipyard laid corvettes and destroyers: light 1 + heavy 1.
+    expectEq(hullsBuildableAt(yard1), ['patrol', 'corvette', 'destroyer']);
+    expectEq(nextHullAfter(yard1)?.hull, 'frigate');
+    expectEq(nextHullAfter({ tier: 3, light: 3 }), null);
+    // The starting Fleet Drydock alone: light hulls only.
+    const dockWorld = [yardPlanet('cap', { system: 'home', slots: [{ structureId: 'fleet_drydock', state: 'active' }] })];
+    expectEq(hullsBuildableAt(systemYardFor(dockWorld, 'f1', 'home')), ['patrol', 'corvette']);
+    expectTrue(checkShipyardGate(dockWorld, 'f1', home, null).ok, 'a drydock is a yard for a bare task force');
+    expectTrue(!checkShipyardGate(dockWorld, 'f1', home, 'destroyer').ok, 'a drydock lays no destroyers');
 });
 
 test('shipyardSystemIdsFor uses the same yard rule as the gate', () => {

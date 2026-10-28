@@ -10,7 +10,8 @@ import React from 'react';
 
 export type UnitIconType =
     | 'INFANTRY' | 'ARMOR' | 'ARTILLERY' | 'ANTI_ARMOR' | 'AIRBORNE' | 'SPECIAL_OPS' | 'MILITIA' | 'ELDER_INFERNOID'
-    | 'CORVETTE' | 'DESTROYER' | 'CRUISER' | 'BATTLESHIP' | 'STATION' | 'DEFENSE_PLATFORM';
+    | 'PATROL' | 'CORVETTE' | 'FRIGATE' | 'ASSAULT'
+    | 'DESTROYER' | 'CRUISER' | 'CARRIER' | 'BATTLESHIP' | 'DREADNOUGHT' | 'STATION' | 'DEFENSE_PLATFORM';
 
 const GLYPHS: Record<UnitIconType, React.ReactNode> = {
     // ── Ground ────────────────────────────────────────────────────────────
@@ -108,11 +109,32 @@ const GLYPHS: Record<UnitIconType, React.ReactNode> = {
         </>
     ),
     // ── Space ─────────────────────────────────────────────────────────────
+    PATROL: (
+        <>
+            {/* the smallest dart */}
+            <path d="M12 6l3.5 10-3.5-2-3.5 2z" />
+        </>
+    ),
     CORVETTE: (
         <>
             {/* small arrowhead */}
             <path d="M12 3l5 14-5-3-5 3z" />
             <path d="M12 14v4" />
+        </>
+    ),
+    FRIGATE: (
+        <>
+            {/* arrowhead with a point-defence ring */}
+            <path d="M12 3l4.5 13-4.5-3-4.5 3z" />
+            <circle cx="12" cy="18.5" r="2" />
+        </>
+    ),
+    ASSAULT: (
+        <>
+            {/* blunt armoured hull with a drop ramp */}
+            <path d="M8 6h8l2 10H6z" />
+            <path d="M9 16l-1 4h8l-1-4" />
+            <path d="M10 10h4" />
         </>
     ),
     DESTROYER: (
@@ -131,6 +153,14 @@ const GLYPHS: Record<UnitIconType, React.ReactNode> = {
             <path d="M12 8v8" />
         </>
     ),
+    CARRIER: (
+        <>
+            {/* flat deck with launch slots */}
+            <path d="M8 3h8l2 17H6z" />
+            <path d="M10 7h4M10 11h4M10 15h4" />
+            <path d="M4 18l2-2M20 18l-2-2" />
+        </>
+    ),
     BATTLESHIP: (
         <>
             {/* heavy hull */}
@@ -140,6 +170,16 @@ const GLYPHS: Record<UnitIconType, React.ReactNode> = {
             {/* turrets */}
             <circle cx="12" cy="9" r="1.2" />
             <circle cx="12" cy="14" r="1.2" />
+        </>
+    ),
+    DREADNOUGHT: (
+        <>
+            {/* the heaviest wedge, three turrets and a command spire */}
+            <path d="M12 1l6 8v12l-6-2-6 2V9z" />
+            <path d="M6 10l-5 4v6l5-2M18 10l5 4v6l-5-2" />
+            <circle cx="12" cy="8" r="1.1" />
+            <circle cx="12" cy="12" r="1.1" />
+            <circle cx="12" cy="16" r="1.1" />
         </>
     ),
     STATION: (

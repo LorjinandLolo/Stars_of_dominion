@@ -202,6 +202,8 @@ const WARFLEET_BY_TIER: Array<{ tier: number; composition: Record<string, number
     { tier: 3, composition: { cruiser: 3, battleship: 2 } },
     { tier: 2, composition: { destroyer: 4, cruiser: 3 } },
     { tier: 1, composition: { corvette: 4, destroyer: 4 } },
+    // Before the Spaceyard: the starting Fleet Drydock lays only light hulls.
+    { tier: 0, composition: { patrol: 4, corvette: 5 } },
 ];
 
 const NON_EMPIRES = new Set(['faction-pirates', 'faction-neutral']);

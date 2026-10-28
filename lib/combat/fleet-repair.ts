@@ -37,6 +37,25 @@ export function yardRepairBonus(
     return best;
 }
 
+/**
+ * Best orbital refit speed bonus (percent, Fleet Drydock) among this faction's
+ * planets in the system. Refit time is divided by (1 + bonus / 100).
+ */
+export function yardRefitBonus(
+    planets: Iterable<YardPlanetLike> | undefined,
+    factionId: string,
+    systemId: string,
+    nowSeconds: number,
+): number {
+    let best = 0;
+    for (const p of planets ?? []) {
+        if (p.ownerId !== factionId || p.systemId !== systemId || !p.orbital) continue;
+        const bonus = computeOrbitalRatings(p as any, nowSeconds).refitSpeedBonus;
+        if (bonus > best) best = bonus;
+    }
+    return best;
+}
+
 /** Sitting still in a system the fleet's faction holds. */
 export function isDocked(world: any, fleet: Fleet): boolean {
     if (!fleet.currentSystemId || fleet.destinationSystemId) return false;

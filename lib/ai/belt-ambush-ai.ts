@@ -21,7 +21,7 @@
 import type { Fleet } from '../movement/types';
 import { hasAsteroidBelt, AMBUSH_WAR_ESCALATION } from '../movement/belts';
 import { isFleetOperational, issueMoveOrder } from '../movement/movement-service';
-import { minYardTierFor, type YardPlanetLike } from '../combat/shipyard-gate';
+import { type YardPlanetLike } from '../combat/shipyard-gate';
 import { fleetBuildQuote, hasQueuedFleetBuild, queueAIFleetBuild, yardCanLay } from './ai-fleet-orders';
 import { queueAIOrder } from './ai-orders';
 
@@ -47,7 +47,8 @@ export interface BeltAmbushWorldView {
 // Three corvettes and a destroyer. Lowercase: the combat engine's counter grid
 // and the tactical adapter key compositions by lowercase ship class
 // (lib/combat/ship-registry.ts).
-export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 3, destroyer: 1 };
+// Light hulls only: every capital's starting Fleet Drydock lays them.
+export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { patrol: 2, corvette: 2 };
 /**
  * What MIL_BUILD_FLEET + the hull recruits charge for a picket, and its
  * finished rating. A function, not a constant: this module and
@@ -56,8 +57,6 @@ export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 
 export function picketQuote(): { cost: Record<string, number>; power: number } {
     return fleetBuildQuote({ ...PICKET_COMPOSITION });
 }
-/** Yard tier the capital must have to lay every hull in the picket (1: the seeded Spaceyard suffices). */
-export const PICKET_REQUIRED_TIER = Math.max(...Object.keys(PICKET_COMPOSITION).map(minYardTierFor));
 /** Pickets per faction at war — one per trap, at most this many. */
 export const MAX_PICKETS = 2;
 /** How far (hyperlane hops) a picket will travel to reach a trap. */

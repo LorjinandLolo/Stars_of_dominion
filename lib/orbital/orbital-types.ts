@@ -100,14 +100,18 @@ export interface OrbitalRatings {
     shieldStrength: number;
     /** Sensor reach contributed to the movement layer. */
     sensorStrength: number;
-    /** 0 = no shipyard. 1–3 gates progressively larger hull classes. */
+    /** 0 = no shipyard. 1–3 gates progressively larger hull classes (heavy line: Spaceyards). */
     shipyardTier: number;
+    /** 0 = no drydock. 1–3 gates the light hulls (light line: Fleet Drydocks). */
+    lightYardTier: number;
     /** Percentage bonus to ship construction speed. */
     shipProductionBonus: number;
     /** Reserve fleets that can be berthed here. */
     fleetCapacity: number;
     /** Fraction of fleet strength restored per hour while docked. */
     fleetRepairRate: number;
+    /** Percentage bonus to refit speed for fleets holding in this system (Fleet Drydock). */
+    refitSpeedBonus: number;
     /** Research added to the planet's output. */
     researchOutput: number;
     /** Haulage contributed to the planetary distribution network. */
@@ -130,8 +134,10 @@ export const ORBITAL_DEFENSE_EFFECT = 'orbital_defense_power';
 export const ORBITAL_SHIELD_EFFECT = 'orbital_shield_strength';
 export const ORBITAL_SENSOR_EFFECT = 'orbital_sensor_strength';
 export const SHIPYARD_TIER_EFFECT = 'shipyard_tier';
+export const LIGHT_YARD_TIER_EFFECT = 'light_yard_tier';
 export const FLEET_CAPACITY_EFFECT = 'fleet_capacity';
 export const FLEET_REPAIR_EFFECT = 'fleet_repair_rate';
+export const REFIT_SPEED_EFFECT = 'refit_speed';
 export const TRADE_EFFICIENCY_EFFECT = 'trade_efficiency';
 
 // ─── Tuning constants ─────────────────────────────────────────────────────────

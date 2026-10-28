@@ -10,7 +10,7 @@ import { MovementWorldState, Fleet, HyperdriveProfile } from '../movement/types'
 import { GameWorldState } from '../game-world-state';
 import { fireNotification } from '../time/notification-hooks';
 import { computeOrbitalRatings } from '../orbital/orbital-service';
-import { minYardTierFor, planetYardTier } from '../combat/shipyard-gate';
+import { hasAnyYard, hullYardFor, planetYardSource, yardCanLay } from '../combat/shipyard-gate';
 import { isShipClass } from '../combat/ship-registry';
 
 /** Non-combat hulls any working yard can lay down. Everything else fails closed. */
@@ -32,18 +32,16 @@ export function startSpaceConstruction(
   // Same yard rule as fleet recruitment (lib/combat/shipyard-gate.ts):
   // orbital spaceyards and the legacy surface yards both count, best tier
   // wins. Non-combat hulls (relays, trade fleets) need any yard at all.
-  const tier = planetYardTier(planet, world.nowSeconds ?? 0);
-  if (tier < 1) {
+  const yard = planetYardSource(planet, world.nowSeconds ?? 0);
+  if (!hasAnyYard(yard)) {
     return { success: false, error: 'Planet does not have an active shipyard' };
   }
-  const need = isShipClass(shipType)
-    ? minYardTierFor(shipType)
-    : ANY_YARD_SHIP_TYPES.has(shipType) ? 1 : Infinity;
-  if (!Number.isFinite(need)) {
+  const known = isShipClass(shipType) ? !!hullYardFor(shipType) : ANY_YARD_SHIP_TYPES.has(shipType);
+  if (!known) {
     return { success: false, error: `${shipType.replace(/_/g, ' ')} is not a hull any yard can lay down` };
   }
-  if (need > tier) {
-    return { success: false, error: `Shipyard tier ${tier} cannot build ${shipType.replace(/_/g, ' ')}` };
+  if (isShipClass(shipType) && !yardCanLay(yard, shipType)) {
+    return { success: false, error: `The yards here cannot build ${shipType.replace(/_/g, ' ')}` };
   }
 
   // Resource subtraction should be handled by the caller (server action)

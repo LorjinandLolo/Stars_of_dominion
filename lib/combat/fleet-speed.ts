@@ -20,11 +20,15 @@ import { CIVILIAN_SHIPS } from './civilian-ships';
 
 /** Relative lane speed per hull class. Wings (interceptor/bomber) ride inside hulls and do not count. */
 export const HULL_SPEED_FACTORS: Record<string, number> = {
+    patrol: 1.3,
     corvette: 1.2,
+    frigate: 1.1,
+    assault: 1.0,
     destroyer: 1.05,
     cruiser: 0.9,
     carrier: 0.8,
     battleship: 0.75,
+    dreadnought: 0.65,
 };
 
 type CompositionLike = Record<string, number | undefined> | null | undefined;

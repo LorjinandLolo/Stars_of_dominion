@@ -164,6 +164,19 @@ function Module({ id, k }: { id: string; k: number }) {
                     <path d={`M ${f1(48 * k)} ${f1(-10 * k)} l ${f1(6 * k)} ${f1(2.5 * k)} l ${f1(-6 * k)} ${f1(2.5 * k)} Z`} fill={LIGHT} className="orb-shuttle" />
                 </g>
             );
+        case 'fleet_drydock': case 'reinforced_drydock': case 'assault_drydock':
+            // A U-shaped cradle with a hull held in it, sparks of work.
+            // (The upgrades share the drawing for now; see the plan doc.)
+            return (
+                <g>
+                    <line x1={0} y1={0} x2={10 * k} y2={0} stroke={STEEL} strokeWidth={2.5 * k} />
+                    <path d={`M ${f1(10 * k)} ${f1(-13 * k)} L ${f1(52 * k)} ${f1(-13 * k)} M ${f1(10 * k)} ${f1(13 * k)} L ${f1(52 * k)} ${f1(13 * k)} M ${f1(10 * k)} ${f1(-13 * k)} L ${f1(10 * k)} ${f1(13 * k)}`}
+                        stroke={STEEL} strokeWidth={3 * k} fill="none" />
+                    {[22, 36].map(x => <line key={x} x1={x * k} y1={-13 * k} x2={x * k} y2={13 * k} stroke={STEEL} strokeWidth={1 * k} opacity={0.5} />)}
+                    <path d={`M ${f1(16 * k)} ${f1(-5 * k)} L ${f1(48 * k)} 0 L ${f1(16 * k)} ${f1(5 * k)} Z`} fill="#94a3b8" />
+                    <circle cx={30 * k} cy={-8 * k} r={1.6 * k} fill="#fbbf24" className="orb-blink" />
+                </g>
+            );
         case 'ship_depot':
             return (
                 <g>

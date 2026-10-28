@@ -137,13 +137,17 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     },
     {
         id: 'build_shipyard',
-        // Every capital starts with a Spaceyard in orbit; the station is what
-        // the bigger yards (cruisers and up) and most orbital modules hang on.
+        // Every capital starts with a Fleet Drydock in orbit; the station is
+        // what the bigger yards (cruisers and up) and most orbital modules hang on.
         title: 'Raise a Space Station over your capital',
-        hint: 'Your Spaceyard lays corvettes and destroyers. A Space Station is the hub the rest of your orbit hangs on: the Advanced Spaceyard that lays cruisers, defences, depots. In your capital’s Orbital tab (or click the station beside the planet), build a Space Station.',
+        hint: 'Your Fleet Drydock lays patrol craft and corvettes. A Space Station is the hub the rest of your orbit hangs on: the Advanced Spaceyard that lays cruisers, defences, depots. In your capital’s Orbital tab (or click the station beside the planet), build a Space Station.',
         takes: `about ${STATION_TIME}`,
         meanwhile: 'This is a check-back-later goal. Queue it, then go and meet your neighbours in Diplomacy.',
         metrics: [DEED_STATIONS_BUILT],
+        // A station raised before this goal existed counts too.
+        measure: (world, factionId) => Math.max(getMetric(world as any, factionId, DEED_STATIONS_BUILT),
+            mapValues(world?.construction?.planets).some((p: any) => p?.ownerId === factionId
+                && (p?.orbital?.slots ?? []).some((s: any) => ORBITAL_STRUCTURE_BY_ID[s?.structureId]?.category === 'station' && (s.state === 'active' || s.state === 'damaged'))) ? 1 : 0),
         target: 1,
     },
     {

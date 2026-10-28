@@ -31,7 +31,7 @@ import { stageForInfiltration } from '../lib/espionage/network-stages';
 const STEAL_MIN_INFILTRATION = 35;
 import { LeadershipService } from '../lib/leadership/leadership-service';
 import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-manager';
-import { dockRepairPerCycle } from '../lib/combat/fleet-repair';
+import { dockRepairPerCycle, yardRefitBonus } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
 import { foundOutpost, refreshDockedCivilians, settleWorld } from '../lib/combat/civilian-service';
@@ -98,8 +98,8 @@ import {
     quoteRefit,
     REFIT_MAX_PER_ORDER,
 } from '../lib/combat/ship-registry';
-import { checkShipyardGate, planetYardTier } from '../lib/combat/shipyard-gate';
-import { foldSurfaceYards } from '../lib/orbital/orbital-service';
+import { checkShipyardGate, planetYardSource } from '../lib/combat/shipyard-gate';
+import { foldSurfaceYards, seedStarterDrydock } from '../lib/orbital/orbital-service';
 import {
     initDistrictWar,
     advanceFront,
@@ -1132,15 +1132,10 @@ async function runGameTick() {
             const capPlanet = Array.from(world.construction.planets.values())
                 .find((p: any) => p.systemId === capSys && p.ownerId === fId);
             if (!capPlanet) continue;
-            // The shipyard lives in orbit: a capital without any yard gets a
-            // Spaceyard in a free orbital slot.
-            if (planetYardTier(capPlanet as any, world.nowSeconds) < 1) {
-                const orbital = ensureOrbitalState(capPlanet as any);
-                const free = orbital.slots.find(s => (s.state === 'empty' || s.state === 'destroyed') && !orbital.buildQueue.some(o => o.slotId === s.slotId));
-                if (free) {
-                    Object.assign(free, { structureId: 'spaceyard', state: 'active', completesAt: null, integrity: 100 });
-                    console.log(`[Tick Worker] Seeded starter Spaceyard in orbit of ${capPlanet.name} (${fId})`);
-                }
+            // The shipyard lives in orbit: a capital with no light yard gets a
+            // Fleet Drydock (patrol craft, corvettes); the Spaceyard is built later.
+            if (planetYardSource(capPlanet as any, world.nowSeconds).light < 1 && seedStarterDrydock(capPlanet as any)) {
+                console.log(`[Tick Worker] Seeded starter Fleet Drydock in orbit of ${capPlanet.name} (${fId})`);
             }
             for (const bId of ['barracks']) {
                 if (!Array.isArray((capPlanet as any).tiles)) (capPlanet as any).tiles = [];
@@ -5374,7 +5369,9 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 n,
                 world.nowSeconds,
                 {
-                    buildTimePerUnit: quote.perShipSeconds,
+                    // A Fleet Drydock in the system speeds the refit (yardRefitBonus).
+                    buildTimePerUnit: Math.max(1, Math.round(quote.perShipSeconds
+                        / (1 + yardRefitBonus(world.construction.planets.values() as any, factionId, fleet.currentSystemId!, world.nowSeconds) / 100))),
                     designId: toDesign.id,
                     designName: toDesign.name,
                     classKey: quote.hullId,

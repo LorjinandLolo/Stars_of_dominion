@@ -3,10 +3,13 @@
 // The one rule for where a hull can be laid down:
 //
 //   A fleet can only take on a hull that a shipyard you own in its current
-//   system can lay down — a Spaceyard (every capital starts with one in
-//   orbit) lays corvettes and destroyers, an Advanced Spaceyard adds
-//   cruisers, a Capital Spaceyard adds battleships. Yards are orbital only;
-//   old surface yards are moved up by foldSurfaceYards (lib/orbital).
+//   system can lay down. Yards come in two lines, both in orbit:
+//     light — Fleet Drydock (patrol craft, corvettes; every capital starts
+//             with one) → Reinforced Drydock (frigates) → Assault Drydock
+//             (assault ships);
+//     heavy — Spaceyard (destroyers) → Advanced Spaceyard (cruisers) →
+//             Capital Spaceyard (carriers, battleships, dreadnoughts).
+//   Old surface yards are moved up by foldSurfaceYards (lib/orbital).
 //
 // Worker (scripts/game-loop.ts MIL_BUILD_FLEET / MIL_RECRUIT_FORMATION_UNIT),
 // the AI capital spawns (ai-expansion, belt-ambush-ai) and the recruit picker
@@ -24,21 +27,29 @@ import type { OrbitalState } from '../orbital/orbital-types';
 import { SHIP_CLASS_IDS, getHull, normalizeUnitKey } from './ship-registry';
 import type { ShipClassId } from './ship-types';
 
-/** Largest `shipyard_tier` effect any orbital structure grants (tested against the catalog). */
+/** Largest `shipyard_tier` (heavy line) effect any orbital structure grants (tested against the catalog). */
 export const MAX_YARD_TIER = 3;
 
-/** Lowest yard tier that lays each hull. The whole gate is this table. */
-export const HULL_MIN_YARD_TIER: Readonly<Record<ShipClassId, number>> = {
-    corvette: 1,
-    destroyer: 1,
-    cruiser: 2,
-    battleship: 3,
+export type YardLine = 'light' | 'heavy';
+
+/** Which yard line, at which tier, lays each hull. The whole gate is this table. */
+export const HULL_YARD: Readonly<Record<ShipClassId, { line: YardLine; tier: number }>> = {
+    patrol: { line: 'light', tier: 1 },
+    corvette: { line: 'light', tier: 1 },
+    frigate: { line: 'light', tier: 2 },
+    assault: { line: 'light', tier: 3 },
+    destroyer: { line: 'heavy', tier: 1 },
+    cruiser: { line: 'heavy', tier: 2 },
+    carrier: { line: 'heavy', tier: 3 },
+    battleship: { line: 'heavy', tier: 3 },
+    dreadnought: { line: 'heavy', tier: 3 },
 };
 
 /**
- * Retired surface yards and the tier they imply. No longer buildable — the
- * worker folds them into orbit — but one that found no free orbital slot
- * still counts until it does.
+ * Retired surface yards and the heavy tier they imply (each also counts as a
+ * light tier 1 yard: it laid corvettes). No longer buildable — the worker
+ * folds them into orbit — but one that found no free orbital slot still
+ * counts until it does.
  */
 export const SURFACE_YARD_TIERS: Readonly<Record<string, number>> = {
     orbital_shipyard: 1,
@@ -50,12 +61,25 @@ const SURFACE_YARD_NAMES: Readonly<Record<string, string>> = {
     fleet_drydock: 'Fleet Drydock',
 };
 
-/** What to build to reach a tier — the text the player sees when refused. */
+/** What to build to reach a heavy tier — the text the player sees when refused. */
 export const YARD_TIER_NAMES: Readonly<Record<number, string>> = {
     1: 'Spaceyard (Orbital tab)',
     2: 'Advanced Spaceyard',
     3: 'Capital Spaceyard',
 };
+
+/** What to build to reach a light tier. */
+export const LIGHT_YARD_TIER_NAMES: Readonly<Record<number, string>> = {
+    1: 'Fleet Drydock (Orbital tab)',
+    2: 'Reinforced Drydock',
+    3: 'Assault Drydock',
+};
+
+const stripTab = (name: string) => name.replace(/ \(Orbital tab\)$/, '');
+
+export function yardNameFor(line: YardLine, tier: number): string {
+    return (line === 'light' ? LIGHT_YARD_TIER_NAMES : YARD_TIER_NAMES)[tier] ?? `tier ${tier} ${line} yard`;
+}
 
 /** The slice of a planet this module reads — construction planets and the synced store shape both satisfy it. */
 export interface YardPlanetLike {
@@ -68,7 +92,10 @@ export interface YardPlanetLike {
 }
 
 export interface YardSource {
+    /** Heavy line (Spaceyards): destroyers and up. */
     tier: number;
+    /** Light line (Drydocks): patrol craft, corvettes, frigates, assault ships. */
+    light: number;
     planetId: string | null;
     planetName: string | null;
     structureName: string | null;
@@ -87,21 +114,58 @@ export type YardGateResult =
     | { ok: true; yard: YardSource }
     | { ok: false; code: YardGateCode; reason: string; yard: YardSource };
 
-const NO_YARD: YardSource = Object.freeze({ tier: 0, planetId: null, planetName: null, structureName: null });
+const NO_YARD: YardSource = Object.freeze({ tier: 0, light: 0, planetId: null, planetName: null, structureName: null });
 
-/** Lowest tier that lays this hull; Infinity for anything that is not a ship class (fail-closed). */
-export function minYardTierFor(hullId: string | null | undefined): number {
+/** The line and tier that lay this hull; null for anything that is not a ship class (fail-closed). */
+export function hullYardFor(hullId: string | null | undefined): { line: YardLine; tier: number } | null {
     const key = normalizeUnitKey(hullId ?? '');
-    const tier = (HULL_MIN_YARD_TIER as Record<string, number>)[key];
-    return tier === undefined ? Infinity : tier;
+    return (HULL_YARD as Record<string, { line: YardLine; tier: number }>)[key] ?? null;
+}
+
+/** Lowest tier (on its own line) that lays this hull; Infinity for anything that is not a ship class. */
+export function minYardTierFor(hullId: string | null | undefined): number {
+    return hullYardFor(hullId)?.tier ?? Infinity;
+}
+
+/** Any yard at all, either line: what civilian hulls and a bare task force need. */
+export function hasAnyYard(yard: Pick<YardSource, 'tier' | 'light'>): boolean {
+    return yard.tier >= 1 || yard.light >= 1;
+}
+
+/** Can this yard lay this hull? false for anything that is not a ship class. */
+export function yardCanLay(yard: Pick<YardSource, 'tier' | 'light'>, hullId: string | null | undefined): boolean {
+    const need = hullYardFor(hullId);
+    if (!need) return false;
+    return (need.line === 'light' ? yard.light : yard.tier) >= need.tier;
 }
 
 /** Best yard on one planet: max(orbital tier, best active surface yard), with its name. */
 export function planetYardSource(planet: YardPlanetLike | undefined | null, nowSeconds = 0): YardSource {
     if (!planet) return NO_YARD;
-    let best: YardSource = NO_YARD;
+    const ratings = computeOrbitalRatings(planet as any, nowSeconds);
+    const heavy = planetHeavySource(planet, ratings.shipyardTier);
+    let light = ratings.lightYardTier;
+    // Outpost drydocks and retired surface yards laid corvettes: light tier too.
+    if (laysCorvettesOffOrbit(planet)) light = Math.max(light, 1);
+    if (heavy.tier > 0) return { ...heavy, light };
+    if (light > 0) {
+        const slot = (planet.orbital?.slots ?? []).find(s => s?.structureId
+            && (s.state === 'active' || s.state === 'damaged')
+            && (ORBITAL_STRUCTURE_BY_ID[s.structureId]?.effects ?? []).some(e => e.type === 'light_yard_tier' && e.value === light));
+        return { tier: 0, light, planetId: planet.id, planetName: planet.name ?? null, structureName: slot?.structureId ? (ORBITAL_STRUCTURE_BY_ID[slot.structureId]?.name ?? slot.structureId) : 'Fleet Drydock' };
+    }
+    return NO_YARD;
+}
 
-    const orbitalTier = computeOrbitalRatings(planet as any, nowSeconds).shipyardTier;
+function laysCorvettesOffOrbit(planet: YardPlanetLike): boolean {
+    const outpost: any = (planet as any).outpost;
+    if (outpost?.base && !(outpost.colonists <= 0) && planetHeavySource(planet, 0).tier > 0) return true;
+    return (planet.tiles ?? []).some(t => t?.buildingId && t.constructionState === 'active' && SURFACE_YARD_TIERS[t.buildingId] !== undefined);
+}
+
+/** Best heavy-line yard on one planet: max(orbital tier, outpost drydocks, retired surface yard). */
+function planetHeavySource(planet: YardPlanetLike, orbitalTier: number): YardSource {
+    let best: YardSource = NO_YARD;
     if (orbitalTier > best.tier) {
         const slot = (planet.orbital?.slots ?? []).find(s =>
             s?.structureId
@@ -109,6 +173,7 @@ export function planetYardSource(planet: YardPlanetLike | undefined | null, nowS
             && (ORBITAL_STRUCTURE_BY_ID[s.structureId]?.effects ?? []).some(e => e.type === 'shipyard_tier' && e.value === orbitalTier));
         best = {
             tier: orbitalTier,
+            light: 0,
             planetId: planet.id,
             planetName: planet.name ?? null,
             structureName: slot?.structureId ? (ORBITAL_STRUCTURE_BY_ID[slot.structureId]?.name ?? slot.structureId) : 'Spaceyard',
@@ -120,7 +185,7 @@ export function planetYardSource(planet: YardPlanetLike | undefined | null, nowS
     if (outpost?.base && !(outpost.colonists <= 0)) {
         const docks = (outpost.cells ?? []).filter((c: any) => c?.module === 'drydock' && c.buildDoneShift === undefined && !c.off && !((c.downUntilShift ?? 0) > outpost.shift)).length;
         const tier = drydockYardTier(docks);
-        if (tier > best.tier) best = { tier, planetId: planet.id, planetName: planet.name ?? null, structureName: 'Drydock' };
+        if (tier > best.tier) best = { tier, light: 0, planetId: planet.id, planetName: planet.name ?? null, structureName: 'Drydock' };
     }
 
     for (const tile of planet.tiles ?? []) {
@@ -129,6 +194,7 @@ export function planetYardSource(planet: YardPlanetLike | undefined | null, nowS
         if (tier === undefined || tier <= best.tier) continue;
         best = {
             tier,
+            light: 0,
             planetId: planet.id,
             planetName: planet.name ?? null,
             structureName: SURFACE_YARD_NAMES[tile.buildingId] ?? tile.buildingId,
@@ -149,24 +215,29 @@ export function systemYardFor(
     nowSeconds = 0,
 ): YardSource {
     if (!systemId) return NO_YARD;
-    let best: YardSource = NO_YARD;
+    // The two lines may be on different worlds of the system: best of each.
+    let heavy: YardSource = NO_YARD;
+    let light: YardSource = NO_YARD;
     for (const p of planets) {
         if (!p || p.ownerId !== factionId || p.systemId !== systemId) continue;
         const src = planetYardSource(p, nowSeconds);
-        if (src.tier > best.tier) best = src;
+        if (src.tier > heavy.tier) heavy = src;
+        if (src.light > light.light) light = src;
     }
-    return best;
+    if (heavy.tier > 0) return { ...heavy, light: light.light };
+    return light.light > 0 ? { ...light, tier: 0 } : NO_YARD;
 }
 
-export function hullsBuildableAt(tier: number): ShipClassId[] {
-    return SHIP_CLASS_IDS.filter(h => HULL_MIN_YARD_TIER[h] <= tier);
+export function hullsBuildableAt(yard: Pick<YardSource, 'tier' | 'light'>): ShipClassId[] {
+    return SHIP_CLASS_IDS.filter(h => yardCanLay(yard, h));
 }
 
-export function nextHullAfter(tier: number): { hull: ShipClassId; tier: number; yardName: string } | null {
-    const next = SHIP_CLASS_IDS.find(h => HULL_MIN_YARD_TIER[h] > tier);
+/** The cheapest next unlock on each line, for the yard hint. */
+export function nextHullAfter(yard: Pick<YardSource, 'tier' | 'light'>): { hull: ShipClassId; line: YardLine; tier: number; yardName: string } | null {
+    const next = SHIP_CLASS_IDS.find(h => !yardCanLay(yard, h));
     if (!next) return null;
-    const need = HULL_MIN_YARD_TIER[next];
-    return { hull: next, tier: need, yardName: YARD_TIER_NAMES[need] ?? `tier ${need} yard` };
+    const need = HULL_YARD[next];
+    return { hull: next, line: need.line, tier: need.tier, yardName: yardNameFor(need.line, need.tier) };
 }
 
 function systemLabel(anchor: YardAnchor): string {
@@ -176,7 +247,7 @@ function systemLabel(anchor: YardAnchor): string {
 export const TRANSIT_REASON = 'Fleet is under way — ships can only be commissioned while it holds in a system with your shipyard.';
 
 export function noYardReason(anchor: YardAnchor): string {
-    return `No shipyard of yours in ${systemLabel(anchor)}. Build an Orbital Shipyard on a world you own here, or move the fleet to a system that has one.`;
+    return `No shipyard of yours in ${systemLabel(anchor)}. Build a Fleet Drydock or a Spaceyard in orbit of a world you own here, or move the fleet to a system that has one.`;
 }
 
 /**
@@ -195,23 +266,23 @@ export function checkShipyardGate(
         return { ok: false, code: 'transit', reason: TRANSIT_REASON, yard: NO_YARD };
     }
     const yard = systemYardFor(planets, factionId, anchor.systemId, nowSeconds);
-    if (yard.tier < 1) {
+    if (!hasAnyYard(yard)) {
         const prefix = hullId ? '' : 'A task force can only be commissioned where you have a shipyard. ';
         return { ok: false, code: 'no_yard', reason: prefix + noYardReason(anchor), yard };
     }
     if (!hullId) return { ok: true, yard };
 
-    const need = minYardTierFor(hullId);
+    const need = hullYardFor(hullId);
     const hullName = getHull(hullId)?.name ?? String(hullId);
-    if (!Number.isFinite(need)) {
+    if (!need) {
         return { ok: false, code: 'tier', reason: `${hullName} is not a hull any yard can lay down.`, yard };
     }
-    if (need > yard.tier) {
-        const where = yard.structureName && yard.planetName ? ` (${yard.structureName} at ${yard.planetName})` : '';
+    if (!yardCanLay(yard, hullId)) {
+        const have = need.line === 'light' ? yard.light : yard.tier;
         return {
             ok: false,
             code: 'tier',
-            reason: `${hullName} needs a tier ${need} yard — ${YARD_TIER_NAMES[need] ?? `tier ${need}`}. ${systemLabel(anchor)} has tier ${yard.tier}${where}.`,
+            reason: `${hullName} needs a tier ${need.tier} ${need.line === 'light' ? 'drydock' : 'spaceyard'} — ${yardNameFor(need.line, need.tier)}. ${systemLabel(anchor)} has ${have > 0 ? stripTab(yardNameFor(need.line, have)) : `no ${need.line === 'light' ? 'drydock' : 'spaceyard'}`}.`,
             yard,
         };
     }
@@ -221,8 +292,9 @@ export function checkShipyardGate(
 /** Short card-footer text for a hull at this anchor, or null when it can be laid down. */
 export function yardLockReason(yard: YardSource, anchor: YardAnchor, hullId: string): string | null {
     if (!anchor.holding) return 'Fleet under way';
-    if (yard.tier < 1) return 'No shipyard here';
-    const need = minYardTierFor(hullId);
-    if (need > yard.tier) return Number.isFinite(need) ? `Needs tier-${need} yard` : 'Not a hull';
+    if (!hasAnyYard(yard)) return 'No shipyard here';
+    const need = hullYardFor(hullId);
+    if (!need) return 'Not a hull';
+    if (!yardCanLay(yard, hullId)) return `Needs ${stripTab(yardNameFor(need.line, need.tier))}`;
     return null;
 }

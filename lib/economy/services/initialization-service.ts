@@ -5,7 +5,7 @@ import { Planet as ConstructionPlanet, PlanetType as ConstructionPlanetType } fr
 import { CivilizationRegistry } from '../../civilization/registry';
 import { homeworldNameFor, homeworldArchetypeTagFor } from '../../galaxy/faction-capitals';
 import { BUILDINGS } from '@/data/buildings';
-import { foldSurfaceYards } from '../../orbital/orbital-service';
+import { foldSurfaceYards, seedStarterDrydock } from '../../orbital/orbital-service';
 
 /**
  * Maps Economy planet types to Construction system types for UI/visual consistency.
@@ -76,7 +76,9 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
      * producing an empty tile.
      */
     const resolveStarterBuildings = (): string[] => {
-        const COMMON = ['metal_mine', 'chemical_plant', 'hydroponic_farm', 'habitat_block', 'orbital_shipyard'];
+        // The shipyard is not a building any more: seedStarterDrydock puts a
+        // Fleet Drydock in orbit below.
+        const COMMON = ['metal_mine', 'chemical_plant', 'hydroponic_farm', 'habitat_block'];
         const authored = starting?.startingBuildings;
         if (!authored?.length) return COMMON;
 
@@ -89,11 +91,9 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
                 `${dangling.join(', ')} — skipped.`
             );
         }
-        // The shipyard is not flavour: without it a faction cannot build ships
-        // and can never expand, so it is appended regardless of what was authored.
-        const merged = [...valid];
-        if (!merged.includes('orbital_shipyard')) merged.push('orbital_shipyard');
-        return merged.length > 1 ? merged : COMMON;
+        // An authored ground shipyard is dropped: yards live in orbit.
+        const merged = valid.filter(id => id !== 'orbital_shipyard' && id !== 'fleet_drydock');
+        return merged.length > 0 ? merged : COMMON;
     };
 
     // 2. We want to ensure 4 planets exist in this system: ONE owned capital
@@ -257,8 +257,11 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
             });
         }
 
-        // The starting yard goes up into orbit as a Spaceyard (one shipyard ladder).
+        // The starting yard: a Fleet Drydock in orbit (patrol craft and
+        // corvettes). The shipyard is not flavour: without it a faction cannot
+        // build ships and can never expand.
         foldSurfaceYards(constrPlanet as any);
+        seedStarterDrydock(constrPlanet as any);
 
         // 8. Inject into Construction state
         world.construction.planets.set(planetId, constrPlanet);

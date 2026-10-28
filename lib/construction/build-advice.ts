@@ -78,7 +78,7 @@ function countOf(planet: AdvicePlanet, id: string): number {
     return standing + queued;
 }
 
-// Shipyards live in orbit (every capital starts with a Spaceyard); an old
+// Shipyards live in orbit (every capital starts with a Fleet Drydock); an old
 // ground yard not yet moved up still counts.
 function yardStanding(planet: AdvicePlanet): boolean {
     return (planet.tiles ?? []).some(t => (t.buildingId === 'orbital_shipyard' || t.buildingId === 'fleet_drydock') && t.constructionState !== 'ruined' && t.constructionState !== 'under_construction')

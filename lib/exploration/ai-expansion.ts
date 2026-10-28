@@ -11,7 +11,7 @@
 import type { GameWorldState } from '../game-world-state';
 import { issueExploreOrder } from './exploration-service';
 import { issueMoveOrder } from '../movement/movement-service';
-import { SURFACE_YARD_TIERS, systemYardFor } from '../combat/shipyard-gate';
+import { SURFACE_YARD_TIERS, systemYardFor, hasAnyYard } from '../combat/shipyard-gate';
 import { repairBuilding } from '../construction/construction-service';
 import { tickAIYardLadder } from '../ai/yard-ladder-ai';
 import { CIVILIAN_SHIPS, EXPLORER_TIME_FACTOR, civilianCount, scanReachFrom } from '../combat/civilian-ships';
@@ -134,7 +134,7 @@ export function tickAIExpansion(world: GameWorldState): void {
             // Same yard rule as the player's MIL_BUILD_FLEET: no yard at the
             // capital, no hull. Every seeded capital carries an Orbital
             // Shipyard tile, so this only bites once that yard is lost.
-            if (systemYardFor(world.construction.planets.values(), factionId, capital, world.nowSeconds).tier < 1) continue;
+            if (!hasAnyYard(systemYardFor(world.construction.planets.values(), factionId, capital, world.nowSeconds))) continue;
             charge(reserves!, SCOUT_FLEET_COST);
             const fleetId = `fleet-${factionId}-scout-1`;
             fleet = {
