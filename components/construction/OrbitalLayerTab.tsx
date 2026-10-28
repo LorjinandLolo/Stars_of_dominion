@@ -57,14 +57,13 @@ export function OrbitalLayerTab({ planet, layer, nowSeconds, actionLoading, onDi
     const hasStation = Boolean(ratings?.hasStation);
     const freeSlots = slots.filter(s => s.state === 'empty' || s.state === 'destroyed').length;
 
-    // Yard tier as the recruit gate sees it: orbital yards AND the surface
-    // Orbital Shipyard tile every capital seeds, so a fresh capital reads 1
-    // here exactly as the picker does.
+    // Yard tier as the recruit gate sees it (the same function the picker
+    // calls), so this line and the picker never disagree.
     const yardTier = planetYardTier(planet as any, nowSeconds);
     const yardNext = nextHullAfter(yardTier);
     const yardHint = yardTier > 0
         ? `Lays ${hullsBuildableAt(yardTier).join(', ')}${yardNext ? ` · next: ${yardNext.yardName} → ${yardNext.hull}` : ' · every hull'}`
-        : 'No yard — build an Orbital Shipyard on the surface or a Spaceyard in orbit';
+        : 'No yard — build a Spaceyard below';
 
     /** Why this structure cannot be laid down right now, or null if it can. */
     const blockedReason = (structureId: string): string | null => {

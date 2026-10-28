@@ -11,7 +11,7 @@ import type { Planet as ConstructionPlanet } from '../construction/construction-
 import type { GameWorldState } from '../game-world-state';
 import { ORBITAL_STRUCTURE_BY_ID } from '../../data/orbital-structures';
 import { bumpMetric } from '../tech/history-ledger';
-import { DEED_SHIPYARDS_BUILT } from '../tech/deed-metrics';
+import { DEED_SHIPYARDS_BUILT, DEED_STATIONS_BUILT } from '../tech/deed-metrics';
 import { specializationMultiplier } from '../specialization/specialization-effects';
 import {
     BASE_ORBITAL_SLOTS,
@@ -112,6 +112,58 @@ const ZERO_RATINGS: OrbitalRatings = {
     activeStructures: 0,
     hasStation: false,
 };
+
+// ─── One shipyard ladder ──────────────────────────────────────────────────────
+
+/**
+ * Shipyards are built in one place: orbit (Spaceyard → Advanced Spaceyard →
+ * Capital Spaceyard). The old surface yards are retired from the build menu,
+ * and any still standing on a world move up into its orbit as the matching
+ * rung. Ground tier 1 is a Spaceyard, ground tier 2 an Advanced Spaceyard.
+ */
+export const SURFACE_YARD_TO_ORBITAL: Readonly<Record<string, string>> = {
+    orbital_shipyard: 'spaceyard',
+    fleet_drydock: 'advanced_spaceyard',
+};
+const YARD_LADDER = ['spaceyard', 'advanced_spaceyard', 'capital_spaceyard'];
+
+/**
+ * Move a world's finished ground yards into its orbit. Idempotent (the worker
+ * runs it every cycle); a yard still being built is left until it finishes,
+ * and one with no free orbital slot stays on the ground, where the yard gate
+ * still counts it. A ruined ground yard arrives damaged and is repaired by the
+ * orbital repair tick. Returns true when anything moved.
+ */
+export function foldSurfaceYards(planet: ConstructionPlanet): boolean {
+    const tiles = (planet.tiles ?? []).filter(t => t.buildingId && SURFACE_YARD_TO_ORBITAL[t.buildingId]
+        && (t.constructionState as string) !== 'under_construction' && (t.constructionState as string) !== 'empty');
+    if (!tiles.length) return false;
+    const rank = (id: string | null | undefined) => (id ? YARD_LADDER.indexOf(id) : -1);
+    const best = tiles.reduce((a, t) => (rank(SURFACE_YARD_TO_ORBITAL[t.buildingId!]) > rank(SURFACE_YARD_TO_ORBITAL[a.buildingId!]) ? t : a));
+    const target = SURFACE_YARD_TO_ORBITAL[best.buildingId!];
+    const ruined = (best.constructionState as string) === 'ruined';
+
+    const orbital = ensureOrbitalState(planet);
+    const busy = new Set(orbital.buildQueue.map(o => o.slotId));
+    const existing = orbital.slots.find(s => rank(s.structureId) >= 0 && s.state !== 'destroyed' && s.state !== 'empty');
+    if (!existing || rank(existing.structureId) < rank(target)) {
+        // Orbit has no yard this good yet: the ground one goes up (into the
+        // weaker yard's slot if there is one, else a free slot).
+        const slot = existing && !busy.has(existing.slotId) ? existing
+            : orbital.slots.find(s => (s.state === 'empty' || s.state === 'destroyed') && !busy.has(s.slotId));
+        if (!slot) return false;
+        slot.structureId = target;
+        slot.state = ruined ? 'damaged' : 'active';
+        slot.completesAt = null;
+        slot.integrity = ruined ? 25 : 100;
+    }
+    for (const t of tiles) {
+        t.buildingId = null;
+        t.constructionState = 'empty' as any;
+        t.constructionCompleteAt = null;
+    }
+    return true;
+}
 
 /**
  * Everything the rest of the game reads off a planet's orbit.
@@ -548,9 +600,9 @@ export function tickOrbitalGlobal(world: GameWorldState, deltaSeconds: number): 
         if (finished.length && planet.ownerId) {
             for (const slotId of finished) {
                 const structureId = planet.orbital?.slots.find(s => s.slotId === slotId)?.structureId;
-                if (structureId && ORBITAL_STRUCTURE_BY_ID[structureId]?.category === 'shipyard') {
-                    bumpMetric(world, planet.ownerId, DEED_SHIPYARDS_BUILT);
-                }
+                const category = structureId ? ORBITAL_STRUCTURE_BY_ID[structureId]?.category : undefined;
+                if (category === 'shipyard') bumpMetric(world, planet.ownerId, DEED_SHIPYARDS_BUILT);
+                if (category === 'station') bumpMetric(world, planet.ownerId, DEED_STATIONS_BUILT);
             }
         }
         repairOrbital(planet, deltaSeconds);

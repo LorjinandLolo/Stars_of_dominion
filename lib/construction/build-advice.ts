@@ -63,7 +63,6 @@ const STEPS: Step[] = [
     { id: 'fusion_reactor', group: 'resources', why: 'Energy keeps buildings running; a deficit shuts them down.' },
     { id: 'chemical_plant', group: 'resources', why: 'Chemicals go into farms, labs, shipyards and fuel.' },
     { id: 'gas_giant_harvester', group: 'resources', why: 'A gas giant is the richest energy source there is.', when: p => (p.tags ?? []).includes('Gas Giant') },
-    { id: 'orbital_shipyard', group: 'exploration', why: 'A shipyard lays down exploration ships, builders for new outposts, and warships.' },
     { id: 'explorer', group: 'exploration', why: 'Fast and unarmed: it scans and surveys the systems around you, which is how you find worlds to settle.' },
     { id: 'construction_yard', group: 'growth', why: 'Each Builder Outpost lets this world build one more thing at a time.' },
     { id: 'metal_mine', group: 'resources', want: 2, why: 'A second mine: metals run short once ships and outposts start.' },
@@ -79,11 +78,8 @@ function countOf(planet: AdvicePlanet, id: string): number {
     return standing + queued;
 }
 
-function hasYard(planet: AdvicePlanet): boolean {
-    return countOf(planet, 'orbital_shipyard') + countOf(planet, 'fleet_drydock') > 0
-        || (planet.orbital?.ratings?.shipyardTier ?? 0) >= 1;
-}
-
+// Shipyards live in orbit (every capital starts with a Spaceyard); an old
+// ground yard not yet moved up still counts.
 function yardStanding(planet: AdvicePlanet): boolean {
     return (planet.tiles ?? []).some(t => (t.buildingId === 'orbital_shipyard' || t.buildingId === 'fleet_drydock') && t.constructionState !== 'ruined' && t.constructionState !== 'under_construction')
         || (planet.orbital?.ratings?.shipyardTier ?? 0) >= 1;
@@ -106,14 +102,12 @@ export function adviseBuilds(planet: AdvicePlanet, ctx: AdviceContext, explorerC
         if (step.when && !step.when(planet)) continue;
         if (step.id === 'explorer') {
             if (ctx.hasExplorer) continue;
-            if (!hasYard(planet)) continue; // the shipyard step comes first
             out.push({
                 id: 'explorer', kind: 'explorer', name: 'Exploration Ship', group: step.group, why: step.why, cost: explorerCost,
-                blocked: yardStanding(planet) ? undefined : 'Waiting for the shipyard to finish',
+                blocked: yardStanding(planet) ? undefined : 'Needs a Spaceyard in orbit (Orbital tab)',
             });
             continue;
         }
-        if (step.id === 'orbital_shipyard' && hasYard(planet)) continue;
         const def = DEF_BY_ID.get(step.id);
         if (!def) continue;
         if (countOf(planet, step.id) >= (step.want ?? 1)) continue;

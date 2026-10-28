@@ -98,7 +98,8 @@ import {
     quoteRefit,
     REFIT_MAX_PER_ORDER,
 } from '../lib/combat/ship-registry';
-import { checkShipyardGate } from '../lib/combat/shipyard-gate';
+import { checkShipyardGate, planetYardTier } from '../lib/combat/shipyard-gate';
+import { foldSurfaceYards } from '../lib/orbital/orbital-service';
 import {
     initDistrictWar,
     advanceFront,
@@ -1117,6 +1118,11 @@ async function runGameTick() {
         }
 
 
+        // 5.6b One shipyard ladder: ground yards still standing move into orbit.
+        for (const p of world.construction.planets.values()) {
+            if (foldSurfaceYards(p as any)) console.log(`[Tick Worker] Moved ${(p as any).name}'s ground shipyard into orbit`);
+        }
+
         // 5.7 Starter Infrastructure — every capital gets a working shipyard and
         // barracks so the core loop (commission ships, recruit troops, repair)
         // functions out of the box. Idempotent: skips planets that have them.
@@ -1126,7 +1132,17 @@ async function runGameTick() {
             const capPlanet = Array.from(world.construction.planets.values())
                 .find((p: any) => p.systemId === capSys && p.ownerId === fId);
             if (!capPlanet) continue;
-            for (const bId of ['orbital_shipyard', 'barracks']) {
+            // The shipyard lives in orbit: a capital without any yard gets a
+            // Spaceyard in a free orbital slot.
+            if (planetYardTier(capPlanet as any, world.nowSeconds) < 1) {
+                const orbital = ensureOrbitalState(capPlanet as any);
+                const free = orbital.slots.find(s => (s.state === 'empty' || s.state === 'destroyed') && !orbital.buildQueue.some(o => o.slotId === s.slotId));
+                if (free) {
+                    Object.assign(free, { structureId: 'spaceyard', state: 'active', completesAt: null, integrity: 100 });
+                    console.log(`[Tick Worker] Seeded starter Spaceyard in orbit of ${capPlanet.name} (${fId})`);
+                }
+            }
+            for (const bId of ['barracks']) {
                 if (!Array.isArray((capPlanet as any).tiles)) (capPlanet as any).tiles = [];
                 const has = (capPlanet as any).tiles.some((t: any) => t.buildingId === bId);
                 if (!has) {

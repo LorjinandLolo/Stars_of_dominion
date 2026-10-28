@@ -24,7 +24,7 @@ import {
     DEED_SHIPS_COMMISSIONED,
     DEED_SYSTEMS_SURVEYED,
     DEED_COLONIES_FOUNDED,
-    DEED_SHIPYARDS_BUILT,
+    DEED_STATIONS_BUILT,
     DEED_TREATIES_SIGNED,
     DEED_ENVOYS_SENT,
     DEED_RESEARCH_STARTED,
@@ -137,13 +137,13 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     },
     {
         id: 'build_shipyard',
-        // Not the ground "Orbital Shipyard" building every capital starts with:
-        // the orbital LAYER's yard, which is what lays cruisers and up.
-        title: 'Raise a Spaceyard in orbit',
-        hint: 'Your ground yard lays corvettes and destroyers. A Spaceyard in orbit builds faster, repairs fleets, and is the first rung to the yards that lay cruisers. In your capital’s Orbital tab, build a Space Station first, then the Spaceyard.',
-        takes: `Station ${STATION_TIME}, then the yard ${SPACEYARD_TIME}`,
+        // Every capital starts with a Spaceyard in orbit; the station is what
+        // the bigger yards (cruisers and up) and most orbital modules hang on.
+        title: 'Raise a Space Station over your capital',
+        hint: 'Your Spaceyard lays corvettes and destroyers. A Space Station is the hub the rest of your orbit hangs on: the Advanced Spaceyard that lays cruisers, defences, depots. In your capital’s Orbital tab (or click the station beside the planet), build a Space Station.',
+        takes: `about ${STATION_TIME}`,
         meanwhile: 'This is a check-back-later goal. Queue it, then go and meet your neighbours in Diplomacy.',
-        metrics: [DEED_SHIPYARDS_BUILT],
+        metrics: [DEED_STATIONS_BUILT],
         target: 1,
     },
     {

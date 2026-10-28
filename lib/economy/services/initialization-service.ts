@@ -5,6 +5,7 @@ import { Planet as ConstructionPlanet, PlanetType as ConstructionPlanetType } fr
 import { CivilizationRegistry } from '../../civilization/registry';
 import { homeworldNameFor, homeworldArchetypeTagFor } from '../../galaxy/faction-capitals';
 import { BUILDINGS } from '@/data/buildings';
+import { foldSurfaceYards } from '../../orbital/orbital-service';
 
 /**
  * Maps Economy planet types to Construction system types for UI/visual consistency.
@@ -255,6 +256,9 @@ export function initializeFactionHomeWorld(world: GameWorldState, factionId: str
                 }
             });
         }
+
+        // The starting yard goes up into orbit as a Spaceyard (one shipyard ladder).
+        foldSurfaceYards(constrPlanet as any);
 
         // 8. Inject into Construction state
         world.construction.planets.set(planetId, constrPlanet);

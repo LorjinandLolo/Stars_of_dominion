@@ -14,6 +14,8 @@ import { InfrastructureTab } from './InfrastructureTab';
 import { LogisticsTab } from './LogisticsTab';
 import { formatPercent } from '@/lib/ui/format';
 import { SURFACE_YARD_TIERS } from '@/lib/combat/shipyard-gate';
+// Shipyards are built in orbit (Orbital tab), not from this list.
+import { SURFACE_YARD_TO_ORBITAL } from '@/lib/orbital/orbital-service';
 import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { getSyncedWorld } from '@/hooks/useGameSync';
@@ -468,7 +470,7 @@ export function PlanetConstructionPanel({
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                         {(BUILDING_DEFS.map(d => [d.id, d]) as [BuildingType, any][])
-                                            .filter(([_, def]) => def.category === cat && buildingOpenTo(def, playerCivId))
+                                            .filter(([_, def]) => def.category === cat && buildingOpenTo(def, playerCivId) && !(def.id in SURFACE_YARD_TO_ORBITAL))
                                             .map(([type, def]) => {
                                                 const afford = canAfford(type);
                                                 const reqsMet = hasPrereq(type);

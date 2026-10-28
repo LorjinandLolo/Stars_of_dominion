@@ -33,6 +33,11 @@ export function canBuildOnTile(
     return { canBuild: false, reason: `This building is unique to the ${buildingDef.civilizationId} civilization` };
   }
 
+  // 0b. Shipyards are built in orbit now (lib/orbital foldSurfaceYards).
+  if (buildingDef.id === 'orbital_shipyard' || buildingDef.id === 'fleet_drydock') {
+    return { canBuild: false, reason: 'Shipyards are built in orbit now: lay down a Spaceyard from the Orbital tab' };
+  }
+
   // 1. Tech check
   if (buildingDef.techRequired && !unlockedTechIds.has(buildingDef.techRequired)) {
     return { canBuild: false, reason: `Technology '${buildingDef.techRequired}' required` };

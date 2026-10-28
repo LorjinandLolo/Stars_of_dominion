@@ -106,7 +106,7 @@ function YardHeader({ anchor, yard }: { anchor: YardAnchor; yard: YardSource }) 
         return (
             <div className="w-full mb-3 px-3 py-2 rounded-lg border border-red-500/20 bg-red-500/5 text-[10px] text-red-300 flex items-center gap-2">
                 <Anchor size={11} className="shrink-0" />
-                No shipyard in {sys} — build an Orbital Shipyard on a world you own here, or move the fleet to a yard system.
+                No shipyard in {sys} — build a Spaceyard in orbit of a world you own here, or move the fleet to a yard system.
             </div>
         );
     }

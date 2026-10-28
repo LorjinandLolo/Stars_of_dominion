@@ -56,7 +56,7 @@ export const PICKET_COMPOSITION: Readonly<Record<string, number>> = { corvette: 
 export function picketQuote(): { cost: Record<string, number>; power: number } {
     return fleetBuildQuote({ ...PICKET_COMPOSITION });
 }
-/** Yard tier the capital must have to lay every hull in the picket (1: the seeded Orbital Shipyard suffices). */
+/** Yard tier the capital must have to lay every hull in the picket (1: the seeded Spaceyard suffices). */
 export const PICKET_REQUIRED_TIER = Math.max(...Object.keys(PICKET_COMPOSITION).map(minYardTierFor));
 /** Pickets per faction at war — one per trap, at most this many. */
 export const MAX_PICKETS = 2;

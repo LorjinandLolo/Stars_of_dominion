@@ -126,7 +126,7 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
     // ─── Shipyards ────────────────────────────────────────────────────────────
     // Pricing rule (2026-09-13): a fresh faction holds 3,000 metals / 1,500
     // chemicals / 50,000 credits (lib/game-world-state-singleton.ts) and its
-    // capital already has a surface Orbital Shipyard (yard tier 1). Station +
+    // capital starts with a Spaceyard in orbit (yard tier 1). Station +
     // Spaceyard must fit in under a third of that metal so the player can still
     // commission a starter squadron (a standard corvette is 480 metals) or a
     // colony (1,000 metals). Each rung is ~2.5× the last; the Capital Spaceyard
@@ -147,7 +147,9 @@ export const ORBITAL_STRUCTURES: OrbitalStructureDefinition[] = [
             { type: 'fleet_repair_rate', value: 0.03 },
         ],
         hullStrength: 900,
-        requiresStation: true,
+        // The first rung stands on its own (it replaced the old surface
+        // Orbital Shipyard, which never needed a station); the bigger yards do.
+        requiresStation: false,
         infrastructureRequired: 2,
         tags: ['orbital', 'shipyard'],
     },

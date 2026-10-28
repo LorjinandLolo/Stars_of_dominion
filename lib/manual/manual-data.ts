@@ -507,14 +507,14 @@ export const MANUAL_DATA: ManualSection[] = [
                         content: [
                             { hull: 'Corvette', yard: 'Any shipyard', time: 'about 10 minutes' },
                             { hull: 'Destroyer', yard: 'Any shipyard', time: 'about 25 minutes' },
-                            { hull: 'Cruiser', yard: 'Fleet Drydock (ground) or Advanced Spaceyard (orbit)', time: 'about 1 hour' },
+                            { hull: 'Cruiser', yard: 'Advanced Spaceyard (orbit)', time: 'about 1 hour' },
                             { hull: 'Battleship', yard: 'Capital Spaceyard (orbit)', time: 'about 3 hours' },
                         ],
                     },
                     {
                         type: 'bullet_list',
                         content: [
-                            'Every capital starts with an Orbital Shipyard on the ground. Ships cost credits, metals and materiel.',
+                            'Every capital starts with a Spaceyard in orbit; bigger yards are built from the Orbital tab. Ships cost credits, metals and materiel.',
                             'Commission ships from a world with a shipyard: its Shipyard tab in Planetary Construction, or UNITS on the world\'s card.',
                             'The Ship Designer (Military) builds your own patterns: a hull plus weapons, utility modules and a reactor core. Modules add power and draw energy; a design may overdraw its reactor by up to 25%, losing combat power for every percent over. Better modules come from research.',
                             'A design that ships are using cannot be changed (it can be renamed). To upgrade ships already built, save a new design and refit them at a yard: you pay only for what is added, and they fight with the old fit until the refit is done.',

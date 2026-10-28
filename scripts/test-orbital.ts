@@ -133,8 +133,11 @@ console.log('\n1. Orbital catalog');
     check('every structure has a build time', ORBITAL_STRUCTURES.every(s => s.buildTimeSeconds > 0));
     check('stations do not require a station', ORBITAL_STRUCTURES
         .filter(s => s.category === 'station').every(s => !s.requiresStation));
-    check('non-stations require a station', ORBITAL_STRUCTURES
-        .filter(s => s.category !== 'station').every(s => s.requiresStation));
+    // The Spaceyard is the one exception: the first shipyard rung stands alone
+    // (it replaced the surface yard, which never needed a station).
+    check('non-stations require a station (bar the Spaceyard)', ORBITAL_STRUCTURES
+        .filter(s => s.category !== 'station' && s.id !== 'spaceyard').every(s => s.requiresStation));
+    check('a spaceyard needs no station', !ORBITAL_STRUCTURE_BY_ID['spaceyard'].requiresStation);
     check('the doc\'s named structures are all present',
         ['space_station', 'spaceyard', 'orbital_defense_network', 'orbital_logistics_hub',
             'orbital_warehouse', 'ship_depot', 'orbital_research_complex',
@@ -190,9 +193,9 @@ console.log('\n3. Build validation');
 
     const planet = makePlanet('p', 4);
     check('a station needs no prerequisite', canBuildOrbital(planet, 'space_station').canBuild);
-    check('a spaceyard without a station is rejected',
-        !canBuildOrbital(planet, 'spaceyard').canBuild,
-        canBuildOrbital(planet, 'spaceyard').reason);
+    check('a defence network without a station is rejected',
+        !canBuildOrbital(planet, 'orbital_defense_network').canBuild,
+        canBuildOrbital(planet, 'orbital_defense_network').reason);
 
     place(planet, 'space_station');
     check('a spaceyard is allowed once a station stands',

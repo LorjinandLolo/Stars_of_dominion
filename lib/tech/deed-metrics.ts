@@ -36,6 +36,8 @@ export const DEED_DEBATES_SETTLED = 'pol.debatesResolved';
 export const DEED_SHIPS_COMMISSIONED = 'mil.shipsCommissioned';
 /** Orbital shipyards finished (lib/orbital/orbital-service tickOrbitalGlobal). Built, not inherited. */
 export const DEED_SHIPYARDS_BUILT = 'mil.shipyardsBuilt';
+/** Space stations finished in orbit (same tick as DEED_SHIPYARDS_BUILT). */
+export const DEED_STATIONS_BUILT = 'mil.stationsBuilt';
 /** Envoys sent (DIP_SEND_ENVOY in the worker). */
 export const DEED_ENVOYS_SENT = 'dip.envoysSent';
 /**
@@ -72,6 +74,7 @@ export const DEED_DEFS: readonly DeedDef[] = [
     { metric: DEED_DEBATES_SETTLED, label: 'Debates settled' },
     { metric: DEED_SHIPS_COMMISSIONED, label: 'Warships commissioned' },
     { metric: DEED_SHIPYARDS_BUILT, label: 'Spaceyards raised in orbit' },
+    { metric: DEED_STATIONS_BUILT, label: 'Space stations raised' },
     { metric: DEED_RESEARCH_STARTED, label: 'Research programmes chosen' },
     { metric: DEED_POLICIES_PROPOSED, label: 'Policies put forward' },
     { metric: DEED_TROOPS_RAISED, label: 'Troops raised' },

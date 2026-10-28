@@ -3,9 +3,10 @@
 // The one rule for where a hull can be laid down:
 //
 //   A fleet can only take on a hull that a shipyard you own in its current
-//   system can lay down — your capital's Orbital Shipyard lays corvettes and
-//   destroyers, an Advanced Spaceyard (or a surface Fleet Drydock) adds
-//   cruisers, a Capital Spaceyard adds battleships.
+//   system can lay down — a Spaceyard (every capital starts with one in
+//   orbit) lays corvettes and destroyers, an Advanced Spaceyard adds
+//   cruisers, a Capital Spaceyard adds battleships. Yards are orbital only;
+//   old surface yards are moved up by foldSurfaceYards (lib/orbital).
 //
 // Worker (scripts/game-loop.ts MIL_BUILD_FLEET / MIL_RECRUIT_FORMATION_UNIT),
 // the AI capital spawns (ai-expansion, belt-ambush-ai) and the recruit picker
@@ -35,10 +36,9 @@ export const HULL_MIN_YARD_TIER: Readonly<Record<ShipClassId, number>> = {
 };
 
 /**
- * Surface buildings that count as a yard, and the tier they imply. The
- * seeded capital tile `orbital_shipyard` is what makes every faction tier 1
- * from its first cycle. Battleships are orbital-only by design: a surface-only
- * empire tops out at cruisers.
+ * Retired surface yards and the tier they imply. No longer buildable — the
+ * worker folds them into orbit — but one that found no free orbital slot
+ * still counts until it does.
  */
 export const SURFACE_YARD_TIERS: Readonly<Record<string, number>> = {
     orbital_shipyard: 1,
@@ -52,8 +52,8 @@ const SURFACE_YARD_NAMES: Readonly<Record<string, string>> = {
 
 /** What to build to reach a tier — the text the player sees when refused. */
 export const YARD_TIER_NAMES: Readonly<Record<number, string>> = {
-    1: 'Orbital Shipyard (surface) or Spaceyard',
-    2: 'Advanced Spaceyard (or a surface Fleet Drydock)',
+    1: 'Spaceyard (Orbital tab)',
+    2: 'Advanced Spaceyard',
     3: 'Capital Spaceyard',
 };
 
