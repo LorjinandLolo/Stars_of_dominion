@@ -264,5 +264,215 @@
   },
   "buildTime": 4200,
   "power": 160
+ },
+ "SCOUT": {
+  "name": "Scout",
+  "description": "Long-range eyes: big sensor reach, sees through fog and spots cloaked ships. Lightly armed.",
+  "baseStrength": 1,
+  "supplyConsumption": 0.4,
+  "moraleWeight": 0.6,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 700,
+   "metals": 220
+  },
+  "buildTime": 260,
+  "power": 8
+ },
+ "TORPEDO_BOAT": {
+  "name": "Torpedo Boat",
+  "description": "Glass cannon: one huge torpedo strike, then mostly spent. Thin armour.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.7,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1300,
+   "metals": 500
+  },
+  "buildTime": 420,
+  "power": 20
+ },
+ "RAIDER": {
+  "name": "Stealth Raider",
+  "description": "Hidden until it fires. Raids commerce and hunts supply lines.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.7,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1800,
+   "metals": 600
+  },
+  "buildTime": 480,
+  "power": 16
+ },
+ "COMMANDO": {
+  "name": "Commando Ship",
+  "description": "Lands agents and commando teams without a full landing; boards stations.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.7,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1700,
+   "metals": 600
+  },
+  "buildTime": 480,
+  "power": 12
+ },
+ "MINELAYER": {
+  "name": "Minelayer",
+  "description": "Lays minefields on lanes and chokepoints; sweeps enemy mines.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.8,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1400,
+   "metals": 600
+  },
+  "buildTime": 480,
+  "power": 12
+ },
+ "EWAR": {
+  "name": "Electronic Warfare Ship",
+  "description": "Jams enemy sensors and aim, and hides its fleet’s composition.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.8,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 2000,
+   "metals": 700
+  },
+  "buildTime": 540,
+  "power": 10
+ },
+ "TENDER": {
+  "name": "Tender",
+  "description": "A mobile drydock: repairs and refits the fleet far from home.",
+  "baseStrength": 4,
+  "supplyConsumption": 1,
+  "moraleWeight": 1,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 2200,
+   "metals": 1100
+  },
+  "buildTime": 720,
+  "power": 10
+ },
+ "SUPPLY_SHIP": {
+  "name": "Supply Ship",
+  "description": "Keeps a fleet or a siege supplied far from home.",
+  "baseStrength": 3,
+  "supplyConsumption": 0.5,
+  "moraleWeight": 0.8,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 1800,
+   "metals": 900
+  },
+  "buildTime": 600,
+  "power": 8
+ },
+ "INTERDICTOR": {
+  "name": "Interdictor",
+  "description": "Pins enemy fleets in the system: no retreat, no jump.",
+  "baseStrength": 8,
+  "supplyConsumption": 2,
+  "moraleWeight": 2,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 4200,
+   "metals": 1800
+  },
+  "buildTime": 1400,
+  "power": 38
+ },
+ "HEAVY_CRUISER": {
+  "name": "Heavy Cruiser",
+  "description": "Fast, hard-hitting, thin-skinned hunter between the cruiser and the battleship.",
+  "baseStrength": 10,
+  "supplyConsumption": 2.5,
+  "moraleWeight": 2.2,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 5200,
+   "metals": 2200
+  },
+  "buildTime": 1700,
+  "power": 60
+ },
+ "TROOP_TRANSPORT": {
+  "name": "Troop Transport",
+  "description": "Carries whole armies and lands them in force.",
+  "baseStrength": 8,
+  "supplyConsumption": 2.5,
+  "moraleWeight": 2,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 4800,
+   "metals": 2000
+  },
+  "buildTime": 1600,
+  "power": 30
+ },
+ "SIEGE_SHIP": {
+  "name": "Siege Ship",
+  "description": "Slow and short-ranged, with an enormous bombardment against planets and stations.",
+  "baseStrength": 11,
+  "supplyConsumption": 3,
+  "moraleWeight": 2.5,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 6200,
+   "metals": 2800
+  },
+  "buildTime": 2000,
+  "power": 55
+ },
+ "COMMAND_SHIP": {
+  "name": "Command Ship",
+  "description": "A flagship below the dreadnought: command bonuses for the fleet, no one-per-fleet limit.",
+  "baseStrength": 14,
+  "supplyConsumption": 3.5,
+  "moraleWeight": 3,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 9000,
+   "metals": 3800
+  },
+  "buildTime": 2600,
+  "power": 75
+ },
+ "MOBILE_YARD": {
+  "name": "Mobile Shipyard",
+  "description": "Builds light hulls wherever it parks.",
+  "baseStrength": 12,
+  "supplyConsumption": 4,
+  "moraleWeight": 3,
+  "bonus": {},
+  "occupationEfficiency": 0,
+  "cost": {
+   "credits": 12000,
+   "metals": 6000
+  },
+  "buildTime": 3600,
+  "power": 30
  }
 }

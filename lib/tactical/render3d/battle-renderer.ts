@@ -20,7 +20,7 @@
 
 import * as THREE from 'three';
 import type { BattleState, BattleStation, Hazard, ShipClassId, TacticalShip, TacticalSide } from '../types';
-import { SHIP_CLASSES, SQUADRON_DEFS } from '../ship-defs';
+import { SHIP_CLASSES, SQUADRON_DEFS, TACTICAL_CLASS_IDS } from '../ship-defs';
 import { buildPlaceholderHull, buildRock, buildStation, buildStrikeCraft } from './placeholder-hulls';
 import { loadModelSet, SUBSYSTEM_IDS, type HullModel, type ModelSet, type SubsystemEmitters } from './hull-models';
 import type { ViewLike } from './view';
@@ -36,7 +36,7 @@ const MAX_PIXEL_RATIO = 1.5;
 const BEAM_FADE_SECONDS = 0.12;   // mirrors beam expiry in lib/tactical/sim.ts
 const FX_Z = 1;                   // glow plane; depth test is off, so it always draws on top
 const DAMAGE_FX_BUDGET = 1500;     // damage smoke/fire/spark sprites per frame; keeps a wrecked 200-ship battle cheap
-const CLASS_IDS: ShipClassId[] = ['corvette', 'destroyer', 'cruiser', 'battleship', 'carrier'];
+const CLASS_IDS: ShipClassId[] = TACTICAL_CLASS_IDS;
 const SIDES: TacticalSide[] = ['player', 'enemy'];
 const CRAFT_TYPES: SquadronType[] = ['interceptor', 'bomber'];
 

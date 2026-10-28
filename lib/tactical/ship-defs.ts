@@ -13,16 +13,17 @@
 // Numbers tuned so a corvette dies in ~4s of focus, a battleship survives
 // ~40s of a cruiser's broadside — battles resolve in the 1–4 minute band.
 
-import type { ArmorProfile, ShipClassDef, ShipClassId, SquadronDef, SquadronType, WeaponDef } from './types';
+import type { ArmorProfile, ShipArchetype, ShipClassDef, ShipClassId, SquadronDef, SquadronType, WeaponDef } from './types';
 
 const TURRET_ARC = Math.PI * 2;
 const deg = (d: number) => (d * Math.PI) / 180;
 
 const NO_ARMOR: ArmorProfile = { fore: 0, side: 0, aft: 0 };
 
-export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
+const BASE_CLASSES: Record<ShipArchetype, ShipClassDef> = {
     corvette: {
         id: 'corvette',
+        archetype: 'corvette',
         name: 'Corvette',
         maxSpeed: 120,
         acceleration: 90,
@@ -59,6 +60,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
 
     destroyer: {
         id: 'destroyer',
+        archetype: 'destroyer',
         name: 'Destroyer',
         maxSpeed: 90,
         acceleration: 55,
@@ -124,6 +126,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
 
     cruiser: {
         id: 'cruiser',
+        archetype: 'cruiser',
         name: 'Cruiser',
         maxSpeed: 70,
         acceleration: 35,
@@ -181,6 +184,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
 
     battleship: {
         id: 'battleship',
+        archetype: 'battleship',
         name: 'Battleship',
         maxSpeed: 50,
         acceleration: 18,
@@ -263,6 +267,7 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
 
     carrier: {
         id: 'carrier',
+        archetype: 'carrier',
         name: 'Carrier',
         maxSpeed: 45,
         acceleration: 16,
@@ -303,6 +308,76 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
         },
     },
 };
+
+/**
+ * Every other hull gets its own battle slot built on a base behaviour: the
+ * base's weapons, ability and AI, with its own name, size, speed, toughness
+ * and deployment cost. `length` is the model length in battle units (the
+ * loader fits a model to 2.5 × radius; docs/art/model-specs-new-classes.md).
+ * The class's own mechanics (mines, stealth, interdiction...) come later
+ * (docs/ship-design/ship-classes-plan.md).
+ */
+interface Derived {
+    base: ShipArchetype;
+    name: string;
+    length: number;
+    speed: number;
+    hull: number;
+    shield: number;
+    deploymentCost: number;
+}
+const DERIVED: Record<Exclude<ShipClassId, ShipArchetype>, Derived> = {
+    patrol: { base: 'corvette', name: 'Patrol Craft', length: 14, speed: 1.1, hull: 0.6, shield: 0.6, deploymentCost: 1 },
+    scout: { base: 'corvette', name: 'Scout', length: 18, speed: 1.05, hull: 0.7, shield: 0.8, deploymentCost: 1 },
+    raider: { base: 'corvette', name: 'Stealth Raider', length: 22, speed: 1.1, hull: 0.9, shield: 0.6, deploymentCost: 2 },
+    commando: { base: 'corvette', name: 'Commando Ship', length: 22, speed: 0.95, hull: 1.2, shield: 1.0, deploymentCost: 2 },
+    torpedo_boat: { base: 'destroyer', name: 'Torpedo Boat', length: 22, speed: 1.1, hull: 0.6, shield: 0.6, deploymentCost: 2 },
+    frigate: { base: 'destroyer', name: 'Frigate', length: 24, speed: 1.0, hull: 0.85, shield: 1.2, deploymentCost: 2 },
+    minelayer: { base: 'destroyer', name: 'Minelayer', length: 26, speed: 0.9, hull: 0.9, shield: 0.9, deploymentCost: 2 },
+    ewar: { base: 'destroyer', name: 'Electronic Warfare Ship', length: 28, speed: 0.95, hull: 0.8, shield: 1.1, deploymentCost: 3 },
+    assault: { base: 'destroyer', name: 'Assault Ship', length: 30, speed: 0.85, hull: 1.3, shield: 1.0, deploymentCost: 3 },
+    tender: { base: 'destroyer', name: 'Tender', length: 36, speed: 0.8, hull: 1.2, shield: 1.2, deploymentCost: 3 },
+    supply_ship: { base: 'destroyer', name: 'Supply Ship', length: 40, speed: 0.8, hull: 1.1, shield: 0.9, deploymentCost: 3 },
+    interdictor: { base: 'cruiser', name: 'Interdictor', length: 44, speed: 0.9, hull: 1.1, shield: 1.2, deploymentCost: 5 },
+    heavy_cruiser: { base: 'cruiser', name: 'Heavy Cruiser', length: 50, speed: 1.1, hull: 1.15, shield: 1.0, deploymentCost: 5 },
+    troop_transport: { base: 'cruiser', name: 'Troop Transport', length: 52, speed: 0.8, hull: 1.3, shield: 1.1, deploymentCost: 5 },
+    command_ship: { base: 'battleship', name: 'Command Ship', length: 56, speed: 0.95, hull: 0.9, shield: 1.1, deploymentCost: 6 },
+    siege_ship: { base: 'battleship', name: 'Siege Ship', length: 58, speed: 0.8, hull: 0.95, shield: 0.9, deploymentCost: 6 },
+    mobile_yard: { base: 'carrier', name: 'Mobile Shipyard', length: 75, speed: 0.7, hull: 1.4, shield: 1.2, deploymentCost: 7 },
+    dreadnought: { base: 'battleship', name: 'Dreadnought', length: 80, speed: 0.85, hull: 1.6, shield: 1.5, deploymentCost: 10 },
+};
+
+function derive(id: ShipClassId, d: Derived): ShipClassDef {
+    const base = BASE_CLASSES[d.base];
+    return {
+        ...base,
+        id,
+        name: d.name,
+        archetype: d.base,
+        radius: d.length / 2.5,
+        maxSpeed: Math.round(base.maxSpeed * d.speed),
+        acceleration: Math.round(base.acceleration * d.speed),
+        maxHull: Math.round(base.maxHull * d.hull),
+        maxShield: Math.round(base.maxShield * d.shield),
+        deploymentCost: d.deploymentCost,
+        // Copies, so a tuning pass on one class never edits its base.
+        weapons: base.weapons.map(w => ({ ...w })),
+        armor: { ...base.armor },
+    };
+}
+
+export const SHIP_CLASSES: Record<ShipClassId, ShipClassDef> = {
+    ...BASE_CLASSES,
+    ...(Object.fromEntries(Object.entries(DERIVED).map(([id, d]) => [id, derive(id as ShipClassId, d)])) as Record<Exclude<ShipClassId, ShipArchetype>, ShipClassDef>),
+};
+
+/** Every class with a battle slot (and a model slot in public/models/manifest.json). */
+export const TACTICAL_CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];
+
+/** The base behaviour a class fights with. */
+export function archetypeOf(classId: ShipClassId): ShipArchetype {
+    return SHIP_CLASSES[classId]?.archetype ?? 'corvette';
+}
 
 /** Strike-craft squadron balance. */
 export const SQUADRON_DEFS: Record<SquadronType, SquadronDef> = {
@@ -350,29 +425,11 @@ export function isOmniMount(weapon: WeaponDef): boolean {
 }
 
 /**
- * Map a strategic composition key to a tactical ship class (V2 mapping). The
- * newer light hulls fight as the nearest tactical class until they get their
- * own (docs/ship-design/ship-classes-plan.md, work package 5).
+ * Map a strategic composition key to its tactical ship class. Every hull has
+ * its own slot; strike craft riding loose in a composition count as corvettes.
  */
 export function classForCompositionKey(key: string): ShipClassId {
-    switch (key.toLowerCase()) {
-        case 'patrol':
-        case 'corvette':
-        case 'interceptor':
-        case 'bomber':
-            return 'corvette';
-        case 'frigate':
-        case 'assault':
-        case 'destroyer':
-            return 'destroyer';
-        case 'cruiser':
-            return 'cruiser';
-        case 'carrier':
-            return 'carrier';
-        case 'battleship':
-        case 'dreadnought':
-            return 'battleship';
-        default:
-            return 'corvette';
-    }
+    const k = key.toLowerCase();
+    if (k in SHIP_CLASSES) return k as ShipClassId;
+    return 'corvette';
 }

@@ -146,8 +146,8 @@ export interface ForceSnapshot {
 }
 
 /** Hulls that screen the line, and the capitals they screen. Assault ships are neither. */
-const SCREEN_HULLS = new Set(['patrol', 'corvette', 'frigate', 'destroyer']);
-const CAPITAL_HULLS = ['cruiser', 'carrier', 'battleship', 'dreadnought'] as const;
+const SCREEN_HULLS = new Set(['patrol', 'scout', 'corvette', 'torpedo_boat', 'frigate', 'minelayer', 'ewar', 'destroyer']);
+const CAPITAL_HULLS = ['cruiser', 'interdictor', 'heavy_cruiser', 'carrier', 'command_ship', 'siege_ship', 'battleship', 'dreadnought'] as const;
 
 /** HOI4 naval rule: three screens per capital is fully efficient. */
 export function screeningEfficiencyOf(comp: UnitComposition): number {

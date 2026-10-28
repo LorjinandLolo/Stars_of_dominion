@@ -38,7 +38,7 @@ import {
     FACING_AFT,
     FACING_PORT,
 } from './types';
-import { SHIP_CLASSES, SQUADRON_DEFS, freshMounts, freshSubsystems, isLightMount, isOmniMount } from './ship-defs';
+import { SHIP_CLASSES, SQUADRON_DEFS, archetypeOf, freshMounts, freshSubsystems, isLightMount, isOmniMount } from './ship-defs';
 import { IDENTITY_TUNING } from './types';
 import type { DesignTuning } from './types';
 
@@ -1577,7 +1577,7 @@ function runEnemyAI(state: BattleState) {
         // Called shots: cruisers and battleships go for the battery that is
         // shooting at them, so a broadside duel silences the guns that hurt.
         ship.targetSubsystem = null;
-        ship.targetMount = ship.classId === 'cruiser' || ship.classId === 'battleship'
+        ship.targetMount = archetypeOf(ship.classId) === 'cruiser' || archetypeOf(ship.classId) === 'battleship'
             ? mountBearingOn(target, ship) : null;
 
         const dx = target.x - ship.x;
@@ -1605,12 +1605,12 @@ function runEnemyAI(state: BattleState) {
             }
         }
 
-        const broadsider = ship.classId === 'cruiser' || ship.classId === 'battleship';
+        const broadsider = archetypeOf(ship.classId) === 'cruiser' || archetypeOf(ship.classId) === 'battleship';
         let face: number | null = null;
         if (broadsider) {
             // Battleship noses in for the spinal lance at long range; both
             // classes turn a flank once in battery range.
-            const wantsSpinal = ship.classId === 'battleship' && dist > 360;
+            const wantsSpinal = archetypeOf(ship.classId) === 'battleship' && dist > 360;
             if (!wantsSpinal) {
                 const a = normalizeAngle(bearing + Math.PI / 2);
                 const b = normalizeAngle(bearing - Math.PI / 2);
@@ -1622,7 +1622,7 @@ function runEnemyAI(state: BattleState) {
         issueMove(state, [ship.id], standX, standY, face);
 
         // Send bombers at the biggest player hull; keep interceptors home.
-        if (ship.classId === 'carrier') {
+        if (archetypeOf(ship.classId) === 'carrier') {
             const big = [...visibleHostiles].sort((a, b) => SHIP_CLASSES[b.classId].maxHull - SHIP_CLASSES[a.classId].maxHull)[0];
             for (const sq of state.squadrons) {
                 if (sq.side !== 'enemy' || sq.carrierId !== ship.id) continue;
@@ -1639,7 +1639,7 @@ function runEnemyAI(state: BattleState) {
                     if (dist > pref * 2) useAbility(state, ship.id);
                     break;
                 case 'torpedo_salvo': {
-                    const big = target.classId === 'cruiser' || target.classId === 'battleship' || target.classId === 'carrier';
+                    const big = archetypeOf(target.classId) === 'cruiser' || archetypeOf(target.classId) === 'battleship' || archetypeOf(target.classId) === 'carrier';
                     if (big && dist < def.weapons[1].range) useAbility(state, ship.id);
                     break;
                 }

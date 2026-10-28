@@ -19,9 +19,14 @@ import type {
 
 // ─── Ship classes ────────────────────────────────────────────────────────────
 
+/**
+ * Every hull: the light line (Drydocks) by tier, then the heavy line
+ * (Spaceyards) by tier. Lists, pickers, standard patterns and the "next
+ * unlock" hint all use this order.
+ */
 export const SHIP_CLASS_IDS: readonly ShipClassId[] = [
-    'patrol', 'corvette', 'frigate', 'assault',
-    'destroyer', 'cruiser', 'carrier', 'battleship', 'dreadnought',
+    'patrol', 'scout', 'corvette', 'torpedo_boat', 'frigate', 'minelayer', 'tender', 'supply_ship', 'raider', 'commando', 'ewar', 'assault',
+    'destroyer', 'cruiser', 'interdictor', 'heavy_cruiser', 'troop_transport', 'siege_ship', 'carrier', 'command_ship', 'battleship', 'mobile_yard', 'dreadnought',
 ];
 
 const SHIP_CLASS_SET = new Set<string>(SHIP_CLASS_IDS);
@@ -92,6 +97,20 @@ export const HULL_BUILD_TIME_MULTIPLIER: Readonly<Record<ShipClassId, number>> =
     carrier: 55,
     battleship: 60,
     dreadnought: 80,
+    scout: 22,
+    torpedo_boat: 26,
+    raider: 28,
+    commando: 28,
+    minelayer: 27,
+    ewar: 28,
+    tender: 32,
+    supply_ship: 30,
+    interdictor: 42,
+    heavy_cruiser: 46,
+    troop_transport: 44,
+    siege_ship: 52,
+    command_ship: 60,
+    mobile_yard: 70,
 };
 
 function hullTimeMultiplier(id: ShipClassId): number {
@@ -112,7 +131,7 @@ function hullBase(id: ShipClassId) {
 
 // ─── Hulls ───────────────────────────────────────────────────────────────────
 
-export const SHIP_HULLS: HullDefinition[] = [
+export const SHIP_HULLS: HullDefinition[] = ([
     {
         id: 'patrol',
         name: 'Patrol Craft',
@@ -253,7 +272,223 @@ export const SHIP_HULLS: HullDefinition[] = [
         // Command Chain Optimization: the doctrine a flagship needs.
         techRequired: 'mil_t3_9',
     },
-];
+    // ── Specialist hulls (docs/ship-design/ship-classes-plan.md; their own
+    //    mechanics come later, for now they differ in stats, price and counters)
+    {
+        id: 'scout',
+        name: 'Scout',
+        size: 'S',
+        description: "Long-range eyes: big sensor reach, sees through fog and spots cloaked ships. Lightly armed.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 12,
+        ...hullBase('scout'),
+    },
+    {
+        id: 'torpedo_boat',
+        name: 'Torpedo Boat',
+        size: 'S',
+        description: "Glass cannon: one huge torpedo strike, then mostly spent. Thin armour.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 14,
+        ...hullBase('torpedo_boat'),
+    },
+    {
+        id: 'raider',
+        name: 'Stealth Raider',
+        size: 'S',
+        description: "Hidden until it fires. Raids commerce and hunts supply lines.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 16,
+        ...hullBase('raider'),
+    },
+    {
+        id: 'commando',
+        name: 'Commando Ship',
+        size: 'S',
+        description: "Lands agents and commando teams without a full landing; boards stations.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 14,
+        ...hullBase('commando'),
+    },
+    {
+        id: 'minelayer',
+        name: 'Minelayer',
+        size: 'M',
+        description: "Lays minefields on lanes and chokepoints; sweeps enemy mines.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 14,
+        ...hullBase('minelayer'),
+    },
+    {
+        id: 'ewar',
+        name: 'Electronic Warfare Ship',
+        size: 'M',
+        description: "Jams enemy sensors and aim, and hides its fleet’s composition.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 20,
+        ...hullBase('ewar'),
+    },
+    {
+        id: 'tender',
+        name: 'Tender',
+        size: 'M',
+        description: "A mobile drydock: repairs and refits the fleet far from home.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 22,
+        ...hullBase('tender'),
+    },
+    {
+        id: 'supply_ship',
+        name: 'Supply Ship',
+        size: 'M',
+        description: "Keeps a fleet or a siege supplied far from home.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 16,
+        ...hullBase('supply_ship'),
+    },
+    {
+        id: 'interdictor',
+        name: 'Interdictor',
+        size: 'L',
+        description: "Pins enemy fleets in the system: no retreat, no jump.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 34,
+        ...hullBase('interdictor'),
+    },
+    {
+        id: 'heavy_cruiser',
+        name: 'Heavy Cruiser',
+        size: 'L',
+        description: "Fast, hard-hitting, thin-skinned hunter between the cruiser and the battleship.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'w3', type: 'weapon' },
+            { id: 'w4', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 38,
+        ...hullBase('heavy_cruiser'),
+    },
+    {
+        id: 'troop_transport',
+        name: 'Troop Transport',
+        size: 'L',
+        description: "Carries whole armies and lands them in force.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 32,
+        ...hullBase('troop_transport'),
+    },
+    {
+        id: 'siege_ship',
+        name: 'Siege Ship',
+        size: 'XL',
+        description: "Slow and short-ranged, with an enormous bombardment against planets and stations.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'w3', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 40,
+        ...hullBase('siege_ship'),
+    },
+    {
+        id: 'command_ship',
+        name: 'Command Ship',
+        size: 'XL',
+        description: "A flagship below the dreadnought: command bonuses for the fleet, no one-per-fleet limit.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'w3', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'u4', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 50,
+        ...hullBase('command_ship'),
+    },
+    {
+        id: 'mobile_yard',
+        name: 'Mobile Shipyard',
+        size: 'XL',
+        description: "Builds light hulls wherever it parks.",
+        slots: [
+            { id: 'w1', type: 'weapon' },
+            { id: 'w2', type: 'weapon' },
+            { id: 'u1', type: 'utility' },
+            { id: 'u2', type: 'utility' },
+            { id: 'u3', type: 'utility' },
+            { id: 'u4', type: 'utility' },
+            { id: 'c1', type: 'core' },
+        ],
+        baseEnergy: 60,
+        ...hullBase('mobile_yard'),
+    },
+] as HullDefinition[]).sort((a, b) => SHIP_CLASS_IDS.indexOf(a.id) - SHIP_CLASS_IDS.indexOf(b.id));
 
 // ─── Modules ─────────────────────────────────────────────────────────────────
 //
@@ -545,9 +780,121 @@ export const DEFAULT_DESIGNS: ShipDesign[] = ([
         },
         isDefault: true,
     },
+    {
+        id: 'default-scout',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Far Watcher",
+        hullId: 'scout',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-torpedo_boat',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Lancer Boat",
+        hullId: 'torpedo_boat',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-raider',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Night Raider",
+        hullId: 'raider',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', u1: 'util-deflector', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-commando',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Boarding Knife",
+        hullId: 'commando',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-minelayer',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Lane Warden",
+        hullId: 'minelayer',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-ewar',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Static Veil",
+        hullId: 'ewar',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-tender',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Fleet Tender",
+        hullId: 'tender',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-supply_ship',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Long Haul",
+        hullId: 'supply_ship',
+        components: { w1: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-interdictor',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Gravity Anchor",
+        hullId: 'interdictor',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-heavy_cruiser',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Hunter Cruiser",
+        hullId: 'heavy_cruiser',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', w3: 'wpn-missile-rack', w4: 'wpn-pulse-laser', u1: 'util-deflector', u2: 'util-plating', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-troop_transport',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Legion Carrier",
+        hullId: 'troop_transport',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-siege_ship',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Breacher",
+        hullId: 'siege_ship',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', w3: 'wpn-missile-rack', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-command_ship',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Fleet Command",
+        hullId: 'command_ship',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', w3: 'wpn-missile-rack', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', u4: 'util-deflector', c1: 'core-fission' },
+        isDefault: true,
+    },
+    {
+        id: 'default-mobile_yard',
+        factionId: DEFAULT_DESIGN_FACTION,
+        name: "Wandering Slip",
+        hullId: 'mobile_yard',
+        components: { w1: 'wpn-pulse-laser', w2: 'wpn-autocannon', u1: 'util-deflector', u2: 'util-plating', u3: 'util-thrusters', u4: 'util-deflector', c1: 'core-fission' },
+        isDefault: true,
+    },
 ] as ShipDesign[])
     // One per hull, in hull order (smallest first).
-    .sort((a, b) => SHIP_CLASS_IDS.indexOf(a.hullId) - SHIP_CLASS_IDS.indexOf(b.hullId));
+    .sort((a, b) => SHIP_CLASS_IDS.indexOf(a.hullId as ShipClassId) - SHIP_CLASS_IDS.indexOf(b.hullId as ShipClassId));
 
 const DEFAULT_BY_HULL = new Map(DEFAULT_DESIGNS.map(d => [d.hullId, d]));
 

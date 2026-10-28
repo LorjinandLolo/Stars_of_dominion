@@ -88,3 +88,34 @@ Order: 1+2 together (the gate cannot change without the classes), then 5
 - **Assault ships carry troops.** Their troop capacity lets armies embark and
   land through the existing siege path, and they can land while the orbit is
   contested (where `canCrossOrbit` would otherwise refuse).
+
+## Specialist classes (added 2026-10-28)
+
+Fourteen more hulls, in the data with stats, yard, counters, speed and icons
+(models: `docs/art/model-specs-new-classes.md`). Each still needs its own
+mechanic; until then it is a stat line in battle.
+
+| Class | Yard | Mechanic still to build |
+|---|---|---|
+| Scout | Drydock 1 | Sensor reach through fog; reveals stealth raiders |
+| Torpedo Boat | Drydock 2 | One alpha-strike salvo per battle |
+| Minelayer | Drydock 2 | Lay / sweep minefields on lanes and chokepoints (new system) |
+| Tender | Drydock 2 | Repairs and refits the fleet away from a yard |
+| Supply Ship | Drydock 2 | Fleet and siege supply far from home (siege supply, blockade) |
+| Stealth Raider | Drydock 3 | Hidden until it fires; commerce raiding |
+| Commando Ship | Drydock 3 | Commando landings and station boarding (ground war raids, espionage) |
+| Electronic Warfare Ship | Drydock 3 | Jams aim and sensors, blurs the enemy's intel on the fleet |
+| Interdictor | Spaceyard 2 | Enemy fleets in its system cannot retreat or jump |
+| Heavy Cruiser | Spaceyard 2 | None needed (stats class) |
+| Troop Transport | Spaceyard 2 | Carries armies by the corps (embark/land) |
+| Siege Ship | Spaceyard 2 | Heavy bombardment vs planets and stations; vs the shield strongpoint |
+| Command Ship | Spaceyard 3 | Fleet command bonuses, stackable below the dreadnought |
+| Mobile Shipyard | Spaceyard 3 | Counts as a light-line yard where it parks |
+
+Not added as classes: the civilians (colony ark, mining barge, armed
+merchant, hospital/prison ship) wait for their behaviour in
+`civilian-service.ts`; the World Breaker stays the planet-ruin project.
+Battle slots: DONE (2026-10-28). Every hull is its own tactical class
+(`lib/tactical/ship-defs.ts` DERIVED): own name, size, speed, toughness,
+deployment cost and model slot, fighting with one of the five base behaviours
+(`archetypeOf`). Preview: `/test/tactical?roster=new`.

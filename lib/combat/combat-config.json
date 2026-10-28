@@ -61,18 +61,21 @@
                 "frigate": -0.2
             },
             "patrol": {
+                "raider": 0.20,
                 "corvette": 0.05,
                 "bomber": 0.05,
                 "destroyer": -0.15,
                 "frigate": -0.10
             },
             "corvette": {
+                "commando": 0.10,
                 "bomber": 0.15,
                 "interceptor": 0.10,
                 "assault": 0.10,
                 "destroyer": -0.15
             },
             "frigate": {
+                "torpedo_boat": 0.20,
                 "bomber": 0.2,
                 "interceptor": 0.15,
                 "corvette": 0.05,
@@ -86,6 +89,9 @@
                 "corvette": -0.10
             },
             "destroyer": {
+                "minelayer": 0.10,
+                "scout": 0.10,
+                "raider": 0.10,
                 "corvette": 0.15,
                 "interceptor": 0.15,
                 "patrol": 0.15,
@@ -99,6 +105,7 @@
                 "battleship": -0.15
             },
             "battleship": {
+                "interdictor": 0.10,
                 "cruiser": 0.15,
                 "destroyer": 0.10,
                 "bomber": -0.15,
@@ -118,6 +125,83 @@
                 "destroyer": 0.05,
                 "bomber": -0.15,
                 "carrier": -0.10
+            },
+            "scout": {
+                "raider": 0.20,
+                "ewar": 0.10,
+                "destroyer": -0.15
+            },
+            "torpedo_boat": {
+                "siege_ship": 0.10,
+                "cruiser": 0.15,
+                "battleship": 0.15,
+                "heavy_cruiser": 0.10,
+                "frigate": -0.20,
+                "corvette": -0.15
+            },
+            "raider": {
+                "supply_ship": 0.20,
+                "troop_transport": 0.15,
+                "tender": 0.15,
+                "patrol": -0.20,
+                "scout": -0.15
+            },
+            "commando": {
+                "mobile_yard": 0.15,
+                "command_ship": 0.10,
+                "frigate": -0.10,
+                "patrol": -0.10
+            },
+            "minelayer": {
+                "raider": 0.10,
+                "torpedo_boat": 0.10,
+                "destroyer": -0.15
+            },
+            "ewar": {
+                "torpedo_boat": 0.10,
+                "carrier": 0.10,
+                "scout": -0.15,
+                "raider": -0.10
+            },
+            "tender": {
+                "corvette": 0.05,
+                "destroyer": -0.10
+            },
+            "supply_ship": {
+                "patrol": 0.05,
+                "raider": -0.20
+            },
+            "interdictor": {
+                "raider": 0.10,
+                "cruiser": 0.05,
+                "battleship": -0.10
+            },
+            "heavy_cruiser": {
+                "siege_ship": 0.15,
+                "cruiser": 0.15,
+                "destroyer": 0.10,
+                "battleship": -0.15,
+                "torpedo_boat": -0.10
+            },
+            "troop_transport": {
+                "commando": 0.10,
+                "destroyer": -0.15,
+                "raider": -0.15
+            },
+            "siege_ship": {
+                "mobile_yard": 0.15,
+                "interdictor": 0.10,
+                "destroyer": -0.15,
+                "corvette": -0.10
+            },
+            "command_ship": {
+                "cruiser": 0.10,
+                "heavy_cruiser": 0.10,
+                "bomber": -0.15
+            },
+            "mobile_yard": {
+                "tender": 0.05,
+                "destroyer": -0.15
             }
         },
         "ground": {

@@ -514,6 +514,11 @@ export const MANUAL_DATA: ManualSection[] = [
                             { hull: 'Carrier', yard: 'Capital Spaceyard', time: 'about 2½ hours' },
                             { hull: 'Battleship', yard: 'Capital Spaceyard', time: 'about 3 hours' },
                             { hull: 'Dreadnought', yard: 'Capital Spaceyard + Command Chain Optimization', time: 'about 8 hours' },
+                            { hull: 'Scout', yard: 'Fleet Drydock', time: 'about 8 minutes' },
+                            { hull: 'Torpedo Boat, Minelayer, Tender, Supply Ship', yard: 'Reinforced Drydock', time: '15 to 35 minutes' },
+                            { hull: 'Stealth Raider, Commando Ship, Electronic Warfare Ship', yard: 'Assault Drydock', time: 'about 20 to 25 minutes' },
+                            { hull: 'Interdictor, Heavy Cruiser, Troop Transport, Siege Ship', yard: 'Advanced Spaceyard', time: '1½ to 3 hours' },
+                            { hull: 'Command Ship, Mobile Shipyard', yard: 'Capital Spaceyard', time: '3½ to 6 hours' },
                         ],
                     },
                     {

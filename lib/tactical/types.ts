@@ -9,7 +9,13 @@
 // (admiral) abilities. Still deliberately absent: boarding, morale, electronic
 // warfare, PvP live-sync (V3).
 
-export type ShipClassId = 'corvette' | 'destroyer' | 'cruiser' | 'battleship' | 'carrier';
+/**
+ * Every hull has its own battle slot (stats, model, name), so the tactical
+ * class list IS the strategic one. Each class fights with one of the five
+ * base behaviours below (its `archetype` in ship-defs.ts).
+ */
+export type ShipClassId = import('../combat/ship-types').ShipClassId;
+export type ShipArchetype = 'corvette' | 'destroyer' | 'cruiser' | 'battleship' | 'carrier';
 
 export type TacticalSide = 'player' | 'enemy';
 
@@ -93,6 +99,8 @@ export interface ShipClassDef {
     /** Capital hulls expose targetable subsystems. */
     hasSubsystems?: boolean;
     hangar?: HangarDef;
+    /** Which base behaviour the AI and the sim use for it; a base class is its own. */
+    archetype: ShipArchetype;
 }
 
 export interface SquadronDef {

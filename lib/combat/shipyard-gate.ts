@@ -43,6 +43,20 @@ export const HULL_YARD: Readonly<Record<ShipClassId, { line: YardLine; tier: num
     carrier: { line: 'heavy', tier: 3 },
     battleship: { line: 'heavy', tier: 3 },
     dreadnought: { line: 'heavy', tier: 3 },
+    scout: { line: 'light', tier: 1 },
+    torpedo_boat: { line: 'light', tier: 2 },
+    raider: { line: 'light', tier: 3 },
+    commando: { line: 'light', tier: 3 },
+    minelayer: { line: 'light', tier: 2 },
+    ewar: { line: 'light', tier: 3 },
+    tender: { line: 'light', tier: 2 },
+    supply_ship: { line: 'light', tier: 2 },
+    interdictor: { line: 'heavy', tier: 2 },
+    heavy_cruiser: { line: 'heavy', tier: 2 },
+    troop_transport: { line: 'heavy', tier: 2 },
+    siege_ship: { line: 'heavy', tier: 2 },
+    command_ship: { line: 'heavy', tier: 3 },
+    mobile_yard: { line: 'heavy', tier: 3 },
 };
 
 /**

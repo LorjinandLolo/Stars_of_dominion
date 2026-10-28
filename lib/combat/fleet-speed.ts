@@ -29,6 +29,20 @@ export const HULL_SPEED_FACTORS: Record<string, number> = {
     carrier: 0.8,
     battleship: 0.75,
     dreadnought: 0.65,
+    scout: 1.35,
+    torpedo_boat: 1.15,
+    raider: 1.25,
+    commando: 1.15,
+    minelayer: 0.95,
+    ewar: 1.05,
+    tender: 0.9,
+    supply_ship: 0.95,
+    interdictor: 0.85,
+    heavy_cruiser: 0.95,
+    troop_transport: 0.8,
+    siege_ship: 0.65,
+    command_ship: 0.8,
+    mobile_yard: 0.55,
 };
 
 type CompositionLike = Record<string, number | undefined> | null | undefined;

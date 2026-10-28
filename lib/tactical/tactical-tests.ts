@@ -577,7 +577,9 @@ suite('fleetsToReserves — edge cases', () => {
     assert(dc !== undefined && dc!.count === 1 && dc!.classId === 'destroyer', 'destroyer entry carried through the merge');
 
     assert(classForCompositionKey('carrier') === 'carrier', 'carrier key → carrier class (V2 mapping)');
-    assert(classForCompositionKey('dreadnought') === 'battleship', 'dreadnought key → battleship class');
+    assert(classForCompositionKey('dreadnought') === 'dreadnought', 'dreadnought key → its own class');
+    assert(classForCompositionKey('heavy_cruiser') === 'heavy_cruiser', 'every hull has its own battle slot');
+    assert(classForCompositionKey('interceptor') === 'corvette', 'loose strike craft still count as corvettes');
     assert(classForCompositionKey('totally-unknown') === 'corvette', 'unknown key falls back to corvette');
 });
 

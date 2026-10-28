@@ -441,12 +441,12 @@ test('checkShipyardGate: transit, no yard, tier, ok — and the bare task force'
     expectEq(yardLockReason(yard1, home, 'frigate'), 'Needs Reinforced Drydock');
     expectEq(yardLockReason(yard1, home, 'destroyer'), null);
     // A retired surface Orbital Shipyard laid corvettes and destroyers: light 1 + heavy 1.
-    expectEq(hullsBuildableAt(yard1), ['patrol', 'corvette', 'destroyer']);
-    expectEq(nextHullAfter(yard1)?.hull, 'frigate');
+    expectEq(hullsBuildableAt(yard1), ['patrol', 'scout', 'corvette', 'destroyer']);
+    expectEq(nextHullAfter(yard1)?.hull, 'torpedo_boat');
     expectEq(nextHullAfter({ tier: 3, light: 3 }), null);
     // The starting Fleet Drydock alone: light hulls only.
     const dockWorld = [yardPlanet('cap', { system: 'home', slots: [{ structureId: 'fleet_drydock', state: 'active' }] })];
-    expectEq(hullsBuildableAt(systemYardFor(dockWorld, 'f1', 'home')), ['patrol', 'corvette']);
+    expectEq(hullsBuildableAt(systemYardFor(dockWorld, 'f1', 'home')), ['patrol', 'scout', 'corvette']);
     expectTrue(checkShipyardGate(dockWorld, 'f1', home, null).ok, 'a drydock is a yard for a bare task force');
     expectTrue(!checkShipyardGate(dockWorld, 'f1', home, 'destroyer').ok, 'a drydock lays no destroyers');
 });

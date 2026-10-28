@@ -29,6 +29,18 @@ const ENEMY_FLEETS: StrategicFleetLike[] = [
     },
 ];
 
+/**
+ * `/test/tactical?roster=new`: every newer hull class on the field, to check
+ * models dropped into public/models/ships/ (docs/art/model-specs-new-classes.md).
+ */
+const NEW_PLAYER_FLEETS: StrategicFleetLike[] = [
+    { id: 'fleet-new-a', factionId: 'faction-aurelian', name: 'Light Line', composition: { patrol: 1, scout: 1, torpedo_boat: 1, frigate: 1, minelayer: 1, raider: 1, commando: 1, ewar: 1, assault: 1, tender: 1, supply_ship: 1 }, strength: 1 },
+    { id: 'fleet-new-b', factionId: 'faction-aurelian', name: 'Heavy Line', composition: { interdictor: 1, heavy_cruiser: 1, troop_transport: 1, command_ship: 1, siege_ship: 1, mobile_yard: 1, dreadnought: 1 }, strength: 1 },
+];
+const NEW_ENEMY_FLEETS: StrategicFleetLike[] = [
+    { id: 'fleet-new-e', factionId: 'faction-pirates', name: 'Mirror Line', composition: { heavy_cruiser: 2, frigate: 3, torpedo_boat: 3, patrol: 4 }, strength: 1 },
+];
+
 const HAZARDS: Hazard[] = [
     { kind: 'asteroid', x: 800, y: 380, r: 110 },
     { kind: 'asteroid', x: 620, y: 700, r: 90 },
@@ -45,6 +57,11 @@ type Done =
 export default function TacticalTestPage() {
     const [done, setDone] = React.useState<Done | null>(null);
     const [runId, setRunId] = React.useState(0);
+    // Read after mount (the page also renders on the server); the key below remounts the battle.
+    const [roster, setRoster] = React.useState<'default' | 'new'>('default');
+    React.useEffect(() => {
+        if (new URLSearchParams(window.location.search).get('roster') === 'new') setRoster('new');
+    }, []);
 
     if (done) {
         return (
@@ -70,10 +87,10 @@ export default function TacticalTestPage() {
 
     return (
         <TacticalBattleView
-            key={runId}
+            key={`${roster}-${runId}`}
             title="TACTICAL SIM TEST"
-            playerFleets={PLAYER_FLEETS}
-            enemyFleets={ENEMY_FLEETS}
+            playerFleets={roster === 'new' ? NEW_PLAYER_FLEETS : PLAYER_FLEETS}
+            enemyFleets={roster === 'new' ? NEW_ENEMY_FLEETS : ENEMY_FLEETS}
             enemyName="Crimson Raider Vanguard"
             hazards={HAZARDS}
             station={STATION}

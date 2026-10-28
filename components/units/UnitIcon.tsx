@@ -11,7 +11,8 @@ import React from 'react';
 export type UnitIconType =
     | 'INFANTRY' | 'ARMOR' | 'ARTILLERY' | 'ANTI_ARMOR' | 'AIRBORNE' | 'SPECIAL_OPS' | 'MILITIA' | 'ELDER_INFERNOID'
     | 'PATROL' | 'CORVETTE' | 'FRIGATE' | 'ASSAULT'
-    | 'DESTROYER' | 'CRUISER' | 'CARRIER' | 'BATTLESHIP' | 'DREADNOUGHT' | 'STATION' | 'DEFENSE_PLATFORM';
+    | 'DESTROYER' | 'CRUISER' | 'CARRIER' | 'BATTLESHIP' | 'DREADNOUGHT' | 'STATION' | 'DEFENSE_PLATFORM'
+    | 'SCOUT' | 'TORPEDO_BOAT' | 'RAIDER' | 'COMMANDO' | 'MINELAYER' | 'EWAR' | 'TENDER' | 'SUPPLY_SHIP' | 'INTERDICTOR' | 'HEAVY_CRUISER' | 'TROOP_TRANSPORT' | 'SIEGE_SHIP' | 'COMMAND_SHIP' | 'MOBILE_YARD';
 
 const GLYPHS: Record<UnitIconType, React.ReactNode> = {
     // ── Ground ────────────────────────────────────────────────────────────
@@ -180,6 +181,110 @@ const GLYPHS: Record<UnitIconType, React.ReactNode> = {
             <circle cx="12" cy="8" r="1.1" />
             <circle cx="12" cy="12" r="1.1" />
             <circle cx="12" cy="16" r="1.1" />
+        </>
+    ),
+    SCOUT: (
+        <>
+            {/* dish on a spine */}
+            <circle cx="12" cy="8" r="4" />
+            <path d="M12 12v9M10 18l2 3 2-3" />
+        </>
+    ),
+    TORPEDO_BOAT: (
+        <>
+            {/* four tubes and an engine */}
+            <path d="M8 3v11M10.7 3v11M13.3 3v11M16 3v11" />
+            <path d="M7 14h10l-2 6H9z" />
+        </>
+    ),
+    RAIDER: (
+        <>
+            {/* flat faceted wing */}
+            <path d="M12 4l9 14-9-4-9 4z" />
+        </>
+    ),
+    COMMANDO: (
+        <>
+            {/* boarding claw */}
+            <path d="M9 3l1 5M15 3l-1 5" />
+            <path d="M9 8h6l1 12H8z" />
+        </>
+    ),
+    MINELAYER: (
+        <>
+            {/* hull with a mine rail */}
+            <path d="M8 3h8v18H8z" />
+            <circle cx="12" cy="11" r="1.2" />
+            <circle cx="12" cy="15" r="1.2" />
+            <circle cx="12" cy="19" r="1.2" />
+        </>
+    ),
+    EWAR: (
+        <>
+            {/* masts and sails */}
+            <path d="M12 21V6M9 21v-9M15 21v-9" />
+            <path d="M5 10l4 2M19 10l-4 2" />
+            <path d="M12 3v3" />
+        </>
+    ),
+    TENDER: (
+        <>
+            {/* open U cradle */}
+            <path d="M7 3v14h10V3" />
+            <path d="M10 6l2 6 2-6" />
+            <path d="M9 17v4h6v-4" />
+        </>
+    ),
+    SUPPLY_SHIP: (
+        <>
+            {/* container grid */}
+            <rect x="8" y="4" width="8" height="15" rx="1" />
+            <path d="M8 9h8M8 14h8M12 4v15" />
+        </>
+    ),
+    INTERDICTOR: (
+        <>
+            {/* hull with two projector domes */}
+            <path d="M12 3l3 7v10h-6V10z" />
+            <circle cx="5" cy="12" r="2.5" />
+            <circle cx="19" cy="12" r="2.5" />
+        </>
+    ),
+    HEAVY_CRUISER: (
+        <>
+            {/* the long knife */}
+            <path d="M12 1l2.5 8v13h-5V9z" />
+            <circle cx="12" cy="9" r="1" />
+            <circle cx="12" cy="13" r="1" />
+        </>
+    ),
+    TROOP_TRANSPORT: (
+        <>
+            {/* dropships along the flanks */}
+            <path d="M10 3h4v18h-4z" />
+            <path d="M10 7H7M10 11H7M10 15H7M14 7h3M14 11h3M14 15h3" />
+        </>
+    ),
+    SIEGE_SHIP: (
+        <>
+            {/* one giant gun */}
+            <path d="M11 2h2v10h-2z" />
+            <path d="M7 12h10v8H7z" />
+        </>
+    ),
+    COMMAND_SHIP: (
+        <>
+            {/* wedge with a tall tower */}
+            <path d="M12 3l5 9v8H7v-8z" />
+            <path d="M10 9h4M12 9V6" />
+        </>
+    ),
+    MOBILE_YARD: (
+        <>
+            {/* flying slipway frame */}
+            <rect x="7" y="2" width="10" height="20" rx="1" />
+            <path d="M7 7h10M7 12h10M7 17h10" />
+            <path d="M12 8l2 5h-4z" />
         </>
     ),
     STATION: (

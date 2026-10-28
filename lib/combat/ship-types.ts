@@ -11,8 +11,10 @@
 // Light hulls come from the Fleet Drydock line, heavy hulls from the
 // Spaceyard line (lib/combat/shipyard-gate.ts HULL_YARD).
 export type ShipClassId =
-    | 'patrol' | 'corvette' | 'frigate' | 'assault'
-    | 'destroyer' | 'cruiser' | 'carrier' | 'battleship' | 'dreadnought';
+    | 'patrol' | 'scout' | 'corvette' | 'torpedo_boat' | 'raider' | 'commando'
+    | 'frigate' | 'minelayer' | 'ewar' | 'assault' | 'tender' | 'supply_ship'
+    | 'destroyer' | 'cruiser' | 'interdictor' | 'heavy_cruiser' | 'troop_transport'
+    | 'carrier' | 'command_ship' | 'siege_ship' | 'battleship' | 'mobile_yard' | 'dreadnought';
 
 export type HullSize = 'S' | 'M' | 'L' | 'XL';
 

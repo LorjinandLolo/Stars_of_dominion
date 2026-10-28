@@ -10,8 +10,8 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { ShipClassId } from '../types';
-import { SHIP_CLASSES } from '../ship-defs';
+import type { ShipArchetype, ShipClassId } from '../types';
+import { SHIP_CLASSES, archetypeOf } from '../ship-defs';
 
 type Part = THREE.BufferGeometry;
 
@@ -172,7 +172,7 @@ function carrier(r: number): THREE.BufferGeometry {
     ]);
 }
 
-const BUILDERS: Record<ShipClassId, (r: number) => THREE.BufferGeometry> = {
+const BUILDERS: Record<ShipArchetype, (r: number) => THREE.BufferGeometry> = {
     corvette,
     destroyer,
     cruiser,
@@ -180,8 +180,9 @@ const BUILDERS: Record<ShipClassId, (r: number) => THREE.BufferGeometry> = {
     carrier,
 };
 
+/** Until a model is dropped in, a class draws as its base's placeholder at its own size. */
 export function buildPlaceholderHull(classId: ShipClassId): THREE.BufferGeometry {
-    return BUILDERS[classId](SHIP_CLASSES[classId].radius);
+    return BUILDERS[archetypeOf(classId)](SHIP_CLASSES[classId].radius);
 }
 
 /** Tiny arrowhead for strike craft, ~5 units long. */

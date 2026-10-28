@@ -34,7 +34,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { ShipClassId, SquadronType, SubsystemId } from '../types';
-import { SHIP_CLASSES } from '../ship-defs';
+import { SHIP_CLASSES, TACTICAL_CLASS_IDS } from '../ship-defs';
 import { addHeightShade, STATION_SPAN } from './placeholder-hulls';
 
 export const MODEL_BASE = '/models';
@@ -147,7 +147,7 @@ interface Manifest {
     station?: string | null;
 }
 
-const CLASS_IDS = new Set<string>(['corvette', 'destroyer', 'cruiser', 'battleship', 'carrier']);
+const CLASS_IDS = new Set<string>(TACTICAL_CLASS_IDS);
 const CRAFT_TYPES = new Set<string>(['interceptor', 'bomber']);
 
 /** Where a model's length along X has to land (must match the placeholders). */

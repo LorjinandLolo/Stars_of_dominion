@@ -23,7 +23,7 @@ recentres it, so the sim, clicks and rings keep working.
 ```
 public/models/
   manifest.json            which slot uses which file
-  ships/                   the five generic hulls (Blender-built, replace freely)
+  ships/                   the generic hulls, one per class (Blender-built, replace freely)
   factions/<faction>/      a faction's own hulls, override the generic ones
   craft/                   strike craft
   props/                   torpedo, asteroids, station
@@ -68,6 +68,24 @@ it wants to change; the rest fall back to `ships`.
 | cruiser | `ships.cruiser` | line ship, the reference size | length 42 | 8k | 2k |
 | battleship | `ships.battleship` | fleet centrepiece | length 60 | 12k | 2k |
 | carrier | `ships.carrier` | launches squadrons | length 55 | 10k | 2k |
+| patrol | `ships.patrol` | Patrol Craft (brief: docs/art/model-specs-new-classes.md) | length 14 | 1.5k | 512 |
+| scout | `ships.scout` | Scout (brief: docs/art/model-specs-new-classes.md) | length 18 | 2k | 1k |
+| torpedo_boat | `ships.torpedo_boat` | Torpedo Boat (brief: docs/art/model-specs-new-classes.md) | length 22 | 2.5k | 1k |
+| raider | `ships.raider` | Stealth Raider (brief: docs/art/model-specs-new-classes.md) | length 22 | 2.5k | 1k |
+| commando | `ships.commando` | Commando Ship (brief: docs/art/model-specs-new-classes.md) | length 22 | 2.5k | 1k |
+| frigate | `ships.frigate` | Frigate (brief: docs/art/model-specs-new-classes.md) | length 24 | 3k | 1k |
+| minelayer | `ships.minelayer` | Minelayer (brief: docs/art/model-specs-new-classes.md) | length 26 | 3k | 1k |
+| ewar | `ships.ewar` | Electronic Warfare Ship (brief: docs/art/model-specs-new-classes.md) | length 28 | 3.5k | 1k |
+| assault | `ships.assault` | Assault Ship (brief: docs/art/model-specs-new-classes.md) | length 30 | 4k | 2k |
+| tender | `ships.tender` | Tender (brief: docs/art/model-specs-new-classes.md) | length 36 | 5k | 2k |
+| supply_ship | `ships.supply_ship` | Supply Ship (brief: docs/art/model-specs-new-classes.md) | length 40 | 4.5k | 2k |
+| interdictor | `ships.interdictor` | Interdictor (brief: docs/art/model-specs-new-classes.md) | length 44 | 7k | 2k |
+| heavy_cruiser | `ships.heavy_cruiser` | Heavy Cruiser (brief: docs/art/model-specs-new-classes.md) | length 50 | 9k | 2k |
+| troop_transport | `ships.troop_transport` | Troop Transport (brief: docs/art/model-specs-new-classes.md) | length 52 | 8k | 2k |
+| command_ship | `ships.command_ship` | Command Ship (brief: docs/art/model-specs-new-classes.md) | length 56 | 10k | 2k |
+| siege_ship | `ships.siege_ship` | Siege Ship (brief: docs/art/model-specs-new-classes.md) | length 58 | 10k | 2k |
+| mobile_yard | `ships.mobile_yard` | Mobile Shipyard (brief: docs/art/model-specs-new-classes.md) | length 75 | 12k | 2k |
+| dreadnought | `ships.dreadnought` | Dreadnought (brief: docs/art/model-specs-new-classes.md) | length 80 | 15k | 2k |
 | faction hull | `factions.<id>.<class>` | that faction's ships, either side of the battle | same as the class | same | same |
 | interceptor | `craft.interceptor` | anti-craft squadrons, 6 per squadron | length 4 | 600 | 512 |
 | bomber | `craft.bomber` | anti-ship squadrons | length 4 | 600 | 512 |
