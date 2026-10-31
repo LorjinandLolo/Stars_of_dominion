@@ -4,84 +4,175 @@
     "destroyer": "ships/destroyer.glb",
     "cruiser": "ships/cruiser.glb",
     "battleship": "ships/battleship.glb",
-    "carrier": "ships/carrier.glb"
+    "carrier": "ships/carrier.glb",
+    "patrol": "ships/patrol.glb",
+    "scout": "ships/scout.glb",
+    "torpedo_boat": "ships/torpedo_boat.glb",
+    "frigate": "ships/frigate.glb",
+    "minelayer": "ships/minelayer.glb",
+    "tender": "ships/tender.glb",
+    "supply_ship": "ships/supply_ship.glb",
+    "raider": "ships/raider.glb",
+    "commando": "ships/commando.glb",
+    "ewar": "ships/ewar.glb",
+    "assault": "ships/assault.glb",
+    "interdictor": "ships/interdictor.glb",
+    "heavy_cruiser": "ships/heavy_cruiser.glb",
+    "troop_transport": "ships/troop_transport.glb",
+    "siege_ship": "ships/siege_ship.glb",
+    "command_ship": "ships/command_ship.glb",
+    "mobile_yard": "ships/mobile_yard.glb",
+    "dreadnought": "ships/dreadnought.glb"
   },
   "factions": {
     ".gitkeep": {},
     "banking_clan": {
       "cruiser": "factions/banking_clan/cruiser.glb",
       "battleship": "factions/banking_clan/battleship.glb",
-      "carrier": "factions/banking_clan/carrier.glb"
+      "carrier": "factions/banking_clan/carrier.glb",
+      "corvette": "factions/banking_clan/corvette.glb",
+      "supply_ship": "factions/banking_clan/supply_ship.glb",
+      "destroyer": "factions/banking_clan/destroyer.glb",
+      "command_ship": "factions/banking_clan/command_ship.glb",
+      "dreadnought": "factions/banking_clan/dreadnought.glb"
     },
     "faction-aurelian": {
       "cruiser": "factions/faction-aurelian/cruiser.glb",
       "battleship": "factions/faction-aurelian/battleship.glb",
-      "carrier": "factions/faction-aurelian/carrier.glb"
+      "carrier": "factions/faction-aurelian/carrier.glb",
+      "corvette": "factions/faction-aurelian/corvette.glb",
+      "destroyer": "factions/faction-aurelian/destroyer.glb",
+      "interdictor": "factions/faction-aurelian/interdictor.glb",
+      "command_ship": "factions/faction-aurelian/command_ship.glb",
+      "dreadnought": "factions/faction-aurelian/dreadnought.glb"
     },
     "faction-buthari": {
       "cruiser": "factions/faction-buthari/cruiser.glb",
       "battleship": "factions/faction-buthari/battleship.glb",
-      "carrier": "factions/faction-buthari/carrier.glb"
+      "carrier": "factions/faction-buthari/carrier.glb",
+      "corvette": "factions/faction-buthari/corvette.glb",
+      "minelayer": "factions/faction-buthari/minelayer.glb",
+      "destroyer": "factions/faction-buthari/destroyer.glb",
+      "command_ship": "factions/faction-buthari/command_ship.glb",
+      "dreadnought": "factions/faction-buthari/dreadnought.glb"
     },
     "faction-covenant": {
       "cruiser": "factions/faction-covenant/cruiser.glb",
       "battleship": "factions/faction-covenant/battleship.glb",
-      "carrier": "factions/faction-covenant/carrier.glb"
+      "carrier": "factions/faction-covenant/carrier.glb",
+      "corvette": "factions/faction-covenant/corvette.glb",
+      "destroyer": "factions/faction-covenant/destroyer.glb",
+      "command_ship": "factions/faction-covenant/command_ship.glb",
+      "dreadnought": "factions/faction-covenant/dreadnought.glb"
     },
     "faction-gabagoonians": {
       "cruiser": "factions/faction-gabagoonians/cruiser.glb",
       "battleship": "factions/faction-gabagoonians/battleship.glb",
-      "carrier": "factions/faction-gabagoonians/carrier.glb"
+      "carrier": "factions/faction-gabagoonians/carrier.glb",
+      "corvette": "factions/faction-gabagoonians/corvette.glb",
+      "supply_ship": "factions/faction-gabagoonians/supply_ship.glb",
+      "destroyer": "factions/faction-gabagoonians/destroyer.glb",
+      "command_ship": "factions/faction-gabagoonians/command_ship.glb",
+      "dreadnought": "factions/faction-gabagoonians/dreadnought.glb"
     },
     "faction-infernoids": {
       "cruiser": "factions/faction-infernoids/cruiser.glb",
       "battleship": "factions/faction-infernoids/battleship.glb",
-      "carrier": "factions/faction-infernoids/carrier.glb"
+      "carrier": "factions/faction-infernoids/carrier.glb",
+      "corvette": "factions/faction-infernoids/corvette.glb",
+      "destroyer": "factions/faction-infernoids/destroyer.glb",
+      "siege_ship": "factions/faction-infernoids/siege_ship.glb",
+      "command_ship": "factions/faction-infernoids/command_ship.glb",
+      "dreadnought": "factions/faction-infernoids/dreadnought.glb"
     },
     "faction-kaerruun": {
       "cruiser": "factions/faction-kaerruun/cruiser.glb",
       "battleship": "factions/faction-kaerruun/battleship.glb",
-      "carrier": "factions/faction-kaerruun/carrier.glb"
+      "carrier": "factions/faction-kaerruun/carrier.glb",
+      "corvette": "factions/faction-kaerruun/corvette.glb",
+      "commando": "factions/faction-kaerruun/commando.glb",
+      "destroyer": "factions/faction-kaerruun/destroyer.glb",
+      "command_ship": "factions/faction-kaerruun/command_ship.glb",
+      "dreadnought": "factions/faction-kaerruun/dreadnought.glb"
     },
     "faction-leopantheri": {
       "cruiser": "factions/faction-leopantheri/cruiser.glb",
       "battleship": "factions/faction-leopantheri/battleship.glb",
-      "carrier": "factions/faction-leopantheri/carrier.glb"
+      "carrier": "factions/faction-leopantheri/carrier.glb",
+      "corvette": "factions/faction-leopantheri/corvette.glb",
+      "destroyer": "factions/faction-leopantheri/destroyer.glb",
+      "command_ship": "factions/faction-leopantheri/command_ship.glb",
+      "dreadnought": "factions/faction-leopantheri/dreadnought.glb"
     },
     "faction-movanites": {
       "cruiser": "factions/faction-movanites/cruiser.glb",
       "battleship": "factions/faction-movanites/battleship.glb",
-      "carrier": "factions/faction-movanites/carrier.glb"
+      "carrier": "factions/faction-movanites/carrier.glb",
+      "corvette": "factions/faction-movanites/corvette.glb",
+      "assault": "factions/faction-movanites/assault.glb",
+      "destroyer": "factions/faction-movanites/destroyer.glb",
+      "command_ship": "factions/faction-movanites/command_ship.glb",
+      "dreadnought": "factions/faction-movanites/dreadnought.glb"
     },
     "faction-null-syndicate": {
       "cruiser": "factions/faction-null-syndicate/cruiser.glb",
       "battleship": "factions/faction-null-syndicate/battleship.glb",
-      "carrier": "factions/faction-null-syndicate/carrier.glb"
+      "carrier": "factions/faction-null-syndicate/carrier.glb",
+      "corvette": "factions/faction-null-syndicate/corvette.glb",
+      "ewar": "factions/faction-null-syndicate/ewar.glb",
+      "destroyer": "factions/faction-null-syndicate/destroyer.glb",
+      "command_ship": "factions/faction-null-syndicate/command_ship.glb",
+      "dreadnought": "factions/faction-null-syndicate/dreadnought.glb"
     },
     "faction-pirates": {
       "cruiser": "factions/faction-pirates/cruiser.glb",
       "battleship": "factions/faction-pirates/battleship.glb",
-      "carrier": "factions/faction-pirates/carrier.glb"
+      "carrier": "factions/faction-pirates/carrier.glb",
+      "corvette": "factions/faction-pirates/corvette.glb",
+      "raider": "factions/faction-pirates/raider.glb",
+      "destroyer": "factions/faction-pirates/destroyer.glb",
+      "command_ship": "factions/faction-pirates/command_ship.glb",
+      "dreadnought": "factions/faction-pirates/dreadnought.glb"
     },
     "faction-rhimetals": {
       "cruiser": "factions/faction-rhimetals/cruiser.glb",
       "battleship": "factions/faction-rhimetals/battleship.glb",
-      "carrier": "factions/faction-rhimetals/carrier.glb"
+      "carrier": "factions/faction-rhimetals/carrier.glb",
+      "corvette": "factions/faction-rhimetals/corvette.glb",
+      "destroyer": "factions/faction-rhimetals/destroyer.glb",
+      "command_ship": "factions/faction-rhimetals/command_ship.glb",
+      "mobile_yard": "factions/faction-rhimetals/mobile_yard.glb",
+      "dreadnought": "factions/faction-rhimetals/dreadnought.glb"
     },
     "faction-sarrak": {
       "cruiser": "factions/faction-sarrak/cruiser.glb",
       "battleship": "factions/faction-sarrak/battleship.glb",
-      "carrier": "factions/faction-sarrak/carrier.glb"
+      "carrier": "factions/faction-sarrak/carrier.glb",
+      "corvette": "factions/faction-sarrak/corvette.glb",
+      "destroyer": "factions/faction-sarrak/destroyer.glb",
+      "troop_transport": "factions/faction-sarrak/troop_transport.glb",
+      "command_ship": "factions/faction-sarrak/command_ship.glb",
+      "dreadnought": "factions/faction-sarrak/dreadnought.glb"
     },
     "faction-vektori": {
       "cruiser": "factions/faction-vektori/cruiser.glb",
       "battleship": "factions/faction-vektori/battleship.glb",
-      "carrier": "factions/faction-vektori/carrier.glb"
+      "carrier": "factions/faction-vektori/carrier.glb",
+      "corvette": "factions/faction-vektori/corvette.glb",
+      "destroyer": "factions/faction-vektori/destroyer.glb",
+      "heavy_cruiser": "factions/faction-vektori/heavy_cruiser.glb",
+      "command_ship": "factions/faction-vektori/command_ship.glb",
+      "dreadnought": "factions/faction-vektori/dreadnought.glb"
     },
     "nexulan_convergence": {
       "cruiser": "factions/nexulan_convergence/cruiser.glb",
       "battleship": "factions/nexulan_convergence/battleship.glb",
-      "carrier": "factions/nexulan_convergence/carrier.glb"
+      "carrier": "factions/nexulan_convergence/carrier.glb",
+      "scout": "factions/nexulan_convergence/scout.glb",
+      "corvette": "factions/nexulan_convergence/corvette.glb",
+      "destroyer": "factions/nexulan_convergence/destroyer.glb",
+      "command_ship": "factions/nexulan_convergence/command_ship.glb",
+      "dreadnought": "factions/nexulan_convergence/dreadnought.glb"
     }
   },
   "craft": {
