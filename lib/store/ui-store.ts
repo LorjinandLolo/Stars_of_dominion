@@ -91,6 +91,9 @@ export interface UIStore {
 
     // ── Fleet selection ──
     selectedFleetId: string | null;
+    /** A fleet that is not ours, open in the FleetInspector card. Never commanded. */
+    inspectedFleetId: string | null;
+    setInspectedFleetId: (id: string | null) => void;
     setSelectedFleetId: (id: string | null) => void;
 
     // ── Tactical battle (live ship combat overlay) ──
@@ -290,6 +293,8 @@ export interface UIStore {
     addSentMessage: (message: EmpireMessageView) => void;
     /** The contact DIPLOMACY should open on (a "Reply" in the brief). Cleared once used. */
     diplomacyFocusId: string | null;
+    /** Which card to open on; absent means the message box (a reply). */
+    diplomacyFocusTab: 'intel' | 'statecraft' | null;
 
     // ── Observer mode (casual-play Item 7) ──
     /** Watching the galaxy without an empire: read-only, orders refused. */
@@ -300,7 +305,7 @@ export interface UIStore {
     /** When this account is in a court as a seated minister, not its ruler. Null for a ruler. */
     ministerSeat: { seatId: string; factionId: string; portfolio: string; empireName: string } | null;
     setMinisterSeat: (seat: { seatId: string; factionId: string; portfolio: string; empireName: string } | null) => void;
-    setDiplomacyFocusId: (factionId: string | null) => void;
+    setDiplomacyFocusId: (factionId: string | null, tab?: 'intel' | 'statecraft') => void;
 
     // ── Interface preferences (PlayerProfile.uiPrefs) ──
     /** Null until loaded from /api/player/prefs. */
@@ -417,7 +422,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
     // ── Fleet selection ──
     selectedFleetId: null,
-    setSelectedFleetId: (id: string | null) => set({ selectedFleetId: id }),
+    setSelectedFleetId: (id: string | null) => set(id ? { selectedFleetId: id, inspectedFleetId: null } : { selectedFleetId: null }),
+    inspectedFleetId: null,
+    setInspectedFleetId: (id) => set({ inspectedFleetId: id }),
 
     // ── Tactical battle ──
     tacticalBattle: null,
@@ -680,11 +687,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
         state.messages.some(m => m.id === message.id) ? {} : { messages: [...state.messages, message] }
     )),
     diplomacyFocusId: null,
+    diplomacyFocusTab: null,
     observer: false,
     setObserver: (observer) => set({ observer }),
     ministerSeat: null,
     setMinisterSeat: (seat) => set({ ministerSeat: seat }),
-    setDiplomacyFocusId: (factionId) => set({ diplomacyFocusId: factionId }),
+    setDiplomacyFocusId: (factionId, tab) => set(tab ? { diplomacyFocusId: factionId, diplomacyFocusTab: tab } : factionId ? { diplomacyFocusId: factionId, diplomacyFocusTab: null } : { diplomacyFocusId: null }),
 
     // ── Interface preferences ──
     uiPrefs: null,

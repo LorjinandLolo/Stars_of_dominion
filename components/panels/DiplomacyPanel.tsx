@@ -178,6 +178,9 @@ export default function DiplomacyPanel() {
         if (!liveFactions.some(f => f.id === diplomacyFocusId)) return;
         setSelectedFactionId(diplomacyFocusId);
         setDiplomacyFocusId(null);
+        // Opened on a card (the fleet inspector): show it, no message to answer.
+        const focusTab = useUIStore.getState().diplomacyFocusTab;
+        if (focusTab) { setActiveTab(focusTab); return; }
         // The player came to answer a message: put the message box on screen
         // (on a phone it sits below the contact card) once it has rendered.
         // Not cleared on cleanup: clearing the focus id above re-runs this

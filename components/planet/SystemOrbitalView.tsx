@@ -95,6 +95,8 @@ export default function SystemOrbitalView() {
     const fleets = useUIStore(s => s.fleets);
     const selectedFleetId = useUIStore(s => s.selectedFleetId);
     const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
+    const inspectedFleetId = useUIStore(s => s.inspectedFleetId);
+    const setInspectedFleetId = useUIStore(s => s.setInspectedFleetId);
 
     const system = systems.find((s: any) => s.id === systemViewId);
     const systemPlanets = React.useMemo(
@@ -618,10 +620,10 @@ export default function SystemOrbitalView() {
                                     : orbitPos ? orbitPos.y + orbitRing * Math.sin(orbitAngle) : baseY - Math.floor(fi / 2) * 46;
                                 const col = factionColor(f.factionId);
                                 const mine = f.factionId === playerFactionId;
-                                const isSel = selectedFleetId === f.id;
+                                const isSel = selectedFleetId === f.id || inspectedFleetId === f.id;
                                 return (
                                     <g key={`fleet-${f.id}`} className="cursor-pointer"
-                                        onClick={() => setSelectedFleetId(isSel ? null : f.id)}>
+                                        onClick={() => mine ? setSelectedFleetId(isSel ? null : f.id) : setInspectedFleetId(isSel ? null : f.id)}>
                                         {orbitPos && (
                                             <circle cx={orbitPos.x} cy={orbitPos.y} r={orbitRing} fill="none" stroke={col}
                                                 strokeWidth={0.8} strokeDasharray="3 5" opacity={0.55} pointerEvents="none" />

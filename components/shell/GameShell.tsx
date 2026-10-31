@@ -5,6 +5,7 @@ import { useUIStore } from '@/lib/store/ui-store';
 import { useGameSync } from '@/hooks/useGameSync';
 import BootScreen from '@/components/auth/BootScreen';
 import { factionColor } from '@/components/galaxy/starVisuals';
+import FleetInspector from '@/components/galaxy/FleetInspector';
 import DraggablePanel from '@/components/ui/DraggablePanel';
 import type { NavTab } from '@/types/ui-state';
 import { getFleetsAction } from '@/app/actions/movement';
@@ -308,6 +309,7 @@ export default function GameShell() {
                 <SystemViewGate />
                 <PlanetSurfaceGate />
                 <OutpostGate />
+                <FleetInspector />
 
                 {/* Contextual workspace expands UP from the Command Dock */}
                 {activePanel && (

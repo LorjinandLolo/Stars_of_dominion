@@ -862,7 +862,8 @@ function SystemForcesPanel({
                     className="flex items-center justify-between gap-2 p-2 rounded-lg bg-red-950/30 border border-red-500/20"
                 >
                     <div className="min-w-0">
-                        <div className="text-[10px] font-bold text-red-300 truncate">{f.name || f.id}</div>
+                        <button onClick={() => useUIStore.getState().setInspectedFleetId(f.id)} title="Whose fleet is this?"
+                            className="block max-w-full text-left text-[10px] font-bold text-red-300 hover:text-red-200 hover:underline truncate">{f.name || f.id}</button>
                         <div className="text-[9px] text-red-400/60">
                             {(f.factionId || '').replace('faction-', '')} · strength {Math.round((f.strength ?? 0) * 100)}%
                         </div>

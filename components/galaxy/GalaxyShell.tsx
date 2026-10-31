@@ -125,6 +125,8 @@ export default function GalaxyShell() {
     const playerFactionId = useUIStore(s => s.playerFactionId);
     const selectedFleetId = useUIStore(s => s.selectedFleetId);
     const setSelectedFleetId = useUIStore(s => s.setSelectedFleetId);
+    const inspectedFleetId = useUIStore(s => s.inspectedFleetId);
+    const setInspectedFleetId = useUIStore(s => s.setInspectedFleetId);
     const selectedPlanetId = useUIStore(s => s.selectedPlanetId);
     const setSelectedPlanet = useUIStore(s => s.setSelectedPlanet);
     const constructionPlanetId = useUIStore(s => s.constructionPlanetId);
@@ -819,6 +821,9 @@ export default function GalaxyShell() {
                                             setSelectedFleetId(fleet.id);
                                             // Show the FLEET's battle card, not a stale planet's
                                             setSelectedPlanet(null);
+                                        } else {
+                                            // Not ours: whose is it? (FleetInspector)
+                                            setInspectedFleetId(fleet.id);
                                         }
                                         if (clickSystemId) setSelectedSystem(clickSystemId);
                                     }}
@@ -829,6 +834,9 @@ export default function GalaxyShell() {
                                     {/* Selection ring */}
                                     {isSelected && (
                                         <circle r={6} fill="none" stroke="#818cf8" strokeWidth={0.8} className="gx-pulse-ring" />
+                                    )}
+                                    {inspectedFleetId === fleet.id && (
+                                        <circle r={6} fill="none" stroke="#f87171" strokeWidth={0.8} className="gx-pulse-ring" />
                                     )}
                                     {/* Engine glow — brighter while under way */}
                                     <circle r={3.5} fill={color} opacity={fleet.currentSystemId ? 0.35 : 0.55} className="gx-breathe" />
