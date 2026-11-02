@@ -168,6 +168,33 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { formationId: "id", name: "string" },
     cost: {}
   },
+  TECH_CRASH_PROGRAM: {
+    id: "TECH_CRASH_PROGRAM",
+    category: "research",
+    // Charged in the handler: the price follows the work left.
+    params: { techId: "id" },
+    cost: {}
+  },
+  MIL_SET_RESERVE: {
+    id: "MIL_SET_RESERVE",
+    category: "military",
+    // With planetId: joins that world's reserve. Without: leaves it as a task force.
+    params: { fleetId: "id" },
+    cost: {}
+  },
+  MIL_MUSTER_ARMY: {
+    id: "MIL_MUSTER_ARMY",
+    category: "military",
+    // Troops leave the garrison as an army, boarding embarkFleetId if named.
+    params: { planetId: "id" },
+    cost: {}
+  },
+  MIL_STAND_DOWN_ARMY: {
+    id: "MIL_STAND_DOWN_ARMY",
+    category: "military",
+    params: { armyId: "id" },
+    cost: {}
+  },
   MIL_FLEET_STANCE: {
     id: "MIL_FLEET_STANCE",
     category: "military",

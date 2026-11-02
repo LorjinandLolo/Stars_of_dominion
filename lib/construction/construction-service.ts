@@ -15,7 +15,7 @@ import { campBuildSpeed } from '../camps/labour-camp';
 import { constructionLogisticsMultiplier } from '../logistics/distribution-service';
 import { computeInfrastructureEffects } from '../infrastructure/infrastructure-service';
 import { getTechModifier } from '../tech/modifiers';
-import { baseBuildSeconds, baseRepairSeconds } from './build-time';
+import { baseBuildSeconds, baseRepairSeconds, QUICK_BUILD_SECONDS, quickBuildApplies } from './build-time';
 
 /**
  * Validates if a building can be built on a specific tile.
@@ -140,7 +140,15 @@ function buildSecondsFor(planet: Planet, buildingDef: BuildingDefinition, world?
     * getTechModifier(world, planet.ownerId, 'construction_speed')
     // Labour gangs on a camp world (lib/camps).
     * campBuildSpeed(planet));
-  return baseBuildSeconds(buildingDef) / buildSpeed;
+  const seconds = baseBuildSeconds(buildingDef) / buildSpeed;
+  return quickBuildApplies(planet as any, buildingDef) ? Math.min(seconds, QUICK_BUILD_SECONDS) : seconds;
+}
+
+/** Starts the clock on one order, spending a quick build if it had one. */
+function startClock(planet: Planet, buildingDef: BuildingDefinition, now: number, world?: any): number {
+  const completesAt = now + buildSecondsFor(planet, buildingDef, world);
+  if (quickBuildApplies(planet as any, buildingDef)) (planet as any).quickBuildsLeft -= 1;
+  return completesAt;
 }
 
 /**
@@ -183,8 +191,7 @@ export function startConstruction(
   tile.constructionState = 'under_construction';
   tile.buildingId = buildingId;
   
-  const buildTime = buildSecondsFor(planet, buildingDef, world);
-  const completionTime = now + buildTime;
+  const completionTime = startClock(planet, buildingDef, now, world);
   tile.constructionCompleteAt = completionTime;
 
   const order: BuildOrder = {
@@ -261,7 +268,7 @@ export function processConstructionQueue(planet: Planet, now: number, world?: an
     const def = BUILDINGS.find(b => b.id === order.buildingId);
     const tile = planet.tiles.find(t => t.tileId === order.tileId);
     if (!def || !tile) { order.queued = false; order.completesAtSeconds = now; continue; }
-    const completesAt = now + buildSecondsFor(planet, def, world);
+    const completesAt = startClock(planet, def, now, world);
     order.queued = false;
     order.startedAtSeconds = now;
     order.completesAtSeconds = completesAt;

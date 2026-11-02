@@ -46,6 +46,14 @@ export default function CommandDock() {
         if (target) state.setSystemView(target);
     };
 
+    // One press from anywhere to your capital's Planet Screen.
+    const handleHome = () => {
+        const state = useUIStore.getState();
+        const mine = (state.planets as any[]).filter(p => p.ownerId === playerFactionId);
+        const home = mine.find(p => p.planetType === 'capital') ?? mine[0];
+        if (home) state.openPlanetScreen(home.id);
+    };
+
     // Remember the last tab used per category so re-opening a category
     // returns to where the player left off.
     const lastTabRef = React.useRef<Record<string, string>>({});
@@ -141,10 +149,20 @@ export default function CommandDock() {
                 )}
             </button>
 
+            {/* ── Your world ──────────────────────────────────────────────── */}
+            <button
+                onClick={handleHome}
+                className="relative flex items-center justify-center gap-2.5 px-4 md:px-5 min-w-[52px] shrink-0 border-r border-slate-800/60 transition-all duration-200 group text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/5"
+                title="Open your capital: output, defences, building, ships and troops"
+            >
+                <Globe2 size={20} className="group-hover:scale-110 transition-transform duration-200" />
+                <span className="hidden xl:block text-[11px] font-display tracking-[0.2em]">WORLD</span>
+            </button>
+
             {/* ── Category buttons ────────────────────────────────────────── */}
             {/* On a phone a full dock is wider than the screen: the row scrolls
                 sideways inside the dock instead of pushing the page wide. */}
-            <div className="dock-categories flex flex-1 min-w-0 items-stretch justify-start md:justify-center overflow-x-auto md:overflow-visible">
+            <div className="dock-categories flex flex-1 min-w-0 items-stretch justify-start 2xl:justify-center overflow-x-auto 2xl:overflow-visible">
                 {shownCategories.map(cat => {
                     const isActive = activeCategory?.id === cat.id;
                     const emergency = cat.id === 'empire' && councilState.emergencySession && councilState.status !== 'absent';

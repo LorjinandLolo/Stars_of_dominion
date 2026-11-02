@@ -92,6 +92,7 @@ import { DefeatManager } from '../defeat/manager';
 import { tickTitles, latchDefeatStatus } from '../titles/title-service';
 import { tickSeasonModifiers } from '../seasons/season-service';
 import { registry as techRegistry, applyUnlock, ticksForTech } from '../tech/engine';
+import { CRASH_SPEED } from '../tech/crash-program';
 import { getTechModifier } from '../tech/modifiers';
 import { tickFactionTraits } from '../factions/traits-service';
 import { cloakedSystems, revealedSystems } from '../factions/buthari-council';
@@ -439,7 +440,7 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
                     if (stuckDef) slot.ticksRequired = ticksForTech(stuckDef);
                 }
 
-                slot.ticksCompleted = (slot.ticksCompleted ?? 0) + researchSpeed;
+                slot.ticksCompleted = (slot.ticksCompleted ?? 0) + researchSpeed * (slot.crash ? CRASH_SPEED : 1);
                 if (slot.ticksRequired && slot.ticksCompleted >= slot.ticksRequired) {
                     const finishedId = slot.techId;
 
@@ -468,6 +469,7 @@ function step4_research(world: ReturnType<typeof getGameWorldState>) {
                     // one technology per game.
                     slot.techId = null;
                     slot.status = 'empty';
+                    slot.crash = false;
                     slot.progressHours = 0;
                     slot.ticksCompleted = 0;
                     slot.ticksRequired = 0;

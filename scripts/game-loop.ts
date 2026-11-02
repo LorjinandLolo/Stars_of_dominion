@@ -34,7 +34,9 @@ import { processSectorCombats, withdrawFleetHome } from '../lib/combat/combat-ma
 import { dockRepairPerCycle, yardRefitBonus } from '../lib/combat/fleet-repair';
 import { blendSpeedBonus, shipCountOf } from '../lib/combat/fleet-speed';
 import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORER_TIME_FACTOR } from '../lib/combat/civilian-ships';
-import { foundOutpost, refreshDockedCivilians, settleWorld } from '../lib/combat/civilian-service';
+import { foundOutpost, newCivilianFleet, refreshDockedCivilians, settleWorld } from '../lib/combat/civilian-service';
+import { grantStarterKits } from '../lib/start/starter-kit';
+import { CRASH_SPEED, crashCost } from '../lib/tech/crash-program';
 import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
@@ -97,6 +99,7 @@ import {
     resolveDesign as resolveShipDesign,
     quoteRefit,
     REFIT_MAX_PER_ORDER,
+    unitConfigFor,
 } from '../lib/combat/ship-registry';
 import { checkShipyardGate, planetYardSource } from '../lib/combat/shipyard-gate';
 import { foldSurfaceYards, seedStarterDrydock } from '../lib/orbital/orbital-service';
@@ -165,6 +168,7 @@ import {
     type BattlePlan,
 } from '../lib/combat/siege/battle-plans';
 import { RecruitmentService } from '../lib/combat/recruitment-service';
+import { capacityRefusal, reserveFleets, shipCapacity, shipsHeld, troopCapacity, troopsHeld } from '../lib/military/reserve';
 import { tickConstructionGlobal, startConstruction, repairBuilding, empireBuildingState } from '../lib/construction/construction-service';
 import { BUILDINGS } from '../data/buildings';
 import { generateSurface, autoPlaceBuilding } from '../lib/planet-surface/generator';
@@ -943,6 +947,8 @@ async function runGameTick() {
                 // Table unreadable — keep the previous list rather than letting
                 // the AI speak for humans.
             }
+            // New empires and new claims get their first ships and quick builds.
+            for (const id of grantStarterKits(world)) console.log(`[Start] Starter kit granted to ${id}.`);
             // Friends in cabinets (lib/government/human-ministers.ts): the
             // seat table is mirrored into the governments on the same cadence.
             try {
@@ -3242,6 +3248,8 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                         break;
                     }
                     const newState = TechEngine.assignResearch(techState, slot.slotId, payload.techId, world.nowSeconds);
+                    // A council project taken over does not hand its crash on.
+                    for (const s of newState.activeSlots as any[]) if (s.slotId === slot.slotId) s.crash = false;
                     world.tech.set(factionId, newState);
                     bumpMetric(world, factionId, DEED_RESEARCH_STARTED);
                 } catch (e: any) {
@@ -3249,6 +3257,26 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                     recordOrderFailure(world, factionId, actionId, `Research could not start: ${e.message}`);
                 }
             }
+            break;
+        }
+
+        case 'TECH_CRASH_PROGRAM': {
+            // payload: { techId } — lib/tech/crash-program.ts
+            const slots: any[] = world.tech.get(factionId)?.activeSlots ?? [];
+            const slot = slots.find(s => s.techId === payload.techId && s.status === 'researching');
+            const tech = slot ? techRegistryForOrders.get(slot.techId) : undefined;
+            if (!slot || !tech) {
+                recordOrderFailure(world, factionId, actionId, 'That project is not being researched.');
+                break;
+            }
+            if (slots.some(s => s.crash)) {
+                recordOrderFailure(world, factionId, actionId, 'Your labs can run one crash program at a time.');
+                break;
+            }
+            const cost = { CREDITS: crashCost(tech.researchCost, slot.ticksCompleted, slot.ticksRequired) };
+            if (!chargePerUnitCost(world, factionId, cost, 1, actionId, `Crash program: ${tech.name}`)) break;
+            slot.crash = true;
+            console.log(`[Order] ${factionId} put ${tech.id} on a crash program (${cost.CREDITS} credits, ×${CRASH_SPEED}).`);
             break;
         }
 
@@ -4045,6 +4073,18 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId,
                     `Recruiting ${String(payload.unitType).replace(/_/g, ' ')} on ${planet.name ?? payload.planetId} needs an active Barracks, Tank Foundry or Military Academy.`);
                 return;
+            }
+
+            // New troops wait in the garrison, which holds what the world's
+            // military buildings can keep ready (lib/military/reserve.ts).
+            {
+                const refusal = capacityRefusal('troops', planet.name ?? payload.planetId,
+                    troopsHeld(planet, world.combat?.recruitmentJobs ?? []), troopCapacity(planet), Number(payload.count) || 0);
+                if (refusal) {
+                    refundOrderCost(world, factionId, actionId);
+                    recordOrderFailure(world, factionId, actionId, refusal);
+                    return;
+                }
             }
 
             // Elders are not queued like armour. One at a time, capped by a live
@@ -5012,11 +5052,33 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 }
             }
 
+            // payload.reserve: this ship joins the world's reserve in orbit. No
+            // shell fee, and the player never made a task force to get here.
+            const reserve = payload.reserve ? reserveFleets(world.movement.fleets.values(), planet, factionId) : [];
+            if (payload.reserve) {
+                const refusal = capacityRefusal('ships', planet.name ?? planet.id,
+                    shipsHeld(world.movement.fleets.values(), world.combat?.recruitmentJobs ?? [], planet, factionId),
+                    shipCapacity(planet, world.nowSeconds), 1);
+                refundOrderCost(world, factionId, actionId);
+                if (refusal) {
+                    recordOrderFailure(world, factionId, actionId, refusal);
+                    return;
+                }
+            }
+            if (reserve.length > 0 && chained?.ok) {
+                const label = chained.spec.designName ?? chained.spec.unitType;
+                if (chargePerUnitCost(world, factionId, chained.spec.cost, 1, actionId, label)) {
+                    queueFormationRecruit(world, factionId, reserve[0].id, true, chained.spec, 1);
+                }
+                break;
+            }
+
             const fleetId = `fleet-${factionId}-${Date.now()}`;
             const newFleet = {
                 id: fleetId,
                 factionId,
-                name: `Task Force ${Math.floor(Math.random() * 100)}`,
+                name: payload.reserve ? `${planet.name} Reserve` : `Task Force ${Math.floor(Math.random() * 100)}`,
+                reserveOf: payload.reserve ? planet.id : undefined,
                 currentSystemId: planet.systemId,
                 arrivedAtSeconds: world.nowSeconds,
                 orbitingPlanetId: planet.id,
@@ -5098,43 +5160,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             const fleetId = `fleet-${factionId}-${Date.now()}-${shipType}`;
             const sameKind = [...world.movement.fleets.values()].filter((f: any) => f.factionId === factionId && civilianCount(f.composition, shipType) > 0).length;
-            world.movement.fleets.set(fleetId, {
-                id: fleetId,
-                factionId,
-                name: `${def.name.replace(' Ship', '')} ${sameKind + 1}`,
-                currentSystemId: planet.systemId,
-                arrivedAtSeconds: world.nowSeconds,
-                orbitingPlanetId: planet.id,
-                destinationSystemId: null,
-                activeLayer: null,
-                transitProgress: 0,
-                etaSeconds: 0,
-                plannedPath: [],
-                orders: [],
-                doctrine: {
-                    type: 'Defensive',
-                    deviationFromPosture: 0,
-                    preferredLayers: ['hyperlane', 'gate'],
-                    retreatThreshold: 1,
-                    logisticsStrain: 0,
-                    moraleDrift: 0,
-                    supplyLevel: 1.0
-                },
-                postureId: 'Expansionist',
-                strength: 1.0,
-                basePower: 0,
-                composition: {},
-                hyperdriveProfile: {
-                    hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
-                    trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
-                    corridor: { speedMultiplier: 2.0, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 },
-                    gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
-                    deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
-                },
-                isDetectable: true,
-                transportedArmyIds: [],
-                leaderId: undefined
-            } as any);
+            world.movement.fleets.set(fleetId, newCivilianFleet(factionId, planet, fleetId, `${def.name.replace(' Ship', '')} ${sameKind + 1}`, world.nowSeconds, {}));
             if (chargePerUnitCost(world, factionId, def.cost, 1, actionId, def.name)) {
                 queueFormationRecruit(world, factionId, fleetId, true, {
                     unitType: shipType.toUpperCase(),
@@ -5206,6 +5232,114 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 return;
             }
             console.log(`[Order] ${factionId} founded an outpost on ${payload.planetId}.`);
+            break;
+        }
+
+        case 'MIL_SET_RESERVE': {
+            // payload: { fleetId, planetId?, name? } — with a planetId the fleet
+            // joins that world's reserve; without one it leaves it, as a task force.
+            const fleet: any = world.movement.fleets.get(payload.fleetId);
+            if (!fleet || fleet.factionId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'No such fleet under your command.');
+                return;
+            }
+            if (payload.planetId) {
+                const planet = world.construction.planets.get(payload.planetId);
+                if (!planet || planet.ownerId !== factionId || planet.systemId !== fleet.currentSystemId || fleet.destinationSystemId) {
+                    recordOrderFailure(world, factionId, actionId, 'A fleet joins the reserve of your own world, holding in its system.');
+                    return;
+                }
+                fleet.reserveOf = planet.id;
+                fleet.name = `${planet.name} Reserve`;
+            } else {
+                fleet.reserveOf = undefined;
+                const name = String(payload.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+                if (name) fleet.name = name;
+            }
+            break;
+        }
+
+        case 'MIL_MUSTER_ARMY': {
+            // payload: { planetId, composition, name?, embarkFleetId? }
+            // Troops step out of the garrison as an army of their own, and board
+            // a fleet in the same order when one is named.
+            const planet: any = world.construction.planets.get(payload.planetId);
+            if (!planet || planet.ownerId !== factionId || !planet.garrison) {
+                recordOrderFailure(world, factionId, actionId, 'You have no garrison on that world.');
+                return;
+            }
+            if (planet.siege) {
+                recordOrderFailure(world, factionId, actionId, `${planet.name} is under siege: its garrison is on the board, not on parade.`);
+                return;
+            }
+            const garrison = planet.garrison;
+            const composition: Record<string, number> = {};
+            let total = 0;
+            let basePower = 0;
+            for (const [type, want] of Object.entries(payload.composition ?? {})) {
+                const take = Math.min(Number(garrison.unitComposition?.[type]) || 0, Math.max(0, Math.floor(Number(want) || 0)));
+                if (take <= 0) continue;
+                composition[type] = take;
+                total += take;
+                basePower += take * (unitConfigFor(type)?.power ?? 10);
+            }
+            if (total === 0) {
+                recordOrderFailure(world, factionId, actionId, 'Choose the troops to muster.');
+                return;
+            }
+            for (const [type, n] of Object.entries(composition)) {
+                garrison.unitComposition[type] -= n;
+                if (garrison.unitComposition[type] <= 0) delete garrison.unitComposition[type];
+            }
+            garrison.garrisonTroops = Math.max(0, (garrison.garrisonTroops ?? 0) - total);
+
+            const armyId = `army-${factionId}-${Date.now()}-${world.movement.armies.size}`;
+            const name = String(payload.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+            const carrier: any = payload.embarkFleetId ? world.movement.fleets.get(payload.embarkFleetId) : undefined;
+            const aboard = carrier && carrier.factionId === factionId && carrier.currentSystemId === planet.systemId && !carrier.destinationSystemId;
+            world.movement.armies.set(armyId, {
+                id: armyId,
+                factionId,
+                name: name || `${planet.name} Army`,
+                currentPlanetId: aboard ? null : planet.id,
+                currentSystemId: planet.systemId,
+                transportFleetId: aboard ? carrier.id : null,
+                composition,
+                stance: 'fortified',
+                strength: 1.0,
+                basePower,
+                supplyLevel: 1.0,
+                morale: 100,
+                leaderId: undefined,
+            });
+            if (aboard) carrier.transportedArmyIds = [...(carrier.transportedArmyIds ?? []), armyId];
+            console.log(`[Order] ${factionId} mustered ${total} troops from ${planet.name} as ${armyId}${aboard ? ` aboard ${carrier.id}` : ''}.`);
+            break;
+        }
+
+        case 'MIL_STAND_DOWN_ARMY': {
+            // payload: { armyId } — an army on its own world folds back into the garrison.
+            const army: any = world.movement.armies.get(payload.armyId);
+            const planet: any = army?.currentPlanetId ? world.construction.planets.get(army.currentPlanetId) : undefined;
+            if (!army || army.factionId !== factionId || army.transportFleetId || !planet || planet.ownerId !== factionId) {
+                recordOrderFailure(world, factionId, actionId, 'An army stands down on the ground of your own world.');
+                return;
+            }
+            if (planet.siege) {
+                recordOrderFailure(world, factionId, actionId, `${planet.name} is under siege.`);
+                return;
+            }
+            if ((world.combat?.recruitmentJobs ?? []).some((j: any) => j.targetFormationId === army.id)) {
+                recordOrderFailure(world, factionId, actionId, `${army.name} still has recruits in training.`);
+                return;
+            }
+            if (!planet.garrison) planet.garrison = defaultGarrison(planet, factionId);
+            for (const [type, n] of Object.entries(army.composition ?? {})) {
+                const count = Number(n) || 0;
+                planet.garrison.unitComposition[type] = (planet.garrison.unitComposition[type] ?? 0) + count;
+                planet.garrison.garrisonTroops = (planet.garrison.garrisonTroops ?? 0) + count;
+            }
+            world.movement.armies.delete(army.id);
             break;
         }
 
@@ -5286,6 +5420,16 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 );
                 if (!gate.ok) {
                     recordOrderFailure(world, factionId, actionId, gate.reason);
+                    return;
+                }
+            }
+            if (isFleet && formation.reserveOf) {
+                const home = world.construction.planets.get(formation.reserveOf);
+                const refusal = home && capacityRefusal('ships', home.name ?? home.id,
+                    shipsHeld(world.movement.fleets.values(), world.combat?.recruitmentJobs ?? [], home, factionId),
+                    shipCapacity(home, world.nowSeconds), count);
+                if (refusal) {
+                    recordOrderFailure(world, factionId, actionId, refusal);
                     return;
                 }
             }
@@ -5881,10 +6025,14 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             src.basePower = Math.max(1, srcPower - newPower);
 
-            const newFleetId = `fleet-${factionId}-${Date.now()}`;
+            // The Muster screen names the id, so its next order can board troops.
+            const wanted = String(payload.newFleetId ?? '');
+            const newFleetId = wanted.startsWith(`fleet-${factionId}-`) && !world.movement.fleets.has(wanted)
+                ? wanted : `fleet-${factionId}-${Date.now()}`;
             world.movement.fleets.set(newFleetId, {
                 ...src,
                 id: newFleetId,
+                reserveOf: undefined,
                 name: payload.name || `${src.name || 'Task Force'} Detachment`,
                 composition: moved,
                 designProfile: detachedProfile,

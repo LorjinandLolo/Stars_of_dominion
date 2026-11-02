@@ -525,7 +525,7 @@ export const MANUAL_DATA: ManualSection[] = [
                         type: 'bullet_list',
                         content: [
                             'Yards are built in orbit (the Orbital tab) in two lines. Fleet Drydocks lay the light hulls and repair and refit fleets; every capital starts with one. Spaceyards lay destroyers and up; build your first when you want a line of battle. Ships cost credits, metals and materiel.',
-                            'Commission ships from a world with a shipyard: its Shipyard tab in Planetary Construction, or UNITS on the world\'s card.',
+                            'Commission ships from a world with a shipyard: open the world, then Build, then Ships.',
                             'The Ship Designer (Military) builds your own patterns: a hull plus weapons, utility modules and a reactor core. Modules add power and draw energy; a design may overdraw its reactor by up to 25%, losing combat power for every percent over. Better modules come from research.',
                             'A design that ships are using cannot be changed (it can be renamed). To upgrade ships already built, save a new design and refit them at a yard: you pay only for what is added, and they fight with the old fit until the refit is done.',
                         ],
@@ -538,7 +538,7 @@ export const MANUAL_DATA: ManualSection[] = [
                 blocks: [
                     {
                         type: 'paragraph',
-                        content: 'Four unarmed ships, laid down at any shipyard from the Shipyard tab. Each one flies in a fleet of its own: civilian ships never join a battle and cannot be merged with warships. An enemy at war that finds one in a system without your warships destroys it.',
+                        content: 'Four unarmed ships, laid down at any shipyard: open the world, then Build, then Ships. Each one flies in a fleet of its own: civilian ships never join a battle and cannot be merged with warships. An enemy at war that finds one in a system without your warships destroys it.',
                     },
                     {
                         type: 'table',
@@ -637,7 +637,7 @@ export const MANUAL_DATA: ManualSection[] = [
                     {
                         type: 'bullet_list',
                         content: [
-                            'Raise troops on a world you own: select it, press UNITS and recruit (infantry, armour, anti-armour, artillery, special operations). Troops cost credits and materiel.',
+                            'Raise troops on a world you own: open the world, then Build, then Troops (infantry, armour, anti-armour, artillery, airborne, special operations). Troops cost credits and materiel.',
                             'Load armies onto a fleet, fly it to the target and take orbit over the world. INVASION lands the troops.',
                             'Landing needs the orbit. Whoever holds the orbit decides who can land, who is supplied and who can be bombarded.',
                         ],

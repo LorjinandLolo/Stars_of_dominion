@@ -41,6 +41,47 @@ function notify(world: GameWorldState, factionId: string, id: string, title: str
 
 // ─── Every cycle ─────────────────────────────────────────────────────────────
 
+/** A civilian fleet at a world, holding. Empty until its ship is built, or already crewed. */
+export function newCivilianFleet(factionId: string, planet: { id: string; systemId: string }, fleetId: string, name: string, nowSeconds: number, composition: Record<string, number>): any {
+    return {
+        id: fleetId,
+        factionId,
+        name,
+        currentSystemId: planet.systemId,
+        arrivedAtSeconds: nowSeconds,
+        orbitingPlanetId: planet.id,
+        destinationSystemId: null,
+        activeLayer: null,
+        transitProgress: 0,
+        etaSeconds: 0,
+        plannedPath: [],
+        orders: [],
+        doctrine: {
+            type: 'Defensive',
+            deviationFromPosture: 0,
+            preferredLayers: ['hyperlane', 'gate'],
+            retreatThreshold: 1,
+            logisticsStrain: 0,
+            moraleDrift: 0,
+            supplyLevel: 1.0,
+        },
+        postureId: 'Expansionist',
+        strength: 1.0,
+        basePower: 0,
+        composition,
+        hyperdriveProfile: {
+            hyperlane: { speedMultiplier: 1.0, detectabilityMultiplier: 1.0, supplyStrainMultiplier: 1.0 },
+            trade: { speedMultiplier: 1.2, detectabilityMultiplier: 1.5, supplyStrainMultiplier: 1.0 },
+            corridor: { speedMultiplier: 2.0, detectabilityMultiplier: 0.5, supplyStrainMultiplier: 1.0 },
+            gate: { speedMultiplier: 10.0, detectabilityMultiplier: 2.0, supplyStrainMultiplier: 1.0 },
+            deepSpace: { speedMultiplier: 0.5, detectabilityMultiplier: 0.2, supplyStrainMultiplier: 1.0 },
+        },
+        isDetectable: true,
+        transportedArmyIds: [],
+        leaderId: undefined,
+    };
+}
+
 export function refreshDockedCivilians(world: GameWorldState): void {
     const docked = new Map<string, DockedCivilians>();
     const sight = new Map<string, Set<string>>();

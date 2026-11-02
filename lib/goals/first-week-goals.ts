@@ -69,6 +69,8 @@ export interface GoalDeepLink {
     tab: string;
     /** Open this planet's build panel (commissioning, orbital structures). */
     constructionPlanetId?: string;
+    /** Which page of the Planet Screen to open on. */
+    constructionTab?: string;
     /** Select this system on the map, so its context panel offers survey/settle. */
     selectSystemId?: string;
     /** Label for the button. */
@@ -99,7 +101,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         id: 'commission_ships',
         // Any ship counts (DEED_SHIPS_COMMISSIONED); the cheap, quick explorer is the one to suggest.
         title: 'Commission an exploration ship',
-        hint: 'Open your capital, go to the Shipyard tab and lay down an Exploration Ship. It surveys twice as fast as a warship, from two jumps away.',
+        hint: 'Open your capital, go to Build, then Ships, and lay down an Exploration Ship. It surveys twice as fast as a warship, from two jumps away.',
         takes: `About ${EXPLORER_TIME}`,
         meanwhile: 'Look around the map: your scanners have already found the systems next door.',
         metrics: [DEED_SHIPS_COMMISSIONED],
@@ -174,7 +176,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
         id: 'raise_troops',
         phase: 'next',
         title: 'Raise ground troops',
-        hint: 'Ships hold the sky; troops take and hold worlds. Select your capital, press UNITS on it and recruit infantry. Every army and ship costs Materiel and every attack spends Ammo: both sit in the top bar, refilled by your factories each cycle.',
+        hint: 'Ships hold the sky; troops take and hold worlds. Open your capital, go to Build, then Troops, and recruit infantry. Every army and ship costs Materiel and every attack spends Ammo: both sit in the top bar, refilled by your factories each cycle.',
         takes: 'Seconds to minutes per unit',
         meanwhile: 'A world falls when your troops hold its strongpoints and its capital, and only while your fleet holds the sky above it.',
         metrics: [DEED_TROOPS_RAISED],
@@ -478,7 +480,7 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
     switch (goalId) {
         case 'commission_ships': {
             const capital = capitalPlanet(world, factionId);
-            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, label: 'Open your capital' };
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'SHIPS', label: 'Open your capital' };
         }
         case 'survey_three': {
             const systemId = surveyTarget(world, factionId);
@@ -490,7 +492,7 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
         }
         case 'build_shipyard': {
             const capital = capitalPlanet(world, factionId);
-            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, label: 'Open your capital' };
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'ORBITAL', label: 'Open your capital' };
         }
         case 'start_research':
             return { tab: 'tech', label: 'Open Research' };
@@ -498,7 +500,7 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
             return { tab: 'government', label: 'Open Government' };
         case 'raise_troops': {
             const capital = capitalPlanet(world, factionId);
-            return { tab: 'galaxy', selectSystemId: capital.systemId, label: 'Show me my capital' };
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'TROOPS', label: 'Recruit at my capital' };
         }
         case 'three_worlds': {
             const systemId = settleTarget(world, factionId);
@@ -510,7 +512,7 @@ export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId)
             return { tab: 'diplomacy', label: 'Open Diplomacy' };
         case 'found_outpost': {
             const capital = capitalPlanet(world, factionId);
-            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, label: 'Open your shipyard' };
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'SHIPS', label: 'Open your shipyard' };
         }
     }
 }

@@ -133,7 +133,8 @@ export default function GalaxyShell() {
     // The system view (dock SYSTEM button) opens a system without selecting it,
     // so BUILD from its dossier had no system to hand the panel and did nothing.
     const systemViewId = useUIStore(s => s.systemViewId);
-    const constructionSystemId = selectedSystemId ?? systemViewId;
+    // The world's own system, not the map's selection: the Planet Screen opens from anywhere.
+    const constructionSystemId = useUIStore(s => (s.planets as any[]).find(p => p.id === s.constructionPlanetId)?.systemId ?? null);
     const setConstructionPlanet = useUIStore(s => s.setConstructionPlanet);
     const playerState = useUIStore(s => s.playerState);
     const factionVisibility = useUIStore(s => s.factionVisibility);

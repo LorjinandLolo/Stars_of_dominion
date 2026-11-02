@@ -4,7 +4,16 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Hammer, Clock, AlertTriangle, Building, ArrowUpCircle, Users, Heart, Zap, Shield, Info, Activity, ShieldCheck, Globe } from 'lucide-react';
 import { BuildingType, PlacedBuilding, ConstructionOrder } from '@/lib/construction/construction-types';
 import { BUILDINGS as BUILDING_DEFS, buildingOpenTo } from '@/data/buildings';
-import QuickBuildMenu from './QuickBuildMenu';
+import PlanetOverviewTab from './PlanetOverviewTab';
+import PlanetForcesTab from './PlanetForcesTab';
+import { buildBlockReason } from '@/lib/construction/build-gates';
+import { reserveFleets } from '@/lib/military/reserve';
+import { registry as techRegistry } from '@/lib/tech/engine';
+import { empireBuildingState } from '@/lib/construction/construction-service';
+import ShipDesignPicker from '@/components/units/ShipDesignPicker';
+import UnitIcon from '@/components/units/UnitIcon';
+import groundUnits from '@/data/combat/ground-units.json';
+import type { ShipDesign } from '@/lib/combat/ship-types';
 import { cancelBuildingAction } from '@/app/actions/construction';
 import { executePlayerAction } from '@/app/actions/registry-handler';
 import { Navigation, Satellite, Route, Truck } from 'lucide-react';
@@ -20,7 +29,7 @@ import { defaultDesignFor, summarizeDesign } from '@/lib/combat/ship-registry';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { getSyncedWorld } from '@/hooks/useGameSync';
 import { buildConstructionView } from '@/lib/construction/construction-view';
-import { baseBuildSeconds } from '@/lib/construction/build-time';
+import { baseBuildSeconds, QUICK_BUILD_SECONDS, quickBuildApplies } from '@/lib/construction/build-time';
 import { ACTION_DEFINITIONS } from '@/lib/actions/registry';
 import { CIVILIAN_SHIPS, CIVILIAN_SHIP_IDS, type CivilianShipId } from '@/lib/combat/civilian-ships';
 
@@ -42,6 +51,13 @@ interface PlanetConstructionPanelProps {
     factionMateriel?: number;
     onClose: () => void;
 }
+
+type PlanetTab = 'OVERVIEW' | 'BUILD' | 'FORCES' | 'ORBITAL' | 'INFRA' | 'LOGISTICS' | 'SOCIETY';
+const PLANET_TABS: readonly PlanetTab[] = ['OVERVIEW', 'BUILD', 'FORCES', 'ORBITAL', 'INFRA', 'LOGISTICS', 'SOCIETY'];
+type BuildSection = 'BUILDINGS' | 'SHIPS' | 'TROOPS';
+const TROOP_TYPES = ['INFANTRY', 'ARMOR', 'ANTI_ARMOR', 'ARTILLERY', 'AIRBORNE', 'SPECIAL_OPS'];
+/** Troops come in companies of this many; the worker charges per head. */
+const TROOP_BATCH = 10;
 
 const TAB_ACTIVE: Record<string, string> = {
     indigo: 'border-indigo-500 text-indigo-300 bg-indigo-500/10',
@@ -67,17 +83,43 @@ export function PlanetConstructionPanel({
     const { playerFactionId, diplomacyState } = useUIStore();
     // Unique buildings show only to their own civilization (data/buildings.ts).
     const playerCivId = useUIStore(s => (s.factions as any)?.[s.playerFactionId ?? '']?.civilizationId as string | undefined);
-    const [activeTab, setActiveTab] = useState<'BUILD' | 'QUEUE' | 'SPACE' | 'SOCIETY' | 'ORBITAL' | 'INFRA' | 'LOGISTICS'>(() => {
-        // Opened from the station in orbit (OrbitLayer): start on the orbital tab, once.
+    const [activeTab, setActiveTab] = useState<PlanetTab>(() => {
+        // Opened on a page (a goal, the forces button, the station in orbit): start there, once.
         const asked = useUIStore.getState().constructionInitialTab;
         if (asked) useUIStore.setState({ constructionInitialTab: null });
-        return asked === 'ORBITAL' ? 'ORBITAL' : 'BUILD';
+        if (asked === 'SHIPS' || asked === 'TROOPS') return 'BUILD';
+        return PLANET_TABS.includes(asked as PlanetTab) ? asked as PlanetTab : 'OVERVIEW';
     });
+    const [buildSection, setBuildSection] = useState<BuildSection>(() => {
+        const asked = useUIStore.getState().constructionInitialTab;
+        return asked === 'SHIPS' ? 'SHIPS' : asked === 'TROOPS' ? 'TROOPS' : 'BUILDINGS';
+    });
+    const [showLocked, setShowLocked] = useState(false);
+    // Each page, each world, starts at its top.
+    const contentRef = React.useRef<HTMLDivElement>(null);
+    useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [activeTab, buildSection, planetId]);
+    const storePlanets = useUIStore(s => s.planets) as any[];
+    const unlockedTech = useUIStore(s => s.techState?.unlockedTechIds);
+    const storeFleets = useUIStore(s => s.fleets) as any[];
+    const storeSystems = useUIStore(s => s.systems) as any[];
+    const myWorlds = React.useMemo(
+        () => storePlanets.filter(p => p.ownerId === playerFactionId)
+            .sort((a, b) => (a.planetType === 'capital' ? -1 : b.planetType === 'capital' ? 1 : String(a.name).localeCompare(String(b.name)))),
+        [storePlanets, playerFactionId],
+    );
+    // Other worlds of ours, one step away, without going back through the map.
+    const stepWorld = (delta: number) => {
+        const i = myWorlds.findIndex(p => p.id === planetId);
+        if (i < 0 || myWorlds.length < 2) return;
+        useUIStore.getState().setConstructionPlanet(myWorlds[(i + delta + myWorlds.length) % myWorlds.length].id);
+    };
     const [buildings, setBuildings] = useState<PlacedBuilding[]>([]);
     const [queue, setQueue] = useState<ConstructionOrder[]>([]);
     const [spaceQueue, setSpaceQueue] = useState<any[]>([]);
     const [planet, setPlanet] = useState<any | null>(null);
     const [planetLayer, setPlanetLayer] = useState<any | null>(null);
+    // `planet` is read once on open; forces and defences must follow the sync.
+    const livePlanet = { ...planet, ...storePlanets.find(p => p.id === planetId) };
     const [worldNowSeconds, setWorldNowSeconds] = useState<number>(() => Math.floor(Date.now() / 1000));
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
@@ -136,7 +178,6 @@ export function PlanetConstructionPanel({
             });
             if (!res.success) throw new Error(res.error || 'Failed to queue building');
             await loadData();
-            setActiveTab('QUEUE');
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -159,7 +200,6 @@ export function PlanetConstructionPanel({
             });
             if (!res.success) throw new Error(res.error || 'Failed to queue space construction');
             await loadData();
-            setActiveTab('QUEUE');
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -225,6 +265,37 @@ export function PlanetConstructionPanel({
             setActionLoading(false);
         }
     };
+
+    // A warship from this world joins its reserve in orbit, made on the first
+    // ship. The player never has to make a task force first.
+    const handleCommissionShip = async (design: ShipDesign) => {
+        const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+        const unitType = design.hullId.toUpperCase();
+        const rawPlanet = storePlanets.find(p => p.id === planetId);
+        const reserve = rawPlanet && reserveFleets(storeFleets as any[], rawPlanet, playerFactionId ?? '')[0];
+        await dispatchOrder(reserve
+            ? { actionId: 'MIL_RECRUIT_FORMATION_UNIT', factionId, payload: { formationId: reserve.id, isFleet: true, unitType, designId: design.id, designName: design.name, count: 1 }, label: `Commissioning ${design.name}` }
+            : { actionId: 'MIL_BUILD_FLEET', factionId, payload: { planetId, systemId, reserve: true, recruitUnitType: unitType, recruitDesignId: design.id }, label: `Commissioning ${design.name}` });
+    };
+
+    const handleRecruitTroops = async (unitType: string, count: number) => {
+        const { dispatchOrder } = await import('@/lib/multiplayer/order-client');
+        await dispatchOrder({ actionId: 'PLANET_RECRUIT_UNITS', factionId, payload: { planetId, unitType, count }, label: `Recruiting ${count}× ${unitType.replace(/_/g, ' ').toLowerCase()}` });
+    };
+
+    // What stops a building here, and how many are stopped.
+    const blockFor = (def: any): string | null => {
+        const rawPlanet = storePlanets.find(p => p.id === planetId);
+        if (!rawPlanet) return null;
+        return buildBlockReason(def, rawPlanet, {
+            civilizationId: playerCivId,
+            unlockedTech: new Set<string>(unlockedTech ?? []),
+            techName: id => techRegistry.get(id)?.name,
+            buildingName: id => buildingMap[id]?.name,
+            empireHas: id => empireBuildingState(storePlanets, playerFactionId ?? '', id) !== 'none',
+        });
+    };
+    const lockedCount = BUILDING_DEFS.filter(d => buildingOpenTo(d, playerCivId) && !(d.id in SURFACE_YARD_TO_ORBITAL) && !!blockFor(d)).length;
 
     // Helper: Can the faction afford this building right now?
     const canAfford = (type: string) => {
@@ -350,19 +421,22 @@ export function PlanetConstructionPanel({
 
     return (
         <div 
-            className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 translate-y-0 w-[90vw] max-w-6xl"
+            className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 translate-y-0 w-[min(96vw,72rem)]"
             onWheel={(e) => e.stopPropagation()}
         >
             <div 
-                className="bg-slate-950/95 backdrop-blur-md border-t border-l border-r border-slate-700/60 rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[78vh] overflow-hidden"
+                className="bg-slate-950/95 backdrop-blur-md border-t border-l border-r border-slate-700/60 rounded-t-xl shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col h-[82vh] overflow-hidden"
                 style={{ borderTopColor: ownerColor }}
             >
                 {/* Header */}
                 <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
-                            <Hammer className="w-5 h-5" />
-                        </div>
+                        {myWorlds.length > 1 && (
+                            <div className="flex flex-col gap-0.5">
+                                <button onClick={() => stepWorld(-1)} aria-label="Previous world" title="Previous world" className="px-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">‹</button>
+                                <button onClick={() => stepWorld(1)} aria-label="Next world" title="Next world" className="px-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">›</button>
+                            </div>
+                        )}
                         <div>
                             <h2 className="text-lg font-bold text-white tracking-wide flex items-center gap-2 leading-tight">
                                 {planet?.name ?? 'Planetary construction'}
@@ -372,7 +446,6 @@ export function PlanetConstructionPanel({
                                     </span>
                                 )}
                             </h2>
-                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Planetary construction</div>
                             {planet && (
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                                     <div className="flex items-center gap-1.5 text-xs">
@@ -395,24 +468,34 @@ export function PlanetConstructionPanel({
                             )}
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                    >
-                        ✕
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            onClick={() => useUIStore.getState().setSurfacePlanet(planetId)}
+                            title="See this world's districts and place buildings by hand"
+                            className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-600/15 hover:bg-emerald-600/30 text-xs font-semibold text-emerald-300"
+                        >
+                            Surface
+                        </button>
+                        <button
+                            onClick={onClose}
+                            aria-label="Close"
+                            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabs — short names on one line; it scrolls sideways when narrow */}
                 <div className="shrink-0 flex gap-1 px-4 pt-2 border-b border-slate-800 bg-slate-900/50 overflow-x-auto whitespace-nowrap">
                     {([
-                        { id: 'BUILD', label: 'Build', icon: <Hammer className="w-3.5 h-3.5" />, accent: 'indigo' },
-                        { id: 'QUEUE', label: `Structures${queue.length ? ` · ${queue.length} building` : ''}`, icon: <Building className="w-3.5 h-3.5" />, accent: 'cyan' },
-                        { id: 'INFRA', label: 'Infrastructure', icon: <Route className="w-3.5 h-3.5" />, accent: 'cyan' },
+                        { id: 'OVERVIEW', label: 'Overview', icon: <Globe className="w-3.5 h-3.5" />, accent: 'cyan' },
+                        { id: 'BUILD', label: `Build${queue.length ? ` · ${queue.length}` : ''}`, icon: <Hammer className="w-3.5 h-3.5" />, accent: 'indigo' },
+                        { id: 'FORCES', label: 'Forces', icon: <Shield className="w-3.5 h-3.5" />, accent: 'amber' },
                         { id: 'ORBITAL', label: 'Orbital', icon: <Satellite className="w-3.5 h-3.5" />, accent: 'fuchsia', alert: !!planet?.orbital?.orbitControlLost },
+                        { id: 'INFRA', label: 'Infrastructure', icon: <Route className="w-3.5 h-3.5" />, accent: 'cyan' },
                         { id: 'LOGISTICS', label: 'Logistics', icon: <Truck className="w-3.5 h-3.5" />, accent: 'amber', alert: !!(planetLayer?.blockade?.active || planetLayer?.logistics?.congested) },
                         { id: 'SOCIETY', label: 'Society', icon: <Users className="w-3.5 h-3.5" />, accent: 'emerald' },
-                        ...(hasShipyard ? [{ id: 'SPACE', label: 'Shipyard', icon: <Navigation className="w-3.5 h-3.5" />, accent: 'fuchsia' }] : []),
                     ] as Array<{ id: typeof activeTab; label: string; icon: React.ReactNode; accent: string; alert?: boolean }>).map(t => (
                         <button
                             key={t.id}
@@ -430,7 +513,7 @@ export function PlanetConstructionPanel({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-950/50 relative">
+                <div ref={contentRef} className="flex-1 overflow-y-auto p-6 pt-4 bg-slate-950/50 relative">
                     {loading && (
                         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm">
                             <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
@@ -447,11 +530,39 @@ export function PlanetConstructionPanel({
                         </div>
                     )}
 
+                    {activeTab === 'OVERVIEW' && planet && (
+                        <div className="mb-6">
+                            <PlanetOverviewTab planet={livePlanet} layer={planetLayer} queue={queue} spaceQueue={spaceQueue} nowSeconds={worldNowSeconds} onOpenBuild={() => setActiveTab('BUILD')} />
+                        </div>
+                    )}
+
+                    {activeTab === 'FORCES' && planet && (
+                        <PlanetForcesTab planet={livePlanet} onOpenBuild={() => { setActiveTab('BUILD'); setBuildSection('SHIPS'); }} onClose={onClose} />
+                    )}
+
                     {activeTab === 'BUILD' && (
+                        <div className="sticky -top-4 z-20 -mx-6 px-6 py-2 mb-4 bg-slate-950/95 border-b border-slate-800/60 flex flex-wrap items-center gap-2">
+                            {([['BUILDINGS', 'Buildings'], ['SHIPS', 'Ships'], ['TROOPS', 'Troops']] as Array<[BuildSection, string]>).map(([id, label]) => (
+                                <button key={id} onClick={() => setBuildSection(id)}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${buildSection === id ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-indigo-500/50'}`}>
+                                    {label}
+                                </button>
+                            ))}
+                            {buildSection === 'BUILDINGS' && lockedCount > 0 && (
+                                <button onClick={() => setShowLocked(v => !v)} className="ml-auto text-[11px] text-slate-400 hover:text-slate-200">
+                                    {showLocked ? 'Hide' : 'Show'} {lockedCount} locked
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'BUILD' && buildSection === 'BUILDINGS' && (
                         <div className="space-y-8">
-                            <QuickBuildMenu planetId={planetId} />
                             <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 rounded-xl border text-xs ${busySlots >= buildSlots ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-700/50 bg-slate-900/60'}`}>
                                 <span className="font-display tracking-widest uppercase text-slate-400">Build slots</span>
+                                {livePlanet.quickBuildsLeft > 0 && (
+                                    <span className="font-mono font-bold text-emerald-300">{livePlanet.quickBuildsLeft} quick build{livePlanet.quickBuildsLeft === 1 ? '' : 's'} left: up in {formatSimAsClock(QUICK_BUILD_SECONDS)}</span>
+                                )}
                                 <span className={`font-mono font-bold ${busySlots >= buildSlots ? 'text-amber-300' : 'text-cyan-300'}`}>{busySlots} / {buildSlots} busy</span>
                                 {waitingOrders > 0 && (
                                     <span className="font-mono text-amber-300">{waitingOrders} waiting for a slot</span>
@@ -473,12 +584,11 @@ export function PlanetConstructionPanel({
                                             .filter(([_, def]) => def.category === cat && buildingOpenTo(def, playerCivId) && !(def.id in SURFACE_YARD_TO_ORBITAL))
                                             .map(([type, def]) => {
                                                 const afford = canAfford(type);
-                                                const reqsMet = hasPrereq(type);
+                                                // What stops it here, in words (the worker's own checks, lib/construction/build-gates.ts).
+                                                const block = blockFor(def);
+                                                const reqsMet = !block;
                                                 const isUpgrade = def.tier > 1;
-
-                                                // Don't clutter UI with upgrades for buildings we don't even have T1 of yet,
-                                                // UNLESS we are specifically looking at T2/T3 and have the prerequisite.
-                                                if (isUpgrade && !reqsMet) return null;
+                                                if (block && !showLocked) return null;
 
                                                 return (
                                                     <div
@@ -499,11 +609,12 @@ export function PlanetConstructionPanel({
                                                                 <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">T{def.tier}</span>
                                                                 <span className="flex items-center gap-1 text-[10px] text-slate-400" title="Build time, real time">
                                                                     <Clock className="w-3 h-3" />
-                                                                    {formatSimAsClock(baseBuildSeconds(def))}
+                                                                    {formatSimAsClock(quickBuildApplies(livePlanet, def) ? Math.min(baseBuildSeconds(def), QUICK_BUILD_SECONDS) : baseBuildSeconds(def))}
                                                                 </span>
                                                             </div>
                                                         </div>
 
+                                                        {block && <p className="text-[11px] text-amber-300/90">{block}</p>}
                                                         {def.effects.length > 0 && (
                                                             <div className="flex flex-wrap gap-1">
                                                                 {def.effects.map((e: any, idx: number) => (
@@ -525,14 +636,14 @@ export function PlanetConstructionPanel({
                                                             <button
                                                                 disabled={!afford || !reqsMet || actionLoading}
                                                                 onClick={() => handleQueueBuilding(type)}
-                                                                title={!reqsMet ? 'Needs the building it upgrades' : !afford ? shortfallText(def) ?? undefined : undefined}
+                                                                title={block ?? (!afford ? shortfallText(def) ?? undefined : undefined)}
                                                                 className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors
                                                                     ${(!afford || !reqsMet)
                                                                         ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed'
                                                                         : 'bg-indigo-600 hover:bg-indigo-500 text-white'}
                                                                 `}
                                                             >
-                                                                {!afford ? (shortfallText(def) ?? 'Cannot afford') : isUpgrade ? 'Upgrade' : busySlots >= buildSlots ? 'Queue' : 'Build'}
+                                                                {block ? 'Locked' : !afford ? (shortfallText(def) ?? 'Cannot afford') : isUpgrade ? 'Upgrade' : busySlots >= buildSlots ? 'Queue' : 'Build'}
                                                             </button>
                                                         </div>
                                                     </div>
@@ -542,70 +653,15 @@ export function PlanetConstructionPanel({
                                 </div>
                             ))}
                         </div>
-                    )}                    {activeTab === 'QUEUE' && (
+                    )}
+
+                    {activeTab === 'OVERVIEW' && (
                         <div className="space-y-6">
-                            {/* Active Queue Section */}
+                            {/* Completed Buildings Section */}
                             <div>
                                 <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-4 flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-cyan-500" />
-                                    Active Construction
-                                </h3>
-                                {(queue.length === 0 && spaceQueue.length === 0) ? (
-                                    <div className="p-8 border-2 border-dashed border-slate-800 rounded-xl text-center text-slate-500">
-                                        No active construction on this planet.
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-3">
-                                        {queue.map(order => {
-                                            const def = buildingMap[order.buildingId];
-                                            if (!def) return null;
-                                            const isUpgrade = def.tier > 1;
-                                            return (
-                                                <div key={order.orderId} className="p-4 bg-slate-900 border border-slate-700/50 rounded-xl flex items-center justify-between">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="p-3 bg-cyan-500/10 text-cyan-400 rounded-lg">
-                                                            {isUpgrade ? <ArrowUpCircle className="w-5 h-5" /> : <Hammer className="w-5 h-5" />}
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-semibold text-slate-200">
-                                                                {(order as any).queued ? `Queued: ${def.name}` : isUpgrade ? `Upgrading: ${def.name}` : `Constructing: ${def.name}`}
-                                                            </div>
-                                                            <div className={`text-xs font-medium font-mono ${(order as any).queued ? 'text-amber-300' : 'text-slate-400'}`}>
-                                                                {(order as any).queued
-                                                                    ? `Waiting for a build slot (${busySlots} / ${buildSlots} busy)`
-                                                                    : `ETA: ${formatSimAsClock(order.completesAtSeconds - worldNowSeconds)}`}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-                                        {spaceQueue.map(order => (
-                                            <div key={order.orderId} className="p-4 bg-slate-900 border border-fuchsia-900/30 rounded-xl flex items-center justify-between">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-3 bg-fuchsia-500/10 text-fuchsia-400 rounded-lg">
-                                                        <Navigation className="w-5 h-5" />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-semibold text-slate-200">
-                                                            Assembling: {order.shipType.replace(/_/g, ' ').toUpperCase()}
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 font-medium font-mono">
-                                                            ETA: {formatSimAsClock(order.completesAtSeconds - worldNowSeconds)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Completed Buildings Section */}
-                            <div className="mt-8">
-                                <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-4 flex items-center gap-2">
                                     <Building className="w-4 h-4 text-emerald-500" />
-                                    Operational Infrastructure ({buildings.filter(b => b.status === 'operational').length} / 5)
+                                    Buildings ({buildings.filter(b => b.status === 'operational').length})
                                 </h3>
                                 {buildings.length === 0 ? (
                                     <div className="p-8 border border-slate-800 rounded-xl text-center text-slate-500 bg-slate-900/30">
@@ -712,8 +768,14 @@ export function PlanetConstructionPanel({
                         />
                     )}
 
-                    {activeTab === 'SPACE' && (
+                    {activeTab === 'BUILD' && buildSection === 'SHIPS' && (
                         <div className="space-y-6">
+                            {!hasShipyard && (
+                                <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs text-amber-200">
+                                    This world has no shipyard. Yards are built in orbit.
+                                    <button onClick={() => setActiveTab('ORBITAL')} className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold">Go to Orbital</button>
+                                </div>
+                            )}
                             <h3 className="text-sm font-bold tracking-widest text-slate-400 uppercase mb-4 flex items-center gap-2">
                                 <Navigation className="w-4 h-4 text-fuchsia-500" />
                                 Civilian Ships
@@ -755,29 +817,46 @@ export function PlanetConstructionPanel({
                                 <Shield className="w-4 h-4 text-fuchsia-500" />
                                 Warships
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {[
-                                    // Only the corvette has a real production path (a new task
-                                    // force with the standard Picket Corvette chained in); bigger
-                                    // hulls are recruited from the Units panel.
-                                    { id: 'corvette', name: 'Escort Corvette', desc: 'A new task force carrying one Picket Corvette (standard pattern). Cruisers and battleships need a bigger yard — see the UNITS panel.', shortfall: corvetteShortfall, cost: `Task force ${TASK_FORCE_COST.credits.toLocaleString()} Cr / ${TASK_FORCE_COST.metals.toLocaleString()} Met + corvette ${corvetteSummary.cost.CREDITS.toLocaleString()} Cr / ${corvetteSummary.cost.METALS.toLocaleString()} Met / ${corvetteSummary.cost.MATERIEL.toLocaleString()} Materiel`, available: true },
-                                ].map(ship => (
-                                    <div key={ship.id} className={`p-4 bg-slate-900 border border-slate-700 rounded-xl flex flex-col ${ship.available ? '' : 'opacity-60'}`}>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <h4 className="font-bold text-slate-200 capitalize">{ship.name}</h4>
-                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Orbital Order</div>
+                            {/* The same picker and yard rule as the recruit gate: every hull this yard can lay, standard or your own design. */}
+                            <ShipDesignPicker
+                                layout="grid"
+                                yardAnchor={{ systemId, systemName: storeSystems.find(s => s.id === systemId)?.name ?? systemId, holding: true }}
+                                onCommission={(design) => handleCommissionShip(design)}
+                            />
+                        </div>
+                    )}
+
+                    {activeTab === 'BUILD' && buildSection === 'TROOPS' && (
+                        <div className="space-y-4">
+                            <p className="text-xs text-slate-400">New troops wait in this world's garrison and defend it. Muster them from Forces. Each order is a company of {TROOP_BATCH}.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {[...TROOP_TYPES, ...(playerCivId === 'civ-infernoid' ? ['ELDER_INFERNOID'] : [])].map(type => {
+                                    const cfg = (groundUnits as Record<string, any>)[type];
+                                    const count = type === 'ELDER_INFERNOID' ? 1 : TROOP_BATCH;
+                                    const credits = (cfg?.cost?.credits ?? 0) * count;
+                                    const metals = (cfg?.cost?.metals ?? 0) * count;
+                                    const short = credits > factionCredits ? `Need ${Math.ceil(credits - factionCredits).toLocaleString()} credits`
+                                        : metals > factionMetals ? `Need ${Math.ceil(metals - factionMetals).toLocaleString()} metals` : null;
+                                    return (
+                                        <div key={type} className="p-3 rounded-xl border border-slate-700/80 bg-slate-900 flex flex-col gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <UnitIcon type={type} size={24} />
+                                                <h4 className="text-sm text-slate-100 font-semibold truncate">{cfg?.name ?? type.replace(/_/g, ' ')}</h4>
+                                                <span className="ml-auto flex items-center gap-1 text-[10px] text-slate-400 shrink-0" title="Build time, real time">
+                                                    <Clock className="w-3 h-3" />{formatSimAsClock((cfg?.buildTime ?? 60) * count)}
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 line-clamp-2" title={cfg?.description}>{cfg?.description}</p>
+                                            <div className="flex items-center justify-between gap-2 mt-auto">
+                                                <span className="text-[11px] font-mono text-slate-300">{credits.toLocaleString()} Cr{metals ? ` · ${metals.toLocaleString()} Met` : ''}</span>
+                                                <button disabled={!!short || actionLoading} onClick={() => handleRecruitTroops(type, count)}
+                                                    className="shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:bg-slate-800/80 disabled:text-slate-500 disabled:cursor-not-allowed">
+                                                    {short ?? `Recruit ${count}`}
+                                                </button>
+                                            </div>
                                         </div>
-                                        <p className="text-xs text-slate-400 mb-4 flex-1">{ship.desc}</p>
-                                        <div className="text-[10px] font-mono text-fuchsia-400 mb-4">{ship.cost}</div>
-                                        <button
-                                            onClick={() => handleQueueSpaceConstruction(ship.id)}
-                                            disabled={actionLoading || !ship.available || !!(ship as any).shortfall}
-                                            className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-fuchsia-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {!ship.available ? 'UNAVAILABLE' : ((ship as any).shortfall ?? 'REQUISITION')}
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

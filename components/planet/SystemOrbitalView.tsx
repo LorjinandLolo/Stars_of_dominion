@@ -680,8 +680,8 @@ export default function SystemOrbitalView() {
                         factions={factions}
                         playerFactionId={playerFactionId}
                         onSurface={() => setSurfacePlanet(selected.id)}
-                        onSystems={() => setConstructionPlanet(selected.id)}
-                        onUnits={() => setSelectedPlanet(selected.id)}
+                        onSystems={() => useUIStore.getState().openPlanetScreen(selected.id, 'BUILD')}
+                        onUnits={() => useUIStore.getState().openPlanetScreen(selected.id, 'FORCES')}
                         orbit={orbitActionFor(selected)}
                         onClose={() => selectPlanet(null)}
                     />

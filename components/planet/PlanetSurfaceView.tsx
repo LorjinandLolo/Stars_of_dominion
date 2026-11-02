@@ -881,7 +881,7 @@ export default function PlanetSurfaceView() {
                     {inOrbit && (
                         <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
                             <OrbitLayer planet={planet} side="front" fleets={fleets} nowSeconds={nowSeconds} isOwner={isOwner}
-                                onOpenOrbit={isOwner ? () => { useUIStore.setState({ constructionInitialTab: 'ORBITAL' }); setConstructionPlanet(planet.id); } : undefined} />
+                                onOpenOrbit={isOwner ? () => useUIStore.getState().openPlanetScreen(planet.id, 'ORBITAL') : undefined} />
                         </svg>
                     )}
                     </div>

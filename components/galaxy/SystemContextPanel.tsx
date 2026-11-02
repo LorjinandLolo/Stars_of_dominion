@@ -4,7 +4,6 @@ import React from 'react';
 import { ShipType, Planet } from '@/lib/construction/construction-types';
 import { RecruitmentJob } from '@/lib/combat/siege/siege-types';
 import { useUIStore } from '@/lib/store/ui-store';
-import QuickBuildMenu from '@/components/construction/QuickBuildMenu';
 import { X, Shield, Zap, Users, Navigation, Search, Sparkles, Crosshair, AlertOctagon, Globe, Anchor, Swords, Radar, Hammer, Home } from 'lucide-react';
 import { relayPingQuote, RELAY_PING_BASE_CREDITS, RELAY_PING_PER_JUMP_CREDITS } from '@/lib/exploration/ping-cost';
 import { hasAsteroidBelt } from '@/lib/movement/belts';
@@ -149,9 +148,6 @@ function PlanetCard({
     const [recruiting, setRecruiting] = React.useState(false);
     const [actionBusy, setActionBusy] = React.useState<string | null>(null);
     const isOwnedByPlayer = planet.ownerId === playerFactionId;
-    // A young world (few buildings) shows its quick-build list open: that is when a player needs it.
-    const [quickBuildOpen, setQuickBuildOpen] = React.useState(() =>
-        isOwnedByPlayer && ((planet as any).tiles ?? []).filter((t: any) => t.buildingId).length < 4);
     const isUnowned = !planet.ownerId;
     const isNeutral = !planet.ownerId || planet.ownerId === 'faction-neutral' || planet.ownerId === '';
     const isEnemyOwned = !!planet.ownerId && planet.ownerId !== playerFactionId && planet.ownerId !== 'faction-neutral';
@@ -355,18 +351,20 @@ function PlanetCard({
                         SURFACE
                     </button>
 
-                    {/* Units & Defense (Always available to inspect) */}
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onSelect(planet.id); }}
-                        className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
-                            isSelected
-                                ? 'bg-indigo-600/40 border-indigo-500/50 text-indigo-300'
-                                : 'bg-slate-800/60 hover:bg-slate-700/80 border-slate-700/50 text-slate-400'
-                        }`}
-                    >
-                        <Shield size={10} />
-                        UNITS
-                    </button>
+                    {/* Rival worlds: what stands on them, as far as we can see */}
+                    {!isOwnedByPlayer && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onSelect(planet.id); }}
+                            className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
+                                isSelected
+                                    ? 'bg-indigo-600/40 border-indigo-500/50 text-indigo-300'
+                                    : 'bg-slate-800/60 hover:bg-slate-700/80 border-slate-700/50 text-slate-400'
+                            }`}
+                        >
+                            <Shield size={10} />
+                            UNITS
+                        </button>
+                    )}
 
                     {/* Planetary construction — where building actually happens.
                         Was labelled SYSTEMS, which nobody read as "build here". */}
@@ -383,38 +381,13 @@ function PlanetCard({
                     {isOwnedByPlayer && !(planet.outpost && !planet.outpost.graduated) && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onConstruct(planet.id); }}
-                            title="Planetary construction — buildings, orbital structures, infrastructure, logistics"
-                            className="flex-1 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/40 rounded text-[9px] text-sky-300 font-bold transition-all flex items-center justify-center gap-1"
+                            title="This world's screen: output, defences, building, ships and troops"
+                            className="flex-[2] py-1.5 bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/60 rounded text-[9px] text-sky-200 font-bold transition-all flex items-center justify-center gap-1"
                         >
                             <Hammer size={10} />
-                            BUILD
+                            OPEN WORLD
                         </button>
                     )}
-                    {isOwnedByPlayer && !(planet.outpost && !planet.outpost.graduated) && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setQuickBuildOpen(o => !o); }}
-                            title="What to build next here, in order of priority, one click each"
-                            className={`flex-1 py-1.5 border rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${quickBuildOpen ? 'bg-indigo-500/30 border-indigo-400/60 text-indigo-100' : 'bg-indigo-500/10 hover:bg-indigo-500/20 border-indigo-500/40 text-indigo-300'}`}
-                        >
-                            <Hammer size={10} />
-                            QUICK
-                        </button>
-                    )}
-
-                    {/* Surface guns: what they fire on when enemy ships are overhead (lib/combat/surface-guns.ts) */}
-                    {guns && guns.power > 0 && (
-                        <select
-                            value={gunTarget}
-                            disabled={actionBusy === 'guns'}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => { e.stopPropagation(); runPlanetAction('guns', 'PLANET_SET_GUN_TARGET', { planetId: planet.id, target: e.target.value }, `Guns on ${planet.name}: ${GUN_TARGET_LABEL[e.target.value as keyof typeof GUN_TARGET_LABEL]}`); }}
-                            title={`Surface guns (${guns.power} power) join space battles over this world, shoot down fighters and bombers first, fire back at bombardment and put flak on landings. ${GUN_TARGET_HINT[gunTarget]}`}
-                            className="flex-1 py-1 px-1 bg-rose-950/30 border border-rose-500/30 rounded text-[9px] text-rose-300 font-bold"
-                        >
-                            {GUN_TARGETS.map(t => <option key={t} value={t}>GUNS: {GUN_TARGET_LABEL[t].toUpperCase()}</option>)}
-                        </select>
-                    )}
-
                     {/* Orbit: in-system fleets take it now; a fleet elsewhere is
                         sent here and takes it on arrival. Orbiting → leave. */}
                     {selectedFleetId && (
@@ -494,13 +467,6 @@ function PlanetCard({
                         </button>
                     )}
                 </div>
-
-                {/* Quick build: what to build next, in priority order (lib/construction/build-advice.ts) */}
-                {quickBuildOpen && isOwnedByPlayer && (
-                    <div className="mt-1.5">
-                        <QuickBuildMenu planetId={planet.id} compact onOpenFull={() => onConstruct(planet.id)} />
-                    </div>
-                )}
 
                 {/* Second action row: expansion & covert operations */}
                 {/* Empty worlds as battlefields and staging grounds (contested-ground.ts) */}
@@ -1236,7 +1202,7 @@ function SystemContextPanel() {
     };
 
     const handleConstruct = (planetId: string) => {
-        setConstructionPlanet(planetId);
+        useUIStore.getState().openPlanetScreen(planetId);
     };
 
     const handleSurface = (planetId: string) => {
@@ -1312,6 +1278,18 @@ function SystemContextPanel() {
                     >
                         <Globe size={12} /> ENTER SYSTEM
                     </button>
+                )}
+
+                {/* Your worlds here, straight to their screens */}
+                {planets.some(p => p.ownerId === playerFactionId) && (
+                    <div className="mx-3 mt-2 flex flex-wrap gap-1.5">
+                        {planets.filter(p => p.ownerId === playerFactionId).map(p => (
+                            <button key={p.id} onClick={() => useUIStore.getState().openPlanetScreen(p.id)}
+                                className="flex-1 min-w-[8rem] px-2 py-1.5 rounded-lg border border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-[10px] font-bold text-sky-200 truncate">
+                                OPEN {p.name}
+                            </button>
+                        ))}
+                    </div>
                 )}
 
                 {/* Tab Bar (if planets available) — a segmented control */}

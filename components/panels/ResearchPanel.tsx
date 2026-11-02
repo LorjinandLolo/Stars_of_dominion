@@ -22,6 +22,8 @@ import {
 import { TechTreeType, TechTier, type Tech } from '@/lib/tech/types';
 import { registry } from '@/lib/tech/engine';
 import { startResearchAction } from '@/app/actions/tech';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
+import { CRASH_SPEED, crashCost } from '@/lib/tech/crash-program';
 import { patchUiPrefs } from '@/lib/player/use-ui-prefs';
 import '@/lib/tech/techData';
 import TechNode, { STATUS_META, STATUS_ORDER, type TechNodeEmphasis, type TechNodeStatus } from '../tech/TechNode';
@@ -440,6 +442,20 @@ export default function ResearchPanel() {
                         >
                             <Filter size={11} /> Available only
                         </button>
+
+                        {activeSlots.filter(s => s.techId).map(s => {
+                            const tech = byId.get(s.techId!);
+                            if (!tech) return null;
+                            return s.crash
+                                ? <span key={s.slotId} className="px-3 py-1.5 rounded-lg border border-amber-500/40 text-[10px] font-bold text-amber-300">Crash ×{CRASH_SPEED}: {tech.name}</span>
+                                : !activeSlots.some(o => o.crash) && (
+                                    <button key={s.slotId} type="button" onClick={() => dispatchOrder({ actionId: 'TECH_CRASH_PROGRAM', factionId: playerFactionId, payload: { techId: tech.id }, label: `Crash program: ${tech.name}` })}
+                                        title={`Finish ${tech.name} ${CRASH_SPEED} times as fast. One crash program at a time.`}
+                                        className="px-3 py-1.5 rounded-lg border border-amber-500/40 text-[10px] font-bold text-amber-300 hover:bg-amber-500/20">
+                                        Crash {tech.name}: {crashCost(tech.researchCost, s.ticksCompleted, s.ticksRequired).toLocaleString()} Cr
+                                    </button>
+                                );
+                        })}
 
                         <div className="flex items-center gap-3 bg-black/40 px-3 py-2 rounded-lg border border-white/10">
                             <div className="flex flex-col items-end">

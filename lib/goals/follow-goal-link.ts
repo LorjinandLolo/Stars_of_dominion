@@ -25,5 +25,5 @@ export function followGoalLink(link: GoalDeepLink): void {
         const system = store.systems.find((s: any) => s.id === link.selectSystemId) as any;
         if (system) store.setFocusTarget({ x: system.q, y: system.r, zoom: 2 });
     }
-    if (link.constructionPlanetId) store.setConstructionPlanet(link.constructionPlanetId);
+    if (link.constructionPlanetId) store.openPlanetScreen(link.constructionPlanetId, link.constructionTab);
 }

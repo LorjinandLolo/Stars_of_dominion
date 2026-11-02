@@ -160,7 +160,7 @@ const BUILDING: TutorialStep[] = [
     {
         id: 'build-home',
         title: 'Your Home System',
-        body: 'Each world you own has a card here. SURFACE shows its districts, BUILD opens the full construction screen, QUICK lists what to build next.',
+        body: 'Each world you own has a card here. OPEN WORLD shows everything about it on one screen: output, defences, building, ships and troops. The WORLD button on the dock opens your capital from anywhere.',
         targetElementId: 'system-context-panel',
         category: 'economy',
         requiredTab: 'galaxy',

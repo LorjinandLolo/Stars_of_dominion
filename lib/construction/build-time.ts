@@ -30,6 +30,16 @@ export function baseBuildSeconds(def: Timed): number {
     return def.buildTimeSeconds * (TIER_BUILD_TIME_MULTIPLIER[tier] ?? 1);
 }
 
+/** An empire's first buildings go up fast (lib/start/starter-kit.ts). */
+export const QUICK_BUILDS = 3;
+/** Two real minutes at 15x. */
+export const QUICK_BUILD_SECONDS = 1800;
+
+/** Is this building one a quick build can cover? Set pieces never are. */
+export function quickBuildApplies(planet: { quickBuildsLeft?: number } | null | undefined, def: Timed): boolean {
+    return (planet?.quickBuildsLeft ?? 0) > 0 && !def.buildTimeIsAbsolute;
+}
+
 /** Base repair time in sim seconds: the authored override, or half the build. */
 export function baseRepairSeconds(def: Timed): number {
     return def.repairTimeSeconds ?? baseBuildSeconds(def) / 2;

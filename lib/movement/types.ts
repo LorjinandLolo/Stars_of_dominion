@@ -288,6 +288,8 @@ export interface FleetDoctrine {
 }
 
 export interface Fleet {
+    /** Planet whose reserve this fleet is (lib/military/reserve.ts). */
+    reserveOf?: string;
     id: string;
     factionId: string;
     name: string;
