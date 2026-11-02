@@ -37,6 +37,8 @@ import { CIVILIAN_SHIPS, civilianCount, isCivilianFleet, isCivilianShip, EXPLORE
 import { foundOutpost, newCivilianFleet, refreshDockedCivilians, settleWorld } from '../lib/combat/civilian-service';
 import { grantStarterKits } from '../lib/start/starter-kit';
 import { CRASH_SPEED, crashCost } from '../lib/tech/crash-program';
+import { QUICK_BUILD_SECONDS } from '../lib/construction/build-time';
+import { DEED_AGENTS_RECRUITED, DEED_OPS_LAUNCHED } from '../lib/tech/deed-metrics';
 import { outpostBombarded, outpostCaptured, outpostOrder, surfaceLocked, tickOutposts } from '../lib/outposts/outpost-service';
 import { tickAIOutpostManagement } from '../lib/ai/outpost-ai';
 import { tickSabotageRecovery } from '../lib/espionage/defence-sabotage';
@@ -77,7 +79,8 @@ import { commissionWarfleet } from '../lib/ai/war-ai';
 const ADVISOR_REPLAYS: Record<string, (world: any, factionId: string) => boolean> = {
     warfleet: (world, factionId) => commissionWarfleet(world, factionId, queueAdvisorOrder) !== null,
 };
-import { tickFirstWeekGoals } from '../lib/goals/first-week-goals';
+import { completedGoals, skipCampaign, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
+import { tickCampaignRaids } from '../lib/goals/campaign-raid';
 import { unlocksForGoal } from '../lib/goals/dock-unlocks';
 import { GroundSiegeEngine } from '../lib/combat/siege/siege-engine';
 import {
@@ -1192,6 +1195,7 @@ async function runGameTick() {
         // so completing one in the UI shows the next on the following sync.
         // Before the notification drain below, so the "done" note goes out now.
         try {
+            tickCampaignRaids(world);
             for (const advance of tickFirstWeekGoals(world)) {
                 const next = advance.next;
                 // What this goal opened on the dock (Item 5), said once, here.
@@ -1199,7 +1203,7 @@ async function runGameTick() {
                 const unlockLine = unlocked.length ? `Unlocked: ${unlocked.join(' and ')}. ` : '';
                 // The first week ends here; the three next steps follow.
                 const weekLine = next?.phase === 'next' && advance.completed.phase !== 'next'
-                    ? 'Your first week is done. ' : '';
+                    ? 'The campaign is done. ' : '';
                 fireNotification({
                     id: `goal-${advance.factionId}-${advance.completed.id}`,
                     factionId: advance.factionId,
@@ -1694,6 +1698,11 @@ function queueFormationRecruit(
     );
     job.targetFormationId = formationId;
     job.isFleet = isFleet;
+    // A player's first warship is rushed: the campaign has a raid waiting on it.
+    if (isFleet && !isCivilianShip(spec.classKey ?? '') && ((world as any).claimedFactionIds ?? []).includes(factionId)
+        && !completedGoals(world, factionId).includes('commission_ships')) {
+        job.completesAt = Math.min(job.completesAt, world.nowSeconds + QUICK_BUILD_SECONDS);
+    }
     // Built at a camp world's yard: the labour gangs (lib/camps).
     {
         const formation: any = isFleet ? world.movement.fleets.get(formationId) : world.movement.armies?.get(formationId);
@@ -3819,7 +3828,14 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
                 recordOrderFailure(world, factionId, actionId, espResult.message);
                 break;
             }
+            bumpMetric(world, factionId, DEED_OPS_LAUNCHED);
             console.log(`[Tick Worker] ${factionId}: ${espResult.message}`);
+            break;
+        }
+
+        case 'CAMPAIGN_SKIP': {
+            skipCampaign(world, factionId);
+            console.log(`[Goals] ${factionId} skipped the campaign.`);
             break;
         }
 
@@ -4024,6 +4040,7 @@ export function executeOrder(world: any, actionId: string, payload: any, faction
             }
             if (reserves) reserves.CREDITS = (reserves.CREDITS ?? 0) - cost;
             const agent = recruitAgent(candidate, factionId, world.nowSeconds, world);
+            bumpMetric(world, factionId, DEED_AGENTS_RECRUITED);
             console.log(`[Tick Worker] Recruited Agent ${agent.codename} for ${factionId}`);
             break;
         }

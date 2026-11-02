@@ -1,12 +1,13 @@
 // lib/goals/first-week-goals.ts
-// Stars of Dominion — the first week, as six things to do, then three next steps.
+// Stars of Dominion — the two-hour campaign, then the next steps.
 //
 // A new player does not need eighteen tutorial steps; they need to know the one
-// thing that moves their empire forward next. Six goals, in order: warships,
-// a first research choice, charts, a second world, a Spaceyard in orbit, and a
-// first contact. Then three "next steps" that point at the systems the first
-// week never touches: a policy (slots and political capital), ground troops
-// (materiel and ammo), and a third world (the gate to every victory). Each has
+// thing that moves their empire forward next. The campaign runs five chapters,
+// one mechanic each: build and explore, research, combat (a first warship, then
+// a staged pirate raid, lib/goals/campaign-raid.ts), espionage and diplomacy.
+// First uses are rushed so it fits in two hours, and Skip finishes it at once.
+// Then "next steps" point at what the campaign never touches: a second world, a
+// station, policy, ground troops, outposts and a third system. Each has
 // one line of hint, how long it takes in real time,
 // something worth doing while it runs, and a deep link that opens the panel
 // that does it. While the goal's work is under way the card counts it down
@@ -21,7 +22,8 @@
 
 import { getMetric } from '@/lib/tech/history-ledger';
 import {
-    DEED_SHIPS_COMMISSIONED,
+    DEED_AGENTS_RECRUITED,
+    DEED_OPS_LAUNCHED,
     DEED_SYSTEMS_SURVEYED,
     DEED_COLONIES_FOUNDED,
     DEED_STATIONS_BUILT,
@@ -32,8 +34,8 @@ import {
     DEED_TROOPS_RAISED,
 } from '@/lib/tech/deed-metrics';
 import { ORBITAL_STRUCTURE_BY_ID } from '@/data/orbital-structures';
-import { baseBuildSeconds } from '@/lib/construction/build-time';
-import { CIVILIAN_SHIPS } from '@/lib/combat/civilian-ships';
+import { baseBuildSeconds, QUICK_BUILDS } from '@/lib/construction/build-time';
+import { CIVILIAN_SHIPS, isCivilianShip } from '@/lib/combat/civilian-ships';
 import { heldSystemCount } from '@/lib/government/admin-capacity';
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
@@ -45,16 +47,18 @@ function simClockOf(seconds: number): string {
     const minutes = Math.max(1, Math.round(seconds / SIM_SECONDS_PER_REAL_SECOND / 60));
     return minutes < 60 ? `${minutes} minutes` : formatSimAsClock(minutes * 60 * SIM_SECONDS_PER_REAL_SECOND);
 }
-const EXPLORER_TIME = simClockOf(CIVILIAN_SHIPS.explorer.buildSeconds);
 const STATION_DEF = ORBITAL_STRUCTURE_BY_ID['space_station'];
 const SPACEYARD_DEF = ORBITAL_STRUCTURE_BY_ID['spaceyard'];
 const STATION_TIME = STATION_DEF ? simClockOf(baseBuildSeconds(STATION_DEF as any)) : 'a while';
 const SPACEYARD_TIME = SPACEYARD_DEF ? simClockOf(baseBuildSeconds(SPACEYARD_DEF as any)) : 'a while longer';
 
 export type GoalId =
+    | 'first_buildings'
     | 'commission_ships'
     | 'start_research'
     | 'survey_three'
+    | 'repel_raid'
+    | 'first_op'
     | 'settle_world'
     | 'build_shipyard'
     | 'reach_out'
@@ -90,46 +94,114 @@ export interface GoalDef {
     metrics: string[];
     /** Progress read from the world instead of the deed ledger (a state, not a deed). */
     measure?: (world: WorldLike, factionId: string) => number;
-    /** 'next' goals come after the first week; the card labels them "Next step". */
+    /** Campaign chapter; the card names it. Goals with `phase: 'next'` have none. */
+    chapter?: string;
+    /** 'next' goals come after the campaign; the card labels them "Next step". */
     phase?: 'next';
     target: number;
 }
 
-/** The order is the lesson: you cannot survey without ships, settle without charts. */
+/** Got past the old first week, so nothing here is new to them. */
+function isVeteran(world: WorldLike, factionId: string): boolean {
+    const stored = world?.firstWeekGoals?.get?.(factionId) ?? world?.firstWeekGoals?.[factionId];
+    return stored?.completedAt?.settle_world !== undefined;
+}
+
+function capitalRecord(world: WorldLike, factionId: string): any {
+    const systemId = world?.economy?.factions?.get?.(factionId)?.capitalSystemId;
+    return mapValues(world?.construction?.planets).find((p: any) => p?.ownerId === factionId && p?.systemId === systemId);
+}
+
+/** The order is the lesson: each chapter teaches one mechanic. */
 export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     {
-        id: 'commission_ships',
-        // Any ship counts (DEED_SHIPS_COMMISSIONED); the cheap, quick explorer is the one to suggest.
-        title: 'Commission an exploration ship',
-        hint: 'Open your capital, go to Build, then Ships, and lay down an Exploration Ship. It surveys twice as fast as a warship, from two jumps away.',
-        takes: `About ${EXPLORER_TIME}`,
-        meanwhile: 'Look around the map: your scanners have already found the systems next door.',
-        metrics: [DEED_SHIPS_COMMISSIONED],
+        chapter: 'Build and explore',
+        id: 'first_buildings',
+        title: 'Start your first building',
+        hint: 'Open your capital and go to Build. Your first three buildings go up in two minutes, and your builder ship works a third site. Pick a mine or a farm.',
+        takes: 'About 2 minutes',
+        meanwhile: 'Send your exploration ship out, and queue the other two.',
+        metrics: [],
+        // Quick builds spent. A player from before them has none to spend.
+        measure: (world, factionId) => {
+            if (isVeteran(world, factionId)) return 1;
+            const left = capitalRecord(world, factionId)?.quickBuildsLeft;
+            return typeof left === 'number' && left < QUICK_BUILDS ? 1 : 0;
+        },
         target: 1,
     },
     {
-        // RESEARCH unlocks with the first ship (dock-unlocks.ts). Until
-        // then the research council keeps the slot busy, but never on a fork:
-        // the player's order takes the council's slot over.
-        id: 'start_research',
-        title: 'Choose your first research',
-        hint: 'Open Research: the card at the top names a good first project, press Start. Nothing early is permanent; the amber Fork cards stay shut until you finish that tree\'s tier I.',
-        takes: 'Starts at once; a tier I project runs a few hours',
-        meanwhile: 'Research runs on its own. When it finishes, your research council picks the next one unless you do.',
-        metrics: [DEED_RESEARCH_STARTED],
-        target: 1,
-    },
-    {
+        chapter: 'Build and explore',
         id: 'survey_three',
         title: 'Survey three systems',
-        hint: 'Send your exploration ship to a nearby system: it surveys the moment it arrives, for free. Only surveyed worlds can be settled.',
+        hint: 'Your exploration ship is at home. Send it to a nearby system: it surveys the moment it arrives, for free. Only surveyed worlds can be settled.',
         takes: 'A few minutes per system, travel included',
         meanwhile: 'Open your capital and queue a building: they take 10 minutes to a few hours, so keep one going.',
         metrics: [DEED_SYSTEMS_SURVEYED],
         target: 3,
     },
     {
+        chapter: 'Research',
+        // RESEARCH unlocks with the first buildings (dock-unlocks.ts). Until
+        // then the research council keeps the slot busy, but never on a fork:
+        // the player's order takes the council's slot over.
+        id: 'start_research',
+        title: 'Choose your first research',
+        hint: 'Open Research: the card at the top names a good first project, press Start. Crash, at the top of the page, buys it four times the speed. Nothing early is permanent; the amber Fork cards stay shut until you finish that tree\'s tier I.',
+        takes: 'Starts at once. Tier I takes a few hours, or about one on a crash program',
+        meanwhile: 'Research runs on its own. When it finishes, your research council picks the next one unless you do.',
+        metrics: [DEED_RESEARCH_STARTED],
+        target: 1,
+    },
+    {
+        chapter: 'Combat',
+        id: 'commission_ships',
+        title: 'Commission a warship',
+        hint: 'Open your capital, go to Build, then Ships, and lay down a warship. Your first one is rushed. It waits in orbit, in your capital\'s reserve.',
+        takes: 'About 2 minutes for your first',
+        meanwhile: 'Keep your exploration ship moving and a building going.',
+        metrics: [],
+        measure: (world, factionId) => mapValues(world?.movement?.fleets).some((f: any) => f?.factionId === factionId
+            && Object.entries(f.composition ?? {}).some(([k, n]) => Number(n) > 0 && !isCivilianShip(k))) ? 1 : 0,
+        target: 1,
+    },
+    {
+        chapter: 'Combat',
+        id: 'repel_raid',
+        title: 'Drive off the raiders',
+        hint: 'Pirates have jumped into your home system. Warships fight on their own whoever is at war with them there, so keep yours at home and watch. Open your capital, then Forces, to see what you have.',
+        takes: 'A few minutes',
+        meanwhile: 'Later, the Forces tab musters reserve ships and troops into a task force you can send anywhere.',
+        metrics: [],
+        measure: (world, factionId) => isVeteran(world, factionId) || capitalRecord(world, factionId)?.campaignRaid?.done ? 1 : 0,
+        target: 1,
+    },
+    {
+        chapter: 'Espionage',
+        id: 'first_op',
+        title: 'Put a spy in the field',
+        hint: 'Open Intelligence, recruit an agent, then launch an operation on a neighbour. Spies are how you learn what a rival is really building.',
+        takes: 'Instant to recruit',
+        meanwhile: 'An exposed spy is a diplomatic incident: read the risk before you launch.',
+        metrics: [DEED_OPS_LAUNCHED, DEED_AGENTS_RECRUITED],
+        measure: (world, factionId) => isVeteran(world, factionId) ? 1
+            : getMetric(world as any, factionId, DEED_OPS_LAUNCHED) + getMetric(world as any, factionId, DEED_AGENTS_RECRUITED),
+        target: 1,
+    },
+    {
+        chapter: 'Diplomacy',
+        id: 'reach_out',
+        title: 'Reach out to a neighbour',
+        hint: 'Send an envoy or sign a pact in Diplomacy. Nobody holds a galaxy alone.',
+        takes: 'Instant',
+        meanwhile: 'Your daily brief will tell you how they answer.',
+        metrics: [DEED_TREATIES_SIGNED, DEED_ENVOYS_SENT],
+        target: 1,
+    },
+    // ── Next steps: what the campaign never touched ──
+    {
         id: 'settle_world',
+        phase: 'next',
         title: 'Settle a second world',
         hint: 'Pick a surveyed, unclaimed planet and settle it (20,000 credits). Your empire starts with one world; this is the second.',
         takes: 'Instant once you can pay',
@@ -139,6 +211,7 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
     },
     {
         id: 'build_shipyard',
+        phase: 'next',
         // Every capital starts with a Fleet Drydock in orbit; the station is
         // what the bigger yards (cruisers and up) and most orbital modules hang on.
         title: 'Raise a Space Station over your capital',
@@ -152,16 +225,6 @@ export const FIRST_WEEK_GOALS: readonly GoalDef[] = [
                 && (p?.orbital?.slots ?? []).some((s: any) => ORBITAL_STRUCTURE_BY_ID[s?.structureId]?.category === 'station' && (s.state === 'active' || s.state === 'damaged'))) ? 1 : 0),
         target: 1,
     },
-    {
-        id: 'reach_out',
-        title: 'Reach out to a neighbour',
-        hint: 'Send an envoy or sign a pact in Diplomacy. Nobody holds a galaxy alone.',
-        takes: 'Instant',
-        meanwhile: 'Your daily brief will tell you how they answer.',
-        metrics: [DEED_TREATIES_SIGNED, DEED_ENVOYS_SENT],
-        target: 1,
-    },
-    // ── Next steps: what the first week never touched ──
     {
         id: 'enact_policy',
         phase: 'next',
@@ -244,6 +307,16 @@ function goalStateOf(world: WorldLike, factionId: string): GoalState {
         ? (stamped === -1 ? FIRST_WEEK_GOALS.length : stamped)
         : Number(stored.index) || 0;
     return { index, completedAt };
+}
+
+/** Skip: every campaign goal counts as met, so the dock opens and no raid comes. */
+export function skipCampaign(world: WorldLike, factionId: string): void {
+    if (!(world.firstWeekGoals instanceof Map)) world.firstWeekGoals = new Map<string, GoalState>();
+    const state = goalStateOf(world, factionId);
+    for (const goal of FIRST_WEEK_GOALS) {
+        if (goal.phase !== 'next' && state.completedAt[goal.id] === undefined) state.completedAt[goal.id] = Number(world.nowSeconds ?? 0);
+    }
+    world.firstWeekGoals.set(factionId, state);
 }
 
 export interface GoalAdvance {
@@ -478,6 +551,16 @@ function settleTarget(world: WorldLike, factionId: string): string | undefined {
 
 export function deepLinkFor(world: WorldLike, factionId: string, goalId: GoalId): GoalDeepLink {
     switch (goalId) {
+        case 'first_buildings': {
+            const capital = capitalPlanet(world, factionId);
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'BUILD', label: 'Open your capital' };
+        }
+        case 'repel_raid': {
+            const capital = capitalPlanet(world, factionId);
+            return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'FORCES', label: 'See your forces' };
+        }
+        case 'first_op':
+            return { tab: 'intelligence', label: 'Open Intelligence' };
         case 'commission_ships': {
             const capital = capitalPlanet(world, factionId);
             return { tab: 'galaxy', constructionPlanetId: capital.id, selectSystemId: capital.systemId, constructionTab: 'SHIPS', label: 'Open your capital' };

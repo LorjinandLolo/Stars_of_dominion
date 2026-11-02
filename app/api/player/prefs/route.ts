@@ -46,6 +46,7 @@ export async function PATCH(req: NextRequest) {
 
         const next = applyUiPrefsPatch(parseUiPrefs(profile.uiPrefs), {
             showEverything: body?.showEverything,
+            quietMode: body?.quietMode,
             opened: Array.isArray(body?.opened) ? body.opened : undefined,
         });
         await prisma.playerProfile.update({ where: { userId }, data: { uiPrefs: JSON.stringify(next) } });

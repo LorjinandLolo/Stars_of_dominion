@@ -168,6 +168,12 @@ export const ACTION_DEFINITIONS: Record<PlayerActionId, ActionSchema> = {
     params: { formationId: "id", name: "string" },
     cost: {}
   },
+  CAMPAIGN_SKIP: {
+    id: "CAMPAIGN_SKIP",
+    category: "internal",
+    params: {},
+    cost: {}
+  },
   TECH_CRASH_PROGRAM: {
     id: "TECH_CRASH_PROGRAM",
     category: "research",

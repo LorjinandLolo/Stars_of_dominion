@@ -15,10 +15,11 @@ import React from 'react';
 import { Target, ChevronDown, ChevronUp, Check, Hourglass, Clock } from 'lucide-react';
 import { useUIStore } from '@/lib/store/ui-store';
 import { followGoalLink } from '@/lib/goals/follow-goal-link';
+import { dispatchOrder } from '@/lib/multiplayer/order-client';
 import { unlocksForGoal } from '@/lib/goals/dock-unlocks';
 import { FIRST_WEEK_GOALS } from '@/lib/goals/first-week-goals';
 
-/** How many goals make the first week; the rest are "next steps", counted on their own. */
+/** How many goals make the campaign; the rest are "next steps", counted on their own. */
 const FIRST_WEEK_COUNT = FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').length;
 import { formatSimAsClock } from '@/lib/time/galactic-time';
 import { SIM_SECONDS_PER_REAL_SECOND } from '@/lib/time/time-config';
@@ -54,6 +55,7 @@ function writeCollapsed(value: boolean): void {
 export default function GoalCard() {
     const current = useUIStore(s => s.firstWeekGoal);
     const activeTab = useUIStore(s => s.activeTab);
+    const playerFactionId = useUIStore(s => s.playerFactionId);
     const briefOpen = useUIStore(s => s.briefOpen);
     // The selected-system panel and the build panel both occupy the left edge
     // the card sits on; while either is open it IS where the goal gets done.
@@ -68,11 +70,11 @@ export default function GoalCard() {
     if (!current || activeTab !== 'galaxy' || briefOpen || systemPanelOpen) return null;
 
     const { goal, number, total, progress, deepLink, waiting } = current;
-    // Two stretches, each counted from 1: "Goal 3/6", then "Next step 2/3".
+    // Two stretches, each counted from 1: "Combat 4/7", then "Next step 2/6".
     const next = goal.phase === 'next';
     const stepNumber = next ? number - FIRST_WEEK_COUNT : number;
     const stepTotal = next ? total - FIRST_WEEK_COUNT : Math.min(total, FIRST_WEEK_COUNT);
-    const stepLabel = next ? 'Next step' : 'Goal';
+    const stepLabel = next ? 'Next step' : goal.chapter ?? 'Goal';
     const remaining = waiting ? formatSimAsClock(waiting.completesAt - nowSeconds, 'any moment') : null;
     // What finishing it adds to the dock — shown only while it is still locked.
     const unlocks = showEverything ? [] : unlocksForGoal(goal.id);
@@ -160,6 +162,18 @@ export default function GoalCard() {
                             {number > 1 && <Check size={12} className="text-emerald-400" />}
                             {deepLink.label}
                         </button>
+                        {!next && (
+                            <button
+                                onClick={() => {
+                                    if (window.confirm('Skip the campaign? Every panel opens now, and the guided steps and the raid are gone.')) {
+                                        void dispatchOrder({ actionId: 'CAMPAIGN_SKIP', factionId: playerFactionId ?? '', payload: {}, label: 'Skipping the campaign' });
+                                    }
+                                }}
+                                className="w-full text-[10px] text-slate-500 hover:text-slate-300"
+                            >
+                                Skip the campaign
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

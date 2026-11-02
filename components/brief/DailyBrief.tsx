@@ -105,7 +105,9 @@ export default function DailyBrief() {
         // brief waits for it instead of opening underneath it.
         if (tutorialActive || !tutorialEverStarted) return;
         setBriefAutoOpenedFor(playerFactionId);
-        if (!brief.empty) setBriefOpen(true);
+        // Quiet mode: during the campaign the goal card is the one thing to read.
+        const campaign = useUIStore.getState().firstWeekGoal?.goal.chapter;
+        if (!brief.empty && !(useUIStore.getState().uiPrefs?.quietMode && campaign)) setBriefOpen(true);
     }, [brief, playerFactionId, autoOpened, setBriefAutoOpenedFor, setBriefOpen, tutorialActive, tutorialEverStarted]);
 
     React.useEffect(() => {

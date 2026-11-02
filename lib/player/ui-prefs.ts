@@ -20,10 +20,12 @@ export interface UiPrefs {
      * offered to take it back from their advisors; this remembers it happened.
      */
     opened: string[];
+    /** Routine notices stay out of the way and cards stay short. On for new accounts. */
+    quietMode: boolean;
 }
 
 export function defaultUiPrefs(): UiPrefs {
-    return { showEverything: false, legacy: false, opened: [] };
+    return { showEverything: false, legacy: false, opened: [], quietMode: true };
 }
 
 /** Parse the stored column. Anything malformed reads as a new account's defaults. */
@@ -34,6 +36,7 @@ export function parseUiPrefs(raw: string | null | undefined): UiPrefs {
         return {
             showEverything: parsed?.showEverything === true,
             legacy: parsed?.legacy === true,
+            quietMode: typeof parsed?.quietMode === 'boolean' ? parsed.quietMode : parsed?.legacy !== true,
             opened: Array.isArray(parsed?.opened)
                 ? parsed.opened.filter((id: unknown): id is string => typeof id === 'string').slice(0, 64)
                 : [],
@@ -46,6 +49,7 @@ export function parseUiPrefs(raw: string | null | undefined): UiPrefs {
 /** What a client may change. `legacy` is set by migration only. */
 export interface UiPrefsPatch {
     showEverything?: boolean;
+    quietMode?: boolean;
     /** Ids to add to `opened`. */
     opened?: string[];
 }
@@ -53,6 +57,7 @@ export interface UiPrefsPatch {
 export function applyUiPrefsPatch(current: UiPrefs, patch: UiPrefsPatch): UiPrefs {
     const next: UiPrefs = { ...current, opened: [...current.opened] };
     if (typeof patch.showEverything === 'boolean') next.showEverything = patch.showEverything;
+    if (typeof patch.quietMode === 'boolean') next.quietMode = patch.quietMode;
     for (const id of patch.opened ?? []) {
         if (typeof id !== 'string' || id.length > 64) continue;
         if (!next.opened.includes(id)) next.opened.push(id);

@@ -109,7 +109,10 @@ export function processSectorCombats(world: GameWorldState) {
 
                 // Pirates are at war with nobody, but on their own ground they
                 // fall on a weaker fleet (lib/piracy/pirate-ground.ts).
-                if (areAtWar(fA, fB, world) || pirateGroundEngages(world, systemId, fA, fB)) {
+                // The campaign's staged raid fights its player (lib/goals/campaign-raid.ts).
+                const staged = fleets.some(f => (f as any).campaignRaidOf === fA || (f as any).campaignRaidOf === fB)
+                    && fleets.some(f => (f as any).campaignRaidOf && (f.factionId === fA || f.factionId === fB));
+                if (areAtWar(fA, fB, world) || pirateGroundEngages(world, systemId, fA, fB) || staged) {
                     handleEngagement(systemId, fA, fB, fleets, world);
                 }
             }

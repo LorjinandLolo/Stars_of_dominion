@@ -1,7 +1,7 @@
 // scripts/test-first-week-goals.ts
-// The first-week goals as a tutorial: a research goal after the first
-// warships, records from before it read correctly, the card knows when the
-// goal's work is under way, and the research council never decides a fork.
+// The campaign goals as a tutorial: one mechanic per chapter, records from
+// before it read correctly, the card knows when the goal's work is under way,
+// and the research council never decides a fork.
 // Run: npx tsx scripts/test-first-week-goals.ts
 
 import assert from 'assert';
@@ -9,7 +9,7 @@ import '../lib/tech/techData';
 import { registry, TechEngine } from '../lib/tech/engine';
 import { StrategicAIService } from '../lib/ai/strategic-ai-service';
 import { bumpMetric } from '../lib/tech/history-ledger';
-import { DEED_POLICIES_PROPOSED, DEED_RESEARCH_STARTED, DEED_SHIPS_COMMISSIONED, DEED_TROOPS_RAISED } from '../lib/tech/deed-metrics';
+import { DEED_POLICIES_PROPOSED, DEED_RESEARCH_STARTED, DEED_SYSTEMS_SURVEYED, DEED_TROOPS_RAISED } from '../lib/tech/deed-metrics';
 import { PANEL_TIPS } from '../lib/tutorial/panel-tips';
 import { MANUAL_DATA } from '../lib/manual/manual-data';
 import { FIRST_WEEK_GOALS, currentGoal, deepLinkFor, tickFirstWeekGoals } from '../lib/goals/first-week-goals';
@@ -37,51 +37,54 @@ function freshWorld(): any {
     };
 }
 
-test('research is goal 2, right after the first warships', () => {
-    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(0, 2).map(g => g.id), ['commission_ships', 'start_research']);
+const stamped = (...ids: string[]) => Object.fromEntries(ids.map(id => [id, 1]));
+const campaign = FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').map(g => g.id);
+const before = (id: string) => stamped(...FIRST_WEEK_GOALS.slice(0, FIRST_WEEK_GOALS.findIndex(g => g.id === id)).map(g => g.id));
+
+test('the campaign runs one chapter per mechanic, in order', () => {
+    assert.deepStrictEqual(campaign, ['first_buildings', 'survey_three', 'start_research', 'commission_ships', 'repel_raid', 'first_op', 'reach_out']);
+    assert.deepStrictEqual([...new Set(FIRST_WEEK_GOALS.filter(g => g.chapter).map(g => g.chapter))], ['Build and explore', 'Research', 'Combat', 'Espionage', 'Diplomacy']);
     for (const g of FIRST_WEEK_GOALS) {
         assert.ok(g.takes && g.meanwhile, `${g.id} needs takes and meanwhile`);
     }
 });
 
 test('takes lines are read from the catalogs, not left as placeholders', () => {
-    const ships = FIRST_WEEK_GOALS.find(g => g.id === 'commission_ships')!;
     const yard = FIRST_WEEK_GOALS.find(g => g.id === 'build_shipyard')!;
-    assert.strictEqual(ships.takes, 'About 2 minutes', 'the exploration ship is the first ship');
-    assert.match(yard.takes, /^Station \d+ minutes, then the yard \dh \d+m$/, yard.takes);
+    assert.match(yard.takes, /^about \d+ minutes$/, yard.takes);
 });
 
-test('a first ship, then a research choice, advance in order', () => {
+test('first buildings, charts, then a research choice, advance in order', () => {
     const world = freshWorld();
+    world.economy.factions.set(F, { capitalSystemId: 'home' });
+    const capital: any = { id: 'p', ownerId: F, systemId: 'home', quickBuildsLeft: 3 };
+    world.construction.planets.set('p', capital);
     tickFirstWeekGoals(world);
-    assert.strictEqual(currentGoal(world, F)!.goal.id, 'commission_ships');
-    bumpMetric(world, F, DEED_SHIPS_COMMISSIONED);
-    const advances = tickFirstWeekGoals(world);
-    assert.deepStrictEqual(advances.map(a => a.completed.id), ['commission_ships']);
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'first_buildings');
+    capital.quickBuildsLeft = 2;
+    assert.deepStrictEqual(tickFirstWeekGoals(world).map(a => a.completed.id), ['first_buildings']);
+    bumpMetric(world, F, DEED_SYSTEMS_SURVEYED, 3);
+    tickFirstWeekGoals(world);
     const now = currentGoal(world, F)!;
     assert.strictEqual(now.goal.id, 'start_research');
     assert.strictEqual(now.deepLink.tab, 'tech');
     bumpMetric(world, F, DEED_RESEARCH_STARTED);
     tickFirstWeekGoals(world);
-    assert.strictEqual(currentGoal(world, F)!.goal.id, 'survey_three');
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'commission_ships');
 });
 
-test('a record from before the research goal lands on it, and its old goals are not announced again', () => {
+test('a record from the old first week passes the new goals without a raid', () => {
     const world = freshWorld();
-    // Old shape: commission, survey and settle done, index 3 of the five-goal list.
-    world.firstWeekGoals.set(F, { index: 3, completedAt: { commission_ships: 1, survey_three: 2, settle_world: 3 } });
-    const goal = currentGoal(world, F)!;
-    assert.strictEqual(goal.goal.id, 'start_research');
-    assert.strictEqual(goal.number, 2);
-    bumpMetric(world, F, DEED_RESEARCH_STARTED);
+    world.firstWeekGoals.set(F, { index: 3, completedAt: stamped('commission_ships', 'survey_three', 'settle_world', 'start_research', 'reach_out') });
     const advances = tickFirstWeekGoals(world);
-    assert.deepStrictEqual(advances.map(a => a.completed.id), ['start_research']);
+    assert.deepStrictEqual(advances.map(a => a.completed.id), ['first_buildings', 'repel_raid', 'first_op']);
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'build_shipyard');
 });
 
 test('the card counts down warships already on the slip', () => {
     const world = freshWorld();
-    tickFirstWeekGoals(world);
+    world.firstWeekGoals.set(F, { index: 0, completedAt: before('commission_ships') });
+    assert.strictEqual(currentGoal(world, F)!.goal.id, 'commission_ships');
     assert.strictEqual(currentGoal(world, F)!.waiting, null);
     world.combat.recruitmentJobs.push(
         { factionId: F, classKey: 'corvette', designName: 'Picket', completesAt: world.nowSeconds + 9000 },
@@ -95,7 +98,7 @@ test('the card counts down warships already on the slip', () => {
 
 test('the Spaceyard goal counts the station it needs first', () => {
     const world = freshWorld();
-    world.firstWeekGoals.set(F, { index: 0, completedAt: { commission_ships: 1, start_research: 1, survey_three: 1, settle_world: 1 } });
+    world.firstWeekGoals.set(F, { index: 0, completedAt: before('build_shipyard') });
     world.construction.planets.set('p1', {
         id: 'p1', ownerId: F,
         orbital: { buildQueue: [{ structureId: 'space_station', completesAtSeconds: world.nowSeconds + 36000 }] },
@@ -134,16 +137,15 @@ test('a player assignment clears the council tag', () => {
     assert.strictEqual(next.activeSlots[0].startedBy, undefined);
 });
 
-test('next steps follow the first week: a policy, troops, an outpost, a third world', () => {
+test('next steps follow the campaign', () => {
     const next = FIRST_WEEK_GOALS.filter(g => g.phase === 'next').map(g => g.id);
-    assert.deepStrictEqual(next, ['enact_policy', 'raise_troops', 'found_outpost', 'three_worlds']);
-    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-4).map(g => g.id), next, 'next steps come last');
+    assert.deepStrictEqual(next, ['settle_world', 'build_shipyard', 'enact_policy', 'raise_troops', 'found_outpost', 'three_worlds']);
+    assert.deepStrictEqual(FIRST_WEEK_GOALS.slice(-6).map(g => g.id), next, 'next steps come last');
 });
 
 test('next steps advance on a policy, on troops, on an outpost, and on holding three star systems', () => {
     const world = freshWorld();
-    const firstWeek = Object.fromEntries(FIRST_WEEK_GOALS.filter(g => g.phase !== 'next').map(g => [g.id, 1]));
-    world.firstWeekGoals.set(F, { index: 0, completedAt: firstWeek });
+    world.firstWeekGoals.set(F, { index: 0, completedAt: before('enact_policy') });
     assert.strictEqual(currentGoal(world, F)!.goal.id, 'enact_policy');
     assert.strictEqual(currentGoal(world, F)!.deepLink.tab, 'government');
     bumpMetric(world, F, DEED_POLICIES_PROPOSED);

@@ -23,6 +23,7 @@ export const DEED_PLANETS_CONQUERED = 'mil.planetsConquered';
 export const DEED_BOMBARDMENTS = 'mil.bombardmentsConducted';
 /** Pre-existing: espionage-service launchOperation. */
 export const DEED_OPS_LAUNCHED = 'esp.opsLaunched';
+export const DEED_AGENTS_RECRUITED = 'esp.agentsRecruited';
 /**
  * Pre-existing, on the TARGET's ledger, from two writers: espionage-service
  * when a catalog op against them is exposed, and the worker's blueprint-theft

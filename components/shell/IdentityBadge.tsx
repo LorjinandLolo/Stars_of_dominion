@@ -23,6 +23,7 @@ export default function IdentityBadge() {
     const [open, setOpen] = useState(false);
     // Until preferences load, the box shows what the dock shows: everything.
     const showEverything = useUIStore(s => s.uiPrefs?.showEverything ?? true);
+    const quietMode = useUIStore(s => s.uiPrefs?.quietMode ?? false);
 
     useEffect(() => {
         authService.getCurrentUser().then(u => {
@@ -137,6 +138,21 @@ export default function IdentityBadge() {
                             className="mt-0.5 accent-sky-500 w-4 h-4 shrink-0"
                             checked={showEverything}
                             onChange={e => { void patchUiPrefs({ showEverything: e.target.checked }); }}
+                        />
+                    </label>
+                    <label htmlFor="quiet-mode-toggle" className="mt-2 flex items-start justify-between gap-2 cursor-pointer">
+                        <span className="min-w-0">
+                            <span className="block text-[10px] font-bold text-slate-300">Quiet mode</span>
+                            <span className="block text-[9px] text-slate-500 leading-snug">
+                                Only what needs you in the feed, and shorter cards.
+                            </span>
+                        </span>
+                        <input
+                            id="quiet-mode-toggle"
+                            type="checkbox"
+                            className="mt-0.5 accent-sky-500 w-4 h-4 shrink-0"
+                            checked={quietMode}
+                            onChange={e => { void patchUiPrefs({ quietMode: e.target.checked }); }}
                         />
                     </label>
                     <button

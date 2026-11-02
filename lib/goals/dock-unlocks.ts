@@ -29,8 +29,8 @@ export interface DockUnlock {
 }
 
 export const DOCK_UNLOCKS: readonly DockUnlock[] = [
-    { id: 'research', kind: 'category', label: 'RESEARCH', unlockedBy: 'commission_ships', delegates: 'research' },
-    { id: 'intelligence', kind: 'category', label: 'INTELLIGENCE', unlockedBy: 'survey_three' },
+    { id: 'research', kind: 'category', label: 'RESEARCH', unlockedBy: 'first_buildings', delegates: 'research' },
+    { id: 'intelligence', kind: 'category', label: 'INTELLIGENCE', unlockedBy: 'repel_raid' },
     { id: 'empire', kind: 'category', label: 'EMPIRE', unlockedBy: 'settle_world', delegates: 'government' },
     { id: 'corporate', kind: 'tab', label: 'CORPORATE', unlockedBy: 'settle_world', delegates: 'corporate' },
     { id: 'designer', kind: 'tab', label: 'SHIP DESIGNER', unlockedBy: 'build_shipyard' },

@@ -99,6 +99,7 @@ export function PlanetConstructionPanel({
     const contentRef = React.useRef<HTMLDivElement>(null);
     useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [activeTab, buildSection, planetId]);
     const storePlanets = useUIStore(s => s.planets) as any[];
+    const quietMode = useUIStore(s => s.uiPrefs?.quietMode ?? false);
     const unlockedTech = useUIStore(s => s.techState?.unlockedTechIds);
     const storeFleets = useUIStore(s => s.fleets) as any[];
     const storeSystems = useUIStore(s => s.systems) as any[];
@@ -603,7 +604,7 @@ export function PlanetConstructionPanel({
                                                                     {isUpgrade ? <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Building className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
                                                                     <span className="truncate">{def.name}</span>
                                                                 </h4>
-                                                                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1" title={def.description}>{def.description}</p>
+                                                                {!quietMode && <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1" title={def.description}>{def.description}</p>}
                                                             </div>
                                                             <div className="flex flex-col items-end gap-1 shrink-0">
                                                                 <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">T{def.tier}</span>

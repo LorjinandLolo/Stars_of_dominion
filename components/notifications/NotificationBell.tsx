@@ -5,7 +5,8 @@
 import React, { useEffect } from 'react';
 import { isPageVisible, onPageVisibilityChange } from '@/hooks/usePageVisible';
 import { Bell } from 'lucide-react';
-import { useNotificationStore } from '@/lib/notifications/notification-store';
+import { needsAttention, useNotificationStore } from '@/lib/notifications/notification-store';
+import { useUIStore } from '@/lib/store/ui-store';
 
 const POLL_INTERVAL_MS = 30_000; // 30s
 // Hidden, the bell is the one thing still worth asking about (the tab title
@@ -13,7 +14,9 @@ const POLL_INTERVAL_MS = 30_000; // 30s
 const HIDDEN_POLL_EVERY = 5;
 
 export default function NotificationBell({ factionId }: { factionId?: string }) {
-    const { unreadCount, addNotifications, toggleFeed, feedOpen } = useNotificationStore();
+    const { addNotifications, toggleFeed, feedOpen } = useNotificationStore();
+    const quietMode = useUIStore(s => s.uiPrefs?.quietMode ?? false);
+    const unreadCount = useNotificationStore(s => s.notifications.filter(n => !n.read && (!quietMode || needsAttention(n))).length);
     const hasUrgent = useNotificationStore(s =>
         s.notifications.some(n => !n.read && n.priority === 'urgent')
     );

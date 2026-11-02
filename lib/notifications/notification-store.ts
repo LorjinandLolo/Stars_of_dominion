@@ -115,6 +115,11 @@ export const useNotificationStore = create<NotificationStore>()(
 
 // ─── Priority helpers ─────────────────────────────────────────────────────────
 
+/** What quiet mode keeps: urgent news, crises and the campaign's own notes. */
+export function needsAttention(n: { priority: NotificationPriority; category: string }): boolean {
+    return n.priority === 'urgent' || n.category === 'crisis' || n.category === 'system';
+}
+
 export const PRIORITY_COLORS: Record<NotificationPriority, string> = {
     urgent: 'text-red-400 border-red-500/40 bg-red-950/30',
     normal: 'text-blue-300 border-blue-500/20 bg-blue-950/20',
