@@ -46,6 +46,16 @@ export function ticksForTech(tech: Tech, costMultiplier = 1): number {
     return Math.max(1, Math.ceil((tech.researchCost * costMultiplier) / TICK_INTERVAL_HOURS));
 }
 
+/**
+ * A reward paid in research hours. The worker finishes a project on
+ * ticksCompleted, so hours must land there; progressHours is the debug path only.
+ * Capped at the finish: the unlock still happens on the next strategic tick.
+ */
+export function addResearchHours(slot: { ticksCompleted?: number; ticksRequired?: number }, hours: number): void {
+    const next = (slot.ticksCompleted ?? 0) + hours / TICK_INTERVAL_HOURS;
+    slot.ticksCompleted = slot.ticksRequired ? Math.min(slot.ticksRequired, next) : next;
+}
+
 function applyEffect(state: PlayerTechState, effect: TechEffect) {
     switch (effect.type) {
         case TechEffectType.MODIFIER_PERCENT:

@@ -241,9 +241,9 @@ test('a test lab pushes the current research', () => {
     build('solar');
     shifts(2);
     s.colonists = Math.max(s.colonists, 30);
-    const h0 = slot.progressHours;
+    const h0 = slot.ticksCompleted;
     order({ op: 'experiment', subjects: 'volunteers' });
-    assert.ok(slot.progressHours > h0, lastError());
+    assert.ok(slot.ticksCompleted > h0, lastError());
     order({ op: 'experiment', subjects: 'volunteers' });
     assert.match(lastError(), /still writing up/);
 });

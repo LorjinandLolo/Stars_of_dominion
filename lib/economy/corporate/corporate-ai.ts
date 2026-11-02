@@ -363,7 +363,6 @@ function fundResearch(company: CharteredCompany, world: GameWorldState, nowSecon
         const tech = world.tech?.get?.(company.foundingFactionId);
         const slot = tech?.activeSlots?.find(s => s.status === 'researching');
         if (slot) {
-            slot.progressHours += 24;
             slot.ticksCompleted = Math.min(slot.ticksRequired, slot.ticksCompleted + 1);
         }
         logCorporateAction(company, {

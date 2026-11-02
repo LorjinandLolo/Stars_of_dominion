@@ -28,7 +28,7 @@ import { RNG, seedFromString } from '../trade-system/rng';
 import { isAtWar, shiftRivalry } from '../diplomacy/offer-service';
 import { isCivilianFleet } from '../combat/civilian-ships';
 import { ensureLedger } from '../combat/siege/prisoners';
-import { registry as techRegistry } from '../tech/engine';
+import { addResearchHours, registry as techRegistry } from '../tech/engine';
 import { fireNotification } from '../time/notification-hooks';
 
 /** Catch-up cap: a worker that was down does not run a day of shifts in one cycle. */
@@ -110,7 +110,7 @@ function enemiesNear(world: GameWorldState, factionId: string, systemId: string)
     return false;
 }
 
-function contextFor(world: GameWorldState, planet: AnyPlanet, state: OutpostState): CrisisContext {
+export function contextFor(world: GameWorldState, planet: AnyPlanet, state: OutpostState): CrisisContext {
     const owner = planet.ownerId as string;
     return {
         rng: new RNG(seedFromString(`${planet.id}|outpost|${state.shift}|${state.crises.length}`)),
@@ -132,7 +132,7 @@ function contextFor(world: GameWorldState, planet: AnyPlanet, state: OutpostStat
         researchBoost: hours => {
             const p = currentProject(world, owner);
             if (!p || hours <= 0) return null;
-            p.slot.progressHours = (p.slot.progressHours ?? 0) + hours;
+            addResearchHours(p.slot, hours);
             return p.tech.name ?? p.tech.id;
         },
         experimentHours: () => experimentHours(world, owner, state),

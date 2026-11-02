@@ -79,7 +79,7 @@ test('observe: a ship watching unseen earns research; contact ends it for everyo
     const tech = world.tech.get(A) ?? (world.tech.set(A, { activeSlots: [] }), world.tech.get(A));
     tech.activeSlots = [{ slotId: 's', techId: 'any-tech', status: 'researching', progressHours: 0, ticksCompleted: 0, ticksRequired: 10, startTime: 0 }];
     tickNatives(world);
-    assert.ok(tech.activeSlots[0].progressHours > 0, 'research gained');
+    assert.ok(tech.activeSlots[0].ticksCompleted > 0, 'research gained');
     act(B, p, 'contact');
     assert.ok(p.natives.contacted && !Object.keys(p.natives.observers).length, 'observation is over');
     act(A, p, 'observe');

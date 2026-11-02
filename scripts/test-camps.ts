@@ -97,7 +97,7 @@ test('experiments: research, faster deaths', () => {
     tech.activeSlots = [{ slotId: 's', techId: 'any', status: 'researching', progressHours: 0, ticksCompleted: 0, ticksRequired: 10, startTime: 0 }];
     const n = campWorld.camp.inmates;
     tickCamps(world);
-    assert.ok(tech.activeSlots[0].progressHours > 0);
+    assert.ok(tech.activeSlots[0].ticksCompleted > 0);
     assert.ok(campWorld.camp.inmates < n * (1 - MORTALITY.labour));
 });
 

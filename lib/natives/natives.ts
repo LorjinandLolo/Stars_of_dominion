@@ -23,6 +23,7 @@
 // State lives on the planet (planet.natives). Pure apart from the world it is
 // handed; no lib/db.
 
+import { addResearchHours } from '../tech/engine';
 import type { GameWorldState } from '../game-world-state';
 import type { PlanetArchetype } from '../planet-surface/types';
 import { RNG, seedFromString } from '../trade-system/rng';
@@ -200,7 +201,7 @@ function addInfamy(world: GameWorldState, factionId: string, n: number): void {
 export function grantResearchHours(world: GameWorldState, factionId: string, hours: number): void {
     const state: any = (world as any).tech?.get?.(factionId);
     const slots = (state?.activeSlots ?? []).filter((s: any) => s.techId && s.status === 'researching');
-    for (const s of slots) s.progressHours = (s.progressHours ?? 0) + hours / slots.length;
+    for (const s of slots) addResearchHours(s, hours / slots.length);
 }
 
 export interface NativeResult { ok: boolean; reason?: string; message?: string }
